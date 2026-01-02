@@ -1,0 +1,13 @@
+# data directory for SQLite
+data/
+*.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
