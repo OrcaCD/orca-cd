@@ -67,7 +67,7 @@ VOLUME ["/data"]
 # Expose port 8080
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["orca-cd", "healthcheck"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["server", "health"]
 
 # Run the server (root command starts the API)
 CMD ["./server"]

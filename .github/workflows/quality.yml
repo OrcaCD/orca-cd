@@ -1,0 +1,74 @@
+name: Quality
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  backend:
+    name: Backend Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Check format
+        run: go mod tidy && gofmt -s -w . && git diff --exit-code
+
+      - name: Check vet
+        run: go vet ./...
+
+      - name: Run Tests
+        run: go test -v -race -coverprofile=coverage.txt ./...
+
+  frontend:
+    name: Frontend Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Setup Aikido Safe Chain
+        working-directory: ./frontend
+        run: |
+          npm i -g @aikidosec/safe-chain
+          safe-chain setup-ci
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci --safe-chain-skip-minimum-package-age
+
+      - name: Run Linter
+        working-directory: ./frontend
+        run: node --run lint
+
+      - name: Check Formatting
+        working-directory: ./frontend
+        run: node --run check:format
+
+      - name: Type Checking
+        working-directory: ./frontend
+        run: node --run check:types
