@@ -7,7 +7,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     devtools(),
     tanstackRouter({
@@ -24,6 +24,8 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
+    allowedHosts: true,
+    ...(mode === "development" && {
     proxy: {
       '/api': {
         target: 'http://localhost:8080/api',
@@ -31,6 +33,6 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
-    allowedHosts: true,
+  })
   },
-})
+}))
