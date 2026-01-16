@@ -20,8 +20,8 @@ FROM golang:1.25-alpine AS backend-builder
 
 WORKDIR /app
 
-# Install build dependencies for SQLite
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+# Install build dependencies for SQLite and protobuf
+RUN apk add --no-cache gcc musl-dev sqlite-dev protobuf
 
 # Copy go mod files
 COPY go.mod go.sum* ./
@@ -29,22 +29,24 @@ COPY go.mod go.sum* ./
 # Download dependencies
 RUN go mod download
 
+# Copy proto files and generate
+COPY api/ ./api/
+
 # Copy source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY main.go ./
 
 # Define build arguments
 ARG VERSION=dev
 ARG BUILD_TIME=unknown
 ARG GIT_COMMIT=unknown
 
-# Build the Go application with version information
+# Build the Hub application
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-X 'orca-cd/internal/config.Version=${VERSION}' \
-              -X 'orca-cd/internal/config.BuildTime=${BUILD_TIME}' \
-              -X 'orca-cd/internal/config.GitCommit=${GIT_COMMIT}'" \
-    -o server .
+    -ldflags="-X 'github.com/OrcaCD/orca-cd/internal/config.Version=${VERSION}' \
+              -X 'github.com/OrcaCD/orca-cd/internal/config.BuildTime=${BUILD_TIME}' \
+              -X 'github.com/OrcaCD/orca-cd/internal/config.GitCommit=${GIT_COMMIT}'" \
+    -o hub ./cmd/hub
 
 # Final stage
 FROM alpine:3.22
@@ -53,8 +55,8 @@ RUN apk --no-cache add ca-certificates sqlite-libs
 
 WORKDIR /root/
 
-# Copy the Go binary from backend builder
-COPY --from=backend-builder /app/server .
+# Copy the Hub binary from backend builder
+COPY --from=backend-builder /app/hub .
 
 # Copy the built frontend from frontend builder
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
@@ -64,10 +66,10 @@ RUN mkdir -p ./data
 
 VOLUME ["/data"]
 
-# Expose port 8080
-EXPOSE 8080
+# Expose HTTP and gRPC ports
+EXPOSE 8080 9090
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["server", "health"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD ["./hub", "health"]
 
-# Run the server (root command starts the API)
-CMD ["./server"]
+# Run the hub server
+CMD ["./hub"]

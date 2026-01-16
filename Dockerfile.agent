@@ -1,0 +1,46 @@
+# Build stage for Go agent
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
+
+# Copy go mod files
+COPY go.mod go.sum* ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy proto files
+COPY api/ ./api/
+
+# Copy source code
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+
+# Define build arguments
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
+ARG GIT_COMMIT=unknown
+
+# Build the Agent application
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-X 'github.com/OrcaCD/orca-cd/internal/config.Version=${VERSION}' \
+              -X 'github.com/OrcaCD/orca-cd/internal/config.BuildTime=${BUILD_TIME}' \
+              -X 'github.com/OrcaCD/orca-cd/internal/config.GitCommit=${GIT_COMMIT}'" \
+    -o agent ./cmd/agent
+
+# Final stage - minimal image for agent
+FROM alpine:3.22
+
+RUN apk --no-cache add ca-certificates docker-cli kubectl git
+
+WORKDIR /root/
+
+# Copy the Agent binary from builder
+COPY --from=builder /app/agent .
+
+# Run the agent
+# Note: --hub and --id flags can be passed via CMD or environment variables
+CMD ["./agent"]

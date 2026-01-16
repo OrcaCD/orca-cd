@@ -1,10 +1,40 @@
 services:
-  app:
+  hub:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.hub
     ports:
       - "8080:8080"
+      - "9090:9090"
     environment:
       - GIN_MODE=release
+      - DB_DRIVER=sqlite
+      - DB_PATH=/data/app.db
+    volumes:
+      - hub-data:/data
     restart: unless-stopped
+    networks:
+      - orca-network
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    command: ["./agent", "--hub", "hub:9090"]
+    environment:
+      - LOG_JSON=true
+    depends_on:
+      - hub
+    restart: unless-stopped
+    networks:
+      - orca-network
+    # Mount docker socket for container management capabilities
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+networks:
+  orca-network:
+    driver: bridge
+
+volumes:
+  hub-data:

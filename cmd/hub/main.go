@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/OrcaCD/orca-cd/cmd"
-	"github.com/OrcaCD/orca-cd/internal/utils"
 	"os"
 	"time"
+
+	"github.com/OrcaCD/orca-cd/internal/hub"
+	"github.com/OrcaCD/orca-cd/internal/utils"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -16,5 +17,5 @@ func main() {
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 	}
 
-	cmd.Run()
+	hub.Run()
 }

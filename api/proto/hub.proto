@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package hub;
+
+option go_package = "github.com/OrcaCD/orca-cd/api/proto";
+
+// HubService defines the gRPC streaming service for hub-agent communication
+service HubService {
+  // AgentStream is a bidirectional streaming RPC for agent-hub communication
+  // The agent connects and maintains a persistent stream with the hub
+  rpc AgentStream(stream AgentMessage) returns (stream HubMessage);
+}
+
+// AgentMessage represents messages sent from agent to hub
+message AgentMessage {
+  string agent_id = 1;
+  oneof payload {
+    AgentRegistration registration = 2;
+    Heartbeat heartbeat = 3;
+    TaskResult task_result = 4;
+    TaskProgress task_progress = 5;
+  }
+}
+
+// HubMessage represents messages sent from hub to agent
+message HubMessage {
+  oneof payload {
+    RegistrationAck registration_ack = 1;
+    TaskAssignment task_assignment = 2;
+    TaskCancel task_cancel = 3;
+  }
+}
+
+// AgentRegistration is sent when an agent first connects
+message AgentRegistration {
+  string agent_id = 1;
+  string version = 2;
+  repeated string capabilities = 3;
+  map<string, string> labels = 4;
+}
+
+// RegistrationAck acknowledges agent registration
+message RegistrationAck {
+  bool success = 1;
+  string message = 2;
+}
+
+// Heartbeat is sent periodically to maintain connection
+message Heartbeat {
+  int64 timestamp = 1;
+  AgentStatus status = 2;
+}
+
+// AgentStatus represents the current state of an agent
+message AgentStatus {
+  enum State {
+    UNKNOWN = 0;
+    IDLE = 1;
+    BUSY = 2;
+    ERROR = 3;
+  }
+  State state = 1;
+  int32 running_tasks = 2;
+  double cpu_usage = 3;
+  double memory_usage = 4;
+}
+
+// TaskAssignment is sent from hub to agent to assign a task
+message TaskAssignment {
+  string task_id = 1;
+  string task_type = 2;
+  bytes payload = 3;  // JSON-encoded task-specific payload
+  int64 timeout_seconds = 4;
+  int32 priority = 5;
+}
+
+// TaskCancel is sent to cancel a running task
+message TaskCancel {
+  string task_id = 1;
+  string reason = 2;
+}
+
+// TaskResult is sent when a task completes
+message TaskResult {
+  string task_id = 1;
+  TaskStatus status = 2;
+  bytes output = 3;  // JSON-encoded task output
+  string error_message = 4;
+  int64 started_at = 5;
+  int64 completed_at = 6;
+}
+
+// TaskProgress is sent during task execution
+message TaskProgress {
+  string task_id = 1;
+  int32 percent_complete = 2;
+  string message = 3;
+  bytes data = 4;  // Optional intermediate data
+}
+
+// TaskStatus represents the completion status of a task
+enum TaskStatus {
+  TASK_STATUS_UNKNOWN = 0;
+  TASK_STATUS_SUCCESS = 1;
+  TASK_STATUS_FAILED = 2;
+  TASK_STATUS_CANCELLED = 3;
+  TASK_STATUS_TIMEOUT = 4;
+}
