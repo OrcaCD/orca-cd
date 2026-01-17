@@ -8,23 +8,21 @@ import Navbar from "../components/navbar";
 export const Route = createRootRoute({
 	component: () => (
 		<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
-			<div
-			className="min-h-screen bg-background">
-
-			<Navbar />
-			<Outlet />
-			<TanStackDevtools
-				config={{
-					position: "bottom-right",
-				}}
-				plugins={[
-					{
-						name: "Tanstack Router",
-						render: <TanStackRouterDevtoolsPanel />,
-					},
-				]}
+			<div className="min-h-screen bg-background">
+				<Navbar />
+				<Outlet />
+				<TanStackDevtools
+					config={{
+						position: "bottom-right",
+					}}
+					plugins={[
+						{
+							name: "Tanstack Router",
+							render: <TanStackRouterDevtoolsPanel />,
+						},
+					]}
 				/>
-				</div>
+			</div>
 		</ThemeProvider>
 	),
 });
