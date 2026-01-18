@@ -1,4 +1,4 @@
-import { createRouter, RouterProvider } from "@tanstack/react-router";
+import { createRouter, Link, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -6,6 +6,7 @@ import ReactDOM from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
 
 import "./styles.css";
+import { Button } from "./components/ui/button";
 
 // Create a new router instance
 const router = createRouter({
@@ -15,7 +16,18 @@ const router = createRouter({
 	scrollRestoration: true,
 	defaultStructuralSharing: true,
 	defaultPreloadStaleTime: 0,
-	defaultViewTransition: true,
+	defaultNotFoundComponent: () => {
+		return (
+			<div className="text-center">
+				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
+					<p>Not Found</p>
+					<Link to="/" className="text- underline">
+						<Button>Go Home</Button>
+					</Link>
+				</div>
+			</div>
+		);
+	},
 });
 
 // Register the router instance for type safety
