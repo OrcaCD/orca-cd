@@ -1,4 +1,4 @@
-.PHONY: all proto build build-hub build-agent docker docker-hub docker-agent clean test
+.PHONY: all proto build build-hub build-agent build-cli docker docker-hub docker-agent clean test
 
 VERSION ?= dev
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -17,13 +17,16 @@ proto:
 		api/proto/hub.proto
 
 # Build all binaries
-build: build-hub build-agent
+build: build-hub build-agent build-cli
 
 build-hub:
 	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o bin/hub ./cmd/hub
 
 build-agent:
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o bin/agent ./cmd/agent
+
+build-cli:
+	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o bin/orca-cli ./cmd/cli
 
 # Build Docker images
 docker: docker-hub docker-agent
@@ -63,6 +66,10 @@ run-hub:
 # Development: run agent locally
 run-agent:
 	go run ./cmd/agent --hub localhost:9090
+
+# Development: run CLI locally
+run-cli:
+	go run ./cmd/cli $(ARGS)
 
 # Docker compose commands
 up:

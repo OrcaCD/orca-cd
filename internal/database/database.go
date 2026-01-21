@@ -60,7 +60,11 @@ func Connect() {
 	}
 
 	// Auto migrate models
-	if err := DB.AutoMigrate(&models.Message{}); err != nil {
+	if err := DB.AutoMigrate(
+		&models.Message{},
+		&models.User{},
+		&models.OneTimeAccessToken{},
+	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
