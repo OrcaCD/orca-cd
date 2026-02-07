@@ -21,7 +21,20 @@ const router = createRouter({
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
 					<p>Not Found</p>
-					<Link to="/" className="text- underline">
+					<Link to="/">
+						<Button>Go Home</Button>
+					</Link>
+				</div>
+			</div>
+		);
+	},
+	defaultErrorComponent: ({ error }) => {
+		return (
+			<div className="text-center">
+				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
+					<p>Something went wrong</p>
+					<pre>{error.message}</pre>
+					<Link to="/">
 						<Button>Go Home</Button>
 					</Link>
 				</div>
