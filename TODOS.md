@@ -3,14 +3,20 @@
 - Go Setup
     - Justfile
     - Commands
-    - Server
-    - Database
+    - Server Hub (Gin)
+    - Agent
+    - Websocket Kommunikation
+    - Sqlite Database with Gorm
+        - Migrations
+        - Models
+        - Encrypted fields
     - Logging
     - Cors and other middleware
     - Controllers and routes
     - Version config
+    - Shoterrr setup
 - Docker setup
-- CI/CD pipeline
+- CI/CD workflow (Linting, Formatting, Testing, ...)
 - dependabot
 - Unit tests
 - Lizenz, code of conduct etc.
