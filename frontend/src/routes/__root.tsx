@@ -83,6 +83,12 @@ export const Route = createRootRoute({
 			{
 				rel: "icon",
 				type: "image/png",
+				sizes: "180x180",
+				href: "/assets/logo-dark-180.png",
+			},
+			{
+				rel: "icon",
+				type: "image/png",
 				sizes: "192x192",
 				href: "/assets/logo-dark-192.png",
 			},
