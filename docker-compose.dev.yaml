@@ -1,0 +1,9 @@
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: hub.Dockerfile
+    container_name: orca-hub
+    ports:
+      - '127.0.0.1:8080:8080'
+    restart: unless-stopped

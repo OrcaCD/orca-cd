@@ -1,34 +1,13 @@
 # TODOS
 
 - Go Setup
-    - Justfile
-    - Commands
-    - Server Hub (Gin)
-    - Agent
-    - Websocket Kommunikation
-        - Protobuf messages
-    - Sqlite Database with Gorm
-        - Migrations
-        - Models
-        - Encrypted fields
-    - Logging
-    - Cors and other middleware
-    - Controllers and routes
-    - Version config
-    - Shoterrr setup
-- Docker setup
-    - Dockerfile for agent and hub
-    - Include frontend in hub
-    - Docker Compose file
-- CI/CD workflow
-    - golangci-lint
-    - go mod verify
-    - go build
-    - Go fmt check
-    - Go vet
-    - Go test
-    - Frontend: Lint, Format, Type check, Build
-- dependabot
-- Unit tests
-- Lizenz, code of conduct etc.
+  - Agent
+  - Websocket Kommunikation
+    - Protobuf messages
+  - Sqlite Database with Gorm
+    - Migrations
+    - Models
+    - Encrypted fields
+  - Shoterrr setup
+- code of conduct etc.
 - Release workflow

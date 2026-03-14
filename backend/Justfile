@@ -1,0 +1,17 @@
+set dotenv-load
+
+lint:
+    golangci-lint run
+    go mod verify
+
+fmt:
+    golangci-lint fmt
+
+build:
+    go build -v ./...
+
+test:
+    go test -v -race ./...
+
+run-hub:
+    go run ./cmd/hub
