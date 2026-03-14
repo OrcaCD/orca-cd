@@ -37,6 +37,7 @@ func main() {
 				port = "8080"
 			}
 
+			//nolint:gosec
 			resp, err := http.Get("http://localhost:" + port + "/api/v1/health")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
