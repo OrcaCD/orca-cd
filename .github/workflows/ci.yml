@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        name: Checkout code
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.x.x'
+
+      - name: Setup Aikido Safe Chain
+        working-directory: ./frontend
+        run: |
+          npm i -g @aikidosec/safe-chain
+          safe-chain setup-ci
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci --safe-chain-skip-minimum-package-age
+
+      - name: Run Check
+        working-directory: ./frontend
+        run: node --run check
+
+      - name: Type Checking
+        working-directory: ./frontend
+        run: node --run typecheck
+
+      - name: Build
+        working-directory: ./frontend
+        run: node --run build
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        name: Checkout code
+
+      - uses: actions/setup-go@v6
+        name: Set up Go
+        with:
+          go-version: stable
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+          working-directory: ./backend
+
+      - name: Verify dependencies
+        working-directory: ./backend
+        run: go mod verify
+
+      - name: Build
+        working-directory: ./backend
+        run: go build -v ./...
+
+      - name: Run Tests
+        working-directory: ./backend
+        run: go test -v -race ./...
