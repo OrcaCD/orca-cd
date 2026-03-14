@@ -5,12 +5,7 @@ import { cn } from "@/lib/utils";
 
 type AnimationVariant = "circle" | "circle-blur" | "gif" | "polygon";
 
-type StartPosition =
-	| "center"
-	| "top-left"
-	| "top-right"
-	| "bottom-left"
-	| "bottom-right";
+type StartPosition = "center" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface ThemeToggleButtonProps {
 	theme?: "light" | "dark";
@@ -48,10 +43,8 @@ export const ModeToggle = ({
 		};
 
 		if (variant === "circle") {
-			const cx =
-				start === "center" ? "50" : start.includes("left") ? "0" : "100";
-			const cy =
-				start === "center" ? "50" : start.includes("top") ? "0" : "100";
+			const cx = start === "center" ? "50" : start.includes("left") ? "0" : "100";
+			const cy = start === "center" ? "50" : start.includes("top") ? "0" : "100";
 			css = `
         @supports (view-transition-name: root) {
           ::view-transition-old(root) { 
@@ -72,10 +65,8 @@ export const ModeToggle = ({
         }
       `;
 		} else if (variant === "circle-blur") {
-			const cx =
-				start === "center" ? "50" : start.includes("left") ? "0" : "100";
-			const cy =
-				start === "center" ? "50" : start.includes("top") ? "0" : "100";
+			const cx = start === "center" ? "50" : start.includes("left") ? "0" : "100";
+			const cy = start === "center" ? "50" : start.includes("top") ? "0" : "100";
 			css = `
         @supports (view-transition-name: root) {
           ::view-transition-old(root) { 
@@ -183,11 +174,7 @@ export const ModeToggle = ({
 			variant="outline"
 			size={showLabel ? "default" : "icon"}
 			onClick={handleClick}
-			className={cn(
-				"relative overflow-hidden transition-all",
-				showLabel && "gap-2",
-				className,
-			)}
+			className={cn("relative overflow-hidden transition-all", showLabel && "gap-2", className)}
 			aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
 		>
 			{theme === "light" ? (
@@ -195,9 +182,7 @@ export const ModeToggle = ({
 			) : (
 				<Moon className="h-[1.2rem] w-[1.2rem]" />
 			)}
-			{showLabel && (
-				<span className="text-sm">{theme === "light" ? "Light" : "Dark"}</span>
-			)}
+			{showLabel && <span className="text-sm">{theme === "light" ? "Light" : "Dark"}</span>}
 		</Button>
 	);
 };
