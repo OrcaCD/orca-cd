@@ -35,7 +35,7 @@ jobs:
 
       - name: Type Checking
         working-directory: ./frontend
-        run: node --run check:types
+        run: node --run typecheck
 
   backend:
     runs-on: ubuntu-latest
