@@ -7,3 +7,10 @@ services:
     ports:
       - '127.0.0.1:8080:8080'
     restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent.Dockerfile
+    container_name: orca-agent
+    restart: unless-stopped
