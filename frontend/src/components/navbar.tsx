@@ -53,9 +53,7 @@ export default function Navbar() {
 			<div className="flex h-14 items-center justify-between px-4">
 				<div className="flex items-center gap-6">
 					<Link to="/" className="flex items-center gap-2">
-						<span className="font-semibold text-lg hidden sm:inline">
-							OrcaCD
-						</span>
+						<span className="font-semibold text-lg hidden sm:inline">OrcaCD</span>
 					</Link>
 
 					<nav className="hidden md:flex items-center gap-1">
@@ -131,11 +129,7 @@ export default function Navbar() {
 						className="md:hidden"
 						onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
 					>
-						{mobileMenuOpen ? (
-							<X className="h-5 w-5" />
-						) : (
-							<Menu className="h-5 w-5" />
-						)}
+						{mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
 					</Button>
 				</div>
 			</div>
