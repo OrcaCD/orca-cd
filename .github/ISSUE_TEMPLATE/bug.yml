@@ -1,0 +1,48 @@
+name: "🐛 Bug Report"
+description: "Report something that is not working as expected"
+title: "🐛 Bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug Summary
+      description: A brief description of the bug.
+      placeholder: What is the bug about? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Describe the steps to reproduce the bug.
+      placeholder: How can the bug be reproduced?
+    validations:
+      required: true
+  - type: textarea
+    id: error-message
+    attributes:
+      label: Provide the error message and stack trace
+      placeholder: Paste the error message and stack trace here, if available
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: What version of OrcaCD are you using?
+      placeholder: The OrcaCD version you are using (e.g., 1.0.0)
+    validations:
+      required: true
+  - type: checkboxes
+    id:
+    attributes:
+      label: Are you willing to help with the implementation?
+      description: If you are willing to help with the implementation, please check the box below.
+      options:
+        - label: "Yes"
+    validations:
+      required: false
