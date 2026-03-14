@@ -13,7 +13,7 @@ import (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:                "hub [flags]",
-		Short:              "Orca Agent",
+		Short:              "Orca Hub",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return hub.Run(hub.DefaultConfig())
@@ -30,9 +30,15 @@ func main() {
 
 	healthCheckCmd := &cobra.Command{
 		Use:   "healthcheck",
-		Short: "Run a health check",
+		Short: "Check the health of the hub",
 		Run: func(cmd *cobra.Command, args []string) {
-			resp, err := http.Get("http://localhost:8080/api/v1/health")
+			port := os.Getenv("ORCA_PORT")
+			if port == "" {
+				port = "8080"
+			}
+
+			//nolint:gosec
+			resp, err := http.Get("http://localhost:" + port + "/api/v1/health")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)
