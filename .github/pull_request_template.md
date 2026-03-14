@@ -2,7 +2,6 @@
 
 - [ ] 🐛 Bug fix
 - [ ] 🚀 New feature
-- [ ] 🌍 New translation
 - [ ] ❓ Other (please specify)
 
 ## **Description**
