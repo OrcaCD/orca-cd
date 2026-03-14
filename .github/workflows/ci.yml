@@ -29,17 +29,9 @@ jobs:
         working-directory: ./frontend
         run: npm ci --safe-chain-skip-minimum-package-age
 
-      - name: Run Linter
-        working-directory: ./frontend
-        run: node --run lint
-
       - name: Run Check
         working-directory: ./frontend
         run: node --run check
-
-      - name: Check Formatting
-        working-directory: ./frontend
-        run: node --run check:format
 
       - name: Type Checking
         working-directory: ./frontend
