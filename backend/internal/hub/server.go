@@ -14,8 +14,8 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	debug := os.Getenv("ORCA_HUB_DEBUG")
-	port := os.Getenv("ORCA_HUB_PORT")
+	debug := os.Getenv("ORCA_DEBUG")
+	port := os.Getenv("ORCA_PORT")
 
 	if port == "" {
 		port = "8080"

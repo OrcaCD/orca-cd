@@ -12,7 +12,7 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	debug := os.Getenv("ORCA_HUB_DEBUG")
+	debug := os.Getenv("ORCA_DEBUG")
 	return Config{
 		Debug: debug == "true",
 	}

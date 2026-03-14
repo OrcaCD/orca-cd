@@ -32,7 +32,7 @@ func main() {
 		Use:   "healthcheck",
 		Short: "Check the health of the hub",
 		Run: func(cmd *cobra.Command, args []string) {
-			port := os.Getenv("ORCA_HUB_PORT")
+			port := os.Getenv("ORCA_PORT")
 			if port == "" {
 				port = "8080"
 			}
