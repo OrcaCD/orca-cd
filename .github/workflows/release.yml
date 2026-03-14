@@ -1,24 +1,40 @@
-name: Build and Push Docker Images
+name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
 
-permissions:
-  contents: read
-  packages: write
-  attestations: write
-  id-token: write
-
 jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      new-release-created: ${{ steps.release-please-action.outputs.releases_created }}
+      tag-name: ${{ steps.release-please-action.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release-please-action
+        with:
+          release-type: go
+
   build:
     name: Build ${{ matrix.name }} Image
+    needs: release-please
+    if: needs.release-please.outputs.new-release-created == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
     strategy:
       matrix:
         include:
@@ -47,11 +63,11 @@ jobs:
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}.{{patch}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag-name }}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=${{ needs.release-please.outputs.tag-name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag-name }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag-name }}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
