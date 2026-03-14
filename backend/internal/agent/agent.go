@@ -1,29 +1,20 @@
-package hub
+package agent
 
 import (
 	"os"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
 
 type Config struct {
 	Debug bool
-	Port  string
 }
 
 func DefaultConfig() Config {
 	debug := os.Getenv("ORCA_HUB_DEBUG")
-	port := os.Getenv("ORCA_HUB_PORT")
-
-	if port == "" {
-		port = "8080"
-	}
-
 	return Config{
 		Debug: debug == "true",
-		Port:  port,
 	}
 }
 
@@ -31,14 +22,7 @@ var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC
 	With().Timestamp().Logger()
 
 func Run(cfg Config) error {
-	if !cfg.Debug {
-		gin.SetMode(gin.ReleaseMode)
-	}
+	log.Info().Msg("agent started")
 
-	router := gin.Default()
-
-	RegisterRoutes(router, cfg)
-
-	log.Info().Str("port", cfg.Port).Msg("hub started")
-	return router.Run(":" + cfg.Port)
+	return nil
 }
