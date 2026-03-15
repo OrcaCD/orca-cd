@@ -9,7 +9,7 @@ import (
 )
 
 type Config struct {
-	Debug bool
+	Debug    bool
 	LogLevel zerolog.Level
 }
 
@@ -23,7 +23,7 @@ func DefaultConfig() Config {
 	}
 
 	return Config{
-		Debug: debug == "true",
+		Debug:    debug == "true",
 		LogLevel: logLevel,
 	}
 }
