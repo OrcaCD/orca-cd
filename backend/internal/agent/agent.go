@@ -19,7 +19,7 @@ func DefaultConfig() Config {
 }
 
 var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Logger()
+	With().Timestamp().Str("service", "agent").Logger()
 
 func Run(cfg Config) error {
 	log.Info().Msg("agent started")
