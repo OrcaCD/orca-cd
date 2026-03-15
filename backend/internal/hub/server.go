@@ -10,25 +10,33 @@ import (
 )
 
 type Config struct {
-	Debug bool
-	Port  string
+	Debug    bool
+	Port     string
+	LogLevel zerolog.Level
 }
 
 func DefaultConfig() Config {
-	debug := os.Getenv("ORCA_DEBUG")
-	port := os.Getenv("ORCA_PORT")
+	debug := os.Getenv("DEBUG")
+	port := os.Getenv("PORT")
+	logLevelStr := os.Getenv("LOG_LEVEL")
 
 	if port == "" {
 		port = "8080"
 	}
 
+	logLevel, err := zerolog.ParseLevel(logLevelStr)
+	if err != nil || logLevelStr == "" {
+		logLevel = zerolog.InfoLevel
+	}
+
 	return Config{
-		Debug: debug == "true",
-		Port:  port,
+		Debug:    debug == "true",
+		Port:     port,
+		LogLevel: logLevel,
 	}
 }
 
-var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
+var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
 	With().Timestamp().Str("service", "hub").Logger()
 
 func Run(cfg Config) error {
@@ -36,10 +44,12 @@ func Run(cfg Config) error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	Log = Log.Level(cfg.LogLevel)
+
 	router := gin.Default()
 
 	RegisterRoutes(router, cfg)
 
-	log.Info().Str("port", cfg.Port).Str("version", version.Version).Msg("hub started")
+	Log.Info().Str("port", cfg.Port).Str("version", version.Version).Msg("hub started")
 	return router.Run(":" + cfg.Port)
 }
