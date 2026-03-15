@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/rs/zerolog"
 )
 
@@ -22,7 +23,7 @@ var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC
 	With().Timestamp().Str("service", "agent").Logger()
 
 func Run(cfg Config) error {
-	log.Info().Msg("agent started")
+	log.Info().Str("version", version.Version).Msg("agent started")
 
 	return nil
 }

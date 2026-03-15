@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
@@ -39,6 +40,6 @@ func Run(cfg Config) error {
 
 	RegisterRoutes(router, cfg)
 
-	log.Info().Str("port", cfg.Port).Msg("hub started")
+	log.Info().Str("port", cfg.Port).Str("version", version.Version).Msg("hub started")
 	return router.Run(":" + cfg.Port)
 }
