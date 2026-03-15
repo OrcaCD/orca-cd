@@ -4,21 +4,25 @@ import (
 	"os"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
 
 type Config struct {
-	Debug    bool
-	Port     string
-	LogLevel zerolog.Level
+	Debug         bool
+	Port          string
+	LogLevel      zerolog.Level
+	EncryptionKey string
 }
 
 func DefaultConfig() Config {
 	debug := os.Getenv("DEBUG")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	encryptionKey := os.Getenv("ENCRYPTION_KEY")
 
 	if port == "" {
 		port = "8080"
@@ -29,10 +33,16 @@ func DefaultConfig() Config {
 		logLevel = zerolog.InfoLevel
 	}
 
+	if encryptionKey == "" {
+		Log.Warn().Msg("ENCRYPTION_KEY not set, using default key (not secure for production)")
+		encryptionKey = "default-secret-key-please-change"
+	}
+
 	return Config{
-		Debug:    debug == "true",
-		Port:     port,
-		LogLevel: logLevel,
+		Debug:         debug == "true",
+		Port:          port,
+		LogLevel:      logLevel,
+		EncryptionKey: encryptionKey,
 	}
 }
 
@@ -45,6 +55,15 @@ func Run(cfg Config) error {
 	}
 
 	Log = Log.Level(cfg.LogLevel)
+
+	if err := crypto.Init(cfg.EncryptionKey); err != nil {
+		Log.Fatal().Err(err).Msg("failed to init crypto")
+	}
+
+	_, err := db.Connect()
+	if err != nil {
+		Log.Fatal().Err(err).Msg("failed to connect to database")
+	}
 
 	router := gin.Default()
 
