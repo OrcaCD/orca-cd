@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -28,7 +29,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }} Image
     needs: release-please
-    if: needs.release-please.outputs.new-release-created == 'true'
+    if: needs.release-please.outputs.new-release-created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,11 +64,12 @@ jobs:
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag-name }}
-            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=${{ needs.release-please.outputs.tag-name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag-name }}
-            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag-name }}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' }}
+            type=raw,value=main,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
@@ -79,7 +81,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ needs.release-please.outputs.tag-name }}
+            VERSION=${{ github.event_name == 'workflow_dispatch' && 'main' || needs.release-please.outputs.tag-name }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
