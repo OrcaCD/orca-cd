@@ -32,13 +32,10 @@ func main() {
 		Use:   "healthcheck",
 		Short: "Check the health of the hub",
 		Run: func(cmd *cobra.Command, args []string) {
-			port := os.Getenv("ORCA_PORT")
-			if port == "" {
-				port = "8080"
-			}
+			cfg := hub.DefaultConfig()
 
 			//nolint:gosec
-			resp, err := http.Get("http://localhost:" + port + "/api/v1/health")
+			resp, err := http.Get("http://localhost:" + cfg.Port + "/api/v1/health")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)

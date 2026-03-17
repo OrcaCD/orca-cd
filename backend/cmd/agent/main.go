@@ -11,7 +11,7 @@ import (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:                "anget [flags]",
+		Use:                "agent [flags]",
 		Short:              "Orca Agent",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

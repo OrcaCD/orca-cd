@@ -1,23 +1,58 @@
-set dotenv-load
+set dotenv-load := true
 
+VERSION := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
+COMMIT := `git rev-parse --short HEAD 2>/dev/null || echo "none"`
+DATE := `date -u +%Y-%m-%dT%H:%M:%SZ`
+LDFLAGS := "-s -w -X github.com/OrcaCD/orca-cd/internal/version.Version=" + VERSION + " -X github.com/OrcaCD/orca-cd/internal/version.Commit=" + COMMIT + " -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=" + DATE
+defaultCommand := ""
+
+# List all available commands
 default:
     @just --list
 
+# Run linter and verify module dependencies
 lint:
     golangci-lint run
     go mod verify
 
+# Format source code using golangci-lint
 fmt:
     golangci-lint fmt
 
-build:
-    go build -v ./...
-
+# Run all tests with race detection
 test:
     go test -v -race ./...
 
-run-hub:
-    go run ./cmd/hub
+# Build the hub binary to bin/hub
+[group('hub')]
+build-hub:
+    CGO_ENABLED=1 go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
 
-run-agent:
-    go run ./cmd/agent
+# Build the agent binary to bin/agent
+[group('agent')]
+build-agent:
+    CGO_ENABLED=1 go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
+
+# Build both hub and agent binaries in parallel
+[parallel]
+build: build-hub build-agent
+
+# Run the hub (use the help command to get a list of commands)
+[group('hub')]
+run-hub cmd=defaultCommand:
+    CGO_ENABLED=1 go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
+
+# Run the agent (use the help command to get a list of commands)
+[group('agent')]
+run-agent cmd=defaultCommand:
+    CGO_ENABLED=1 go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
+
+# Run both hub and agent in parallel
+[parallel]
+run: run-hub run-agent
+
+# Print the current version, commit, and build date
+version:
+    @echo "Version: {{ VERSION }}"
+    @echo "Commit:  {{ COMMIT }}"
+    @echo "Date:    {{ DATE }}"

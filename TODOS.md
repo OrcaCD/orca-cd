@@ -7,5 +7,3 @@
     - Migrations
     - Models
     - Encrypted fields
-- code of conduct etc.
-- Release workflow
