@@ -1,18 +1,23 @@
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { createRootRoute, HeadContent, Outlet } from "@tanstack/react-router";
+import { createRootRoute, HeadContent, Outlet, useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import Navbar from "../components/navbar";
+import { Toaster } from "@/components/ui/sonner";
 
-export const Route = createRootRoute({
-	component: () => (
+function RootComponent() {
+	const { location } = useRouterState();
+	const showNavbar = location.pathname !== "/login";
+
+	return (
 		<>
 			<HeadContent />
 			<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
 				<div className="min-h-screen bg-background">
-					<Navbar />
+					{showNavbar && <Navbar />}
 					<Outlet />
+					<Toaster />
 					<TanStackDevtools
 						config={{
 							position: "bottom-right",
@@ -27,7 +32,11 @@ export const Route = createRootRoute({
 				</div>
 			</ThemeProvider>
 		</>
-	),
+	);
+}
+
+export const Route = createRootRoute({
+	component: RootComponent,
 	head: () => ({
 		meta: [
 			{
