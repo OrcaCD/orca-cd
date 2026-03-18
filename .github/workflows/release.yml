@@ -21,10 +21,18 @@ jobs:
       new-release-created: ${{ steps.release-please-action.outputs.releases_created }}
       tag-name: ${{ steps.release-please-action.outputs.tag_name }}
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: release-please-action
         with:
           release-type: go
+          token: ${{ steps.app-token.outputs.token }}
 
   build:
     name: Build ${{ matrix.name }} Image
