@@ -13,6 +13,7 @@ import (
 
 type Config struct {
 	Debug          bool
+	Host           string
 	Port           string
 	LogLevel       zerolog.Level
 	TrustedProxies []string
@@ -21,6 +22,7 @@ type Config struct {
 
 func DefaultConfig() (Config, error) {
 	debug := os.Getenv("DEBUG")
+	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 
@@ -45,6 +47,7 @@ func DefaultConfig() (Config, error) {
 
 	return Config{
 		Debug:          debug == "true",
+		Host:           host,
 		Port:           port,
 		LogLevel:       logLevel,
 		TrustedProxies: trustedProxies,
@@ -74,6 +77,7 @@ func Run(cfg Config) error {
 
 	RegisterRoutes(router, cfg)
 
-	Log.Info().Str("port", cfg.Port).Str("version", version.Version).Msg("hub started")
-	return router.Run(":" + cfg.Port)
+	addr := cfg.Host + ":" + cfg.Port
+	Log.Info().Str("addr", addr).Str("version", version.Version).Msg("hub started")
+	return router.Run(addr)
 }
