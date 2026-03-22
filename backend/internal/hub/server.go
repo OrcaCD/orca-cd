@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -47,6 +48,7 @@ func Run(cfg Config) error {
 	Log = Log.Level(cfg.LogLevel)
 
 	router := gin.Default()
+	router.Use(middleware.SecurityHeaders())
 
 	RegisterRoutes(router, cfg)
 
