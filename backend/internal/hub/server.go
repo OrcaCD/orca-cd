@@ -2,6 +2,7 @@ package hub
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
@@ -11,12 +12,14 @@ import (
 )
 
 type Config struct {
-	Debug    bool
-	Port     string
-	LogLevel zerolog.Level
+	Debug          bool
+	Port           string
+	LogLevel       zerolog.Level
+	TrustedProxies []string
+	AppURL         string
 }
 
-func DefaultConfig() Config {
+func DefaultConfig() (Config, error) {
 	debug := os.Getenv("DEBUG")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
@@ -30,11 +33,23 @@ func DefaultConfig() Config {
 		logLevel = zerolog.InfoLevel
 	}
 
-	return Config{
-		Debug:    debug == "true",
-		Port:     port,
-		LogLevel: logLevel,
+	var trustedProxies []string
+	if tp := os.Getenv("TRUSTED_PROXIES"); tp != "" {
+		trustedProxies = strings.Split(tp, ",")
 	}
+
+	appURL, err := parseAppURL(os.Getenv("APP_URL"))
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Config{
+		Debug:          debug == "true",
+		Port:           port,
+		LogLevel:       logLevel,
+		TrustedProxies: trustedProxies,
+		AppURL:         appURL,
+	}, nil
 }
 
 var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
@@ -48,7 +63,14 @@ func Run(cfg Config) error {
 	Log = Log.Level(cfg.LogLevel)
 
 	router := gin.Default()
+	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return err
+	}
+	if len(cfg.TrustedProxies) == 0 {
+		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
+	}
 	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 
 	RegisterRoutes(router, cfg)
 
