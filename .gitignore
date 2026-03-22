@@ -7,3 +7,4 @@ dist-ssr
 .nitro
 .tanstack
 bin
+.claude/settings.local.json

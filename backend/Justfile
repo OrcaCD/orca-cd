@@ -1,8 +1,21 @@
 set dotenv-load := true
+set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
-VERSION := `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
-COMMIT := `git rev-parse --short HEAD 2>/dev/null || echo "none"`
-DATE := `date -u +%Y-%m-%dT%H:%M:%SZ`
+VERSION := if os_family() == 'windows' {
+    `git describe --tags --always --dirty 2>$null; if (-not $?) { "dev" }`
+} else {
+    `git describe --tags --always --dirty 2>/dev/null || echo "dev"`
+}
+COMMIT := if os_family() == 'windows' {
+    `git rev-parse --short HEAD 2>$null; if (-not $?) { "none" }`
+} else {
+    `git rev-parse --short HEAD 2>/dev/null || echo "none"`
+}
+DATE := if os_family() == 'windows' {
+    `(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')`
+} else {
+    `date -u +%Y-%m-%dT%H:%M:%SZ`
+}
 LDFLAGS := "-s -w -X github.com/OrcaCD/orca-cd/internal/version.Version=" + VERSION + " -X github.com/OrcaCD/orca-cd/internal/version.Commit=" + COMMIT + " -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=" + DATE
 defaultCommand := ""
 
@@ -25,13 +38,15 @@ test:
 
 # Build the hub binary to bin/hub
 [group('hub')]
+[env("CGO_ENABLED", "1")]
 build-hub:
-    CGO_ENABLED=1 go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
+    go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
 
 # Build the agent binary to bin/agent
 [group('agent')]
+[env("CGO_ENABLED", "1")]
 build-agent:
-    CGO_ENABLED=1 go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
+    go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
 
 # Build both hub and agent binaries in parallel
 [parallel]
@@ -39,13 +54,15 @@ build: build-hub build-agent
 
 # Run the hub (use the help command to get a list of commands)
 [group('hub')]
+[env("CGO_ENABLED", "1")]
 run-hub cmd=defaultCommand:
-    CGO_ENABLED=1 go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
+    go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
 
 # Run the agent (use the help command to get a list of commands)
 [group('agent')]
+[env("CGO_ENABLED", "1")]
 run-agent cmd=defaultCommand:
-    CGO_ENABLED=1 go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
+    go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
 
 # Run both hub and agent in parallel
 [parallel]

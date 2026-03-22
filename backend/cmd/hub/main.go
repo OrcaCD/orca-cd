@@ -16,7 +16,11 @@ func main() {
 		Short:              "Orca Hub",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return hub.Run(hub.DefaultConfig())
+			cfg, err := hub.DefaultConfig()
+			if err != nil {
+				return err
+			}
+			return hub.Run(cfg)
 		},
 	}
 
@@ -32,7 +36,11 @@ func main() {
 		Use:   "healthcheck",
 		Short: "Check the health of the hub",
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg := hub.DefaultConfig()
+			cfg, err := hub.DefaultConfig()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
+				os.Exit(1)
+			}
 
 			//nolint:gosec
 			resp, err := http.Get("http://localhost:" + cfg.Port + "/api/v1/health")
