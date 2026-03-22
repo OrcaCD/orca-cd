@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+var defaultPorts = map[string]string{
+	"http":  "80",
+	"https": "443",
+}
+
 // parseAppURL validates and normalises the APP_URL value.
 // It must contain a scheme and host, must not contain a path (other than a
 // single leading slash which is stripped), and must not contain a query or
@@ -34,5 +39,12 @@ func parseAppURL(raw string) (string, error) {
 		return "", errors.New("APP_URL must not include a query string or fragment")
 	}
 
-	return u.Scheme + "://" + u.Host, nil
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	if port != "" && port != defaultPorts[scheme] {
+		host = host + ":" + port
+	}
+
+	return scheme + "://" + host, nil
 }

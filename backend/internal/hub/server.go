@@ -36,8 +36,10 @@ func DefaultConfig() (Config, error) {
 	}
 
 	var trustedProxies []string
-	if tp := os.Getenv("TRUSTED_PROXIES"); tp != "" {
-		trustedProxies = strings.Split(tp, ",")
+	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {
+		if s := strings.TrimSpace(entry); s != "" {
+			trustedProxies = append(trustedProxies, s)
+		}
 	}
 
 	appURL, err := parseAppURL(os.Getenv("APP_URL"))
@@ -69,7 +71,7 @@ func Run(cfg Config) error {
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
-	if len(cfg.TrustedProxies) == 0 {
+	if !cfg.Debug && len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())
