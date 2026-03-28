@@ -33,11 +33,13 @@ fmt:
     golangci-lint fmt
 
 # Run all tests with race detection
+[group('test')]
 [env("CGO_ENABLED", "1")]
 test:
     go test -v -race ./...
 
 # Run all tests with race detection and coverage report
+[group('test')]
 [env("CGO_ENABLED", "1")]
 test-coverage:
     go test -v -race -coverprofile coverage.txt -covermode atomic ./...
