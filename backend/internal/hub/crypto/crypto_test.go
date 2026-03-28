@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aegis-aead/go-libaegis/aegis256x2"
+	"github.com/aegis-aead/go-libaegis/aegis256"
 )
 
 // validKey is an example application secret string used for tests. It is treated
@@ -138,11 +138,88 @@ func TestDecrypt_TamperedNonce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("base64 decode: %v", err)
 	}
-	for i := range aegis256x2.NonceSize {
+	for i := range aegis256.NonceSize {
 		data[i] = 0
 	}
 	tampered := base64.StdEncoding.EncodeToString(data)
 	if _, err := Decrypt(tampered); err == nil {
 		t.Error("expected error when decrypting with wrong nonce")
+	}
+}
+
+func TestDecrypt_InvalidBase64(t *testing.T) {
+	mustInit(t)
+
+	if _, err := Decrypt("not-valid-base64!!!"); err == nil {
+		t.Error("expected error for invalid base64 input")
+	}
+}
+
+func TestDecrypt_TooShort(t *testing.T) {
+	mustInit(t)
+
+	// Encode fewer bytes than NonceSize.
+	short := base64.StdEncoding.EncodeToString(make([]byte, aegis256.NonceSize-1))
+	if _, err := Decrypt(short); err == nil {
+		t.Error("expected error for ciphertext shorter than nonce")
+	}
+}
+
+func TestDecrypt_WrongKey(t *testing.T) {
+	if err := Init(validKey); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	ciphertext, err := Encrypt("secret")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	if err := Init("completely-different-secret"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if _, err := Decrypt(ciphertext); err == nil {
+		t.Error("expected error when decrypting with a different key")
+	}
+}
+
+func TestDeriveKey_Deterministic(t *testing.T) {
+	k1, err := deriveKey("mysecret", "info")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	k2, err := deriveKey("mysecret", "info")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	if string(k1) != string(k2) {
+		t.Error("expected deriveKey to be deterministic")
+	}
+}
+
+func TestDeriveKey_DifferentInfoDifferentKey(t *testing.T) {
+	k1, err := deriveKey("mysecret", "info-a")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	k2, err := deriveKey("mysecret", "info-b")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	if string(k1) == string(k2) {
+		t.Error("expected different keys for different info strings")
+	}
+}
+
+func TestDeriveKey_DifferentSecretDifferentKey(t *testing.T) {
+	k1, err := deriveKey("secret-a", "info")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	k2, err := deriveKey("secret-b", "info")
+	if err != nil {
+		t.Fatalf("deriveKey: %v", err)
+	}
+	if string(k1) == string(k2) {
+		t.Error("expected different keys for different secrets")
 	}
 }

@@ -5,5 +5,17 @@ formatters:
     - goimports
 linters:
   enable:
+    # Default linters
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Additional linters
     - gosec
     - zerologlint
+    - gocritic
+    - bodyclose
+    - goconst
+    - modernize
+    - unparam

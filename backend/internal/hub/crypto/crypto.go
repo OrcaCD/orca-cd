@@ -1,61 +1,64 @@
 package crypto
 
 import (
+	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 
-	"github.com/aegis-aead/go-libaegis/aegis256x2"
+	"github.com/aegis-aead/go-libaegis/aegis256"
 )
 
-var globalKey []byte
+var globalAead cipher.AEAD
 
 func Init(appSecret string) error {
-	hash := sha256.Sum256([]byte(appSecret + "_DB_ENCRYPTION_KEY"))
-	globalKey = hash[:]
+	key, err := deriveKey(appSecret, "DB_ENCRYPTION_KEY")
+	if err != nil {
+		return err
+	}
+	aead, err := aegis256.New(key, 32)
+	if err != nil {
+		return err
+	}
+	globalAead = aead
 	return nil
 }
 
 func Encrypt(plaintext string) (string, error) {
-	aead, err := aegis256x2.New(globalKey, 32)
-	if err != nil {
-		return "", err
-	}
-
-	nonce := make([]byte, aegis256x2.NonceSize)
+	nonce := make([]byte, aegis256.NonceSize)
 
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
 
 	// Seal appends ciphertext to nonce, producing nonce || ciphertext.
-	data := aead.Seal(nonce, nonce, []byte(plaintext), nil)
+	data := globalAead.Seal(nonce, nonce, []byte(plaintext), nil)
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
 func Decrypt(encoded string) (string, error) {
-	aead, err := aegis256x2.New(globalKey, 32)
-	if err != nil {
-		return "", err
-	}
-
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", err
 	}
 
-	if len(data) < aegis256x2.NonceSize {
-		return "", fmt.Errorf("ciphertext must be at least %d bytes long", aegis256x2.NonceSize)
+	if len(data) < aegis256.NonceSize {
+		return "", fmt.Errorf("ciphertext must be at least %d bytes long", aegis256.NonceSize)
 	}
 
-	nonce := data[:aegis256x2.NonceSize]
-	ciphertext := data[aegis256x2.NonceSize:]
+	nonce := data[:aegis256.NonceSize]
+	ciphertext := data[aegis256.NonceSize:]
 
-	decrypted, err := aead.Open(nil, nonce, ciphertext, nil)
+	decrypted, err := globalAead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return "", err
 	}
 
 	return string(decrypted), nil
+}
+
+func deriveKey(secret, info string) ([]byte, error) {
+	return hkdf.Key(sha256.New, []byte(secret), nil, info, 32)
 }
