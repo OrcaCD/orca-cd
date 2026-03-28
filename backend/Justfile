@@ -33,6 +33,7 @@ fmt:
     golangci-lint fmt
 
 # Run all tests with race detection
+[env("CGO_ENABLED", "1")]
 test:
     go test -v -race ./...
 
