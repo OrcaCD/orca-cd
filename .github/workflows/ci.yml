@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  id-token: write
 
 jobs:
   frontend:
@@ -55,6 +56,8 @@ jobs:
         name: Set up Go
         with:
           go-version: stable
+          cache: true
+          cache-dependency-path: backend/go.sum
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
@@ -72,4 +75,10 @@ jobs:
 
       - name: Run Tests
         working-directory: ./backend
-        run: go test -v -race ./...
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          use_oidc: true
+          fail_ci_if_error: true
