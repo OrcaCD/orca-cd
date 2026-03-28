@@ -35,11 +35,11 @@ FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates sqlite-libs
 
-COPY --from=builder /bin/hub /usr/local/bin/hub
+COPY --from=builder /bin/hub /app/hub
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=90s --timeout=5s --start-period=10s --retries=3 CMD [ "/usr/local/bin/hub", "healthcheck" ]
+HEALTHCHECK --interval=90s --timeout=5s --start-period=10s --retries=3 CMD [ "/app/hub", "healthcheck" ]
 
-ENTRYPOINT ["hub"]
+ENTRYPOINT ["/app/hub"]

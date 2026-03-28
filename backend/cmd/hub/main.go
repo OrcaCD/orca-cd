@@ -15,6 +15,7 @@ func main() {
 		Use:                "hub [flags]",
 		Short:              "Orca Hub",
 		DisableFlagParsing: true,
+		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := hub.DefaultConfig()
 			if err != nil {

@@ -21,6 +21,6 @@ RUN CGO_ENABLED=1 go build \
 
 FROM alpine:3.23
 
-COPY --from=builder /bin/agent /usr/local/bin/agent
+COPY --from=builder /bin/agent /app/agent
 
-ENTRYPOINT ["agent"]
+ENTRYPOINT ["/app/agent"]
