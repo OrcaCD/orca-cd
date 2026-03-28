@@ -37,6 +37,10 @@ func (e *EncryptedString) Scan(value any) error {
 	default:
 		return errors.New("EncryptedString.Scan: expected string or []byte")
 	}
+	if s == "" {
+		*e = ""
+		return nil
+	}
 	decrypted, err := Decrypt(s)
 	if err != nil {
 		return fmt.Errorf("EncryptedString.Scan: %w", err)

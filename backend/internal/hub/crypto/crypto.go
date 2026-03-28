@@ -39,14 +39,14 @@ func Decrypt(ciphertext string) (string, error) {
 		return "", err
 	}
 
+	if len(ciphertext) < hex.EncodedLen(aegis256x2.NonceSize) {
+		return "", fmt.Errorf("ciphertext must be at least %d characters long", hex.EncodedLen(aegis256x2.NonceSize))
+	}
+
 	nonceHex := ciphertext[len(ciphertext)-hex.EncodedLen(aegis256x2.NonceSize):]
 	nonce, err := hex.DecodeString(nonceHex)
 	if err != nil {
 		return "", err
-	}
-
-	if len(ciphertext) < hex.EncodedLen(aegis256x2.NonceSize) {
-		return "", fmt.Errorf("ciphertext must be at least %d characters long", hex.EncodedLen(aegis256x2.NonceSize))
 	}
 
 	ciphertext = ciphertext[:len(ciphertext)-hex.EncodedLen(aegis256x2.NonceSize)]

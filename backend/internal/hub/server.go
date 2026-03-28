@@ -79,6 +79,7 @@ func Run(cfg Config) error {
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
+		return err
 	}
 
 	err := db.Connect()
