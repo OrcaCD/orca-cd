@@ -8,3 +8,5 @@ dist-ssr
 .tanstack
 bin
 .claude/settings.local.json
+backend/data
+data

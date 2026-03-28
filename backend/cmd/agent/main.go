@@ -14,6 +14,7 @@ func main() {
 		Use:                "agent [flags]",
 		Short:              "Orca Agent",
 		DisableFlagParsing: true,
+		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return agent.Run(agent.DefaultConfig())
 		},

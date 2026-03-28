@@ -1,10 +1,13 @@
 package hub
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
@@ -18,6 +21,7 @@ type Config struct {
 	LogLevel       zerolog.Level
 	TrustedProxies []string
 	AppURL         string
+	AppSecret      string
 }
 
 func DefaultConfig() (Config, error) {
@@ -25,6 +29,7 @@ func DefaultConfig() (Config, error) {
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	appSecret := os.Getenv("APP_SECRET")
 
 	if port == "" {
 		port = "8080"
@@ -47,6 +52,10 @@ func DefaultConfig() (Config, error) {
 		return Config{}, err
 	}
 
+	if appSecret == "" || len(appSecret) < 32 {
+		return Config{}, errors.New("invalid app secret: must be minimum 32 characters")
+	}
+
 	return Config{
 		Debug:          debug == "true",
 		Host:           host,
@@ -54,6 +63,7 @@ func DefaultConfig() (Config, error) {
 		LogLevel:       logLevel,
 		TrustedProxies: trustedProxies,
 		AppURL:         appURL,
+		AppSecret:      appSecret,
 	}, nil
 }
 
@@ -66,6 +76,17 @@ func Run(cfg Config) error {
 	}
 
 	Log = Log.Level(cfg.LogLevel)
+
+	if err := crypto.Init(cfg.AppSecret); err != nil {
+		Log.Error().Err(err).Msg("failed to init crypto")
+		return err
+	}
+
+	err := db.Connect()
+	if err != nil {
+		Log.Error().Err(err).Msg("failed to connect to database")
+		return err
+	}
 
 	router := gin.Default()
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
