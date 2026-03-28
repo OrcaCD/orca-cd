@@ -13,6 +13,7 @@ env:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       issues: write
