@@ -9,3 +9,4 @@ dist-ssr
 bin
 .claude/settings.local.json
 backend/data
+data

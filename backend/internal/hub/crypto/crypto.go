@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/aegis-aead/go-libaegis/aegis256x2"
 )
@@ -23,7 +24,10 @@ func Encrypt(plaintext string) (string, error) {
 	}
 
 	nonce := make([]byte, aegis256x2.NonceSize)
-	rand.Read(nonce)
+
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
 
 	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), nil)
 	return string(ciphertext) + hex.EncodeToString(nonce), nil
@@ -39,6 +43,10 @@ func Decrypt(ciphertext string) (string, error) {
 	nonce, err := hex.DecodeString(nonceHex)
 	if err != nil {
 		return "", err
+	}
+
+	if len(ciphertext) < hex.EncodedLen(aegis256x2.NonceSize) {
+		return "", fmt.Errorf("ciphertext must be at least %d characters long", hex.EncodedLen(aegis256x2.NonceSize))
 	}
 
 	ciphertext = ciphertext[:len(ciphertext)-hex.EncodedLen(aegis256x2.NonceSize)]

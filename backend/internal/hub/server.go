@@ -78,12 +78,12 @@ func Run(cfg Config) error {
 	Log = Log.Level(cfg.LogLevel)
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
-		Log.Fatal().Err(err).Msg("failed to init crypto")
+		Log.Error().Err(err).Msg("failed to init crypto")
 	}
 
-	_, err := db.Connect()
+	err := db.Connect()
 	if err != nil {
-		Log.Fatal().Err(err).Msg("failed to connect to database")
+		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
 	}
 

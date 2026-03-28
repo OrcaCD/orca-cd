@@ -28,13 +28,14 @@ func (e *EncryptedString) Scan(value any) error {
 		*e = ""
 		return nil
 	}
-	s, ok := value.(string)
-	if !ok {
-		return errors.New("EncryptedString.Scan: expected string")
-	}
-	if s == "" {
-		*e = ""
-		return nil
+	var s string
+	switch v := value.(type) {
+	case string:
+		s = v
+	case []byte:
+		s = string(v)
+	default:
+		return errors.New("EncryptedString.Scan: expected string or []byte")
 	}
 	decrypted, err := Decrypt(s)
 	if err != nil {

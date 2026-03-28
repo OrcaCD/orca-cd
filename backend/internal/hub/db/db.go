@@ -14,21 +14,24 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-func Connect() (*gorm.DB, error) {
+var DB *gorm.DB
+
+func Connect() error {
 	if err := os.MkdirAll("data", 0750); err != nil {
-		return nil, err
+		return err
 	}
 
 	db, err := gorm.Open(sqlite.Open("data/hub.db"))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := runMigrations(db); err != nil {
-		return nil, err
+		return err
 	}
 
-	return db, nil
+	DB = db
+	return nil
 }
 
 func runMigrations(db *gorm.DB) error {
@@ -54,6 +57,14 @@ func runMigrations(db *gorm.DB) error {
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return err
+	}
+
+	sourceError, databaseError := m.Close()
+	if sourceError != nil {
+		return sourceError
+	}
+	if databaseError != nil {
+		return databaseError
 	}
 
 	return nil

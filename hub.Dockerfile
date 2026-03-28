@@ -33,6 +33,8 @@ RUN CGO_ENABLED=1 go build \
 
 FROM alpine:3.23
 
+WORKDIR /app
+
 RUN apk add --no-cache ca-certificates sqlite-libs
 
 COPY --from=builder /bin/hub /app/hub
