@@ -1,11 +1,15 @@
 package crypto
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/aegis-aead/go-libaegis/aegis256x2"
 )
 
-// validKey is a 32-byte key expressed as 64 hex characters.
+// validKey is an example application secret string used for tests. It is treated
+// as an arbitrary string by Init, not as hex-encoded key material.
 const validKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 
 func mustInit(t *testing.T) {
@@ -129,10 +133,16 @@ func TestDecrypt_TamperedNonce(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	// Replace the trailing nonce hex with zeros.
-	noncePart := strings.Repeat("0", 64)
-	body := ciphertext[:len(ciphertext)-64]
-	if _, err := Decrypt(body + noncePart); err == nil {
+	// Decode, zero out the nonce bytes, then re-encode.
+	data, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	for i := range aegis256x2.NonceSize {
+		data[i] = 0
+	}
+	tampered := base64.StdEncoding.EncodeToString(data)
+	if _, err := Decrypt(tampered); err == nil {
 		t.Error("expected error when decrypting with wrong nonce")
 	}
 }
