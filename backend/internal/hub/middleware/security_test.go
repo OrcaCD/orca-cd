@@ -18,11 +18,11 @@ func TestSecurityHeaders_SetsAllHeaders(t *testing.T) {
 	mw(c)
 
 	expected := map[string]string{
-		"X-Frame-Options":             "DENY",
-		"X-Content-Type-Options":      "nosniff",
-		"Referrer-Policy":             "same-origin",
-		"X-Robots-Tag":               "noindex, nofollow, noarchive",
-		"Cross-Origin-Opener-Policy":  "same-origin",
+		"X-Frame-Options":              "DENY",
+		"X-Content-Type-Options":       "nosniff",
+		"Referrer-Policy":              "same-origin",
+		"X-Robots-Tag":                 "noindex, nofollow, noarchive",
+		"Cross-Origin-Opener-Policy":   "same-origin",
 		"Cross-Origin-Resource-Policy": "same-origin",
 		"Cross-Origin-Embedder-Policy": "require-corp",
 	}
