@@ -1,12 +1,18 @@
-node_modules
+# General
 .DS_Store
+.env
+.claude/settings.local.json
+*.local
+
+# Frontend
+node_modules
 dist
 dist-ssr
-*.local
-.env
 .nitro
 .tanstack
+
+# Backend
 bin
-.claude/settings.local.json
-backend/data
 data
+backend/data
+backend/coverage.txt
