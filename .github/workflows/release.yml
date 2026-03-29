@@ -59,7 +59,9 @@ jobs:
 
       - name: Compile Protobufs
         working-directory: ./backend
-        run: protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go
+          protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
