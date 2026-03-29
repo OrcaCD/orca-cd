@@ -54,6 +54,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # v3.0.0
+
+      - name: Compile Protobufs
+        working-directory: ./backend
+        run: protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 

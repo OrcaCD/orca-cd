@@ -59,6 +59,13 @@ jobs:
           cache: true
           cache-dependency-path: backend/go.sum
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@3ea1d70ac22caff0b66ed6cb37d5b7aadebd4623 # v3.0.0
+
+      - name: Compile Protobufs
+        working-directory: ./backend
+        run: protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
