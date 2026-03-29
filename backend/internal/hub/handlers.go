@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 )
 
 func RegisterRoutes(router *gin.Engine, cfg Config) {
@@ -11,6 +12,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 	{
 		api.GET("/health", routes.HealthHandler)
 	}
+
+	h := websocket.NewHub(&Log)
+	w := websocket.NewWorker(h, &Log)
+	w.Start()
+	router.GET("/ws/:id", websocket.WsHandler(h, &Log))
 
 	if !cfg.Debug {
 		router.Static("/assets", "./frontend/dist/assets")

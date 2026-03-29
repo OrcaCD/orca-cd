@@ -45,16 +45,19 @@ test-coverage:
     go test -v -race -coverprofile coverage.txt -covermode atomic ./...
     go tool cover -html coverage.txt
 
+proto:
+    protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
+
 # Build the hub binary to bin/hub
 [group('hub')]
 [env("CGO_ENABLED", "1")]
-build-hub:
+build-hub: proto
     go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
 
 # Build the agent binary to bin/agent
 [group('agent')]
 [env("CGO_ENABLED", "1")]
-build-agent:
+build-agent: proto
     go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
 
 # Build both hub and agent binaries in parallel
@@ -64,13 +67,13 @@ build: build-hub build-agent
 # Run the hub (use the help command to get a list of commands)
 [group('hub')]
 [env("CGO_ENABLED", "1")]
-run-hub cmd=defaultCommand:
+run-hub cmd=defaultCommand: proto
     go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
 
 # Run the agent (use the help command to get a list of commands)
 [group('agent')]
 [env("CGO_ENABLED", "1")]
-run-agent cmd=defaultCommand:
+run-agent cmd=defaultCommand: proto
     go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
 
 # Run both hub and agent in parallel

@@ -16,3 +16,4 @@ bin
 data
 backend/data
 backend/coverage.txt
+*.pb.go
