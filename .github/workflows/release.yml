@@ -54,11 +54,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Buf CLI
+        uses: bufbuild/buf-action@219c9aef02e8f6a27e4b46274db239ef513f5d53 # v1.4.0
+        with:
+          setup_only: true
+          version: 1.66.1
+
       - name: Compile Protobufs
         working-directory: ./backend
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go
-          npx @bufbuild/buf generate
+          buf generate
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
