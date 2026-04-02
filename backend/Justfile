@@ -45,8 +45,9 @@ test-coverage:
     go test -v -race -coverprofile coverage.txt -covermode atomic ./...
     go tool cover -html coverage.txt
 
+# Compile protobuf to go
 proto:
-    protoc --go_out=. --go_opt=paths=source_relative internal/proto/messages.proto
+    buf generate
 
 # Build the hub binary to bin/hub
 [group('hub')]
