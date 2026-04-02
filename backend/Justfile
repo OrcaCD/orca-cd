@@ -27,10 +27,12 @@ default:
 lint:
     golangci-lint run
     go mod verify
+    buf lint
 
 # Format source code using golangci-lint
 fmt:
     golangci-lint fmt
+    buf format -w
 
 # Run all tests with race detection
 [group('test')]

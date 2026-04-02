@@ -63,6 +63,7 @@ jobs:
         working-directory: ./backend
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go
+          npx @bufbuild/buf lint
           npx @bufbuild/buf generate
 
       - name: golangci-lint

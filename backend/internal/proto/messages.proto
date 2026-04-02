@@ -19,8 +19,19 @@ message ServerMessage {
   }
 }
 
-message PingRequest   { int64 timestamp = 1; }
-message PongResponse  { int64 timestamp = 1; }
-message DataRequest   { string key = 1; }
-message DataResponse  { string key = 1; string value = 2; }
-message ErrorResponse { string message = 1; }
+message PingRequest {
+  int64 timestamp = 1;
+}
+message PongResponse {
+  int64 timestamp = 1;
+}
+message DataRequest {
+  string key = 1;
+}
+message DataResponse {
+  string key = 1;
+  string value = 2;
+}
+message ErrorResponse {
+  string message = 1;
+}

@@ -1,0 +1,15 @@
+version: v2
+modules:
+  - path: internal/proto
+    name: github.com/OrcaCD/orca-cd
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    PACKAGE_DIRECTORY_MATCH:
+      - internal/proto/messages.proto
+    PACKAGE_VERSION_SUFFIX:
+      - internal/proto/messages.proto
+breaking:
+  use:
+    - FILE
