@@ -19,3 +19,5 @@ services:
       dockerfile: agent.Dockerfile
     container_name: orca-agent
     restart: unless-stopped
+    environment:
+      - HUB_URL=ws://hub:8080/ws/client-1
