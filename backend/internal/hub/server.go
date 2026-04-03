@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
@@ -79,6 +80,11 @@ func Run(cfg Config) error {
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
+		return err
+	}
+
+	if err := auth.Init(cfg.AppSecret); err != nil {
+		Log.Error().Err(err).Msg("failed to init auth")
 		return err
 	}
 

@@ -10,6 +10,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 	api := router.Group("/api/v1")
 	{
 		api.GET("/health", routes.HealthHandler)
+
+		api.GET("/auth/setup", routes.SetupHandler)
+		api.POST("/auth/register", routes.RegisterHandler)
+		api.POST("/auth/login", routes.LoginHandler)
 	}
 
 	if !cfg.Debug {

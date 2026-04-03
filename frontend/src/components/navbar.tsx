@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
 	Activity,
 	Bell,
@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
+import { useAuth } from "@/lib/auth";
 
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
@@ -34,6 +35,8 @@ const navItems = [
 ];
 
 export default function Navbar() {
+	const { auth, logout } = useAuth();
+	const navigate = useNavigate();
 	const { theme, setTheme } = useTheme();
 	const { startTransition } = useThemeTransition();
 
@@ -100,9 +103,9 @@ export default function Navbar() {
 						<DropdownMenuTrigger asChild>
 							<Button variant="ghost" className="flex items-center gap-2 px-2">
 								<div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
-									A
+									{auth.username?.[0]?.toUpperCase() ?? "?"}
 								</div>
-								<span className="hidden sm:inline text-sm">admin</span>
+								<span className="hidden sm:inline text-sm">{auth.username ?? "User"}</span>
 								<ChevronDown className="h-4 w-4 text-muted-foreground" />
 							</Button>
 						</DropdownMenuTrigger>
@@ -114,11 +117,15 @@ export default function Navbar() {
 								</Link>
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<DropdownMenuItem asChild>
-								<Link to="/" className="flex items-center text-destructive">
-									<LogOut className="mr-2 h-4 w-4" />
-									Sign Out
-								</Link>
+							<DropdownMenuItem
+								className="flex items-center text-destructive cursor-pointer"
+								onClick={async () => {
+									logout();
+									await navigate({ to: "/login" });
+								}}
+							>
+								<LogOut className="mr-2 h-4 w-4" />
+								Sign Out
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
