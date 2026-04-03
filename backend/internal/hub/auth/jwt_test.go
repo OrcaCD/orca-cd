@@ -115,6 +115,64 @@ func TestValidateToken_WrongIssuer(t *testing.T) {
 	}
 }
 
+func TestValidateToken_MissingSubject(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	now := time.Now()
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://localhost:8080",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			// Subject intentionally omitted
+		},
+		UserId:   "user-123",
+		Username: "admin",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateToken() expected error for missing subject")
+	}
+}
+
+func TestValidateToken_MissingUserID(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	now := time.Now()
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://localhost:8080",
+			Subject:   "user-123",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+		// UserId intentionally omitted
+		Username: "admin",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateToken() expected error for missing user id")
+	}
+}
+
 func TestValidateToken_WrongSigningKey(t *testing.T) {
 	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)

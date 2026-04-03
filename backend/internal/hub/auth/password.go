@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"errors"
+
 	"github.com/alexedwards/argon2id"
 )
+
+var ErrEmptyPassword = errors.New("password must not be empty")
 
 var (
 	params = &argon2id.Params{
@@ -15,6 +19,9 @@ var (
 )
 
 func HashPassword(password string) (string, error) {
+	if password == "" {
+		return "", ErrEmptyPassword
+	}
 	hash, err := argon2id.CreateHash(password, params)
 	if err != nil {
 		return "", err
@@ -23,11 +30,12 @@ func HashPassword(password string) (string, error) {
 }
 
 func CheckPassword(password, hash string) bool {
+	if password == "" || hash == "" {
+		return false
+	}
 	match, err := argon2id.ComparePasswordAndHash(password, hash)
-
 	if err != nil {
 		return false
 	}
-
 	return match
 }

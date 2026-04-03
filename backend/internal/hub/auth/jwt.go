@@ -77,5 +77,9 @@ func ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	if claims.Subject == "" || claims.UserId == "" {
+		return nil, fmt.Errorf("invalid token claims: missing subject or user id")
+	}
+
 	return claims, nil
 }
