@@ -10,7 +10,7 @@ import (
 )
 
 func TestRequireAuth_ValidToken(t *testing.T) {
-	if err := auth.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("auth.Init() error: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestRequireAuth_InvalidFormat(t *testing.T) {
 }
 
 func TestRequireAuth_InvalidToken(t *testing.T) {
-	if err := auth.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("auth.Init() error: %v", err)
 	}
 

@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"testing"
 	"time"
 
@@ -8,13 +10,13 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	if err := Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)
 	}
 }
 
 func TestGenerateAndValidateToken(t *testing.T) {
-	if err := Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)
 	}
 
@@ -30,16 +32,25 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateToken() error: %v", err)
 	}
-	if claims.UserID != "user-123" {
-		t.Errorf("expected UserID %q, got %q", "user-123", claims.UserID)
+	if claims.Issuer != "http://localhost:8080" {
+		t.Errorf("expected Issuer %q, got %q", "http://localhost:8080", claims.Issuer)
+	}
+	if claims.Subject != "user-123" {
+		t.Errorf("expected Subject %q, got %q", "user-123", claims.Subject)
+	}
+	if claims.UserId != "user-123" {
+		t.Errorf("expected UserId %q, got %q", "user-123", claims.UserId)
 	}
 	if claims.Username != "admin" {
 		t.Errorf("expected Username %q, got %q", "admin", claims.Username)
 	}
+	if claims.NotBefore == nil {
+		t.Error("expected NotBefore to be set")
+	}
 }
 
 func TestValidateToken_Invalid(t *testing.T) {
-	if err := Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)
 	}
 
@@ -50,7 +61,7 @@ func TestValidateToken_Invalid(t *testing.T) {
 }
 
 func TestValidateToken_Expired(t *testing.T) {
-	if err := Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)
 	}
 
@@ -60,11 +71,11 @@ func TestValidateToken_Expired(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(-1 * time.Hour)),
 		},
-		UserID:   "user-123",
+		UserId:   "user-123",
 		Username: "admin",
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := token.SignedString(signingKey)
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
 	if err != nil {
 		t.Fatalf("failed to create expired token: %v", err)
 	}
@@ -75,9 +86,43 @@ func TestValidateToken_Expired(t *testing.T) {
 	}
 }
 
-func TestValidateToken_WrongSigningKey(t *testing.T) {
-	if err := Init("test-secret-that-is-long-enough-32chars"); err != nil {
+func TestValidateToken_WrongIssuer(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("Init() error: %v", err)
+	}
+
+	now := time.Now()
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://evil.example.com",
+			Subject:   "user-123",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		},
+		UserId:   "user-123",
+		Username: "admin",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateToken() expected error for wrong issuer")
+	}
+}
+
+func TestValidateToken_WrongSigningKey(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	_, wrongKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
 	}
 
 	claims := Claims{
@@ -85,11 +130,11 @@ func TestValidateToken_WrongSigningKey(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		},
-		UserID:   "user-123",
+		UserId:   "user-123",
 		Username: "admin",
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenStr, err := token.SignedString([]byte("wrong-key-that-is-32-characters!"))
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(wrongKey)
 	if err != nil {
 		t.Fatalf("failed to create token: %v", err)
 	}

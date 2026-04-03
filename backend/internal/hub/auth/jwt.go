@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/sha256"
 	"fmt"
@@ -9,55 +10,72 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var signingKey []byte
+var (
+	privateKey ed25519.PrivateKey
+	issuer     string
+	parser     *jwt.Parser
+)
 
 const tokenExpiry = 24 * time.Hour
 
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID   string `json:"uid"`
+	UserId   string `json:"uid"`
 	Username string `json:"usr"`
 }
 
-// Init derives the JWT signing key from the app secret using HKDF.
-func Init(appSecret string) error {
-	key, err := hkdf.Key(sha256.New, []byte(appSecret), nil, "JWT_SIGNING_KEY", 32)
+func initJWT(appSecret, appURL string) error {
+	seed, err := hkdf.Key(sha256.New, []byte(appSecret), nil, "JWT_SIGNING_KEY", ed25519.SeedSize)
 	if err != nil {
-		return fmt.Errorf("auth.Init: %w", err)
+		return fmt.Errorf("auth.initJWT: %w", err)
 	}
-	signingKey = key
+
+	privateKey = ed25519.NewKeyFromSeed(seed)
+	issuer = appURL
+
+	parser = jwt.NewParser(
+		jwt.WithIssuer(appURL),
+		jwt.WithExpirationRequired(),
+		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
+		jwt.WithIssuedAt(),
+		jwt.WithNotBeforeRequired(),
+		jwt.WithStrictDecoding(),
+	)
 	return nil
 }
 
-// GenerateToken creates a signed JWT for the given user.
-func GenerateToken(userID, username string) (string, error) {
+func GenerateToken(userId string, username string) (string, error) {
 	now := time.Now()
+
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Subject:   userId,
 			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
 		},
-		UserID:   userID,
+		UserId:   userId,
 		Username: username,
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(signingKey)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	return token.SignedString(privateKey)
 }
 
-// ValidateToken parses and validates a JWT, returning the claims.
 func ValidateToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return signingKey, nil
+	token, err := parser.ParseWithClaims(tokenString, &Claims{}, func(*jwt.Token) (any, error) {
+		return privateKey.Public(), nil
 	})
+
 	if err != nil {
 		return nil, err
 	}
+
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
 	}
+
 	return claims, nil
 }

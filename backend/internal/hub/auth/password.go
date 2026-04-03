@@ -1,11 +1,21 @@
 package auth
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"github.com/alexedwards/argon2id"
+)
 
-const bcryptCost = 12
+var (
+	params = &argon2id.Params{
+		Memory:      128 * 1024,
+		Iterations:  3,
+		Parallelism: 1,
+		SaltLength:  16,
+		KeyLength:   32,
+	}
+)
 
 func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	hash, err := argon2id.CreateHash(password, params)
 	if err != nil {
 		return "", err
 	}
@@ -13,5 +23,11 @@ func HashPassword(password string) (string, error) {
 }
 
 func CheckPassword(password, hash string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	match, err := argon2id.ComparePasswordAndHash(password, hash)
+
+	if err != nil {
+		return false
+	}
+
+	return match
 }

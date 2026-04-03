@@ -29,7 +29,7 @@ func setupTestDB(t *testing.T) {
 	}
 	db.DB = testDB
 
-	if err := auth.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("failed to init auth: %v", err)
 	}
 }

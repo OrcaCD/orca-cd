@@ -83,7 +83,7 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	if err := auth.Init(cfg.AppSecret); err != nil {
+	if err := auth.Init(cfg.AppSecret, cfg.AppURL); err != nil {
 		Log.Error().Err(err).Msg("failed to init auth")
 		return err
 	}

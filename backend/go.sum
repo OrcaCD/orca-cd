@@ -1,5 +1,7 @@
 github.com/aegis-aead/go-libaegis v0.2.14 h1:H7dJkBDO08Hm3gPQP4Ca13PYivCszeTNIeucXny+Q1I=
 github.com/aegis-aead/go-libaegis v0.2.14/go.mod h1:WKSG0pcdvpDrwDPBl9NdAIxHxpZOCqlKWH7EOnPLKHc=
+github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e h1:CuCebtHGXeAvdZWqSep7KpIPG6OLruTms/gX+r0Xqns=
+github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e/go.mod h1:e2S3yie2nqqvB/n9NYpVW47tS9S2x+gR+xcLndWDKjM=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=
 github.com/bytedance/gopkg v0.1.3/go.mod h1:576VvJ+eJgyCzdjS+c4+77QF3p7ubbtiKARP3TxducM=
 github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uSE=
