@@ -64,7 +64,7 @@ func TestHashPassword_LongPassword(t *testing.T) {
 }
 
 func TestHashPassword_UnicodePassword(t *testing.T) {
-	pw := "pässwörd-测试-パスワード"
+	pw := "pässwörd-测试-パスワード" // #nosec
 	hash, err := HashPassword(pw)
 	if err != nil {
 		t.Fatalf("HashPassword(unicode) error: %v", err)

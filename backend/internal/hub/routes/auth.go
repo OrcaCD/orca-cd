@@ -26,6 +26,26 @@ type setupResponse struct {
 	NeedsSetup bool `json:"needsSetup"`
 }
 
+type profileResponse struct {
+	Id    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+func ProfileHandler(c *gin.Context) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	c.JSON(http.StatusOK, profileResponse{
+		Id:    claims.Subject,
+		Name:  claims.Name,
+		Email: claims.Email,
+	})
+}
+
 func SetupHandler(c *gin.Context) {
 	count, err := gorm.G[models.User](db.DB).Count(c.Request.Context(), "*")
 	if err != nil {

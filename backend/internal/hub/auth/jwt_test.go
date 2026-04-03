@@ -21,7 +21,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 		t.Fatalf("Init() error: %v", err)
 	}
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin"}
+	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
 	token, err := GenerateToken(user)
 	if err != nil {
 		t.Fatalf("GenerateToken() error: %v", err)
@@ -40,8 +40,11 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	if claims.Subject != "user-123" {
 		t.Errorf("expected Subject %q, got %q", "user-123", claims.Subject)
 	}
-	if claims.Name != "admin" {
-		t.Errorf("expected Name %q, got %q", "admin", claims.Name)
+	if claims.Name != "test" {
+		t.Errorf("expected Name %q, got %q", "test", claims.Name)
+	}
+	if claims.Email != "test@example.com" {
+		t.Errorf("expected Email %q, got %q", "test@example.com", claims.Email)
 	}
 	if claims.NotBefore == nil {
 		t.Error("expected NotBefore to be set")
@@ -70,7 +73,7 @@ func TestValidateToken_Expired(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(-1 * time.Hour)),
 		},
-		Name: "admin",
+		Name: "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -98,7 +101,7 @@ func TestValidateToken_WrongIssuer(t *testing.T) {
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 		},
-		Name: "admin",
+		Name: "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -126,7 +129,7 @@ func TestValidateToken_MissingSubject(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 			// Subject intentionally omitted
 		},
-		Name: "admin",
+		Name: "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -155,7 +158,7 @@ func TestValidateToken_WrongSigningKey(t *testing.T) {
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		},
-		Name: "admin",
+		Name: "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(wrongKey)

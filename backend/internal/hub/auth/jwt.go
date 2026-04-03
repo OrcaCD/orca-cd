@@ -21,7 +21,8 @@ const tokenExpiry = 24 * time.Hour
 
 type Claims struct {
 	jwt.RegisteredClaims
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 func initJWT(appSecret, appURL string) error {
@@ -55,7 +56,8 @@ func GenerateToken(user *models.User) (string, error) {
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
 		},
-		Name: user.Name,
+		Name:  user.Name,
+		Email: user.Email,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)

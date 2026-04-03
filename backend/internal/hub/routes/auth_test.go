@@ -3,10 +3,13 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -14,6 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func init() {
@@ -24,7 +29,16 @@ func setupTestDB(t *testing.T) {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	testDB, err := gorm.Open(sqlite.Open(dbPath))
+	testDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: gormlogger.New(
+			log.New(os.Stderr, "\n", log.LstdFlags),
+			gormlogger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  gormlogger.Warn,
+				IgnoreRecordNotFoundError: true,
+			},
+		),
+	})
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
@@ -229,6 +243,59 @@ func TestLoginHandler_UserNotFound(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	LoginHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestProfileHandler_Success(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Base: models.Base{Id: "user-abc"}, Name: "Alice", Email: "alice@example.com"}
+	token, err := auth.GenerateToken(user)
+	if err != nil {
+		t.Fatalf("GenerateToken() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+	c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+
+	claims, err := auth.ValidateToken(token)
+	if err != nil {
+		t.Fatalf("ValidateToken() error: %v", err)
+	}
+	auth.SetClaims(c, claims)
+
+	ProfileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body profileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Id != "user-abc" {
+		t.Errorf("expected Id %q, got %q", "user-abc", body.Id)
+	}
+	if body.Name != "Alice" {
+		t.Errorf("expected Name %q, got %q", "Alice", body.Name)
+	}
+	if body.Email != "alice@example.com" {
+		t.Errorf("expected Email %q, got %q", "alice@example.com", body.Email)
+	}
+}
+
+func TestProfileHandler_NoClaims(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+
+	ProfileHandler(c)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())

@@ -2,13 +2,16 @@ package db
 
 import (
 	"embed"
+	"log"
 	"os"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 //go:embed migrations/*.sql
@@ -21,7 +24,16 @@ func Connect() error {
 		return err
 	}
 
-	db, err := gorm.Open(sqlite.Open("data/hub.db"))
+	db, err := gorm.Open(sqlite.Open("data/hub.db"), &gorm.Config{
+		Logger: gormlogger.New(
+			log.New(os.Stderr, "\n", log.LstdFlags),
+			gormlogger.Config{
+				SlowThreshold:             200 * time.Millisecond,
+				LogLevel:                  gormlogger.Warn,
+				IgnoreRecordNotFoundError: true,
+			},
+		),
+	})
 	if err != nil {
 		return err
 	}
