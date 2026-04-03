@@ -12,17 +12,14 @@ import (
 )
 
 type registerRequest struct {
-	Username string `json:"username" binding:"required,min=3,max=64"`
+	Name     string `json:"name" binding:"required,min=2,max=64"`
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8,max=128"`
 }
 
 type loginRequest struct {
-	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
-}
-
-type tokenResponse struct {
-	Token string `json:"token"`
 }
 
 type setupResponse struct {
@@ -30,8 +27,8 @@ type setupResponse struct {
 }
 
 func SetupHandler(c *gin.Context) {
-	var count int64
-	if err := db.DB.Model(&models.User{}).Count(&count).Error; err != nil {
+	count, err := gorm.G[models.User](db.DB).Count(c.Request.Context(), "*")
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -41,12 +38,12 @@ func SetupHandler(c *gin.Context) {
 func RegisterHandler(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: username (min 3 chars) and password (min 8 chars) are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars) and password (min 8 chars) are required"})
 		return
 	}
 
-	var count int64
-	if err := db.DB.Model(&models.User{}).Count(&count).Error; err != nil {
+	count, err := gorm.G[models.User](db.DB).Count(c.Request.Context(), "*")
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -62,22 +59,24 @@ func RegisterHandler(c *gin.Context) {
 	}
 
 	user := models.User{
-		Username:     req.Username,
-		PasswordHash: hash,
+		Email:        req.Email,
+		Name:         req.Name,
+		PasswordHash: &hash,
 		AuthProvider: models.AuthProviderLocal,
 	}
-	if err := db.DB.Create(&user).Error; err != nil {
+	if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
 		return
 	}
 
-	token, err := auth.GenerateToken(user.Id, user.Username)
+	token, err := auth.GenerateToken(&user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, tokenResponse{Token: token})
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
 }
 
 func LoginHandler(c *gin.Context) {
@@ -87,8 +86,8 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	if err := db.DB.Where("username = ? AND auth_provider = ?", req.Username, models.AuthProviderLocal).First(&user).Error; err != nil {
+	user, err := gorm.G[models.User](db.DB).Where("email = ? AND auth_provider = ?", req.Email, models.AuthProviderLocal).First(c.Request.Context())
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
@@ -97,16 +96,22 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	if !auth.CheckPassword(req.Password, user.PasswordHash) {
+	if user.PasswordHash == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 		return
 	}
 
-	token, err := auth.GenerateToken(user.Id, user.Username)
+	if !auth.CheckPassword(req.Password, *user.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+		return
+	}
+
+	token, err := auth.GenerateToken(&user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, tokenResponse{Token: token})
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
 }

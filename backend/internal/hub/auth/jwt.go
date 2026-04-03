@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -20,8 +21,7 @@ const tokenExpiry = 24 * time.Hour
 
 type Claims struct {
 	jwt.RegisteredClaims
-	UserId   string `json:"uid"`
-	Username string `json:"usr"`
+	Name string `json:"name"`
 }
 
 func initJWT(appSecret, appURL string) error {
@@ -44,19 +44,18 @@ func initJWT(appSecret, appURL string) error {
 	return nil
 }
 
-func GenerateToken(userId string, username string) (string, error) {
+func GenerateToken(user *models.User) (string, error) {
 	now := time.Now()
 
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
-			Subject:   userId,
+			Subject:   user.Id,
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
 		},
-		UserId:   userId,
-		Username: username,
+		Name: user.Name,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
@@ -77,8 +76,8 @@ func ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
-	if claims.Subject == "" || claims.UserId == "" {
-		return nil, fmt.Errorf("invalid token claims: missing subject or user id")
+	if claims.Subject == "" {
+		return nil, fmt.Errorf("invalid token claims: missing subject")
 	}
 
 	return claims, nil

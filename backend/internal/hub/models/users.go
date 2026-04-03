@@ -8,7 +8,8 @@ const (
 
 type User struct {
 	Base
-	Username     string       `gorm:"type:text;uniqueIndex;not null"`
-	PasswordHash string       `gorm:"type:text;not null;default:''"`
+	Email        string       `gorm:"type:text;uniqueIndex;not null"`
+	Name         string       `gorm:"type:text;not null"`
+	PasswordHash *string      `gorm:"type:text;"`
 	AuthProvider AuthProvider `gorm:"type:text;not null;default:'local'"`
 }

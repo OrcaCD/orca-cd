@@ -16,6 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
 func setupTestDB(t *testing.T) {
 	t.Helper()
 
@@ -44,6 +48,15 @@ func setupTestDB(t *testing.T) {
 	}
 }
 
+func hasAuthCookie(w *httptest.ResponseRecorder) bool {
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == "orcacd_auth" && cookie.Value != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSetupHandler_NoUsers(t *testing.T) {
 	setupTestDB(t)
 
@@ -69,7 +82,7 @@ func TestSetupHandler_WithUsers(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Username: "admin", PasswordHash: hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -93,7 +106,7 @@ func TestRegisterHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Username: "admin", Password: "password123"})
+	reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "password123"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
@@ -104,12 +117,8 @@ func TestRegisterHandler_Success(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	var body tokenResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if body.Token == "" {
-		t.Error("expected non-empty token")
+	if !hasAuthCookie(w) {
+		t.Error("expected auth cookie in response")
 	}
 }
 
@@ -117,10 +126,10 @@ func TestRegisterHandler_RejectsSecondUser(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Username: "admin", PasswordHash: hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Username: "hacker", Password: "password456"})
+	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "password456"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
@@ -140,8 +149,9 @@ func TestRegisterHandler_InvalidRequest(t *testing.T) {
 		name string
 		body any
 	}{
-		{"short username", registerRequest{Username: "ab", Password: "password123"}},
-		{"short password", registerRequest{Username: "admin", Password: "short"}},
+		{"short name", registerRequest{Name: "a", Email: "test@example.com", Password: "password123"}},
+		{"short password", registerRequest{Name: "Test", Email: "test@example.com", Password: "short"}},
+		{"invalid email", registerRequest{Name: "Test", Email: "notanemail", Password: "password123"}},
 		{"empty body", nil},
 	}
 
@@ -169,10 +179,10 @@ func TestLoginHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Username: "admin", PasswordHash: hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Username: "admin", Password: "password123"})
+	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
@@ -183,12 +193,8 @@ func TestLoginHandler_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	var body tokenResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if body.Token == "" {
-		t.Error("expected non-empty token")
+	if !hasAuthCookie(w) {
+		t.Error("expected auth cookie in response")
 	}
 }
 
@@ -196,10 +202,10 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Username: "admin", PasswordHash: hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Username: "admin", Password: "wrongpassword"})
+	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "wrongpassword"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
@@ -216,7 +222,7 @@ func TestLoginHandler_UserNotFound(t *testing.T) {
 	setupTestDB(t)
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Username: "nonexistent", Password: "password123"})
+	reqBody, _ := json.Marshal(loginRequest{Email: "nonexistent@example.com", Password: "password123"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
