@@ -135,3 +135,8 @@ func LoginHandler(c *gin.Context) {
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
 }
+
+func LogoutHandler(c *gin.Context) {
+	auth.ClearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+}

@@ -5,18 +5,16 @@ import fetcher, { API_BASE } from "./api";
 export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
-  id: string | null;
-  name: string | null;
-  email: string | null;
+  profile: Profile | null;
 }
 
 interface AuthContextValue {
   auth: AuthState;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
 }
 
-interface ProfileResponse {
+interface Profile {
   id: string;
   name: string;
   email: string;
@@ -25,19 +23,20 @@ interface ProfileResponse {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { data, isLoading, mutate } = useSWR<ProfileResponse>(`${API_BASE}/auth/profile`, fetcher);
+  const { data, isLoading, mutate } = useSWR<Profile>(`${API_BASE}/auth/profile`, fetcher);
 
   const auth: AuthState = isLoading
-    ? { isAuthenticated: false, isLoading: true, id: null, name: null, email: null }
+    ? { isAuthenticated: false, isLoading: true, profile: null }
     : data
-      ? { isAuthenticated: true, isLoading: false, id: data.id, name: data.name, email: data.email }
-      : { isAuthenticated: false, isLoading: false, id: null, name: null, email: null };
+      ? { isAuthenticated: true, isLoading: false, profile: data }
+      : { isAuthenticated: false, isLoading: false, profile: null };
 
   const refreshAuth = useCallback(async () => {
     await mutate();
   }, [mutate]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
     mutate(undefined, false);
   }, [mutate]);
 
