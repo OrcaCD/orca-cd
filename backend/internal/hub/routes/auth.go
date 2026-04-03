@@ -58,7 +58,7 @@ func SetupHandler(c *gin.Context) {
 func RegisterHandler(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars) and password (min 8 chars) are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 8 chars) and valid email are required"})
 		return
 	}
 
