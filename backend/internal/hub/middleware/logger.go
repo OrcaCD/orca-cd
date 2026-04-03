@@ -15,14 +15,17 @@ func RequestLogger(logger zerolog.Logger) gin.HandlerFunc {
 		c.Next()
 
 		status := c.Writer.Status()
-		event := logger.Info()
-		if status >= http.StatusInternalServerError {
-			event = logger.Error()
-		} else if status >= http.StatusBadRequest {
-			event = logger.Warn()
+		var level zerolog.Level
+		switch {
+		case status >= http.StatusInternalServerError:
+			level = zerolog.ErrorLevel
+		case status >= http.StatusBadRequest:
+			level = zerolog.WarnLevel
+		default:
+			level = zerolog.InfoLevel
 		}
 
-		event.
+		logger.WithLevel(level).
 			Str("method", c.Request.Method).
 			Str("path", c.Request.URL.Path).
 			Int("status", status).

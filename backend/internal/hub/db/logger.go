@@ -39,19 +39,19 @@ func (l *zerologGormLogger) LogMode(level gormlogger.LogLevel) gormlogger.Interf
 	return &newLogger
 }
 
-func (l *zerologGormLogger) Info(_ context.Context, msg string, args ...interface{}) {
+func (l *zerologGormLogger) Info(_ context.Context, msg string, args ...any) {
 	if l.logLevel >= gormlogger.Info {
 		l.logger.Info().Msg(fmt.Sprintf(msg, args...))
 	}
 }
 
-func (l *zerologGormLogger) Warn(_ context.Context, msg string, args ...interface{}) {
+func (l *zerologGormLogger) Warn(_ context.Context, msg string, args ...any) {
 	if l.logLevel >= gormlogger.Warn {
 		l.logger.Warn().Msg(fmt.Sprintf(msg, args...))
 	}
 }
 
-func (l *zerologGormLogger) Error(_ context.Context, msg string, args ...interface{}) {
+func (l *zerologGormLogger) Error(_ context.Context, msg string, args ...any) {
 	if l.logLevel >= gormlogger.Error {
 		l.logger.Error().Msg(fmt.Sprintf(msg, args...))
 	}

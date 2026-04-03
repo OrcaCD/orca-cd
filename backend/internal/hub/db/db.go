@@ -73,13 +73,5 @@ func runMigrations(db *gorm.DB) error {
 		return err
 	}
 
-	sourceError, databaseError := m.Close()
-	if sourceError != nil {
-		return sourceError
-	}
-	if databaseError != nil {
-		return databaseError
-	}
-
 	return nil
 }
