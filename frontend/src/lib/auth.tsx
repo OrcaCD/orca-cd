@@ -1,61 +1,70 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { fetchProfile } from "./api";
 
 export interface AuthState {
 	isAuthenticated: boolean;
-	token: string | null;
-	userId: string | null;
-	username: string | null;
+	isLoading: boolean;
+	id: string | null;
+	name: string | null;
+	email: string | null;
 }
 
 const UNAUTHENTICATED: AuthState = {
 	isAuthenticated: false,
-	token: null,
-	userId: null,
-	username: null,
+	isLoading: false,
+	id: null,
+	name: null,
+	email: null,
+};
+
+const LOADING: AuthState = {
+	isAuthenticated: false,
+	isLoading: true,
+	id: null,
+	name: null,
+	email: null,
 };
 
 interface AuthContextValue {
 	auth: AuthState;
 	setAuth: (auth: AuthState) => void;
 	logout: () => void;
+	refreshAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function loadAuthFromStorage(): AuthState {
-	const token = localStorage.getItem("auth_token");
-	if (!token) {
-		return UNAUTHENTICATED;
-	}
-
-	try {
-		const payload = JSON.parse(atob(token.split(".")[1]));
-		// Check expiry
-		if (payload.exp && payload.exp * 1000 < Date.now()) {
-			localStorage.removeItem("auth_token");
-			return UNAUTHENTICATED;
-		}
-		return {
-			isAuthenticated: true,
-			token,
-			userId: payload.uid,
-			username: payload.usr,
-		};
-	} catch {
-		localStorage.removeItem("auth_token");
-		return UNAUTHENTICATED;
-	}
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-	const [auth, setAuth] = useState<AuthState>(loadAuthFromStorage);
+	const [auth, setAuth] = useState<AuthState>(LOADING);
+
+	const refreshAuth = useCallback(async () => {
+		try {
+			const profile = await fetchProfile();
+			setAuth({
+				isAuthenticated: true,
+				isLoading: false,
+				id: profile.id,
+				name: profile.name,
+				email: profile.email,
+			});
+		} catch {
+			setAuth(UNAUTHENTICATED);
+		}
+	}, []);
+
+	useEffect(() => {
+		refreshAuth();
+	}, [refreshAuth]);
 
 	const logout = useCallback(() => {
-		localStorage.removeItem("auth_token");
 		setAuth(UNAUTHENTICATED);
 	}, []);
 
-	return <AuthContext.Provider value={{ auth, setAuth, logout }}>{children}</AuthContext.Provider>;
+	return (
+		<AuthContext.Provider value={{ auth, setAuth, logout, refreshAuth }}>
+			{children}
+		</AuthContext.Provider>
+	);
 }
 
 export function useAuth(): AuthContextValue {

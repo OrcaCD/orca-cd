@@ -31,16 +31,17 @@ export const Route = createFileRoute("/login")({
 });
 
 const loginSchema = z.object({
-	username: z.string().min(1, "Username is required"),
+	email: z.string().min(1, "Email is required").email("Invalid email address"),
 	password: z.string().min(1, "Password is required"),
 });
 
 const registerSchema = z
 	.object({
-		username: z
+		name: z
 			.string()
-			.min(3, "Username must be at least 3 characters")
-			.max(64, "Username must be at most 64 characters"),
+			.min(2, "Name must be at least 2 characters")
+			.max(64, "Name must be at most 64 characters"),
+		email: z.string().min(1, "Email is required").email("Invalid email address"),
 		password: z
 			.string()
 			.min(8, "Password must be at least 8 characters")
@@ -56,18 +57,18 @@ function LoginComponent() {
 	const { needsSetup } = Route.useLoaderData();
 	const { redirect: redirectTo } = Route.useSearch();
 	const navigate = useNavigate();
-	const { setAuth } = useAuth();
+	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
 	const loginForm = useForm({
-		defaultValues: { username: "", password: "" },
+		defaultValues: { email: "", password: "" },
 		validators: { onSubmit: loginSchema },
 		onSubmit: async ({ value }) => {
 			setIsLoading(true);
 			try {
-				const auth = await login(value.username, value.password);
-				setAuth(auth);
+				await login(value.email, value.password);
+				await refreshAuth();
 				await navigate({ to: redirectTo ?? "/" });
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Login failed");
@@ -78,13 +79,13 @@ function LoginComponent() {
 	});
 
 	const registerForm = useForm({
-		defaultValues: { username: "", password: "", confirmPassword: "" },
+		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
 		validators: { onSubmit: registerSchema },
 		onSubmit: async ({ value }) => {
 			setIsLoading(true);
 			try {
-				const auth = await register(value.username, value.password);
-				setAuth(auth);
+				await register(value.name, value.email, value.password);
+				await refreshAuth();
 				toast.success("Account created successfully");
 				await navigate({ to: "/" });
 			} catch (err) {
@@ -120,12 +121,12 @@ function LoginComponent() {
 								>
 									<FieldGroup>
 										<registerForm.Field
-											name="username"
+											name="name"
 											children={(field) => {
 												const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 												return (
 													<Field data-invalid={isInvalid}>
-														<Label htmlFor={field.name}>Username</Label>
+														<Label htmlFor={field.name}>Name</Label>
 														<Input
 															id={field.name}
 															name={field.name}
@@ -133,12 +134,33 @@ function LoginComponent() {
 															onBlur={field.handleBlur}
 															onChange={(e) => field.handleChange(e.target.value)}
 															type="text"
-															placeholder="admin"
+															placeholder="Admin"
 															required
-															autoCapitalize="none"
-															autoComplete="username"
-															autoCorrect="off"
+															autoComplete="name"
 															autoFocus
+														/>
+														{isInvalid && <FieldError errors={field.state.meta.errors} />}
+													</Field>
+												);
+											}}
+										/>
+										<registerForm.Field
+											name="email"
+											children={(field) => {
+												const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+												return (
+													<Field data-invalid={isInvalid}>
+														<Label htmlFor={field.name}>Email</Label>
+														<Input
+															id={field.name}
+															name={field.name}
+															value={field.state.value}
+															onBlur={field.handleBlur}
+															onChange={(e) => field.handleChange(e.target.value)}
+															type="email"
+															placeholder="admin@example.com"
+															required
+															autoComplete="email"
 														/>
 														{isInvalid && <FieldError errors={field.state.meta.errors} />}
 													</Field>
@@ -212,24 +234,22 @@ function LoginComponent() {
 								>
 									<FieldGroup>
 										<loginForm.Field
-											name="username"
+											name="email"
 											children={(field) => {
 												const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 												return (
 													<Field data-invalid={isInvalid}>
-														<Label htmlFor={field.name}>Username</Label>
+														<Label htmlFor={field.name}>Email</Label>
 														<Input
 															id={field.name}
 															name={field.name}
 															value={field.state.value}
 															onBlur={field.handleBlur}
 															onChange={(e) => field.handleChange(e.target.value)}
-															type="text"
-															placeholder="admin"
+															type="email"
+															placeholder="admin@example.com"
 															required
-															autoCapitalize="none"
-															autoComplete="username"
-															autoCorrect="off"
+															autoComplete="email"
 															autoFocus
 														/>
 														{isInvalid && <FieldError errors={field.state.meta.errors} />}

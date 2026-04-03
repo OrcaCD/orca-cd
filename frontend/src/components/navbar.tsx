@@ -103,9 +103,9 @@ export default function Navbar() {
 						<DropdownMenuTrigger asChild>
 							<Button variant="ghost" className="flex items-center gap-2 px-2">
 								<div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
-									{auth.username?.[0]?.toUpperCase() ?? "?"}
+									{auth.name?.[0]?.toUpperCase() ?? "?"}
 								</div>
-								<span className="hidden sm:inline text-sm">{auth.username ?? "User"}</span>
+								<span className="hidden sm:inline text-sm">{auth.name ?? "User"}</span>
 								<ChevronDown className="h-4 w-4 text-muted-foreground" />
 							</Button>
 						</DropdownMenuTrigger>
