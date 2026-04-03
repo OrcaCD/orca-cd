@@ -1,12 +1,12 @@
 # <div align="center"><img src="./frontend/public/assets/logo-dark-1024.png" width="100"/> </br>OrcaCD</div>
 
 <div align="center">
-Simple GitOps for Docker
+Simple GitOps for Docker</br></br>
 
 <img alt="GitHub License" src="https://img.shields.io/github/license/OrcaCD/orca-cd">
 <img alt="GitHub Release" src="https://img.shields.io/github/v/release/OrcaCD/orca-cd">
 <img alt="GitHub Issues or Pull Requests" src="https://img.shields.io/github/issues/OrcaCD/orca-cd">
-<img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/OrcaCD/orca-cd/ci.yml?label=OrcaCD%20CI">
+<img alt="GitHub Actions Workflow Status" src="https://img.shields.io/github/actions/workflow/status/OrcaCD/orca-cd/ci.yml?label=OrcaCD%20CI"></br></br>
 </div>
 
 OrcaCD is a simple GitOps tool for Docker. It allows you to deploy your applications using Git as the source of truth. With OrcaCD, you can easily manage your Docker containers and keep them in sync with your Git repository.
