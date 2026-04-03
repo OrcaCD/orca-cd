@@ -27,6 +27,16 @@ func setupTestDB(t *testing.T) {
 	if err := testDB.AutoMigrate(&models.User{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
+
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		db.DB = nil
+	})
+
 	db.DB = testDB
 
 	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
