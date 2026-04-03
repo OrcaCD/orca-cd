@@ -88,13 +88,20 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	err := db.Connect()
+	dbLogger := Log.With().Str("component", "gorm").Logger()
+	err := db.Connect(dbLogger, cfg.Debug)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
 	}
 
-	router := gin.Default()
+	router := gin.New()
+
+	if cfg.Debug {
+		router.Use(middleware.RequestLogger(Log))
+	}
+
+	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}

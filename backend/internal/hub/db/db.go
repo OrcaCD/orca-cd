@@ -2,13 +2,13 @@ package db
 
 import (
 	"embed"
-	"log"
 	"os"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -19,20 +19,22 @@ var migrationFiles embed.FS
 
 var DB *gorm.DB
 
-func Connect() error {
+func Connect(logger zerolog.Logger, debug bool) error {
 	if err := os.MkdirAll("data", 0750); err != nil {
 		return err
 	}
 
+	logLevel := gormlogger.Error
+	if debug {
+		logLevel = gormlogger.Info
+	}
+
 	db, err := gorm.Open(sqlite.Open("data/hub.db"), &gorm.Config{
-		Logger: gormlogger.New(
-			log.New(os.Stderr, "\n", log.LstdFlags),
-			gormlogger.Config{
-				SlowThreshold:             200 * time.Millisecond,
-				LogLevel:                  gormlogger.Warn,
-				IgnoreRecordNotFoundError: true,
-			},
-		),
+		Logger: NewGormLogger(logger, GormLoggerConfig{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logLevel,
+			IgnoreRecordNotFoundError: true,
+		}),
 	})
 	if err != nil {
 		return err
