@@ -1,22 +1,26 @@
 package hub
 
 import (
-	"github.com/gin-gonic/gin"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
+	"github.com/gin-gonic/gin"
 )
 
 func RegisterRoutes(router *gin.Engine, cfg Config) {
 	api := router.Group("/api/v1")
 	{
-		// Public routes — no authentication required
+		// Public routes (no authentication required)
 		api.GET("/health", routes.HealthHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
-		api.POST("/auth/register", routes.RegisterHandler)
-		api.POST("/auth/login", routes.LoginHandler)
 
-		// Protected routes — authentication required
+		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
+		authRateLimit := middleware.RateLimit(6*time.Second, 5)
+		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
+		api.POST("/auth/login", authRateLimit, routes.LoginHandler)
+
+		// Protected routes (authentication required)
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
