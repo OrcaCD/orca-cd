@@ -43,6 +43,7 @@ func Recovery(logger zerolog.Logger) gin.HandlerFunc {
 					Interface("error", err).
 					Str("method", c.Request.Method).
 					Str("path", c.Request.URL.Path).
+					Stack().
 					Msg("panic recovered")
 				c.AbortWithStatus(http.StatusInternalServerError)
 			}

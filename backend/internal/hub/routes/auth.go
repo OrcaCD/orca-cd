@@ -12,7 +12,7 @@ import (
 )
 
 type registerRequest struct {
-	Name     string `json:"name" binding:"required,min=2,max=64"`
+	Name     string `json:"name" binding:"required,min=3,max=64"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8,max=128"`
 }
@@ -85,7 +85,11 @@ func RegisterHandler(c *gin.Context) {
 		AuthProvider: models.AuthProviderLocal,
 	}
 	if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -102,14 +106,14 @@ func RegisterHandler(c *gin.Context) {
 func LoginHandler(c *gin.Context) {
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "username and password are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
 		return
 	}
 
 	user, err := gorm.G[models.User](db.DB).Where("email = ? AND auth_provider = ?", req.Email, models.AuthProviderLocal).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -117,12 +121,12 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if user.PasswordHash == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 
 	if !auth.CheckPassword(req.Password, *user.PasswordHash) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 

@@ -13,12 +13,7 @@ import { useState } from "react";
 import { API_BASE, type ErrorResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
-const searchSchema = z.object({
-	redirect: z.string().optional(),
-});
-
 export const Route = createFileRoute("/login")({
-	validateSearch: searchSchema,
 	beforeLoad: ({ context }) => {
 		if (context.auth.isAuthenticated) {
 			throw redirect({ to: "/" });
@@ -60,7 +55,6 @@ const registerSchema = z
 
 function LoginComponent() {
 	const { needsSetup } = Route.useLoaderData();
-	const { redirect: redirectTo } = Route.useSearch();
 
 	return (
 		<div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -72,7 +66,7 @@ function LoginComponent() {
 						</div>
 						OrcaCD
 					</div>
-					{needsSetup ? <RegisterForm /> : <LoginForm redirectTo={redirectTo} />}
+					{needsSetup ? <RegisterForm /> : <LoginForm />}
 				</div>
 			</div>
 		</div>
@@ -234,7 +228,7 @@ function RegisterForm() {
 	);
 }
 
-function LoginForm({ redirectTo }: { redirectTo?: string }) {
+function LoginForm() {
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
@@ -262,7 +256,7 @@ function LoginForm({ redirectTo }: { redirectTo?: string }) {
 			try {
 				await login(value.email, value.password);
 				await refreshAuth();
-				await navigate({ to: redirectTo ?? "/" });
+				await navigate({ to: "/" });
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Login failed");
 			} finally {
