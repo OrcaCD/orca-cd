@@ -3,52 +3,54 @@ import useSWR from "swr";
 import fetcher, { API_BASE } from "./api";
 
 export interface AuthState {
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  profile: Profile | null;
+	isAuthenticated: boolean;
+	isLoading: boolean;
+	profile: Profile | null;
 }
 
 interface AuthContextValue {
-  auth: AuthState;
-  logout: () => Promise<void>;
-  refreshAuth: () => Promise<void>;
+	auth: AuthState;
+	logout: () => Promise<void>;
+	refreshAuth: () => Promise<void>;
 }
 
 interface Profile {
-  id: string;
-  name: string;
-  email: string;
+	id: string;
+	name: string;
+	email: string;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { data, isLoading, mutate } = useSWR<Profile>(`${API_BASE}/auth/profile`, fetcher);
+	const { data, isLoading, mutate } = useSWR<Profile>(`${API_BASE}/auth/profile`, fetcher, {
+		shouldRetryOnError: false,
+	});
 
-  const auth: AuthState = isLoading
-    ? { isAuthenticated: false, isLoading: true, profile: null }
-    : data
-      ? { isAuthenticated: true, isLoading: false, profile: data }
-      : { isAuthenticated: false, isLoading: false, profile: null };
+	const auth: AuthState = {
+		isLoading,
+		profile: data || null,
+		isAuthenticated: !!data,
+	};
 
-  const refreshAuth = useCallback(async () => {
-    await mutate();
-  }, [mutate]);
+	const refreshAuth = useCallback(async () => {
+		await mutate();
+	}, [mutate]);
 
-  const logout = useCallback(async () => {
-    await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
-    mutate(undefined, false);
-  }, [mutate]);
+	const logout = useCallback(async () => {
+		await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+		await mutate(undefined, false);
+	}, [mutate]);
 
-  return (
-    <AuthContext.Provider value={{ auth, logout, refreshAuth }}>{children}</AuthContext.Provider>
-  );
+	return (
+		<AuthContext.Provider value={{ auth, logout, refreshAuth }}>{children}</AuthContext.Provider>
+	);
 }
 
 export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return ctx;
+	const ctx = useContext(AuthContext);
+	if (!ctx) {
+		throw new Error("useAuth must be used within AuthProvider");
+	}
+	return ctx;
 }
