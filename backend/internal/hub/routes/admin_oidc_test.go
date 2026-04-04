@@ -14,6 +14,32 @@ import (
 	"gorm.io/gorm"
 )
 
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v) //nolint:errcheck,gosec
+}
+
+func newTestOIDCDiscoveryServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer":                                srv.URL,
+			"authorization_endpoint":                srv.URL + "/authorize",
+			"token_endpoint":                        srv.URL + "/token",
+			"jwks_uri":                              srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{"keys": []any{}})
+	})
+	return srv
+}
+
 func createTestProvider(t *testing.T, name string, enabled bool) models.OIDCProvider {
 	t.Helper()
 	p := models.OIDCProvider{
@@ -270,5 +296,213 @@ func TestAdminDeleteOIDCProviderHandler_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
+	setupTestDB(t)
+	srv := newTestOIDCDiscoveryServer(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Test IDP",
+		"issuerUrl":    srv.URL,
+		"clientId":     "my-client",
+		"clientSecret": "my-secret",
+		"scopes":       "groups",
+		"enabled":      true,
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/oidc-providers", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	AdminCreateOIDCProviderHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body oidcProviderResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Name != "Test IDP" {
+		t.Errorf("expected name %q, got %q", "Test IDP", body.Name)
+	}
+	if body.IssuerURL != srv.URL {
+		t.Errorf("expected issuerUrl %q, got %q", srv.URL, body.IssuerURL)
+	}
+	if body.ClientID != "my-client" {
+		t.Errorf("expected clientId %q, got %q", "my-client", body.ClientID)
+	}
+	if body.Scopes != "groups" {
+		t.Errorf("expected scopes %q, got %q", "groups", body.Scopes)
+	}
+	if !body.Enabled {
+		t.Error("expected enabled=true")
+	}
+	if body.Id == "" {
+		t.Error("expected non-empty id")
+	}
+
+	// Verify the secret was encrypted in DB (not stored as plaintext)
+	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", body.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to find provider: %v", err)
+	}
+	if provider.ClientSecret.String() != "my-secret" {
+		t.Errorf("expected client secret to decrypt to %q, got %q", "my-secret", provider.ClientSecret.String())
+	}
+}
+
+func TestAdminCreateOIDCProviderHandler_InvalidIssuer(t *testing.T) {
+	setupTestDB(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Bad IDP",
+		"issuerUrl":    "https://nonexistent.invalid.example.com",
+		"clientId":     "c",
+		"clientSecret": "s",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/oidc-providers", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	AdminCreateOIDCProviderHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminCreateOIDCProviderHandler_DefaultEnabled(t *testing.T) {
+	setupTestDB(t)
+	srv := newTestOIDCDiscoveryServer(t)
+
+	// Omit "enabled" — should default to true
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Default Enabled",
+		"issuerUrl":    srv.URL,
+		"clientId":     "c",
+		"clientSecret": "s",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/oidc-providers", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	AdminCreateOIDCProviderHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body oidcProviderResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.Enabled {
+		t.Error("expected enabled to default to true when omitted")
+	}
+}
+
+func TestAdminUpdateOIDCProviderHandler_ChangedIssuer(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Original", true)
+
+	newSrv := newTestOIDCDiscoveryServer(t)
+
+	enabled := true
+	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
+		Name:      "Migrated",
+		IssuerURL: newSrv.URL, // different from original
+		ClientID:  "new-client",
+		Enabled:   &enabled,
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/oidc-providers/"+p.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body oidcProviderResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.IssuerURL != newSrv.URL {
+		t.Errorf("expected issuerUrl %q, got %q", newSrv.URL, body.IssuerURL)
+	}
+	if body.Name != "Migrated" {
+		t.Errorf("expected name %q, got %q", "Migrated", body.Name)
+	}
+}
+
+func TestAdminUpdateOIDCProviderHandler_ChangedIssuerInvalid(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Stable", true)
+
+	enabled := true
+	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
+		Name:      "Broken",
+		IssuerURL: "https://nonexistent.invalid.example.com",
+		ClientID:  "c",
+		Enabled:   &enabled,
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/oidc-providers/"+p.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUpdateOIDCProviderHandler_UpdatesClientSecret(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Secret Update", true)
+
+	newSecret := "brand-new-secret"
+	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
+		Name:         "Secret Update",
+		IssuerURL:    p.IssuerURL, // same issuer
+		ClientID:     p.ClientID,
+		ClientSecret: &newSecret,
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/oidc-providers/"+p.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify the new secret in DB
+	updated, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", p.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to find provider: %v", err)
+	}
+	if updated.ClientSecret.String() != "brand-new-secret" {
+		t.Errorf("expected client secret %q, got %q", "brand-new-secret", updated.ClientSecret.String())
 	}
 }

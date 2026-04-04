@@ -306,3 +306,88 @@ func TestProfileHandler_NoClaims(t *testing.T) {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestLoginHandler_LocalAuthDisabled(t *testing.T) {
+	setupTestDB(t)
+
+	LocalAuthDisabled = true
+	t.Cleanup(func() { LocalAuthDisabled = false })
+
+	//nolint:gosec
+	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	LoginHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRegisterHandler_AssignsAdminRole(t *testing.T) {
+	setupTestDB(t)
+
+	//nolint:gosec
+	reqBody, _ := json.Marshal(registerRequest{Name: "First User", Email: "admin@example.com", Password: "password123"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	RegisterHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify the user was created with admin role
+	var user models.User
+	if err := db.DB.Where("email = ?", "admin@example.com").First(&user).Error; err != nil {
+		t.Fatalf("failed to find user: %v", err)
+	}
+	if user.Role != models.UserRoleAdmin {
+		t.Errorf("expected role %q, got %q", models.UserRoleAdmin, user.Role)
+	}
+}
+
+func TestProfileHandler_ReturnsRole(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{
+		Base:  models.Base{Id: "user-admin"},
+		Name:  "Admin",
+		Email: "admin@example.com",
+		Role:  models.UserRoleAdmin,
+	}
+	token, err := auth.GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	claims, err := auth.ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+	auth.SetClaims(c, claims)
+
+	ProfileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body profileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Role != "admin" {
+		t.Errorf("expected role %q, got %q", "admin", body.Role)
+	}
+}

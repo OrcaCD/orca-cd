@@ -1,13 +1,28 @@
 package oidc
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v) //nolint:errcheck,gosec
+}
 
 func initCrypto(t *testing.T) {
 	t.Helper()
@@ -135,5 +150,329 @@ func TestGenerateRandomString(t *testing.T) {
 func TestStateCookieName(t *testing.T) {
 	if got := StateCookieName(); got != "orcacd_oidc_state" {
 		t.Errorf("expected %q, got %q", "orcacd_oidc_state", got)
+	}
+}
+
+// HandleCallback state validation tests
+
+func makeEncryptedState(t *testing.T, sd *stateData) string {
+	t.Helper()
+	enc, err := encryptState(sd)
+	if err != nil {
+		t.Fatalf("encryptState() error: %v", err)
+	}
+	return enc
+}
+
+func TestHandleCallback_ExpiredState(t *testing.T) {
+	initCrypto(t)
+
+	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	sd := &stateData{State: "s", Verifier: "v", ProviderID: "prov-1", ExpiresAt: time.Now().Add(-1 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(t.Context(), provider, "http://localhost", "code", "s", enc)
+	if err == nil || !strings.Contains(err.Error(), "state expired") {
+		t.Errorf("expected 'state expired' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_StateMismatch(t *testing.T) {
+	initCrypto(t)
+
+	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	sd := &stateData{State: "correct-state", Verifier: "v", ProviderID: "prov-1", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(t.Context(), provider, "http://localhost", "code", "wrong-state", enc)
+	if err == nil || !strings.Contains(err.Error(), "state mismatch") {
+		t.Errorf("expected 'state mismatch' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_ProviderMismatch(t *testing.T) {
+	initCrypto(t)
+
+	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-DIFFERENT"}}
+	sd := &stateData{State: "s", Verifier: "v", ProviderID: "prov-1", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(t.Context(), provider, "http://localhost", "code", "s", enc)
+	if err == nil || !strings.Contains(err.Error(), "provider mismatch") {
+		t.Errorf("expected 'provider mismatch' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_InvalidStateCookie(t *testing.T) {
+	initCrypto(t)
+
+	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	_, err := HandleCallback(t.Context(), provider, "http://localhost", "code", "s", "garbage-data")
+	if err == nil || !strings.Contains(err.Error(), "invalid state cookie") {
+		t.Errorf("expected 'invalid state cookie' error, got: %v", err)
+	}
+}
+
+// Test OIDC server for full flow tests
+
+type testOIDCServer struct {
+	Server     *httptest.Server
+	PrivateKey *rsa.PrivateKey
+	KeyID      string
+}
+
+func newTestOIDCServer(t *testing.T) *testOIDCServer {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	kid := "test-key-1"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// OIDC discovery
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer":                                srv.URL,
+			"authorization_endpoint":                srv.URL + "/authorize",
+			"token_endpoint":                        srv.URL + "/token",
+			"jwks_uri":                              srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+
+	// JWKS
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA",
+				"alg": "RS256",
+				"use": "sig",
+				"kid": kid,
+				"n":   base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+
+	// Token endpoint
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss":            srv.URL,
+			"sub":            "oidc-user-42",
+			"aud":            "test-client-id",
+			"exp":            time.Now().Add(time.Hour).Unix(),
+			"iat":            time.Now().Unix(),
+			"nonce":          "ignored-in-test",
+			"email":          "oidc@example.com",
+			"email_verified": true,
+			"name":           "OIDC User",
+		})
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+
+		writeJSON(w, map[string]any{
+			"access_token": "test-access-token",
+			"token_type":   "Bearer",
+			"id_token":     signed,
+		})
+	})
+
+	return &testOIDCServer{Server: srv, PrivateKey: key, KeyID: kid}
+}
+
+func (s *testOIDCServer) URL() string { return s.Server.URL }
+
+func TestStartAuth_Success(t *testing.T) {
+	initCrypto(t)
+	srv := newTestOIDCServer(t)
+
+	provider := &models.OIDCProvider{
+		Base:         models.Base{Id: "prov-test"},
+		ClientID:     "test-client-id",
+		ClientSecret: crypto.EncryptedString("test-client-secret"),
+		IssuerURL:    srv.URL(),
+		Scopes:       "",
+	}
+
+	authURL, encState, err := StartAuth(context.Background(), provider, "https://app.example.com")
+	if err != nil {
+		t.Fatalf("StartAuth() error: %v", err)
+	}
+
+	// Auth URL should point to the test server's authorize endpoint
+	if !strings.HasPrefix(authURL, srv.URL()+"/authorize") {
+		t.Errorf("auth URL should start with %s/authorize, got: %s", srv.URL(), authURL)
+	}
+
+	// Should contain PKCE code_challenge
+	if !strings.Contains(authURL, "code_challenge=") {
+		t.Error("auth URL missing PKCE code_challenge parameter")
+	}
+	if !strings.Contains(authURL, "code_challenge_method=S256") {
+		t.Error("auth URL missing code_challenge_method=S256")
+	}
+
+	// Encrypted state should be decryptable and valid
+	sd, err := decryptState(encState)
+	if err != nil {
+		t.Fatalf("decryptState() error: %v", err)
+	}
+	if sd.ProviderID != "prov-test" {
+		t.Errorf("state ProviderID: expected prov-test, got %s", sd.ProviderID)
+	}
+	if sd.Verifier == "" {
+		t.Error("state Verifier should not be empty")
+	}
+	if sd.ExpiresAt <= time.Now().Unix() {
+		t.Error("state should not already be expired")
+	}
+}
+
+func TestHandleCallback_Success(t *testing.T) {
+	initCrypto(t)
+	srv := newTestOIDCServer(t)
+
+	provider := &models.OIDCProvider{
+		Base:         models.Base{Id: "prov-test"},
+		ClientID:     "test-client-id",
+		ClientSecret: crypto.EncryptedString("test-client-secret"),
+		IssuerURL:    srv.URL(),
+	}
+
+	// Build a valid encrypted state with matching params
+	sd := &stateData{
+		State:      "test-state-value",
+		Verifier:   oauth2.GenerateVerifier(),
+		ProviderID: "prov-test",
+		ExpiresAt:  time.Now().Add(5 * time.Minute).Unix(),
+	}
+	encState := makeEncryptedState(t, sd)
+
+	user, err := HandleCallback(context.Background(), provider, "https://app.example.com", "test-auth-code", "test-state-value", encState)
+	if err != nil {
+		t.Fatalf("HandleCallback() error: %v", err)
+	}
+
+	if user.Subject != "oidc-user-42" {
+		t.Errorf("Subject: expected %q, got %q", "oidc-user-42", user.Subject)
+	}
+	if user.Email != "oidc@example.com" {
+		t.Errorf("Email: expected %q, got %q", "oidc@example.com", user.Email)
+	}
+	if user.Name != "OIDC User" {
+		t.Errorf("Name: expected %q, got %q", "OIDC User", user.Name)
+	}
+	if user.Issuer != srv.URL() {
+		t.Errorf("Issuer: expected %q, got %q", srv.URL(), user.Issuer)
+	}
+}
+
+func TestHandleCallback_MissingEmail(t *testing.T) {
+	initCrypto(t)
+
+	// Custom server that returns a token without an email claim
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	kid := "no-email-key"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid,
+				"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": srv.URL, "sub": "user-no-email", "aud": "test-client",
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+			// No email claim!
+		})
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+		writeJSON(w, map[string]any{"access_token": "x", "token_type": "Bearer", "id_token": signed})
+	})
+
+	provider := &models.OIDCProvider{
+		Base: models.Base{Id: "prov-noemail"}, ClientID: "test-client",
+		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
+	}
+	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderID: "prov-noemail", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", enc)
+	if err == nil || !strings.Contains(err.Error(), "email claim is missing") {
+		t.Errorf("expected 'email claim is missing' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_NameFallsBackToEmail(t *testing.T) {
+	initCrypto(t)
+
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	kid := "no-name-key"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid,
+				"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": srv.URL, "sub": "user-no-name", "aud": "test-client",
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+			"email": "noname@example.com",
+			// No name claim — should fall back to email
+		})
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+		writeJSON(w, map[string]any{"access_token": "x", "token_type": "Bearer", "id_token": signed})
+	})
+
+	provider := &models.OIDCProvider{
+		Base: models.Base{Id: "prov-noname"}, ClientID: "test-client",
+		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
+	}
+	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderID: "prov-noname", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	user, err := HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", enc)
+	if err != nil {
+		t.Fatalf("HandleCallback() error: %v", err)
+	}
+	if user.Name != "noname@example.com" {
+		t.Errorf("Name should fall back to email, got: %q", user.Name)
 	}
 }
