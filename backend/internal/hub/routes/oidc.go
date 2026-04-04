@@ -101,24 +101,35 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Find or create user by OIDC identity
+	// Find user by OIDC identity, then fall back to email, then JIT provision.
 	user, err := gorm.G[models.User](db.DB).Where("oidc_issuer = ? AND oidc_subject = ?", oidcUser.Issuer, oidcUser.Subject).First(c.Request.Context())
 	if err != nil {
-		// User doesn't exist — JIT provision
-		user = models.User{
-			Email:        oidcUser.Email,
-			Name:         oidcUser.Name,
-			AuthProvider: models.AuthProviderOIDC,
-			Role:         models.UserRoleUser,
-			OIDCSubject:  &oidcUser.Subject,
-			OIDCIssuer:   &oidcUser.Issuer,
-		}
-		if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
-			c.Redirect(http.StatusFound, "/login?error=account_creation_failed")
-			return
+		// No user linked to this OIDC identity yet — check if one exists with the same email.
+		user, err = gorm.G[models.User](db.DB).Where("email = ?", oidcUser.Email).First(c.Request.Context())
+		if err != nil {
+			// Completely new user — JIT provision
+			user = models.User{
+				Email:        oidcUser.Email,
+				Name:         oidcUser.Name,
+				AuthProvider: models.AuthProviderOIDC,
+				Role:         models.UserRoleUser,
+				OIDCSubject:  &oidcUser.Subject,
+				OIDCIssuer:   &oidcUser.Issuer,
+			}
+			if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
+				c.Redirect(http.StatusFound, "/login?error=account_creation_failed")
+				return
+			}
+		} else {
+			// Existing account found by email — link the OIDC identity to it.
+			db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{
+				"oidc_subject": oidcUser.Subject,
+				"oidc_issuer":  oidcUser.Issuer,
+				"name":         oidcUser.Name,
+			}) //nolint:errcheck
 		}
 	} else {
-		// Update name and email from OIDC claims on each login
+		// Known OIDC user — update name and email from claims.
 		db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email}) //nolint:errcheck
 	}
 

@@ -21,6 +21,6 @@ type User struct {
 	PasswordHash *string      `gorm:"type:text;"`
 	AuthProvider AuthProvider `gorm:"type:text;not null;default:'local'"`
 	Role         UserRole     `gorm:"type:text;not null;default:'user'"`
-	OIDCSubject  *string      `gorm:"type:text;"`
-	OIDCIssuer   *string      `gorm:"type:text;"`
+	OIDCSubject  *string      `gorm:"column:oidc_subject;type:text;"`
+	OIDCIssuer   *string      `gorm:"column:oidc_issuer;type:text;"`
 }

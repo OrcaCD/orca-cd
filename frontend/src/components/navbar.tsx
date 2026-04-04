@@ -1,10 +1,8 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-	Bell,
 	ChevronDown,
 	FileText,
 	GitBranch,
-	HelpCircle,
 	LayoutGrid,
 	LogOut,
 	Menu,
@@ -83,16 +81,7 @@ export default function Navbar() {
 
 				<div className="flex items-center gap-3">
 					<Button variant="ghost" size="icon" className="hidden sm:flex">
-						<HelpCircle className="h-5 w-5 text-muted-foreground" />
-					</Button>
-
-					<Button variant="ghost" size="icon" className="hidden sm:flex">
 						<FileText className="h-5 w-5 text-muted-foreground" />
-					</Button>
-
-					<Button variant="ghost" size="icon" className="relative">
-						<Bell className="h-5 w-5 text-muted-foreground" />
-						<span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />
 					</Button>
 
 					<ModeToggle
