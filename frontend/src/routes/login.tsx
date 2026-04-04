@@ -9,7 +9,7 @@ import { z } from "zod";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { API_BASE, type ErrorResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -39,7 +39,7 @@ const registerSchema = z
 	.object({
 		name: z
 			.string()
-			.min(2, "Name must be at least 2 characters")
+			.min(3, "Name must be at least 3 characters")
 			.max(64, "Name must be at most 64 characters"),
 		email: z.email("Invalid email address"),
 		password: z
@@ -340,7 +340,7 @@ function PasswordInput({
 	showPassword,
 	onToggle,
 	...props
-}: React.ComponentProps<typeof Input> & {
+}: ComponentProps<typeof Input> & {
 	showPassword: boolean;
 	onToggle: () => void;
 }) {
