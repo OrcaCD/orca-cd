@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -68,7 +70,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	providerID := c.Param("id")
 
 	if errParam := c.Query("error"); errParam != "" {
-		c.Redirect(http.StatusFound, "/login?error="+errParam)
+		c.Redirect(http.StatusFound, "/login?error="+url.QueryEscape(errParam))
 		return
 	}
 
@@ -104,8 +106,16 @@ func OIDCCallbackHandler(c *gin.Context) {
 	// Find user by OIDC identity, then fall back to email, then JIT provision.
 	user, err := gorm.G[models.User](db.DB).Where("oidc_issuer = ? AND oidc_subject = ?", oidcUser.Issuer, oidcUser.Subject).First(c.Request.Context())
 	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.Redirect(http.StatusFound, "/login?error=internal_error")
+			return
+		}
 		// No user linked to this OIDC identity yet — check if one exists with the same email.
 		user, err = gorm.G[models.User](db.DB).Where("email = ?", oidcUser.Email).First(c.Request.Context())
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.Redirect(http.StatusFound, "/login?error=internal_error")
+			return
+		}
 		if err != nil {
 			// Completely new user — JIT provision
 			user = models.User{
@@ -122,15 +132,24 @@ func OIDCCallbackHandler(c *gin.Context) {
 			}
 		} else {
 			// Existing account found by email — link the OIDC identity to it.
-			db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{
+			tx := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{
 				"oidc_subject": oidcUser.Subject,
 				"oidc_issuer":  oidcUser.Issuer,
 				"name":         oidcUser.Name,
-			}) //nolint:errcheck
+			})
+
+			if tx.Error != nil {
+				c.Redirect(http.StatusFound, "/login?error=account_linking_failed")
+				return
+			}
 		}
 	} else {
 		// Known OIDC user — update name and email from claims.
-		db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email}) //nolint:errcheck
+		tx := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email})
+		if tx.Error != nil {
+			c.Redirect(http.StatusFound, "/login?error=account_update_failed")
+			return
+		}
 	}
 
 	token, err := auth.GenerateUserToken(&user)

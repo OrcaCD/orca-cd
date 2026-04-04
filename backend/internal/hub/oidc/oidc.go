@@ -30,6 +30,7 @@ type OIDCUser struct {
 type stateData struct {
 	State      string `json:"s"`
 	Verifier   string `json:"v"`
+	Nonce      string `json:"n"`
 	ProviderID string `json:"p"`
 	ExpiresAt  int64  `json:"e"`
 }
@@ -96,9 +97,15 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 
 	verifier := oauth2.GenerateVerifier()
 
+	nonce, err := generateRandomString()
+	if err != nil {
+		return "", "", fmt.Errorf("generate nonce: %w", err)
+	}
+
 	sd := &stateData{
 		State:      state,
 		Verifier:   verifier,
+		Nonce:      nonce,
 		ProviderID: provider.Id,
 		ExpiresAt:  time.Now().Add(stateTTL).Unix(),
 	}
@@ -106,11 +113,6 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 	encryptedState, err = encryptState(sd)
 	if err != nil {
 		return "", "", fmt.Errorf("encrypt state: %w", err)
-	}
-
-	nonce, err := generateRandomString()
-	if err != nil {
-		return "", "", fmt.Errorf("generate nonce: %w", err)
 	}
 
 	authURL = oauth2Config.AuthCodeURL(state,
@@ -169,9 +171,14 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		Email         string `json:"email"`
 		EmailVerified bool   `json:"email_verified"`
 		Name          string `json:"name"`
+		Nonce         string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
+	}
+
+	if claims.Nonce != sd.Nonce {
+		return nil, fmt.Errorf("nonce mismatch")
 	}
 
 	if claims.Email == "" {
