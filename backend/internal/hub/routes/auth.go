@@ -100,7 +100,7 @@ func RegisterHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateToken(&user)
+	token, err := auth.GenerateUserToken(&user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -139,7 +139,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateToken(&user)
+	token, err := auth.GenerateUserToken(&user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return

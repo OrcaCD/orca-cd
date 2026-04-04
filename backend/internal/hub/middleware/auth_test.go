@@ -20,9 +20,9 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 	}
 
 	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin"}
-	token, err := auth.GenerateToken(user)
+	token, err := auth.GenerateUserToken(user)
 	if err != nil {
-		t.Fatalf("GenerateToken() error: %v", err)
+		t.Fatalf("GenerateUserToken() error: %v", err)
 	}
 
 	router := gin.New()

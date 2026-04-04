@@ -18,7 +18,7 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := auth.ValidateToken(authCookie)
+		claims, err := auth.ValidateUserToken(authCookie)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			c.Abort()

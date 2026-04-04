@@ -253,9 +253,9 @@ func TestProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	user := &models.User{Base: models.Base{Id: "user-abc"}, Name: "Alice", Email: "alice@example.com"}
-	token, err := auth.GenerateToken(user)
+	token, err := auth.GenerateUserToken(user)
 	if err != nil {
-		t.Fatalf("GenerateToken() error: %v", err)
+		t.Fatalf("GenerateUserToken() error: %v", err)
 	}
 
 	w := httptest.NewRecorder()
@@ -263,9 +263,9 @@ func TestProfileHandler_Success(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
 	c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
 
-	claims, err := auth.ValidateToken(token)
+	claims, err := auth.ValidateUserToken(token)
 	if err != nil {
-		t.Fatalf("ValidateToken() error: %v", err)
+		t.Fatalf("ValidateUserToken() error: %v", err)
 	}
 	auth.SetClaims(c, claims)
 
