@@ -32,21 +32,17 @@ func NewHub(log *zerolog.Logger) *Hub {
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
-	h.mu.RLock()
-	_, exists := h.clients[id]
-	h.mu.RUnlock()
-	if exists {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, exists := h.clients[id]; exists {
 		return nil, fmt.Errorf("client ID %s already registered", id)
 	}
-
 	c := &Client{
 		Id:   id,
 		conn: conn,
 		Send: make(chan *messages.ServerMessage, 64),
 	}
-	h.mu.Lock()
 	h.clients[id] = c
-	h.mu.Unlock()
 	h.log.Debug().Str("client", id).Msg("Client registered")
 	return c, nil
 }
