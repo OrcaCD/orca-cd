@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"fmt"
 	"sync"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -30,7 +31,14 @@ func NewHub(log *zerolog.Logger) *Hub {
 	return &Hub{clients: make(map[string]*Client), log: log}
 }
 
-func (h *Hub) Register(id string, conn *websocket.Conn) *Client {
+func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
+	h.mu.RLock()
+	_, exists := h.clients[id]
+	h.mu.RUnlock()
+	if exists {
+		return nil, fmt.Errorf("client ID %s already registered", id)
+	}
+
 	c := &Client{
 		Id:   id,
 		conn: conn,
@@ -40,7 +48,7 @@ func (h *Hub) Register(id string, conn *websocket.Conn) *Client {
 	h.clients[id] = c
 	h.mu.Unlock()
 	h.log.Debug().Str("client", id).Msg("Client registered")
-	return c
+	return c, nil
 }
 
 func (h *Hub) Unregister(id string) {
@@ -55,7 +63,7 @@ func (h *Hub) Unregister(id string) {
 func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
 	h.mu.RLock()
 	c, ok := h.clients[id]
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 	if !ok {
 		return false
 	}

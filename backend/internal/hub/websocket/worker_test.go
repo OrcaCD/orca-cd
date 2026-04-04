@@ -29,7 +29,10 @@ func TestWorker_Start_BroadcastsPing(t *testing.T) {
 	conn := newTestWSConn(t)
 	defer conn.Close() //nolint:errcheck
 
-	client := h.Register("agent-1", conn)
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	// We can't wait 60s in a test, so instead we verify the broadcast logic
 	// by calling Broadcast directly (Worker.Start just wraps a ticker + Broadcast).

@@ -41,7 +41,10 @@ func TestHub_Register(t *testing.T) {
 	wsConn := newTestWSConn(t)
 	defer wsConn.Close() //nolint:errcheck
 
-	client := h.Register("agent-1", wsConn)
+	client, err := h.Register("agent-1", wsConn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	if client == nil {
 		t.Fatal("expected non-nil client")
@@ -64,7 +67,7 @@ func TestHub_Register(t *testing.T) {
 	}
 }
 
-func TestHub_Register_ReplacesExisting(t *testing.T) {
+func TestHub_Register_RejectsDuplicate(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)
 
@@ -73,18 +76,14 @@ func TestHub_Register_ReplacesExisting(t *testing.T) {
 	conn2 := newTestWSConn(t)
 	defer conn2.Close() //nolint:errcheck
 
-	first := h.Register("agent-1", conn1)
-	second := h.Register("agent-1", conn2)
-
-	h.mu.RLock()
-	registered := h.clients["agent-1"]
-	h.mu.RUnlock()
-
-	if registered == first {
-		t.Error("expected hub to have replaced the first client")
+	_, err := h.Register("agent-1", conn1)
+	if err != nil {
+		t.Fatalf("expected no error on first register, got %v", err)
 	}
-	if registered != second {
-		t.Error("expected hub to have the second client")
+
+	_, err = h.Register("agent-1", conn2)
+	if err == nil {
+		t.Error("expected error when registering duplicate client ID")
 	}
 }
 
@@ -95,7 +94,10 @@ func TestHub_Unregister(t *testing.T) {
 	conn := newTestWSConn(t)
 	defer conn.Close() //nolint:errcheck
 
-	h.Register("agent-1", conn)
+	_, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 	h.Unregister("agent-1")
 
 	h.mu.RLock()
@@ -121,7 +123,10 @@ func TestHub_Send_ExistingClient(t *testing.T) {
 	conn := newTestWSConn(t)
 	defer conn.Close() //nolint:errcheck
 
-	client := h.Register("agent-1", conn)
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_Ping{
@@ -171,7 +176,10 @@ func TestHub_Send_FullBuffer(t *testing.T) {
 	conn := newTestWSConn(t)
 	defer conn.Close() //nolint:errcheck
 
-	client := h.Register("agent-1", conn)
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_Ping{
@@ -199,7 +207,11 @@ func TestHub_Broadcast(t *testing.T) {
 	for i := range numClients {
 		conn := newTestWSConn(t)
 		defer conn.Close() //nolint:errcheck
-		clients[i] = h.Register(strings.Repeat("a", i+1), conn)
+		c, err := h.Register(strings.Repeat("a", i+1), conn)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		clients[i] = c
 	}
 
 	msg := &messages.ServerMessage{
@@ -229,7 +241,10 @@ func TestHub_Broadcast_SkipsFullBuffer(t *testing.T) {
 	conn := newTestWSConn(t)
 	defer conn.Close() //nolint:errcheck
 
-	client := h.Register("agent-full", conn)
+	client, err := h.Register("agent-full", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_Ping{
@@ -264,7 +279,7 @@ func TestHub_ConcurrentAccess(t *testing.T) {
 			conn := newTestWSConn(t)
 			defer conn.Close() //nolint:errcheck
 			id := strings.Repeat("x", i+1)
-			h.Register(id, conn)
+			_, _ = h.Register(id, conn)
 			h.Send(id, msg)
 			h.Unregister(id)
 		})
@@ -288,7 +303,10 @@ func TestHub_WritePump(t *testing.T) {
 	serverConn, clientConn := newWSPair(t)
 	defer clientConn.Close() //nolint:errcheck
 
-	client := h.Register("agent-wp", serverConn)
+	client, err := h.Register("agent-wp", serverConn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
 	go h.WritePump(client, &log)
 
 	msg := &messages.ServerMessage{
@@ -344,10 +362,12 @@ func newTestWSConn(t *testing.T) *websocket.Conn {
 			return
 		}
 		defer conn.Close() //nolint:errcheck
-		// Keep the server connection alive until the test is done
-		select {}
+		<-r.Context().Done()
 	}))
-	t.Cleanup(server.Close)
+	t.Cleanup(func() {
+		server.CloseClientConnections()
+		server.Close()
+	})
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)

@@ -49,14 +49,6 @@ func connectWithRetry(url string, authToken string) *websocket.Conn {
 		header.Set("Authorization", authToken)
 		conn, resp, err := websocket.DefaultDialer.Dial(url, header)
 
-		defer func() {
-			if resp != nil {
-				if closeErr := resp.Body.Close(); closeErr != nil {
-					Log.Error().Err(closeErr).Msg("Failed to close response body")
-				}
-			}
-		}()
-
 		if err == nil {
 			Log.Info().Str("url", url).Msg("Connected to hub")
 			return conn
@@ -69,6 +61,12 @@ func connectWithRetry(url string, authToken string) *websocket.Conn {
 		delay *= 2
 		if delay > maxDelay {
 			delay = maxDelay
+		}
+
+		if resp != nil {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				Log.Error().Err(closeErr).Msg("Failed to close response body")
+			}
 		}
 	}
 }

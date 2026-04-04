@@ -10,7 +10,7 @@ COPY frontend/ ./
 
 RUN npm run build
 
-FROM bufbuild/buf:1.6.7 AS buf
+FROM bufbuild/buf:1.67 AS buf
 
 FROM golang:1.26-alpine AS builder
 
