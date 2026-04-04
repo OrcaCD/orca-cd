@@ -1,6 +1,10 @@
 package auth
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestHashAndCheckPassword(t *testing.T) {
 	password := "securepassword123"
@@ -93,5 +97,71 @@ func TestCheckPassword_EmptyPassword(t *testing.T) {
 func TestCheckPassword_EmptyHash(t *testing.T) {
 	if CheckPassword("password", "") {
 		t.Error("CheckPassword() returned true for empty hash")
+	}
+}
+
+func TestInitPassword_SetsDummyHash(t *testing.T) {
+	prev := dummyHash
+	dummyHash = ""
+	t.Cleanup(func() { dummyHash = prev })
+
+	if err := initPassword(); err != nil {
+		t.Fatalf("initPassword() error: %v", err)
+	}
+	if dummyHash == "" {
+		t.Fatal("initPassword() did not set dummyHash")
+	}
+	if !strings.HasPrefix(dummyHash, "$argon2id$") {
+		t.Errorf("dummyHash does not look like an argon2id hash: %q", dummyHash)
+	}
+}
+
+func TestCompareWithDummy_DoesNotPanic(t *testing.T) {
+	if err := initPassword(); err != nil {
+		t.Fatalf("initPassword() error: %v", err)
+	}
+
+	CompareWithDummy("some-password")
+	CompareWithDummy("")
+	CompareWithDummy(strings.Repeat("a", 1000))
+}
+
+func TestCompareWithDummy_Timing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping timing test in short mode")
+	}
+
+	if err := initPassword(); err != nil {
+		t.Fatalf("initPassword() error: %v", err)
+	}
+
+	hash, err := HashPassword("reference-password")
+	if err != nil {
+		t.Fatalf("HashPassword() error: %v", err)
+	}
+
+	const runs = 3
+	var realTotal, dummyTotal time.Duration
+	for range runs {
+		start := time.Now()
+		CheckPassword("wrong-password", hash)
+		realTotal += time.Since(start)
+
+		start = time.Now()
+		CompareWithDummy("wrong-password")
+		dummyTotal += time.Since(start)
+	}
+
+	realAvg := realTotal / runs
+	dummyAvg := dummyTotal / runs
+
+	diff := realAvg - dummyAvg
+	if diff < 0 {
+		diff = -diff
+	}
+	threshold := realAvg / 2
+	if diff > threshold {
+		t.Errorf("timing difference too large: real=%v dummy=%v diff=%v (threshold=%v)",
+			realAvg, dummyAvg, diff, threshold)
 	}
 }

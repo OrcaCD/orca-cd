@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+var errRegistrationDisabled = errors.New("registration disabled")
 
 type registerRequest struct {
 	Name     string `json:"name" binding:"required,min=3,max=64"`
@@ -62,31 +65,35 @@ func RegisterHandler(c *gin.Context) {
 		return
 	}
 
-	count, err := gorm.G[models.User](db.DB).Count(c.Request.Context(), "*")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "registration is disabled: a user already exists"})
-		return
-	}
-
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	user := models.User{
-		Email:        req.Email,
-		Name:         req.Name,
-		PasswordHash: &hash,
-		AuthProvider: models.AuthProviderLocal,
-	}
-	if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
+	var user models.User
+
+	txErr := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		count, err := gorm.G[models.User](tx).Count(c.Request.Context(), "*")
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errRegistrationDisabled
+		}
+
+		user = models.User{
+			Email:        req.Email,
+			Name:         req.Name,
+			PasswordHash: &hash,
+			AuthProvider: models.AuthProviderLocal,
+		}
+		return gorm.G[models.User](tx).Create(c.Request.Context(), &user)
+	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
+
+	if txErr != nil {
+		if errors.Is(txErr, errRegistrationDisabled) || errors.Is(txErr, gorm.ErrDuplicatedKey) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "registration is disabled"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -113,6 +120,7 @@ func LoginHandler(c *gin.Context) {
 	user, err := gorm.G[models.User](db.DB).Where("email = ? AND auth_provider = ?", req.Email, models.AuthProviderLocal).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			auth.CompareWithDummy(req.Password)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
@@ -121,6 +129,7 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if user.PasswordHash == nil {
+		auth.CompareWithDummy(req.Password)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
