@@ -55,7 +55,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		}
 
 		client := h.Register(claims.Subject, conn)
-		gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
+		_, err = gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
+		if err != nil {
+			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
+		}
 
 		// WritePump runs in background, reads from client.Send channel
 		go h.WritePump(client, log)
@@ -64,7 +67,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		defer func() {
 			h.Unregister(claims.Subject)
 			client.Close()
-			gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(context.Background(), "status", models.AgentStatusOffline)
+			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(context.Background(), "status", models.AgentStatusOffline)
+			if err != nil {
+				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
+			}
 		}()
 
 		for {
@@ -90,7 +96,10 @@ func handleClientMessage(id string, msg *messages.ClientMessage, log *zerolog.Lo
 	case *messages.ClientMessage_Pong:
 		log.Info().Str("client", id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
 		ctx := context.Background() // TODO: Check if gin context can be passed here for timeout
-		gorm.G[models.Agent](db.DB).Where("id = ?", id).Update(ctx, "last_seen", p.Pong.Timestamp)
+		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Update(ctx, "last_seen", p.Pong.Timestamp)
+		if err != nil {
+			log.Error().Err(err).Str("client", id).Msg("Failed to update last_seen")
+		}
 	default:
 		log.Warn().Str("client", id).Msg("Unknown message type received")
 	}

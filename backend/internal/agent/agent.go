@@ -59,7 +59,10 @@ func Run(cfg Config) error {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			Log.Error().Err(err).Msg("Disconnected from hub, reconnecting...")
-			conn.Close()
+			err = conn.Close()
+			if err != nil {
+				Log.Error().Err(err).Msg("Error closing connection")
+			}
 			conn = connectWithRetry(cfg.HubUrl, cfg.AuthToken)
 			continue
 		}
