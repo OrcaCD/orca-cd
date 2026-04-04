@@ -59,12 +59,6 @@ jobs:
           cache: true
           cache-dependency-path: backend/go.sum
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
-        with:
-          version: v2.11
-          working-directory: ./backend
-
       - name: Install Buf CLI
         uses: bufbuild/buf-action@219c9aef02e8f6a27e4b46274db239ef513f5d53 # v1.4.0
         with:
@@ -83,6 +77,12 @@ jobs:
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           buf generate
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          version: v2.11
+          working-directory: ./backend
 
       - name: Verify dependencies
         working-directory: ./backend
