@@ -7,11 +7,15 @@ import { routeTree } from "./routeTree.gen";
 
 import "./styles.css";
 import { Button } from "./components/ui/button";
+import { AuthProvider, useAuth } from "./lib/auth";
+import type { RouterContext } from "./routes/__root";
 
 // Create a new router instance
 const router = createRouter({
 	routeTree,
-	context: {},
+	context: {
+		auth: undefined!,
+	} as RouterContext,
 	defaultPreload: "intent",
 	scrollRestoration: true,
 	defaultStructuralSharing: true,
@@ -50,13 +54,23 @@ declare module "@tanstack/react-router" {
 	}
 }
 
+function InnerApp() {
+	const { auth } = useAuth();
+	if (auth.isLoading) {
+		return null;
+	}
+	return <RouterProvider router={router} context={{ auth }} />;
+}
+
 // Render the app
 const rootElement = document.getElementById("app");
 if (rootElement && !rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);
 	root.render(
 		<StrictMode>
-			<RouterProvider router={router} />
+			<AuthProvider>
+				<InnerApp />
+			</AuthProvider>
 		</StrictMode>,
 	);
 }

@@ -17,7 +17,7 @@ const (
 type Agent struct {
 	Base
 	Name     crypto.EncryptedString `gorm:"type:text;not null"`
-	Secret   crypto.EncryptedString `gorm:"type:text;not null"`
+	KeyId    crypto.EncryptedString `gorm:"type:text;not null;"`
 	Status   AgentStatus            `gorm:"type:integer;default:0"`
 	LastSeen *time.Time
 }

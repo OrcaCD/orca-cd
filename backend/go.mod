@@ -4,10 +4,13 @@ go 1.26.1
 
 require (
 	github.com/aegis-aead/go-libaegis v0.2.14
+	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/gin-gonic/gin v1.12.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/time v0.15.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )

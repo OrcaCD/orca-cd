@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
@@ -82,13 +83,25 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	err := db.Connect()
+	if err := auth.Init(cfg.AppSecret, cfg.AppURL); err != nil {
+		Log.Error().Err(err).Msg("failed to init auth")
+		return err
+	}
+
+	dbLogger := Log.With().Str("component", "gorm").Logger()
+	err := db.Connect(dbLogger, cfg.Debug)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
 	}
 
-	router := gin.Default()
+	router := gin.New()
+
+	if cfg.Debug {
+		router.Use(middleware.RequestLogger(Log))
+	}
+
+	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}

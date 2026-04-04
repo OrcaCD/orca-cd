@@ -1,10 +1,20 @@
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { createRootRoute, HeadContent, Outlet, useRouterState } from "@tanstack/react-router";
+import {
+	createRootRouteWithContext,
+	HeadContent,
+	Outlet,
+	useRouterState,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import Navbar from "../components/navbar";
 import { Toaster } from "@/components/ui/sonner";
+import type { AuthState } from "@/lib/auth";
+
+export interface RouterContext {
+	auth: AuthState;
+}
 
 function RootComponent() {
 	const { location } = useRouterState();
@@ -35,7 +45,7 @@ function RootComponent() {
 	);
 }
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<RouterContext>()({
 	component: RootComponent,
 	head: () => ({
 		meta: [
