@@ -37,7 +37,7 @@ type stateData struct {
 func buildOAuth2Config(provider *models.OIDCProvider, endpoint oauth2.Endpoint, appURL string) *oauth2.Config {
 	scopes := []string{gooidc.ScopeOpenID, "email", "profile"}
 	if provider.Scopes != "" {
-		for _, s := range strings.Split(provider.Scopes, ",") {
+		for s := range strings.SplitSeq(provider.Scopes, ",") {
 			if trimmed := strings.TrimSpace(s); trimmed != "" {
 				scopes = append(scopes, trimmed)
 			}
