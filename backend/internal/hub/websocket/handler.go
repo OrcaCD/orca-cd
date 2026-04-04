@@ -16,7 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
-var upgrader = websocket.Upgrader{}
+const pongWait = 90 * time.Second // must be greater than the worker ping interval (60s)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
+}
 
 func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -55,10 +60,22 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			return
 		}
 
+		if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+			log.Error().Err(err).Msg("Failed to set read deadline")
+			err = conn.Close()
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to close connection after read deadline error")
+			}
+			return
+		}
+
 		client, err := h.Register(claims.Subject, conn)
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to register client")
-			c.AbortWithStatus(http.StatusInternalServerError)
+			err = conn.Close()
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to close connection after registration error")
+			}
 			return
 		}
 
@@ -67,14 +84,14 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
 
-		// WritePump runs in background, reads from client.Send channel
 		go h.WritePump(client, log)
 
-		// ReadPump runs here (blocking), reads incoming messages from WS
 		defer func() {
 			h.Unregister(claims.Subject)
 			client.Close()
-			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(context.Background(), "status", models.AgentStatusOffline)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(ctx, "status", models.AgentStatusOffline)
 			if err != nil {
 				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
 			}
@@ -83,7 +100,11 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
-				log.Error().Err(err).Str("client", claims.Subject).Msg("Client disconnected")
+				log.Debug().Err(err).Str("client", claims.Subject).Msg("Client disconnected")
+				return
+			}
+			if err := conn.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+				log.Error().Err(err).Str("client", claims.Subject).Msg("Failed to reset read deadline")
 				return
 			}
 
@@ -93,7 +114,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			handleClientMessage(claims.Subject, msg, log)
+			go handleClientMessage(claims.Subject, msg, log)
 		}
 	}
 }
@@ -102,7 +123,8 @@ func handleClientMessage(id string, msg *messages.ClientMessage, log *zerolog.Lo
 	switch p := msg.Payload.(type) {
 	case *messages.ClientMessage_Pong:
 		log.Info().Str("client", id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
-		ctx := context.Background() // TODO: Check if gin context can be passed here for timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		lastSeen := time.Unix(p.Pong.Timestamp, 0)
 		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Update(ctx, "last_seen", lastSeen)
 		if err != nil {
