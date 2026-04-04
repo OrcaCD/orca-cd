@@ -267,7 +267,7 @@ func newTestOIDCServer(t *testing.T) *testOIDCServer {
 			"aud":            "test-client-id",
 			"exp":            time.Now().Add(time.Hour).Unix(),
 			"iat":            time.Now().Unix(),
-			"nonce":          "ignored-in-test",
+			"nonce":          "test-nonce-value",
 			"email":          "oidc@example.com",
 			"email_verified": true,
 			"name":           "OIDC User",
@@ -348,6 +348,7 @@ func TestHandleCallback_Success(t *testing.T) {
 	sd := &stateData{
 		State:      "test-state-value",
 		Verifier:   oauth2.GenerateVerifier(),
+		Nonce:      "test-nonce-value",
 		ProviderID: "prov-test",
 		ExpiresAt:  time.Now().Add(5 * time.Minute).Unix(),
 	}
