@@ -53,8 +53,8 @@ func buildOAuth2Config(provider *models.OIDCProvider, endpoint oauth2.Endpoint, 
 	}
 }
 
-func generateRandomString(n int) (string, error) {
-	b := make([]byte, n)
+func generateRandomString() (string, error) {
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
@@ -89,7 +89,7 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 
 	oauth2Config := buildOAuth2Config(provider, oidcProvider.Endpoint(), appURL)
 
-	state, err := generateRandomString(32)
+	state, err := generateRandomString()
 	if err != nil {
 		return "", "", fmt.Errorf("generate state: %w", err)
 	}
@@ -108,7 +108,7 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 		return "", "", fmt.Errorf("encrypt state: %w", err)
 	}
 
-	nonce, err := generateRandomString(32)
+	nonce, err := generateRandomString()
 	if err != nil {
 		return "", "", fmt.Errorf("generate nonce: %w", err)
 	}

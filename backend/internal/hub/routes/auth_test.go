@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
@@ -42,7 +43,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.User{}); err != nil {
+	if err := testDB.AutoMigrate(&models.User{}, &models.OIDCProvider{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -56,6 +57,10 @@ func setupTestDB(t *testing.T) {
 	})
 
 	db.DB = testDB
+
+	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+		t.Fatalf("failed to init crypto: %v", err)
+	}
 
 	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("failed to init auth: %v", err)
