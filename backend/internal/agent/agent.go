@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -24,8 +25,9 @@ func DefaultConfig() (Config, error) {
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
-	if hubUrl == "" {
-		return Config{}, errors.New("HUB_URL is required")
+	hubUrl, err := parseHubURL(hubUrl)
+	if err != nil {
+		return Config{}, fmt.Errorf("HUB_URL: %w", err)
 	}
 
 	if authToken == "" {
