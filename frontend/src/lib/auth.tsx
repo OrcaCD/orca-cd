@@ -5,6 +5,7 @@ import fetcher, { API_BASE } from "./api";
 export interface AuthState {
 	isAuthenticated: boolean;
 	isLoading: boolean;
+	isAdmin: boolean;
 	profile: Profile | null;
 }
 
@@ -18,6 +19,7 @@ interface Profile {
 	id: string;
 	name: string;
 	email: string;
+	role: string;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		isLoading,
 		profile: data || null,
 		isAuthenticated: !!data,
+		isAdmin: data?.role === "admin",
 	};
 
 	const refreshAuth = useCallback(async () => {

@@ -9,9 +9,11 @@ import { z } from "zod";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 import { useState, type ComponentProps } from "react";
 import { API_BASE, type ErrorResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import type { AuthProviderInfo } from "@/lib/oidc";
 
 export const Route = createFileRoute("/login")({
 	beforeLoad: ({ context }) => {
@@ -20,12 +22,24 @@ export const Route = createFileRoute("/login")({
 		}
 	},
 	loader: async () => {
-		const res = await fetch(`${API_BASE}/auth/setup`);
-		if (!res.ok) {
+		const [setupRes, providersRes] = await Promise.all([
+			fetch(`${API_BASE}/auth/setup`),
+			fetch(`${API_BASE}/auth/providers`),
+		]);
+		if (!setupRes.ok) {
 			throw new Error("Failed to check setup status");
 		}
-		const { needsSetup } = await res.json();
-		return { needsSetup };
+		const { needsSetup } = await setupRes.json();
+
+		let providers: AuthProviderInfo[] = [];
+		let localAuthEnabled = true;
+		if (providersRes.ok) {
+			const data = await providersRes.json();
+			providers = data.providers ?? [];
+			localAuthEnabled = data.localAuthEnabled;
+		}
+
+		return { needsSetup, providers, localAuthEnabled };
 	},
 	component: LoginComponent,
 });
@@ -54,7 +68,7 @@ const registerSchema = z
 	});
 
 function LoginComponent() {
-	const { needsSetup } = Route.useLoaderData();
+	const { needsSetup, providers, localAuthEnabled } = Route.useLoaderData();
 
 	return (
 		<div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -66,7 +80,11 @@ function LoginComponent() {
 						</div>
 						OrcaCD
 					</div>
-					{needsSetup ? <RegisterForm /> : <LoginForm />}
+					{needsSetup ? (
+						<RegisterForm />
+					) : (
+						<LoginForm providers={providers} localAuthEnabled={localAuthEnabled} />
+					)}
 				</div>
 			</div>
 		</div>
@@ -228,7 +246,13 @@ function RegisterForm() {
 	);
 }
 
-function LoginForm() {
+function LoginForm({
+	providers,
+	localAuthEnabled,
+}: {
+	providers: AuthProviderInfo[];
+	localAuthEnabled: boolean;
+}) {
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
@@ -265,72 +289,101 @@ function LoginForm() {
 		},
 	});
 
+	const hasProviders = providers.length > 0;
+
 	return (
 		<Card>
 			<CardHeader className="text-center">
 				<CardTitle className="text-xl">Login to your account</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<form
-					onSubmit={async (e) => {
-						e.preventDefault();
-						await form.handleSubmit();
-					}}
-				>
-					<FieldGroup>
-						<form.Field
-							name="email"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Email</Label>
-										<Input
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											type="email"
-											placeholder="admin@example.com"
-											required
-											autoComplete="email"
-											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
+				<div className="flex flex-col gap-4">
+					{hasProviders && (
+						<div className="flex flex-col gap-2">
+							{providers.map((provider) => (
+								<Button key={provider.id} variant="outline" className="w-full" asChild>
+									<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
+										Continue with {provider.name}
+									</a>
+								</Button>
+							))}
+						</div>
+					)}
+					{hasProviders && localAuthEnabled && (
+						<div className="flex items-center gap-4">
+							<Separator className="flex-1" />
+							<span className="text-muted-foreground text-xs uppercase">or</span>
+							<Separator className="flex-1" />
+						</div>
+					)}
+					{localAuthEnabled && (
+						<form
+							onSubmit={async (e) => {
+								e.preventDefault();
+								await form.handleSubmit();
 							}}
-						/>
-						<form.Field
-							name="password"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Password</Label>
-										<PasswordInput
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											showPassword={showPassword}
-											onToggle={() => setShowPassword(!showPassword)}
-											autoComplete="current-password"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<Field>
-							<Button type="submit" className="w-full" disabled={isLoading}>
-								{isLoading ? "Logging in..." : "Login"}
-							</Button>
-						</Field>
-					</FieldGroup>
-				</form>
+						>
+							<FieldGroup>
+								<form.Field
+									name="email"
+									children={(field) => {
+										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+										return (
+											<Field data-invalid={isInvalid}>
+												<Label htmlFor={field.name}>Email</Label>
+												<Input
+													id={field.name}
+													name={field.name}
+													value={field.state.value}
+													onBlur={field.handleBlur}
+													onChange={(e) => field.handleChange(e.target.value)}
+													type="email"
+													placeholder="admin@example.com"
+													required
+													autoComplete="email"
+													autoFocus
+												/>
+												{isInvalid && <FieldError errors={field.state.meta.errors} />}
+											</Field>
+										);
+									}}
+								/>
+								<form.Field
+									name="password"
+									children={(field) => {
+										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+										return (
+											<Field data-invalid={isInvalid}>
+												<Label htmlFor={field.name}>Password</Label>
+												<PasswordInput
+													id={field.name}
+													name={field.name}
+													value={field.state.value}
+													onBlur={field.handleBlur}
+													onChange={(e) => field.handleChange(e.target.value)}
+													showPassword={showPassword}
+													onToggle={() => setShowPassword(!showPassword)}
+													autoComplete="current-password"
+												/>
+												{isInvalid && <FieldError errors={field.state.meta.errors} />}
+											</Field>
+										);
+									}}
+								/>
+								<Field>
+									<Button type="submit" className="w-full" disabled={isLoading}>
+										{isLoading ? "Logging in..." : "Login"}
+									</Button>
+								</Field>
+							</FieldGroup>
+						</form>
+					)}
+					{!localAuthEnabled && !hasProviders && (
+						<p className="text-center text-sm text-muted-foreground">
+							No login methods are currently available. Please contact your administrator.
+						</p>
+					)}
+				</div>
 			</CardContent>
 		</Card>
 	);

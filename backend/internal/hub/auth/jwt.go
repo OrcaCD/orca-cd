@@ -24,6 +24,7 @@ type UserClaims struct {
 	jwt.RegisteredClaims
 	Name  string `json:"name"`
 	Email string `json:"email"`
+	Role  string `json:"role"`
 }
 
 type AgentClaims struct {
@@ -75,6 +76,7 @@ func GenerateUserToken(user *models.User) (string, error) {
 		},
 		Name:  user.Name,
 		Email: user.Email,
+		Role:  string(user.Role),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)

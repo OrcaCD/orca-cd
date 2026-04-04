@@ -4,6 +4,14 @@ type AuthProvider string
 
 const (
 	AuthProviderLocal AuthProvider = "local"
+	AuthProviderOIDC  AuthProvider = "oidc"
+)
+
+type UserRole string
+
+const (
+	UserRoleAdmin UserRole = "admin"
+	UserRoleUser  UserRole = "user"
 )
 
 type User struct {
@@ -12,4 +20,7 @@ type User struct {
 	Name         string       `gorm:"type:text;not null"`
 	PasswordHash *string      `gorm:"type:text;"`
 	AuthProvider AuthProvider `gorm:"type:text;not null;default:'local'"`
+	Role         UserRole     `gorm:"type:text;not null;default:'user'"`
+	OIDCSubject  *string      `gorm:"type:text;"`
+	OIDCIssuer   *string      `gorm:"type:text;"`
 }

@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-	Activity,
 	Bell,
 	ChevronDown,
 	FileText,
@@ -10,6 +9,7 @@ import {
 	LogOut,
 	Menu,
 	Server,
+	Settings,
 	User,
 	X,
 } from "lucide-react";
@@ -31,8 +31,9 @@ const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
 	{ name: "Repositories", href: "/repositories", icon: GitBranch },
 	{ name: "Hosts", href: "/hosts", icon: Server },
-	{ name: "Activity", href: "/activity", icon: Activity },
 ];
+
+const adminNavItems = [{ name: "Settings", href: "/settings", icon: Settings }];
 
 export default function Navbar() {
 	const { auth, logout } = useAuth();
@@ -51,6 +52,8 @@ export default function Navbar() {
 	const location = useLocation();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+	const allNavItems = auth.isAdmin ? [...navItems, ...adminNavItems] : navItems;
+
 	return (
 		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
 			<div className="flex h-14 items-center justify-between px-4">
@@ -60,7 +63,7 @@ export default function Navbar() {
 					</Link>
 
 					<nav className="hidden md:flex items-center gap-1">
-						{navItems.map((item) => (
+						{allNavItems.map((item) => (
 							<Link
 								key={item.name}
 								to={item.href}
@@ -143,7 +146,7 @@ export default function Navbar() {
 
 			{mobileMenuOpen && (
 				<nav className="md:hidden border-t border-border p-4 space-y-1">
-					{navItems.map((item) => (
+					{allNavItems.map((item) => (
 						<Link
 							key={item.name}
 							to={item.href}

@@ -14,6 +14,9 @@ import (
 
 var errRegistrationDisabled = errors.New("registration disabled")
 
+// LocalAuthDisabled is set by the server config to gate local auth endpoints.
+var LocalAuthDisabled bool
+
 type registerRequest struct {
 	Name     string `json:"name" binding:"required,min=3,max=64"`
 	Email    string `json:"email" binding:"required,email"`
@@ -33,6 +36,7 @@ type profileResponse struct {
 	Id    string `json:"id"`
 	Name  string `json:"name"`
 	Email string `json:"email"`
+	Role  string `json:"role"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -46,6 +50,7 @@ func ProfileHandler(c *gin.Context) {
 		Id:    claims.Subject,
 		Name:  claims.Name,
 		Email: claims.Email,
+		Role:  claims.Role,
 	})
 }
 
@@ -87,6 +92,7 @@ func RegisterHandler(c *gin.Context) {
 			Name:         req.Name,
 			PasswordHash: &hash,
 			AuthProvider: models.AuthProviderLocal,
+			Role:         models.UserRoleAdmin,
 		}
 		return gorm.G[models.User](tx).Create(c.Request.Context(), &user)
 	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -111,6 +117,11 @@ func RegisterHandler(c *gin.Context) {
 }
 
 func LoginHandler(c *gin.Context) {
+	if LocalAuthDisabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "local authentication is disabled"})
+		return
+	}
+
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})

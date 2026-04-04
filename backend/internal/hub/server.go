@@ -16,13 +16,14 @@ import (
 )
 
 type Config struct {
-	Debug          bool
-	Host           string
-	Port           string
-	LogLevel       zerolog.Level
-	TrustedProxies []string
-	AppURL         string
-	AppSecret      string
+	Debug            bool
+	Host             string
+	Port             string
+	LogLevel         zerolog.Level
+	TrustedProxies   []string
+	AppURL           string
+	AppSecret        string
+	DisableLocalAuth bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -31,6 +32,7 @@ func DefaultConfig() (Config, error) {
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 	appSecret := os.Getenv("APP_SECRET")
+	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
 
 	if port == "" {
 		port = "8080"
@@ -58,13 +60,14 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Debug:          debug == "true",
-		Host:           host,
-		Port:           port,
-		LogLevel:       logLevel,
-		TrustedProxies: trustedProxies,
-		AppURL:         appURL,
-		AppSecret:      appSecret,
+		Debug:            debug == "true",
+		Host:             host,
+		Port:             port,
+		LogLevel:         logLevel,
+		TrustedProxies:   trustedProxies,
+		AppURL:           appURL,
+		AppSecret:        appSecret,
+		DisableLocalAuth: disableLocalAuth == "true",
 	}, nil
 }
 
