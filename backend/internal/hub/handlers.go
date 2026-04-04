@@ -31,7 +31,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		h := websocket.NewHub(&Log)
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
-		api.GET("/ws", websocket.WsHandler(h, &Log))
+
+		// Rate-limit reconnects: 20 req/min per IP, burst of 5
+		wsRateLimit := middleware.RateLimit(3*time.Second, 5)
+		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
 	}
 
 	if !cfg.Debug {
