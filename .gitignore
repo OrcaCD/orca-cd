@@ -16,3 +16,6 @@ bin
 data
 backend/data
 backend/coverage.txt
+
+# Proto generated files
+*.pb.go

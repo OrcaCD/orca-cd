@@ -190,16 +190,9 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 		t.Fatal("GenerateAgentToken() returned empty token")
 	}
 
-	token, err := agentParser.ParseWithClaims(tokenStr, &AgentClaims{}, func(*jwt.Token) (any, error) {
-		return privateKey.Public(), nil
-	})
+	claims, err := ValidateAgentToken(tokenStr)
 	if err != nil {
-		t.Fatalf("agentParser.ParseWithClaims() error: %v", err)
-	}
-
-	claims, ok := token.Claims.(*AgentClaims)
-	if !ok || !token.Valid {
-		t.Fatal("invalid agent token claims")
+		t.Fatalf("ValidateAgentToken() error: %v", err)
 	}
 	if claims.Issuer != "http://localhost:8080" {
 		t.Errorf("expected Issuer %q, got %q", "http://localhost:8080", claims.Issuer)
@@ -218,20 +211,115 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	}
 }
 
-func TestValidateUserToken_WrongAudience(t *testing.T) {
+func TestGenerateAgentToken_MissingId(t *testing.T) {
 	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("initJWT() error: %v", err)
 	}
 
-	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
-	tokenStr, err := GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("GenerateAgentToken() error: %v", err)
+	agent := &models.Agent{KeyId: crypto.EncryptedString("key-abc")}
+	_, err := GenerateAgentToken(agent)
+	if err == nil {
+		t.Error("GenerateAgentToken() expected error for agent with missing ID")
+	}
+}
+
+func TestValidateAgentToken_Invalid(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
 	}
 
-	_, err = ValidateUserToken(tokenStr)
+	_, err := ValidateAgentToken("invalid.token.here")
 	if err == nil {
-		t.Error("ValidateUserToken() expected error when validating an agent token")
+		t.Error("ValidateAgentToken() expected error for invalid token")
+	}
+}
+
+func TestValidateAgentToken_WrongIssuer(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	now := time.Now()
+	claims := AgentClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://evil.example.com",
+			Subject:   "agent-456",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Audience:  []string{"agent"},
+		},
+		KeyId: "key-abc",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateAgentToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateAgentToken() expected error for wrong issuer")
+	}
+}
+
+func TestValidateAgentToken_MissingSubject(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	now := time.Now()
+	claims := AgentClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://localhost:8080",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Audience:  []string{"agent"},
+			// Subject intentionally omitted
+		},
+		KeyId: "key-abc",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(privateKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateAgentToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateAgentToken() expected error for missing subject")
+	}
+}
+
+func TestValidateAgentToken_WrongSigningKey(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	_, wrongKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	now := time.Now()
+	claims := AgentClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "http://localhost:8080",
+			Subject:   "agent-456",
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Audience:  []string{"agent"},
+		},
+		KeyId: "key-abc",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	tokenStr, err := token.SignedString(wrongKey)
+	if err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	_, err = ValidateAgentToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateAgentToken() expected error for wrong signing key")
 	}
 }
 
@@ -246,10 +334,25 @@ func TestValidateAgentToken_WrongAudience(t *testing.T) {
 		t.Fatalf("GenerateUserToken() error: %v", err)
 	}
 
-	_, err = agentParser.ParseWithClaims(tokenStr, &AgentClaims{}, func(*jwt.Token) (any, error) {
-		return privateKey.Public(), nil
-	})
+	_, err = ValidateAgentToken(tokenStr)
 	if err == nil {
-		t.Error("agentParser expected error when validating a user token")
+		t.Error("ValidateAgentToken() expected error when validating a user token")
+	}
+}
+
+func TestValidateUserToken_WrongAudience(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
+	tokenStr, err := GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("GenerateAgentToken() error: %v", err)
+	}
+
+	_, err = ValidateUserToken(tokenStr)
+	if err == nil {
+		t.Error("ValidateUserToken() expected error when validating an agent token")
 	}
 }

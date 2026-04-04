@@ -16,7 +16,11 @@ func main() {
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return agent.Run(agent.DefaultConfig())
+			cfg, err := agent.DefaultConfig()
+			if err != nil {
+				return err
+			}
+			return agent.Run(cfg)
 		},
 	}
 

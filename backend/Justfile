@@ -27,10 +27,16 @@ default:
 lint:
     golangci-lint run
     go mod verify
+    buf lint
 
 # Format source code using golangci-lint
 fmt:
     golangci-lint fmt
+    buf format -w
+
+# Compile protobuf to go
+proto:
+    buf generate
 
 # Run all tests with race detection
 [group('test')]
@@ -48,13 +54,13 @@ test-coverage:
 # Build the hub binary to bin/hub
 [group('hub')]
 [env("CGO_ENABLED", "1")]
-build-hub:
+build-hub: proto
     go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
 
 # Build the agent binary to bin/agent
 [group('agent')]
 [env("CGO_ENABLED", "1")]
-build-agent:
+build-agent: proto
     go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
 
 # Build both hub and agent binaries in parallel
@@ -64,13 +70,13 @@ build: build-hub build-agent
 # Run the hub (use the help command to get a list of commands)
 [group('hub')]
 [env("CGO_ENABLED", "1")]
-run-hub cmd=defaultCommand:
+run-hub cmd=defaultCommand: proto
     go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
 
 # Run the agent (use the help command to get a list of commands)
 [group('agent')]
 [env("CGO_ENABLED", "1")]
-run-agent cmd=defaultCommand:
+run-agent cmd=defaultCommand: proto
     go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
 
 # Run both hub and agent in parallel

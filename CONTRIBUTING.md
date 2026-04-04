@@ -24,11 +24,13 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 
 **Backend:**
 
-| Tool                                                        | Version | Purpose          |
-| ----------------------------------------------------------- | ------- | ---------------- |
-| [Go](https://go.dev/dl/)                                    | 1.26+   | Language runtime |
-| [golangci-lint](https://golangci-lint.run/welcome/install/) | v2.11+  | Linting          |
-| [just](https://just.systems/man/en/packages.html)           | latest  | Task runner      |
+| Tool                                                             | Version | Purpose                     |
+| ---------------------------------------------------------------- | ------- | --------------------------- |
+| [Go](https://go.dev/dl/)                                         | 1.26+   | Language runtime            |
+| [golangci-lint](https://golangci-lint.run/welcome/install/)      | v2.11+  | Linting                     |
+| [just](https://just.systems/man/en/packages.html)                | latest  | Task runner                 |
+| [buf](https://buf.build/docs/cli/installation/)                  | latest  | Protobuf tooling            |
+| [protoc-gen-go](https://protobuf.dev/reference/go/go-generated/) | latest  | Go protobuf code generation |
 
 **Frontend:**
 
@@ -41,10 +43,10 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 
 1. Install all required tools listed above.
 2. Clone the repository and navigate to the project directory.
-4. For the frontend, navigate to the `frontend/` directory and run `npm ci` to install dependencies.
-5. Run the frontend development server with `node --run dev` from the `frontend/` directory.
-7. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
-8. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
+3. For the frontend, navigate to the `frontend/` directory and run `npm ci` to install dependencies.
+4. Run the frontend development server with `node --run dev` from the `frontend/` directory.
+5. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
+6. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
 
 ### Running locally with Docker
 
