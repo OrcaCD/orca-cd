@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package messages;
+
+option go_package = "./messages";
+
+message ClientMessage {
+  oneof payload {
+    PongResponse pong = 1;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    PingRequest ping = 1;
+  }
+}
+
+message PingRequest {
+  int64 timestamp = 1;
+}
+message PongResponse {
+  int64 timestamp = 1;
+}

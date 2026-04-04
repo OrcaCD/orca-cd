@@ -119,3 +119,24 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	return token.SignedString(privateKey)
 }
+
+func ValidateAgentToken(tokenString string) (*AgentClaims, error) {
+	token, err := agentParser.ParseWithClaims(tokenString, &AgentClaims{}, func(*jwt.Token) (any, error) {
+		return privateKey.Public(), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(*AgentClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	if claims.Subject == "" {
+		return nil, fmt.Errorf("invalid token claims: missing subject")
+	}
+
+	return claims, nil
+}

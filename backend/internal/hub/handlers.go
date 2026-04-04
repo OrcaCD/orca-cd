@@ -5,6 +5,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,6 +27,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			protected.GET("/auth/profile", routes.ProfileHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
 		}
+
+		h := websocket.NewHub(&Log)
+		w := websocket.NewWorker(h, &Log)
+		w.Start()
+		api.GET("/ws", websocket.WsHandler(h, &Log))
 	}
 
 	if !cfg.Debug {
