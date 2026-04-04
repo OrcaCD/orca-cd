@@ -38,18 +38,28 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn) {
 	}
 }
 
-// TODO: Handle unauthorized gracefully
-// TODO: Handle service disconnect gracefully and retry
 func connectWithRetry(url string, authToken string) *websocket.Conn {
+	const (
+		initialDelay = 1 * time.Second
+		maxDelay     = 60 * time.Second
+	)
+	delay := initialDelay
 	for {
 		header := make(http.Header)
 		header.Set("Authorization", authToken)
-		conn, _, err := websocket.DefaultDialer.Dial(url, header)
+		conn, resp, err := websocket.DefaultDialer.Dial(url, header)
 		if err == nil {
-			Log.Println("Connected to", url)
+			Log.Info().Str("url", url).Msg("Connected to hub")
 			return conn
 		}
-		Log.Printf("Connection failed, retrying in 5s: %v", err)
-		time.Sleep(5 * time.Second)
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			Log.Fatal().Msg("Unauthorized: auth token is invalid or expired, aborting")
+		}
+		Log.Error().Err(err).Dur("retry_in", delay/1000).Msg("Connection failed, retrying")
+		time.Sleep(delay)
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
+		}
 	}
 }

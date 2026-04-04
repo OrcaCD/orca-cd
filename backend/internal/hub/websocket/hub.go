@@ -102,6 +102,3 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 		}
 	}
 }
-
-// TODO: What happens there. Does WritePump exists for every client?
-// TODO: Handle client disconnects and cleanup

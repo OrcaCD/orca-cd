@@ -55,17 +55,13 @@ func Run(cfg Config) error {
 
 	conn := connectWithRetry(cfg.HubUrl, cfg.AuthToken)
 
-	defer func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			Log.Error().Err(closeErr).Msg("failed to close WebSocket connection")
-		}
-	}()
-
-	// Read incoming messages from server
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			return err
+			Log.Error().Err(err).Msg("Disconnected from hub, reconnecting...")
+			conn.Close()
+			conn = connectWithRetry(cfg.HubUrl, cfg.AuthToken)
+			continue
 		}
 		msg := &messages.ServerMessage{}
 		if err := proto.Unmarshal(data, msg); err != nil {

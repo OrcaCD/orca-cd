@@ -8,14 +8,14 @@ require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/time v0.15.0
+	google.golang.org/protobuf v1.36.11
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
-
-require github.com/gorilla/websocket v1.5.3 // indirect
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
@@ -53,5 +53,4 @@ require (
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )
