@@ -72,4 +72,3 @@ func TestPingDaemon_Unreachable(t *testing.T) {
 		t.Error("expected Ready() == false after failed ping")
 	}
 }
-
