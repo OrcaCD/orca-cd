@@ -28,7 +28,7 @@ import { useAuth } from "@/lib/auth";
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
 	{ name: "Repositories", href: "/repositories", icon: GitBranch },
-	{ name: "Hosts", href: "/hosts", icon: Server },
+	{ name: "Agents", href: "/agents", icon: Server },
 ];
 
 const adminNavItems = [{ name: "Admin", href: "/admin", icon: Settings }];
@@ -80,8 +80,10 @@ export default function Navbar() {
 				</div>
 
 				<div className="flex items-center gap-3">
-					<Button variant="ghost" size="icon" className="hidden sm:flex">
-						<FileText className="h-5 w-5 text-muted-foreground" />
+					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
+						<a href="https://orcacd.github.io/docs/" target="_blank" rel="noopener noreferrer">
+							<FileText className="h-5 w-5 text-muted-foreground" />
+						</a>
 					</Button>
 
 					<ModeToggle
