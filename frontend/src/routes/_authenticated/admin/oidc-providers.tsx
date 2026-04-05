@@ -2,8 +2,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import fetcher, { API_BASE } from "@/lib/api";
 import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -32,6 +33,15 @@ function OIDCProvidersPage() {
 
 	async function handleSave() {
 		await mutate();
+	}
+
+	async function handleCopyCallbackUrl(callbackUrl: string) {
+		try {
+			await navigator.clipboard.writeText(callbackUrl);
+			toast.success("Callback URL copied");
+		} catch {
+			toast.error("Failed to copy callback URL");
+		}
 	}
 
 	return (
@@ -92,6 +102,25 @@ function OIDCProvidersPage() {
 										&middot; <span className="font-medium">Extra scopes:</span> {provider.scopes}
 									</>
 								)}
+							</div>
+							<div className="mt-2 text-sm text-muted-foreground">
+								<div className="flex items-start gap-2">
+									<span className="font-medium">Callback URL:</span>
+									<code className="bg-muted rounded px-1 py-0.5 font-mono text-xs break-all">
+										{provider.callbackUrl}
+									</code>
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon"
+										onClick={() => handleCopyCallbackUrl(provider.callbackUrl)}
+										className="h-7 w-7 shrink-0"
+										aria-label="Copy callback URL"
+										title="Copy callback URL"
+									>
+										<Copy className="h-3.5 w-3.5" />
+									</Button>
+								</div>
 							</div>
 						</CardContent>
 					</Card>

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -32,26 +33,28 @@ type updateOIDCProviderRequest struct {
 }
 
 type oidcProviderResponse struct {
-	Id        string `json:"id"`
-	Name      string `json:"name"`
-	IssuerURL string `json:"issuerUrl"`
-	ClientId  string `json:"clientId"`
-	Scopes    string `json:"scopes"`
-	Enabled   bool   `json:"enabled"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	Id          string `json:"id"`
+	Name        string `json:"name"`
+	IssuerURL   string `json:"issuerUrl"`
+	ClientId    string `json:"clientId"`
+	Scopes      string `json:"scopes"`
+	Enabled     bool   `json:"enabled"`
+	CallbackURL string `json:"callbackUrl"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
 }
 
 func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 	return oidcProviderResponse{
-		Id:        p.Id,
-		Name:      p.Name,
-		IssuerURL: p.IssuerURL,
-		ClientId:  p.ClientId,
-		Scopes:    p.Scopes,
-		Enabled:   p.Enabled,
-		CreatedAt: p.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: p.UpdatedAt.Format(time.RFC3339),
+		Id:          p.Id,
+		Name:        p.Name,
+		IssuerURL:   p.IssuerURL,
+		ClientId:    p.ClientId,
+		Scopes:      p.Scopes,
+		Enabled:     p.Enabled,
+		CallbackURL: fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", OIDCAppURL, p.Id),
+		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   p.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

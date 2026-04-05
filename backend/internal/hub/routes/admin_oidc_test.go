@@ -111,6 +111,10 @@ func TestAdminListOIDCProvidersHandler_ReturnsAll(t *testing.T) {
 func TestAdminGetOIDCProviderHandler_Found(t *testing.T) {
 	setupTestDB(t)
 	p := createTestProvider(t, "My IDP", true)
+	OIDCAppURL = "https://app.example.com"
+	t.Cleanup(func() {
+		OIDCAppURL = ""
+	})
 
 	router := gin.New()
 	router.GET("/api/v1/admin/oidc-providers/:id", AdminGetOIDCProviderHandler)
@@ -132,6 +136,13 @@ func TestAdminGetOIDCProviderHandler_Found(t *testing.T) {
 	}
 	if body.ClientId != "client-id" {
 		t.Errorf("expected clientId %q, got %q", "client-id", body.ClientId)
+	}
+	if body.CallbackURL != "https://app.example.com/api/v1/auth/oidc/"+p.Id+"/callback" {
+		t.Errorf(
+			"expected callbackUrl %q, got %q",
+			"https://app.example.com/api/v1/auth/oidc/"+p.Id+"/callback",
+			body.CallbackURL,
+		)
 	}
 }
 
@@ -302,6 +313,10 @@ func TestAdminDeleteOIDCProviderHandler_NotFound(t *testing.T) {
 func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	setupTestDB(t)
 	srv := newTestOIDCDiscoveryServer(t)
+	OIDCAppURL = "https://app.example.com"
+	t.Cleanup(func() {
+		OIDCAppURL = ""
+	})
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":         "Test IDP",
@@ -344,6 +359,13 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	}
 	if body.Id == "" {
 		t.Error("expected non-empty id")
+	}
+	if body.CallbackURL != "https://app.example.com/api/v1/auth/oidc/"+body.Id+"/callback" {
+		t.Errorf(
+			"expected callbackUrl %q, got %q",
+			"https://app.example.com/api/v1/auth/oidc/"+body.Id+"/callback",
+			body.CallbackURL,
+		)
 	}
 
 	// Verify the secret was encrypted in DB (not stored as plaintext)

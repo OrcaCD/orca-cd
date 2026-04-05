@@ -12,6 +12,7 @@ export interface OIDCProviderDetail {
 	clientId: string;
 	scopes: string;
 	enabled: boolean;
+	callbackUrl: string;
 	createdAt: string;
 	updatedAt: string;
 }
