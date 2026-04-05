@@ -16,7 +16,7 @@ import (
 type createOIDCProviderRequest struct {
 	Name         string `json:"name" binding:"required,min=1,max=100"`
 	IssuerURL    string `json:"issuerUrl" binding:"required,http_url"`
-	ClientID     string `json:"clientId" binding:"required"`
+	ClientId     string `json:"clientId" binding:"required"`
 	ClientSecret string `json:"clientSecret" binding:"required"`
 	Scopes       string `json:"scopes"`
 	Enabled      *bool  `json:"enabled"`
@@ -25,7 +25,7 @@ type createOIDCProviderRequest struct {
 type updateOIDCProviderRequest struct {
 	Name         string  `json:"name" binding:"required,min=1,max=100"`
 	IssuerURL    string  `json:"issuerUrl" binding:"required,http_url"`
-	ClientID     string  `json:"clientId" binding:"required"`
+	ClientId     string  `json:"clientId" binding:"required"`
 	ClientSecret *string `json:"clientSecret"`
 	Scopes       string  `json:"scopes"`
 	Enabled      *bool   `json:"enabled"`
@@ -35,7 +35,7 @@ type oidcProviderResponse struct {
 	Id        string `json:"id"`
 	Name      string `json:"name"`
 	IssuerURL string `json:"issuerUrl"`
-	ClientID  string `json:"clientId"`
+	ClientId  string `json:"clientId"`
 	Scopes    string `json:"scopes"`
 	Enabled   bool   `json:"enabled"`
 	CreatedAt string `json:"createdAt"`
@@ -47,7 +47,7 @@ func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 		Id:        p.Id,
 		Name:      p.Name,
 		IssuerURL: p.IssuerURL,
-		ClientID:  p.ClientID,
+		ClientId:  p.ClientId,
 		Scopes:    p.Scopes,
 		Enabled:   p.Enabled,
 		CreatedAt: p.CreatedAt.Format(time.RFC3339),
@@ -105,7 +105,7 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 	provider := models.OIDCProvider{
 		Name:         req.Name,
 		IssuerURL:    req.IssuerURL,
-		ClientID:     req.ClientID,
+		ClientId:     req.ClientId,
 		ClientSecret: crypto.EncryptedString(req.ClientSecret),
 		Scopes:       req.Scopes,
 		Enabled:      enabled,
@@ -146,7 +146,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 
 	existing.Name = req.Name
 	existing.IssuerURL = req.IssuerURL
-	existing.ClientID = req.ClientID
+	existing.ClientId = req.ClientId
 	existing.Scopes = req.Scopes
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled

@@ -219,7 +219,7 @@ func TestGenerateAgentToken_MissingId(t *testing.T) {
 	agent := &models.Agent{KeyId: crypto.EncryptedString("key-abc")}
 	_, err := GenerateAgentToken(agent)
 	if err == nil {
-		t.Error("GenerateAgentToken() expected error for agent with missing ID")
+		t.Error("GenerateAgentToken() expected error for agent with missing Id")
 	}
 }
 

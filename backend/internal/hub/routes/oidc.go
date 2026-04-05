@@ -46,9 +46,9 @@ func ListProvidersHandler(c *gin.Context) {
 }
 
 func OIDCAuthorizeHandler(c *gin.Context) {
-	providerID := c.Param("id")
+	providerId := c.Param("id")
 
-	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ? AND enabled = ?", providerID, true).First(c.Request.Context())
+	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ? AND enabled = ?", providerId, true).First(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		return
@@ -67,7 +67,7 @@ func OIDCAuthorizeHandler(c *gin.Context) {
 }
 
 func OIDCCallbackHandler(c *gin.Context) {
-	providerID := c.Param("id")
+	providerId := c.Param("id")
 
 	if errParam := c.Query("error"); errParam != "" {
 		c.Redirect(http.StatusFound, "/login?error="+url.QueryEscape(errParam))
@@ -91,7 +91,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(oidc.StateCookieName(), "", -1, "/", "", true, true)
 
-	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ? AND enabled = ?", providerID, true).First(c.Request.Context())
+	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ? AND enabled = ?", providerId, true).First(c.Request.Context())
 	if err != nil {
 		c.Redirect(http.StatusFound, "/login?error=provider_not_found")
 		return

@@ -45,7 +45,7 @@ func TestListProvidersHandler_WithProviders(t *testing.T) {
 	if err := gorm.G[models.OIDCProvider](db.DB).Create(t.Context(), &models.OIDCProvider{
 		Name:         "Enabled IDP",
 		IssuerURL:    "https://idp.example.com",
-		ClientID:     "client-1",
+		ClientId:     "client-1",
 		ClientSecret: crypto.EncryptedString("secret"),
 		Enabled:      true,
 	}); err != nil {
@@ -54,7 +54,7 @@ func TestListProvidersHandler_WithProviders(t *testing.T) {
 	disabled := models.OIDCProvider{
 		Name:         "Disabled IDP",
 		IssuerURL:    "https://disabled.example.com",
-		ClientID:     "client-2",
+		ClientId:     "client-2",
 		ClientSecret: crypto.EncryptedString("secret"),
 		Enabled:      true,
 	}

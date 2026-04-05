@@ -45,7 +45,7 @@ func createTestProvider(t *testing.T, name string, enabled bool) models.OIDCProv
 	p := models.OIDCProvider{
 		Name:         name,
 		IssuerURL:    "https://idp.example.com",
-		ClientID:     "client-id",
+		ClientId:     "client-id",
 		ClientSecret: crypto.EncryptedString("client-secret"),
 		Scopes:       "groups",
 		Enabled:      true,
@@ -130,8 +130,8 @@ func TestAdminGetOIDCProviderHandler_Found(t *testing.T) {
 	if body.Name != "My IDP" {
 		t.Errorf("expected name %q, got %q", "My IDP", body.Name)
 	}
-	if body.ClientID != "client-id" {
-		t.Errorf("expected clientId %q, got %q", "client-id", body.ClientID)
+	if body.ClientId != "client-id" {
+		t.Errorf("expected clientId %q, got %q", "client-id", body.ClientId)
 	}
 }
 
@@ -191,7 +191,7 @@ func TestAdminUpdateOIDCProviderHandler_NotFound(t *testing.T) {
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
 		Name:      "Updated",
 		IssuerURL: "https://idp.example.com",
-		ClientID:  "client-id",
+		ClientId:  "client-id",
 	})
 
 	router := gin.New()
@@ -237,7 +237,7 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
 		Name:      "Updated Name",
 		IssuerURL: p.IssuerURL, // same issuer — no OIDC discovery needed
-		ClientID:  "new-client-id",
+		ClientId:  "new-client-id",
 		Enabled:   &enabled,
 	})
 
@@ -257,8 +257,8 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	if body.Name != "Updated Name" {
 		t.Errorf("expected name %q, got %q", "Updated Name", body.Name)
 	}
-	if body.ClientID != "new-client-id" {
-		t.Errorf("expected clientId %q, got %q", "new-client-id", body.ClientID)
+	if body.ClientId != "new-client-id" {
+		t.Errorf("expected clientId %q, got %q", "new-client-id", body.ClientId)
 	}
 }
 
@@ -333,8 +333,8 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	if body.IssuerURL != srv.URL {
 		t.Errorf("expected issuerUrl %q, got %q", srv.URL, body.IssuerURL)
 	}
-	if body.ClientID != "my-client" {
-		t.Errorf("expected clientId %q, got %q", "my-client", body.ClientID)
+	if body.ClientId != "my-client" {
+		t.Errorf("expected clientId %q, got %q", "my-client", body.ClientId)
 	}
 	if body.Scopes != "groups" {
 		t.Errorf("expected scopes %q, got %q", "groups", body.Scopes)
@@ -420,7 +420,7 @@ func TestAdminUpdateOIDCProviderHandler_ChangedIssuer(t *testing.T) {
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
 		Name:      "Migrated",
 		IssuerURL: newSrv.URL, // different from original
-		ClientID:  "new-client",
+		ClientId:  "new-client",
 		Enabled:   &enabled,
 	})
 
@@ -456,7 +456,7 @@ func TestAdminUpdateOIDCProviderHandler_ChangedIssuerInvalid(t *testing.T) {
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
 		Name:      "Broken",
 		IssuerURL: "https://nonexistent.invalid.example.com",
-		ClientID:  "c",
+		ClientId:  "c",
 		Enabled:   &enabled,
 	})
 
@@ -481,7 +481,7 @@ func TestAdminUpdateOIDCProviderHandler_UpdatesClientSecret(t *testing.T) {
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
 		Name:         "Secret Update",
 		IssuerURL:    p.IssuerURL, // same issuer
-		ClientID:     p.ClientID,
+		ClientId:     p.ClientId,
 		ClientSecret: &newSecret,
 	})
 

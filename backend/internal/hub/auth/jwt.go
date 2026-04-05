@@ -106,7 +106,7 @@ func ValidateUserToken(tokenString string) (*UserClaims, error) {
 
 func GenerateAgentToken(agent *models.Agent) (string, error) {
 	if agent.Id == "" {
-		return "", fmt.Errorf("agent ID is required for token generation")
+		return "", fmt.Errorf("agent Id is required for token generation")
 	}
 
 	now := time.Now()

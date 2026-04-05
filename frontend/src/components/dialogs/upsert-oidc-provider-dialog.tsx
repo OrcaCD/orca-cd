@@ -22,13 +22,13 @@ import { Checkbox } from "../ui/checkbox";
 const providerSchema = z.object({
 	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
 	issuerUrl: z.httpUrl("Must be a valid URL"),
-	clientId: z.string().min(1, "Client ID is required"),
+	clientId: z.string().min(1, "Client Id is required"),
 	clientSecret: z.string(),
 	scopes: z.string(),
 	enabled: z.boolean(),
 });
 
-export default function CreateOIDCProviderDialog({
+export default function UpsertOIDCProviderDialog({
 	provider,
 	onSave,
 }: {
@@ -167,7 +167,7 @@ export default function CreateOIDCProviderDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Client ID</Label>
+										<Label htmlFor={field.name}>Client Id</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}

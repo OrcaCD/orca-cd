@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import fetcher, { API_BASE } from "@/lib/api";
 import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import CreateOIDCProviderDialog from "@/components/dialogs/create-oidc-provider-dialog";
+import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
 
 export const Route = createFileRoute("/_authenticated/settings/oidc-providers")({
 	component: OIDCProvidersPage,
@@ -44,7 +44,7 @@ function OIDCProvidersPage() {
 					</p>
 				</div>
 
-				<CreateOIDCProviderDialog provider={null} onSave={handleSave} />
+				<UpsertOIDCProviderDialog provider={null} onSave={handleSave} />
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">Loading providers...</p>}
@@ -75,7 +75,7 @@ function OIDCProvidersPage() {
 								>
 									{provider.enabled ? "Enabled" : "Disabled"}
 								</span>
-								<CreateOIDCProviderDialog provider={provider} onSave={handleSave} />
+								<UpsertOIDCProviderDialog provider={provider} onSave={handleSave} />
 								<ConfirmationDialog
 									onConfirm={() => handleDelete(provider)}
 									triggerText={<Trash2 className="h-4 w-4" />}
@@ -85,7 +85,7 @@ function OIDCProvidersPage() {
 						</CardHeader>
 						<CardContent>
 							<div className="text-sm text-muted-foreground">
-								<span className="font-medium">Client ID:</span> {provider.clientId}
+								<span className="font-medium">Client Id:</span> {provider.clientId}
 								{provider.scopes && (
 									<>
 										{" "}

@@ -31,7 +31,7 @@ type stateData struct {
 	State      string `json:"s"`
 	Verifier   string `json:"v"`
 	Nonce      string `json:"n"`
-	ProviderID string `json:"p"`
+	ProviderId string `json:"p"`
 	ExpiresAt  int64  `json:"e"`
 }
 
@@ -46,7 +46,7 @@ func buildOAuth2Config(provider *models.OIDCProvider, endpoint oauth2.Endpoint, 
 	}
 
 	return &oauth2.Config{
-		ClientID:     provider.ClientID,
+		ClientID:     provider.ClientId,
 		ClientSecret: provider.ClientSecret.String(),
 		Endpoint:     endpoint,
 		RedirectURL:  fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", appURL, provider.Id),
@@ -106,7 +106,7 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 		State:      state,
 		Verifier:   verifier,
 		Nonce:      nonce,
-		ProviderID: provider.Id,
+		ProviderId: provider.Id,
 		ExpiresAt:  time.Now().Add(stateTTL).Unix(),
 	}
 
@@ -137,7 +137,7 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("state mismatch")
 	}
 
-	if sd.ProviderID != provider.Id {
+	if sd.ProviderId != provider.Id {
 		return nil, fmt.Errorf("provider mismatch")
 	}
 
@@ -153,16 +153,16 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("exchange code: %w", err)
 	}
 
-	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	rawIdToken, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
 		return nil, fmt.Errorf("no id_token in token response")
 	}
 
 	verifier := oidcProvider.Verifier(&gooidc.Config{
-		ClientID: provider.ClientID,
+		ClientID: provider.ClientId,
 	})
 
-	idToken, err := verifier.Verify(ctx, rawIDToken)
+	idToken, err := verifier.Verify(ctx, rawIdToken)
 	if err != nil {
 		return nil, fmt.Errorf("verify id_token: %w", err)
 	}
