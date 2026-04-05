@@ -15,7 +15,33 @@ import { API_BASE, type ErrorResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
 
+const loginSearchSchema = z.object({
+	error: z.string().optional(),
+});
+
+const oidcErrorMessages: Record<string, string> = {
+	access_denied: "Sign-in was canceled or denied by your identity provider.",
+	invalid_callback: "The authentication callback was invalid. Please try again.",
+	missing_state: "The sign-in session expired. Please start sign-in again.",
+	provider_not_found: "The selected identity provider is unavailable.",
+	authentication_failed: "Authentication failed. Please try again.",
+	internal_error: "A server error occurred during sign-in. Please try again.",
+	account_creation_failed: "Your account could not be created. Please contact an administrator.",
+	account_linking_failed: "Your account could not be linked. Please contact an administrator.",
+	account_update_failed: "Your account could not be updated. Please contact an administrator.",
+	token_generation_failed: "Sign-in failed while creating your session. Please try again.",
+};
+
+function getLoginErrorMessage(error?: string): string | null {
+	if (!error) {
+		return null;
+	}
+
+	return oidcErrorMessages[error] ?? "Authentication failed. Please try again.";
+}
+
 export const Route = createFileRoute("/login")({
+	validateSearch: (search) => loginSearchSchema.parse(search),
 	beforeLoad: ({ context }) => {
 		if (context.auth.isAuthenticated) {
 			throw redirect({ to: "/" });
@@ -66,6 +92,8 @@ const registerSchema = z
 
 function LoginComponent() {
 	const { needsSetup, providers, localAuthEnabled } = Route.useLoaderData();
+	const { error } = Route.useSearch();
+	const loginErrorMessage = getLoginErrorMessage(error);
 
 	return (
 		<div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -78,9 +106,13 @@ function LoginComponent() {
 						OrcaCD
 					</div>
 					{needsSetup ? (
-						<RegisterForm />
+						<RegisterForm loginErrorMessage={loginErrorMessage} />
 					) : (
-						<LoginForm providers={providers} localAuthEnabled={localAuthEnabled} />
+						<LoginForm
+							providers={providers}
+							localAuthEnabled={localAuthEnabled}
+							loginErrorMessage={loginErrorMessage}
+						/>
 					)}
 				</div>
 			</div>
@@ -88,7 +120,7 @@ function LoginComponent() {
 	);
 }
 
-function RegisterForm() {
+function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null }) {
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
@@ -133,111 +165,114 @@ function RegisterForm() {
 				<CardDescription>Set up the first admin account to get started</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<form
-					onSubmit={async (e) => {
-						e.preventDefault();
-						await form.handleSubmit();
-					}}
-				>
-					<FieldGroup>
-						<form.Field
-							name="name"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Name</Label>
-										<Input
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											type="text"
-											placeholder="Admin"
-											required
-											autoComplete="name"
-											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="email"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Email</Label>
-										<Input
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											type="email"
-											placeholder="admin@example.com"
-											required
-											autoComplete="email"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="password"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Password</Label>
-										<PasswordInput
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											showPassword={showPassword}
-											onToggle={() => setShowPassword(!showPassword)}
-											autoComplete="new-password"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="confirmPassword"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Confirm Password</Label>
-										<PasswordInput
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											showPassword={showPassword}
-											onToggle={() => setShowPassword(!showPassword)}
-											autoComplete="new-password"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<Field>
-							<Button type="submit" className="w-full" disabled={isLoading}>
-								{isLoading ? "Creating account..." : "Create Account"}
-							</Button>
-						</Field>
-					</FieldGroup>
-				</form>
+				<div className="flex flex-col gap-4">
+					{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
+					<form
+						onSubmit={async (e) => {
+							e.preventDefault();
+							await form.handleSubmit();
+						}}
+					>
+						<FieldGroup>
+							<form.Field
+								name="name"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Name</Label>
+											<Input
+												id={field.name}
+												name={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												type="text"
+												placeholder="Admin"
+												required
+												autoComplete="name"
+												autoFocus
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							/>
+							<form.Field
+								name="email"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Email</Label>
+											<Input
+												id={field.name}
+												name={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												type="email"
+												placeholder="admin@example.com"
+												required
+												autoComplete="email"
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							/>
+							<form.Field
+								name="password"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Password</Label>
+											<PasswordInput
+												id={field.name}
+												name={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												showPassword={showPassword}
+												onToggle={() => setShowPassword(!showPassword)}
+												autoComplete="new-password"
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							/>
+							<form.Field
+								name="confirmPassword"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Confirm Password</Label>
+											<PasswordInput
+												id={field.name}
+												name={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												showPassword={showPassword}
+												onToggle={() => setShowPassword(!showPassword)}
+												autoComplete="new-password"
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							/>
+							<Field>
+								<Button type="submit" className="w-full" disabled={isLoading}>
+									{isLoading ? "Creating account..." : "Create Account"}
+								</Button>
+							</Field>
+						</FieldGroup>
+					</form>
+				</div>
 			</CardContent>
 		</Card>
 	);
@@ -246,9 +281,11 @@ function RegisterForm() {
 function LoginForm({
 	providers,
 	localAuthEnabled,
+	loginErrorMessage,
 }: {
 	providers: AuthProviderInfo[];
 	localAuthEnabled: boolean;
+	loginErrorMessage: string | null;
 }) {
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
@@ -295,6 +332,7 @@ function LoginForm({
 			</CardHeader>
 			<CardContent>
 				<div className="flex flex-col gap-4">
+					{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
 					{hasProviders && (
 						<div className="flex flex-col gap-2">
 							{providers.map((provider) => (
@@ -383,6 +421,17 @@ function LoginForm({
 				</div>
 			</CardContent>
 		</Card>
+	);
+}
+
+function LoginErrorBanner({ message }: { message: string }) {
+	return (
+		<div
+			role="alert"
+			className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+		>
+			{message}
+		</div>
 	);
 }
 
