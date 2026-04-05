@@ -15,7 +15,7 @@ import (
 
 type createOIDCProviderRequest struct {
 	Name         string `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL    string `json:"issuerUrl" binding:"required,url"`
+	IssuerURL    string `json:"issuerUrl" binding:"required,http_url"`
 	ClientID     string `json:"clientId" binding:"required"`
 	ClientSecret string `json:"clientSecret" binding:"required"`
 	Scopes       string `json:"scopes"`
@@ -24,7 +24,7 @@ type createOIDCProviderRequest struct {
 
 type updateOIDCProviderRequest struct {
 	Name         string  `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL    string  `json:"issuerUrl" binding:"required,url"`
+	IssuerURL    string  `json:"issuerUrl" binding:"required,http_url"`
 	ClientID     string  `json:"clientId" binding:"required"`
 	ClientSecret *string `json:"clientSecret"`
 	Scopes       string  `json:"scopes"`

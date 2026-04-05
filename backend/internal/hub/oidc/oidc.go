@@ -185,14 +185,16 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("email claim is missing from id_token")
 	}
 
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+
 	name := claims.Name
 	if name == "" {
-		name = claims.Email
+		name = email
 	}
 
 	return &OIDCUser{
 		Subject: idToken.Subject,
-		Email:   claims.Email,
+		Email:   email,
 		Name:    name,
 		Issuer:  idToken.Issuer,
 	}, nil
