@@ -9,7 +9,7 @@ import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
 
-export const Route = createFileRoute("/_authenticated/settings/oidc-providers")({
+export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
 });
 
@@ -97,5 +97,5 @@ function OIDCProvidersPage() {
 					</Card>
 				))}
 		</div>
-	);
+	)
 }

@@ -12,9 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedSettingsOidcProvidersRouteImport } from './routes/_authenticated/settings/oidc-providers'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -30,64 +30,58 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsIndexRoute =
-  AuthenticatedSettingsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedSettingsOidcProvidersRoute =
-  AuthenticatedSettingsOidcProvidersRouteImport.update({
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const AuthenticatedAdminOidcProvidersRoute =
+  AuthenticatedAdminOidcProvidersRouteImport.update({
     id: '/oidc-providers',
     path: '/oidc-providers',
-    getParentRoute: () => AuthenticatedSettingsRoute,
+    getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
   '/login': typeof LoginRoute
-  '/settings': typeof AuthenticatedSettingsRouteWithChildren
-  '/settings/oidc-providers': typeof AuthenticatedSettingsOidcProvidersRoute
-  '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/admin': typeof AuthenticatedAdminRouteWithChildren
+  '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AuthenticatedIndexRoute
-  '/settings/oidc-providers': typeof AuthenticatedSettingsOidcProvidersRoute
-  '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
-  '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
-  '/_authenticated/settings/oidc-providers': typeof AuthenticatedSettingsOidcProvidersRoute
-  '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/login'
-    | '/settings'
-    | '/settings/oidc-providers'
-    | '/settings/'
+  fullPaths: '/' | '/login' | '/admin' | '/admin/oidc-providers' | '/admin/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/' | '/settings/oidc-providers' | '/settings'
+  to: '/login' | '/' | '/admin/oidc-providers' | '/admin'
   id:
     | '__root__'
     | '/_authenticated'
     | '/login'
-    | '/_authenticated/settings'
+    | '/_authenticated/admin'
     | '/_authenticated/'
-    | '/_authenticated/settings/oidc-providers'
-    | '/_authenticated/settings/'
+    | '/_authenticated/admin/oidc-providers'
+    | '/_authenticated/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -118,53 +112,50 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings/': {
-      id: '/_authenticated/settings/'
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
       path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/settings/oidc-providers': {
-      id: '/_authenticated/settings/oidc-providers'
+    '/_authenticated/admin/oidc-providers': {
+      id: '/_authenticated/admin/oidc-providers'
       path: '/oidc-providers'
-      fullPath: '/settings/oidc-providers'
-      preLoaderRoute: typeof AuthenticatedSettingsOidcProvidersRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
+      fullPath: '/admin/oidc-providers'
+      preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
     }
   }
 }
 
-interface AuthenticatedSettingsRouteChildren {
-  AuthenticatedSettingsOidcProvidersRoute: typeof AuthenticatedSettingsOidcProvidersRoute
-  AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
+interface AuthenticatedAdminRouteChildren {
+  AuthenticatedAdminOidcProvidersRoute: typeof AuthenticatedAdminOidcProvidersRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
-const AuthenticatedSettingsRouteChildren: AuthenticatedSettingsRouteChildren = {
-  AuthenticatedSettingsOidcProvidersRoute:
-    AuthenticatedSettingsOidcProvidersRoute,
-  AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,
+const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
+  AuthenticatedAdminOidcProvidersRoute: AuthenticatedAdminOidcProvidersRoute,
+  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
-const AuthenticatedSettingsRouteWithChildren =
-  AuthenticatedSettingsRoute._addFileChildren(
-    AuthenticatedSettingsRouteChildren,
-  )
+const AuthenticatedAdminRouteWithChildren =
+  AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
 interface AuthenticatedRouteChildren {
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
+  AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
 }
 
