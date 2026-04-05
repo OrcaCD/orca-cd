@@ -12,6 +12,8 @@ export interface OIDCProviderDetail {
 	clientId: string;
 	scopes: string;
 	enabled: boolean;
+	requireVerifiedEmail: boolean;
+	autoSignup: boolean;
 	callbackUrl: string;
 	createdAt: string;
 	updatedAt: string;
@@ -24,6 +26,8 @@ export interface CreateOIDCProviderRequest {
 	clientSecret: string;
 	scopes?: string;
 	enabled?: boolean;
+	requireVerifiedEmail?: boolean;
+	autoSignup?: boolean;
 }
 
 export interface UpdateOIDCProviderRequest {
@@ -33,6 +37,8 @@ export interface UpdateOIDCProviderRequest {
 	clientSecret?: string;
 	scopes?: string;
 	enabled?: boolean;
+	requireVerifiedEmail?: boolean;
+	autoSignup?: boolean;
 }
 
 export function fetchOIDCProviders(): Promise<OIDCProviderDetail[]> {

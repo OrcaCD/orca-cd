@@ -26,6 +26,8 @@ const providerSchema = z.object({
 	clientSecret: z.string(),
 	scopes: z.string(),
 	enabled: z.boolean(),
+	requireVerifiedEmail: z.boolean(),
+	autoSignup: z.boolean(),
 });
 
 export default function UpsertOIDCProviderDialog({
@@ -47,6 +49,8 @@ export default function UpsertOIDCProviderDialog({
 			clientSecret: "",
 			scopes: provider?.scopes ?? "",
 			enabled: provider?.enabled ?? true,
+			requireVerifiedEmail: provider?.requireVerifiedEmail ?? false,
+			autoSignup: provider?.autoSignup ?? true,
 		},
 		validators: {
 			onSubmit: isEditing
@@ -67,6 +71,8 @@ export default function UpsertOIDCProviderDialog({
 						clientSecret: value.clientSecret || undefined,
 						scopes: value.scopes,
 						enabled: value.enabled,
+						requireVerifiedEmail: value.requireVerifiedEmail,
+						autoSignup: value.autoSignup,
 					});
 					toast.success("Provider updated");
 				} else {
@@ -77,6 +83,8 @@ export default function UpsertOIDCProviderDialog({
 						clientSecret: value.clientSecret!,
 						scopes: value.scopes,
 						enabled: value.enabled,
+						requireVerifiedEmail: value.requireVerifiedEmail,
+						autoSignup: value.autoSignup,
 					});
 					toast.success("Provider created");
 				}
@@ -237,6 +245,38 @@ export default function UpsertOIDCProviderDialog({
 											className="h-4 w-4 rounded border-gray-300"
 										/>
 										<Label htmlFor={field.name}>Enabled</Label>
+									</div>
+								</Field>
+							)}
+						/>
+						<form.Field
+							name="requireVerifiedEmail"
+							children={(field) => (
+								<Field>
+									<div className="flex items-center gap-2">
+										<Checkbox
+											id={field.name}
+											checked={field.state.value}
+											onCheckedChange={(checked) => field.handleChange(checked === true)}
+											className="h-4 w-4 rounded border-gray-300"
+										/>
+										<Label htmlFor={field.name}>Require verified emails</Label>
+									</div>
+								</Field>
+							)}
+						/>
+						<form.Field
+							name="autoSignup"
+							children={(field) => (
+								<Field>
+									<div className="flex items-center gap-2">
+										<Checkbox
+											id={field.name}
+											checked={field.state.value}
+											onCheckedChange={(checked) => field.handleChange(checked === true)}
+											className="h-4 w-4 rounded border-gray-300"
+										/>
+										<Label htmlFor={field.name}>Allow auto signup</Label>
 									</div>
 								</Field>
 							)}

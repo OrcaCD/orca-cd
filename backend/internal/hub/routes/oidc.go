@@ -71,6 +71,10 @@ func OIDCCallbackHandler(c *gin.Context) {
 
 	oidcUser, err := oidc.HandleCallback(c.Request.Context(), &provider, OIDCAppURL, code, stateParam, encryptedState)
 	if err != nil {
+		if errors.Is(err, oidc.ErrEmailNotVerified) {
+			c.Redirect(http.StatusFound, "/login?error=email_not_verified")
+			return
+		}
 		c.Redirect(http.StatusFound, "/login?error=authentication_failed")
 		return
 	}
@@ -89,6 +93,11 @@ func OIDCCallbackHandler(c *gin.Context) {
 			return
 		}
 		if err != nil {
+			if !provider.AutoSignup {
+				c.Redirect(http.StatusFound, "/login?error=signup_disabled")
+				return
+			}
+
 			// Completely new user — JIT provision
 			user = models.User{
 				Email:       oidcUser.Email,

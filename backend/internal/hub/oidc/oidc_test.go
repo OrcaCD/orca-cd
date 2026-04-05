@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -421,6 +422,109 @@ func TestHandleCallback_MissingEmail(t *testing.T) {
 	_, err := HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", enc)
 	if err == nil || !strings.Contains(err.Error(), "email claim is missing") {
 		t.Errorf("expected 'email claim is missing' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_RequireVerifiedEmailFalseClaim(t *testing.T) {
+	initCrypto(t)
+
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	kid := "email-false-key"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid,
+				"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": srv.URL, "sub": "user-email-false", "aud": "test-client",
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+			"email":          "unverified@example.com",
+			"email_verified": false,
+		})
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+		writeJSON(w, map[string]any{"access_token": "x", "token_type": "Bearer", "id_token": signed})
+	})
+
+	provider := &models.OIDCProvider{
+		Base: models.Base{Id: "prov-email-false"}, ClientId: "test-client",
+		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
+		RequireVerifiedEmail: true,
+	}
+	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderId: "prov-email-false", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", enc)
+	if !errors.Is(err, ErrEmailNotVerified) {
+		t.Fatalf("expected ErrEmailNotVerified, got: %v", err)
+	}
+}
+
+func TestHandleCallback_RequireVerifiedEmailMissingClaim(t *testing.T) {
+	initCrypto(t)
+
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	kid := "email-missing-verified-key"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		})
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid,
+				"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"iss": srv.URL, "sub": "user-email-missing-verified", "aud": "test-client",
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+			"email": "missing-verified@example.com",
+		})
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+		writeJSON(w, map[string]any{"access_token": "x", "token_type": "Bearer", "id_token": signed})
+	})
+
+	provider := &models.OIDCProvider{
+		Base: models.Base{Id: "prov-email-missing-verified"}, ClientId: "test-client",
+		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
+		RequireVerifiedEmail: true,
+	}
+	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderId: "prov-email-missing-verified", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	enc := makeEncryptedState(t, sd)
+
+	_, err := HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", enc)
+	if !errors.Is(err, ErrEmailNotVerified) {
+		t.Fatalf("expected ErrEmailNotVerified, got: %v", err)
 	}
 }
 

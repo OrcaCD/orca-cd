@@ -43,12 +43,14 @@ func newTestOIDCDiscoveryServer(t *testing.T) *httptest.Server {
 func createTestProvider(t *testing.T, name string, enabled bool) models.OIDCProvider {
 	t.Helper()
 	p := models.OIDCProvider{
-		Name:         name,
-		IssuerURL:    "https://idp.example.com",
-		ClientId:     "client-id",
-		ClientSecret: crypto.EncryptedString("client-secret"),
-		Scopes:       "groups",
-		Enabled:      true,
+		Name:                 name,
+		IssuerURL:            "https://idp.example.com",
+		ClientId:             "client-id",
+		ClientSecret:         crypto.EncryptedString("client-secret"),
+		Scopes:               "groups",
+		Enabled:              true,
+		RequireVerifiedEmail: false,
+		AutoSignup:           true,
 	}
 	if err := gorm.G[models.OIDCProvider](db.DB).Create(t.Context(), &p); err != nil {
 		t.Fatalf("failed to create test provider: %v", err)
@@ -261,11 +263,15 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
 
 	enabled := true
+	requireVerifiedEmail := true
+	autoSignup := false
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
-		Name:      "Updated Name",
-		IssuerURL: p.IssuerURL, // same issuer — no OIDC discovery needed
-		ClientId:  "new-client-id",
-		Enabled:   &enabled,
+		Name:                 "Updated Name",
+		IssuerURL:            p.IssuerURL, // same issuer — no OIDC discovery needed
+		ClientId:             "new-client-id",
+		Enabled:              &enabled,
+		RequireVerifiedEmail: &requireVerifiedEmail,
+		AutoSignup:           &autoSignup,
 	})
 
 	w := httptest.NewRecorder()
@@ -286,6 +292,12 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	}
 	if body.ClientId != "new-client-id" {
 		t.Errorf("expected clientId %q, got %q", "new-client-id", body.ClientId)
+	}
+	if !body.RequireVerifiedEmail {
+		t.Error("expected requireVerifiedEmail=true")
+	}
+	if body.AutoSignup {
+		t.Error("expected autoSignup=false")
 	}
 }
 
@@ -335,12 +347,14 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	})
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":         "Test IDP",
-		"issuerUrl":    srv.URL,
-		"clientId":     "my-client",
-		"clientSecret": "my-secret",
-		"scopes":       "groups",
-		"enabled":      true,
+		"name":                 "Test IDP",
+		"issuerUrl":            srv.URL,
+		"clientId":             "my-client",
+		"clientSecret":         "my-secret",
+		"scopes":               "groups",
+		"enabled":              true,
+		"requireVerifiedEmail": true,
+		"autoSignup":           false,
 	})
 
 	w := httptest.NewRecorder()
@@ -372,6 +386,12 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	}
 	if !body.Enabled {
 		t.Error("expected enabled=true")
+	}
+	if !body.RequireVerifiedEmail {
+		t.Error("expected requireVerifiedEmail=true")
+	}
+	if body.AutoSignup {
+		t.Error("expected autoSignup=false")
 	}
 	if body.Id == "" {
 		t.Error("expected non-empty id")
@@ -445,6 +465,12 @@ func TestAdminCreateOIDCProviderHandler_DefaultEnabled(t *testing.T) {
 	}
 	if !body.Enabled {
 		t.Error("expected enabled to default to true when omitted")
+	}
+	if body.RequireVerifiedEmail {
+		t.Error("expected requireVerifiedEmail to default to false when omitted")
+	}
+	if !body.AutoSignup {
+		t.Error("expected autoSignup to default to true when omitted")
 	}
 }
 

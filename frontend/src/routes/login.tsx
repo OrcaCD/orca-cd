@@ -25,6 +25,8 @@ const oidcErrorMessages: Record<string, string> = {
 	missing_state: "The sign-in session expired. Please start sign-in again.",
 	provider_not_found: "The selected identity provider is unavailable.",
 	authentication_failed: "Authentication failed. Please try again.",
+	email_not_verified: "Your identity provider did not confirm a verified email address.",
+	signup_disabled: "Automatic account creation is disabled for this provider.",
 	internal_error: "A server error occurred during sign-in. Please try again.",
 	account_creation_failed: "Your account could not be created. Please contact an administrator.",
 	account_linking_failed: "Your account could not be linked. Please contact an administrator.",

@@ -101,7 +101,11 @@ function OIDCProvidersPage() {
 										{" "}
 										&middot; <span className="font-medium">Extra scopes:</span> {provider.scopes}
 									</>
-								)}
+								)}{" "}
+								&middot; <span className="font-medium">Verified email:</span>{" "}
+								{provider.requireVerifiedEmail ? "Required" : "Not required"} &middot;{" "}
+								<span className="font-medium">Auto signup:</span>{" "}
+								{provider.autoSignup ? "Allowed" : "Disabled"}
 							</div>
 							<div className="mt-2 text-sm text-muted-foreground">
 								<div className="flex items-start gap-2">

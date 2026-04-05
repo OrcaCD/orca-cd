@@ -15,46 +15,54 @@ import (
 )
 
 type createOIDCProviderRequest struct {
-	Name         string `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL    string `json:"issuerUrl" binding:"required,http_url"`
-	ClientId     string `json:"clientId" binding:"required"`
-	ClientSecret string `json:"clientSecret" binding:"required"`
-	Scopes       string `json:"scopes"`
-	Enabled      *bool  `json:"enabled"`
+	Name                 string `json:"name" binding:"required,min=1,max=100"`
+	IssuerURL            string `json:"issuerUrl" binding:"required,http_url"`
+	ClientId             string `json:"clientId" binding:"required"`
+	ClientSecret         string `json:"clientSecret" binding:"required"`
+	Scopes               string `json:"scopes"`
+	Enabled              *bool  `json:"enabled"`
+	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail"`
+	AutoSignup           *bool  `json:"autoSignup"`
 }
 
 type updateOIDCProviderRequest struct {
-	Name         string  `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL    string  `json:"issuerUrl" binding:"required,http_url"`
-	ClientId     string  `json:"clientId" binding:"required"`
-	ClientSecret *string `json:"clientSecret"`
-	Scopes       string  `json:"scopes"`
-	Enabled      *bool   `json:"enabled"`
+	Name                 string  `json:"name" binding:"required,min=1,max=100"`
+	IssuerURL            string  `json:"issuerUrl" binding:"required,http_url"`
+	ClientId             string  `json:"clientId" binding:"required"`
+	ClientSecret         *string `json:"clientSecret"`
+	Scopes               string  `json:"scopes"`
+	Enabled              *bool   `json:"enabled"`
+	RequireVerifiedEmail *bool   `json:"requireVerifiedEmail"`
+	AutoSignup           *bool   `json:"autoSignup"`
 }
 
 type oidcProviderResponse struct {
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	IssuerURL   string `json:"issuerUrl"`
-	ClientId    string `json:"clientId"`
-	Scopes      string `json:"scopes"`
-	Enabled     bool   `json:"enabled"`
-	CallbackURL string `json:"callbackUrl"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	Id                   string `json:"id"`
+	Name                 string `json:"name"`
+	IssuerURL            string `json:"issuerUrl"`
+	ClientId             string `json:"clientId"`
+	Scopes               string `json:"scopes"`
+	Enabled              bool   `json:"enabled"`
+	RequireVerifiedEmail bool   `json:"requireVerifiedEmail"`
+	AutoSignup           bool   `json:"autoSignup"`
+	CallbackURL          string `json:"callbackUrl"`
+	CreatedAt            string `json:"createdAt"`
+	UpdatedAt            string `json:"updatedAt"`
 }
 
 func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 	return oidcProviderResponse{
-		Id:          p.Id,
-		Name:        p.Name,
-		IssuerURL:   p.IssuerURL,
-		ClientId:    p.ClientId,
-		Scopes:      p.Scopes,
-		Enabled:     p.Enabled,
-		CallbackURL: fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", OIDCAppURL, p.Id),
-		CreatedAt:   p.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:   p.UpdatedAt.Format(time.RFC3339),
+		Id:                   p.Id,
+		Name:                 p.Name,
+		IssuerURL:            p.IssuerURL,
+		ClientId:             p.ClientId,
+		Scopes:               p.Scopes,
+		Enabled:              p.Enabled,
+		RequireVerifiedEmail: p.RequireVerifiedEmail,
+		AutoSignup:           p.AutoSignup,
+		CallbackURL:          fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", OIDCAppURL, p.Id),
+		CreatedAt:            p.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            p.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -105,16 +113,28 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 
-	provider := models.OIDCProvider{
-		Name:         req.Name,
-		IssuerURL:    req.IssuerURL,
-		ClientId:     req.ClientId,
-		ClientSecret: crypto.EncryptedString(req.ClientSecret),
-		Scopes:       req.Scopes,
-		Enabled:      enabled,
+	requireVerifiedEmail := false
+	if req.RequireVerifiedEmail != nil {
+		requireVerifiedEmail = *req.RequireVerifiedEmail
 	}
 
-	if err := gorm.G[models.OIDCProvider](db.DB).Create(c.Request.Context(), &provider); err != nil {
+	autoSignup := true
+	if req.AutoSignup != nil {
+		autoSignup = *req.AutoSignup
+	}
+
+	provider := models.OIDCProvider{
+		Name:                 req.Name,
+		IssuerURL:            req.IssuerURL,
+		ClientId:             req.ClientId,
+		ClientSecret:         crypto.EncryptedString(req.ClientSecret),
+		Scopes:               req.Scopes,
+		Enabled:              enabled,
+		RequireVerifiedEmail: requireVerifiedEmail,
+		AutoSignup:           autoSignup,
+	}
+
+	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&provider).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -153,6 +173,12 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	existing.Scopes = req.Scopes
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
+	}
+	if req.RequireVerifiedEmail != nil {
+		existing.RequireVerifiedEmail = *req.RequireVerifiedEmail
+	}
+	if req.AutoSignup != nil {
+		existing.AutoSignup = *req.AutoSignup
 	}
 	if req.ClientSecret != nil && *req.ClientSecret != "" {
 		existing.ClientSecret = crypto.EncryptedString(*req.ClientSecret)

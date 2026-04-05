@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ const (
 	stateCookieName = "orcacd_oidc_state"
 	stateTTL        = 10 * time.Minute
 )
+
+var ErrEmailNotVerified = errors.New("email is not verified")
 
 type OIDCUser struct {
 	Subject string
@@ -169,7 +172,7 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 
 	var claims struct {
 		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
+		EmailVerified *bool  `json:"email_verified"`
 		Name          string `json:"name"`
 		Nonce         string `json:"nonce"`
 	}
@@ -183,6 +186,10 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 
 	if claims.Email == "" {
 		return nil, fmt.Errorf("email claim is missing from id_token")
+	}
+
+	if provider.RequireVerifiedEmail && (claims.EmailVerified == nil || !*claims.EmailVerified) {
+		return nil, ErrEmailNotVerified
 	}
 
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
