@@ -97,5 +97,5 @@ function OIDCProvidersPage() {
 					</Card>
 				))}
 		</div>
-	)
+	);
 }

@@ -5,11 +5,6 @@ export interface AuthProviderInfo {
 	name: string;
 }
 
-export interface AuthProvidersResponse {
-	providers: AuthProviderInfo[];
-	localAuthEnabled: boolean;
-}
-
 export interface OIDCProviderDetail {
 	id: string;
 	name: string;
@@ -37,10 +32,6 @@ export interface UpdateOIDCProviderRequest {
 	clientSecret?: string;
 	scopes?: string;
 	enabled?: boolean;
-}
-
-export function fetchAuthProviders(): Promise<AuthProvidersResponse> {
-	return fetcher<AuthProvidersResponse>(`${API_BASE}/auth/providers`);
 }
 
 export function fetchOIDCProviders(): Promise<OIDCProviderDetail[]> {

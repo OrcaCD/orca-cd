@@ -29,8 +29,15 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type providerInfo struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type setupResponse struct {
-	NeedsSetup bool `json:"needsSetup"`
+	NeedsSetup       bool           `json:"needsSetup"`
+	Providers        []providerInfo `json:"providers"`
+	LocalAuthEnabled bool           `json:"localAuthEnabled"`
 }
 
 type profileResponse struct {
@@ -61,7 +68,23 @@ func SetupHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, setupResponse{NeedsSetup: count == 0})
+
+	providers, err := gorm.G[models.OIDCProvider](db.DB).Where("enabled = ?", true).Find(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	infos := make([]providerInfo, 0, len(providers))
+	for _, p := range providers {
+		infos = append(infos, providerInfo{Id: p.Id, Name: p.Name})
+	}
+
+	c.JSON(http.StatusOK, setupResponse{
+		NeedsSetup:       count == 0,
+		Providers:        infos,
+		LocalAuthEnabled: !LocalAuthDisabled,
+	})
 }
 
 func RegisterHandler(c *gin.Context) {

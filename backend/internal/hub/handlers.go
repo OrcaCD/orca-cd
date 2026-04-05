@@ -19,7 +19,6 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		// Public routes (no authentication required)
 		api.GET("/health", routes.HealthHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
-		api.GET("/auth/providers", routes.ListProvidersHandler)
 
 		// OIDC auth flow (public)
 		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)

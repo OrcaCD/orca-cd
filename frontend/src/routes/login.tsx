@@ -22,24 +22,21 @@ export const Route = createFileRoute("/login")({
 		}
 	},
 	loader: async () => {
-		const [setupRes, providersRes] = await Promise.all([
-			fetch(`${API_BASE}/auth/setup`),
-			fetch(`${API_BASE}/auth/providers`),
-		]);
+		const setupRes = await fetch(`${API_BASE}/auth/setup`);
 		if (!setupRes.ok) {
 			throw new Error("Failed to check setup status");
 		}
-		const { needsSetup } = await setupRes.json();
+		const data: {
+			needsSetup: boolean;
+			providers?: AuthProviderInfo[];
+			localAuthEnabled?: boolean;
+		} = await setupRes.json();
 
-		let providers: AuthProviderInfo[] = [];
-		let localAuthEnabled = true;
-		if (providersRes.ok) {
-			const data = await providersRes.json();
-			providers = data.providers ?? [];
-			localAuthEnabled = data.localAuthEnabled;
-		}
-
-		return { needsSetup, providers, localAuthEnabled };
+		return {
+			needsSetup: data.needsSetup,
+			providers: data.providers ?? [],
+			localAuthEnabled: data.localAuthEnabled ?? true,
+		};
 	},
 	component: LoginComponent,
 });

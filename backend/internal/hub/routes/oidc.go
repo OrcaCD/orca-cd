@@ -17,34 +17,6 @@ import (
 // OIDCAppURL is set during route registration from the server config.
 var OIDCAppURL string
 
-type providerInfo struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type providersResponse struct {
-	Providers        []providerInfo `json:"providers"`
-	LocalAuthEnabled bool           `json:"localAuthEnabled"`
-}
-
-func ListProvidersHandler(c *gin.Context) {
-	providers, err := gorm.G[models.OIDCProvider](db.DB).Where("enabled = ?", true).Find(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	infos := make([]providerInfo, 0, len(providers))
-	for _, p := range providers {
-		infos = append(infos, providerInfo{Id: p.Id, Name: p.Name})
-	}
-
-	c.JSON(http.StatusOK, providersResponse{
-		Providers:        infos,
-		LocalAuthEnabled: !LocalAuthDisabled,
-	})
-}
-
 func OIDCAuthorizeHandler(c *gin.Context) {
 	providerId := c.Param("id")
 

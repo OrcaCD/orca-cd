@@ -78,6 +78,8 @@ func hasAuthCookie(w *httptest.ResponseRecorder) bool {
 
 func TestSetupHandler_NoUsers(t *testing.T) {
 	setupTestDB(t)
+	LocalAuthDisabled = false
+	t.Cleanup(func() { LocalAuthDisabled = false })
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -95,10 +97,18 @@ func TestSetupHandler_NoUsers(t *testing.T) {
 	if !body.NeedsSetup {
 		t.Error("expected needsSetup=true when no users exist")
 	}
+	if len(body.Providers) != 0 {
+		t.Errorf("expected 0 providers, got %d", len(body.Providers))
+	}
+	if !body.LocalAuthEnabled {
+		t.Error("expected localAuthEnabled=true")
+	}
 }
 
 func TestSetupHandler_WithUsers(t *testing.T) {
 	setupTestDB(t)
+	LocalAuthDisabled = false
+	t.Cleanup(func() { LocalAuthDisabled = false })
 
 	hash, _ := auth.HashPassword("password123")
 	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
@@ -118,6 +128,47 @@ func TestSetupHandler_WithUsers(t *testing.T) {
 	}
 	if body.NeedsSetup {
 		t.Error("expected needsSetup=false when users exist")
+	}
+}
+
+func TestSetupHandler_ReturnsProvidersAndLocalAuthSetting(t *testing.T) {
+	setupTestDB(t)
+
+	if err := gorm.G[models.OIDCProvider](db.DB).Create(t.Context(), &models.OIDCProvider{
+		Name:         "Enabled IDP",
+		IssuerURL:    "https://idp.example.com",
+		ClientId:     "client-1",
+		ClientSecret: crypto.EncryptedString("secret"),
+		Enabled:      true,
+	}); err != nil {
+		t.Fatalf("failed to create provider: %v", err)
+	}
+
+	LocalAuthDisabled = true
+	t.Cleanup(func() { LocalAuthDisabled = false })
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/setup", nil)
+
+	SetupHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body setupResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.Providers) != 1 {
+		t.Fatalf("expected 1 enabled provider, got %d", len(body.Providers))
+	}
+	if body.Providers[0].Name != "Enabled IDP" {
+		t.Errorf("expected provider name %q, got %q", "Enabled IDP", body.Providers[0].Name)
+	}
+	if body.LocalAuthEnabled {
+		t.Error("expected localAuthEnabled=false when LocalAuthDisabled=true")
 	}
 }
 
