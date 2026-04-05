@@ -25,7 +25,7 @@ jobs:
         - language: actions
           build-mode: none
         - language: go
-          build-mode: autobuild
+          build-mode: manual
         - language: javascript-typescript
           build-mode: none
 
@@ -33,12 +33,41 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+    - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      name: Set up Go
+      if: matrix.build-mode == 'manual' && matrix.language == 'go'
+      with:
+        go-version: stable
+        cache: true
+        cache-dependency-path: backend/go.sum
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
         queries: security-and-quality
+
+    - name: Install Buf CLI
+      uses: bufbuild/buf-action@219c9aef02e8f6a27e4b46274db239ef513f5d53 # v1.4.0
+      if: matrix.build-mode == 'manual' && matrix.language == 'go'
+      with:
+        setup_only: true
+        version: 1.66.1
+
+    - name: Compile Protobufs
+      working-directory: ./backend
+      if: matrix.build-mode == 'manual' && matrix.language == 'go'
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+        buf generate
+
+    - name: Build Go code
+      working-directory: ./backend
+      if: matrix.build-mode == 'manual' && matrix.language == 'go'
+      run: go build -o bin/hub ./cmd/hub && go build -o bin/agent ./cmd/agent
+      env:
+        CGO_ENABLED: 1
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
