@@ -95,20 +95,21 @@ function OIDCProvidersPage() {
 						</CardHeader>
 						<CardContent>
 							<div className="text-sm text-muted-foreground">
-								<span className="font-medium">Client Id:</span> {provider.clientId}
+								&middot; <span className="font-medium">Client Id:</span> {provider.clientId}
 								{provider.scopes && (
 									<>
 										{" "}
 										&middot; <span className="font-medium">Extra scopes:</span> {provider.scopes}
 									</>
-								)}{" "}
+								)}
+								<br />
 								&middot; <span className="font-medium">Verified email:</span>{" "}
-								{provider.requireVerifiedEmail ? "Required" : "Not required"} &middot;{" "}
+								{provider.requireVerifiedEmail ? "Required" : "Not required"} <br /> &middot;{" "}
 								<span className="font-medium">Auto signup:</span>{" "}
 								{provider.autoSignup ? "Allowed" : "Disabled"}
 							</div>
 							<div className="mt-2 text-sm text-muted-foreground">
-								<div className="flex items-start gap-2">
+								<div className="flex items-center gap-2">
 									<span className="font-medium">Callback URL:</span>
 									<code className="bg-muted rounded px-1 py-0.5 font-mono text-xs break-all">
 										{provider.callbackUrl}

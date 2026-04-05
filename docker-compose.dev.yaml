@@ -26,6 +26,7 @@ services:
       - AUTH_TOKEN=supersecrettoken
 
   pocket-id:
+    container_name: pocket-id
     image: ghcr.io/pocket-id/pocket-id:v2
     restart: unless-stopped
     ports:
