@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/rs/zerolog"
@@ -55,22 +56,28 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
+	dockerClient, err := docker.New(Log)
+	if err != nil {
+		return fmt.Errorf("docker init: %w", err)
+	}
+	_ = dockerClient // will be passed to handlers once deployment logic is added
+
 	conn := connectWithRetry(cfg.HubUrl, cfg.AuthToken)
 
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			Log.Error().Err(err).Msg("Disconnected from hub, reconnecting...")
+			Log.Error().Err(err).Msg("disconnected from hub, reconnecting...")
 			err = conn.Close()
 			if err != nil {
-				Log.Error().Err(err).Msg("Error closing connection")
+				Log.Error().Err(err).Msg("error closing connection")
 			}
 			conn = connectWithRetry(cfg.HubUrl, cfg.AuthToken)
 			continue
 		}
 		msg := &messages.ServerMessage{}
 		if err := proto.Unmarshal(data, msg); err != nil {
-			Log.Error().Err(err).Msg("Unmarshal error")
+			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
 		handleServerMessage(msg, conn)
