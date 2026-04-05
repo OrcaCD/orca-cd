@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useState, type ComponentProps } from "react";
-import { API_BASE, type ErrorResponse } from "@/lib/api";
+import fetcher, { API_BASE } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
 
@@ -48,15 +48,11 @@ export const Route = createFileRoute("/login")({
 		}
 	},
 	loader: async () => {
-		const setupRes = await fetch(`${API_BASE}/auth/setup`);
-		if (!setupRes.ok) {
-			throw new Error("Failed to check setup status");
-		}
-		const data: {
+		const data = await fetcher<{
 			needsSetup: boolean;
 			providers?: AuthProviderInfo[];
 			localAuthEnabled?: boolean;
-		} = await setupRes.json();
+		}>(`${API_BASE}/auth/setup`);
 
 		return {
 			needsSetup: data.needsSetup,
@@ -127,17 +123,11 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 	const [isLoading, setIsLoading] = useState(false);
 
 	async function register(name: string, email: string, password: string): Promise<void> {
-		const res = await fetch(`${API_BASE}/auth/register`, {
+		await fetcher(`${API_BASE}/auth/register`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			credentials: "include",
 			body: JSON.stringify({ name, email, password }),
 		});
-
-		if (!res.ok) {
-			const body: ErrorResponse = await res.json();
-			throw new Error(body.error ?? "Registration failed");
-		}
 	}
 
 	const form = useForm({
@@ -293,17 +283,11 @@ function LoginForm({
 	const [isLoading, setIsLoading] = useState(false);
 
 	async function login(email: string, password: string): Promise<void> {
-		const res = await fetch(`${API_BASE}/auth/login`, {
+		await fetcher(`${API_BASE}/auth/login`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			credentials: "include",
 			body: JSON.stringify({ email, password }),
 		});
-
-		if (!res.ok) {
-			const body: ErrorResponse = await res.json();
-			throw new Error(body.error ?? "Login failed");
-		}
 	}
 
 	const form = useForm({
