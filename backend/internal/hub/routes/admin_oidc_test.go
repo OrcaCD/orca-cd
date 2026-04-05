@@ -192,6 +192,14 @@ func TestAdminCreateOIDCProviderHandler_InvalidRequest(t *testing.T) {
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
 			}
+
+			var body map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			if body["error"] != "invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid" {
+				t.Errorf("unexpected error message: %q", body["error"])
+			}
 		})
 	}
 }
@@ -234,6 +242,14 @@ func TestAdminUpdateOIDCProviderHandler_InvalidRequest(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body["error"] != "invalid request: name, issuerUrl, and clientId are required and must be valid" {
+		t.Errorf("unexpected error message: %q", body["error"])
 	}
 }
 

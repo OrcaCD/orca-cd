@@ -88,7 +88,7 @@ func AdminGetOIDCProviderHandler(c *gin.Context) {
 func AdminCreateOIDCProviderHandler(c *gin.Context) {
 	var req createOIDCProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, clientId, and clientSecret are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid"})
 		return
 	}
 
@@ -127,7 +127,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 
 	var req updateOIDCProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, and clientId are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, and clientId are required and must be valid"})
 		return
 	}
 
