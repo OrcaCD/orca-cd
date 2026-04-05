@@ -91,12 +91,11 @@ func OIDCCallbackHandler(c *gin.Context) {
 		if err != nil {
 			// Completely new user — JIT provision
 			user = models.User{
-				Email:        oidcUser.Email,
-				Name:         oidcUser.Name,
-				AuthProvider: models.AuthProviderOIDC,
-				Role:         models.UserRoleUser,
-				OIDCSubject:  &oidcUser.Subject,
-				OIDCIssuer:   &oidcUser.Issuer,
+				Email:       oidcUser.Email,
+				Name:        oidcUser.Name,
+				Role:        models.UserRoleUser,
+				OIDCSubject: &oidcUser.Subject,
+				OIDCIssuer:  &oidcUser.Issuer,
 			}
 			if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
 				c.Redirect(http.StatusFound, "/login?error=account_creation_failed")

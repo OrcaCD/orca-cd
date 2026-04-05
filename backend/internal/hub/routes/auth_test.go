@@ -111,7 +111,7 @@ func TestSetupHandler_WithUsers(t *testing.T) {
 	t.Cleanup(func() { LocalAuthDisabled = false })
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -196,7 +196,7 @@ func TestRegisterHandler_RejectsSecondUser(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "password456"})
@@ -249,7 +249,7 @@ func TestLoginHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
@@ -272,7 +272,7 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, AuthProvider: models.AuthProviderLocal})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "wrongpassword"})

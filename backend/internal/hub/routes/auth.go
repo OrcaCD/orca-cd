@@ -116,7 +116,6 @@ func RegisterHandler(c *gin.Context) {
 			Email:        req.Email,
 			Name:         req.Name,
 			PasswordHash: &hash,
-			AuthProvider: models.AuthProviderLocal,
 			Role:         models.UserRoleAdmin,
 		}
 		return gorm.G[models.User](tx).Create(c.Request.Context(), &user)
@@ -154,7 +153,7 @@ func LoginHandler(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	user, err := gorm.G[models.User](db.DB).Where("email = ? AND auth_provider = ?", req.Email, models.AuthProviderLocal).First(c.Request.Context())
+	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			auth.CompareWithDummy(req.Password)
