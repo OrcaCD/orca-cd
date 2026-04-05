@@ -21,7 +21,7 @@ import { Checkbox } from "../ui/checkbox";
 
 const providerSchema = z.object({
 	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
-	issuerUrl: z.httpUrl("Must be a valid URL", ),
+	issuerUrl: z.httpUrl("Must be a valid URL"),
 	clientId: z.string().min(1, "Client ID is required"),
 	clientSecret: z.string(),
 	scopes: z.string(),
