@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -12,6 +14,14 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+)
+
+var (
+	errOIDCSignupDisabled        = errors.New("oidc signup disabled")
+	errOIDCAccountLinkingFailed  = errors.New("oidc account linking failed")
+	errOIDCAccountCreationFailed = errors.New("oidc account creation failed")
+	errOIDCAccountUpdateFailed   = errors.New("oidc account update failed")
+	errOIDCProviderEmailConflict = errors.New("oidc provider email conflict")
 )
 
 // OIDCAppURL is set during route registration from the server config.
@@ -79,57 +89,10 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Find user by OIDC identity, then fall back to email, then JIT provision.
-	user, err := gorm.G[models.User](db.DB).Where("oidc_issuer = ? AND oidc_subject = ?", oidcUser.Issuer, oidcUser.Subject).First(c.Request.Context())
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.Redirect(http.StatusFound, "/login?error=internal_error")
-			return
-		}
-		// No user linked to this OIDC identity yet — check if one exists with the same email.
-		user, err = gorm.G[models.User](db.DB).Where("email = ?", oidcUser.Email).First(c.Request.Context())
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.Redirect(http.StatusFound, "/login?error=internal_error")
-			return
-		}
-		if err != nil {
-			if !provider.AutoSignup {
-				c.Redirect(http.StatusFound, "/login?error=signup_disabled")
-				return
-			}
-
-			// Completely new user — JIT provision
-			user = models.User{
-				Email:       oidcUser.Email,
-				Name:        oidcUser.Name,
-				Role:        models.UserRoleUser,
-				OIDCSubject: &oidcUser.Subject,
-				OIDCIssuer:  &oidcUser.Issuer,
-			}
-			if err := gorm.G[models.User](db.DB).Create(c.Request.Context(), &user); err != nil {
-				c.Redirect(http.StatusFound, "/login?error=account_creation_failed")
-				return
-			}
-		} else {
-			// Existing account found by email — link the OIDC identity to it.
-			tx := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{
-				"oidc_subject": oidcUser.Subject,
-				"oidc_issuer":  oidcUser.Issuer,
-				"name":         oidcUser.Name,
-			})
-
-			if tx.Error != nil {
-				c.Redirect(http.StatusFound, "/login?error=account_linking_failed")
-				return
-			}
-		}
-	} else {
-		// Known OIDC user — update name and email from claims.
-		tx := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email})
-		if tx.Error != nil {
-			c.Redirect(http.StatusFound, "/login?error=account_update_failed")
-			return
-		}
+	user, redirectError := resolveOIDCUser(c.Request.Context(), &provider, oidcUser)
+	if redirectError != "" {
+		c.Redirect(http.StatusFound, "/login?error="+redirectError)
+		return
 	}
 
 	token, err := auth.GenerateUserToken(&user)
@@ -140,4 +103,127 @@ func OIDCCallbackHandler(c *gin.Context) {
 
 	auth.SetAuthCookie(c, token)
 	c.Redirect(http.StatusFound, "/")
+}
+
+func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUser *oidc.OIDCUser) (models.User, string) {
+	var user models.User
+
+	txErr := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		identity, err := gorm.G[models.UserOIDCIdentity](tx).Where("issuer = ? AND subject = ?", oidcUser.Issuer, oidcUser.Subject).First(ctx)
+		if err == nil {
+			user, err = gorm.G[models.User](tx).Where("id = ?", identity.UserId).First(ctx)
+			if err != nil {
+				return err
+			}
+
+			hasConflict, err := hasProviderEmailConflict(tx, provider.Id, oidcUser.Email, user.Id)
+			if err != nil {
+				return err
+			}
+			if hasConflict {
+				return errOIDCProviderEmailConflict
+			}
+
+			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email}).Error; err != nil {
+				return errOIDCAccountUpdateFailed
+			}
+			user.Name = oidcUser.Name
+			user.Email = oidcUser.Email
+
+			return nil
+		}
+
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		user, err = gorm.G[models.User](tx).Where("email = ?", oidcUser.Email).First(ctx)
+		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
+			if !provider.AutoSignup {
+				return errOIDCSignupDisabled
+			}
+
+			user = models.User{
+				Email: oidcUser.Email,
+				Name:  oidcUser.Name,
+				Role:  models.UserRoleUser,
+			}
+			if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
+				return errOIDCAccountCreationFailed
+			}
+		} else {
+			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Update("name", oidcUser.Name).Error; err != nil {
+				return errOIDCAccountLinkingFailed
+			}
+			user.Name = oidcUser.Name
+		}
+
+		hasConflict, err := hasProviderEmailConflict(tx, provider.Id, oidcUser.Email, user.Id)
+		if err != nil {
+			return err
+		}
+		if hasConflict {
+			return errOIDCProviderEmailConflict
+		}
+
+		providerId := provider.Id
+		identity = models.UserOIDCIdentity{
+			UserId:     user.Id,
+			ProviderId: &providerId,
+			Issuer:     oidcUser.Issuer,
+			Subject:    oidcUser.Subject,
+		}
+
+		if err := gorm.G[models.UserOIDCIdentity](tx).Create(ctx, &identity); err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed") {
+				existing, findErr := gorm.G[models.UserOIDCIdentity](tx).Where("issuer = ? AND subject = ?", oidcUser.Issuer, oidcUser.Subject).First(ctx)
+				if findErr == nil && existing.UserId == user.Id {
+					return nil
+				}
+			}
+			return errOIDCAccountLinkingFailed
+		}
+
+		return nil
+	})
+
+	if txErr == nil {
+		return user, ""
+	}
+
+	switch {
+	case errors.Is(txErr, errOIDCSignupDisabled):
+		return models.User{}, "signup_disabled"
+	case errors.Is(txErr, errOIDCAccountCreationFailed):
+		return models.User{}, "account_creation_failed"
+	case errors.Is(txErr, errOIDCAccountLinkingFailed):
+		return models.User{}, "account_linking_failed"
+	case errors.Is(txErr, errOIDCAccountUpdateFailed):
+		return models.User{}, "account_update_failed"
+	case errors.Is(txErr, errOIDCProviderEmailConflict):
+		return models.User{}, "provider_email_conflict"
+	default:
+		return models.User{}, "internal_error"
+	}
+}
+
+func hasProviderEmailConflict(tx *gorm.DB, providerId string, email string, currentUserId string) (bool, error) {
+	query := tx.Table("user_oidc_identities AS uoi").
+		Joins("JOIN users AS u ON u.id = uoi.user_id").
+		Where("uoi.provider_id = ? AND LOWER(u.email) = LOWER(?)", providerId, email)
+
+	if currentUserId != "" {
+		query = query.Where("uoi.user_id <> ?", currentUserId)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
 }

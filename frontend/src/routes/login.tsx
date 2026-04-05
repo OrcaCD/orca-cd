@@ -31,6 +31,8 @@ const oidcErrorMessages: Record<string, string> = {
 	account_creation_failed: "Your account could not be created. Please contact an administrator.",
 	account_linking_failed: "Your account could not be linked. Please contact an administrator.",
 	account_update_failed: "Your account could not be updated. Please contact an administrator.",
+	provider_email_conflict:
+		"Another account is already linked to this identity provider with the same email. Please contact an administrator.",
 	token_generation_failed: "Sign-in failed while creating your session. Please try again.",
 };
 
