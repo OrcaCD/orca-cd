@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -39,10 +40,10 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn) {
 	}
 }
 
-func connectWithRetry(url string, authToken string) *websocket.Conn {
+func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Conn, error) {
 	const (
 		initialDelay = 1 * time.Second
-		maxDelay     = 60 * time.Second
+		maxDelay     = 30 * time.Second
 	)
 
 	if strings.HasPrefix(url, "ws://") {
@@ -53,26 +54,35 @@ func connectWithRetry(url string, authToken string) *websocket.Conn {
 	for {
 		header := make(http.Header)
 		header.Set("Authorization", authToken)
-		conn, resp, err := websocket.DefaultDialer.Dial(url, header)
+		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, url, header)
 
 		if err == nil {
 			Log.Info().Str("url", url).Msg("connected to hub")
-			return conn
+			return conn, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			Log.Fatal().Msg("unauthorized: auth token is invalid or expired, aborting")
 		}
 		Log.Error().Err(err).Float64("retry_in", delay.Seconds()).Msg("connection failed, retrying")
-		time.Sleep(delay)
-		delay *= 2
-		if delay > maxDelay {
-			delay = maxDelay
-		}
 
 		if resp != nil {
 			if closeErr := resp.Body.Close(); closeErr != nil {
 				Log.Error().Err(closeErr).Msg("failed to close response body")
 			}
+		}
+
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+
+		delay *= 2
+		if delay > maxDelay {
+			delay = maxDelay
 		}
 	}
 }

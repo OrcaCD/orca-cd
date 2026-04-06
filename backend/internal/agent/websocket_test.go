@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,7 +160,10 @@ func TestConnectWithRetry_Success(t *testing.T) {
 	})
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if conn == nil {
 		t.Fatal("expected non-nil connection")
 	}
@@ -182,7 +186,10 @@ func TestConnectWithRetry_AuthHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, token)
+	conn, err := connectWithRetry(context.Background(), u, token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	conn.Close() //nolint:errcheck,gosec
 
 	select {
@@ -220,7 +227,10 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if conn == nil {
 		t.Fatal("expected non-nil connection after retries")
 	}
@@ -228,5 +238,36 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 
 	if got := attempt.Load(); got < wantAttempts {
 		t.Errorf("expected at least %d attempts, got %d", wantAttempts, got)
+	}
+}
+
+func TestConnectWithRetry_ContextCancelled(t *testing.T) {
+	// Server that is never ready — every request gets a 503 so the dialer keeps retrying.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		u := "ws" + strings.TrimPrefix(srv.URL, "http")
+		conn, err := connectWithRetry(ctx, u, "Bearer test-token")
+		if err == nil {
+			conn.Close() //nolint:errcheck
+			t.Errorf("expected error on context cancellation, got nil")
+		}
+	}()
+
+	// Give the goroutine time to start its first retry sleep, then cancel.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("connectWithRetry did not return after context cancellation")
 	}
 }

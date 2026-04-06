@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/version"
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
@@ -51,6 +56,27 @@ func DefaultConfig() (Config, error) {
 var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
 	With().Timestamp().Str("service", "agent").Logger()
 
+// connTracker holds the active WebSocket connection under a mutex so the
+// shutdown goroutine can safely close it from a different goroutine.
+type connTracker struct {
+	mu   sync.Mutex
+	conn *websocket.Conn
+}
+
+func (t *connTracker) set(conn *websocket.Conn) {
+	t.mu.Lock()
+	t.conn = conn
+	t.mu.Unlock()
+}
+
+func (t *connTracker) close() {
+	t.mu.Lock()
+	if t.conn != nil {
+		_ = t.conn.Close()
+	}
+	t.mu.Unlock()
+}
+
 func Run(cfg Config) error {
 	Log = Log.Level(cfg.LogLevel)
 
@@ -62,17 +88,40 @@ func Run(cfg Config) error {
 	}
 	_ = dockerClient // will be passed to handlers once deployment logic is added
 
-	conn := connectWithRetry(cfg.HubUrl, cfg.AuthToken)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	var tracker connTracker
+	go func() {
+		<-ctx.Done()
+		Log.Info().Msg("shutting down agent...")
+		tracker.close()
+	}()
+
+	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
+	if err != nil {
+		Log.Info().Msg("agent stopped")
+		return nil
+	}
+	tracker.set(conn)
 
 	for {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			Log.Error().Err(err).Msg("disconnected from hub, reconnecting...")
-			err = conn.Close()
-			if err != nil {
-				Log.Error().Err(err).Msg("error closing connection")
+		_, data, readErr := conn.ReadMessage()
+		if readErr != nil {
+			if ctx.Err() != nil {
+				Log.Info().Msg("agent stopped")
+				return nil
 			}
-			conn = connectWithRetry(cfg.HubUrl, cfg.AuthToken)
+			Log.Error().Err(readErr).Msg("disconnected from hub, reconnecting...")
+			if closeErr := conn.Close(); closeErr != nil {
+				Log.Error().Err(closeErr).Msg("error closing connection")
+			}
+			conn, err = connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
+			if err != nil {
+				Log.Info().Msg("agent stopped")
+				return nil
+			}
+			tracker.set(conn)
 			continue
 		}
 		msg := &messages.ServerMessage{}
