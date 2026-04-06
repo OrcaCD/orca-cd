@@ -83,7 +83,7 @@ func TestHub_Register_RejectsDuplicate(t *testing.T) {
 
 	_, err = h.Register("agent-1", conn2)
 	if err == nil {
-		t.Error("expected error when registering duplicate client ID")
+		t.Error("expected error when registering duplicate client Id")
 	}
 }
 

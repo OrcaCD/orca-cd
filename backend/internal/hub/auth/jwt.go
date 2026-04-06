@@ -22,8 +22,10 @@ const tokenExpiry = 24 * time.Hour
 
 type UserClaims struct {
 	jwt.RegisteredClaims
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Picture string `json:"picture,omitempty"`
+	Role    string `json:"role"`
 }
 
 type AgentClaims struct {
@@ -62,6 +64,10 @@ func initJWT(appSecret, appURL string) error {
 }
 
 func GenerateUserToken(user *models.User) (string, error) {
+	return GenerateUserTokenWithPicture(user, "")
+}
+
+func GenerateUserTokenWithPicture(user *models.User, picture string) (string, error) {
 	now := time.Now()
 
 	claims := UserClaims{
@@ -73,8 +79,10 @@ func GenerateUserToken(user *models.User) (string, error) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
 			Audience:  []string{"user"},
 		},
-		Name:  user.Name,
-		Email: user.Email,
+		Name:    user.Name,
+		Email:   user.Email,
+		Picture: picture,
+		Role:    string(user.Role),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
@@ -104,7 +112,7 @@ func ValidateUserToken(tokenString string) (*UserClaims, error) {
 
 func GenerateAgentToken(agent *models.Agent) (string, error) {
 	if agent.Id == "" {
-		return "", fmt.Errorf("agent ID is required for token generation")
+		return "", fmt.Errorf("agent Id is required for token generation")
 	}
 
 	now := time.Now()
