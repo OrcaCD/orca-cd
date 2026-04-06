@@ -31,14 +31,14 @@ func TestResolveOIDCUser_CreatesNewUserAndIdentity(t *testing.T) {
 		t.Fatalf("expected email %q, got %q", claims.Email, user.Email)
 	}
 
-	identity, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("issuer = ? AND subject = ?", claims.Issuer, claims.Subject).First(t.Context())
+	identity, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("provider_id = ? AND subject = ?", provider.Id, claims.Subject).First(t.Context())
 	if err != nil {
 		t.Fatalf("expected linked identity row, got error: %v", err)
 	}
 	if identity.UserId != user.Id {
 		t.Fatalf("expected identity to point at user %q, got %q", user.Id, identity.UserId)
 	}
-	if identity.ProviderId == nil || *identity.ProviderId != provider.Id {
+	if identity.ProviderId != provider.Id {
 		t.Fatalf("expected provider id %q, got %v", provider.Id, identity.ProviderId)
 	}
 }
@@ -92,9 +92,7 @@ func TestResolveOIDCUser_LinksMultipleProvidersToSameUser(t *testing.T) {
 
 	providerIds := map[string]bool{}
 	for _, identity := range identities {
-		if identity.ProviderId != nil {
-			providerIds[*identity.ProviderId] = true
-		}
+		providerIds[identity.ProviderId] = true
 	}
 	if !providerIds[provider1.Id] || !providerIds[provider2.Id] {
 		t.Fatalf("expected identities for providers %q and %q", provider1.Id, provider2.Id)
@@ -118,11 +116,9 @@ func TestResolveOIDCUser_RejectsProviderEmailConflict(t *testing.T) {
 		t.Fatalf("failed to create user B: %v", err)
 	}
 
-	providerId := provider.Id
 	identityA := models.UserOIDCIdentity{
 		UserId:     userA.Id,
-		ProviderId: &providerId,
-		Issuer:     "https://issuer-1.example.com",
+		ProviderId: provider.Id,
 		Subject:    "subject-1",
 	}
 	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &identityA); err != nil {
@@ -131,8 +127,7 @@ func TestResolveOIDCUser_RejectsProviderEmailConflict(t *testing.T) {
 
 	identityB := models.UserOIDCIdentity{
 		UserId:     userB.Id,
-		ProviderId: &providerId,
-		Issuer:     "https://issuer-1.example.com",
+		ProviderId: provider.Id,
 		Subject:    "subject-2",
 	}
 	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &identityB); err != nil {

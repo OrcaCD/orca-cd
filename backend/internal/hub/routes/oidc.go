@@ -109,7 +109,7 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 	var user models.User
 
 	txErr := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		identity, err := gorm.G[models.UserOIDCIdentity](tx).Where("issuer = ? AND subject = ?", oidcUser.Issuer, oidcUser.Subject).First(ctx)
+		identity, err := gorm.G[models.UserOIDCIdentity](tx).Where("provider_id = ? AND subject = ?", provider.Id, oidcUser.Subject).First(ctx)
 		if err == nil {
 			user, err = gorm.G[models.User](tx).Where("id = ?", identity.UserId).First(ctx)
 			if err != nil {
@@ -170,17 +170,15 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 			return errOIDCProviderEmailConflict
 		}
 
-		providerId := provider.Id
 		identity = models.UserOIDCIdentity{
 			UserId:     user.Id,
-			ProviderId: &providerId,
-			Issuer:     oidcUser.Issuer,
+			ProviderId: provider.Id,
 			Subject:    oidcUser.Subject,
 		}
 
 		if err := gorm.G[models.UserOIDCIdentity](tx).Create(ctx, &identity); err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed") {
-				existing, findErr := gorm.G[models.UserOIDCIdentity](tx).Where("issuer = ? AND subject = ?", oidcUser.Issuer, oidcUser.Subject).First(ctx)
+				existing, findErr := gorm.G[models.UserOIDCIdentity](tx).Where("provider_id = ? AND subject = ?", provider.Id, oidcUser.Subject).First(ctx)
 				if findErr == nil && existing.UserId == user.Id {
 					return nil
 				}
