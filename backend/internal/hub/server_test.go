@@ -164,7 +164,6 @@ func TestDefaultConfig_Errors(t *testing.T) {
 
 func TestDefaultConfig_SecretExactly32Chars(t *testing.T) {
 	t.Setenv("APP_URL", "https://example.com")
-	t.Setenv("APP_SECRET", "exactly-32-characters-long-secret")
 
 	secret32 := "12345678901234567890123456789012"
 	if len(secret32) != 32 {
@@ -249,7 +248,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 			t.Errorf("Run returned unexpected error: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Error("Run did not shut down within 5 seconds after SIGTERM")
+		t.Error("Run did not shut down within 5 seconds after SIGINT")
 	}
 }
 

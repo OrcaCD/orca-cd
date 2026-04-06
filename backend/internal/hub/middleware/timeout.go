@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,7 @@ import (
 func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// WebSocket connections are long-lived; skip the timeout.
-		if c.Request.Header.Get("Upgrade") == "websocket" {
+		if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
 			c.Next()
 			return
 		}

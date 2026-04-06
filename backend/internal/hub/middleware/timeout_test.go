@@ -70,23 +70,29 @@ func TestTimeoutMiddleware_ContextExpiresForSlowHandler(t *testing.T) {
 func TestTimeoutMiddleware_SkipsWebSocketRequests(t *testing.T) {
 	t.Parallel()
 
-	router := gin.New()
-	router.Use(TimeoutMiddleware(100 * time.Millisecond))
-	router.GET("/ws", func(c *gin.Context) {
-		_, ok := c.Request.Context().Deadline()
-		if ok {
-			t.Fatal("expected no deadline for WebSocket request")
-		}
-		c.Status(http.StatusOK)
-	})
+	for _, upgradeVal := range []string{"websocket", "WebSocket", "WEBSOCKET"} {
+		t.Run(upgradeVal, func(t *testing.T) {
+			t.Parallel()
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
-	req.Header.Set("Upgrade", "websocket")
-	router.ServeHTTP(w, req)
+			router := gin.New()
+			router.Use(TimeoutMiddleware(100 * time.Millisecond))
+			router.GET("/ws", func(c *gin.Context) {
+				_, ok := c.Request.Context().Deadline()
+				if ok {
+					t.Fatal("expected no deadline for WebSocket request")
+				}
+				c.Status(http.StatusOK)
+			})
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+			req.Header.Set("Upgrade", upgradeVal)
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", w.Code)
+			}
+		})
 	}
 }
 
