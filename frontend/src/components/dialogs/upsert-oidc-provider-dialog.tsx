@@ -9,6 +9,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createOIDCProvider, updateOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -33,9 +34,11 @@ const providerSchema = z.object({
 export default function UpsertOIDCProviderDialog({
 	provider,
 	onSave,
+	asDropdownItem = false,
 }: {
 	provider: OIDCProviderDetail | null;
 	onSave: () => void;
+	asDropdownItem?: boolean;
 }) {
 	const isEditing = !!provider;
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -100,7 +103,12 @@ export default function UpsertOIDCProviderDialog({
 	return (
 		<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
 			<DialogTrigger asChild>
-				{isEditing ? (
+				{asDropdownItem ? (
+					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<Pencil className="h-4 w-4" />
+						Edit
+					</DropdownMenuItem>
+				) : isEditing ? (
 					<Button variant="ghost" size="icon">
 						<Pencil className="h-4 w-4" />
 					</Button>

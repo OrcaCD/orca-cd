@@ -9,6 +9,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 
@@ -20,6 +21,7 @@ interface ConfirmationDialogProps {
 	cancelText?: string;
 	onConfirm: () => void;
 	triggerProps?: VariantProps<typeof buttonVariants>;
+	asDropdownItem?: boolean;
 }
 
 export default function ConfirmationDialog({
@@ -30,6 +32,7 @@ export default function ConfirmationDialog({
 	cancelText = "Cancel",
 	onConfirm,
 	triggerProps = { variant: "outline" },
+	asDropdownItem = false,
 }: ConfirmationDialogProps) {
 	const [open, setOpen] = useState(false);
 
@@ -41,7 +44,13 @@ export default function ConfirmationDialog({
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogTrigger asChild>
-				<Button {...triggerProps}>{triggerText}</Button>
+				{asDropdownItem ? (
+					<DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
+						{triggerText}
+					</DropdownMenuItem>
+				) : (
+					<Button {...triggerProps}>{triggerText}</Button>
+				)}
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
