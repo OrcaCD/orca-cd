@@ -120,6 +120,7 @@ func Run(cfg Config) error {
 	}
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
+	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
 	RegisterRoutes(router, cfg)
 

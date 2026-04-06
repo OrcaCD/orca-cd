@@ -186,7 +186,10 @@ func freePort(t *testing.T) (host, port string) {
 		t.Fatalf("failed to find free port: %v", err)
 	}
 	addr := ln.Addr().(*net.TCPAddr)
-	ln.Close()
+	err = ln.Close()
+	if err != nil {
+		t.Fatalf("failed to close listener: %v", err)
+	}
 	return "127.0.0.1", strconv.Itoa(addr.Port)
 }
 
@@ -198,7 +201,10 @@ func waitForServer(t *testing.T, addr string) {
 	for time.Now().Before(deadline) {
 		resp, err := client.Get("http://" + addr + "/api/v1/health")
 		if err == nil {
-			resp.Body.Close()
+			err = resp.Body.Close()
+			if err != nil {
+				t.Fatalf("failed to close response body: %v", err)
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -255,7 +261,11 @@ func TestRun_PortInUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}
-	defer ln.Close()
+	defer func() {
+		if err := ln.Close(); err != nil {
+			t.Fatalf("failed to close listener: %v", err)
+		}
+	}()
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 
 	cfg := Config{
