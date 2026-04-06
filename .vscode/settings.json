@@ -40,4 +40,6 @@
     "editor.defaultFormatter": "golang.go",
   },
   "editor.formatOnSave": true,
+  "oxc.fmt.configPath": "./frontend/.oxfmtrc.json",
+  "oxc.configPath": "./frontend/.oxlintrc.json"
 }
