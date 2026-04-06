@@ -242,13 +242,13 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 }
 
 func TestConnectWithRetry_ContextCancelled(t *testing.T) {
-	// Server that is never ready — every request gets a 503 so the dialer keeps retrying.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not ready", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	done := make(chan struct{})
 	go func() {
@@ -256,12 +256,11 @@ func TestConnectWithRetry_ContextCancelled(t *testing.T) {
 		u := "ws" + strings.TrimPrefix(srv.URL, "http")
 		conn, err := connectWithRetry(ctx, u, "Bearer test-token")
 		if err == nil {
-			conn.Close() //nolint:errcheck
+			conn.Close() //nolint:errcheck,gosec
 			t.Errorf("expected error on context cancellation, got nil")
 		}
 	}()
 
-	// Give the goroutine time to start its first retry sleep, then cancel.
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 
@@ -269,5 +268,46 @@ func TestConnectWithRetry_ContextCancelled(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("connectWithRetry did not return after context cancellation")
+	}
+}
+
+func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	cancel()
+
+	conn, err := connectWithRetry(ctx, "ws://localhost:1", "Bearer test-token")
+	if err == nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatal("expected error for pre-cancelled context, got nil")
+	}
+	if conn != nil {
+		t.Errorf("expected nil conn, got non-nil")
+	}
+}
+
+func TestConnTracker_CloseNilConn(t *testing.T) {
+	var tracker connTracker
+	tracker.close()
+}
+
+func TestConnTracker_SetAndClose(t *testing.T) {
+	serverDone := make(chan struct{})
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		defer close(serverDone)
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, _, _ = serverConn.ReadMessage()
+	})
+
+	clientConn := dialServer(t, srv)
+
+	var tracker connTracker
+	tracker.setAndCancelled(context.Background(), clientConn)
+	tracker.close()
+
+	select {
+	case <-serverDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not detect connection close")
 	}
 }

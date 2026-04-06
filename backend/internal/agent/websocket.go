@@ -74,9 +74,11 @@ func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Co
 			}
 		}
 
+		timer := time.NewTimer(delay)
 		select {
-		case <-time.After(delay):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, ctx.Err()
 		}
 

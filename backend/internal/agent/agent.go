@@ -63,18 +63,23 @@ type connTracker struct {
 	conn *websocket.Conn
 }
 
-func (t *connTracker) set(conn *websocket.Conn) {
-	t.mu.Lock()
-	t.conn = conn
-	t.mu.Unlock()
-}
-
 func (t *connTracker) close() {
 	t.mu.Lock()
 	if t.conn != nil {
 		_ = t.conn.Close()
 	}
 	t.mu.Unlock()
+}
+
+func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn) bool {
+	t.mu.Lock()
+	t.conn = conn
+	cancelled := ctx.Err() != nil
+	if cancelled {
+		_ = conn.Close()
+	}
+	t.mu.Unlock()
+	return cancelled
 }
 
 func Run(cfg Config) error {
@@ -99,11 +104,10 @@ func Run(cfg Config) error {
 	}()
 
 	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-	if err != nil {
+	if err != nil || tracker.setAndCancelled(ctx, conn) {
 		Log.Info().Msg("agent stopped")
 		return nil
 	}
-	tracker.set(conn)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -117,11 +121,10 @@ func Run(cfg Config) error {
 				Log.Error().Err(closeErr).Msg("error closing connection")
 			}
 			conn, err = connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-			if err != nil {
+			if err != nil || tracker.setAndCancelled(ctx, conn) {
 				Log.Info().Msg("agent stopped")
 				return nil
 			}
-			tracker.set(conn)
 			continue
 		}
 		msg := &messages.ServerMessage{}
