@@ -54,7 +54,7 @@ export default async function fetcher<JSON = any>(
 	input: RequestInfo,
 	init?: RequestInit,
 ): Promise<JSON> {
-	const res = await fetch(input, { credentials: "include", ...init });
+	const res = await fetch(input, { ...init });
 	if (!res.ok) {
 		throw new Error(await getErrorMessage(res));
 	}
