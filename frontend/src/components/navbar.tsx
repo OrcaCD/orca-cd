@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-	ChevronDown,
 	FileText,
 	GitBranch,
 	LayoutGrid,
@@ -20,10 +19,11 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
@@ -95,12 +95,11 @@ export default function Navbar() {
 
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="flex items-center gap-2 px-2">
-								<div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
-									{auth.profile?.name?.[0]?.toUpperCase() ?? "?"}
-								</div>
-								<span className="hidden sm:inline text-sm">{auth.profile?.name ?? "User"}</span>
-								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							<Button variant="ghost" className="relative h-10 w-10 rounded-full">
+								<Avatar className="h-10 w-10">
+									<AvatarImage src={undefined} alt={auth.profile?.name} />
+									<AvatarFallback>{getInitials(auth.profile?.name || "")}</AvatarFallback>
+								</Avatar>
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-48">
