@@ -95,7 +95,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateUserToken(&user)
+	token, err := auth.GenerateUserToken(user)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/login?error=token_generation_failed")
 		return
@@ -105,7 +105,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
 }
 
-func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUser *oidc.OIDCUser) (models.User, string) {
+func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUser *oidc.OIDCUser) (*models.User, string) {
 	var user models.User
 
 	txErr := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -192,22 +192,22 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 	})
 
 	if txErr == nil {
-		return user, ""
+		return &user, ""
 	}
 
 	switch {
 	case errors.Is(txErr, errOIDCSignupDisabled):
-		return models.User{}, "signup_disabled"
+		return nil, "signup_disabled"
 	case errors.Is(txErr, errOIDCAccountCreationFailed):
-		return models.User{}, "account_creation_failed"
+		return nil, "account_creation_failed"
 	case errors.Is(txErr, errOIDCAccountLinkingFailed):
-		return models.User{}, "account_linking_failed"
+		return nil, "account_linking_failed"
 	case errors.Is(txErr, errOIDCAccountUpdateFailed):
-		return models.User{}, "account_update_failed"
+		return nil, "account_update_failed"
 	case errors.Is(txErr, errOIDCProviderEmailConflict):
-		return models.User{}, "provider_email_conflict"
+		return nil, "provider_email_conflict"
 	default:
-		return models.User{}, "internal_error"
+		return nil, "internal_error"
 	}
 }
 
