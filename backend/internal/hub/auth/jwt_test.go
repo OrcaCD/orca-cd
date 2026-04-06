@@ -47,11 +47,36 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if claims.Email != "test@example.com" {
 		t.Errorf("expected Email %q, got %q", "test@example.com", claims.Email)
 	}
+	if claims.Picture != "" {
+		t.Errorf("expected Picture to be empty, got %q", claims.Picture)
+	}
 	if claims.NotBefore == nil {
 		t.Error("expected NotBefore to be set")
 	}
 	if len(claims.Audience) != 1 || claims.Audience[0] != "user" {
 		t.Errorf("expected Audience [\"user\"], got %v", claims.Audience)
+	}
+}
+
+func TestGenerateAndValidateUserTokenWithPicture(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
+	picture := "https://cdn.example.com/test.png"
+
+	token, err := GenerateUserTokenWithPicture(user, picture)
+	if err != nil {
+		t.Fatalf("GenerateUserTokenWithPicture() error: %v", err)
+	}
+
+	claims, err := ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+	if claims.Picture != picture {
+		t.Errorf("expected Picture %q, got %q", picture, claims.Picture)
 	}
 }
 

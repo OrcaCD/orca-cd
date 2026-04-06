@@ -84,6 +84,30 @@ func TestBuildOAuth2Config_ExtraScopes(t *testing.T) {
 	}
 }
 
+func TestNormalizePictureURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "valid https", in: "https://cdn.example.com/avatar.png", want: "https://cdn.example.com/avatar.png"},
+		{name: "valid http", in: "http://cdn.example.com/avatar.png", want: "http://cdn.example.com/avatar.png"},
+		{name: "empty", in: "", want: ""},
+		{name: "relative path", in: "/avatar.png", want: ""},
+		{name: "javascript scheme", in: "javascript:alert(1)", want: ""},
+		{name: "malformed url", in: "http://", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizePictureURL(tt.in)
+			if got != tt.want {
+				t.Errorf("normalizePictureURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestEncryptDecryptState_Roundtrip(t *testing.T) {
 	initCrypto(t)
 
@@ -272,6 +296,7 @@ func newTestOIDCServer(t *testing.T) *testOIDCServer {
 			"email":          "oidc@example.com",
 			"email_verified": true,
 			"name":           "OIDC User",
+			"picture":        "https://cdn.example.com/oidc-user-42.png",
 		})
 		idToken.Header["kid"] = kid
 		signed, _ := idToken.SignedString(key)
@@ -368,6 +393,9 @@ func TestHandleCallback_Success(t *testing.T) {
 	}
 	if user.Name != "OIDC User" {
 		t.Errorf("Name: expected %q, got %q", "OIDC User", user.Name)
+	}
+	if user.Picture != "https://cdn.example.com/oidc-user-42.png" {
+		t.Errorf("Picture: expected %q, got %q", "https://cdn.example.com/oidc-user-42.png", user.Picture)
 	}
 	if user.Issuer != srv.URL() {
 		t.Errorf("Issuer: expected %q, got %q", srv.URL(), user.Issuer)
@@ -579,5 +607,8 @@ func TestHandleCallback_NameFallsBackToEmail(t *testing.T) {
 	}
 	if user.Name != "noname@example.com" {
 		t.Errorf("Name should fall back to email, got: %q", user.Name)
+	}
+	if user.Picture != "" {
+		t.Errorf("Picture should be empty when claim is missing, got: %q", user.Picture)
 	}
 }

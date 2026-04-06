@@ -344,6 +344,44 @@ func TestProfileHandler_Success(t *testing.T) {
 	if body.Email != "alice@example.com" {
 		t.Errorf("expected Email %q, got %q", "alice@example.com", body.Email)
 	}
+	if body.Picture != "" {
+		t.Errorf("expected Picture to be empty, got %q", body.Picture)
+	}
+}
+
+func TestProfileHandler_ReturnsPicture(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Base: models.Base{Id: "user-abc"}, Name: "Alice", Email: "alice@example.com"}
+	picture := "https://cdn.example.com/alice.png"
+	token, err := auth.GenerateUserTokenWithPicture(user, picture)
+	if err != nil {
+		t.Fatalf("GenerateUserTokenWithPicture() error: %v", err)
+	}
+
+	claims, err := auth.ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+	auth.SetClaims(c, claims)
+
+	ProfileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body profileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Picture != picture {
+		t.Errorf("expected Picture %q, got %q", picture, body.Picture)
+	}
 }
 
 func TestProfileHandler_NoClaims(t *testing.T) {

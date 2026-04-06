@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,7 +28,27 @@ type OIDCUser struct {
 	Subject string
 	Email   string
 	Name    string
+	Picture string
 	Issuer  string
+}
+
+func normalizePictureURL(raw string) string {
+	picture := strings.TrimSpace(raw)
+	if picture == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(picture)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "https" && scheme != "http" {
+		return ""
+	}
+
+	return picture
 }
 
 type stateData struct {
@@ -174,6 +195,7 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		Email         string `json:"email"`
 		EmailVerified *bool  `json:"email_verified"`
 		Name          string `json:"name"`
+		Picture       string `json:"picture"`
 		Nonce         string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
@@ -199,10 +221,13 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		name = email
 	}
 
+	picture := normalizePictureURL(claims.Picture)
+
 	return &OIDCUser{
 		Subject: idToken.Subject,
 		Email:   email,
 		Name:    name,
+		Picture: picture,
 		Issuer:  idToken.Issuer,
 	}, nil
 }

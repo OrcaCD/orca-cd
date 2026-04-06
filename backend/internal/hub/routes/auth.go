@@ -41,10 +41,11 @@ type setupResponse struct {
 }
 
 type profileResponse struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Id      string `json:"id"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Picture string `json:"picture,omitempty"`
+	Role    string `json:"role"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -55,10 +56,11 @@ func ProfileHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
-		Id:    claims.Subject,
-		Name:  claims.Name,
-		Email: claims.Email,
-		Role:  claims.Role,
+		Id:      claims.Subject,
+		Name:    claims.Name,
+		Email:   claims.Email,
+		Picture: claims.Picture,
+		Role:    claims.Role,
 	})
 }
 

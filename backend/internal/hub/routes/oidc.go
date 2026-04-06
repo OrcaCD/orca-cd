@@ -95,7 +95,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.GenerateUserToken(user)
+	token, err := auth.GenerateUserTokenWithPicture(user, oidcUser.Picture)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/login?error=token_generation_failed")
 		return
