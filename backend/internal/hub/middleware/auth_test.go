@@ -32,7 +32,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no claims"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"userID": claims.Subject})
+		c.JSON(http.StatusOK, gin.H{"userId": claims.Subject})
 	})
 
 	w := httptest.NewRecorder()

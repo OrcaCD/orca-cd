@@ -111,12 +111,12 @@ func dialWS(server *httptest.Server, token string) (*websocket.Conn, *http.Respo
 }
 
 // waitForOffline polls the DB until the agent status is Offline or the timeout expires.
-func waitForOffline(t *testing.T, agentID string) {
+func waitForOffline(t *testing.T, agentId string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var dbAgent models.Agent
-		if err := db.DB.First(&dbAgent, "id = ?", agentID).Error; err != nil {
+		if err := db.DB.First(&dbAgent, "id = ?", agentId).Error; err != nil {
 			return // DB may already be closed during cleanup; that's fine.
 		}
 		if dbAgent.Status == models.AgentStatusOffline {
@@ -124,7 +124,7 @@ func waitForOffline(t *testing.T, agentID string) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Errorf("timed out waiting for agent %s to go offline", agentID)
+	t.Errorf("timed out waiting for agent %s to go offline", agentId)
 }
 
 func TestWsHandler_MissingAuthHeader(t *testing.T) {

@@ -10,11 +10,19 @@ import (
 )
 
 func RegisterRoutes(router *gin.Engine, cfg Config) {
+	// Configure package-level settings from config
+	routes.LocalAuthDisabled = cfg.DisableLocalAuth
+	routes.OIDCAppURL = cfg.AppURL
+
 	api := router.Group("/api/v1")
 	{
 		// Public routes (no authentication required)
 		api.GET("/health", routes.HealthHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
+
+		// OIDC auth flow (public)
+		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
+		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
 
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
@@ -26,6 +34,16 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+		}
+
+		// Admin routes (authentication + admin role required)
+		admin := api.Group("/admin", middleware.RequireAuth(), middleware.RequireAdmin())
+		{
+			admin.GET("/oidc-providers", routes.AdminListOIDCProvidersHandler)
+			admin.POST("/oidc-providers", routes.AdminCreateOIDCProviderHandler)
+			admin.GET("/oidc-providers/:id", routes.AdminGetOIDCProviderHandler)
+			admin.PUT("/oidc-providers/:id", routes.AdminUpdateOIDCProviderHandler)
+			admin.DELETE("/oidc-providers/:id", routes.AdminDeleteOIDCProviderHandler)
 		}
 
 		h := websocket.NewHub(&Log)

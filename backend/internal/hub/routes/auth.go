@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -13,6 +14,9 @@ import (
 )
 
 var errRegistrationDisabled = errors.New("registration disabled")
+
+// LocalAuthDisabled is set by the server config to gate local auth endpoints.
+var LocalAuthDisabled bool
 
 type registerRequest struct {
 	Name     string `json:"name" binding:"required,min=3,max=64"`
@@ -25,14 +29,23 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type providerInfo struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type setupResponse struct {
-	NeedsSetup bool `json:"needsSetup"`
+	NeedsSetup       bool           `json:"needsSetup"`
+	Providers        []providerInfo `json:"providers"`
+	LocalAuthEnabled bool           `json:"localAuthEnabled"`
 }
 
 type profileResponse struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Id      string `json:"id"`
+	Name    string `json:"name"`
+	Email   string `json:"email"`
+	Picture string `json:"picture,omitempty"`
+	Role    string `json:"role"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -43,9 +56,11 @@ func ProfileHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
-		Id:    claims.Subject,
-		Name:  claims.Name,
-		Email: claims.Email,
+		Id:      claims.Subject,
+		Name:    claims.Name,
+		Email:   claims.Email,
+		Picture: claims.Picture,
+		Role:    claims.Role,
 	})
 }
 
@@ -55,7 +70,23 @@ func SetupHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	c.JSON(http.StatusOK, setupResponse{NeedsSetup: count == 0})
+
+	providers, err := gorm.G[models.OIDCProvider](db.DB).Where("enabled = ?", true).Find(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	infos := make([]providerInfo, 0, len(providers))
+	for _, p := range providers {
+		infos = append(infos, providerInfo{Id: p.Id, Name: p.Name})
+	}
+
+	c.JSON(http.StatusOK, setupResponse{
+		NeedsSetup:       count == 0,
+		Providers:        infos,
+		LocalAuthEnabled: !LocalAuthDisabled,
+	})
 }
 
 func RegisterHandler(c *gin.Context) {
@@ -64,6 +95,7 @@ func RegisterHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 8 chars) and valid email are required"})
 		return
 	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -86,7 +118,7 @@ func RegisterHandler(c *gin.Context) {
 			Email:        req.Email,
 			Name:         req.Name,
 			PasswordHash: &hash,
-			AuthProvider: models.AuthProviderLocal,
+			Role:         models.UserRoleAdmin,
 		}
 		return gorm.G[models.User](tx).Create(c.Request.Context(), &user)
 	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -111,13 +143,19 @@ func RegisterHandler(c *gin.Context) {
 }
 
 func LoginHandler(c *gin.Context) {
+	if LocalAuthDisabled {
+		c.JSON(http.StatusForbidden, gin.H{"error": "local authentication is disabled"})
+		return
+	}
+
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
 		return
 	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	user, err := gorm.G[models.User](db.DB).Where("email = ? AND auth_provider = ?", req.Email, models.AuthProviderLocal).First(c.Request.Context())
+	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			auth.CompareWithDummy(req.Password)

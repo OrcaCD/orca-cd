@@ -35,7 +35,7 @@ func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, exists := h.clients[id]; exists {
-		return nil, fmt.Errorf("client ID %s already registered", id)
+		return nil, fmt.Errorf("client Id %s already registered", id)
 	}
 	c := &Client{
 		Id:   id,
@@ -54,7 +54,7 @@ func (h *Hub) Unregister(id string) {
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
-// Send sends a message to a specific client by ID.
+// Send sends a message to a specific client by Id.
 // Returns false if the client doesn't exist or the buffer is full.
 func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
 	h.mu.RLock()

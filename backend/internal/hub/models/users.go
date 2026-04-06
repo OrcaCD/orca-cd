@@ -1,15 +1,16 @@
 package models
 
-type AuthProvider string
+type UserRole string
 
 const (
-	AuthProviderLocal AuthProvider = "local"
+	UserRoleAdmin UserRole = "admin"
+	UserRoleUser  UserRole = "user"
 )
 
 type User struct {
 	Base
-	Email        string       `gorm:"type:text;uniqueIndex;not null"`
-	Name         string       `gorm:"type:text;not null"`
-	PasswordHash *string      `gorm:"type:text;"`
-	AuthProvider AuthProvider `gorm:"type:text;not null;default:'local'"`
+	Email        string   `gorm:"type:text;uniqueIndex;not null"`
+	Name         string   `gorm:"type:text;not null"`
+	PasswordHash *string  `gorm:"type:text;"`
+	Role         UserRole `gorm:"type:text;not null;default:'user'"`
 }

@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/aegis-aead/go-libaegis v0.2.14
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/docker/cli v29.3.1+incompatible
 	github.com/docker/compose/v5 v5.1.1
 	github.com/gin-gonic/gin v1.12.0
@@ -15,6 +16,7 @@ require (
 	github.com/moby/moby/client v0.3.0
 	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/time v0.15.0
 	google.golang.org/protobuf v1.36.11
 	gorm.io/driver/sqlite v1.6.0
@@ -56,6 +58,7 @@ require (
 	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect

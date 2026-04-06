@@ -1,15 +1,12 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
-	Activity,
-	Bell,
-	ChevronDown,
 	FileText,
 	GitBranch,
-	HelpCircle,
 	LayoutGrid,
 	LogOut,
 	Menu,
 	Server,
+	Settings,
 	User,
 	X,
 } from "lucide-react";
@@ -22,17 +19,19 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
 	{ name: "Repositories", href: "/repositories", icon: GitBranch },
-	{ name: "Hosts", href: "/hosts", icon: Server },
-	{ name: "Activity", href: "/activity", icon: Activity },
+	{ name: "Agents", href: "/agents", icon: Server },
 ];
+
+const adminNavItems = [{ name: "Admin", href: "/admin", icon: Settings }];
 
 export default function Navbar() {
 	const { auth, logout } = useAuth();
@@ -51,6 +50,8 @@ export default function Navbar() {
 	const location = useLocation();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+	const allNavItems = auth.isAdmin ? [...navItems, ...adminNavItems] : navItems;
+
 	return (
 		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
 			<div className="flex h-14 items-center justify-between px-4">
@@ -60,7 +61,7 @@ export default function Navbar() {
 					</Link>
 
 					<nav className="hidden md:flex items-center gap-1">
-						{navItems.map((item) => (
+						{allNavItems.map((item) => (
 							<Link
 								key={item.name}
 								to={item.href}
@@ -79,17 +80,10 @@ export default function Navbar() {
 				</div>
 
 				<div className="flex items-center gap-3">
-					<Button variant="ghost" size="icon" className="hidden sm:flex">
-						<HelpCircle className="h-5 w-5 text-muted-foreground" />
-					</Button>
-
-					<Button variant="ghost" size="icon" className="hidden sm:flex">
-						<FileText className="h-5 w-5 text-muted-foreground" />
-					</Button>
-
-					<Button variant="ghost" size="icon" className="relative">
-						<Bell className="h-5 w-5 text-muted-foreground" />
-						<span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />
+					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
+						<a href="https://orcacd.github.io/docs/" target="_blank" rel="noopener noreferrer">
+							<FileText className="h-5 w-5 text-muted-foreground" />
+						</a>
 					</Button>
 
 					<ModeToggle
@@ -101,12 +95,11 @@ export default function Navbar() {
 
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="flex items-center gap-2 px-2">
-								<div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
-									{auth.profile?.name?.[0]?.toUpperCase() ?? "?"}
-								</div>
-								<span className="hidden sm:inline text-sm">{auth.profile?.name ?? "User"}</span>
-								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							<Button variant="ghost" className="relative h-10 w-10 rounded-full">
+								<Avatar className="h-10 w-10">
+									<AvatarImage src={auth.profile?.picture || undefined} alt={auth.profile?.name} />
+									<AvatarFallback>{getInitials(auth.profile?.name || "")}</AvatarFallback>
+								</Avatar>
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-48">
@@ -143,7 +136,7 @@ export default function Navbar() {
 
 			{mobileMenuOpen && (
 				<nav className="md:hidden border-t border-border p-4 space-y-1">
-					{navItems.map((item) => (
+					{allNavItems.map((item) => (
 						<Link
 							key={item.name}
 							to={item.href}
