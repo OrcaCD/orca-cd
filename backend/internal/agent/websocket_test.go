@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,7 +160,10 @@ func TestConnectWithRetry_Success(t *testing.T) {
 	})
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if conn == nil {
 		t.Fatal("expected non-nil connection")
 	}
@@ -182,7 +186,10 @@ func TestConnectWithRetry_AuthHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, token)
+	conn, err := connectWithRetry(context.Background(), u, token)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	conn.Close() //nolint:errcheck,gosec
 
 	select {
@@ -220,7 +227,10 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn := connectWithRetry(u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if conn == nil {
 		t.Fatal("expected non-nil connection after retries")
 	}
@@ -228,5 +238,76 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 
 	if got := attempt.Load(); got < wantAttempts {
 		t.Errorf("expected at least %d attempts, got %d", wantAttempts, got)
+	}
+}
+
+func TestConnectWithRetry_ContextCancelled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		u := "ws" + strings.TrimPrefix(srv.URL, "http")
+		conn, err := connectWithRetry(ctx, u, "Bearer test-token")
+		if err == nil {
+			conn.Close() //nolint:errcheck,gosec
+			t.Errorf("expected error on context cancellation, got nil")
+		}
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("connectWithRetry did not return after context cancellation")
+	}
+}
+
+func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	cancel()
+
+	conn, err := connectWithRetry(ctx, "ws://localhost:1", "Bearer test-token")
+	if err == nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatal("expected error for pre-cancelled context, got nil")
+	}
+	if conn != nil {
+		t.Errorf("expected nil conn, got non-nil")
+	}
+}
+
+func TestConnTracker_CloseNilConn(t *testing.T) {
+	var tracker connTracker
+	tracker.close()
+}
+
+func TestConnTracker_SetAndClose(t *testing.T) {
+	serverDone := make(chan struct{})
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		defer close(serverDone)
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, _, _ = serverConn.ReadMessage()
+	})
+
+	clientConn := dialServer(t, srv)
+
+	var tracker connTracker
+	tracker.setAndCancelled(context.Background(), clientConn)
+	tracker.close()
+
+	select {
+	case <-serverDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not detect connection close")
 	}
 }
