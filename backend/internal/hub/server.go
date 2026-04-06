@@ -1,9 +1,13 @@
 package hub
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -94,6 +98,12 @@ func Run(cfg Config) error {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
 	}
+	defer func() {
+		if sqlDB, err := db.DB.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+		db.DB = nil
+	}()
 
 	router := gin.New()
 
@@ -114,6 +124,46 @@ func Run(cfg Config) error {
 	RegisterRoutes(router, cfg)
 
 	addr := cfg.Host + ":" + cfg.Port
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		MaxHeaderBytes:    22 << 10, // 22 KB
+		IdleTimeout:       120 * time.Second,
+	}
+
 	Log.Info().Str("addr", addr).Str("version", version.Version).Msg("hub started")
-	return router.Run(addr)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+
+	select {
+	case err := <-serverErr:
+		Log.Error().Err(err).Msg("server error")
+		return err
+	case sig := <-quit:
+		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		Log.Error().Err(err).Msg("forced shutdown")
+		return err
+	}
+
+	Log.Info().Msg("hub stopped")
+	return nil
 }
