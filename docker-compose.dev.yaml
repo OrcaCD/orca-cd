@@ -21,6 +21,8 @@ services:
     restart: unless-stopped
     depends_on:
       - hub
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HUB_URL=ws://hub:8080/api/v1/ws
       - AUTH_TOKEN=supersecrettoken
