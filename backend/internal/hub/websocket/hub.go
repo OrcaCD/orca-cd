@@ -3,6 +3,7 @@ package websocket
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/gorilla/websocket"
@@ -85,6 +86,8 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 	}
 }
 
+const writeWait = 10 * time.Second
+
 // WritePump writes outgoing messages to the WebSocket connection.
 // Must be run in a goroutine. Exits when the client's Send channel is closed.
 func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
@@ -99,6 +102,10 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 		if err != nil {
 			log.Error().Err(err).Msg("Marshal error")
 			continue
+		}
+		if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+			log.Error().Err(err).Msg("failed to set write deadline")
+			return
 		}
 		if err := c.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
 			log.Error().Err(err).Msg("Write error")
