@@ -22,6 +22,8 @@ type Client struct {
 	cli     command.Cli
 	compose api.Compose
 	ready   bool
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 func New(log zerolog.Logger) (*Client, error) {
@@ -39,10 +41,13 @@ func New(log zerolog.Logger) (*Client, error) {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	c := &Client{
 		log:     log,
 		cli:     dockerCLI,
 		compose: composeSvc,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 
 	if c.pingDaemon() {
@@ -53,6 +58,10 @@ func New(log zerolog.Logger) (*Client, error) {
 	}
 
 	return c, nil
+}
+
+func (c *Client) Close() {
+	c.cancel()
 }
 
 func (c *Client) CLI() command.Cli {
@@ -71,7 +80,7 @@ func (c *Client) Ready() bool {
 }
 
 func (c *Client) pingDaemon() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
 
 	ping, err := c.cli.Client().Ping(ctx, client.PingOptions{NegotiateAPIVersion: true})
@@ -102,12 +111,11 @@ func (c *Client) pingDaemon() bool {
 // incoming events. When the stream errors out (daemon went away), it hands off
 // to waitForDaemon to poll for recovery.
 func (c *Client) startEventLoop() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	result := c.cli.Client().Events(ctx, client.EventsListOptions{})
+	result := c.cli.Client().Events(c.ctx, client.EventsListOptions{})
 	for {
 		select {
+		case <-c.ctx.Done():
+			return
 		case msg, ok := <-result.Messages:
 			if !ok {
 				return
@@ -136,10 +144,20 @@ func (c *Client) handleEvent(msg events.Message) {
 func (c *Client) waitForDaemon() {
 	ticker := time.NewTicker(daemonCheckInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		if c.pingDaemon() {
-			go c.startEventLoop()
+	var ticks int
+	for {
+		select {
+		case <-c.ctx.Done():
 			return
+		case <-ticker.C:
+			ticks++
+			if c.pingDaemon() {
+				go c.startEventLoop()
+				return
+			}
+			if ticks%12 == 0 {
+				c.log.Warn().Msg("Docker daemon still unreachable, retrying in the background")
+			}
 		}
 	}
 }

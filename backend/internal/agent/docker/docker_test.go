@@ -12,6 +12,7 @@ func newTestClient(t *testing.T) *Client {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(c.Close)
 	return c
 }
 

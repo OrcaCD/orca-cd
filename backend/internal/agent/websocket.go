@@ -62,7 +62,7 @@ func connectWithRetry(url string, authToken string) *websocket.Conn {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			Log.Fatal().Msg("unauthorized: auth token is invalid or expired, aborting")
 		}
-		Log.Error().Err(err).Dur("retry_in", delay/1000).Msg("connection failed, retrying")
+		Log.Error().Err(err).Float64("retry_in", delay.Seconds()).Msg("connection failed, retrying")
 		time.Sleep(delay)
 		delay *= 2
 		if delay > maxDelay {
