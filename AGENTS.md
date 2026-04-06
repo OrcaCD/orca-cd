@@ -31,6 +31,7 @@ just lint           # golangci-lint + go mod verify
 just fmt            # format with golangci-lint
 just test           # run all tests with race detection
 just test-coverage  # tests + HTML coverage report
+just proto          # generate Go code from .proto files, used for WebSocket messages
 ```
 
 Running a single test package:
@@ -65,15 +66,21 @@ Frontend (React SPA)
     │  HTTP /api/*
     ▼
 Hub (Go, port 8080)
+    ├─ auth/        JWT + password hashing, cookies
     ├─ crypto/      AEGIS-256 encryption for sensitive DB fields
     ├─ db/          SQLite + golang-migrate + GORM
     ├─ models/      GORM models (Agent, …)
-    ├─ middleware/  CSRF, security headers, origin validation
-    ├─ routes/      /api/v1/health and future endpoints
-    └─ handlers.go  registers all routes
+    ├─ middleware/  CSRF, security headers, origin validation, authentication
+    ├─ routes/      /api/v1/ — health, auth endpoints
+    ├─ websocket/   Hub-side WebSocket handler + worker pool
+    ├─ server.go    Config, Gin setup, middleware wiring
+    ├─ handlers.go  registers all routes
+    └─ url.go       APP_URL parsing and validation
 
 Agent (Go)
-    └─ connects to Hub, executes deployments
+    ├─ agent.go     Config, connection lifecycle
+    ├─ websocket.go WebSocket client connecting to Hub
+    └─ url.go       Hub URL parsing and validation
 ```
 
 **Version info** is injected at build time via `ldflags` into `internal/version/version.go`.
@@ -84,7 +91,7 @@ Agent (Go)
 
 | Layer             | Choice                                             |
 | ----------------- | -------------------------------------------------- |
-| Backend framework | Gin                                                |
+| Backend framework | Gin + gorilla/websocket                            |
 | ORM / DB          | GORM + SQLite + golang-migrate                     |
 | Encryption        | AEGIS-256 via go-libaegis                          |
 | CLI               | Cobra                                              |

@@ -122,7 +122,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 func handleClientMessage(id string, msg *messages.ClientMessage, log *zerolog.Logger) {
 	switch p := msg.Payload.(type) {
 	case *messages.ClientMessage_Pong:
-		log.Info().Str("client", id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
+		log.Debug().Str("client", id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		lastSeen := time.Unix(p.Pong.Timestamp, 0)
