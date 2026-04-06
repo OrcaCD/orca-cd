@@ -1,6 +1,6 @@
 import { deleteRepository, type Repository } from "@/lib/repsitories";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, MoreHorizontal, RefreshCw, Trash } from "lucide-react";
+import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -91,33 +91,35 @@ export const columns: ColumnDef<Repository>[] = [
 			}
 
 			return (
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button variant="ghost" className="h-8 w-8 p-0">
-							<span className="sr-only">Open menu</span>
-							<MoreHorizontal className="h-4 w-4" />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						<DropdownMenuLabel>Actions</DropdownMenuLabel>
-						<DropdownMenuItem>
-							<RefreshCw className="mr-1 h-4 w-4" />
-							Refresh
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<UpsertRepositoryDialog repository={row.original} asDropdownItem />
-						<ConfirmationDialog
-							triggerText={
-								<>
-									<Trash className="mr-1 h-4 w-4" />
-									Disconnect
-								</>
-							}
-							onConfirm={async () => await handleDelete()}
-							asDropdownItem
-						/>
-					</DropdownMenuContent>
-				</DropdownMenu>
+				<div className="flex justify-end">
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Button variant="ghost" className="h-8 w-8 p-0">
+								<span className="sr-only">Open menu</span>
+								<MoreHorizontal className="h-4 w-4" />
+							</Button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuLabel>Actions</DropdownMenuLabel>
+							<DropdownMenuItem>
+								<RefreshCw className="h-4 w-4" />
+								Refresh
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<UpsertRepositoryDialog repository={row.original} asDropdownItem />
+							<ConfirmationDialog
+								triggerText={
+									<>
+										<Trash2 className="h-4 w-4" />
+										Disconnect
+									</>
+								}
+								onConfirm={async () => await handleDelete()}
+								asDropdownItem
+							/>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
 			);
 		},
 	},
