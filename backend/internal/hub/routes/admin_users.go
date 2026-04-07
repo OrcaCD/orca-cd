@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -23,18 +25,21 @@ type adminUserResponse struct {
 	UpdatedAt   string `json:"updatedAt"`
 }
 
+type adminUserWithGeneratedPasswordResponse struct {
+	adminUserResponse
+	GeneratedPassword string `json:"generatedPassword"`
+}
+
 type adminCreateUserRequest struct {
-	Name     string `json:"name" binding:"required,min=3,max=64"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8,max=128"`
-	Role     string `json:"role" binding:"required,oneof=admin user"`
+	Name  string `json:"name" binding:"required,min=3,max=64"`
+	Email string `json:"email" binding:"required,email"`
+	Role  string `json:"role" binding:"required,oneof=admin user"`
 }
 
 type adminUpdateUserRequest struct {
-	Name     string  `json:"name" binding:"required,min=3,max=64"`
-	Email    string  `json:"email" binding:"required,email"`
-	Role     string  `json:"role" binding:"required,oneof=admin user"`
-	Password *string `json:"password" binding:"omitempty,min=8,max=128"`
+	Name  string `json:"name" binding:"required,min=3,max=64"`
+	Email string `json:"email" binding:"required,email"`
+	Role  string `json:"role" binding:"required,oneof=admin user"`
 }
 
 func toAdminUserResponse(user *models.User) adminUserResponse {
@@ -46,6 +51,13 @@ func toAdminUserResponse(user *models.User) adminUserResponse {
 		HasPassword: user.PasswordHash != nil,
 		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func toAdminUserWithGeneratedPasswordResponse(user *models.User, generatedPassword string) adminUserWithGeneratedPasswordResponse {
+	return adminUserWithGeneratedPasswordResponse{
+		adminUserResponse: toAdminUserResponse(user),
+		GeneratedPassword: generatedPassword,
 	}
 }
 
@@ -83,13 +95,19 @@ func AdminGetUserHandler(c *gin.Context) {
 func AdminCreateUserHandler(c *gin.Context) {
 	var req adminCreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, email, password and role are required and must be valid"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, email and role are required and must be valid"})
 		return
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	hash, err := auth.HashPassword(req.Password)
+	generatedPassword, err := generateRandomPassword()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	hash, err := auth.HashPassword(generatedPassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -111,7 +129,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toAdminUserResponse(&user))
+	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, generatedPassword))
 }
 
 func AdminUpdateUserHandler(c *gin.Context) {
@@ -156,14 +174,18 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	user.Email = req.Email
 	user.Role = models.UserRole(req.Role)
 
-	if req.Password != nil {
-		hash, err := auth.HashPassword(*req.Password)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-		user.PasswordHash = &hash
+	generatedPassword, err := generateRandomPassword()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
 	}
+
+	hash, err := auth.HashPassword(generatedPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	user.PasswordHash = &hash
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
 		if isUniqueConstraintError(err) {
@@ -174,7 +196,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAdminUserResponse(&user))
+	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, generatedPassword))
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
@@ -218,4 +240,13 @@ func countAdminUsers(c *gin.Context) (int64, error) {
 
 func isUniqueConstraintError(err error) bool {
 	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+}
+
+func generateRandomPassword() (string, error) {
+	raw := make([]byte, 18)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
