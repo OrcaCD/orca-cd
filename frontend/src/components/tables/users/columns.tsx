@@ -85,7 +85,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 				} catch (err) {
 					toast.error(err instanceof Error ? err.message : "Failed to delete user");
 				}
-				mutate(`${API_BASE}/admin/users`);
+				await mutate(`${API_BASE}/admin/users`);
 			}
 
 			return (

@@ -98,7 +98,7 @@ export default function UpsertUserDialog({
 					setIsGeneratedPasswordOpen(true);
 				}
 
-				mutate(`${API_BASE}/admin/users`);
+				await mutate(`${API_BASE}/admin/users`);
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save user");
