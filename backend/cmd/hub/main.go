@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 
 	"github.com/OrcaCD/orca-cd/internal/hub"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -43,8 +45,7 @@ func main() {
 				os.Exit(1)
 			}
 
-			//nolint:gosec
-			resp, err := http.Get("http://localhost:" + cfg.Port + "/api/v1/health")
+			resp, err := httpclient.Get(context.Background(), "http://localhost:"+cfg.Port+"/api/v1/health")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)
