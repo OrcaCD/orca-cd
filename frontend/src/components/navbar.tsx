@@ -33,8 +33,8 @@ import {
 
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
-	{ name: "Repositories", href: "/repositories", icon: GitBranch },
 	{ name: "Agents", href: "/agents", icon: Server },
+	{ name: "Repositories", href: "/repositories", icon: GitBranch },
 ];
 
 const adminNavItems = [{ name: "Admin", href: "/admin", icon: Settings }];
