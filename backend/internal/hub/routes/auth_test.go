@@ -506,7 +506,10 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 		t.Fatalf("failed to create user: %v", err)
 	}
 
-	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "NEW@Example.COM"}) //nolint:gosec
+	updatedName := "Updated Name"
+	updatedEmail := "new@example.com"
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: updatedName, Email: "NEW@Example.COM"}) //nolint:gosec
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
@@ -526,22 +529,22 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Name != "Updated Name" {
-		t.Errorf("expected Name %q, got %q", "Updated Name", body.Name)
+	if body.Name != updatedName {
+		t.Errorf("expected Name %q, got %q", updatedName, body.Name)
 	}
-	if body.Email != "new@example.com" {
-		t.Errorf("expected normalized email %q, got %q", "new@example.com", body.Email)
+	if body.Email != updatedEmail {
+		t.Errorf("expected normalized email %q, got %q", updatedEmail, body.Email)
 	}
 
 	var reloaded models.User
 	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
 		t.Fatalf("failed to reload user: %v", err)
 	}
-	if reloaded.Name != "Updated Name" {
-		t.Errorf("expected persisted name %q, got %q", "Updated Name", reloaded.Name)
+	if reloaded.Name != updatedName {
+		t.Errorf("expected persisted name %q, got %q", updatedName, reloaded.Name)
 	}
-	if reloaded.Email != "new@example.com" {
-		t.Errorf("expected persisted email %q, got %q", "new@example.com", reloaded.Email)
+	if reloaded.Email != updatedEmail {
+		t.Errorf("expected persisted email %q, got %q", updatedEmail, reloaded.Email)
 	}
 }
 
