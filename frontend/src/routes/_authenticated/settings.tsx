@@ -10,37 +10,27 @@ import {
 	SidebarMenuItem,
 	SidebarProvider,
 } from "@/components/ui/sidebar";
-import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, Shield, Users } from "lucide-react";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Key, Settings, User } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/admin")({
-	beforeLoad: ({ context }) => {
-		if (!context.auth.isAdmin) {
-			throw redirect({ to: "/" });
-		}
-	},
-	component: AdminLayout,
+export const Route = createFileRoute("/_authenticated/settings")({
+	component: SettingsLayout,
 });
 
-const adminPages = [
+const settingsPages = [
 	{
-		title: "System Info",
-		icon: Info,
-		path: "/admin/system-info",
+		title: "Profile",
+		icon: User,
+		path: "/settings/profile",
 	},
 	{
-		title: "OIDC Providers",
-		icon: IdCard,
-		path: "/admin/oidc-providers",
-	},
-	{
-		title: "User Management",
-		icon: Users,
-		path: "/admin/users",
+		title: "Security",
+		icon: Key,
+		path: "/settings/security",
 	},
 ];
 
-function AdminLayout() {
+function SettingsLayout() {
 	const { location } = useRouterState();
 
 	return (
@@ -48,16 +38,16 @@ function AdminLayout() {
 			<Sidebar collapsible="none" className="h-screen border-r">
 				<SidebarHeader className="px-4 py-5">
 					<div className="flex items-center gap-2 font-semibold">
-						<Shield className="size-4" />
-						Admin
+						<Settings className="size-4" />
+						Settings
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
 					<SidebarGroup>
-						<SidebarGroupLabel>Management</SidebarGroupLabel>
+						<SidebarGroupLabel>Account</SidebarGroupLabel>
 						<SidebarGroupContent>
 							<SidebarMenu>
-								{adminPages.map((item) => (
+								{settingsPages.map((item) => (
 									<SidebarMenuItem key={item.title}>
 										<SidebarMenuButton asChild isActive={location.pathname === item.path}>
 											<Link to={item.path}>

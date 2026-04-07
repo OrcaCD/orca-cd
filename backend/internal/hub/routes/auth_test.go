@@ -76,6 +76,22 @@ func hasAuthCookie(w *httptest.ResponseRecorder) bool {
 	return false
 }
 
+func setUserClaims(t *testing.T, c *gin.Context, user *models.User) {
+	t.Helper()
+
+	token, err := auth.GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	claims, err := auth.ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+
+	auth.SetClaims(c, claims)
+}
+
 func TestSetupHandler_NoUsers(t *testing.T) {
 	setupTestDB(t)
 	LocalAuthDisabled = false
@@ -478,5 +494,209 @@ func TestProfileHandler_ReturnsRole(t *testing.T) {
 	}
 	if body.Role != "admin" {
 		t.Errorf("expected role %q, got %q", "admin", body.Role)
+	}
+}
+
+func TestUpdateOwnProfileHandler_Success(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Base: models.Base{Id: "user-local-1"}, Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "NEW@Example.COM"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !hasAuthCookie(w) {
+		t.Error("expected refreshed auth cookie in response")
+	}
+
+	var body profileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Name != "Updated Name" {
+		t.Errorf("expected Name %q, got %q", "Updated Name", body.Name)
+	}
+	if body.Email != "new@example.com" {
+		t.Errorf("expected normalized email %q, got %q", "new@example.com", body.Email)
+	}
+
+	var reloaded models.User
+	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.Name != "Updated Name" {
+		t.Errorf("expected persisted name %q, got %q", "Updated Name", reloaded.Name)
+	}
+	if reloaded.Email != "new@example.com" {
+		t.Errorf("expected persisted email %q, got %q", "new@example.com", reloaded.Email)
+	}
+}
+
+func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
+	setupTestDB(t)
+
+	hashA, _ := auth.HashPassword("password123")
+	hashB, _ := auth.HashPassword("password456")
+	userA := &models.User{Base: models.Base{Id: "user-local-3"}, Email: "first@example.com", Name: "First", PasswordHash: &hashA, Role: models.UserRoleUser}
+	userB := &models.User{Base: models.Base{Id: "user-local-4"}, Email: "second@example.com", Name: "Second", PasswordHash: &hashB, Role: models.UserRoleUser}
+	if err := db.DB.Create(userA).Error; err != nil {
+		t.Fatalf("failed to create user A: %v", err)
+	}
+	if err := db.DB.Create(userB).Error; err != nil {
+		t.Fatalf("failed to create user B: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: userA.Name, Email: userB.Email}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, userA)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded models.User
+	if err := db.DB.Where("id = ?", userA.Id).First(&reloaded).Error; err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.Email != "first@example.com" {
+		t.Errorf("expected email to remain unchanged, got %q", reloaded.Email)
+	}
+}
+
+func TestUpdateOwnPasswordHandler_Success(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Base: models.Base{Id: "user-local-5"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnPasswordRequest{CurrentPassword: "password123", NewPassword: "newpassword123"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile/password", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnPasswordHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !hasAuthCookie(w) {
+		t.Error("expected refreshed auth cookie in response")
+	}
+
+	var reloaded models.User
+	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.PasswordHash == nil {
+		t.Fatal("expected password hash to be set")
+	}
+	if !auth.CheckPassword("newpassword123", *reloaded.PasswordHash) {
+		t.Error("expected password hash to match new password")
+	}
+}
+
+func TestUpdateOwnPasswordHandler_WrongCurrentPassword(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Base: models.Base{Id: "user-local-6"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnPasswordRequest{CurrentPassword: "wrong-password", NewPassword: "newpassword123"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile/password", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnPasswordHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reloaded models.User
+	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.PasswordHash == nil || !auth.CheckPassword("password123", *reloaded.PasswordHash) {
+		t.Error("expected original password hash to remain unchanged")
+	}
+}
+
+func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Base: models.Base{Id: "user-sso-1"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	identity := models.UserOIDCIdentity{UserId: user.Id, ProviderId: "provider-1", Subject: "subject-1"}
+	if err := db.DB.Create(&identity).Error; err != nil {
+		t.Fatalf("failed to create oidc identity: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		body    any
+		handler gin.HandlerFunc
+		path    string
+	}{
+		{
+			name:    "profile update",
+			body:    updateOwnProfileRequest{Name: "Blocked Name", Email: "blocked@example.com"},
+			handler: UpdateOwnProfileHandler,
+			path:    "/api/v1/auth/profile",
+		},
+		{
+			name:    "password update",
+			body:    updateOwnPasswordRequest{CurrentPassword: "password123", NewPassword: "newpassword123"},
+			handler: UpdateOwnPasswordHandler,
+			path:    "/api/v1/auth/profile/password",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.body) //nolint:gosec
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPut, tt.path, bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setUserClaims(t, c, user)
+
+			tt.handler(c)
+
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

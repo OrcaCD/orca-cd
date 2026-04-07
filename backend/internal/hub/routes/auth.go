@@ -29,6 +29,16 @@ type loginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type updateOwnProfileRequest struct {
+	Name  string `json:"name" binding:"required,min=3,max=64"`
+	Email string `json:"email" binding:"required,email"`
+}
+
+type updateOwnPasswordRequest struct {
+	CurrentPassword string `json:"currentPassword" binding:"required"`
+	NewPassword     string `json:"newPassword" binding:"required,min=8,max=128"`
+}
+
 type providerInfo struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
@@ -46,6 +56,7 @@ type profileResponse struct {
 	Email   string `json:"email"`
 	Picture string `json:"picture,omitempty"`
 	Role    string `json:"role"`
+	IsLocal bool   `json:"isLocal"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -55,13 +66,131 @@ func ProfileHandler(c *gin.Context) {
 		return
 	}
 
+	isLocal := false
+	if user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context()); err == nil {
+		if count, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", user.Id).Count(c.Request.Context(), "*"); err == nil {
+			isLocal = user.PasswordHash != nil && count == 0
+		}
+	}
+
 	c.JSON(http.StatusOK, profileResponse{
 		Id:      claims.Subject,
 		Name:    claims.Name,
 		Email:   claims.Email,
 		Picture: claims.Picture,
 		Role:    claims.Role,
+		IsLocal: isLocal,
 	})
+}
+
+func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return nil, nil, false
+	}
+
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+			return nil, nil, false
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return nil, nil, false
+	}
+
+	identityCount, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", user.Id).Count(c.Request.Context(), "*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return nil, nil, false
+	}
+
+	if user.PasswordHash == nil || identityCount > 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
+		return nil, nil, false
+	}
+
+	return claims, &user, true
+}
+
+func UpdateOwnProfileHandler(c *gin.Context) {
+	var req updateOwnProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars) and valid email are required"})
+		return
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	claims, user, ok := getCurrentLocalUser(c)
+	if !ok {
+		return
+	}
+
+	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email}).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	user.Name = req.Name
+	user.Email = req.Email
+
+	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, profileResponse{
+		Id:      user.Id,
+		Name:    user.Name,
+		Email:   user.Email,
+		Picture: claims.Picture,
+		Role:    string(user.Role),
+	})
+}
+
+func UpdateOwnPasswordHandler(c *gin.Context) {
+	var req updateOwnPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: currentPassword and newPassword are required; newPassword must be between 8 and 128 characters"})
+		return
+	}
+
+	claims, user, ok := getCurrentLocalUser(c)
+	if !ok {
+		return
+	}
+
+	if user.PasswordHash == nil || !auth.CheckPassword(req.CurrentPassword, *user.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid current password"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Update("password_hash", hash).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	user.PasswordHash = &hash
+
+	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{"message": "password updated successfully"})
 }
 
 func SetupHandler(c *gin.Context) {
