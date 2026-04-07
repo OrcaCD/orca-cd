@@ -29,9 +29,9 @@ export const Route = createFileRoute("/_authenticated/admin/system-info")({
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
-		<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-			<span className="text-muted-foreground text-sm">{label}</span>
-			<div className="text-sm">{children}</div>
+		<div className="grid gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-start sm:gap-3">
+			<span className="text-muted-foreground text-sm sm:pt-0.5">{label}</span>
+			<div className="min-w-0 text-sm">{children}</div>
 		</div>
 	);
 }
@@ -59,41 +59,41 @@ function SystemInfoPage() {
 					<Separator />
 					<CardContent className="pt-4">
 						<div className="flex flex-col gap-4">
-							<InfoRow label="APP_URL">
-								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
+							<InfoRow label="App URL">
+								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
 									{data.app_url || "—"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="HOST">
+							<InfoRow label="Host">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.host || "0.0.0.0"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="PORT">
+							<InfoRow label="Port">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.port}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="LOG_LEVEL">
+							<InfoRow label="Log Level">
 								<Badge variant="secondary">{data.log_level}</Badge>
 							</InfoRow>
 
-							<InfoRow label="DEBUG">
+							<InfoRow label="Debug Mode">
 								<Badge variant={data.debug ? "success" : "outline"}>
 									{data.debug ? "Enabled" : "Disabled"}
 								</Badge>
 							</InfoRow>
 
-							<InfoRow label="DISABLE_LOCAL_AUTH">
+							<InfoRow label="Password Authentication">
 								<Badge variant={data.disable_local_auth ? "destructive" : "outline"}>
 									{data.disable_local_auth ? "Enabled" : "Disabled"}
 								</Badge>
 							</InfoRow>
 
-							<InfoRow label="TRUSTED_PROXIES">
+							<InfoRow label="Trusted Proxies">
 								{data.trusted_proxies && data.trusted_proxies.length > 0 ? (
 									<div className="flex flex-wrap gap-1.5">
 										{data.trusted_proxies.map((proxy) => (

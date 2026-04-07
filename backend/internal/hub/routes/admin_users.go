@@ -135,6 +135,11 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
+	if user.PasswordHash == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
+		return
+	}
+
 	if user.Role == models.UserRoleAdmin && req.Role != string(models.UserRoleAdmin) {
 		count, err := countAdminUsers(c)
 		if err != nil {
