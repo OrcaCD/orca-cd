@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import useSWR from "swr";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import fetcher, { API_BASE } from "@/lib/api";
 
@@ -13,10 +13,18 @@ interface SystemInfo {
 	trusted_proxies: string[];
 	app_url: string;
 	disable_local_auth: boolean;
+	version: string;
 }
 
 export const Route = createFileRoute("/_authenticated/admin/system-info")({
 	component: SystemInfoPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Admin - System Info",
+			},
+		],
+	}),
 });
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -46,6 +54,7 @@ function SystemInfoPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle>Server Configuration</CardTitle>
+						<CardDescription>Version: {data.version}</CardDescription>
 					</CardHeader>
 					<Separator />
 					<CardContent className="pt-4">

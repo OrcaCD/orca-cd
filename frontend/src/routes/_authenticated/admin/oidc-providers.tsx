@@ -28,6 +28,13 @@ import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-
 
 export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Admin - OIDC Providers",
+			},
+		],
+	}),
 });
 
 function OIDCProvidersPage() {

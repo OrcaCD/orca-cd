@@ -23,6 +23,35 @@ import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { Search } from "lucide-react";
 
+function toSearchableText(value: unknown): string {
+	if (value === null || value === undefined) {
+		return "";
+	}
+
+	if (value instanceof Date) {
+		return value.toISOString().toLowerCase();
+	}
+
+	if (Array.isArray(value)) {
+		return value.map(toSearchableText).join(" ");
+	}
+
+	switch (typeof value) {
+		case "string":
+			return value.toLowerCase();
+		case "number":
+		case "boolean":
+		case "bigint":
+			return String(value).toLowerCase();
+		case "object":
+			return Object.values(value as Record<string, unknown>)
+				.map(toSearchableText)
+				.join(" ");
+		default:
+			return "";
+	}
+}
+
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
 	data: TData[];
@@ -33,6 +62,7 @@ export function UserDataTable<TData, TValue>({
 	data,
 }: RepositoryDataTable<TData, TValue>) {
 	const [sorting, setSorting] = useState<SortingState>([]);
+	const [globalFilter, setGlobalFilter] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
@@ -42,11 +72,22 @@ export function UserDataTable<TData, TValue>({
 		getCoreRowModel: getCoreRowModel(),
 		onSortingChange: setSorting,
 		getSortedRowModel: getSortedRowModel(),
+		onGlobalFilterChange: setGlobalFilter,
+		globalFilterFn: (row, columnId, filterValue) => {
+			const query = String(filterValue).trim().toLowerCase();
+
+			if (!query) {
+				return true;
+			}
+
+			return toSearchableText(row.getValue(columnId)).includes(query);
+		},
 		onColumnFiltersChange: setColumnFilters,
 		getFilteredRowModel: getFilteredRowModel(),
 		onColumnVisibilityChange: setColumnVisibility,
 		state: {
 			sorting,
+			globalFilter,
 			columnFilters,
 			columnVisibility,
 		},
@@ -60,8 +101,8 @@ export function UserDataTable<TData, TValue>({
 					<Input
 						placeholder="Search users..."
 						className="pl-9 bg-muted border-border"
-						value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-						onChange={(event) => table.getColumn("name")?.setFilterValue(event.target.value)}
+						value={globalFilter}
+						onChange={(event) => setGlobalFilter(event.target.value)}
 					/>
 				</div>
 

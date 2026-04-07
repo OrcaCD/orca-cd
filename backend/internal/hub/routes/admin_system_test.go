@@ -25,6 +25,7 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 		TrustedProxies:   trustedProxies,
 		AppURL:           "https://example.com",
 		DisableLocalAuth: true,
+		Version:          "test",
 	})
 
 	trustedProxies[0] = "mutated"
@@ -62,6 +63,9 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 	}
 	if body["disable_local_auth"] != true {
 		t.Fatalf("expected disable_local_auth=true, got %v", body["disable_local_auth"])
+	}
+	if body["version"] != "test" {
+		t.Fatalf("expected version=test, got %v", body["version"])
 	}
 
 	proxiesRaw, ok := body["trusted_proxies"].([]any)

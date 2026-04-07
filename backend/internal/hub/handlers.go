@@ -6,6 +6,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +22,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		TrustedProxies:   cfg.TrustedProxies,
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
+		Version:          version.Full(),
 	})
 
 	api := router.Group("/api/v1")

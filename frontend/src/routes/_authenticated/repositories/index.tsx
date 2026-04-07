@@ -6,6 +6,13 @@ import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/repositories/")({
 	component: RepositoriesPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Repositories",
+			},
+		],
+	}),
 });
 
 const mockRepos: Repository[] = [
