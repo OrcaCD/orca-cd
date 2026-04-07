@@ -30,9 +30,11 @@ const baseSchema = z.object({
 export default function UpsertUserDialog({
 	user,
 	asDropdownItem = false,
+	disabled = false,
 }: {
 	user: UserDetail | null;
 	asDropdownItem?: boolean;
+	disabled?: boolean;
 }) {
 	const isEditing = !!user;
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -89,16 +91,16 @@ export default function UpsertUserDialog({
 		<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+					<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
 						<Pencil className="h-4 w-4" />
 						Edit
 					</DropdownMenuItem>
 				) : isEditing ? (
-					<Button variant="ghost" size="icon">
+					<Button variant="ghost" size="icon" disabled={disabled}>
 						<Pencil className="h-4 w-4" />
 					</Button>
 				) : (
-					<Button>
+					<Button disabled={disabled}>
 						<Plus className="mr-2 h-4 w-4" />
 						Add User
 					</Button>

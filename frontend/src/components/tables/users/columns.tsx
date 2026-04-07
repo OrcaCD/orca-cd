@@ -95,7 +95,11 @@ export const columns: ColumnDef<UserDetail>[] = [
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							<UpsertUserDialog user={row.original} asDropdownItem />
+							<UpsertUserDialog
+								user={row.original}
+								asDropdownItem
+								disabled={!row.original.hasPassword}
+							/>
 							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={() => handleDelete()}
