@@ -24,9 +24,9 @@ const router = createRouter({
 		return (
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>Not Found</p>
+					<p>Page Not Found</p>
 					<Link to="/">
-						<Button>Go Home</Button>
+						<Button size="lg">Go Home</Button>
 					</Link>
 				</div>
 			</div>
@@ -39,7 +39,7 @@ const router = createRouter({
 					<p>Something went wrong</p>
 					<pre>{error.message}</pre>
 					<Link to="/">
-						<Button>Go Home</Button>
+						<Button size="lg">Go Home</Button>
 					</Link>
 				</div>
 			</div>
