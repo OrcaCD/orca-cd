@@ -34,6 +34,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+
+			protected.GET("/repositories", routes.ListRepositoriesHandler)
+			protected.POST("/repositories", routes.CreateRepositoryHandler)
+			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
 		}
 
 		// Admin routes (authentication + admin role required)

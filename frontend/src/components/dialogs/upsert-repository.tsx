@@ -4,25 +4,125 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
-	DialogDescription,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { createRepository, updateRepository, type Repository } from "@/lib/repsitories";
-import { useState } from "react";
+import {
+	createRepository,
+	updateRepository,
+	type Repository,
+	type RepositoryProvider,
+} from "@/lib/repsitories";
+import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Field, FieldError, FieldGroup } from "../ui/field";
-import { Label } from "../ui/label";
-import { Input } from "../ui/input";
+import {
+	Field,
+	FieldError,
+	FieldGroup,
+	FieldContent,
+	FieldLabel,
+	FieldTitle,
+} from "@/components/ui/field";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { defineStepper } from "@stepperize/react";
+import { useStepItemContext, type StepStatus } from "@stepperize/react/primitives";
+import { cn } from "@/lib/utils";
+
+const PROVIDERS = [
+	{
+		id: "github",
+		label: "GitHub",
+		disabled: false,
+		icon: "github",
+	},
+	{
+		id: "gitlab",
+		label: "GitLab",
+		disabled: true,
+		icon: "gitlab",
+	},
+	{
+		id: "bitbucket",
+		label: "Bitbucket",
+		disabled: true,
+		icon: "bitbucket",
+	},
+	{
+		id: "azure-devops",
+		label: "Azure DevOps",
+		disabled: true,
+		icon: "azure-devops",
+	},
+	{
+		id: "generic",
+		label: "Generic",
+		disabled: true,
+		icon: "git",
+	},
+] as const;
+
+const { Stepper } = defineStepper({ id: "provider" }, { id: "repository" }, { id: "sync" });
+
+const StepperTriggerWrapper = () => {
+	const item = useStepItemContext();
+	const isInactive = item.status === "inactive";
+
+	return (
+		<Stepper.Trigger
+			render={(domProps) => (
+				<Button
+					className="rounded-full"
+					variant={isInactive ? "secondary" : "default"}
+					size="icon"
+					{...domProps}
+				>
+					<Stepper.Indicator>{item.index + 1}</Stepper.Indicator>
+				</Button>
+			)}
+		/>
+	);
+};
+
+const StepperSeparatorWithStatus = ({
+	status,
+	isLast,
+}: {
+	status: StepStatus;
+	isLast: boolean;
+}) => {
+	if (isLast) {
+		return null;
+	}
+	return (
+		<Stepper.Separator
+			orientation="horizontal"
+			data-status={status}
+			className="self-center bg-muted data-[status=success]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
+		/>
+	);
+};
 
 const repositorySchema = z.object({
-	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
 	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }),
+	provider: z.enum(["github", "gitlab", "generic"]),
+	authToken: z.string().trim().max(1024, "Auth token must be at most 1024 characters"),
 });
+
+function deriveRepositoryNameFromUrl(url: string): string {
+	const parsed = new URL(url);
+	const segments = parsed.pathname.split("/").filter(Boolean);
+	if (segments.length >= 2) {
+		return `${segments[segments.length - 2]}/${segments[segments.length - 1].replace(/\.git$/, "")}`;
+	}
+
+	return url;
+}
 
 export default function UpsertRepositoryDialog({
 	repository,
@@ -37,8 +137,9 @@ export default function UpsertRepositoryDialog({
 
 	const form = useForm({
 		defaultValues: {
-			name: repository?.name ?? "",
 			url: repository?.url ?? "",
+			provider: repository?.provider ?? "github",
+			authToken: "",
 		},
 		validators: {
 			onSubmit: repositorySchema,
@@ -46,18 +147,30 @@ export default function UpsertRepositoryDialog({
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				if (isEditing && repository) {
+				const authToken = value.authToken?.trim() ? value.authToken.trim() : undefined;
+				const authMethod = authToken ? "token" : "none";
+				const name = deriveRepositoryNameFromUrl(value.url);
+
+				if (isEditing) {
 					await updateRepository(repository.id, {
-						name: value.name,
+						name,
 						url: value.url,
+						authMethod,
+						authToken,
+						syncType: repository.syncType,
+						pollingIntervalSeconds: repository.pollingIntervalSeconds ?? undefined,
 					});
 					toast.success("Repository updated");
 				} else {
 					await createRepository({
-						name: value.name,
+						name,
 						url: value.url,
+						provider: value.provider,
+						authMethod,
+						authToken,
+						syncType: "manual",
 					});
-					toast.success("Repository connected");
+					toast.success("Repository created");
 				}
 				setOpen(false);
 			} catch (err) {
@@ -68,8 +181,13 @@ export default function UpsertRepositoryDialog({
 		},
 	});
 
+	const handleClose = () => {
+		setOpen(false);
+		form.reset();
+	};
+
 	return (
-		<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
+		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -87,16 +205,11 @@ export default function UpsertRepositoryDialog({
 					</Button>
 				)}
 			</DialogTrigger>
-			<DialogContent className="sm:max-w-106.25">
+			<DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						{isEditing ? "Edit Repository" : "Connect Repository"}
 					</DialogTitle>
-					<DialogDescription className="py-2">
-						{isEditing
-							? "Update the repository configuration."
-							: "Connect a Git repository to start tracking deployments."}
-					</DialogDescription>
 				</DialogHeader>
 
 				<form
@@ -105,68 +218,195 @@ export default function UpsertRepositoryDialog({
 						await form.handleSubmit();
 					}}
 				>
-					<FieldGroup>
-						<form.Field
-							name="name"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Name</Label>
-										<Input
-											id={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "org/api-gateway"'
-											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="url"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Repository URL</Label>
-										<Input
-											id={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="https://github.com/org/repo"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
+					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
+						{({ stepper }) => (
+							<>
+								<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
+									{stepper.state.all.map((stepData, index) => {
+										const currentIndex = stepper.state.current.index;
+										const status: StepStatus =
+											index < currentIndex
+												? "success"
+												: index === currentIndex
+													? "active"
+													: "inactive";
+										const isLast = index === stepper.state.all.length - 1;
+										return (
+											<React.Fragment key={stepData.id}>
+												<Stepper.Item
+													step={stepData.id}
+													className="group peer relative flex shrink-0 items-center gap-2"
+												>
+													<StepperTriggerWrapper />
+												</Stepper.Item>
+												<StepperSeparatorWithStatus status={status} isLast={isLast} />
+											</React.Fragment>
+										);
+									})}
+								</Stepper.List>
 
-						<div className="flex gap-2 pt-2">
-							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting
-									? "Saving..."
-									: isEditing
-										? "Update Repository"
-										: "Connect Repository"}
-							</Button>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={() => {
-									setOpen(false);
-									form.reset();
-								}}
-								disabled={isSubmitting}
-							>
-								Cancel
-							</Button>
-						</div>
-					</FieldGroup>
+								{stepper.flow.switch({
+									provider: () => (
+										<Stepper.Content
+											step="provider"
+											render={(props) => (
+												<div {...props}>
+													<form.Field name="provider">
+														{(field) => (
+															<>
+																<p className="text-muted-foreground text-sm mb-3">
+																	Select the Git provider for this repository.
+																</p>
+
+																<RadioGroup
+																	value={field.state.value}
+																	onValueChange={(v) => field.handleChange(v as RepositoryProvider)}
+																	className="grid grid-cols-3 gap-3"
+																>
+																	{PROVIDERS.map((p) => {
+																		const inputId = `provider-${p.id}`;
+																		return (
+																			<FieldLabel
+																				key={p.id}
+																				htmlFor={inputId}
+																				className={cn(
+																					"transition-colors",
+																					p.disabled
+																						? "cursor-not-allowed opacity-60"
+																						: "cursor-pointer",
+																				)}
+																			>
+																				<Field
+																					className="relative aspect-square items-center justify-center p-4 text-center"
+																					data-disabled={p.disabled ? "true" : undefined}
+																				>
+																					<RadioGroupItem
+																						value={p.id}
+																						id={inputId}
+																						disabled={p.disabled}
+																						className="hidden"
+																					/>
+																					<FieldContent className="items-center justify-center gap-2">
+																						<img
+																							src={`/assets/icons/${p.icon}.svg`}
+																							alt={p.label}
+																							className="h-10 w-10"
+																						/>
+																						<FieldTitle className="justify-center text-base">
+																							{p.label}
+																						</FieldTitle>
+																					</FieldContent>
+																				</Field>
+																			</FieldLabel>
+																		);
+																	})}
+																</RadioGroup>
+															</>
+														)}
+													</form.Field>
+												</div>
+											)}
+										/>
+									),
+									repository: () => (
+										<Stepper.Content
+											step="repository"
+											render={(props) => (
+												<div {...props}>
+													<FieldGroup>
+														<form.Field name="url">
+															{(field) => {
+																const isInvalid =
+																	field.state.meta.isTouched && !field.state.meta.isValid;
+																return (
+																	<Field data-invalid={isInvalid}>
+																		<Label htmlFor={field.name}>Repository URL</Label>
+																		<Input
+																			id={field.name}
+																			value={field.state.value}
+																			onBlur={field.handleBlur}
+																			onChange={(e) => field.handleChange(e.target.value)}
+																			placeholder="https://github.com/org/repo"
+																			autoFocus
+																		/>
+																		{isInvalid && <FieldError errors={field.state.meta.errors} />}
+																	</Field>
+																);
+															}}
+														</form.Field>
+														<form.Field name="authToken">
+															{(field) => {
+																const isInvalid =
+																	field.state.meta.isTouched && !field.state.meta.isValid;
+																return (
+																	<Field data-invalid={isInvalid}>
+																		<Label htmlFor={field.name}>Auth Token (Optional)</Label>
+																		<Input
+																			id={field.name}
+																			type="password"
+																			value={field.state.value}
+																			onBlur={field.handleBlur}
+																			onChange={(e) => field.handleChange(e.target.value)}
+																			placeholder="Paste a personal access token"
+																		/>
+																		<p className="text-muted-foreground text-xs">
+																			Recommended, but not required for public repositories.
+																		</p>
+																		{isInvalid && <FieldError errors={field.state.meta.errors} />}
+																	</Field>
+																);
+															}}
+														</form.Field>
+													</FieldGroup>
+												</div>
+											)}
+										/>
+									),
+								})}
+
+								<div className="flex items-center justify-between gap-4 pt-2">
+									<div>
+										<Button
+											type="button"
+											variant="outline"
+											onClick={handleClose}
+											disabled={isSubmitting}
+										>
+											Cancel
+										</Button>
+									</div>
+									<div className="flex gap-2">
+										{stepper.state.current.index > 0 && (
+											<Stepper.Prev
+												render={(domProps) => (
+													<Button type="button" variant="outline" {...domProps}>
+														Previous
+													</Button>
+												)}
+											/>
+										)}
+										{stepper.state.isLast ? (
+											<Button type="submit" disabled={isSubmitting}>
+												{isSubmitting
+													? "Saving..."
+													: isEditing
+														? "Update Repository"
+														: "Connect Repository"}
+											</Button>
+										) : (
+											<Stepper.Next
+												render={(domProps) => (
+													<Button type="button" {...domProps}>
+														Next
+													</Button>
+												)}
+											/>
+										)}
+									</div>
+								</div>
+							</>
+						)}
+					</Stepper.Root>
 				</form>
 			</DialogContent>
 		</Dialog>

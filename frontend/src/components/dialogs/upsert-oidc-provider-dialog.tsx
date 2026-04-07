@@ -15,10 +15,10 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Field, FieldError, FieldGroup } from "../ui/field";
-import { Label } from "../ui/label";
-import { Input } from "../ui/input";
-import { Checkbox } from "../ui/checkbox";
+import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const providerSchema = z.object({
 	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),

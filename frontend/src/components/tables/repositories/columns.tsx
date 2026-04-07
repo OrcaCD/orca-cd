@@ -42,34 +42,38 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 	},
 	{
-		accessorKey: "status",
+		accessorKey: "syncStatus",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Status" />;
 		},
 		cell: ({ row }) => {
-			const status = row.original.status;
+			const syncStatus = row.original.syncStatus;
 
 			return (
 				<div>
 					<span
 						className={`inline-flex h-2 w-2 rounded-full ${
-							status === 0 ? "bg-green-500" : "bg-red-500"
+							syncStatus === "syncing"
+								? "bg-blue-500"
+								: syncStatus === "failed"
+									? "bg-red-500"
+									: "bg-green-500"
 						}`}
 					/>
-					<span className="ml-2">{status === 0 ? "Connected" : "Error"}</span>
+					<span className="ml-2 capitalize">{syncStatus}</span>
 				</div>
 			);
 		},
 	},
 	{
-		accessorKey: "lastSync",
+		accessorKey: "lastSyncedAt",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Last Sync" />;
 		},
 		cell: ({ row }) => {
-			const lastSync = row.original.lastSync;
+			const lastSyncedAt = row.original.lastSyncedAt;
 
-			return <span>{lastSync ? lastSync.toLocaleTimeString() : "N/A"}</span>;
+			return <span>{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Never"}</span>;
 		},
 	},
 	{
