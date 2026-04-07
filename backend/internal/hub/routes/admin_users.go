@@ -16,18 +16,19 @@ import (
 )
 
 type adminUserResponse struct {
-	Id          string `json:"id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	Role        string `json:"role"`
-	HasPassword bool   `json:"hasPassword"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	Id                     string `json:"id"`
+	Name                   string `json:"name"`
+	Email                  string `json:"email"`
+	Role                   string `json:"role"`
+	HasPassword            bool   `json:"hasPassword"`
+	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
+	CreatedAt              string `json:"createdAt"`
+	UpdatedAt              string `json:"updatedAt"`
 }
 
 type adminUserWithGeneratedPasswordResponse struct {
 	adminUserResponse
-	GeneratedPassword string `json:"generatedPassword"`
+	GeneratedPassword string `json:"generatedPassword,omitempty"`
 }
 
 type adminCreateUserRequest struct {
@@ -37,20 +38,22 @@ type adminCreateUserRequest struct {
 }
 
 type adminUpdateUserRequest struct {
-	Name  string `json:"name" binding:"required,min=3,max=64"`
-	Email string `json:"email" binding:"required,email"`
-	Role  string `json:"role" binding:"required,oneof=admin user"`
+	Name          string `json:"name" binding:"required,min=3,max=64"`
+	Email         string `json:"email" binding:"required,email"`
+	Role          string `json:"role" binding:"required,oneof=admin user"`
+	ResetPassword bool   `json:"resetPassword"`
 }
 
 func toAdminUserResponse(user *models.User) adminUserResponse {
 	return adminUserResponse{
-		Id:          user.Id,
-		Name:        user.Name,
-		Email:       user.Email,
-		Role:        string(user.Role),
-		HasPassword: user.PasswordHash != nil,
-		CreatedAt:   user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:   user.UpdatedAt.Format(time.RFC3339),
+		Id:                     user.Id,
+		Name:                   user.Name,
+		Email:                  user.Email,
+		Role:                   string(user.Role),
+		HasPassword:            user.PasswordHash != nil,
+		PasswordChangeRequired: user.PasswordChangeRequired,
+		CreatedAt:              user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:              user.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -114,10 +117,11 @@ func AdminCreateUserHandler(c *gin.Context) {
 	}
 
 	user := models.User{
-		Name:         req.Name,
-		Email:        req.Email,
-		PasswordHash: &hash,
-		Role:         models.UserRole(req.Role),
+		Name:                   req.Name,
+		Email:                  req.Email,
+		PasswordHash:           &hash,
+		PasswordChangeRequired: true,
+		Role:                   models.UserRole(req.Role),
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
@@ -174,18 +178,23 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	user.Email = req.Email
 	user.Role = models.UserRole(req.Role)
 
-	generatedPassword, err := generateRandomPassword()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	generatedPassword := ""
+	if req.ResetPassword {
+		var genErr error
+		generatedPassword, genErr = generateRandomPassword()
+		if genErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
 
-	hash, err := auth.HashPassword(generatedPassword)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		hash, err := auth.HashPassword(generatedPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		user.PasswordHash = &hash
+		user.PasswordChangeRequired = true
 	}
-	user.PasswordHash = &hash
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
 		if isUniqueConstraintError(err) {

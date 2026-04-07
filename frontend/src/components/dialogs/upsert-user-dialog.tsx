@@ -20,11 +20,15 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel, FieldTitle } f
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+import { Checkbox } from "../ui/checkbox";
+import { mutate } from "swr";
+import { API_BASE } from "@/lib/api";
 
 const baseSchema = z.object({
 	name: z.string().min(3, "Name must be at least 3 characters").max(64),
 	email: z.email("Must be a valid email address"),
 	role: z.enum(["admin", "user"]),
+	resetPassword: z.boolean(),
 });
 
 export default function UpsertUserDialog({
@@ -60,6 +64,7 @@ export default function UpsertUserDialog({
 			name: user?.name ?? "",
 			email: user?.email ?? "",
 			role: (user?.role as "admin" | "user") ?? "user",
+			resetPassword: false,
 		},
 		validators: {
 			onSubmit: baseSchema,
@@ -67,16 +72,17 @@ export default function UpsertUserDialog({
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				let generated: string;
+				let generated: string | null = null;
 
 				if (isEditing && user) {
 					const response = await updateUser(user.id, {
 						name: value.name,
 						email: value.email,
 						role: value.role,
+						resetPassword: value.resetPassword,
 					});
-					generated = response.generatedPassword;
-					toast.success("User updated");
+					generated = response.generatedPassword ?? null;
+					toast.success(value.resetPassword ? "User updated and password reset" : "User updated");
 				} else {
 					const response = await createUser({
 						name: value.name,
@@ -87,8 +93,12 @@ export default function UpsertUserDialog({
 					toast.success("User created");
 				}
 
-				setGeneratedPassword(generated);
-				setIsGeneratedPasswordOpen(true);
+				if (generated) {
+					setGeneratedPassword(generated);
+					setIsGeneratedPasswordOpen(true);
+				}
+
+				mutate(`${API_BASE}/admin/users`);
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save user");
@@ -123,8 +133,8 @@ export default function UpsertUserDialog({
 						<DialogTitle>{isEditing ? "Edit User" : "Add User"}</DialogTitle>
 						<DialogDescription className="py-2">
 							{isEditing
-								? "Update user details and permissions."
-								: "Create a new local user account."}
+								? "Update user details and permissions. Optionally reset the password."
+								: "Create a new local user account. A temporary password will be generated."}
 						</DialogDescription>
 					</DialogHeader>
 
@@ -219,6 +229,29 @@ export default function UpsertUserDialog({
 									</Field>
 								)}
 							/>
+							{isEditing && (
+								<form.Field
+									name="resetPassword"
+									children={(field) => (
+										<Field>
+											<div className="flex items-start gap-2">
+												<Checkbox
+													id={field.name}
+													checked={field.state.value}
+													onCheckedChange={(checked) => field.handleChange(checked === true)}
+													className="h-4 w-4 rounded border-gray-300"
+												/>
+												<div className="space-y-1">
+													<Label htmlFor={field.name}>Reset password</Label>
+													<p className="text-muted-foreground text-xs">
+														Generate a new password and require the user to change it after sign-in.
+													</p>
+												</div>
+											</div>
+										</Field>
+									)}
+								/>
+							)}
 
 							<div className="flex gap-2 pt-2">
 								<Button type="submit" disabled={isSubmitting}>

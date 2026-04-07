@@ -6,12 +6,17 @@ export interface UserDetail {
 	email: string;
 	role: string;
 	hasPassword: boolean;
+	passwordChangeRequired: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
 
 export interface UserDetailWithGeneratedPassword extends UserDetail {
 	generatedPassword: string;
+}
+
+export interface UserDetailWithOptionalGeneratedPassword extends UserDetail {
+	generatedPassword?: string;
 }
 
 export interface CreateUserRequest {
@@ -24,6 +29,7 @@ export interface UpdateUserRequest {
 	name: string;
 	email: string;
 	role: string;
+	resetPassword?: boolean;
 }
 
 export function createUser(data: CreateUserRequest): Promise<UserDetailWithGeneratedPassword> {
@@ -37,8 +43,8 @@ export function createUser(data: CreateUserRequest): Promise<UserDetailWithGener
 export function updateUser(
 	id: string,
 	data: UpdateUserRequest,
-): Promise<UserDetailWithGeneratedPassword> {
-	return fetcher<UserDetailWithGeneratedPassword>(`${API_BASE}/admin/users/${id}`, {
+): Promise<UserDetailWithOptionalGeneratedPassword> {
+	return fetcher<UserDetailWithOptionalGeneratedPassword>(`${API_BASE}/admin/users/${id}`, {
 		method: "PUT",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(data),

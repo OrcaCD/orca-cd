@@ -14,6 +14,8 @@ import { deleteUser, type UserDetail } from "@/lib/users";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
+import { API_BASE } from "@/lib/api";
+import { mutate } from "swr";
 
 export const columns: ColumnDef<UserDetail>[] = [
 	{
@@ -83,6 +85,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 				} catch (err) {
 					toast.error(err instanceof Error ? err.message : "Failed to delete user");
 				}
+				mutate(`${API_BASE}/admin/users`);
 			}
 
 			return (

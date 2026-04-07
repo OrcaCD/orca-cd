@@ -11,6 +11,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import Navbar from "../components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 import type { AuthState } from "@/lib/auth";
+import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
 
 export interface RouterContext {
 	auth: AuthState;
@@ -26,6 +27,7 @@ function RootComponent() {
 			<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
 				<div className="min-h-screen bg-background">
 					{showNavbar && <Navbar />}
+					<ForcePasswordChangeDialog />
 					<Outlet />
 					<Toaster />
 					<TanStackDevtools
