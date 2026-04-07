@@ -9,7 +9,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/version"
 )
 
-const DefaultTimeout = 30 * time.Second
+const DefaultTimeout = 15 * time.Second
 
 var Default = &http.Client{
 	Timeout: DefaultTimeout,
