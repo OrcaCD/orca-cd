@@ -3,14 +3,15 @@ import {
 	SidebarContent,
 	SidebarGroup,
 	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarHeader,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	SidebarProvider,
 } from "@/components/ui/sidebar";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { IdCard, Info, Users } from "lucide-react";
+import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { IdCard, Info, Shield, Users } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
 	beforeLoad: ({ context }) => {
@@ -40,33 +41,40 @@ const adminPages = [
 ];
 
 function AdminLayout() {
+	const { location } = useRouterState();
+
 	return (
 		<SidebarProvider>
-			<TooltipProvider>
-				<Sidebar collapsible="none" className="h-screen w-sm">
-					<SidebarContent>
-						<SidebarGroup>
-							<SidebarGroupContent>
-								<SidebarMenu>
-									{adminPages.map((item) => (
-										<SidebarMenuItem key={item.title} className="mb-2">
-											<SidebarMenuButton tooltip={item.title} asChild>
-												<a href={item.path}>
-													<item.icon />
-													<span>{item.title}</span>
-												</a>
-											</SidebarMenuButton>
-										</SidebarMenuItem>
-									))}
-								</SidebarMenu>
-							</SidebarGroupContent>
-						</SidebarGroup>
-					</SidebarContent>
-				</Sidebar>
-				<div className="p-6 space-y-6 w-full">
-					<Outlet />
-				</div>
-			</TooltipProvider>
+			<Sidebar collapsible="none" className="h-screen border-r">
+				<SidebarHeader className="px-4 py-5">
+					<div className="flex items-center gap-2 font-semibold">
+						<Shield className="size-4" />
+						Admin
+					</div>
+				</SidebarHeader>
+				<SidebarContent>
+					<SidebarGroup>
+						<SidebarGroupLabel>Management</SidebarGroupLabel>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{adminPages.map((item) => (
+									<SidebarMenuItem key={item.title}>
+										<SidebarMenuButton asChild isActive={location.pathname === item.path}>
+											<Link to={item.path}>
+												<item.icon />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				</SidebarContent>
+			</Sidebar>
+			<div className="p-6 space-y-6 w-full overflow-y-auto">
+				<Outlet />
+			</div>
 		</SidebarProvider>
 	);
 }
