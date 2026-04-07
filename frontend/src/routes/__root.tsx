@@ -50,15 +50,23 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 	head: () => ({
 		meta: [
 			{
+				name: "charset",
+				content: "utf-8",
+			},
+			{
+				name: "viewport",
+				content: "width=device-width, initial-scale=1",
+			},
+			{
 				name: "description",
 				content: "GitOps for Docker",
 			},
 			{
-				title: "OrcaCD",
-				charset: "utf-8",
-				viewport: "width=device-width, initial-scale=1",
-				themeColor: "#0f172a",
+				name: "title",
+				content: "OrcaCD",
 			},
+
+			{ name: "theme-color", content: "#0f172a" },
 		],
 		links: [
 			{
@@ -68,6 +76,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 			{
 				rel: "apple-touch-icon",
 				href: "/assets/apple-touch-icon.png",
+			},
+			{
+				rel: "icon",
+				type: "image/svg+xml",
+				sizes: "any",
+				href: "/assets/logo-dark.svg",
 			},
 			{
 				rel: "icon",
