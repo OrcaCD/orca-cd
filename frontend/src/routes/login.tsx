@@ -65,6 +65,13 @@ export const Route = createFileRoute("/login")({
 		};
 	},
 	component: LoginComponent,
+	head: () => ({
+		meta: [
+			{
+				title: "Login",
+			},
+		],
+	}),
 });
 
 const loginSchema = z.object({
@@ -101,7 +108,7 @@ function LoginComponent() {
 				<div className="flex flex-col gap-6">
 					<div className="flex items-center gap-2 self-center font-medium">
 						<div className="flex size-8 items-center justify-center rounded-md text-primary-foreground">
-							<img src="/assets/logo-dark-1024.png" alt="OrcaCD Logo" />
+							<img src="/assets/logo-dark.svg" alt="OrcaCD Logo" />
 						</div>
 						OrcaCD
 					</div>

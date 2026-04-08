@@ -14,6 +14,8 @@ import { deleteUser, type UserDetail } from "@/lib/users";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
+import { API_BASE } from "@/lib/api";
+import { mutate } from "swr";
 
 export const columns: ColumnDef<UserDetail>[] = [
 	{
@@ -55,27 +57,29 @@ export const columns: ColumnDef<UserDetail>[] = [
 		},
 	},
 	{
-		accessorKey: "hasPassword",
+		accessorKey: "providers",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Has Password" />;
+			return <DataTableColumnHeader column={column} title="Providers" />;
 		},
 		cell: ({ row }) => {
-			const hasPassword = row.original.hasPassword;
+			const providers = row.original.providers;
 			return (
-				<>
-					{hasPassword && (
-						<Badge variant="outline">
-							<KeyRound className="mr-1 h-3 w-3" />
-							Password
+				<div className="flex flex-wrap gap-1 max-w-sm">
+					{providers.map((provider) => (
+						<Badge key={provider} variant="outline">
+							{provider === "password" && <KeyRound className="mr-1 h-3 w-3" />}
+							{provider}
 						</Badge>
-					)}
-				</>
+					))}
+				</div>
 			);
 		},
 	},
 	{
 		id: "actions",
 		cell: ({ row }) => {
+			const hasPasswordProvider = row.original.providers.includes("password");
+
 			async function handleDelete() {
 				try {
 					await deleteUser(row.original.id);
@@ -83,6 +87,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 				} catch (err) {
 					toast.error(err instanceof Error ? err.message : "Failed to delete user");
 				}
+				await mutate(`${API_BASE}/admin/users`);
 			}
 
 			return (
@@ -95,7 +100,11 @@ export const columns: ColumnDef<UserDetail>[] = [
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							<UpsertUserDialog user={row.original} asDropdownItem />
+							<UpsertUserDialog
+								user={row.original}
+								asDropdownItem
+								disabled={!hasPasswordProvider}
+							/>
 							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={() => handleDelete()}

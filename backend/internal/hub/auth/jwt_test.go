@@ -56,6 +56,34 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if len(claims.Audience) != 1 || claims.Audience[0] != "user" {
 		t.Errorf("expected Audience [\"user\"], got %v", claims.Audience)
 	}
+	if claims.PasswordChangeRequired {
+		t.Error("expected PasswordChangeRequired=false by default")
+	}
+}
+
+func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("Init() error: %v", err)
+	}
+
+	user := &models.User{
+		Base:                   models.Base{Id: "user-123"},
+		Name:                   "test",
+		Email:                  "test@example.com",
+		PasswordChangeRequired: true,
+	}
+	token, err := GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	claims, err := ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+	if !claims.PasswordChangeRequired {
+		t.Error("expected PasswordChangeRequired=true")
+	}
 }
 
 func TestGenerateAndValidateUserTokenWithPicture(t *testing.T) {

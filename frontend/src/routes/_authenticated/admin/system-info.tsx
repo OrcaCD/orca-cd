@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import useSWR from "swr";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import fetcher, { API_BASE } from "@/lib/api";
 
@@ -9,21 +9,29 @@ interface SystemInfo {
 	debug: boolean;
 	host: string;
 	port: string;
-	log_level: string;
-	trusted_proxies: string[];
-	app_url: string;
-	disable_local_auth: boolean;
+	logLevel: string;
+	trustedProxies: string[];
+	appUrl: string;
+	disableLocalAuth: boolean;
+	version: string;
 }
 
 export const Route = createFileRoute("/_authenticated/admin/system-info")({
 	component: SystemInfoPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Admin - System Info",
+			},
+		],
+	}),
 });
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
 	return (
-		<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-			<span className="text-muted-foreground text-sm">{label}</span>
-			<div className="text-sm">{children}</div>
+		<div className="grid gap-1 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-start sm:gap-3">
+			<span className="text-muted-foreground text-sm sm:pt-0.5">{label}</span>
+			<div className="min-w-0 text-sm">{children}</div>
 		</div>
 	);
 }
@@ -46,48 +54,49 @@ function SystemInfoPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle>Server Configuration</CardTitle>
+						<CardDescription>Version: {data.version}</CardDescription>
 					</CardHeader>
 					<Separator />
 					<CardContent className="pt-4">
 						<div className="flex flex-col gap-4">
-							<InfoRow label="APP_URL">
-								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
-									{data.app_url || "—"}
+							<InfoRow label="App URL">
+								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
+									{data.appUrl || "—"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="HOST">
+							<InfoRow label="Host">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.host || "0.0.0.0"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="PORT">
+							<InfoRow label="Port">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.port}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="LOG_LEVEL">
-								<Badge variant="secondary">{data.log_level}</Badge>
+							<InfoRow label="Log Level">
+								<Badge variant="secondary">{data.logLevel}</Badge>
 							</InfoRow>
 
-							<InfoRow label="DEBUG">
+							<InfoRow label="Debug Mode">
 								<Badge variant={data.debug ? "success" : "outline"}>
 									{data.debug ? "Enabled" : "Disabled"}
 								</Badge>
 							</InfoRow>
 
-							<InfoRow label="DISABLE_LOCAL_AUTH">
-								<Badge variant={data.disable_local_auth ? "destructive" : "outline"}>
-									{data.disable_local_auth ? "Enabled" : "Disabled"}
+							<InfoRow label="Password Authentication">
+								<Badge variant={data.disableLocalAuth ? "destructive" : "outline"}>
+									{data.disableLocalAuth ? "Enabled" : "Disabled"}
 								</Badge>
 							</InfoRow>
 
-							<InfoRow label="TRUSTED_PROXIES">
-								{data.trusted_proxies && data.trusted_proxies.length > 0 ? (
+							<InfoRow label="Trusted Proxies">
+								{data.trustedProxies && data.trustedProxies.length > 0 ? (
 									<div className="flex flex-wrap gap-1.5">
-										{data.trusted_proxies.map((proxy) => (
+										{data.trustedProxies.map((proxy) => (
 											<code
 												key={proxy}
 												className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs"

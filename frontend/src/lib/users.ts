@@ -5,15 +5,23 @@ export interface UserDetail {
 	name: string;
 	email: string;
 	role: string;
-	hasPassword: boolean;
+	providers: string[];
+	passwordChangeRequired: boolean;
 	createdAt: string;
 	updatedAt: string;
+}
+
+export interface UserDetailWithGeneratedPassword extends UserDetail {
+	generatedPassword: string;
+}
+
+export interface UserDetailWithOptionalGeneratedPassword extends UserDetail {
+	generatedPassword?: string;
 }
 
 export interface CreateUserRequest {
 	name: string;
 	email: string;
-	password: string;
 	role: string;
 }
 
@@ -21,19 +29,22 @@ export interface UpdateUserRequest {
 	name: string;
 	email: string;
 	role: string;
-	password?: string;
+	resetPassword?: boolean;
 }
 
-export function createUser(data: CreateUserRequest): Promise<UserDetail> {
-	return fetcher<UserDetail>(`${API_BASE}/admin/users`, {
+export function createUser(data: CreateUserRequest): Promise<UserDetailWithGeneratedPassword> {
+	return fetcher<UserDetailWithGeneratedPassword>(`${API_BASE}/admin/users`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(data),
 	});
 }
 
-export function updateUser(id: string, data: UpdateUserRequest): Promise<UserDetail> {
-	return fetcher<UserDetail>(`${API_BASE}/admin/users/${id}`, {
+export function updateUser(
+	id: string,
+	data: UpdateUserRequest,
+): Promise<UserDetailWithOptionalGeneratedPassword> {
+	return fetcher<UserDetailWithOptionalGeneratedPassword>(`${API_BASE}/admin/users/${id}`, {
 		method: "PUT",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(data),

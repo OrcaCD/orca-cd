@@ -48,7 +48,7 @@ function SettingsLayout() {
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{settingsPages.map((item) => (
-									<SidebarMenuItem key={item.title}>
+									<SidebarMenuItem key={item.title} className="mb-2">
 										<SidebarMenuButton asChild isActive={location.pathname === item.path}>
 											<Link to={item.path}>
 												<item.icon />

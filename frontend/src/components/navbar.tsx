@@ -8,7 +8,7 @@ import {
 	Server,
 	Settings,
 	User,
-	X,
+	XIcon,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,12 @@ import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import {
+	NavigationMenuItem,
+	NavigationMenuLink,
+	NavigationMenu,
+	NavigationMenuList,
+} from "@/components/ui/navigation-menu";
 
 const navItems = [
 	{ name: "Applications", href: "/applications", icon: LayoutGrid },
@@ -56,27 +62,31 @@ export default function Navbar() {
 		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
 			<div className="flex h-14 items-center justify-between px-4">
 				<div className="flex items-center gap-6">
-					<Link to="/" className="flex items-center gap-2">
+					<Link to="/" className="flex items-center gap-3">
+						<img src="/assets/logo-dark.svg" alt="OrcaCD Logo" className="h-9 w-9" />
 						<span className="font-semibold text-lg hidden sm:inline">OrcaCD</span>
 					</Link>
 
-					<nav className="hidden md:flex items-center gap-1">
-						{allNavItems.map((item) => (
-							<Link
-								key={item.name}
-								to={item.href}
-								className={cn(
-									"flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
-									location.pathname.startsWith(item.href)
-										? "bg-sidebar-accent text-foreground"
-										: "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent",
-								)}
-							>
-								<item.icon className="h-4 w-4" />
-								{item.name}
-							</Link>
-						))}
-					</nav>
+					<NavigationMenu className="hidden md:flex">
+						<NavigationMenuList className="gap-2">
+							{allNavItems.map((item) => (
+								<NavigationMenuItem key={item.name}>
+									<NavigationMenuLink asChild>
+										<Link
+											key={item.name}
+											to={item.href}
+											className={cn(
+												location.pathname.startsWith(item.href) &&
+													"bg-sidebar-accent text-primary-foreground hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+											)}
+										>
+											<item.icon className="h-4 w-4" /> {item.name}
+										</Link>
+									</NavigationMenuLink>
+								</NavigationMenuItem>
+							))}
+						</NavigationMenuList>
+					</NavigationMenu>
 				</div>
 
 				<div className="flex items-center gap-3">
@@ -129,31 +139,42 @@ export default function Navbar() {
 						className="md:hidden"
 						onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
 					>
-						{mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+						{mobileMenuOpen ? <XIcon className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
 					</Button>
 				</div>
 			</div>
 
-			{mobileMenuOpen && (
-				<nav className="md:hidden border-t border-border p-4 space-y-1">
-					{allNavItems.map((item) => (
-						<Link
-							key={item.name}
-							to={item.href}
-							onClick={() => setMobileMenuOpen(false)}
-							className={cn(
-								"flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors",
-								location.pathname.startsWith(item.href)
-									? "bg-sidebar-accent text-foreground"
-									: "text-muted-foreground hover:text-foreground hover:bg-sidebar-accent",
-							)}
-						>
-							<item.icon className="h-4 w-4" />
-							{item.name}
-						</Link>
-					))}
-				</nav>
-			)}
+			<div
+				className={cn(
+					"md:hidden grid transition-[grid-template-rows] duration-300 ease-in-out",
+					mobileMenuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+				)}
+			>
+				<div className="overflow-hidden">
+					<NavigationMenu className="border-t border-border p-4 max-w-full w-full [&>div]:w-full">
+						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
+							{allNavItems.map((item) => (
+								<NavigationMenuItem key={item.name} className="w-full">
+									<NavigationMenuLink asChild>
+										<Link
+											key={item.name}
+											to={item.href}
+											className={cn(
+												"w-full",
+												location.pathname.startsWith(item.href) &&
+													"bg-sidebar-accent text-primary-foreground hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+											)}
+											onClick={() => setMobileMenuOpen(false)}
+										>
+											<item.icon className="h-4 w-4" /> {item.name}
+										</Link>
+									</NavigationMenuLink>
+								</NavigationMenuItem>
+							))}
+						</NavigationMenuList>
+					</NavigationMenu>
+				</div>
+			</div>
 		</header>
 	);
 }

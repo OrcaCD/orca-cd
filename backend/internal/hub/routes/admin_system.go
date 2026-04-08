@@ -14,6 +14,7 @@ type AdminSystemInfoConfig struct {
 	TrustedProxies   []string
 	AppURL           string
 	DisableLocalAuth bool
+	Version          string
 }
 
 var adminSystemInfoConfig AdminSystemInfoConfig
@@ -22,10 +23,11 @@ type adminSystemInfoResponse struct {
 	Debug            bool     `json:"debug"`
 	Host             string   `json:"host"`
 	Port             string   `json:"port"`
-	LogLevel         string   `json:"log_level"`
-	TrustedProxies   []string `json:"trusted_proxies"`
-	AppURL           string   `json:"app_url"`
-	DisableLocalAuth bool     `json:"disable_local_auth"`
+	LogLevel         string   `json:"logLevel"`
+	TrustedProxies   []string `json:"trustedProxies"`
+	AppURL           string   `json:"appUrl"`
+	DisableLocalAuth bool     `json:"disableLocalAuth"`
+	Version          string   `json:"version"`
 }
 
 func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
@@ -37,6 +39,7 @@ func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 		TrustedProxies:   append([]string(nil), cfg.TrustedProxies...),
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
+		Version:          cfg.Version,
 	}
 }
 
@@ -51,5 +54,6 @@ func AdminSystemInfoHandler(c *gin.Context) {
 		TrustedProxies:   append([]string(nil), cfg.TrustedProxies...),
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
+		Version:          cfg.Version,
 	})
 }

@@ -22,6 +22,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { Search } from "lucide-react";
+import { toSearchableText } from "@/lib/utils";
 
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
@@ -33,6 +34,7 @@ export function RepositoryDataTable<TData, TValue>({
 	data,
 }: RepositoryDataTable<TData, TValue>) {
 	const [sorting, setSorting] = useState<SortingState>([]);
+	const [globalFilter, setGlobalFilter] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
@@ -42,11 +44,23 @@ export function RepositoryDataTable<TData, TValue>({
 		getCoreRowModel: getCoreRowModel(),
 		onSortingChange: setSorting,
 		getSortedRowModel: getSortedRowModel(),
+		onGlobalFilterChange: setGlobalFilter,
+		getColumnCanGlobalFilter: () => true,
+		globalFilterFn: (row, columnId, filterValue) => {
+			const query = String(filterValue).trim().toLowerCase();
+
+			if (!query) {
+				return true;
+			}
+
+			return toSearchableText(row.getValue(columnId)).includes(query);
+		},
 		onColumnFiltersChange: setColumnFilters,
 		getFilteredRowModel: getFilteredRowModel(),
 		onColumnVisibilityChange: setColumnVisibility,
 		state: {
 			sorting,
+			globalFilter,
 			columnFilters,
 			columnVisibility,
 		},
@@ -60,8 +74,8 @@ export function RepositoryDataTable<TData, TValue>({
 					<Input
 						placeholder="Search repositories..."
 						className="pl-9 bg-muted border-border"
-						value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-						onChange={(event) => table.getColumn("name")?.setFilterValue(event.target.value)}
+						value={globalFilter}
+						onChange={(event) => setGlobalFilter(event.target.value)}
 					/>
 				</div>
 

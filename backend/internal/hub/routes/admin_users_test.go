@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,7 +47,15 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	setupTestDB(t)
 
 	createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
-	createTestUser(t, "OIDC User", "oidc@example.com", models.UserRoleUser, "")
+	oidcUser := createTestUser(t, "OIDC User", "oidc@example.com", models.UserRoleUser, "")
+	provider := createTestProvider(t, "GitHub", true)
+	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &models.UserOIDCIdentity{
+		UserId:     oidcUser.Id,
+		ProviderId: provider.Id,
+		Subject:    "oidc-subject",
+	}); err != nil {
+		t.Fatalf("failed to create oidc identity: %v", err)
+	}
 
 	router := gin.New()
 	router.GET("/api/v1/admin/users", AdminListUsersHandler)
@@ -81,16 +90,22 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	if !ok {
 		t.Fatal("expected admin@example.com in response")
 	}
-	if !admin.HasPassword {
-		t.Fatal("expected admin@example.com to have hasPassword=true")
+	if !slices.Equal(admin.Providers, []string{"password"}) {
+		t.Fatalf("expected admin@example.com providers %v, got %v", []string{"password"}, admin.Providers)
+	}
+	if admin.PasswordChangeRequired {
+		t.Fatal("expected admin@example.com to have passwordChangeRequired=false")
 	}
 
-	oidcUser, ok := byEmail["oidc@example.com"]
+	oidcUserResponse, ok := byEmail["oidc@example.com"]
 	if !ok {
 		t.Fatal("expected oidc@example.com in response")
 	}
-	if oidcUser.HasPassword {
-		t.Fatal("expected oidc@example.com to have hasPassword=false")
+	if !slices.Equal(oidcUserResponse.Providers, []string{"GitHub"}) {
+		t.Fatalf("expected oidc@example.com providers %v, got %v", []string{"GitHub"}, oidcUserResponse.Providers)
+	}
+	if oidcUserResponse.PasswordChangeRequired {
+		t.Fatal("expected oidc@example.com to have passwordChangeRequired=false")
 	}
 }
 
@@ -113,10 +128,9 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":     "New User",
-		"email":    "NEW@Example.com",
-		"password": "password123",
-		"role":     "user",
+		"name":  "New User",
+		"email": "NEW@Example.com",
+		"role":  "user",
 	})
 
 	w := httptest.NewRecorder()
@@ -130,7 +144,7 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var body adminUserResponse
+	var body adminUserWithGeneratedPasswordResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -141,16 +155,25 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	if body.Role != string(models.UserRoleUser) {
 		t.Fatalf("expected role %q, got %q", models.UserRoleUser, body.Role)
 	}
-	if !body.HasPassword {
-		t.Fatal("expected hasPassword=true")
+	if !slices.Equal(body.Providers, []string{"password"}) {
+		t.Fatalf("expected providers %v, got %v", []string{"password"}, body.Providers)
+	}
+	if !body.PasswordChangeRequired {
+		t.Fatal("expected passwordChangeRequired=true")
+	}
+	if body.GeneratedPassword == "" {
+		t.Fatal("expected generatedPassword to be returned")
 	}
 
 	var user models.User
 	if err := db.DB.Where("id = ?", body.Id).First(&user).Error; err != nil {
 		t.Fatalf("failed to load created user: %v", err)
 	}
-	if user.PasswordHash == nil || !auth.CheckPassword("password123", *user.PasswordHash) {
-		t.Fatal("expected stored password hash to match input password")
+	if user.PasswordHash == nil || !auth.CheckPassword(body.GeneratedPassword, *user.PasswordHash) {
+		t.Fatal("expected stored password hash to match generated password")
+	}
+	if !user.PasswordChangeRequired {
+		t.Fatal("expected passwordChangeRequired=true for created user")
 	}
 }
 
@@ -160,10 +183,9 @@ func TestAdminCreateUserHandler_DuplicateEmail(t *testing.T) {
 	createTestUser(t, "Existing", "existing@example.com", models.UserRoleUser, "password123")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":     "Another",
-		"email":    "existing@example.com",
-		"password": "password123",
-		"role":     "user",
+		"name":  "Another",
+		"email": "existing@example.com",
+		"role":  "user",
 	})
 
 	w := httptest.NewRecorder()
@@ -184,10 +206,9 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":     "Updated User",
-		"email":    "UPDATED@Example.com",
-		"role":     "admin",
-		"password": "new-password-123",
+		"name":  "Updated User",
+		"email": "UPDATED@Example.com",
+		"role":  "admin",
 	})
 
 	router := gin.New()
@@ -200,6 +221,14 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body adminUserWithGeneratedPasswordResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.GeneratedPassword != "" {
+		t.Fatal("expected generatedPassword to be omitted when resetPassword=false")
 	}
 
 	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
@@ -216,8 +245,59 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	if updated.Role != models.UserRoleAdmin {
 		t.Fatalf("expected role %q, got %q", models.UserRoleAdmin, updated.Role)
 	}
-	if updated.PasswordHash == nil || !auth.CheckPassword("new-password-123", *updated.PasswordHash) {
-		t.Fatal("expected password to be updated")
+	if updated.PasswordHash == nil || !auth.CheckPassword("old-password", *updated.PasswordHash) {
+		t.Fatal("expected password to remain unchanged when resetPassword=false")
+	}
+	if updated.PasswordChangeRequired {
+		t.Fatal("expected passwordChangeRequired=false when resetPassword=false")
+	}
+}
+
+func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
+	setupTestDB(t)
+
+	user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":          "Updated User",
+		"email":         "UPDATED@Example.com",
+		"role":          "admin",
+		"resetPassword": true,
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+user.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body adminUserWithGeneratedPasswordResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.GeneratedPassword == "" {
+		t.Fatal("expected generatedPassword to be returned when resetPassword=true")
+	}
+	if !body.PasswordChangeRequired {
+		t.Fatal("expected passwordChangeRequired=true when resetPassword=true")
+	}
+
+	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated user: %v", err)
+	}
+
+	if updated.PasswordHash == nil || !auth.CheckPassword(body.GeneratedPassword, *updated.PasswordHash) {
+		t.Fatal("expected password to be updated to generated password")
+	}
+	if !updated.PasswordChangeRequired {
+		t.Fatal("expected passwordChangeRequired=true when password is reset")
 	}
 }
 

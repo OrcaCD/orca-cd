@@ -1,10 +1,11 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { Copy, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -19,63 +20,85 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel, FieldTitle } f
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
+import { Checkbox } from "../ui/checkbox";
+import { mutate } from "swr";
+import { API_BASE } from "@/lib/api";
 
 const baseSchema = z.object({
 	name: z.string().min(3, "Name must be at least 3 characters").max(64),
 	email: z.email("Must be a valid email address"),
 	role: z.enum(["admin", "user"]),
-	password: z.string(),
+	resetPassword: z.boolean(),
 });
 
 export default function UpsertUserDialog({
 	user,
 	asDropdownItem = false,
+	disabled = false,
 }: {
 	user: UserDetail | null;
 	asDropdownItem?: boolean;
+	disabled?: boolean;
 }) {
 	const isEditing = !!user;
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [open, setOpen] = useState(false);
+	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
+	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
+
+	async function handleCopyGeneratedPassword() {
+		if (!generatedPassword) {
+			return;
+		}
+
+		try {
+			await navigator.clipboard.writeText(generatedPassword);
+			toast.success("Password copied to clipboard");
+		} catch {
+			toast.error("Failed to copy password");
+		}
+	}
 
 	const form = useForm({
 		defaultValues: {
 			name: user?.name ?? "",
 			email: user?.email ?? "",
 			role: (user?.role as "admin" | "user") ?? "user",
-			password: "",
+			resetPassword: false,
 		},
 		validators: {
-			onSubmit: isEditing
-				? baseSchema.refine((d) => !d.password || d.password.length >= 8, {
-						message: "Password must be at least 8 characters",
-						path: ["password"],
-					})
-				: baseSchema.refine((d) => d.password.length >= 8, {
-						message: "Password must be at least 8 characters",
-						path: ["password"],
-					}),
+			onSubmit: baseSchema,
 		},
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
+				let generated: string | null = null;
+
 				if (isEditing && user) {
-					await updateUser(user.id, {
+					const response = await updateUser(user.id, {
 						name: value.name,
 						email: value.email,
 						role: value.role,
-						password: value.password || undefined,
+						resetPassword: value.resetPassword,
 					});
-					toast.success("User updated");
+					generated = response.generatedPassword ?? null;
+					toast.success(value.resetPassword ? "User updated and password reset" : "User updated");
 				} else {
-					await createUser({
+					const response = await createUser({
 						name: value.name,
 						email: value.email,
 						role: value.role,
-						password: value.password,
 					});
+					generated = response.generatedPassword;
 					toast.success("User created");
 				}
+
+				if (generated) {
+					setGeneratedPassword(generated);
+					setIsGeneratedPasswordOpen(true);
+				}
+
+				await mutate(`${API_BASE}/admin/users`);
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save user");
@@ -86,174 +109,210 @@ export default function UpsertUserDialog({
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<Pencil className="h-4 w-4" />
-						Edit
-					</DropdownMenuItem>
-				) : isEditing ? (
-					<Button variant="ghost" size="icon">
-						<Pencil className="h-4 w-4" />
-					</Button>
-				) : (
-					<Button>
-						<Plus className="mr-2 h-4 w-4" />
-						Add User
-					</Button>
-				)}
-			</DialogTrigger>
-			<DialogContent className="sm:max-w-106.25">
-				<DialogHeader>
-					<DialogTitle>{isEditing ? "Edit User" : "Add User"}</DialogTitle>
-					<DialogDescription className="py-2">
-						{isEditing
-							? "Update user details and permissions."
-							: "Create a new local user account."}
-					</DialogDescription>
-				</DialogHeader>
+		<>
+			<Dialog open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
+				<DialogTrigger asChild>
+					{asDropdownItem ? (
+						<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
+							<Pencil className="h-4 w-4" />
+							Edit
+						</DropdownMenuItem>
+					) : isEditing ? (
+						<Button variant="ghost" size="icon" disabled={disabled}>
+							<Pencil className="h-4 w-4" />
+						</Button>
+					) : (
+						<Button disabled={disabled}>
+							<Plus className="mr-2 h-4 w-4" />
+							Add User
+						</Button>
+					)}
+				</DialogTrigger>
+				<DialogContent className="sm:max-w-106.25">
+					<DialogHeader>
+						<DialogTitle>{isEditing ? "Edit User" : "Add User"}</DialogTitle>
+						<DialogDescription className="py-2">
+							{isEditing
+								? "Update user details and permissions. Optionally reset the password."
+								: "Create a new local user account. A temporary password will be generated."}
+						</DialogDescription>
+					</DialogHeader>
 
-				<form
-					onSubmit={async (e) => {
-						e.preventDefault();
-						await form.handleSubmit();
-					}}
-				>
-					<FieldGroup>
-						<form.Field
-							name="name"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Name</Label>
-										<Input
-											id={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="Full name"
-											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="email"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Email</Label>
-										<Input
-											id={field.name}
-											type="email"
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="user@example.com"
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="password"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>
-											Password
-											{isEditing && (
-												<span className="text-muted-foreground font-normal">
-													{" "}
-													(leave blank to keep current)
-												</span>
-											)}
-										</Label>
-										<Input
-											id={field.name}
-											type="password"
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											autoComplete="new-password"
-											placeholder={isEditing ? "••••••••" : "Min. 8 characters"}
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="role"
-							children={(field) => (
-								<Field>
-									<Label htmlFor={field.name}>Role</Label>
-									<div className="flex gap-4">
-										<RadioGroup
-											name={field.name}
-											value={field.state.value}
-											onValueChange={(value) => field.handleChange(value as "admin" | "user")}
-										>
-											<FieldLabel>
-												<Field
-													orientation="horizontal"
-													data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-												>
-													<FieldContent>
-														<FieldTitle>Admin</FieldTitle>
-													</FieldContent>
-													<RadioGroupItem
-														aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-														value="admin"
-													/>
-												</Field>
-											</FieldLabel>
-											<FieldLabel>
-												<Field
-													orientation="horizontal"
-													data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-												>
-													<FieldContent>
-														<FieldTitle>User</FieldTitle>
-													</FieldContent>
-													<RadioGroupItem
-														aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-														value="user"
-													/>
-												</Field>
-											</FieldLabel>
-										</RadioGroup>
-									</div>
-								</Field>
-							)}
-						/>
-
-						<div className="flex gap-2 pt-2">
-							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving..." : isEditing ? "Update User" : "Create User"}
-							</Button>
-							<Button
-								type="button"
-								variant="outline"
-								onClick={() => {
-									setOpen(false);
-									form.reset();
+					<form
+						onSubmit={async (e) => {
+							e.preventDefault();
+							await form.handleSubmit();
+						}}
+					>
+						<FieldGroup>
+							<form.Field
+								name="name"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Name</Label>
+											<Input
+												id={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												placeholder="Full name"
+												autoFocus
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
 								}}
-								disabled={isSubmitting}
-							>
-								Cancel
-							</Button>
-						</div>
-					</FieldGroup>
-				</form>
-			</DialogContent>
-		</Dialog>
+							/>
+							<form.Field
+								name="email"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>Email</Label>
+											<Input
+												id={field.name}
+												type="email"
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												placeholder="user@example.com"
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							/>
+							<form.Field
+								name="role"
+								children={(field) => (
+									<Field>
+										<Label htmlFor={field.name}>Role</Label>
+										<div className="flex gap-4">
+											<RadioGroup
+												name={field.name}
+												value={field.state.value}
+												onValueChange={(value) => field.handleChange(value as "admin" | "user")}
+											>
+												<FieldLabel>
+													<Field
+														orientation="horizontal"
+														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
+													>
+														<FieldContent>
+															<FieldTitle>Admin</FieldTitle>
+														</FieldContent>
+														<RadioGroupItem
+															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
+															value="admin"
+														/>
+													</Field>
+												</FieldLabel>
+												<FieldLabel>
+													<Field
+														orientation="horizontal"
+														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
+													>
+														<FieldContent>
+															<FieldTitle>User</FieldTitle>
+														</FieldContent>
+														<RadioGroupItem
+															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
+															value="user"
+														/>
+													</Field>
+												</FieldLabel>
+											</RadioGroup>
+										</div>
+									</Field>
+								)}
+							/>
+							{isEditing && (
+								<form.Field
+									name="resetPassword"
+									children={(field) => (
+										<Field>
+											<div className="flex items-start gap-2">
+												<Checkbox
+													id={field.name}
+													checked={field.state.value}
+													onCheckedChange={(checked) => field.handleChange(checked === true)}
+													className="h-4 w-4 rounded border-gray-300"
+												/>
+												<div className="space-y-1">
+													<Label htmlFor={field.name}>Reset password</Label>
+													<p className="text-muted-foreground text-xs">
+														Generate a new password and require the user to change it after sign-in.
+													</p>
+												</div>
+											</div>
+										</Field>
+									)}
+								/>
+							)}
+
+							<div className="flex gap-2 pt-2">
+								<Button type="submit" disabled={isSubmitting}>
+									{isSubmitting ? "Saving..." : isEditing ? "Update User" : "Create User"}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => {
+										setOpen(false);
+										form.reset();
+									}}
+									disabled={isSubmitting}
+								>
+									Cancel
+								</Button>
+							</div>
+						</FieldGroup>
+					</form>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={isGeneratedPasswordOpen}
+				onOpenChange={(nextOpen) => {
+					setIsGeneratedPasswordOpen(nextOpen);
+					if (!nextOpen) {
+						setGeneratedPassword(null);
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Generated Password</DialogTitle>
+						<DialogDescription>
+							Copy this password now. It will not be shown again.
+						</DialogDescription>
+					</DialogHeader>
+
+					<div className="space-y-2">
+						<Label htmlFor="generated-password">Password</Label>
+						<Input id="generated-password" value={generatedPassword ?? ""} readOnly />
+					</div>
+
+					<DialogFooter>
+						<Button type="button" variant="outline" onClick={handleCopyGeneratedPassword}>
+							<Copy className="mr-2 h-4 w-4" />
+							Copy
+						</Button>
+						<Button
+							type="button"
+							onClick={() => {
+								setIsGeneratedPasswordOpen(false);
+								setGeneratedPassword(null);
+							}}
+						>
+							Done
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</>
 	);
 }

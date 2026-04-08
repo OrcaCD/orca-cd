@@ -8,6 +8,13 @@ import { columns } from "@/components/tables/users/columns";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
 	component: UsersPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Admin - User Management",
+			},
+		],
+	}),
 });
 
 function UsersPage() {
