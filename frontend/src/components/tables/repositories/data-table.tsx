@@ -22,35 +22,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { Search } from "lucide-react";
-
-function toSearchableText(value: unknown): string {
-	if (value === null || value === undefined) {
-		return "";
-	}
-
-	if (value instanceof Date) {
-		return value.toISOString().toLowerCase();
-	}
-
-	if (Array.isArray(value)) {
-		return value.map(toSearchableText).join(" ");
-	}
-
-	switch (typeof value) {
-		case "string":
-			return value.toLowerCase();
-		case "number":
-		case "boolean":
-		case "bigint":
-			return String(value).toLowerCase();
-		case "object":
-			return Object.values(value as Record<string, unknown>)
-				.map(toSearchableText)
-				.join(" ");
-		default:
-			return "";
-	}
-}
+import { toSearchableText } from "@/lib/utils";
 
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
