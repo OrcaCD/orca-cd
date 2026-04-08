@@ -751,74 +751,6 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 	}
 }
 
-func TestUpdateOwnPasswordHandler_Success(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-local-5"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
-	if err := db.DB.Create(user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(updateOwnPasswordRequest{CurrentPassword: "password123", NewPassword: "newpassword123"}) //nolint:gosec
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile/password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	setUserClaims(t, c, user)
-
-	UpdateOwnPasswordHandler(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if !hasAuthCookie(w) {
-		t.Error("expected refreshed auth cookie in response")
-	}
-
-	var reloaded models.User
-	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
-		t.Fatalf("failed to reload user: %v", err)
-	}
-	if reloaded.PasswordHash == nil {
-		t.Fatal("expected password hash to be set")
-	}
-	if !auth.CheckPassword("newpassword123", *reloaded.PasswordHash) {
-		t.Error("expected password hash to match new password")
-	}
-}
-
-func TestUpdateOwnPasswordHandler_WrongCurrentPassword(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-local-6"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
-	if err := db.DB.Create(user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(updateOwnPasswordRequest{CurrentPassword: "wrong-password", NewPassword: "newpassword123"}) //nolint:gosec
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile/password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	setUserClaims(t, c, user)
-
-	UpdateOwnPasswordHandler(c)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var reloaded models.User
-	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
-		t.Fatalf("failed to reload user: %v", err)
-	}
-	if reloaded.PasswordHash == nil || !auth.CheckPassword("password123", *reloaded.PasswordHash) {
-		t.Error("expected original password hash to remain unchanged")
-	}
-}
-
 func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 	setupTestDB(t)
 
@@ -844,12 +776,6 @@ func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 			body:    updateOwnProfileRequest{Name: "Blocked Name", Email: "blocked@example.com"},
 			handler: UpdateOwnProfileHandler,
 			path:    "/api/v1/auth/profile",
-		},
-		{
-			name:    "password update",
-			body:    updateOwnPasswordRequest{CurrentPassword: "password123", NewPassword: "newpassword123"},
-			handler: UpdateOwnPasswordHandler,
-			path:    "/api/v1/auth/profile/password",
 		},
 	}
 
