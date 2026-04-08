@@ -55,22 +55,22 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 	if body["port"] != "8080" {
 		t.Fatalf("expected port=8080, got %v", body["port"])
 	}
-	if body["log_level"] != "debug" {
-		t.Fatalf("expected log_level=debug, got %v", body["log_level"])
+	if body["logLevel"] != "debug" {
+		t.Fatalf("expected logLevel=debug, got %v", body["logLevel"])
 	}
-	if body["app_url"] != "https://example.com" {
-		t.Fatalf("expected app_url=https://example.com, got %v", body["app_url"])
+	if body["appUrl"] != "https://example.com" {
+		t.Fatalf("expected appUrl=https://example.com, got %v", body["appUrl"])
 	}
-	if body["disable_local_auth"] != true {
-		t.Fatalf("expected disable_local_auth=true, got %v", body["disable_local_auth"])
+	if body["disableLocalAuth"] != true {
+		t.Fatalf("expected disableLocalAuth=true, got %v", body["disableLocalAuth"])
 	}
 	if body["version"] != "test" {
 		t.Fatalf("expected version=test, got %v", body["version"])
 	}
 
-	proxiesRaw, ok := body["trusted_proxies"].([]any)
+	proxiesRaw, ok := body["trustedProxies"].([]any)
 	if !ok {
-		t.Fatalf("expected trusted_proxies to be array, got %T", body["trusted_proxies"])
+		t.Fatalf("expected trustedProxies to be array, got %T", body["trustedProxies"])
 	}
 	proxies := make([]string, 0, len(proxiesRaw))
 	for _, v := range proxiesRaw {
