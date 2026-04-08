@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,14 +17,14 @@ import (
 )
 
 type adminUserResponse struct {
-	Id                     string `json:"id"`
-	Name                   string `json:"name"`
-	Email                  string `json:"email"`
-	Role                   string `json:"role"`
-	HasPassword            bool   `json:"hasPassword"`
-	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
-	CreatedAt              string `json:"createdAt"`
-	UpdatedAt              string `json:"updatedAt"`
+	Id                     string   `json:"id"`
+	Name                   string   `json:"name"`
+	Email                  string   `json:"email"`
+	Role                   string   `json:"role"`
+	Providers              []string `json:"providers"`
+	PasswordChangeRequired bool     `json:"passwordChangeRequired"`
+	CreatedAt              string   `json:"createdAt"`
+	UpdatedAt              string   `json:"updatedAt"`
 }
 
 type adminUserWithGeneratedPasswordResponse struct {
@@ -44,22 +45,27 @@ type adminUpdateUserRequest struct {
 	ResetPassword bool   `json:"resetPassword"`
 }
 
-func toAdminUserResponse(user *models.User) adminUserResponse {
+type adminUserProviderRow struct {
+	UserId       string `gorm:"column:user_id"`
+	ProviderName string `gorm:"column:provider_name"`
+}
+
+func toAdminUserResponse(user *models.User, oidcProviderNames []string) adminUserResponse {
 	return adminUserResponse{
 		Id:                     user.Id,
 		Name:                   user.Name,
 		Email:                  user.Email,
 		Role:                   string(user.Role),
-		HasPassword:            user.PasswordHash != nil,
+		Providers:              buildAuthProviderNames(user.PasswordHash, oidcProviderNames),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		CreatedAt:              user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:              user.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
-func toAdminUserWithGeneratedPasswordResponse(user *models.User, generatedPassword string) adminUserWithGeneratedPasswordResponse {
+func toAdminUserWithGeneratedPasswordResponse(user *models.User, oidcProviderNames []string, generatedPassword string) adminUserWithGeneratedPasswordResponse {
 	return adminUserWithGeneratedPasswordResponse{
-		adminUserResponse: toAdminUserResponse(user),
+		adminUserResponse: toAdminUserResponse(user, oidcProviderNames),
 		GeneratedPassword: generatedPassword,
 	}
 }
@@ -71,9 +77,20 @@ func AdminListUsersHandler(c *gin.Context) {
 		return
 	}
 
+	userIds := make([]string, 0, len(users))
+	for i := range users {
+		userIds = append(userIds, users[i].Id)
+	}
+
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, userIds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	response := make([]adminUserResponse, 0, len(users))
 	for i := range users {
-		response = append(response, toAdminUserResponse(&users[i]))
+		response = append(response, toAdminUserResponse(&users[i], oidcProviderNamesByUserId[users[i].Id]))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -92,7 +109,13 @@ func AdminGetUserHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAdminUserResponse(&user))
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toAdminUserResponse(&user, oidcProviderNamesByUserId[user.Id]))
 }
 
 func AdminCreateUserHandler(c *gin.Context) {
@@ -133,7 +156,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, generatedPassword))
+	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
 }
 
 func AdminUpdateUserHandler(c *gin.Context) {
@@ -205,7 +228,13 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, generatedPassword))
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
@@ -245,6 +274,66 @@ func countAdminUsers(c *gin.Context) (int64, error) {
 	var count int64
 	err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("role = ?", models.UserRoleAdmin).Count(&count).Error
 	return count, err
+}
+
+func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string][]string, error) {
+	providerNamesByUserId := make(map[string][]string, len(userIds))
+	for _, userId := range userIds {
+		providerNamesByUserId[userId] = make([]string, 0)
+	}
+
+	if len(userIds) == 0 {
+		return providerNamesByUserId, nil
+	}
+
+	var rows []adminUserProviderRow
+	err := db.DB.WithContext(c.Request.Context()).
+		Table("user_oidc_identities AS uoi").
+		Select("uoi.user_id, op.name AS provider_name").
+		Joins("JOIN oidc_providers AS op ON op.id = uoi.provider_id").
+		Where("uoi.user_id IN ?", userIds).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		providerName := strings.TrimSpace(row.ProviderName)
+		if providerName == "" {
+			continue
+		}
+		providerNamesByUserId[row.UserId] = append(providerNamesByUserId[row.UserId], providerName)
+	}
+
+	return providerNamesByUserId, nil
+}
+
+func buildAuthProviderNames(passwordHash *string, oidcProviderNames []string) []string {
+	seen := make(map[string]struct{}, len(oidcProviderNames)+1)
+	providerNames := make([]string, 0, len(oidcProviderNames)+1)
+
+	if passwordHash != nil {
+		providerNames = append(providerNames, "password")
+		seen["password"] = struct{}{}
+	}
+
+	uniqueOIDCProviderNames := make([]string, 0, len(oidcProviderNames))
+	for _, providerName := range oidcProviderNames {
+		providerName = strings.TrimSpace(providerName)
+		if providerName == "" {
+			continue
+		}
+		if _, ok := seen[providerName]; ok {
+			continue
+		}
+		seen[providerName] = struct{}{}
+		uniqueOIDCProviderNames = append(uniqueOIDCProviderNames, providerName)
+	}
+
+	sort.Strings(uniqueOIDCProviderNames)
+
+	providerNames = append(providerNames, uniqueOIDCProviderNames...)
+	return providerNames
 }
 
 func isUniqueConstraintError(err error) bool {

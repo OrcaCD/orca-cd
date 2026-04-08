@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,7 +47,15 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	setupTestDB(t)
 
 	createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
-	createTestUser(t, "OIDC User", "oidc@example.com", models.UserRoleUser, "")
+	oidcUser := createTestUser(t, "OIDC User", "oidc@example.com", models.UserRoleUser, "")
+	provider := createTestProvider(t, "GitHub", true)
+	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &models.UserOIDCIdentity{
+		UserId:     oidcUser.Id,
+		ProviderId: provider.Id,
+		Subject:    "oidc-subject",
+	}); err != nil {
+		t.Fatalf("failed to create oidc identity: %v", err)
+	}
 
 	router := gin.New()
 	router.GET("/api/v1/admin/users", AdminListUsersHandler)
@@ -81,21 +90,21 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	if !ok {
 		t.Fatal("expected admin@example.com in response")
 	}
-	if !admin.HasPassword {
-		t.Fatal("expected admin@example.com to have hasPassword=true")
+	if !slices.Equal(admin.Providers, []string{"password"}) {
+		t.Fatalf("expected admin@example.com providers %v, got %v", []string{"password"}, admin.Providers)
 	}
 	if admin.PasswordChangeRequired {
 		t.Fatal("expected admin@example.com to have passwordChangeRequired=false")
 	}
 
-	oidcUser, ok := byEmail["oidc@example.com"]
+	oidcUserResponse, ok := byEmail["oidc@example.com"]
 	if !ok {
 		t.Fatal("expected oidc@example.com in response")
 	}
-	if oidcUser.HasPassword {
-		t.Fatal("expected oidc@example.com to have hasPassword=false")
+	if !slices.Equal(oidcUserResponse.Providers, []string{"GitHub"}) {
+		t.Fatalf("expected oidc@example.com providers %v, got %v", []string{"GitHub"}, oidcUserResponse.Providers)
 	}
-	if oidcUser.PasswordChangeRequired {
+	if oidcUserResponse.PasswordChangeRequired {
 		t.Fatal("expected oidc@example.com to have passwordChangeRequired=false")
 	}
 }
@@ -146,8 +155,8 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	if body.Role != string(models.UserRoleUser) {
 		t.Fatalf("expected role %q, got %q", models.UserRoleUser, body.Role)
 	}
-	if !body.HasPassword {
-		t.Fatal("expected hasPassword=true")
+	if !slices.Equal(body.Providers, []string{"password"}) {
+		t.Fatalf("expected providers %v, got %v", []string{"password"}, body.Providers)
 	}
 	if !body.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=true")

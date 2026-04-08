@@ -57,27 +57,29 @@ export const columns: ColumnDef<UserDetail>[] = [
 		},
 	},
 	{
-		accessorKey: "hasPassword",
+		accessorKey: "providers",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Has Password" />;
+			return <DataTableColumnHeader column={column} title="Providers" />;
 		},
 		cell: ({ row }) => {
-			const hasPassword = row.original.hasPassword;
+			const providers = row.original.providers;
 			return (
-				<>
-					{hasPassword && (
-						<Badge variant="outline">
-							<KeyRound className="mr-1 h-3 w-3" />
-							Password
+				<div className="flex flex-wrap gap-1 max-w-sm">
+					{providers.map((provider) => (
+						<Badge key={provider} variant="outline">
+							{provider === "password" && <KeyRound className="mr-1 h-3 w-3" />}
+							{provider}
 						</Badge>
-					)}
-				</>
+					))}
+				</div>
 			);
 		},
 	},
 	{
 		id: "actions",
 		cell: ({ row }) => {
+			const hasPasswordProvider = row.original.providers.includes("password");
+
 			async function handleDelete() {
 				try {
 					await deleteUser(row.original.id);
@@ -101,7 +103,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 							<UpsertUserDialog
 								user={row.original}
 								asDropdownItem
-								disabled={!row.original.hasPassword}
+								disabled={!hasPasswordProvider}
 							/>
 							<DropdownMenuSeparator />
 							<ConfirmationDialog

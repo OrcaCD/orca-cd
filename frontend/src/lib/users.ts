@@ -5,7 +5,7 @@ export interface UserDetail {
 	name: string;
 	email: string;
 	role: string;
-	hasPassword: boolean;
+	providers: string[];
 	passwordChangeRequired: boolean;
 	createdAt: string;
 	updatedAt: string;

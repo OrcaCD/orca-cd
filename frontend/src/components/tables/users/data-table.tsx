@@ -73,6 +73,7 @@ export function UserDataTable<TData, TValue>({
 		onSortingChange: setSorting,
 		getSortedRowModel: getSortedRowModel(),
 		onGlobalFilterChange: setGlobalFilter,
+		getColumnCanGlobalFilter: () => true,
 		globalFilterFn: (row, columnId, filterValue) => {
 			const query = String(filterValue).trim().toLowerCase();
 

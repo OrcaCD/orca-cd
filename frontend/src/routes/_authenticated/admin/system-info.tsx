@@ -9,10 +9,10 @@ interface SystemInfo {
 	debug: boolean;
 	host: string;
 	port: string;
-	log_level: string;
-	trusted_proxies: string[];
-	app_url: string;
-	disable_local_auth: boolean;
+	logLevel: string;
+	trustedProxies: string[];
+	appUrl: string;
+	disableLocalAuth: boolean;
 	version: string;
 }
 
@@ -61,7 +61,7 @@ function SystemInfoPage() {
 						<div className="flex flex-col gap-4">
 							<InfoRow label="App URL">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
-									{data.app_url || "—"}
+									{data.appUrl || "—"}
 								</code>
 							</InfoRow>
 
@@ -78,7 +78,7 @@ function SystemInfoPage() {
 							</InfoRow>
 
 							<InfoRow label="Log Level">
-								<Badge variant="secondary">{data.log_level}</Badge>
+								<Badge variant="secondary">{data.logLevel}</Badge>
 							</InfoRow>
 
 							<InfoRow label="Debug Mode">
@@ -88,15 +88,15 @@ function SystemInfoPage() {
 							</InfoRow>
 
 							<InfoRow label="Password Authentication">
-								<Badge variant={data.disable_local_auth ? "destructive" : "outline"}>
-									{data.disable_local_auth ? "Enabled" : "Disabled"}
+								<Badge variant={data.disableLocalAuth ? "destructive" : "outline"}>
+									{data.disableLocalAuth ? "Enabled" : "Disabled"}
 								</Badge>
 							</InfoRow>
 
 							<InfoRow label="Trusted Proxies">
-								{data.trusted_proxies && data.trusted_proxies.length > 0 ? (
+								{data.trustedProxies && data.trustedProxies.length > 0 ? (
 									<div className="flex flex-wrap gap-1.5">
-										{data.trusted_proxies.map((proxy) => (
+										{data.trustedProxies.map((proxy) => (
 											<code
 												key={proxy}
 												className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs"
