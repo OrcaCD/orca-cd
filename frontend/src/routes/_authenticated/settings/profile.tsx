@@ -15,6 +15,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/_authenticated/settings/profile")({
 	component: ProfileSettingsPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Settings - Profile",
+			},
+		],
+	}),
 });
 
 const profileSchema = z.object({

@@ -15,6 +15,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/_authenticated/settings/security")({
 	component: SecuritySettingsPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Settings - Security",
+			},
+		],
+	}),
 });
 
 const passwordSchema = z
