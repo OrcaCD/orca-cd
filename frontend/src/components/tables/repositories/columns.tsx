@@ -1,4 +1,4 @@
-import { deleteRepository, type Repository } from "@/lib/repsitories";
+import { deleteRepository, RepositoryStatus, type Repository } from "@/lib/repsitories";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,23 @@ import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import { toast } from "sonner";
+
+function getRepositoryStatusLabel(status: RepositoryStatus): string {
+	return status === RepositoryStatus.Connected ? "Connected" : "Error";
+}
+
+function getLastSyncSearchText(lastSync?: Date): string {
+	if (!lastSync) {
+		return "N/A not synced";
+	}
+
+	return [
+		lastSync.toISOString(),
+		lastSync.toLocaleDateString(),
+		lastSync.toLocaleTimeString(),
+		lastSync.toLocaleString(),
+	].join(" ");
+}
 
 export const columns: ColumnDef<Repository>[] = [
 	{
@@ -42,27 +59,36 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 	},
 	{
-		accessorKey: "status",
+		id: "status",
+		accessorFn: (row) => getRepositoryStatusLabel(row.status),
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Status" />;
 		},
 		cell: ({ row }) => {
 			const status = row.original.status;
+			const statusLabel = getRepositoryStatusLabel(status);
 
 			return (
 				<div>
 					<span
 						className={`inline-flex h-2 w-2 rounded-full ${
-							status === 0 ? "bg-green-500" : "bg-red-500"
+							status === RepositoryStatus.Connected ? "bg-green-500" : "bg-red-500"
 						}`}
 					/>
-					<span className="ml-2">{status === 0 ? "Connected" : "Error"}</span>
+					<span className="ml-2">{statusLabel}</span>
 				</div>
 			);
 		},
 	},
 	{
-		accessorKey: "lastSync",
+		id: "lastSync",
+		accessorFn: (row) => getLastSyncSearchText(row.lastSync),
+		sortingFn: (rowA, rowB) => {
+			const firstSync = rowA.original.lastSync?.getTime() ?? 0;
+			const secondSync = rowB.original.lastSync?.getTime() ?? 0;
+
+			return firstSync - secondSync;
+		},
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Last Sync" />;
 		},
