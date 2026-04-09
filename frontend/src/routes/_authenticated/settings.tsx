@@ -5,10 +5,13 @@ import {
 	SidebarGroupContent,
 	SidebarGroupLabel,
 	SidebarHeader,
+	SidebarInset,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
 	SidebarProvider,
+	SidebarTrigger,
+	useSidebar,
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Key, Settings, User } from "lucide-react";
@@ -34,8 +37,8 @@ function SettingsLayout() {
 	const { location } = useRouterState();
 
 	return (
-		<SidebarProvider>
-			<Sidebar collapsible="none" className="h-screen border-r">
+		<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">
+			<Sidebar className="border-r md:top-14">
 				<SidebarHeader className="px-4 py-5">
 					<div className="flex items-center gap-2 font-semibold">
 						<Settings className="size-4" />
@@ -48,23 +51,55 @@ function SettingsLayout() {
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{settingsPages.map((item) => (
-									<SidebarMenuItem key={item.title} className="mb-2">
-										<SidebarMenuButton asChild isActive={location.pathname === item.path}>
-											<Link to={item.path}>
-												<item.icon />
-												<span>{item.title}</span>
-											</Link>
-										</SidebarMenuButton>
-									</SidebarMenuItem>
+									<SettingsSidebarMenuItem
+										key={item.title}
+										item={item}
+										pathname={location.pathname}
+									/>
 								))}
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>
 				</SidebarContent>
 			</Sidebar>
-			<div className="p-6 space-y-6 w-full overflow-y-auto">
-				<Outlet />
-			</div>
+			<SidebarInset className="min-w-0">
+				<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
+					<div className="flex items-center gap-2 md:hidden">
+						<SidebarTrigger className="-ml-1" />
+						<span className="font-semibold">Admin</span>
+					</div>
+					<Outlet />
+				</div>
+			</SidebarInset>
 		</SidebarProvider>
+	);
+}
+
+function SettingsSidebarMenuItem({
+	item,
+	pathname,
+}: {
+	item: (typeof settingsPages)[number];
+	pathname: string;
+}) {
+	const { isMobile, setOpenMobile } = useSidebar();
+	const isActive = pathname === item.path || pathname.startsWith(`${item.path}/`);
+
+	return (
+		<SidebarMenuItem className="mb-2">
+			<SidebarMenuButton asChild isActive={isActive}>
+				<Link
+					to={item.path}
+					onClick={() => {
+						if (isMobile) {
+							setOpenMobile(false);
+						}
+					}}
+				>
+					<item.icon />
+					<span>{item.title}</span>
+				</Link>
+			</SidebarMenuButton>
+		</SidebarMenuItem>
 	);
 }
