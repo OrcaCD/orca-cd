@@ -66,7 +66,7 @@ function SettingsLayout() {
 				<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
 					<div className="flex items-center gap-2 md:hidden">
 						<SidebarTrigger className="-ml-1" />
-						<span className="font-semibold">Admin</span>
+						<span className="font-semibold">Settings</span>
 					</div>
 					<Outlet />
 				</div>

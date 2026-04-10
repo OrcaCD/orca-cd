@@ -72,7 +72,7 @@ export async function updateProfile(data: { name: string; email: string }): Prom
 }
 
 export async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
-	await fetcher(`${API_BASE}/auth/profile/password`, {
+	await fetcher(`${API_BASE}/auth/change-password`, {
 		method: "PUT",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ currentPassword, newPassword }),

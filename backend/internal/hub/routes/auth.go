@@ -100,13 +100,7 @@ func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) 
 		return nil, nil, false
 	}
 
-	identityCount, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", user.Id).Count(c.Request.Context(), "*")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return nil, nil, false
-	}
-
-	if user.PasswordHash == nil || identityCount > 0 {
+	if user.PasswordHash == nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
 		return nil, nil, false
 	}
@@ -146,11 +140,13 @@ func UpdateOwnProfileHandler(c *gin.Context) {
 
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusOK, profileResponse{
-		Id:      user.Id,
-		Name:    user.Name,
-		Email:   user.Email,
-		Picture: claims.Picture,
-		Role:    string(user.Role),
+		Id:                     user.Id,
+		Name:                   user.Name,
+		Email:                  user.Email,
+		Picture:                claims.Picture,
+		Role:                   string(user.Role),
+		PasswordChangeRequired: user.PasswordChangeRequired,
+		IsLocal:                true,
 	})
 }
 

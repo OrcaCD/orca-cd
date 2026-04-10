@@ -52,7 +52,7 @@ function PasswordInput({
 				size="icon"
 				className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
 				onClick={onToggle}
-				tabIndex={-1}
+				aria-label={showPassword ? "Hide password" : "Show password"}
 			>
 				{showPassword ? (
 					<EyeOff className="h-4 w-4 text-muted-foreground" />
