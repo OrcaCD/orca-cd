@@ -69,9 +69,7 @@ func ProfileHandler(c *gin.Context) {
 
 	isLocal := false
 	if user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context()); err == nil {
-		if count, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", user.Id).Count(c.Request.Context(), "*"); err == nil {
-			isLocal = user.PasswordHash != nil && count == 0
-		}
+		isLocal = user.PasswordHash != nil
 	}
 
 	c.JSON(http.StatusOK, profileResponse{

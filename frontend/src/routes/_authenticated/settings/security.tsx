@@ -66,7 +66,9 @@ function PasswordInput({
 
 function SecuritySettingsPage() {
 	const { auth } = useAuth();
-	const [showPasswords, setShowPasswords] = useState(false);
+	const [showCurrentPasswords, setShowCurrentPasswords] = useState(false);
+	const [showNewPasswords, setShowNewPasswords] = useState(false);
+	const [showConfirmPasswords, setShowConfirmPasswords] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const isLocal = auth.profile?.isLocal ?? false;
@@ -117,6 +119,7 @@ function SecuritySettingsPage() {
 				</CardHeader>
 				<CardContent>
 					<form
+						className="max-w-xl"
 						onSubmit={async (e) => {
 							e.preventDefault();
 							await form.handleSubmit();
@@ -136,8 +139,8 @@ function SecuritySettingsPage() {
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showPasswords}
-												onToggle={() => setShowPasswords(!showPasswords)}
+												showPassword={showCurrentPasswords}
+												onToggle={() => setShowCurrentPasswords(!showCurrentPasswords)}
 												autoComplete="current-password"
 												disabled={!isLocal}
 											/>
@@ -159,8 +162,8 @@ function SecuritySettingsPage() {
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showPasswords}
-												onToggle={() => setShowPasswords(!showPasswords)}
+												showPassword={showNewPasswords}
+												onToggle={() => setShowNewPasswords(!showNewPasswords)}
 												autoComplete="new-password"
 												disabled={!isLocal}
 											/>
@@ -182,8 +185,8 @@ function SecuritySettingsPage() {
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showPasswords}
-												onToggle={() => setShowPasswords(!showPasswords)}
+												showPassword={showConfirmPasswords}
+												onToggle={() => setShowConfirmPasswords(!showConfirmPasswords)}
 												autoComplete="new-password"
 												disabled={!isLocal}
 											/>
@@ -193,7 +196,7 @@ function SecuritySettingsPage() {
 								}}
 							/>
 							<Field>
-								<Button type="submit" disabled={isSubmitting || !isLocal}>
+								<Button type="submit" disabled={isSubmitting || !isLocal} className="max-w-fit">
 									{isSubmitting ? "Updating..." : "Update Password"}
 								</Button>
 							</Field>

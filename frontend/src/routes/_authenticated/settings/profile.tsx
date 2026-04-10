@@ -83,6 +83,7 @@ function ProfileSettingsPage() {
 				</CardHeader>
 				<CardContent>
 					<form
+						className="max-w-xl"
 						onSubmit={async (e) => {
 							e.preventDefault();
 							await form.handleSubmit();
@@ -133,7 +134,7 @@ function ProfileSettingsPage() {
 								}}
 							/>
 							<Field>
-								<Button type="submit" disabled={isSubmitting || !isLocal}>
+								<Button type="submit" disabled={isSubmitting || !isLocal} className="max-w-fit">
 									{isSubmitting ? "Saving..." : "Save Changes"}
 								</Button>
 							</Field>
