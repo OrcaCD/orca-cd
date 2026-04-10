@@ -751,11 +751,138 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 	}
 }
 
-func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
+func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-sso-1"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Base: models.Base{Id: "user-local-invalid-req"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		body any
+	}{
+		{name: "short name", body: updateOwnProfileRequest{Name: "ab", Email: "new@example.com"}},
+		{name: "invalid email", body: updateOwnProfileRequest{Name: "Updated Name", Email: "not-an-email"}},
+		{name: "empty body", body: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var reqBody []byte
+			if tt.body != nil {
+				reqBody, _ = json.Marshal(tt.body)
+			}
+
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+			setUserClaims(t, c, user)
+
+			UpdateOwnProfileHandler(c)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpdateOwnProfileHandler_NoClaims(t *testing.T) {
+	setupTestDB(t)
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateOwnProfileHandler_UserNotFound(t *testing.T) {
+	setupTestDB(t)
+
+	missingUser := &models.User{Base: models.Base{Id: "user-local-missing"}, Email: "missing@example.com", Name: "Missing", Role: models.UserRoleUser}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, missingUser)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Base: models.Base{Id: "user-managed-no-password"}, Email: "managed@example.com", Name: "Managed User", Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateOwnProfileHandler_InternalErrorWhenUserLookupFails(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Base: models.Base{Id: "user-local-db-error"}, Email: "db-error@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("failed to close sql db: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Base: models.Base{Id: "user-sso-1"}, Email: "user@example.com", Name: "User", Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
