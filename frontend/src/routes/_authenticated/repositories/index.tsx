@@ -6,6 +6,13 @@ import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/repositories/")({
 	component: RepositoriesPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Repositories",
+			},
+		],
+	}),
 });
 
 const mockRepos: Repository[] = [
@@ -59,7 +66,7 @@ const mockRepos: Repository[] = [
 	},
 ];
 
-export default function RepositoriesPage() {
+function RepositoriesPage() {
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

@@ -29,7 +29,7 @@ interface RepositoryDataTable<TData, TValue> {
 	data: TData[];
 }
 
-export function RepositoryDataTable<TData, TValue>({
+export function UserDataTable<TData, TValue>({
 	columns,
 	data,
 }: RepositoryDataTable<TData, TValue>) {
@@ -72,7 +72,7 @@ export function RepositoryDataTable<TData, TValue>({
 				<div className="relative w-md mt-6">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 					<Input
-						placeholder="Search repositories..."
+						placeholder="Search users..."
 						className="pl-9 bg-muted border-border"
 						value={globalFilter}
 						onChange={(event) => setGlobalFilter(event.target.value)}

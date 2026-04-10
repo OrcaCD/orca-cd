@@ -22,10 +22,11 @@ const tokenExpiry = 24 * time.Hour
 
 type UserClaims struct {
 	jwt.RegisteredClaims
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Picture string `json:"picture,omitempty"`
-	Role    string `json:"role"`
+	Name                   string `json:"name"`
+	Email                  string `json:"email"`
+	Picture                string `json:"picture,omitempty"`
+	Role                   string `json:"role"`
+	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
 }
 
 type AgentClaims struct {
@@ -79,10 +80,11 @@ func GenerateUserTokenWithPicture(user *models.User, picture string) (string, er
 			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
 			Audience:  []string{"user"},
 		},
-		Name:    user.Name,
-		Email:   user.Email,
-		Picture: picture,
-		Role:    string(user.Role),
+		Name:                   user.Name,
+		Email:                  user.Email,
+		Picture:                picture,
+		Role:                   string(user.Role),
+		PasswordChangeRequired: user.PasswordChangeRequired,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)

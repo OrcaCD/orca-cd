@@ -28,6 +28,13 @@ import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-
 
 export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
+	head: () => ({
+		meta: [
+			{
+				title: "Admin - OIDC Providers",
+			},
+		],
+	}),
 });
 
 function OIDCProvidersPage() {
@@ -149,22 +156,24 @@ function OIDCProvidersPage() {
 								</Badge>
 							</div>
 						</CardContent>
-						<CardFooter className="bg-card flex items-center gap-2 text-sm">
+						<CardFooter className="bg-card flex flex-col items-start text-sm">
 							<span className="text-muted-foreground shrink-0">Callback URL</span>
-							<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
-								{provider.callbackUrl}
-							</code>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								onClick={() => handleCopyCallbackUrl(provider.callbackUrl)}
-								className="h-7 w-7 shrink-0"
-								aria-label="Copy callback URL"
-								title="Copy callback URL"
-							>
-								<Copy className="h-3.5 w-3.5" />
-							</Button>
+							<div className="mt-0.5 flex items-center gap-2">
+								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
+									{provider.callbackUrl}
+								</code>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									onClick={() => handleCopyCallbackUrl(provider.callbackUrl)}
+									className="h-7 w-7 shrink-0"
+									aria-label="Copy callback URL"
+									title="Copy callback URL"
+								>
+									<Copy className="h-3.5 w-3.5" />
+								</Button>
+							</div>
 						</CardFooter>
 					</Card>
 				))}

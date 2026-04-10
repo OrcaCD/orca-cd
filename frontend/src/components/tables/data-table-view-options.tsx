@@ -19,7 +19,7 @@ export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) 
 			<DropdownMenuTrigger asChild>
 				<Button variant="outline" size="sm" className="ml-auto hidden h-8 lg:flex">
 					<Settings2 />
-					View
+					Column Options
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-37.5">
