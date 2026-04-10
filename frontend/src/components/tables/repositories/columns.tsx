@@ -15,6 +15,24 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import { toast } from "sonner";
 
+function getLastSyncSearchText(lastSync?: string | null): string {
+	if (!lastSync) {
+		return "N/A not synced";
+	}
+
+	const parsedDate = new Date(lastSync);
+	if (Number.isNaN(parsedDate.getTime())) {
+		return "N/A not synced";
+	}
+
+	return [
+		parsedDate.toISOString(),
+		parsedDate.toLocaleDateString(),
+		parsedDate.toLocaleTimeString(),
+		parsedDate.toLocaleString(),
+	].join(" ");
+}
+
 export const columns: ColumnDef<Repository>[] = [
 	{
 		accessorKey: "name",
@@ -42,7 +60,8 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 	},
 	{
-		accessorKey: "syncStatus",
+		id: "syncStatus",
+		accessorFn: (row) => row.syncStatus,
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Status" />;
 		},
@@ -59,14 +78,26 @@ export const columns: ColumnDef<Repository>[] = [
 									? "bg-red-500"
 									: "bg-green-500"
 						}`}
-					/>
-					<span className="ml-2 capitalize">{syncStatus}</span>
+					>
+						{syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1)}
+					</span>
 				</div>
 			);
 		},
 	},
 	{
-		accessorKey: "lastSyncedAt",
+		id: "lastSyncedAt",
+		accessorFn: (row) => getLastSyncSearchText(row.lastSyncedAt),
+		sortingFn: (rowA, rowB) => {
+			const firstSync = rowA.original.lastSyncedAt
+				? new Date(rowA.original.lastSyncedAt).getTime()
+				: 0;
+			const secondSync = rowB.original.lastSyncedAt
+				? new Date(rowB.original.lastSyncedAt).getTime()
+				: 0;
+
+			return firstSync - secondSync;
+		},
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Last Sync" />;
 		},

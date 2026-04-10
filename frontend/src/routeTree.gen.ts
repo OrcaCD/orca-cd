@@ -17,6 +17,8 @@ import { Route as AuthenticatedRepositoriesIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedApplicationsIndexRouteImport } from './routes/_authenticated/applications/index'
 import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
 
 const LoginRoute = LoginRouteImport.update({
@@ -61,6 +63,17 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const AuthenticatedAdminSystemInfoRoute =
+  AuthenticatedAdminSystemInfoRouteImport.update({
+    id: '/system-info',
+    path: '/system-info',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
 const AuthenticatedAdminOidcProvidersRoute =
   AuthenticatedAdminOidcProvidersRouteImport.update({
     id: '/oidc-providers',
@@ -73,6 +86,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/applications/': typeof AuthenticatedApplicationsIndexRoute
@@ -82,6 +97,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/applications': typeof AuthenticatedApplicationsIndexRoute
@@ -94,6 +111,8 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/_authenticated/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/applications/': typeof AuthenticatedApplicationsIndexRoute
@@ -106,6 +125,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin'
     | '/admin/oidc-providers'
+    | '/admin/system-info'
+    | '/admin/users'
     | '/admin/'
     | '/agents/'
     | '/applications/'
@@ -115,6 +136,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/'
     | '/admin/oidc-providers'
+    | '/admin/system-info'
+    | '/admin/users'
     | '/admin'
     | '/agents'
     | '/applications'
@@ -126,6 +149,8 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/'
     | '/_authenticated/admin/oidc-providers'
+    | '/_authenticated/admin/system-info'
+    | '/_authenticated/admin/users'
     | '/_authenticated/admin/'
     | '/_authenticated/agents/'
     | '/_authenticated/applications/'
@@ -195,6 +220,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/system-info': {
+      id: '/_authenticated/admin/system-info'
+      path: '/system-info'
+      fullPath: '/admin/system-info'
+      preLoaderRoute: typeof AuthenticatedAdminSystemInfoRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
     '/_authenticated/admin/oidc-providers': {
       id: '/_authenticated/admin/oidc-providers'
       path: '/oidc-providers'
@@ -207,11 +246,15 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminOidcProvidersRoute: typeof AuthenticatedAdminOidcProvidersRoute
+  AuthenticatedAdminSystemInfoRoute: typeof AuthenticatedAdminSystemInfoRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminOidcProvidersRoute: AuthenticatedAdminOidcProvidersRoute,
+  AuthenticatedAdminSystemInfoRoute: AuthenticatedAdminSystemInfoRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 

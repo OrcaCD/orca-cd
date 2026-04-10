@@ -6,6 +6,7 @@ export interface AuthState {
 	isAuthenticated: boolean;
 	isLoading: boolean;
 	isAdmin: boolean;
+	passwordChangeRequired: boolean;
 	profile: Profile | null;
 }
 
@@ -21,6 +22,7 @@ interface Profile {
 	email: string;
 	picture?: string;
 	role: string;
+	passwordChangeRequired: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -35,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		profile: data || null,
 		isAuthenticated: !!data,
 		isAdmin: data?.role === "admin",
+		passwordChangeRequired: data?.passwordChangeRequired ?? false,
 	};
 
 	const refreshAuth = useCallback(async () => {
