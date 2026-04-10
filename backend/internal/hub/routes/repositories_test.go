@@ -305,13 +305,13 @@ func TestCreateRepositoryHandler_Success_Polling(t *testing.T) {
 
 	interval := int64(300)
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":                    "Polled Repo",
-		"url":                     "https://github.com/owner/polled-repo",
-		"provider":                "github",
-		"authMethod":              "token",
-		"authToken":               "ghp_secret",
-		"syncType":                "polling",
-		"pollingIntervalSeconds":  interval,
+		"name":                   "Polled Repo",
+		"url":                    "https://github.com/owner/polled-repo",
+		"provider":               "github",
+		"authMethod":             "token",
+		"authToken":              "ghp_secret",
+		"syncType":               "polling",
+		"pollingIntervalSeconds": interval,
 	})
 
 	c, w := makeAuthContext(t, "user-456")

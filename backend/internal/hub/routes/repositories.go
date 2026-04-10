@@ -10,7 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/OrcaCD/orca-cd/internal/hub/repository"
+	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -211,9 +211,9 @@ func resolveProvider(
 	prov models.RepositoryProvider,
 	url string,
 	authMethod models.RepositoryAuthMethod,
-) (repository.Provider, int, string) {
+) (repositories.Provider, int, string) {
 	switch prov {
-	case models.GitHub, models.GitLab, models.Generic:
+	case models.GitHub, models.GitLab, models.Generic, models.Bitbucket, models.AzureDevOps, models.Gitea:
 	default:
 		return nil, http.StatusBadRequest, "invalid provider: must be github, gitlab, or generic"
 	}
@@ -224,7 +224,7 @@ func resolveProvider(
 		return nil, http.StatusBadRequest, "invalid authMethod: must be none, token, basic, or ssh"
 	}
 
-	p, err := repository.Get(prov)
+	p, err := repositories.Get(prov)
 	if err != nil {
 		return nil, http.StatusBadRequest, "unsupported provider"
 	}

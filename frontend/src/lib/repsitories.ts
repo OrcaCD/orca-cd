@@ -1,6 +1,13 @@
 import fetcher, { API_BASE } from "./api";
 
-export type RepositoryProvider = "github" | "gitlab" | "generic";
+export type RepositoryProvider =
+	| "github"
+	| "gitlab"
+	| "generic"
+	| "bitbucket"
+	| "azure_devops"
+	| "gitea";
+
 export type RepositoryAuthMethod = "none" | "token" | "basic" | "ssh";
 export type RepositorySyncType = "polling" | "webhook" | "manual";
 export type RepositorySyncStatus = "unknown" | "syncing" | "failed" | "success";

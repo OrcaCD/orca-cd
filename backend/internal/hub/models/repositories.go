@@ -9,10 +9,12 @@ import (
 type RepositoryProvider string
 
 const (
-	GitHub  RepositoryProvider = "github"
-	GitLab  RepositoryProvider = "gitlab"
-	Generic RepositoryProvider = "generic"
-	// Todo: Add more providers like Bitbucket, Azure DevOps, etc.
+	GitHub      RepositoryProvider = "github"
+	GitLab      RepositoryProvider = "gitlab"
+	Generic     RepositoryProvider = "generic"
+	Bitbucket   RepositoryProvider = "bitbucket"
+	AzureDevOps RepositoryProvider = "azure_devops"
+	Gitea       RepositoryProvider = "gitea"
 )
 
 type RepositoryAuthMethod string
@@ -30,7 +32,7 @@ const (
 	SyncTypePolling RepositorySyncType = "polling"
 	SyncTypeWebhook RepositorySyncType = "webhook"
 	SyncTypeManual  RepositorySyncType = "manual"
-	// Maybe later "scheduled" or "github-app"
+	// Todo add "scheduled" and maybe "github-app"
 )
 
 type RepositorySyncStatus string
