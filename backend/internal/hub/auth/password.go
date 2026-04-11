@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -57,4 +59,13 @@ func CheckPassword(password, hash string) bool {
 // whether a user exists based on how long the password check takes.
 func CompareWithDummy(password string) {
 	CheckPassword(password, dummyHash) //nolint:errcheck
+}
+
+func GenerateRandomPassword() (string, error) {
+	raw := make([]byte, 18)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }

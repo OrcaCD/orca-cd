@@ -131,6 +131,7 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
 	async function register(name: string, email: string, password: string): Promise<void> {
@@ -257,8 +258,8 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showPassword}
-												onToggle={() => setShowPassword(!showPassword)}
+												showPassword={showConfirmPassword}
+												onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
 												autoComplete="new-password"
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}

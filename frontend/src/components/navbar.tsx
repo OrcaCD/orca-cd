@@ -114,7 +114,7 @@ export default function Navbar() {
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-48">
 							<DropdownMenuItem asChild>
-								<Link to="/" className="flex items-center">
+								<Link to="/settings" className="flex items-center">
 									<User className="mr-2 h-4 w-4" />
 									User Settings
 								</Link>

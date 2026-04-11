@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"sort"
@@ -127,7 +125,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	generatedPassword, err := generateRandomPassword()
+	generatedPassword, err := auth.GenerateRandomPassword()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -204,7 +202,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	generatedPassword := ""
 	if req.ResetPassword {
 		var genErr error
-		generatedPassword, genErr = generateRandomPassword()
+		generatedPassword, genErr = auth.GenerateRandomPassword()
 		if genErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
@@ -338,13 +336,4 @@ func buildAuthProviderNames(passwordHash *string, oidcProviderNames []string) []
 
 func isUniqueConstraintError(err error) bool {
 	return errors.Is(err, gorm.ErrDuplicatedKey) || strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
-}
-
-func generateRandomPassword() (string, error) {
-	raw := make([]byte, 18)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-
-	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
