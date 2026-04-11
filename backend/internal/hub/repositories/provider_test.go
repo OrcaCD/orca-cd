@@ -9,13 +9,13 @@ import (
 )
 
 type stubProvider struct {
-	validateErr      error
+	parseURLErr      error
 	authMethods      []models.RepositoryAuthMethod
 	testConnectionFn func(ctx context.Context, repo *models.Repository) error
 }
 
-func (s *stubProvider) ValidateURL(url string) error {
-	return s.validateErr
+func (s *stubProvider) ParseURL(url string) (string, string, error) {
+	return "", "", s.parseURLErr
 }
 
 func (s *stubProvider) SupportedAuthMethods() []models.RepositoryAuthMethod {
@@ -76,8 +76,8 @@ func TestGet_ErrorMessage(t *testing.T) {
 
 func TestRegister_Overwrite(t *testing.T) {
 	withIsolatedRegistry(t, func() {
-		first := &stubProvider{validateErr: errors.New("first")}
-		second := &stubProvider{validateErr: errors.New("second")}
+		first := &stubProvider{parseURLErr: errors.New("first")}
+		second := &stubProvider{parseURLErr: errors.New("second")}
 
 		Register(models.GitHub, first)
 		Register(models.GitHub, second)

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -16,7 +17,6 @@ import (
 )
 
 type createRepositoryRequest struct {
-	Name            string                      `json:"name" binding:"required,min=1,max=50"`
 	Url             string                      `json:"url" binding:"required"`
 	Provider        models.RepositoryProvider   `json:"provider" binding:"required"`
 	AuthMethod      models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
@@ -107,19 +107,25 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	// Validate polling interval is provided when syncType is polling
 	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pollingIntervalSeconds is required when syncType is polling"})
 		return
 	}
 
-	if _, httpStatus, validationErr := resolveProvider(req.Provider, req.Url, req.AuthMethod); validationErr != "" {
+	provider, httpStatus, validationErr := resolveProvider(req.Provider, req.AuthMethod)
+	if validationErr != "" {
 		c.JSON(httpStatus, gin.H{"error": validationErr})
 		return
 	}
 
+	repoOwner, repoName, err := provider.ParseURL(req.Url)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid repository URL: %v", err)})
+		return
+	}
+
 	repo := models.Repository{
-		Name:       req.Name,
+		Name:       fmt.Sprintf("%s/%s", repoOwner, repoName),
 		Url:        req.Url,
 		Provider:   req.Provider,
 		AuthMethod: req.AuthMethod,
@@ -175,9 +181,15 @@ func TestConnectionHandler(c *gin.Context) {
 		return
 	}
 
-	provider, httpStatus, validationErr := resolveProvider(req.Provider, req.Url, req.AuthMethod)
+	provider, httpStatus, validationErr := resolveProvider(req.Provider, req.AuthMethod)
 	if validationErr != "" {
 		c.JSON(httpStatus, gin.H{"error": validationErr})
+		return
+	}
+
+	_, _, err := provider.ParseURL(req.Url)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid repository URL: %v", err)})
 		return
 	}
 
@@ -209,7 +221,6 @@ func TestConnectionHandler(c *gin.Context) {
 // registered provider on success, or an HTTP status code and error message on failure.
 func resolveProvider(
 	prov models.RepositoryProvider,
-	url string,
 	authMethod models.RepositoryAuthMethod,
 ) (repositories.Provider, int, string) {
 	switch prov {
@@ -227,10 +238,6 @@ func resolveProvider(
 	p, err := repositories.Get(prov)
 	if err != nil {
 		return nil, http.StatusBadRequest, "unsupported provider"
-	}
-
-	if err := p.ValidateURL(url); err != nil {
-		return nil, http.StatusBadRequest, "invalid repository URL: " + err.Error()
 	}
 
 	if !isAuthMethodSupported(authMethod, p.SupportedAuthMethods()) {

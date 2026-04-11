@@ -62,9 +62,8 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 	return owner, repo, nil
 }
 
-func (githubProvider) ValidateURL(rawURL string) error {
-	_, _, err := parseGitHubURL(rawURL)
-	return err
+func (githubProvider) ParseURL(rawURL string) (string, string, error) {
+	return parseGitHubURL(rawURL)
 }
 
 func (githubProvider) SupportedAuthMethods() []models.RepositoryAuthMethod {

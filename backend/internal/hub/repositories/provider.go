@@ -8,9 +8,14 @@ import (
 )
 
 type Provider interface {
-	ValidateURL(url string) error
+	// Validates and parses the repository URL, returning the owner and repo name if valid.
+	ParseURL(url string) (string, string, error)
+	// Returns the list of supported authentication methods for this provider.
 	SupportedAuthMethods() []models.RepositoryAuthMethod
+	// Tests the connection to the repository using the provided credentials.
 	TestConnection(ctx context.Context, repo *models.Repository) error
+	// ListBranches(ctx context.Context, repo *models.Repository) ([]string, error)
+	// ...
 }
 
 var registry = map[models.RepositoryProvider]Provider{}

@@ -69,7 +69,11 @@ func columnNames(t *testing.T, sqlDB *sql.DB, table string) map[string]bool {
 	if err != nil {
 		t.Fatalf("failed to query columns for table %q: %v", table, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Fatalf("failed to close rows: %v", err)
+		}
+	}()
 
 	cols := make(map[string]bool)
 	for rows.Next() {
@@ -225,7 +229,11 @@ func TestRunMigrations_UserOIDCIdentitiesIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to query indexes: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Fatalf("failed to close rows: %v", err)
+		}
+	}()
 
 	indexes := make(map[string]bool)
 	for rows.Next() {

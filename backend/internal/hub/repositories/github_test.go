@@ -35,7 +35,7 @@ func jsonResponse(code int) *http.Response {
 	}
 }
 
-func TestGitHubValidateURL(t *testing.T) {
+func TestGitHubParseURL(t *testing.T) {
 	p := githubProvider{}
 
 	valid := []string{
@@ -49,7 +49,7 @@ func TestGitHubValidateURL(t *testing.T) {
 	}
 
 	for _, u := range valid {
-		if err := p.ValidateURL(u); err != nil {
+		if _, _, err := p.ParseURL(u); err != nil {
 			t.Errorf("expected %q to be valid, got error: %v", u, err)
 		}
 	}
@@ -68,7 +68,7 @@ func TestGitHubValidateURL(t *testing.T) {
 	}
 
 	for _, u := range invalid {
-		if err := p.ValidateURL(u); err == nil {
+		if _, _, err := p.ParseURL(u); err == nil {
 			t.Errorf("expected %q to be invalid, but got no error", u)
 		}
 	}
