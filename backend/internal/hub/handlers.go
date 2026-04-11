@@ -24,6 +24,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          version.Full(),
 	})
+	routes.SetRepositoriesConfig(cfg.AppURL)
 
 	api := router.Group("/api/v1")
 	{
@@ -52,6 +53,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
 			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
+			protected.PATCH("/repositories/:id", routes.UpdateRepositoryHandler)
 		}
 
 		// Admin routes (authentication + admin role required)

@@ -16,6 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
+var appUrl string
+
+func SetRepositoriesConfig(url string) {
+	appUrl = url
+}
+
 type createRepositoryRequest struct {
 	Url             string                      `json:"url" binding:"required"`
 	Provider        models.RepositoryProvider   `json:"provider" binding:"required"`
@@ -24,7 +30,6 @@ type createRepositoryRequest struct {
 	AuthToken       *string                     `json:"authToken"`
 	SyncType        models.RepositorySyncType   `json:"syncType" binding:"required"`
 	PollingInterval *int64                      `json:"pollingIntervalSeconds"`
-	WebhookSecret   *string                     `json:"webhookSecret"`
 }
 
 type repositoryResponse struct {
@@ -41,9 +46,11 @@ type repositoryResponse struct {
 	CreatedBy              string  `json:"createdBy"`
 	CreatedAt              string  `json:"createdAt"`
 	UpdatedAt              string  `json:"updatedAt"`
+	WebhookSecret          *string `json:"webhookSecret,omitempty"`
+	WebhookUrl             *string `json:"webhookUrl,omitempty"`
 }
 
-func toRepositoryResponse(r *models.Repository) repositoryResponse {
+func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryResponse {
 	resp := repositoryResponse{
 		Id:            r.Id,
 		Name:          r.Name,
@@ -68,6 +75,15 @@ func toRepositoryResponse(r *models.Repository) repositoryResponse {
 		resp.LastSyncedAt = &s
 	}
 
+	if includeWebhook && r.WebhookSecret != nil {
+		s := r.WebhookSecret.String()
+		resp.WebhookSecret = &s
+
+		// Webhook URL would typically be something like: https://orca-cd.example.com/webhooks/repositories/{id}
+		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/%s", appUrl, r.Id)
+		resp.WebhookUrl = &webhookUrl
+	}
+
 	return resp
 }
 
@@ -80,7 +96,7 @@ func ListRepositoriesHandler(c *gin.Context) {
 
 	result := make([]repositoryResponse, 0, len(repos))
 	for _, r := range repos {
-		result = append(result, toRepositoryResponse(&r))
+		result = append(result, toRepositoryResponse(&r, false))
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -95,7 +111,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 
 	var req createRepositoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, url, provider, authMethod, and syncType are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: url, provider, authMethod, and syncType are required"})
 		return
 	}
 
@@ -145,8 +161,13 @@ func CreateRepositoryHandler(c *gin.Context) {
 		repo.AuthToken = &enc
 	}
 
-	if req.WebhookSecret != nil && *req.WebhookSecret != "" {
-		enc := crypto.EncryptedString(*req.WebhookSecret)
+	if req.SyncType == models.SyncTypeWebhook {
+		secret, err := auth.GenerateRandomString(32)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate webhook secret"})
+			return
+		}
+		enc := crypto.EncryptedString(secret)
 		repo.WebhookSecret = &enc
 	}
 
@@ -164,7 +185,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toRepositoryResponse(&repo))
+	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true))
 }
 
 type testConnectionRequest struct {
@@ -232,6 +253,110 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
+}
+
+type updateRepositoryRequest struct {
+	Url             string                      `json:"url" binding:"required"`
+	AuthMethod      models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
+	AuthUser        *string                     `json:"authUser"`
+	AuthToken       *string                     `json:"authToken"`
+	SyncType        models.RepositorySyncType   `json:"syncType" binding:"required"`
+	PollingInterval *int64                      `json:"pollingIntervalSeconds"`
+}
+
+func UpdateRepositoryHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var req updateRepositoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: url, authMethod, and syncType are required"})
+		return
+	}
+
+	switch req.SyncType {
+	case models.SyncTypePolling, models.SyncTypeWebhook, models.SyncTypeManual:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid syncType: must be polling, webhook, or manual"})
+		return
+	}
+
+	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
+		var defaultInterval int64 = 60
+		req.PollingInterval = &defaultInterval
+	}
+
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	provider, httpStatus, validationErr := resolveProvider(repo.Provider, req.AuthMethod)
+	if validationErr != "" {
+		c.JSON(httpStatus, gin.H{"error": validationErr})
+		return
+	}
+
+	if req.Url != repo.Url {
+		repoOwner, repoName, err := provider.ParseURL(req.Url)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid repository URL: %v", err)})
+			return
+		}
+		repo.Url = req.Url
+		repo.Name = fmt.Sprintf("%s/%s", repoOwner, repoName)
+	}
+
+	repo.AuthMethod = req.AuthMethod
+
+	if req.AuthUser != nil && *req.AuthUser != "" {
+		enc := crypto.EncryptedString(*req.AuthUser)
+		repo.AuthUser = &enc
+	} else {
+		repo.AuthUser = nil
+	}
+
+	if req.AuthToken != nil && *req.AuthToken != "" {
+		enc := crypto.EncryptedString(*req.AuthToken)
+		repo.AuthToken = &enc
+	} else {
+		repo.AuthToken = nil
+	}
+
+	prevSyncType := repo.SyncType
+	repo.SyncType = req.SyncType
+
+	switch {
+	case req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook:
+		secret, err := auth.GenerateRandomString(32)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate webhook secret"})
+			return
+		}
+		enc := crypto.EncryptedString(secret)
+		repo.WebhookSecret = &enc
+	case req.SyncType != models.SyncTypeWebhook:
+		repo.WebhookSecret = nil
+	}
+
+	if req.PollingInterval != nil {
+		d := time.Duration(*req.PollingInterval) * time.Second
+		repo.PollingInterval = &d
+	} else {
+		repo.PollingInterval = nil
+	}
+
+	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
+	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret))
 }
 
 // resolveProvider validates the provider enum, URL, and authMethod, returning the

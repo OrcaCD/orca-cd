@@ -1,5 +1,13 @@
 // oxlint-disable react/no-children-prop
-import { Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
+import {
+	CheckIcon,
+	ClipboardIcon,
+	EyeIcon,
+	EyeOffIcon,
+	Loader2Icon,
+	PencilIcon,
+	PlusIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -42,7 +50,7 @@ import SuccessAlert from "../success-alert";
 
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false },
-	{ id: "gitlab", label: "GitLab", disabled: true },
+	{ id: "gitlab", label: "GitLab", disabled: false },
 	{ id: "bitbucket", label: "Bitbucket", disabled: true },
 	{ id: "azure_devops", label: "Azure DevOps", disabled: true },
 	{ id: "gitea", label: "Gitea", disabled: true },
@@ -276,7 +284,44 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 	);
 }
 
-function SyncTypeSummaryContent({ isEditing }: { isEditing: boolean }) {
+function CopyButton({ text, title = "Copy to clipboard" }: { text: string; title?: string }) {
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = async () => {
+		await navigator.clipboard.writeText(text);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+
+	return (
+		<Button
+			type="button"
+			variant="ghost"
+			size="icon"
+			className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+			onClick={handleCopy}
+			title={title}
+		>
+			{copied ? (
+				<CheckIcon className="h-4 w-4 text-green-500" />
+			) : (
+				<ClipboardIcon className="h-4 w-4" />
+			)}
+		</Button>
+	);
+}
+
+function SyncTypeSummaryContent({
+	isEditing,
+	webhookUrl,
+	webhookSecret,
+}: {
+	isEditing: boolean;
+	webhookUrl: string | undefined;
+	webhookSecret: string | undefined;
+}) {
+	const [visible, setVisible] = useState(false);
+
 	return (
 		<>
 			<SuccessAlert
@@ -287,7 +332,50 @@ function SyncTypeSummaryContent({ isEditing }: { isEditing: boolean }) {
 						: "The repository has been successfully connected."
 				}
 			/>
-			<div className="text-destructive">TODO: Show Webhook setup token here</div>
+
+			{!webhookSecret ? (
+				<p className="text-sm text-muted-foreground mt-4">
+					No further action is needed. OrcaCD will start syncing with the repository shortly.
+				</p>
+			) : (
+				<div className="space-y-3 mt-4">
+					<p className="text-sm text-muted-foreground">
+						Set up a webhook in your repository to enable real-time updates:
+					</p>
+
+					<div className="space-y-1">
+						<p className="text-xs font-medium">Webhook URL</p>
+						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-2">
+							<code className="flex-1 overflow-x-auto font-mono text-sm">{webhookUrl}</code>
+							<CopyButton text={webhookUrl ?? ""} title="Copy webhook URL" />
+						</div>
+					</div>
+
+					<div className="space-y-1">
+						<p className="text-xs font-medium">Webhook Secret</p>
+						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-2">
+							<code className="flex-1 truncate font-mono text-sm">
+								{visible ? webhookSecret : "•".repeat(32)}
+							</code>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+								onClick={() => setVisible((v) => !v)}
+								title={visible ? "Hide secret" : "Reveal secret"}
+							>
+								{visible ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+							</Button>
+							<CopyButton text={webhookSecret} title="Copy webhook secret" />
+						</div>
+						<p className="text-xs text-muted-foreground">
+							Save this secret now — it won't be shown again.
+						</p>
+					</div>
+					<div className="text-destructive">TODO: Link to docs</div>
+				</div>
+			)}
 		</>
 	);
 }
@@ -338,24 +426,26 @@ function StepperNavigation({
 }
 
 export default function UpsertRepositoryDialog({
-	repository,
+	existingRepository,
 	asDropdownItem = false,
 }: {
-	repository: Repository | null;
+	existingRepository?: Repository | undefined;
 	asDropdownItem?: boolean;
 }) {
-	const isEditing = !!repository;
+	const isEditing = !!existingRepository;
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | undefined>();
 	const stepperRef = React.useRef<{ navigation: { next: () => void } } | null>(null);
+	const [webhookSecret, setWebhookSecret] = useState<string | undefined>();
+	const [webhookUrl, setWebhookUrl] = useState<string | undefined>();
 
 	const form = useForm({
 		defaultValues: {
-			url: repository?.url ?? "",
-			provider: repository?.provider ?? "github",
+			url: existingRepository?.url ?? "",
+			provider: existingRepository?.provider ?? "github",
 			authToken: "",
-			syncType: repository?.syncType ?? "webhook",
+			syncType: existingRepository?.syncType ?? "webhook",
 		},
 		validators: {
 			onSubmit: repositorySchema,
@@ -367,21 +457,27 @@ export default function UpsertRepositoryDialog({
 				const authMethod = authToken ? "token" : "none";
 
 				if (isEditing) {
-					await updateRepository(repository.id, {
+					const repo = await updateRepository(existingRepository.id, {
 						url: value.url,
 						authMethod,
 						authToken,
-						syncType: repository.syncType,
-						pollingIntervalSeconds: repository.pollingIntervalSeconds ?? undefined,
+						syncType: value.syncType,
+						// To-Do add sync interval setting to edit form
+						// I intentionally skipped it in inital setup form now to reduce complexity, but it should be editable when updating
+						pollingIntervalSeconds: existingRepository.pollingIntervalSeconds ?? undefined,
 					});
+					setWebhookSecret(repo.webhookSecret);
+					setWebhookUrl(repo.webhookUrl);
 				} else {
-					await createRepository({
+					const repo = await createRepository({
 						url: value.url,
 						provider: value.provider,
 						authMethod,
 						authToken,
 						syncType: value.syncType,
 					});
+					setWebhookSecret(repo.webhookSecret);
+					setWebhookUrl(repo.webhookUrl);
 				}
 
 				stepperRef.current?.navigation.next();
@@ -536,7 +632,11 @@ export default function UpsertRepositoryDialog({
 												step="summary"
 												render={(props) => (
 													<div {...props}>
-														<SyncTypeSummaryContent isEditing={isEditing} />
+														<SyncTypeSummaryContent
+															isEditing={isEditing}
+															webhookSecret={webhookSecret}
+															webhookUrl={webhookUrl}
+														/>
 													</div>
 												)}
 											/>

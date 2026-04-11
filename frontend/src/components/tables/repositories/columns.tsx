@@ -210,7 +210,7 @@ export const columns: ColumnDef<Repository>[] = [
 								Refresh
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<UpsertRepositoryDialog repository={row.original} asDropdownItem />
+							<UpsertRepositoryDialog existingRepository={row.original} asDropdownItem />
 							<ConfirmationDialog
 								triggerText={
 									<>

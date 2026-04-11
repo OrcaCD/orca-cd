@@ -27,7 +27,7 @@ function RepositoriesPage() {
 					<h1 className="text-2xl font-bold">Repositories</h1>
 					<p className="text-muted-foreground text-sm mt-1">Manage connected Git repositories</p>
 				</div>
-				<UpsertRepositoryDialog repository={null} />
+				<UpsertRepositoryDialog />
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">Loading repositories...</p>}

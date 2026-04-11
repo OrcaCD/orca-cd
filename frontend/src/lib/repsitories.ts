@@ -28,6 +28,8 @@ export interface Repository {
 	createdAt: string;
 	updatedAt: string;
 	apps: number;
+	webhookSecret?: string | undefined;
+	webhookUrl?: string | undefined;
 }
 
 export interface CreateRepositoryRequest {

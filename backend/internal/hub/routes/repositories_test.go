@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
@@ -116,11 +117,10 @@ func TestCreateRepositoryHandler_InvalidRequest(t *testing.T) {
 		body any
 	}{
 		{"empty body", nil},
-		{"missing name", map[string]any{"url": "https://github.com/o/r", "provider": "github", "authMethod": "none", "syncType": "manual"}},
-		{"missing url", map[string]any{"name": "My Repo", "provider": "github", "authMethod": "none", "syncType": "manual"}},
-		{"missing provider", map[string]any{"name": "My Repo", "url": "https://github.com/o/r", "authMethod": "none", "syncType": "manual"}},
-		{"missing authMethod", map[string]any{"name": "My Repo", "url": "https://github.com/o/r", "provider": "github", "syncType": "manual"}},
-		{"missing syncType", map[string]any{"name": "My Repo", "url": "https://github.com/o/r", "provider": "github", "authMethod": "none"}},
+		{"missing url", map[string]any{"provider": "github", "authMethod": "none", "syncType": "manual"}},
+		{"missing provider", map[string]any{"url": "https://github.com/o/r", "authMethod": "none", "syncType": "manual"}},
+		{"missing authMethod", map[string]any{"url": "https://github.com/o/r", "provider": "github", "syncType": "manual"}},
+		{"missing syncType", map[string]any{"url": "https://github.com/o/r", "provider": "github", "authMethod": "none"}},
 	}
 
 	for _, tt := range tests {
@@ -294,8 +294,8 @@ func TestCreateRepositoryHandler_Success_Manual(t *testing.T) {
 	if body.Id == "" {
 		t.Error("expected non-empty id")
 	}
-	if body.Name != "My Repo" {
-		t.Errorf("expected name %q, got %q", "My Repo", body.Name)
+	if body.Name != "owner/my-repo" {
+		t.Errorf("expected name %q, got %q", "owner/my-repo", body.Name)
 	}
 	if body.Url != "https://github.com/owner/my-repo" {
 		t.Errorf("unexpected url: %q", body.Url)
@@ -525,6 +525,335 @@ func TestTestConnectionHandler_ConnectionFailed(t *testing.T) {
 	}
 	if body["error"] == "" {
 		t.Error("expected non-empty error message")
+	}
+}
+
+func TestUpdateRepositoryHandler_NotFound(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/nonexistent-id", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent-id"}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_InvalidRequest(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	tests := []struct {
+		name string
+		body any
+	}{
+		{"empty body", nil},
+		{"missing url", map[string]any{"authMethod": "none", "syncType": "manual"}},
+		{"missing authMethod", map[string]any{"url": "https://github.com/o/r", "syncType": "manual"}},
+		{"missing syncType", map[string]any{"url": "https://github.com/o/r", "authMethod": "none"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := models.Repository{
+				Name:       "Test Repo",
+				Url:        "https://github.com/owner/repo",
+				Provider:   models.GitHub,
+				AuthMethod: models.AuthMethodNone,
+				SyncType:   models.SyncTypeManual,
+				SyncStatus: models.SyncStatusUnknown,
+				CreatedBy:  "user-1",
+			}
+			if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+				t.Fatalf("failed to seed repo: %v", err)
+			}
+
+			var reqBody []byte
+			if tt.body != nil {
+				reqBody, _ = json.Marshal(tt.body)
+			}
+
+			c, w := makeAuthContext(t, "user-1")
+			c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+			UpdateRepositoryHandler(c)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpdateRepositoryHandler_InvalidSyncType(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "Test Repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "none",
+		"syncType":   "invalid",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_UnsupportedAuthMethod(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "Test Repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	// GitHub does not support SSH
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "ssh",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_InvalidURL(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "Test Repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "not-a-valid-github-url",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_Success(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/old-repo",
+		Url:        "https://github.com/owner/old-repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	interval := int64(120)
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                    "https://github.com/owner/new-repo",
+		"authMethod":             "token",
+		"authToken":              "test-token", //nolint:gosec
+		"syncType":               "polling",
+		"pollingIntervalSeconds": interval,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Url != "https://github.com/owner/new-repo" {
+		t.Errorf("expected url %q, got %q", "https://github.com/owner/new-repo", body.Url)
+	}
+	if body.Name != "owner/new-repo" {
+		t.Errorf("expected name %q, got %q", "owner/new-repo", body.Name)
+	}
+	if body.AuthMethod != "token" {
+		t.Errorf("expected authMethod %q, got %q", "token", body.AuthMethod)
+	}
+	if body.SyncType != "polling" {
+		t.Errorf("expected syncType %q, got %q", "polling", body.SyncType)
+	}
+	if body.PollingIntervalSeconds == nil || *body.PollingIntervalSeconds != 120 {
+		t.Errorf("expected pollingIntervalSeconds 120, got %v", body.PollingIntervalSeconds)
+	}
+}
+
+func TestUpdateRepositoryHandler_SwitchToWebhook(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "none",
+		"syncType":   "webhook",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.SyncType != "webhook" {
+		t.Errorf("expected syncType %q, got %q", "webhook", body.SyncType)
+	}
+	if body.WebhookSecret == nil || *body.WebhookSecret == "" {
+		t.Error("expected webhookSecret to be returned when switching to webhook")
+	}
+}
+
+func TestUpdateRepositoryHandler_SwitchFromWebhook(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	secret := crypto.EncryptedString("existing-secret")
+	repo := models.Repository{
+		Name:          "owner/repo",
+		Url:           "https://github.com/owner/repo",
+		Provider:      models.GitHub,
+		AuthMethod:    models.AuthMethodNone,
+		SyncType:      models.SyncTypeWebhook,
+		SyncStatus:    models.SyncStatusUnknown,
+		WebhookSecret: &secret,
+		CreatedBy:     "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.SyncType != "manual" {
+		t.Errorf("expected syncType %q, got %q", "manual", body.SyncType)
+	}
+	if body.WebhookSecret != nil {
+		t.Error("expected webhookSecret to be nil after switching away from webhook")
+	}
+
+	// Confirm webhook secret is cleared in DB
+	updated, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to fetch repo from DB: %v", err)
+	}
+	if updated.WebhookSecret != nil {
+		t.Error("expected webhookSecret to be cleared in DB")
 	}
 }
 
