@@ -67,11 +67,6 @@ func ProfileHandler(c *gin.Context) {
 		return
 	}
 
-	isLocal := false
-	if user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context()); err == nil {
-		isLocal = user.PasswordHash != nil
-	}
-
 	c.JSON(http.StatusOK, profileResponse{
 		Id:                     claims.Subject,
 		Name:                   claims.Name,
@@ -79,7 +74,7 @@ func ProfileHandler(c *gin.Context) {
 		Picture:                claims.Picture,
 		Role:                   claims.Role,
 		PasswordChangeRequired: claims.PasswordChangeRequired,
-		IsLocal:                isLocal,
+		IsLocal:                claims.IsLocal,
 	})
 }
 

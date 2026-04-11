@@ -59,6 +59,9 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if claims.PasswordChangeRequired {
 		t.Error("expected PasswordChangeRequired=false by default")
 	}
+	if claims.IsLocal {
+		t.Error("expected IsLocal=false without password hash")
+	}
 }
 
 func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
@@ -66,10 +69,13 @@ func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
 		t.Fatalf("Init() error: %v", err)
 	}
 
+	hash := "hashed-password"
+
 	user := &models.User{
 		Base:                   models.Base{Id: "user-123"},
 		Name:                   "test",
 		Email:                  "test@example.com",
+		PasswordHash:           &hash,
 		PasswordChangeRequired: true,
 	}
 	token, err := GenerateUserToken(user)
@@ -83,6 +89,9 @@ func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
 	}
 	if !claims.PasswordChangeRequired {
 		t.Error("expected PasswordChangeRequired=true")
+	}
+	if !claims.IsLocal {
+		t.Error("expected IsLocal=true for local user")
 	}
 }
 
