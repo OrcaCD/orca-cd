@@ -44,6 +44,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
+			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
 		}
