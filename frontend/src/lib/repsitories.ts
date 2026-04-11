@@ -83,3 +83,9 @@ export function updateRepository(id: string, data: UpdateRepositoryRequest): Pro
 		body: JSON.stringify(data),
 	});
 }
+
+export function getGitProviderIconPath(provider: RepositoryProvider): string {
+	const iconName = provider === "generic" ? "git" : provider;
+
+	return `/assets/icons/${iconName}.svg`;
+}

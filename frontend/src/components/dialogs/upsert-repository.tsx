@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -14,6 +14,9 @@ import {
 	updateRepository,
 	type Repository,
 	type RepositoryProvider,
+	testRepositoryConnection,
+	type RepositorySyncType,
+	getGitProviderIconPath,
 } from "@/lib/repsitories";
 import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -26,6 +29,7 @@ import {
 	FieldContent,
 	FieldLabel,
 	FieldTitle,
+	FieldDescription,
 } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -33,28 +37,51 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { defineStepper } from "@stepperize/react";
 import { useStepItemContext, type StepStatus } from "@stepperize/react/primitives";
 import { cn } from "@/lib/utils";
+import ErrorAlert from "../error-alert";
+import { mutate } from "swr";
+import { API_BASE } from "@/lib/api";
 
 const PROVIDERS = [
-	{ id: "github", label: "GitHub", disabled: false, icon: "github" },
-	{ id: "gitlab", label: "GitLab", disabled: true, icon: "gitlab" },
-	{ id: "bitbucket", label: "Bitbucket", disabled: true, icon: "bitbucket" },
-	{ id: "azure-devops", label: "Azure DevOps", disabled: true, icon: "azure-devops" },
-	{ id: "gitea", label: "Gitea", disabled: true, icon: "gitea" },
-	{ id: "generic", label: "Generic", disabled: true, icon: "git" },
+	{ id: "github", label: "GitHub", disabled: false },
+	{ id: "gitlab", label: "GitLab", disabled: true },
+	{ id: "bitbucket", label: "Bitbucket", disabled: true },
+	{ id: "azure_devops", label: "Azure DevOps", disabled: true },
+	{ id: "gitea", label: "Gitea", disabled: true },
+	{ id: "generic", label: "Generic", disabled: true },
 ] as const;
 
-const { Stepper } = defineStepper({ id: "provider" }, { id: "repository" }, { id: "sync" });
+const syncTypes = [
+	{
+		id: "webhook",
+		label: "Webhook (Recommended)",
+		description: "Real-time updates with minimal resource usage.",
+	},
+	{
+		id: "polling",
+		label: "Polling",
+		description: "Periodic checks for updates. May have a delay.",
+	},
+	{ id: "manual", label: "Manual", description: "Updates must be triggered manually." },
+] as const satisfies { id: RepositorySyncType; label: string; description: string }[];
+
+const { Stepper } = defineStepper({ id: "provider" }, { id: "repository" }, { id: "syncType" });
 
 const repositorySchema = z.object({
 	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }),
 	provider: z.enum(["github", "gitlab", "generic"]),
 	authToken: z.string().trim().max(1024, "Auth token must be at most 1024 characters"),
+	syncType: z.enum(["webhook", "polling", "manual"]),
 });
 
 // Only used for ReturnType inference — never called at runtime
 function useRepoForm() {
 	return useForm({
-		defaultValues: { url: "", provider: "github" as RepositoryProvider, authToken: "" },
+		defaultValues: {
+			url: "",
+			provider: "github" as RepositoryProvider,
+			authToken: "",
+			syncType: "webhook" as RepositorySyncType,
+		},
 		validators: { onSubmit: repositorySchema },
 		// oxlint-disable-next-line no-empty-function
 		onSubmit: async () => {},
@@ -70,10 +97,13 @@ const StepperTriggerWrapper = () => {
 		<Stepper.Trigger
 			render={(domProps) => (
 				<Button
-					className="rounded-full"
+					className="rounded-full cursor-default"
 					variant={isInactive ? "secondary" : "default"}
 					size="icon"
 					{...domProps}
+					onClick={(e) => {
+						e.preventDefault();
+					}}
 				>
 					<Stepper.Indicator>{item.index + 1}</Stepper.Indicator>
 				</Button>
@@ -136,11 +166,7 @@ function ProviderStepContent({ form }: { form: RepoFormApi }) {
 											className="hidden"
 										/>
 										<FieldContent className="items-center justify-center gap-2">
-											<img
-												src={`/assets/icons/${p.icon}.svg`}
-												alt={p.label}
-												className="h-10 w-10"
-											/>
+											<img src={getGitProviderIconPath(p.id)} alt={p.label} className="h-10 w-10" />
 											<FieldTitle className="justify-center text-base">{p.label}</FieldTitle>
 										</FieldContent>
 									</Field>
@@ -154,57 +180,95 @@ function ProviderStepContent({ form }: { form: RepoFormApi }) {
 	);
 }
 
-function RepositoryStepContent({ form }: { form: RepoFormApi }) {
+function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: string | undefined }) {
 	return (
-		<FieldGroup>
-			<form.Field
-				name="url"
-				validators={{ onSubmit: repositorySchema.shape.url }}
-			>
-				{(field) => {
-					const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-					return (
-						<Field data-invalid={isInvalid}>
-							<Label htmlFor={field.name}>Repository URL</Label>
-							<Input
-								id={field.name}
-								value={field.state.value}
-								onBlur={field.handleBlur}
-								onChange={(e) => field.handleChange(e.target.value)}
-								placeholder="https://github.com/org/repo"
-								autoFocus
-							/>
-							{isInvalid && <FieldError errors={field.state.meta.errors} />}
-						</Field>
-					);
-				}}
-			</form.Field>
-			<form.Field
-				name="authToken"
-				validators={{ onSubmit: repositorySchema.shape.authToken }}
-			>
-				{(field) => {
-					const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-					return (
-						<Field data-invalid={isInvalid}>
-							<Label htmlFor={field.name}>Auth Token (Optional)</Label>
-							<Input
-								id={field.name}
-								type="password"
-								value={field.state.value}
-								onBlur={field.handleBlur}
-								onChange={(e) => field.handleChange(e.target.value)}
-								placeholder="Paste a personal access token"
-							/>
-							<p className="text-muted-foreground text-xs">
-								Recommended, but not required for public repositories.
-							</p>
-							{isInvalid && <FieldError errors={field.state.meta.errors} />}
-						</Field>
-					);
-				}}
-			</form.Field>
-		</FieldGroup>
+		<>
+			<p className="text-muted-foreground text-sm mb-4">
+				Enter the repository URL and an auth token.
+			</p>
+			<FieldGroup>
+				<form.Field name="url" validators={{ onSubmit: repositorySchema.shape.url }}>
+					{(field) => {
+						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+						return (
+							<Field data-invalid={isInvalid}>
+								<Label htmlFor={field.name}>Repository URL</Label>
+								<Input
+									id={field.name}
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(e) => field.handleChange(e.target.value)}
+									placeholder="https://github.com/org/repo"
+									autoFocus
+								/>
+								{isInvalid && <FieldError errors={field.state.meta.errors} />}
+							</Field>
+						);
+					}}
+				</form.Field>
+				<form.Field name="authToken" validators={{ onSubmit: repositorySchema.shape.authToken }}>
+					{(field) => {
+						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+						return (
+							<Field data-invalid={isInvalid}>
+								<Label htmlFor={field.name}>Auth Token</Label>
+								<Input
+									id={field.name}
+									type="password"
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(e) => field.handleChange(e.target.value)}
+									placeholder="Paste a personal access token"
+								/>
+								<p className="text-muted-foreground text-xs">
+									Recommended, but not required for public repositories.
+								</p>
+								{isInvalid && <FieldError errors={field.state.meta.errors} />}
+							</Field>
+						);
+					}}
+				</form.Field>
+				{error && <ErrorAlert title="Can't connect to repository" description={error} />}
+			</FieldGroup>
+		</>
+	);
+}
+
+function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
+	return (
+		<>
+			<p className="text-muted-foreground text-sm mb-4">
+				Decide how OrcaCD should check for updates in this repository.
+			</p>
+			<FieldGroup>
+				<form.Field name="syncType" validators={{ onSubmit: repositorySchema.shape.syncType }}>
+					{(field) => (
+						<RadioGroup
+							value={field.state.value}
+							onBlur={field.handleBlur}
+							onValueChange={(v) => field.handleChange(v as RepositorySyncType)}
+							className="w-fit"
+						>
+							{syncTypes.map((type) => (
+								<FieldLabel
+									htmlFor={`syncType-${type.id}`}
+									key={type.id}
+									className="cursor-pointer transition-colors"
+								>
+									<Field orientation="horizontal">
+										<FieldContent className="ps-1">
+											<FieldTitle>{type.label}</FieldTitle>
+											<FieldDescription>{type.description}</FieldDescription>
+										</FieldContent>
+										<RadioGroupItem value={type.id} id={`syncType-${type.id}`} />
+									</Field>
+								</FieldLabel>
+							))}
+						</RadioGroup>
+					)}
+				</form.Field>
+			</FieldGroup>
+		</>
 	);
 }
 
@@ -266,13 +330,16 @@ export default function UpsertRepositoryDialog({
 }) {
 	const isEditing = !!repository;
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
+	const [error, setError] = useState<string | undefined>();
 
 	const form = useForm({
 		defaultValues: {
 			url: repository?.url ?? "",
 			provider: repository?.provider ?? "github",
 			authToken: "",
+			syncType: repository?.syncType ?? "webhook",
 		},
 		validators: {
 			onSubmit: repositorySchema,
@@ -298,10 +365,12 @@ export default function UpsertRepositoryDialog({
 						provider: value.provider,
 						authMethod,
 						authToken,
-						syncType: "manual",
+						syncType: value.syncType,
 					});
 					toast.success("Repository created");
 				}
+
+				mutate(`${API_BASE}/repositories`);
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save repository");
@@ -325,7 +394,29 @@ export default function UpsertRepositoryDialog({
 			if (urlErrors?.length || tokenErrors?.length) {
 				return;
 			}
+
+			const url = form.getFieldValue("url");
+			const authToken = form.getFieldValue("authToken")?.trim() || undefined;
+			const provider = form.getFieldValue("provider");
+
+			// To-Do support other auth methods
+			const authMethod = authToken?.length ? "token" : "none";
+
+			setIsLoading(true);
+
+			try {
+				await testRepositoryConnection({ provider, url, authToken: authToken, authMethod });
+			} catch (err: any) {
+				setError(
+					err?.message || "Failed to connect to repository. Please check the URL and auth token.",
+				);
+				return;
+			} finally {
+				setIsLoading(false);
+			}
 		}
+
+		setError(undefined);
 		advance();
 	}
 
@@ -334,23 +425,32 @@ export default function UpsertRepositoryDialog({
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<Pencil className="h-4 w-4" />
+						<PencilIcon className="h-4 w-4" />
 						Edit
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
-						<Pencil className="h-4 w-4" />
+						<PencilIcon className="h-4 w-4" />
 					</Button>
 				) : (
 					<Button>
-						<Plus className="h-4 w-4" />
-						Connect Repository
+						<PlusIcon className="h-4 w-4" />
+						Add Repository
 					</Button>
 				)}
 			</DialogTrigger>
-			<DialogContent onPointerDownOutside={(e) => e.preventDefault()} className="sm:max-w-md">
+			<DialogContent
+				onPointerDownOutside={(e) => e.preventDefault()}
+				className="sm:max-w-md overflow-hidden"
+			>
+				{isLoading && (
+					<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
+						<Loader2Icon className="h-8 w-8 animate-spin text-primary" />
+						<p className="text-sm text-muted-foreground">Loading…</p>
+					</div>
+				)}
 				<DialogHeader>
-					<DialogTitle>{isEditing ? "Edit Repository" : "Connect Repository"}</DialogTitle>
+					<DialogTitle>{isEditing ? "Edit Repository" : "Add Repository"}</DialogTitle>
 				</DialogHeader>
 				<form
 					onSubmit={async (e) => {
@@ -401,7 +501,17 @@ export default function UpsertRepositoryDialog({
 											step="repository"
 											render={(props) => (
 												<div {...props}>
-													<RepositoryStepContent form={form} />
+													<RepositoryStepContent form={form} error={error} />
+												</div>
+											)}
+										/>
+									),
+									syncType: () => (
+										<Stepper.Content
+											step="syncType"
+											render={(props) => (
+												<div {...props}>
+													<SyncTypeStepContent form={form} />
 												</div>
 											)}
 										/>

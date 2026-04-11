@@ -109,3 +109,4 @@ Agent (Go)
 - Write tests for new features and bug fixes, aiming for good coverage.
 - Do not add useless comments, but do add comments to explain complex logic or decisions.
 - The repo uses squash merges, so commit history should be clean and focused on the feature/bug being implemented.
+- Do not try modify files in frontend/src/components/ui

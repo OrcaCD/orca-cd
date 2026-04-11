@@ -1,6 +1,19 @@
-import { deleteRepository, type Repository } from "@/lib/repsitories";
+import {
+	deleteRepository,
+	getGitProviderIconPath,
+	type Repository,
+	type RepositorySyncStatus,
+	type RepositorySyncType,
+} from "@/lib/repsitories";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
+import {
+	ExternalLink,
+	MoreHorizontal,
+	MousePointerClickIcon,
+	RefreshCw,
+	Trash2,
+	WebhookIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -33,6 +46,32 @@ function getLastSyncSearchText(lastSync?: string | null): string {
 	].join(" ");
 }
 
+function getSyncStatusColor(syncStatus: RepositorySyncStatus): string {
+	switch (syncStatus) {
+		case "syncing":
+			return "bg-blue-500";
+		case "failed":
+			return "bg-red-500";
+		case "success":
+			return "bg-green-500";
+		default:
+			return "bg-gray-500";
+	}
+}
+
+function getSyncTypeIcon(syncType: RepositorySyncType) {
+	switch (syncType) {
+		case "webhook":
+			return <WebhookIcon className="h-4 w-4" />;
+		case "polling":
+			return <RefreshCw className="h-4 w-4" />;
+		case "manual":
+			return <MousePointerClickIcon className="h-4 w-4" />;
+		default:
+			return null;
+	}
+}
+
 export const columns: ColumnDef<Repository>[] = [
 	{
 		accessorKey: "name",
@@ -42,19 +81,24 @@ export const columns: ColumnDef<Repository>[] = [
 		cell: ({ row }) => {
 			const name = row.original.name;
 			const url = row.original.url;
+			const provider = row.original.provider;
 
 			return (
-				<div>
-					<p className="font-medium">{name}</p>
-					<a
-						href={url}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
-					>
-						{url}
-						<ExternalLink className="h-3 w-3" />
-					</a>
+				<div className="flex flex-row gap-3 items-center">
+					<img src={getGitProviderIconPath(provider)} alt="Git Provider" className="h-7 w-7" />
+
+					<div>
+						<p className="font-medium">{name}</p>
+						<a
+							href={url}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1"
+						>
+							{url}
+							<ExternalLink className="h-3 w-3" />
+						</a>
+					</div>
 				</div>
 			);
 		},
@@ -70,16 +114,24 @@ export const columns: ColumnDef<Repository>[] = [
 
 			return (
 				<div className="flex items-center gap-2">
-					<span
-						className={`inline-flex h-2 w-2 rounded-full ${
-							syncStatus === "syncing"
-								? "bg-blue-500"
-								: syncStatus === "failed"
-									? "bg-red-500"
-									: "bg-green-500"
-						}`}
-					/>
+					<span className={`inline-flex h-2 w-2 rounded-full ${getSyncStatusColor(syncStatus)}`} />
 					{syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1)}
+				</div>
+			);
+		},
+	},
+	{
+		id: "syncType",
+		accessorFn: (row) => row.syncType,
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title="Sync Type" />;
+		},
+		cell: ({ row }) => {
+			const syncType = row.original.syncType;
+			return (
+				<div className="flex items-center gap-2">
+					{getSyncTypeIcon(syncType)}
+					{syncType.charAt(0).toUpperCase() + syncType.slice(1)}
 				</div>
 			);
 		},
@@ -104,6 +156,12 @@ export const columns: ColumnDef<Repository>[] = [
 			const lastSyncedAt = row.original.lastSyncedAt;
 
 			return <span>{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Never"}</span>;
+		},
+	},
+	{
+		accessorKey: "authMethod",
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title="Auth Method" />;
 		},
 	},
 	{
