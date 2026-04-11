@@ -101,9 +101,10 @@ function useRepoForm() {
 }
 type RepoFormApi = ReturnType<typeof useRepoForm>;
 
-const StepperTriggerWrapper = () => {
+const StepperTriggerWrapper = ({ displayNumber }: { displayNumber?: number }) => {
 	const item = useStepItemContext();
 	const isInactive = item.status === "inactive";
+	const number = displayNumber ?? item.index + 1;
 
 	return (
 		<Stepper.Trigger
@@ -117,7 +118,7 @@ const StepperTriggerWrapper = () => {
 						e.preventDefault();
 					}}
 				>
-					<Stepper.Indicator>{item.index + 1}</Stepper.Indicator>
+					<Stepper.Indicator>{number}</Stepper.Indicator>
 				</Button>
 			)}
 		/>
@@ -391,13 +392,17 @@ function StepperNavigation({
 	handleClose: () => void;
 	isEditing: boolean;
 }) {
+	const isAtFirstVisibleStep = isEditing
+		? stepper.state.current.data.id === "repository"
+		: stepper.state.current.index === 0;
+
 	return (
 		<div className="flex items-center justify-between gap-4 pt-2">
 			<Button type="button" variant="outline" onClick={handleClose}>
 				{stepper.state.isLast ? "Close" : "Cancel"}
 			</Button>
 			<div className="flex gap-2">
-				{stepper.state.current.index > 0 && !stepper.state.isLast && (
+				{!isAtFirstVisibleStep && !stepper.state.isLast && (
 					<Stepper.Prev
 						render={(domProps) => (
 							<Button type="button" variant="outline" {...domProps}>
@@ -567,28 +572,40 @@ export default function UpsertRepositoryDialog({
 						await form.handleSubmit();
 					}}
 				>
-					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
+					<Stepper.Root
+						key={String(open)}
+						className="w-full space-y-6"
+						orientation="horizontal"
+						initialStep={isEditing ? "repository" : undefined}
+					>
 						{({ stepper }) => {
 							stepperRef.current = stepper;
+							const allSteps = stepper.state.all;
+							const stepsToShow = isEditing
+								? allSteps.filter((s) => s.id !== "provider")
+								: allSteps;
+							const currentRealIndex = stepper.state.current.index;
 							return (
 								<>
 									<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
-										{stepper.state.all.map((stepData, index) => {
-											const currentIndex = stepper.state.current.index;
+										{stepsToShow.map((stepData, displayIndex) => {
+											const realIndex = allSteps.findIndex(
+												(s) => s.id === stepData.id,
+											);
 											const status: StepStatus =
-												index < currentIndex
+												realIndex < currentRealIndex
 													? "success"
-													: index === currentIndex
+													: realIndex === currentRealIndex
 														? "active"
 														: "inactive";
-											const isLast = index === stepper.state.all.length - 1;
+											const isLast = displayIndex === stepsToShow.length - 1;
 											return (
 												<React.Fragment key={stepData.id}>
 													<Stepper.Item
 														step={stepData.id}
 														className="group peer relative flex shrink-0 items-center gap-2"
 													>
-														<StepperTriggerWrapper />
+														<StepperTriggerWrapper displayNumber={displayIndex + 1} />
 													</Stepper.Item>
 													<StepperSeparatorWithStatus status={status} isLast={isLast} />
 												</React.Fragment>

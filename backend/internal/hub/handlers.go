@@ -53,7 +53,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
 			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
-			protected.PATCH("/repositories/:id", routes.UpdateRepositoryHandler)
+			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
 		}
 
 		// Admin routes (authentication + admin role required)
