@@ -32,7 +32,7 @@ function RepositoriesPage() {
 
 			{isLoading && <p className="text-muted-foreground text-sm">Loading repositories...</p>}
 
-			{repos && <RepositoryDataTable columns={columns} data={repos || []} />}
+			{repos && <RepositoryDataTable columns={columns} data={repos} />}
 		</div>
 	);
 }

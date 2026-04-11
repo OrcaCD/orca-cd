@@ -27,6 +27,7 @@ import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import { toast } from "sonner";
+import { toSearchableText } from "@/lib/utils";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
@@ -168,6 +169,17 @@ export const columns: ColumnDef<Repository>[] = [
 		accessorKey: "apps",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Apps" />;
+		},
+	},
+	{
+		id: "createdAt",
+		accessorFn: (row) => toSearchableText(row.createdAt),
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title="Created At" />;
+		},
+		cell: ({ row }) => {
+			const createdAt = row.original.createdAt;
+			return <span>{new Date(createdAt).toLocaleString()}</span>;
 		},
 	},
 	{

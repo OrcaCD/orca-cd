@@ -50,6 +50,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
+			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
 		}
 

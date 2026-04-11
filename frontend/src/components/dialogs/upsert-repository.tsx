@@ -38,8 +38,7 @@ import { defineStepper } from "@stepperize/react";
 import { useStepItemContext, type StepStatus } from "@stepperize/react/primitives";
 import { cn } from "@/lib/utils";
 import ErrorAlert from "../error-alert";
-import { mutate } from "swr";
-import { API_BASE } from "@/lib/api";
+import SuccessAlert from "../success-alert";
 
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false },
@@ -64,7 +63,12 @@ const syncTypes = [
 	{ id: "manual", label: "Manual", description: "Updates must be triggered manually." },
 ] as const satisfies { id: RepositorySyncType; label: string; description: string }[];
 
-const { Stepper } = defineStepper({ id: "provider" }, { id: "repository" }, { id: "syncType" });
+const { Stepper } = defineStepper(
+	{ id: "provider" },
+	{ id: "repository" },
+	{ id: "syncType" },
+	{ id: "summary" },
+);
 
 const repositorySchema = z.object({
 	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }),
@@ -272,26 +276,40 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 	);
 }
 
+function SyncTypeSummaryContent({ isEditing }: { isEditing: boolean }) {
+	return (
+		<>
+			<SuccessAlert
+				title={isEditing ? "Repository updated" : "Repository connected"}
+				description={
+					isEditing
+						? "The repository has been successfully updated."
+						: "The repository has been successfully connected."
+				}
+			/>
+			<div className="text-destructive">TODO: Show Webhook setup token here</div>
+		</>
+	);
+}
+
 function StepperNavigation({
 	stepper,
 	onNext,
 	handleClose,
-	isSubmitting,
 	isEditing,
 }: {
 	stepper: { state: { current: { index: number; data: { id: string } }; isLast: boolean } };
 	onNext: (stepId: string, advance: () => void) => void;
 	handleClose: () => void;
-	isSubmitting: boolean;
 	isEditing: boolean;
 }) {
 	return (
 		<div className="flex items-center justify-between gap-4 pt-2">
-			<Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
-				Cancel
+			<Button type="button" variant="outline" onClick={handleClose}>
+				{stepper.state.isLast ? "Close" : "Cancel"}
 			</Button>
 			<div className="flex gap-2">
-				{stepper.state.current.index > 0 && (
+				{stepper.state.current.index > 0 && !stepper.state.isLast && (
 					<Stepper.Prev
 						render={(domProps) => (
 							<Button type="button" variant="outline" {...domProps}>
@@ -300,11 +318,9 @@ function StepperNavigation({
 						)}
 					/>
 				)}
-				{stepper.state.isLast ? (
-					<Button type="submit" disabled={isSubmitting}>
-						{isSubmitting ? "Saving..." : isEditing ? "Update Repository" : "Connect Repository"}
-					</Button>
-				) : (
+				{stepper.state.current.data.id === "syncType" ? (
+					<Button type="submit">{isEditing ? "Update Repository" : "Connect Repository"}</Button>
+				) : !stepper.state.isLast ? (
 					<Stepper.Next
 						render={(domProps) => (
 							<Button
@@ -315,7 +331,7 @@ function StepperNavigation({
 							</Button>
 						)}
 					/>
-				)}
+				) : null}
 			</div>
 		</div>
 	);
@@ -329,10 +345,10 @@ export default function UpsertRepositoryDialog({
 	asDropdownItem?: boolean;
 }) {
 	const isEditing = !!repository;
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | undefined>();
+	const stepperRef = React.useRef<{ navigation: { next: () => void } } | null>(null);
 
 	const form = useForm({
 		defaultValues: {
@@ -345,7 +361,7 @@ export default function UpsertRepositoryDialog({
 			onSubmit: repositorySchema,
 		},
 		onSubmit: async ({ value }) => {
-			setIsSubmitting(true);
+			setIsLoading(true);
 			try {
 				const authToken = value.authToken?.trim() ? value.authToken.trim() : undefined;
 				const authMethod = authToken ? "token" : "none";
@@ -358,7 +374,6 @@ export default function UpsertRepositoryDialog({
 						syncType: repository.syncType,
 						pollingIntervalSeconds: repository.pollingIntervalSeconds ?? undefined,
 					});
-					toast.success("Repository updated");
 				} else {
 					await createRepository({
 						url: value.url,
@@ -367,15 +382,13 @@ export default function UpsertRepositoryDialog({
 						authToken,
 						syncType: value.syncType,
 					});
-					toast.success("Repository created");
 				}
 
-				mutate(`${API_BASE}/repositories`);
-				setOpen(false);
-			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save repository");
+				stepperRef.current?.navigation.next();
+			} catch (err: any) {
+				toast.error(err?.message || "An unexpected error occurred");
 			} finally {
-				setIsSubmitting(false);
+				setIsLoading(false);
 			}
 		},
 	});
@@ -459,74 +472,86 @@ export default function UpsertRepositoryDialog({
 					}}
 				>
 					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
-						{({ stepper }) => (
-							<>
-								<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
-									{stepper.state.all.map((stepData, index) => {
-										const currentIndex = stepper.state.current.index;
-										const status: StepStatus =
-											index < currentIndex
-												? "success"
-												: index === currentIndex
-													? "active"
-													: "inactive";
-										const isLast = index === stepper.state.all.length - 1;
-										return (
-											<React.Fragment key={stepData.id}>
-												<Stepper.Item
-													step={stepData.id}
-													className="group peer relative flex shrink-0 items-center gap-2"
-												>
-													<StepperTriggerWrapper />
-												</Stepper.Item>
-												<StepperSeparatorWithStatus status={status} isLast={isLast} />
-											</React.Fragment>
-										);
+						{({ stepper }) => {
+							stepperRef.current = stepper;
+							return (
+								<>
+									<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
+										{stepper.state.all.map((stepData, index) => {
+											const currentIndex = stepper.state.current.index;
+											const status: StepStatus =
+												index < currentIndex
+													? "success"
+													: index === currentIndex
+														? "active"
+														: "inactive";
+											const isLast = index === stepper.state.all.length - 1;
+											return (
+												<React.Fragment key={stepData.id}>
+													<Stepper.Item
+														step={stepData.id}
+														className="group peer relative flex shrink-0 items-center gap-2"
+													>
+														<StepperTriggerWrapper />
+													</Stepper.Item>
+													<StepperSeparatorWithStatus status={status} isLast={isLast} />
+												</React.Fragment>
+											);
+										})}
+									</Stepper.List>
+
+									{stepper.flow.switch({
+										provider: () => (
+											<Stepper.Content
+												step="provider"
+												render={(props) => (
+													<div {...props}>
+														<ProviderStepContent form={form} />
+													</div>
+												)}
+											/>
+										),
+										repository: () => (
+											<Stepper.Content
+												step="repository"
+												render={(props) => (
+													<div {...props}>
+														<RepositoryStepContent form={form} error={error} />
+													</div>
+												)}
+											/>
+										),
+										syncType: () => (
+											<Stepper.Content
+												step="syncType"
+												render={(props) => (
+													<div {...props}>
+														<SyncTypeStepContent form={form} />
+													</div>
+												)}
+											/>
+										),
+										summary: () => (
+											<Stepper.Content
+												step="summary"
+												render={(props) => (
+													<div {...props}>
+														<SyncTypeSummaryContent isEditing={isEditing} />
+													</div>
+												)}
+											/>
+										),
 									})}
-								</Stepper.List>
 
-								{stepper.flow.switch({
-									provider: () => (
-										<Stepper.Content
-											step="provider"
-											render={(props) => (
-												<div {...props}>
-													<ProviderStepContent form={form} />
-												</div>
-											)}
-										/>
-									),
-									repository: () => (
-										<Stepper.Content
-											step="repository"
-											render={(props) => (
-												<div {...props}>
-													<RepositoryStepContent form={form} error={error} />
-												</div>
-											)}
-										/>
-									),
-									syncType: () => (
-										<Stepper.Content
-											step="syncType"
-											render={(props) => (
-												<div {...props}>
-													<SyncTypeStepContent form={form} />
-												</div>
-											)}
-										/>
-									),
-								})}
-
-								<StepperNavigation
-									stepper={stepper}
-									onNext={handleNext}
-									handleClose={handleClose}
-									isSubmitting={isSubmitting}
-									isEditing={isEditing}
-								/>
-							</>
-						)}
+									<StepperNavigation
+										stepper={stepper}
+										onNext={handleNext}
+										handleClose={handleClose}
+										isEditing={isEditing}
+									/>
+								</>
+							);
+						}}
 					</Stepper.Root>
 				</form>
 			</DialogContent>

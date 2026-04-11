@@ -108,8 +108,9 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "pollingIntervalSeconds is required when syncType is polling"})
-		return
+		// Default to 60 seconds if polling is selected but no interval is provided
+		var defaultInterval int64 = 60
+		req.PollingInterval = &defaultInterval
 	}
 
 	provider, httpStatus, validationErr := resolveProvider(req.Provider, req.AuthMethod)
@@ -215,6 +216,22 @@ func TestConnectionHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "connection successful"})
+}
+
+func DeleteRepositoryHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	result := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&models.Repository{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 }
 
 // resolveProvider validates the provider enum, URL, and authMethod, returning the

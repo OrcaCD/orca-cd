@@ -36,7 +36,10 @@ export function RepositoryDataTable<TData, TValue>({
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ authMethod: false });
+	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+		authMethod: false,
+		createdAt: false,
+	});
 
 	const table = useReactTable({
 		data,

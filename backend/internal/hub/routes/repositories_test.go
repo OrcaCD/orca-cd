@@ -187,7 +187,7 @@ func TestCreateRepositoryHandler_InvalidSyncType(t *testing.T) {
 	}
 }
 
-func TestCreateRepositoryHandler_MissingPollingInterval(t *testing.T) {
+func TestCreateRepositoryHandler_DefaultPollingInterval(t *testing.T) {
 	setupTestDBWithRepos(t)
 
 	reqBody, _ := json.Marshal(map[string]any{
@@ -196,7 +196,7 @@ func TestCreateRepositoryHandler_MissingPollingInterval(t *testing.T) {
 		"provider":   "github",
 		"authMethod": "none",
 		"syncType":   "polling",
-		// pollingIntervalSeconds is missing
+		// pollingIntervalSeconds is omitted — should default to 60
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -205,8 +205,19 @@ func TestCreateRepositoryHandler_MissingPollingInterval(t *testing.T) {
 
 	CreateRepositoryHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.PollingIntervalSeconds == nil {
+		t.Fatal("expected pollingIntervalSeconds to be set")
+	}
+	if *body.PollingIntervalSeconds != 60 {
+		t.Errorf("expected default pollingIntervalSeconds 60, got %d", *body.PollingIntervalSeconds)
 	}
 }
 
@@ -365,6 +376,54 @@ func mockHTTPClient(statusCode int) func() {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestDeleteRepositoryHandler_NotFound(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/nonexistent-id", nil)
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent-id"}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteRepositoryHandler_Success(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "To Delete",
+		Url:        "https://github.com/owner/to-delete",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify the record is gone
+	var count int64
+	db.DB.Model(&models.Repository{}).Where("id = ?", repo.Id).Count(&count)
+	if count != 0 {
+		t.Error("expected repository to be deleted from DB")
+	}
+}
 
 func TestTestConnectionHandler_InvalidRequest(t *testing.T) {
 	setupTestDBWithRepos(t)

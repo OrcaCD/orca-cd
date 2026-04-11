@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangleIcon } from "lucide-react";
+import { CheckCircle2Icon } from "lucide-react";
 
-export default function ErrorAlert({
+export default function SuccessAlert({
 	title,
 	description,
 }: {
@@ -10,12 +10,12 @@ export default function ErrorAlert({
 }) {
 	const desc = description
 		? description.at(0)?.toUpperCase() + description.slice(1)
-		: "An error occurred.";
+		: "Operation successful.";
 
 	return (
-		<Alert className="mt-2 border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-50">
-			<AlertTriangleIcon />
-			<AlertTitle>{title || "Error"}</AlertTitle>
+		<Alert className="mt-2 border-green-200 bg-green-50 text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-50">
+			<CheckCircle2Icon />
+			<AlertTitle>{title || "Success"}</AlertTitle>
 			<AlertDescription className="text-foreground text-wrap">{desc}</AlertDescription>
 		</Alert>
 	);
