@@ -20,6 +20,7 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
+import { Route as AuthenticatedApplicationsChar91idChar93IndexRouteImport } from './routes/_authenticated/applications/[id]/index'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -80,6 +81,12 @@ const AuthenticatedAdminOidcProvidersRoute =
     path: '/oidc-providers',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedApplicationsChar91idChar93IndexRoute =
+  AuthenticatedApplicationsChar91idChar93IndexRouteImport.update({
+    id: '/applications/id/',
+    path: '/applications/id/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthenticatedIndexRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/applications/': typeof AuthenticatedApplicationsIndexRoute
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
+  '/applications/id/': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -103,6 +111,7 @@ export interface FileRoutesByTo {
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/applications': typeof AuthenticatedApplicationsIndexRoute
   '/repositories': typeof AuthenticatedRepositoriesIndexRoute
+  '/applications/id': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -117,6 +126,7 @@ export interface FileRoutesById {
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/applications/': typeof AuthenticatedApplicationsIndexRoute
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
+  '/_authenticated/applications/id/': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/applications/'
     | '/repositories/'
+    | '/applications/id/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/agents'
     | '/applications'
     | '/repositories'
+    | '/applications/id'
   id:
     | '__root__'
     | '/_authenticated'
@@ -155,6 +167,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agents/'
     | '/_authenticated/applications/'
     | '/_authenticated/repositories/'
+    | '/_authenticated/applications/id/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -241,6 +254,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/applications/id/': {
+      id: '/_authenticated/applications/id/'
+      path: '/applications/id'
+      fullPath: '/applications/id/'
+      preLoaderRoute: typeof AuthenticatedApplicationsChar91idChar93IndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
@@ -267,6 +287,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedApplicationsIndexRoute: typeof AuthenticatedApplicationsIndexRoute
   AuthenticatedRepositoriesIndexRoute: typeof AuthenticatedRepositoriesIndexRoute
+  AuthenticatedApplicationsChar91idChar93IndexRoute: typeof AuthenticatedApplicationsChar91idChar93IndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -275,6 +296,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedApplicationsIndexRoute: AuthenticatedApplicationsIndexRoute,
   AuthenticatedRepositoriesIndexRoute: AuthenticatedRepositoriesIndexRoute,
+  AuthenticatedApplicationsChar91idChar93IndexRoute:
+    AuthenticatedApplicationsChar91idChar93IndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -7,10 +7,10 @@ type Props = {
   apps: Application[]
 }
 
-export function ApplicationGrid({ viewMode, apps }: Props) {
-  if (viewMode === "grid") {
-    return <ApplicationGridView apps={apps} />
-  }
-
-  return <ApplicationListView apps={apps} />
+export function ApplicationView({ viewMode, apps }: Props) {
+  return viewMode === "grid" ? (
+    <ApplicationGridView apps={apps} />
+  ) : (
+    <ApplicationListView apps={apps} />
+  )
 }

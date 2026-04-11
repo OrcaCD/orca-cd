@@ -1,4 +1,4 @@
-import { ApplicationGrid } from "@/components/application-view/application-view";
+import { ApplicationView } from "@/components/application-view/application-view";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { ApplicationStats } from "@/components/ui/grid";
 import { ApplicationFilters } from "@/components/ui/toolbar/application-toolbar/application-toolbar";
@@ -118,7 +118,7 @@ function ApplicationsPage() {
 				<ApplicationFilters viewMode={viewMode} setViewMode={setViewMode} searchQuery={searchQuery} setSearchQuery={setSearchQuery} projectFilter={projectFilter} setProjectFilter={setProjectFilter} />
 			</div>
 			<div>
-				<ApplicationGrid viewMode={viewMode} apps={filteredApps} />
+				<ApplicationView viewMode={viewMode} apps={filteredApps} />
 			</div>
 		</div>
 	);
