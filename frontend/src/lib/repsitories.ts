@@ -30,7 +30,6 @@ export interface Repository {
 }
 
 export interface CreateRepositoryRequest {
-	name: string;
 	url: string;
 	provider: RepositoryProvider;
 	authMethod: RepositoryAuthMethod;

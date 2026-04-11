@@ -1,11 +1,1 @@
-<?xml version="1.0" encoding="utf-8"?><!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-<svg width="800px" height="800px" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M2.9087 3.00008C2.64368 2.99655 2.3907 3.11422 2.21764 3.32152C2.04458 3.52883 1.96915 3.80455 2.01158 4.07472L5.81987 27.9484C5.91782 28.5515 6.42093 28.9949 7.01305 28.9999H25.283C25.7274 29.0058 26.109 28.6748 26.1801 28.2217L29.9884 4.07935C30.0309 3.80918 29.9554 3.53346 29.7824 3.32615C29.6093 3.11885 29.3563 3.00118 29.0913 3.00471L2.9087 3.00008ZM18.9448 20.2546H13.1135L11.5346 11.7362H20.3578L18.9448 20.2546Z" fill="#2684FF"/>
-<path fill-rule="evenodd" clip-rule="evenodd" d="M28.7778 11.7363H20.3582L18.9453 20.2547H13.114L6.22852 28.6944C6.44675 28.8892 6.725 28.9976 7.0135 29.0001H25.2879C25.7324 29.006 26.114 28.675 26.1851 28.2219L28.7778 11.7363Z" fill="url(#paint0_linear_87_7932)"/>
-<defs>
-<linearGradient id="paint0_linear_87_7932" x1="30.7245" y1="14.1218" x2="20.5764" y2="28.0753" gradientUnits="userSpaceOnUse">
-<stop offset="0.18" stop-color="#0052CC"/>
-<stop offset="1" stop-color="#2684FF"/>
-</linearGradient>
-</defs>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" fill="none" viewBox="0 0 32 32"><path fill="#2684ff" d="M2.909 3a.89.89 0 0 0-.691.322.95.95 0 0 0-.206.753L5.82 27.948A1.23 1.23 0 0 0 7.013 29h18.27a.906.906 0 0 0 .897-.778l3.808-24.143a.95.95 0 0 0-.206-.753.89.89 0 0 0-.69-.321zm16.036 17.255h-5.831l-1.58-8.519h8.824z"/><path fill="url(#a)" fill-rule="evenodd" d="M28.778 11.736h-8.42l-1.413 8.519h-5.831l-6.885 8.44c.218.194.496.303.784.305h18.275a.906.906 0 0 0 .897-.778z" clip-rule="evenodd"/><defs><linearGradient id="a" x1="30.724" x2="20.576" y1="14.122" y2="28.075" gradientUnits="userSpaceOnUse"><stop offset=".18" stop-color="#0052cc"/><stop offset="1" stop-color="#2684ff"/></linearGradient></defs></svg>

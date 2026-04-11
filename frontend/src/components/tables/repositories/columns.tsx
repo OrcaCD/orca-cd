@@ -69,7 +69,7 @@ export const columns: ColumnDef<Repository>[] = [
 			const syncStatus = row.original.syncStatus;
 
 			return (
-				<div>
+				<div className="flex items-center gap-2">
 					<span
 						className={`inline-flex h-2 w-2 rounded-full ${
 							syncStatus === "syncing"
@@ -78,9 +78,8 @@ export const columns: ColumnDef<Repository>[] = [
 									? "bg-red-500"
 									: "bg-green-500"
 						}`}
-					>
-						{syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1)}
-					</span>
+					/>
+					{syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1)}
 				</div>
 			);
 		},
