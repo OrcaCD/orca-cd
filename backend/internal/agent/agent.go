@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 type Config struct {
 	Debug     bool
 	LogLevel  zerolog.Level
+	LogJSON   bool
 	HubUrl    string
 	AuthToken string
 }
@@ -28,6 +30,7 @@ type Config struct {
 func DefaultConfig() (Config, error) {
 	debug := os.Getenv("DEBUG")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	logJSONStr := os.Getenv("LOG_JSON")
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
@@ -45,16 +48,27 @@ func DefaultConfig() (Config, error) {
 		logLevel = zerolog.InfoLevel
 	}
 
+	logJSON := strings.EqualFold(logJSONStr, "true")
+
 	return Config{
 		Debug:     debug == "true",
 		LogLevel:  logLevel,
+		LogJSON:   logJSON,
 		HubUrl:    hubUrl,
 		AuthToken: authToken,
 	}, nil
 }
 
-var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Str("service", "agent").Logger()
+func newLogger(logJSON bool) zerolog.Logger {
+	if logJSON {
+		return zerolog.New(os.Stderr).With().Timestamp().Str("service", "agent").Logger()
+	}
+
+	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
+		With().Timestamp().Str("service", "agent").Logger()
+}
+
+var Log = newLogger(false)
 
 // connTracker holds the active WebSocket connection under a mutex so the
 // shutdown goroutine can safely close it from a different goroutine.
@@ -83,7 +97,7 @@ func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn)
 }
 
 func Run(cfg Config) error {
-	Log = Log.Level(cfg.LogLevel)
+	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
