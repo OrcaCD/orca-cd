@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import useSWR from "swr";
-import fetcher, { API_BASE } from "@/lib/api";
+import { useFetch } from "@/lib/api";
 import { type UserDetail } from "@/lib/users";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
 import { UserDataTable } from "@/components/tables/users/data-table";
@@ -18,7 +17,7 @@ export const Route = createFileRoute("/_authenticated/admin/users")({
 });
 
 function UsersPage() {
-	const { data: users, isLoading } = useSWR<UserDetail[]>(`${API_BASE}/admin/users`, fetcher);
+	const { data: users, isLoading } = useFetch<UserDetail[]>("/admin/users");
 
 	return (
 		<div className="flex flex-col gap-6">

@@ -1,4 +1,4 @@
-import fetcher, { API_BASE } from "./api";
+import { fetcher } from "./api";
 
 export interface AuthProviderInfo {
 	id: string;
@@ -41,33 +41,17 @@ export interface UpdateOIDCProviderRequest {
 	autoSignup?: boolean;
 }
 
-export function fetchOIDCProviders(): Promise<OIDCProviderDetail[]> {
-	return fetcher<OIDCProviderDetail[]>(`${API_BASE}/admin/oidc-providers`);
-}
-
-export function fetchOIDCProvider(id: string): Promise<OIDCProviderDetail> {
-	return fetcher<OIDCProviderDetail>(`${API_BASE}/admin/oidc-providers/${id}`);
-}
-
 export function createOIDCProvider(data: CreateOIDCProviderRequest): Promise<OIDCProviderDetail> {
-	return fetcher<OIDCProviderDetail>(`${API_BASE}/admin/oidc-providers`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	return fetcher<OIDCProviderDetail>(`/admin/oidc-providers`, "POST", data);
 }
 
 export function updateOIDCProvider(
 	id: string,
 	data: UpdateOIDCProviderRequest,
 ): Promise<OIDCProviderDetail> {
-	return fetcher<OIDCProviderDetail>(`${API_BASE}/admin/oidc-providers/${id}`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	return fetcher<OIDCProviderDetail>(`/admin/oidc-providers/${id}`, "PUT", data);
 }
 
 export async function deleteOIDCProvider(id: string): Promise<void> {
-	await fetcher(`${API_BASE}/admin/oidc-providers/${id}`, { method: "DELETE" });
+	await fetcher(`/admin/oidc-providers/${id}`, "DELETE");
 }
