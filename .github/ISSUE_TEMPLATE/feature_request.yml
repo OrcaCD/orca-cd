@@ -1,7 +1,7 @@
 name: 🚀 Feature
 description: Suggest a new feature or enhancement
 title: "🚀 Feature: "
-labels: ["feature"]
+type: 'Feature'
 body:
   - type: markdown
     attributes:
@@ -24,3 +24,7 @@ body:
         - label: "Yes"
     validations:
       required: false
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, please check if the feature hasn't been proposed before.

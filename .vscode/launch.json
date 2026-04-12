@@ -1,0 +1,42 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Hub",
+			"type": "go",
+			"request": "launch",
+			"envFile": "${workspaceFolder}/backend/.env",
+			"mode": "debug",
+			"program": "${workspaceFolder}/backend/cmd/hub/main.go",
+			"cwd": "${workspaceFolder}/backend"
+		},
+		{
+			"name": "Agent",
+			"type": "go",
+			"request": "launch",
+			"envFile": "${workspaceFolder}/backend/.env",
+			"mode": "debug",
+			"program": "${workspaceFolder}/backend/cmd/agent/main.go",
+			"cwd": "${workspaceFolder}/backend"
+		},
+		{
+			"name": "Frontend",
+			"type": "node",
+			"request": "launch",
+			"cwd": "${workspaceFolder}/frontend",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": ["run", "dev"]
+		}
+	],
+	"compounds": [
+		{
+			"name": "Development",
+			"configurations": ["Hub", "Agent", "Frontend"],
+			"presentation": {
+				"hidden": false,
+				"group": "",
+				"order": 1
+			}
+		}
+	]
+}
