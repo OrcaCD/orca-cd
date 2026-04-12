@@ -35,7 +35,6 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	}
 }
 
-
 func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", "test-token")
