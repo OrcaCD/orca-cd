@@ -3,8 +3,7 @@ import { RepositoryDataTable } from "@/components/tables/repositories/data-table
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import type { Repository } from "@/lib/repsitories";
 import { createFileRoute } from "@tanstack/react-router";
-import fetcher, { API_BASE } from "@/lib/api";
-import useSWR from "swr";
+import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/repositories/")({
 	component: RepositoriesPage,
@@ -18,7 +17,7 @@ export const Route = createFileRoute("/_authenticated/repositories/")({
 });
 
 function RepositoriesPage() {
-	const { data: repos, isLoading } = useSWR<Repository[]>(`${API_BASE}/repositories`, fetcher);
+	const { data: repos, isLoading } = useFetch<Repository[]>("/repositories");
 
 	return (
 		<div className="p-6 space-y-6">

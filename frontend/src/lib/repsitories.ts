@@ -1,5 +1,5 @@
 import { mutate } from "swr";
-import fetcher, { API_BASE } from "./api";
+import { API_BASE, fetcher } from "./api";
 
 export type RepositoryProvider =
 	| "github"
@@ -54,31 +54,21 @@ export interface TestConnectionRequest {
 }
 
 export function listRepositories(): Promise<Repository[]> {
-	return fetcher<Repository[]>(`${API_BASE}/repositories`);
+	return fetcher<Repository[]>("/repositories", "GET");
 }
 
 export async function createRepository(data: CreateRepositoryRequest): Promise<Repository> {
-	const res = await fetcher<Repository>(`${API_BASE}/repositories`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	const res = await fetcher<Repository>("/repositories", "POST", data);
 	await mutate(`${API_BASE}/repositories`);
 	return res;
 }
 
 export function testRepositoryConnection(data: TestConnectionRequest): Promise<void> {
-	return fetcher(`${API_BASE}/repositories/test-connection`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	return fetcher("/repositories/test-connection", "POST", data);
 }
 
 export async function deleteRepository(id: string): Promise<void> {
-	await fetcher(`${API_BASE}/repositories/${id}`, {
-		method: "DELETE",
-	});
+	await fetcher(`/repositories/${id}`, "DELETE");
 	await mutate(`${API_BASE}/repositories`);
 }
 
@@ -86,11 +76,7 @@ export async function updateRepository(
 	id: string,
 	data: UpdateRepositoryRequest,
 ): Promise<Repository> {
-	const res = await fetcher<Repository>(`${API_BASE}/repositories/${id}`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	const res = await fetcher<Repository>(`/repositories/${id}`, "PUT", data);
 	await mutate(`${API_BASE}/repositories`);
 	return res;
 }

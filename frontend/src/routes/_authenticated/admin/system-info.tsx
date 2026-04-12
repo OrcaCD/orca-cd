@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import useSWR from "swr";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import fetcher, { API_BASE } from "@/lib/api";
 import { CircleCheck, TriangleAlert } from "lucide-react";
+import { useFetch } from "@/lib/api";
 
 interface SystemInfo {
 	debug: boolean;
@@ -44,9 +43,8 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function SystemVersion({ systemInfo }: { systemInfo: SystemInfo }) {
-	const { data, isLoading } = useSWR<GitHubRelease>(
+	const { data, isLoading } = useFetch<GitHubRelease>(
 		"https://api.github.com/repos/OrcaCD/orca-cd/releases/latest",
-		fetcher,
 	);
 
 	if (isLoading || !data) {
@@ -76,7 +74,7 @@ function SystemVersion({ systemInfo }: { systemInfo: SystemInfo }) {
 }
 
 function SystemInfoPage() {
-	const { data, isLoading } = useSWR<SystemInfo>(`${API_BASE}/admin/system-info`, fetcher);
+	const { data, isLoading } = useFetch<SystemInfo>("/admin/system-info");
 	const isTagVersion = data?.version.startsWith("v");
 
 	return (

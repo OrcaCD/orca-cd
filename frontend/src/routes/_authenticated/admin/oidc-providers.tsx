@@ -1,6 +1,5 @@
 // oxlint-disable react/no-children-prop
 import { createFileRoute } from "@tanstack/react-router";
-import useSWR from "swr";
 import { toast } from "sonner";
 import { EllipsisVertical, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import {
@@ -21,7 +20,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import fetcher, { API_BASE } from "@/lib/api";
+import { useFetch } from "@/lib/api";
 import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
@@ -43,7 +42,7 @@ function OIDCProvidersPage() {
 		data: providers,
 		mutate,
 		isLoading,
-	} = useSWR<OIDCProviderDetail[]>(`${API_BASE}/admin/oidc-providers`, fetcher);
+	} = useFetch<OIDCProviderDetail[]>("/admin/oidc-providers");
 
 	async function handleDelete(provider: OIDCProviderDetail) {
 		try {
