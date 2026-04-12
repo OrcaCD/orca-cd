@@ -8,7 +8,8 @@ export function ApplicationCard({ app }: { app: Application }) {
     return (
         <Link
             key={app.id}
-            to={`/applications/${app.id}`}
+            to={`/applications/$id`}
+            params={{ id: app.id }}
             className="group bg-card border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
         >
             <div className="flex items-start justify-between">

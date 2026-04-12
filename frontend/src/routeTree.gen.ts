@@ -20,7 +20,9 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
-import { Route as AuthenticatedApplicationsChar91idChar93IndexRouteImport } from './routes/_authenticated/applications/[id]/index'
+import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id.index'
+import { Route as AuthenticatedApplicationsIdSettingsRouteImport } from './routes/_authenticated/applications/$id.settings'
+import { Route as AuthenticatedApplicationsIdLogsRouteImport } from './routes/_authenticated/applications/$id.logs'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -81,10 +83,22 @@ const AuthenticatedAdminOidcProvidersRoute =
     path: '/oidc-providers',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedApplicationsChar91idChar93IndexRoute =
-  AuthenticatedApplicationsChar91idChar93IndexRouteImport.update({
-    id: '/applications/id/',
-    path: '/applications/id/',
+const AuthenticatedApplicationsIdIndexRoute =
+  AuthenticatedApplicationsIdIndexRouteImport.update({
+    id: '/applications/$id/',
+    path: '/applications/$id/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsRoute =
+  AuthenticatedApplicationsIdSettingsRouteImport.update({
+    id: '/applications/$id/settings',
+    path: '/applications/$id/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsIdLogsRoute =
+  AuthenticatedApplicationsIdLogsRouteImport.update({
+    id: '/applications/$id/logs',
+    path: '/applications/$id/logs',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 
@@ -99,7 +113,9 @@ export interface FileRoutesByFullPath {
   '/agents/': typeof AuthenticatedAgentsIndexRoute
   '/applications/': typeof AuthenticatedApplicationsIndexRoute
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
-  '/applications/id/': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
+  '/applications/$id/logs': typeof AuthenticatedApplicationsIdLogsRoute
+  '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRoute
+  '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -111,7 +127,9 @@ export interface FileRoutesByTo {
   '/agents': typeof AuthenticatedAgentsIndexRoute
   '/applications': typeof AuthenticatedApplicationsIndexRoute
   '/repositories': typeof AuthenticatedRepositoriesIndexRoute
-  '/applications/id': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
+  '/applications/$id/logs': typeof AuthenticatedApplicationsIdLogsRoute
+  '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRoute
+  '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -126,7 +144,9 @@ export interface FileRoutesById {
   '/_authenticated/agents/': typeof AuthenticatedAgentsIndexRoute
   '/_authenticated/applications/': typeof AuthenticatedApplicationsIndexRoute
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
-  '/_authenticated/applications/id/': typeof AuthenticatedApplicationsChar91idChar93IndexRoute
+  '/_authenticated/applications/$id/logs': typeof AuthenticatedApplicationsIdLogsRoute
+  '/_authenticated/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRoute
+  '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,7 +161,9 @@ export interface FileRouteTypes {
     | '/agents/'
     | '/applications/'
     | '/repositories/'
-    | '/applications/id/'
+    | '/applications/$id/logs'
+    | '/applications/$id/settings'
+    | '/applications/$id/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -153,7 +175,9 @@ export interface FileRouteTypes {
     | '/agents'
     | '/applications'
     | '/repositories'
-    | '/applications/id'
+    | '/applications/$id/logs'
+    | '/applications/$id/settings'
+    | '/applications/$id'
   id:
     | '__root__'
     | '/_authenticated'
@@ -167,7 +191,9 @@ export interface FileRouteTypes {
     | '/_authenticated/agents/'
     | '/_authenticated/applications/'
     | '/_authenticated/repositories/'
-    | '/_authenticated/applications/id/'
+    | '/_authenticated/applications/$id/logs'
+    | '/_authenticated/applications/$id/settings'
+    | '/_authenticated/applications/$id/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -254,11 +280,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/applications/id/': {
-      id: '/_authenticated/applications/id/'
-      path: '/applications/id'
-      fullPath: '/applications/id/'
-      preLoaderRoute: typeof AuthenticatedApplicationsChar91idChar93IndexRouteImport
+    '/_authenticated/applications/$id/': {
+      id: '/_authenticated/applications/$id/'
+      path: '/applications/$id'
+      fullPath: '/applications/$id/'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/$id/settings': {
+      id: '/_authenticated/applications/$id/settings'
+      path: '/applications/$id/settings'
+      fullPath: '/applications/$id/settings'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/$id/logs': {
+      id: '/_authenticated/applications/$id/logs'
+      path: '/applications/$id/logs'
+      fullPath: '/applications/$id/logs'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdLogsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
   }
@@ -287,7 +327,9 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedApplicationsIndexRoute: typeof AuthenticatedApplicationsIndexRoute
   AuthenticatedRepositoriesIndexRoute: typeof AuthenticatedRepositoriesIndexRoute
-  AuthenticatedApplicationsChar91idChar93IndexRoute: typeof AuthenticatedApplicationsChar91idChar93IndexRoute
+  AuthenticatedApplicationsIdLogsRoute: typeof AuthenticatedApplicationsIdLogsRoute
+  AuthenticatedApplicationsIdSettingsRoute: typeof AuthenticatedApplicationsIdSettingsRoute
+  AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -296,8 +338,10 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedApplicationsIndexRoute: AuthenticatedApplicationsIndexRoute,
   AuthenticatedRepositoriesIndexRoute: AuthenticatedRepositoriesIndexRoute,
-  AuthenticatedApplicationsChar91idChar93IndexRoute:
-    AuthenticatedApplicationsChar91idChar93IndexRoute,
+  AuthenticatedApplicationsIdLogsRoute: AuthenticatedApplicationsIdLogsRoute,
+  AuthenticatedApplicationsIdSettingsRoute:
+    AuthenticatedApplicationsIdSettingsRoute,
+  AuthenticatedApplicationsIdIndexRoute: AuthenticatedApplicationsIdIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
