@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import fetcher, { API_BASE } from "@/lib/api";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 
 interface SystemInfo {
 	debug: boolean;
@@ -14,6 +15,12 @@ interface SystemInfo {
 	appUrl: string;
 	disableLocalAuth: boolean;
 	version: string;
+	commit: string;
+	buildDate: string;
+}
+
+interface GitHubRelease {
+	tag_name: string;
 }
 
 export const Route = createFileRoute("/_authenticated/admin/system-info")({
@@ -36,8 +43,41 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 	);
 }
 
+function SystemVersion({ systemInfo }: { systemInfo: SystemInfo }) {
+	const { data, isLoading } = useSWR<GitHubRelease>(
+		"https://api.github.com/repos/OrcaCD/orca-cd/releases/latest",
+		fetcher,
+	);
+
+	if (isLoading || !data) {
+		return null;
+	}
+
+	if (data.tag_name === systemInfo.version) {
+		return (
+			<div className="text-xs text-green-500 font-medium flex gap-1">
+				<CircleCheck className="w-4 h-4" />
+				<span>Up to date</span>
+			</div>
+		);
+	}
+
+	return (
+		<a
+			href="https://github.com/OrcaCD/orca-cd/releases"
+			target="_blank"
+			rel="noopener noreferrer"
+			className="text-xs text-red-500 font-medium flex gap-1"
+		>
+			<TriangleAlert className="w-4 h-4" />
+			<span>Update available: {data.tag_name}</span>
+		</a>
+	);
+}
+
 function SystemInfoPage() {
 	const { data, isLoading } = useSWR<SystemInfo>(`${API_BASE}/admin/system-info`, fetcher);
+	const isTagVersion = data?.version.startsWith("v");
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -54,7 +94,15 @@ function SystemInfoPage() {
 				<Card>
 					<CardHeader>
 						<CardTitle>Server Configuration</CardTitle>
-						<CardDescription>Version: {data.version}</CardDescription>
+						<CardDescription>
+							<div className="flex flex-col gap-1">
+								<span>
+									Version: {data.version} (commit: {data.commit}, built:{" "}
+									{new Date(data.buildDate).toLocaleString()})
+								</span>
+								{isTagVersion ? <SystemVersion systemInfo={data} /> : null}
+							</div>
+						</CardDescription>
 					</CardHeader>
 					<Separator />
 					<CardContent className="pt-4">

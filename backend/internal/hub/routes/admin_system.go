@@ -15,6 +15,8 @@ type AdminSystemInfoConfig struct {
 	AppURL           string
 	DisableLocalAuth bool
 	Version          string
+	Commit           string
+	BuildDate        string
 }
 
 var adminSystemInfoConfig AdminSystemInfoConfig
@@ -28,6 +30,8 @@ type adminSystemInfoResponse struct {
 	AppURL           string   `json:"appUrl"`
 	DisableLocalAuth bool     `json:"disableLocalAuth"`
 	Version          string   `json:"version"`
+	Commit           string   `json:"commit"`
+	BuildDate        string   `json:"buildDate"`
 }
 
 func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
@@ -40,6 +44,8 @@ func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          cfg.Version,
+		Commit:           cfg.Commit,
+		BuildDate:        cfg.BuildDate,
 	}
 }
 
@@ -55,5 +61,7 @@ func AdminSystemInfoHandler(c *gin.Context) {
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          cfg.Version,
+		Commit:           cfg.Commit,
+		BuildDate:        cfg.BuildDate,
 	})
 }
