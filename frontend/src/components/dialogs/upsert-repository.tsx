@@ -73,7 +73,7 @@ const { Stepper } = defineStepper(
 );
 
 const repositorySchema = z.object({
-	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }),
+	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }).trim(),
 	provider: z.enum(["github", "gitlab", "generic"]),
 	authToken: z.string().trim().max(1024, "Auth token must be at most 1024 characters"),
 	syncType: z.enum(["webhook", "polling", "manual"]),
