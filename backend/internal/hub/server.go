@@ -24,6 +24,7 @@ type Config struct {
 	Host             string
 	Port             string
 	LogLevel         zerolog.Level
+	LogJSON          bool
 	TrustedProxies   []string
 	AppURL           string
 	AppSecret        string
@@ -35,6 +36,7 @@ func DefaultConfig() (Config, error) {
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
 
@@ -46,6 +48,8 @@ func DefaultConfig() (Config, error) {
 	if err != nil || logLevelStr == "" {
 		logLevel = zerolog.InfoLevel
 	}
+
+	logJSON := strings.EqualFold(logJSONStr, "true")
 
 	var trustedProxies []string
 	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {
@@ -68,6 +72,7 @@ func DefaultConfig() (Config, error) {
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
+		LogJSON:          logJSON,
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
@@ -75,15 +80,23 @@ func DefaultConfig() (Config, error) {
 	}, nil
 }
 
-var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Str("service", "hub").Logger()
+func newLogger(logJSON bool) zerolog.Logger {
+	if logJSON {
+		return zerolog.New(os.Stderr).With().Timestamp().Str("service", "hub").Logger()
+	}
+
+	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
+		With().Timestamp().Str("service", "hub").Logger()
+}
+
+var Log = newLogger(false)
 
 func Run(cfg Config) error {
 	if !cfg.Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	Log = Log.Level(cfg.LogLevel)
+	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
