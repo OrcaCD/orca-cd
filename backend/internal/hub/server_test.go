@@ -19,6 +19,7 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	t.Setenv("HOST", "127.0.0.1")
 	t.Setenv("DEBUG", "true")
 	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_JSON", "true")
 	t.Setenv("TRUSTED_PROXIES", "10.0.0.1, 10.0.0.2")
 
 	cfg, err := DefaultConfig()
@@ -37,6 +38,9 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if cfg.LogLevel != zerolog.DebugLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.DebugLevel)
 	}
+	if !cfg.LogJSON {
+		t.Error("LogJSON = false, want true")
+	}
 	if cfg.AppURL != "https://example.com" {
 		t.Errorf("AppURL = %q, want %q", cfg.AppURL, "https://example.com")
 	}
@@ -51,6 +55,7 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("DEBUG", "")
 	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("LOG_JSON", "")
 	t.Setenv("TRUSTED_PROXIES", "")
 
 	cfg, err := DefaultConfig()
@@ -66,8 +71,40 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	if cfg.LogLevel != zerolog.InfoLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.InfoLevel)
 	}
+	if cfg.LogJSON {
+		t.Error("LogJSON = true, want false by default")
+	}
 	if len(cfg.TrustedProxies) != 0 {
 		t.Errorf("TrustedProxies = %v, want empty", cfg.TrustedProxies)
+	}
+}
+
+func TestDefaultConfig_LogJSON(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"true", true},
+		{"TRUE", true},
+		{"false", false},
+		{"invalid", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Setenv("APP_URL", "https://example.com")
+			t.Setenv("APP_SECRET", "a-test-secret-that-is-at-least-32-chars!!")
+			t.Setenv("LOG_JSON", tt.input)
+
+			cfg, err := DefaultConfig()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.LogJSON != tt.want {
+				t.Errorf("LogJSON = %v, want %v", cfg.LogJSON, tt.want)
+			}
+		})
 	}
 }
 
