@@ -60,7 +60,7 @@ async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit):
 	return (await res.json()) as JSON;
 }
 
-export async function fetcher<JSON extends Record<string, any> = any>(
+export async function fetcher<JSON extends Record<string, any> | void = any>(
 	url: string,
 	method: "GET" | "POST" | "PUT" | "DELETE",
 	data?: Record<string, any>,
