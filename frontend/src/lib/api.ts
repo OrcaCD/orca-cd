@@ -60,18 +60,24 @@ async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit):
 	return (await res.json()) as JSON;
 }
 
-export async function fetcher<JSON = any>(
+export async function fetcher<JSON extends Record<string, any> = any>(
 	url: string,
 	method: "GET" | "POST" | "PUT" | "DELETE",
-	data?: any,
+	data?: Record<string, any>,
+	additionalHeaders?: Record<string, string>,
 ) {
 	return await fetchWrapper<JSON>(API_BASE + url, {
 		method,
-		headers: data ? { "Content-Type": "application/json" } : undefined,
+		headers: data
+			? { "Content-Type": "application/json", ...additionalHeaders }
+			: additionalHeaders,
 		body: data ? JSON.stringify(data) : undefined,
 	});
 }
 
-export const useFetch = <JSON = any>(url: string, config?: SWRConfiguration) => {
+export const useFetch = <JSON extends Record<string, any> = any>(
+	url: string,
+	config?: SWRConfiguration,
+) => {
 	return useSWR<JSON>(API_BASE + url, fetchWrapper, config);
 };
