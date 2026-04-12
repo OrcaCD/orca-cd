@@ -47,12 +47,12 @@ const (
 type Repository struct {
 	Base
 	Name            string                  `gorm:"type:text;not null"`
-	Url             string                  `gorm:"type:text;not null"`
+	Url             string                  `gorm:"type:text;not null;uniqueIndex:idx_repositories_url_sync_type"`
 	Provider        RepositoryProvider      `gorm:"type:text;not null"`
 	AuthMethod      RepositoryAuthMethod    `gorm:"type:text;not null"`
 	AuthUser        *crypto.EncryptedString `gorm:"type:text;"`
 	AuthToken       *crypto.EncryptedString `gorm:"type:text;"`
-	SyncType        RepositorySyncType      `gorm:"type:text;not null"`
+	SyncType        RepositorySyncType      `gorm:"type:text;not null;uniqueIndex:idx_repositories_url_sync_type"`
 	SyncStatus      RepositorySyncStatus    `gorm:"type:text;not null"`
 	LastSyncError   *string                 `gorm:"type:text;"`
 	PollingInterval *time.Duration          `gorm:"type:integer;"`

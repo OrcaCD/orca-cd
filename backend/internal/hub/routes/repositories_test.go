@@ -377,6 +377,57 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestCreateRepositoryHandler_DuplicateUrlAndSyncType(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/my-repo",
+		"provider":   "github",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	// First creation should succeed
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	CreateRepositoryHandler(c)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on first create, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Second creation with same URL and syncType should conflict
+	reqBody, _ = json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/my-repo",
+		"provider":   "github",
+		"authMethod": "token",
+		"authToken":  "ghp_token",
+		"syncType":   "manual",
+	})
+	c, w = makeAuthContext(t, "user-2")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	CreateRepositoryHandler(c)
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 on duplicate url+syncType, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Same URL with a different syncType should succeed
+	reqBody, _ = json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/my-repo",
+		"provider":   "github",
+		"authMethod": "none",
+		"syncType":   "webhook",
+	})
+	c, w = makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	CreateRepositoryHandler(c)
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201 for same url with different syncType, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestDeleteRepositoryHandler_NotFound(t *testing.T) {
 	setupTestDBWithRepos(t)
 
@@ -550,8 +601,6 @@ func TestUpdateRepositoryHandler_NotFound(t *testing.T) {
 }
 
 func TestUpdateRepositoryHandler_InvalidRequest(t *testing.T) {
-	setupTestDBWithRepos(t)
-
 	tests := []struct {
 		name string
 		body any
@@ -564,6 +613,7 @@ func TestUpdateRepositoryHandler_InvalidRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			setupTestDBWithRepos(t)
 			repo := models.Repository{
 				Name:       "Test Repo",
 				Url:        "https://github.com/owner/repo",

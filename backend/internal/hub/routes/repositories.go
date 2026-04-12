@@ -179,7 +179,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&repo).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
+		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "repository already exists"})
 			return
 		}
@@ -353,6 +353,10 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "repository already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
