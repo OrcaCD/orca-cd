@@ -75,7 +75,7 @@ export const Route = createFileRoute("/login")({
 });
 
 const loginSchema = z.object({
-	email: z.email("Invalid email address"),
+	email: z.email("Invalid email address").trim(),
 	password: z.string().min(1, "Password is required"),
 });
 
@@ -83,9 +83,10 @@ const registerSchema = z
 	.object({
 		name: z
 			.string()
+			.trim()
 			.min(3, "Name must be at least 3 characters")
 			.max(64, "Name must be at most 64 characters"),
-		email: z.email("Invalid email address"),
+		email: z.email("Invalid email address").trim(),
 		password: z
 			.string()
 			.min(8, "Password must be at least 8 characters")

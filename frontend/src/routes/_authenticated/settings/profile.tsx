@@ -27,9 +27,10 @@ export const Route = createFileRoute("/_authenticated/settings/profile")({
 const profileSchema = z.object({
 	name: z
 		.string()
+		.trim()
 		.min(3, "Name must be at least 3 characters")
 		.max(64, "Name must be at most 64 characters"),
-	email: z.email("Must be a valid email address"),
+	email: z.email("Must be a valid email address").trim(),
 });
 
 function ProfileSettingsPage() {

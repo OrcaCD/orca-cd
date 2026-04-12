@@ -26,8 +26,8 @@ import { API_BASE } from "@/lib/api";
 import CopyButton from "../copy-btn";
 
 const baseSchema = z.object({
-	name: z.string().min(3, "Name must be at least 3 characters").max(64),
-	email: z.email("Must be a valid email address"),
+	name: z.string().trim().min(3, "Name must be at least 3 characters").max(64),
+	email: z.email("Must be a valid email address").trim(),
 	role: z.enum(["admin", "user"]),
 	resetPassword: z.boolean(),
 });
