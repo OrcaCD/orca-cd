@@ -539,6 +539,7 @@ export default function UpsertRepositoryDialog({
 					<DialogTitle>{isEditing ? "Edit Repository" : "Add Repository"}</DialogTitle>
 				</DialogHeader>
 				<form
+					className="max-w-[calc(var(--container-md)-2rem)]"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();
