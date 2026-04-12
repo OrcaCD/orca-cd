@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext } from "react";
-import useSWR from "swr";
-import fetcher, { API_BASE } from "./api";
+import { API_BASE, fetcher, useFetch } from "./api";
 
 export interface AuthState {
 	isAuthenticated: boolean;
@@ -29,7 +28,7 @@ export interface Profile {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-	const { data, isLoading, mutate } = useSWR<Profile>(`${API_BASE}/auth/profile`, fetcher, {
+	const { data, isLoading, mutate } = useFetch<Profile>("/auth/profile", {
 		shouldRetryOnError: false,
 	});
 
@@ -64,17 +63,9 @@ export function useAuth(): AuthContextValue {
 }
 
 export async function updateProfile(data: { name: string; email: string }): Promise<void> {
-	await fetcher(`${API_BASE}/auth/profile`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	await fetcher(`/auth/profile`, "PUT", data);
 }
 
 export async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
-	await fetcher(`${API_BASE}/auth/change-password`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ currentPassword, newPassword }),
-	});
+	await fetcher(`/auth/change-password`, "PUT", { currentPassword, newPassword });
 }

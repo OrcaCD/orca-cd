@@ -11,9 +11,9 @@ import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useState, type ComponentProps } from "react";
-import fetcher, { API_BASE } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
+import { API_BASE, fetcher } from "@/lib/api";
 
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
@@ -56,7 +56,7 @@ export const Route = createFileRoute("/login")({
 			needsSetup: boolean;
 			providers?: AuthProviderInfo[];
 			localAuthEnabled?: boolean;
-		}>(`${API_BASE}/auth/setup`);
+		}>("/auth/setup", "GET");
 
 		return {
 			needsSetup: data.needsSetup,
@@ -135,10 +135,10 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 	const [isLoading, setIsLoading] = useState(false);
 
 	async function register(name: string, email: string, password: string): Promise<void> {
-		await fetcher(`${API_BASE}/auth/register`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ name, email, password }),
+		await fetcher("/auth/register", "POST", {
+			name,
+			email,
+			password,
 		});
 	}
 
@@ -295,10 +295,9 @@ function LoginForm({
 	const [isLoading, setIsLoading] = useState(false);
 
 	async function login(email: string, password: string): Promise<void> {
-		await fetcher(`${API_BASE}/auth/login`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ email, password }),
+		await fetcher("/auth/login", "POST", {
+			email,
+			password,
 		});
 	}
 
