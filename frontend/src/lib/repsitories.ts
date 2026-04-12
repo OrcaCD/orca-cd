@@ -27,7 +27,7 @@ export interface Repository {
 	createdBy: string;
 	createdAt: string;
 	updatedAt: string;
-	apps: number;
+	appCount: number;
 	webhookSecret?: string | undefined;
 	webhookUrl?: string | undefined;
 }
@@ -99,4 +99,8 @@ export function getGitProviderIconPath(provider: RepositoryProvider): string {
 	const iconName = provider === "generic" ? "git" : provider;
 
 	return `/assets/icons/${iconName}.svg`;
+}
+
+export function getGitProviderIconClass(provider: RepositoryProvider): string {
+	return provider === "github" ? "dark:invert" : "";
 }

@@ -1,6 +1,7 @@
 import {
 	deleteRepository,
 	getGitProviderIconPath,
+	getGitProviderIconClass,
 	type Repository,
 	type RepositorySyncStatus,
 	type RepositorySyncType,
@@ -31,12 +32,12 @@ import { toSearchableText } from "@/lib/utils";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
-		return "N/A not synced";
+		return "N/A not synced never synced";
 	}
 
 	const parsedDate = new Date(lastSync);
 	if (Number.isNaN(parsedDate.getTime())) {
-		return "N/A not synced";
+		return "N/A not synced never synced";
 	}
 
 	return [
@@ -75,7 +76,8 @@ function getSyncTypeIcon(syncType: RepositorySyncType) {
 
 export const columns: ColumnDef<Repository>[] = [
 	{
-		accessorKey: "name",
+		id: "name",
+		accessorFn: (row) => `${row.provider} ${row.url} ${row.name}`,
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Name" />;
 		},
@@ -86,7 +88,11 @@ export const columns: ColumnDef<Repository>[] = [
 
 			return (
 				<div className="flex flex-row gap-3 items-center">
-					<img src={getGitProviderIconPath(provider)} alt="Git Provider" className="h-7 w-7" />
+					<img
+						src={getGitProviderIconPath(provider)}
+						alt="Git Provider"
+						className={`h-7 w-7 ${getGitProviderIconClass(provider)}`}
+					/>
 
 					<div>
 						<p className="font-medium">{name}</p>
@@ -166,7 +172,7 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 	},
 	{
-		accessorKey: "apps",
+		accessorKey: "appCount",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Apps" />;
 		},

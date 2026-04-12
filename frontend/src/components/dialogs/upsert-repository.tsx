@@ -1,13 +1,5 @@
 // oxlint-disable react/no-children-prop
-import {
-	CheckIcon,
-	ClipboardIcon,
-	EyeIcon,
-	EyeOffIcon,
-	Loader2Icon,
-	PencilIcon,
-	PlusIcon,
-} from "lucide-react";
+import { EyeIcon, EyeOffIcon, Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -25,6 +17,7 @@ import {
 	testRepositoryConnection,
 	type RepositorySyncType,
 	getGitProviderIconPath,
+	getGitProviderIconClass,
 } from "@/lib/repsitories";
 import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -45,8 +38,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { defineStepper } from "@stepperize/react";
 import { useStepItemContext, type StepStatus } from "@stepperize/react/primitives";
 import { cn } from "@/lib/utils";
-import ErrorAlert from "../error-alert";
-import SuccessAlert from "../success-alert";
+import ErrorAlert from "../alerts/error-alert";
+import SuccessAlert from "../alerts/success-alert";
+import CopyButton from "../copy-btn";
 
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false },
@@ -179,7 +173,11 @@ function ProviderStepContent({ form }: { form: RepoFormApi }) {
 											className="hidden"
 										/>
 										<FieldContent className="items-center justify-center gap-2">
-											<img src={getGitProviderIconPath(p.id)} alt={p.label} className="h-10 w-10" />
+											<img
+												src={getGitProviderIconPath(p.id)}
+												alt={p.label}
+												className={`h-10 w-10 ${getGitProviderIconClass(p.id)}`}
+											/>
 											<FieldTitle className="justify-center text-base">{p.label}</FieldTitle>
 										</FieldContent>
 									</Field>
@@ -285,33 +283,6 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 	);
 }
 
-function CopyButton({ text, title = "Copy to clipboard" }: { text: string; title?: string }) {
-	const [copied, setCopied] = useState(false);
-
-	const handleCopy = async () => {
-		await navigator.clipboard.writeText(text);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
-	};
-
-	return (
-		<Button
-			type="button"
-			variant="ghost"
-			size="icon"
-			className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-			onClick={handleCopy}
-			title={title}
-		>
-			{copied ? (
-				<CheckIcon className="h-4 w-4 text-green-500" />
-			) : (
-				<ClipboardIcon className="h-4 w-4" />
-			)}
-		</Button>
-	);
-}
-
 function SyncTypeSummaryContent({
 	isEditing,
 	webhookUrl,
@@ -346,15 +317,15 @@ function SyncTypeSummaryContent({
 
 					<div className="space-y-1">
 						<p className="text-xs font-medium">Webhook URL</p>
-						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-2">
-							<code className="flex-1 overflow-x-auto font-mono text-sm">{webhookUrl}</code>
+						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
+							<code className="flex-1 truncate font-mono text-sm">{webhookUrl}</code>
 							<CopyButton text={webhookUrl ?? ""} title="Copy webhook URL" />
 						</div>
 					</div>
 
 					<div className="space-y-1">
 						<p className="text-xs font-medium">Webhook Secret</p>
-						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-2">
+						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
 							<code className="flex-1 truncate font-mono text-sm">
 								{visible ? webhookSecret : "•".repeat(32)}
 							</code>
@@ -556,6 +527,7 @@ export default function UpsertRepositoryDialog({
 			<DialogContent
 				onPointerDownOutside={(e) => e.preventDefault()}
 				className="sm:max-w-md overflow-hidden"
+				aria-describedby={undefined}
 			>
 				{isLoading && (
 					<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
@@ -589,9 +561,7 @@ export default function UpsertRepositoryDialog({
 								<>
 									<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
 										{stepsToShow.map((stepData, displayIndex) => {
-											const realIndex = allSteps.findIndex(
-												(s) => s.id === stepData.id,
-											);
+											const realIndex = allSteps.findIndex((s) => s.id === stepData.id);
 											const status: StepStatus =
 												realIndex < currentRealIndex
 													? "success"

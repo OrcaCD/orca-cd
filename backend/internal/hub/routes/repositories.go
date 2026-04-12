@@ -48,6 +48,7 @@ type repositoryResponse struct {
 	UpdatedAt              string  `json:"updatedAt"`
 	WebhookSecret          *string `json:"webhookSecret,omitempty"`
 	WebhookUrl             *string `json:"webhookUrl,omitempty"`
+	AppCount               int     `json:"appCount"`
 }
 
 func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryResponse {
@@ -63,6 +64,7 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryR
 		CreatedBy:     r.CreatedBy,
 		CreatedAt:     r.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     r.UpdatedAt.Format(time.RFC3339),
+		AppCount:      0, // This will be populated in the future
 	}
 
 	if r.PollingInterval != nil {
