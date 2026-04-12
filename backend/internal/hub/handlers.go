@@ -22,7 +22,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		TrustedProxies:   cfg.TrustedProxies,
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
-		Version:          version.Full(),
+		Version:          version.Version,
+		Commit:           version.Commit,
+		BuildDate:        version.BuildDate,
 	})
 
 	api := router.Group("/api/v1")
