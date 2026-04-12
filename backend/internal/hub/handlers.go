@@ -26,6 +26,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		Commit:           version.Commit,
 		BuildDate:        version.BuildDate,
 	})
+	routes.SetRepositoriesConfig(cfg.AppURL)
 
 	api := router.Group("/api/v1")
 	{
@@ -49,6 +50,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+
+			protected.GET("/repositories", routes.ListRepositoriesHandler)
+			protected.POST("/repositories", routes.CreateRepositoryHandler)
+			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
+			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
+			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
 		}
 
 		// Admin routes (authentication + admin role required)

@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { Copy, Pencil, Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -23,6 +23,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
 import { mutate } from "swr";
 import { API_BASE } from "@/lib/api";
+import CopyButton from "../copy-btn";
 
 const baseSchema = z.object({
 	name: z.string().min(3, "Name must be at least 3 characters").max(64),
@@ -45,19 +46,6 @@ export default function UpsertUserDialog({
 	const [open, setOpen] = useState(false);
 	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
-
-	async function handleCopyGeneratedPassword() {
-		if (!generatedPassword) {
-			return;
-		}
-
-		try {
-			await navigator.clipboard.writeText(generatedPassword);
-			toast.success("Password copied to clipboard");
-		} catch {
-			toast.error("Failed to copy password");
-		}
-	}
 
 	const form = useForm({
 		defaultValues: {
@@ -297,10 +285,7 @@ export default function UpsertUserDialog({
 					</div>
 
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={handleCopyGeneratedPassword}>
-							<Copy className="mr-2 h-4 w-4" />
-							Copy
-						</Button>
+						<CopyButton text={generatedPassword ?? ""} title="Copy generated password" />
 						<Button
 							type="button"
 							onClick={() => {
