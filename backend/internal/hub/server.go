@@ -29,6 +29,7 @@ type Config struct {
 	AppURL           string
 	AppSecret        string
 	DisableLocalAuth bool
+	Demo             bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -39,6 +40,7 @@ func DefaultConfig() (Config, error) {
 	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
+	demo := os.Getenv("DEMO")
 
 	if port == "" {
 		port = "8080"
@@ -67,8 +69,10 @@ func DefaultConfig() (Config, error) {
 		return Config{}, errors.New("invalid app secret: must be minimum 32 characters")
 	}
 
+	trueString := "true"
+
 	return Config{
-		Debug:            debug == "true",
+		Debug:            debug == trueString,
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
@@ -76,7 +80,8 @@ func DefaultConfig() (Config, error) {
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth == "true",
+		DisableLocalAuth: disableLocalAuth == trueString,
+		Demo:             demo == trueString,
 	}, nil
 }
 
@@ -109,7 +114,7 @@ func Run(cfg Config) error {
 	}
 
 	dbLogger := Log.With().Str("component", "gorm").Logger()
-	err := db.Connect(dbLogger, cfg.Debug)
+	err := db.Connect(dbLogger, cfg.Debug, cfg.Demo)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
@@ -125,6 +130,10 @@ func Run(cfg Config) error {
 
 	if cfg.Debug {
 		router.Use(middleware.RequestLogger(Log))
+	}
+
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
 	}
 
 	router.Use(middleware.Recovery(Log))
