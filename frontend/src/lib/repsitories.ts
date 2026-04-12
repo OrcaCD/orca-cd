@@ -53,10 +53,6 @@ export interface TestConnectionRequest {
 	authToken?: string;
 }
 
-export function listRepositories(): Promise<Repository[]> {
-	return fetcher<Repository[]>("/repositories", "GET");
-}
-
 export async function createRepository(data: CreateRepositoryRequest): Promise<Repository> {
 	const res = await fetcher<Repository>("/repositories", "POST", data);
 	await mutate(`${API_BASE}/repositories`);
