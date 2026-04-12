@@ -91,7 +91,7 @@ export default function Navbar() {
 
 				<div className="flex items-center gap-3">
 					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
-						<a href="https://orcacd.github.io/docs/" target="_blank" rel="noopener noreferrer">
+						<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
 							<FileText className="h-5 w-5 text-muted-foreground" />
 						</a>
 					</Button>

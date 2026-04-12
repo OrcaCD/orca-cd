@@ -13,6 +13,7 @@
 	},
 	"dependencies": {
 		"@fontsource-variable/geist-mono": "^5.2.7",
+		"@stepperize/react": "^6.1.0",
 		"@tailwindcss/vite": "^4.2.2",
 		"@tanstack/react-devtools": "^0.10.2",
 		"@tanstack/react-form": "^1.29.0",

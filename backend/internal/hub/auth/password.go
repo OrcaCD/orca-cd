@@ -62,10 +62,14 @@ func CompareWithDummy(password string) {
 }
 
 func GenerateRandomPassword() (string, error) {
-	raw := make([]byte, 18)
+	return GenerateRandomString(20)
+}
+
+func GenerateRandomString(length int) (string, error) {
+	raw := make([]byte, length)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
 
-	return base64.RawURLEncoding.EncodeToString(raw), nil
+	return base64.RawURLEncoding.EncodeToString(raw)[:length], nil
 }

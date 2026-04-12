@@ -15,7 +15,7 @@ OrcaCD is a simple GitOps tool for Docker. It allows you to deploy your applicat
 
 ## Getting Started
 
-You can get started with OrcaCD by following the guide in the [documentation](https://orcacd.github.io/docs/).
+You can get started with OrcaCD by following the guide in the [documentation](https://orcacd.dev).
 
 ## Contribute
 
