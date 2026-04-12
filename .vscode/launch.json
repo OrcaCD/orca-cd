@@ -24,8 +24,8 @@
 			"type": "node",
 			"request": "launch",
 			"cwd": "${workspaceFolder}/frontend",
-			"runtimeExecutable": "npm",
-			"runtimeArgs": ["run", "dev"]
+			"runtimeExecutable": "node",
+			"runtimeArgs": ["--run", "dev"]
 		}
 	],
 	"compounds": [
