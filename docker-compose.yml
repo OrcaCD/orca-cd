@@ -8,6 +8,13 @@ services:
     env_file: .env
     volumes:
       - ./data/hub:/app/data
+    # Optional healthcheck
+    healthcheck:
+      test: [ "CMD", "/app/hub", "healthcheck" ]
+      interval: 1m30s
+      timeout: 5s
+      retries: 2
+      start_period: 10s
 
   agent:
     image: ghcr.io/orcacd/agent:latest # Replace with your actual image version tag
