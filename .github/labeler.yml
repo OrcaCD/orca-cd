@@ -1,0 +1,31 @@
+frontend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "frontend/**"
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/**"
+
+hub:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/cmd/hub/**"
+      - "backend/internal/hub/**"
+
+agent:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "backend/cmd/agent/**"
+      - "backend/internal/agent/**"
+
+docs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "**/*.md"
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/**"

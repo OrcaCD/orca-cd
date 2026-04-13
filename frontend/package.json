@@ -9,10 +9,12 @@
 		"preview": "vite preview",
 		"lint": "oxlint --type-aware --deny-warnings",
 		"format": "oxfmt --write",
-		"format:check": "oxfmt --check"
+		"format:check": "oxfmt --check",
+		"translations:check": "inlang validate --project ./project.inlang"
 	},
 	"dependencies": {
 		"@fontsource-variable/geist-mono": "^5.2.7",
+		"@stepperize/react": "^6.1.0",
 		"@tailwindcss/vite": "^4.2.2",
 		"@tanstack/react-devtools": "^0.10.2",
 		"@tanstack/react-form": "^1.29.0",
@@ -35,6 +37,10 @@
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
+		"@inlang/cli": "^3.1.9",
+		"@inlang/paraglide-js": "^2.15.3",
+		"@inlang/plugin-m-function-matcher": "^2.2.4",
+		"@inlang/plugin-message-format": "^4.4.0",
 		"@tanstack/devtools-vite": "^0.6.0",
 		"@types/node": "^25.6.0",
 		"@types/react": "^19.2.14",

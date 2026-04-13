@@ -2,13 +2,19 @@ import { defineConfig } from "vite";
 import { devtools } from "@tanstack/devtools-vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { fileURLToPath, URL } from "node:url";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
 	plugins: [
+		paraglideVitePlugin({
+			project: "./project.inlang",
+			outdir: "./src/lib/paraglide",
+			strategy: ["localStorage", "preferredLanguage", "baseLocale"],
+			localStorageKey: "orca-locale",
+		}),
 		devtools(),
 		tanstackRouter({
 			target: "react",
