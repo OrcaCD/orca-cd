@@ -85,18 +85,18 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 	return (
 		<div className="space-y-4">
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div className="text-sm text-muted-foreground">
-					{filteredAgents.length} of {data.length} agents
-				</div>
-
 				<div className="relative w-full sm:max-w-md">
 					<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						value={searchQuery}
 						onChange={(event) => setSearchQuery(event.target.value)}
-						placeholder="Search agents by name, URL or IP..."
+						placeholder="Search agents..."
 						className="bg-muted pl-9"
 					/>
+				</div>
+
+				<div className="text-sm text-muted-foreground">
+					{filteredAgents.length} of {data.length} agents
 				</div>
 			</div>
 
