@@ -35,8 +35,6 @@ const mockApp = {
       name: "api-gateway",
       image: "org/api-gateway:v2.1.0",
       status: "running",
-      cpu: "12%",
-      memory: "256MB",
       ports: "8080:80",
     },
     {
@@ -44,8 +42,6 @@ const mockApp = {
       name: "redis-cache",
       image: "redis:7-alpine",
       status: "running",
-      cpu: "2%",
-      memory: "64MB",
       ports: "6379",
     },
     {
@@ -53,8 +49,6 @@ const mockApp = {
       name: "nginx-proxy",
       image: "nginx:alpine",
       status: "running",
-      cpu: "1%",
-      memory: "32MB",
       ports: "443:443, 80:80",
     },
   ],

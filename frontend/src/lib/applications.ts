@@ -34,8 +34,6 @@ export interface Container {
   name: string
   image: string
   status: string
-  cpu: string
-  memory: string
   ports: string
 }
 

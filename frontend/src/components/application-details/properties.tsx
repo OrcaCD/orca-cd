@@ -1,6 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Application } from "@/lib/applications";
-import { Box, Cpu, HardDrive, MoreVertical, RotateCcw, Square, Terminal } from "lucide-react";
+import { Box, MoreVertical, RotateCcw, Square, Terminal } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "../ui/button";
 import { Link } from "@tanstack/react-router";
@@ -59,18 +59,6 @@ export function Properties({ app, id }: Props) {
                                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                                             {container.status}
                                         </span>
-                                    </td>
-                                    <td className="p-4 hidden md:table-cell">
-                                        <div className="flex items-center gap-2">
-                                            <Cpu className="h-4 w-4 text-muted-foreground" />
-                                            <span>{container.cpu}</span>
-                                        </div>
-                                    </td>
-                                    <td className="p-4 hidden md:table-cell">
-                                        <div className="flex items-center gap-2">
-                                            <HardDrive className="h-4 w-4 text-muted-foreground" />
-                                            <span>{container.memory}</span>
-                                        </div>
                                     </td>
                                     <td className="p-4 text-muted-foreground text-sm hidden lg:table-cell">{container.ports}</td>
                                     <td className="p-4">
