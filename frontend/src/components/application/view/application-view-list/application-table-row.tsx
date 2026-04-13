@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ActionsMenu } from "@/components/application-view/actions-menu";
+import { ActionsMenu } from "@/components/application/view/actions-menu";
 import { StatusBadge } from "@/components/status-badge";
 import type { Application } from "@/lib/applications";
 
@@ -7,7 +7,7 @@ export function ApplicationTableRow({ app }: { app: Application }) {
     return (
         <tr key={app.id} className="border-b border-border last:border-0 hover:bg-muted/50">
             <td className="p-4">
-                <Link to={`/applications/${app.id}`} className="font-medium hover:text-primary">
+                <Link to="/applications/$id" params={{ id: app.id }} className="font-medium hover:text-primary">
                     {app.name}
                 </Link>
             </td>

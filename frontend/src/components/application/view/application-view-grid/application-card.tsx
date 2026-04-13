@@ -1,14 +1,14 @@
 import type { Application } from "@/lib/applications"
 import { Box, GitBranch, GitCommit } from "lucide-react"
 import { Link } from "@tanstack/react-router"
-import { ActionsMenu } from "./actions-menu"
+import { ActionsMenu } from "@/components/application/view/actions-menu"
 import { StatusBadge } from "@/components/status-badge"
 
 export function ApplicationCard({ app }: { app: Application }) {
     return (
         <Link
             key={app.id}
-            to={`/applications/$id`}
+            to="/applications/$id"
             params={{ id: app.id }}
             className="group bg-card border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
         >

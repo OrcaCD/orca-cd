@@ -1,8 +1,8 @@
-import { General } from "./general";
-import { Source } from "./source";
-import { Sync } from "./sync";
-import { Notifications } from "./notifications";
-import { Danger } from "./danger";
+import { General } from "@/components/application/settings/general";
+import { Source } from "@/components/application/settings/source";
+import { Sync } from "@/components/application/settings/sync";
+import { Notifications } from "@/components/application/settings/notifications";
+import { Danger } from "@/components/application/settings/danger";
 
 export function MainContent({ activeSection }: { activeSection: string }) {
     return (

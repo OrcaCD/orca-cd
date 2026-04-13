@@ -1,7 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { SaveChanges } from "./save-changes";
+import { SaveChanges } from "@/components/application/settings/save-changes";
 
 export function Notifications({ activeSection }: { activeSection: string }) {
     return (

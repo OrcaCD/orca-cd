@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { Button } from "../ui/button";
+import { Button } from "@/components/ui/button";
 
 export function Danger({ activeSection }: { activeSection: string }) {
     return (

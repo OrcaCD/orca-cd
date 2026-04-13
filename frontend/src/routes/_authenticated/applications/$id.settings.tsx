@@ -1,6 +1,6 @@
-import { Breadcrumb } from '@/components/application-settings/breadcrumb'
-import { MainContent } from '@/components/application-settings/main-content'
-import { SidebarNavigation } from '@/components/application-settings/sidebar-navigation'
+import { Breadcrumb } from '@/components/application/settings/breadcrumb'
+import { MainContent } from '@/components/application/settings/main-content'
+import { SidebarNavigation } from '@/components/application/settings/sidebar-navigation'
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 

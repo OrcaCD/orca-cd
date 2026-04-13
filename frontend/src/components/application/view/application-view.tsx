@@ -1,6 +1,6 @@
 import type { Application } from "@/lib/applications"
-import { ApplicationGridView } from "./application-grid-view"
-import { ApplicationListView } from "./application-list-view"
+import { ApplicationGridView } from "@/components/application/view/application-view-grid/application-grid-view"
+import { ApplicationListView } from "@/components/application/view/application-view-list/application-list-view"
 
 type Props = {
   viewMode: "grid" | "list"

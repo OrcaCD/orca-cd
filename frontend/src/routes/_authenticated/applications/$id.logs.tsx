@@ -1,6 +1,6 @@
-import { Breadcrumb } from '@/components/application-logs/breadcrumb'
-import { Controls } from '@/components/application-logs/controls'
-import { LogViewer } from '@/components/application-logs/log-viewer'
+import { Breadcrumb } from '@/components/application/logs/breadcrumb'
+import { Controls } from '@/components/application/logs/controls'
+import { LogViewer } from '@/components/application/logs/log-viewer'
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 

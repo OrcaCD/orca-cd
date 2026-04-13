@@ -1,7 +1,7 @@
-import { Breadcrumb } from "@/components/application-details/breadcrumb"
-import { Header } from "@/components/application-details/header"
-import { InfoCards } from "@/components/application-details/info-cards"
-import { Properties } from "@/components/application-details/properties"
+import { Breadcrumb } from "@/components/application/details/breadcrumb"
+import { Header } from "@/components/application/details/header"
+import { InfoCards } from "@/components/application/details/info-cards"
+import { Properties } from "@/components/application/details/properties"
 import { HealthStatus, SyncStatus } from "@/lib/applications"
 import { createFileRoute } from "@tanstack/react-router"
 

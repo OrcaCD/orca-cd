@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
-import { SaveChanges } from "./save-changes";
+import { SaveChanges } from "@/components/application/settings/save-changes";
 
 export function Sync({ activeSection }: { activeSection: string }) {
     const [autoSync, setAutoSync] = useState(true)

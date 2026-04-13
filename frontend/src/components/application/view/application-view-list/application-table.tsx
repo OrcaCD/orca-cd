@@ -1,5 +1,5 @@
 import type { Application } from "@/lib/applications"
-import { ApplicationTableRow } from "./application-table-row"
+import { ApplicationTableRow } from "@/components/application/view/application-view-list/application-table-row"
 
 type Props = {
     apps: Application[]

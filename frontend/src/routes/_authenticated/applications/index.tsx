@@ -1,7 +1,7 @@
-import { ApplicationView } from "@/components/application-view/application-view";
+import { ApplicationView } from "@/components/application/view/application-view";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
-import { ApplicationStats } from "@/components/ui/grid";
-import { ApplicationFilters } from "@/components/ui/toolbar/application-toolbar/application-toolbar";
+import { ApplicationStats } from "@/components/application/view/application-stats";
+import { ApplicationFilters } from "@/components/application/view/application-toolbar/application-filters";
 import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";

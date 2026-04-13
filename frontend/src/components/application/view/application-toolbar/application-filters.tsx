@@ -1,10 +1,8 @@
-import {
-    SearchInput,
-    ProjectFilter,
-    ViewModeToggle,
-} from "@/components/ui/toolbar/application-toolbar"
 import { RefreshCw } from "lucide-react"
-import { Button } from "../../button"
+import { Button } from "@/components/ui/button"
+import { ProjectFilter } from "@/components/application/view/application-toolbar/project-filter"
+import { SearchInput } from "@/components/application/view/application-toolbar/search-input"
+import { ViewModeToggle } from "@/components/application/view/application-toolbar/view-mode-toggle"
 
 type Props = {
     viewMode: "grid" | "list"

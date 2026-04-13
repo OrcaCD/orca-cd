@@ -1,5 +1,5 @@
 import type { Application } from "@/lib/applications";
-import { ApplicationCard } from "./application-card";
+import { ApplicationCard } from "@/components/application/view/application-view-grid/application-card";
 
 export function ApplicationGridView({ apps }: { apps: Application[] }) {
   return (
