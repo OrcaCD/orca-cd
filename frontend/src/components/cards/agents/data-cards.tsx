@@ -95,9 +95,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 					/>
 				</div>
 
-				<div className="text-sm text-muted-foreground">
-					{filteredAgents.length} of {data.length} agents
-				</div>
+				<div className="text-sm text-muted-foreground">There are {data.length} agents in total</div>
 			</div>
 
 			{filteredAgents.length === 0 ? (
