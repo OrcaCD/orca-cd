@@ -55,10 +55,11 @@ function metricValue(value?: number | string) {
 export function AgentDataCards({ data }: AgentDataCardsProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 
-	async function handleDeleteCard(agentId: string) {
+	async function handleDeleteCard(agent: Agent) {
 		try {
-			await deleteAgent(agentId);
-			toast.success(`Agent ${agentId} deleted successfully`);
+			await deleteAgent(agent.id);
+			const agentIdentifier = agent?.name?.trim() || agent.id;
+			toast.success(`Agent ${agentIdentifier} deleted successfully`);
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Failed to delete agent");
 		}
@@ -123,7 +124,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 											<UpsertAgentDialog agent={agent} asDropdownItem />
 											<DropdownMenuSeparator />
 											<ConfirmationDialog
-												onConfirm={() => handleDeleteCard(agent.id)}
+												onConfirm={() => handleDeleteCard(agent)}
 												title="Delete agent card?"
 												description={`This will permanently delete "${agent.name}". This action cannot be undone.`}
 												triggerText={
