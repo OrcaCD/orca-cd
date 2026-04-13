@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS applications (
     sync_status    TEXT     NOT NULL,
     health_status  TEXT     NOT NULL,
     branch         TEXT     NOT NULL,
-    commit         TEXT     NOT NULL,
+    "commit"      TEXT     NOT NULL,
     commit_message TEXT     NOT NULL,
     last_synced_at DATETIME,
     path           TEXT     NOT NULL,
