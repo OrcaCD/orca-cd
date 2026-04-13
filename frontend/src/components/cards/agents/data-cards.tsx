@@ -125,7 +125,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 											<ConfirmationDialog
 												onConfirm={() => handleDeleteCard(agent.id)}
 												title="Delete agent card?"
-												description={`This removes "${agent.name}" from the cards view.`}
+												description={`This will permanently delete "${agent.name}". This action cannot be undone.`}
 												triggerText={
 													<>
 														<Trash2 className="h-4 w-4" />
