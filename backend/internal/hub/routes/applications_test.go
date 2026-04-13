@@ -15,6 +15,9 @@ import (
 	"gorm.io/gorm"
 )
 
+var invaligStatus = "invalid"
+var notRfc3339 = "not-rfc3339"
+
 func setupTestDBWithApplications(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
@@ -326,7 +329,7 @@ func TestCreateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-sync")
 	agent := seedTestAgent(t, "agent-create-invalid-sync")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["syncStatus"] = "invalid"
+	req["syncStatus"] = invaligStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -347,7 +350,7 @@ func TestCreateApplicationHandler_InvalidHealthStatus(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-health")
 	agent := seedTestAgent(t, "agent-create-invalid-health")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["healthStatus"] = "invalid"
+	req["healthStatus"] = invaligStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -368,7 +371,7 @@ func TestCreateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-synced-at")
 	agent := seedTestAgent(t, "agent-create-invalid-synced-at")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["lastSyncedAt"] = "not-rfc3339"
+	req["lastSyncedAt"] = notRfc3339
 
 	reqBody, _ := json.Marshal(req)
 
@@ -545,7 +548,7 @@ func TestUpdateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 		"name":          "Sync App",
 		"repositoryId":  repo.Id,
 		"agentId":       agent.Id,
-		"syncStatus":    "invalid",
+		"syncStatus":    invaligStatus,
 		"healthStatus":  "unknown",
 		"branch":        "main",
 		"commit":        "abc",
@@ -595,7 +598,7 @@ func TestUpdateApplicationHandler_InvalidHealthStatus(t *testing.T) {
 	agent := seedTestAgent(t, "agent-update-invalid-health")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Health App")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["healthStatus"] = "invalid"
+	req["healthStatus"] = invaligStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -618,7 +621,7 @@ func TestUpdateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
 	agent := seedTestAgent(t, "agent-update-invalid-synced-at")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Synced App")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["lastSyncedAt"] = "not-rfc3339"
+	req["lastSyncedAt"] = notRfc3339
 
 	reqBody, _ := json.Marshal(req)
 
@@ -818,7 +821,7 @@ func TestIsValidHealthStatus(t *testing.T) {
 	if !isValidHealthStatus(models.UnknownHealth) {
 		t.Error("expected unknown to be valid")
 	}
-	if isValidHealthStatus(models.HealthStatus("invalid")) {
+	if isValidHealthStatus(models.HealthStatus(invaligStatus)) {
 		t.Error("expected invalid health status to be rejected")
 	}
 }
@@ -846,7 +849,7 @@ func TestParseRFC3339Timestamp(t *testing.T) {
 	})
 
 	t.Run("invalid value", func(t *testing.T) {
-		invalid := "not-rfc3339"
+		invalid := notRfc3339
 		parsed, ok := parseRFC3339Timestamp(&invalid)
 		if ok {
 			t.Fatal("expected invalid value to be rejected")
