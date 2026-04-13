@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Cpu, EllipsisVertical, HardDrive, Search, Trash2 } from "lucide-react";
+import { Cpu, EllipsisVertical, HardDrive, Search, Server, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
@@ -137,8 +137,15 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 									</DropdownMenu>
 								</CardAction>
 
-								<CardTitle>{agent.name}</CardTitle>
-								<CardDescription>{agent.ip}</CardDescription>
+								<div className="flex items-center gap-3">
+									<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
+										<Server className="h-5 w-5 text-muted-foreground" />
+									</div>
+									<div className="space-y-1">
+										<CardTitle>{agent.name}</CardTitle>
+										<CardDescription>{agent.ip}</CardDescription>
+									</div>
+								</div>
 							</CardHeader>
 
 							<hr />
