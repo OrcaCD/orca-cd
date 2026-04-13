@@ -1,14 +1,13 @@
 // oxlint-disable react/no-children-prop
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { z } from "zod";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, FileTextIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useState, type ComponentProps } from "react";
 import { useAuth } from "@/lib/auth";
@@ -82,25 +81,57 @@ function LoginComponent() {
 	const loginErrorMessage = getLoginErrorMessage(error);
 
 	return (
-		<div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-			<div className="w-full max-w-sm">
-				<div className="flex flex-col gap-6">
-					<div className="flex items-center gap-2 self-center font-medium">
-						<div className="flex size-8 items-center justify-center rounded-md text-primary-foreground">
+		<div className="grid min-h-svh lg:grid-cols-2">
+			<div className="flex flex-col gap-4 p-6 md:p-10">
+				<div className="flex justify-center gap-2 md:justify-start">
+					<div className="flex items-center gap-3 font-medium text-xl">
+						<div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
 							<img src="/assets/logo-dark.svg" alt="OrcaCD Logo" />
 						</div>
 						OrcaCD
 					</div>
-					{needsSetup ? (
-						<RegisterForm loginErrorMessage={loginErrorMessage} />
-					) : (
-						<LoginForm
-							providers={providers}
-							localAuthEnabled={localAuthEnabled}
-							loginErrorMessage={loginErrorMessage}
-						/>
-					)}
 				</div>
+				<div className="flex flex-1 items-center justify-center">
+					<div className="w-full max-w-xs">
+						{needsSetup ? (
+							<RegisterForm loginErrorMessage={loginErrorMessage} />
+						) : (
+							<LoginForm
+								providers={providers}
+								localAuthEnabled={localAuthEnabled}
+								loginErrorMessage={loginErrorMessage}
+							/>
+						)}
+					</div>
+				</div>
+				<div className="flex items-center gap-1">
+					<a
+						href="https://github.com/OrcaCD/orca-cd"
+						target="_blank"
+						rel="noopener noreferrer nofollow"
+					>
+						<Button variant="ghost" size="icon-lg">
+							<img
+								src="/assets/icons/github.svg"
+								alt="GitHub Logo"
+								className="size-6 dark:invert"
+							/>
+						</Button>
+					</a>
+					<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer nofollow">
+						<Button variant="ghost" size="icon-lg">
+							<FileTextIcon className="size-6" />
+						</Button>
+					</a>
+				</div>
+			</div>
+			<div className="relative hidden bg-muted lg:block">
+				<img
+					src="/assets/wallpaper/lachlan-gowen-lleHA3cpZXo-unsplash.jpg"
+					alt="Orca swimming away from shore by Lachlan Gowen on Unsplash"
+					title="Orca swimming away from shore by Lachlan Gowen on Unsplash"
+					className="absolute inset-0 h-full w-full object-cover"
+				/>
 			</div>
 		</div>
 	);
@@ -159,122 +190,121 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 	});
 
 	return (
-		<Card>
-			<CardHeader className="text-center">
-				<CardTitle className="text-xl">{m.createYourAccount()}</CardTitle>
-				<CardDescription>{m.createAdminAccountDescription()}</CardDescription>
-			</CardHeader>
-			<CardContent>
-				<div className="flex flex-col gap-4">
-					{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
-					<form
-						onSubmit={async (e) => {
-							e.preventDefault();
-							await form.handleSubmit();
+		<div className="flex flex-col gap-6">
+			<div className="flex flex-col items-center gap-1 text-center">
+				<h1 className="text-2xl font-bold">{m.createYourAccount()}</h1>
+				<p className="text-sm text-balance text-muted-foreground">
+					{m.createAdminAccountDescription()}
+				</p>
+			</div>
+
+			{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
+			<form
+				onSubmit={async (e) => {
+					e.preventDefault();
+					await form.handleSubmit();
+				}}
+			>
+				<FieldGroup>
+					<form.Field
+						name="name"
+						children={(field) => {
+							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+							return (
+								<Field data-invalid={isInvalid}>
+									<Label htmlFor={field.name}>{m.name()}</Label>
+									<Input
+										id={field.name}
+										name={field.name}
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(e) => field.handleChange(e.target.value)}
+										type="text"
+										placeholder={m.adminNamePlaceholder()}
+										required
+										autoComplete="name"
+										autoFocus
+									/>
+									{isInvalid && <FieldError errors={field.state.meta.errors} />}
+								</Field>
+							);
 						}}
-					>
-						<FieldGroup>
-							<form.Field
-								name="name"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.name()}</Label>
-											<Input
-												id={field.name}
-												name={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												type="text"
-												placeholder={m.adminNamePlaceholder()}
-												required
-												autoComplete="name"
-												autoFocus
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<form.Field
-								name="email"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.email()}</Label>
-											<Input
-												id={field.name}
-												name={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												type="email"
-												placeholder={m.emailPlaceholder()}
-												required
-												autoComplete="email"
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<form.Field
-								name="password"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.password()}</Label>
-											<PasswordInput
-												id={field.name}
-												name={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showPassword}
-												onToggle={() => setShowPassword(!showPassword)}
-												autoComplete="new-password"
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<form.Field
-								name="confirmPassword"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.confirmPassword()}</Label>
-											<PasswordInput
-												id={field.name}
-												name={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												showPassword={showConfirmPassword}
-												onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
-												autoComplete="new-password"
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<Field>
-								<Button type="submit" className="w-full" disabled={isLoading}>
-									{isLoading ? m.creatingAccount() : m.createAccount()}
-								</Button>
-							</Field>
-						</FieldGroup>
-					</form>
-				</div>
-			</CardContent>
-		</Card>
+					/>
+					<form.Field
+						name="email"
+						children={(field) => {
+							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+							return (
+								<Field data-invalid={isInvalid}>
+									<Label htmlFor={field.name}>{m.email()}</Label>
+									<Input
+										id={field.name}
+										name={field.name}
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(e) => field.handleChange(e.target.value)}
+										type="email"
+										placeholder={m.emailPlaceholder()}
+										required
+										autoComplete="email"
+									/>
+									{isInvalid && <FieldError errors={field.state.meta.errors} />}
+								</Field>
+							);
+						}}
+					/>
+					<form.Field
+						name="password"
+						children={(field) => {
+							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+							return (
+								<Field data-invalid={isInvalid}>
+									<Label htmlFor={field.name}>{m.password()}</Label>
+									<PasswordInput
+										id={field.name}
+										name={field.name}
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(e) => field.handleChange(e.target.value)}
+										showPassword={showPassword}
+										onToggle={() => setShowPassword(!showPassword)}
+										autoComplete="new-password"
+									/>
+									{isInvalid && <FieldError errors={field.state.meta.errors} />}
+								</Field>
+							);
+						}}
+					/>
+					<form.Field
+						name="confirmPassword"
+						children={(field) => {
+							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+							return (
+								<Field data-invalid={isInvalid}>
+									<Label htmlFor={field.name}>{m.confirmPassword()}</Label>
+									<PasswordInput
+										id={field.name}
+										name={field.name}
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(e) => field.handleChange(e.target.value)}
+										showPassword={showConfirmPassword}
+										onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+										autoComplete="new-password"
+									/>
+									{isInvalid && <FieldError errors={field.state.meta.errors} />}
+								</Field>
+							);
+						}}
+					/>
+					<Field>
+						<Button type="submit" className="w-full" disabled={isLoading}>
+							{isLoading ? m.creatingAccount() : m.createAccount()}
+						</Button>
+					</Field>
+				</FieldGroup>
+			</form>
+		</div>
 	);
 }
 
@@ -324,102 +354,99 @@ function LoginForm({
 	const hasProviders = providers.length > 0;
 
 	return (
-		<Card>
-			<CardHeader className="text-center">
-				<CardTitle className="text-xl">{m.loginToYourAccount()}</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div className="flex flex-col gap-4">
-					{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
-					{hasProviders && (
-						<div className="flex flex-col gap-2">
-							{providers.map((provider) => (
-								<Button key={provider.id} variant="outline" className="w-full" asChild>
-									<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
-										{m.continueWith({ providerName: provider.name })}
-									</a>
-								</Button>
-							))}
-						</div>
-					)}
-					{hasProviders && localAuthEnabled && (
-						<div className="flex items-center gap-4">
-							<Separator className="flex-1" />
-							<span className="text-muted-foreground text-xs uppercase">{m.or()}</span>
-							<Separator className="flex-1" />
-						</div>
-					)}
-					{localAuthEnabled && (
-						<form
-							onSubmit={async (e) => {
-								e.preventDefault();
-								await form.handleSubmit();
+		<div className="flex flex-col gap-6">
+			<div className="flex flex-col items-center gap-1 text-center">
+				<h1 className="text-2xl font-bold">{m.loginToYourAccount()}</h1>
+				<p className="text-sm text-balance text-muted-foreground">{m.chooseAuthMethod()}</p>
+			</div>
+
+			{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
+
+			{localAuthEnabled && (
+				<form
+					onSubmit={async (e) => {
+						e.preventDefault();
+						await form.handleSubmit();
+					}}
+				>
+					<FieldGroup>
+						<form.Field
+							name="email"
+							children={(field) => {
+								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+								return (
+									<Field data-invalid={isInvalid}>
+										<Label htmlFor={field.name}>{m.email()}</Label>
+										<Input
+											id={field.name}
+											name={field.name}
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(e) => field.handleChange(e.target.value)}
+											type="email"
+											placeholder={m.emailPlaceholder()}
+											required
+											autoComplete="email"
+											autoFocus
+										/>
+										{isInvalid && <FieldError errors={field.state.meta.errors} />}
+									</Field>
+								);
 							}}
-						>
-							<FieldGroup>
-								<form.Field
-									name="email"
-									children={(field) => {
-										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-										return (
-											<Field data-invalid={isInvalid}>
-												<Label htmlFor={field.name}>{m.email()}</Label>
-												<Input
-													id={field.name}
-													name={field.name}
-													value={field.state.value}
-													onBlur={field.handleBlur}
-													onChange={(e) => field.handleChange(e.target.value)}
-													type="email"
-													placeholder={m.emailPlaceholder()}
-													required
-													autoComplete="email"
-													autoFocus
-												/>
-												{isInvalid && <FieldError errors={field.state.meta.errors} />}
-											</Field>
-										);
-									}}
-								/>
-								<form.Field
-									name="password"
-									children={(field) => {
-										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-										return (
-											<Field data-invalid={isInvalid}>
-												<Label htmlFor={field.name}>{m.password()}</Label>
-												<PasswordInput
-													id={field.name}
-													name={field.name}
-													value={field.state.value}
-													onBlur={field.handleBlur}
-													onChange={(e) => field.handleChange(e.target.value)}
-													showPassword={showPassword}
-													onToggle={() => setShowPassword(!showPassword)}
-													autoComplete="current-password"
-													placeholder={m.passwordPlaceholder()}
-												/>
-												{isInvalid && <FieldError errors={field.state.meta.errors} />}
-											</Field>
-										);
-									}}
-								/>
-								<Field>
-									<Button type="submit" className="w-full" disabled={isLoading}>
-										{isLoading ? m.loggingIn() : m.login()}
-									</Button>
-								</Field>
-							</FieldGroup>
-						</form>
-					)}
-					{!localAuthEnabled && !hasProviders && (
-						<p className="text-center text-sm text-muted-foreground">
-							{m.noLoginMethodsAvailable()}
-						</p>
-					)}
+						/>
+						<form.Field
+							name="password"
+							children={(field) => {
+								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+								return (
+									<Field data-invalid={isInvalid}>
+										<Label htmlFor={field.name}>{m.password()}</Label>
+										<PasswordInput
+											id={field.name}
+											name={field.name}
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(e) => field.handleChange(e.target.value)}
+											showPassword={showPassword}
+											onToggle={() => setShowPassword(!showPassword)}
+											autoComplete="current-password"
+											placeholder={m.passwordPlaceholder()}
+										/>
+										{isInvalid && <FieldError errors={field.state.meta.errors} />}
+									</Field>
+								);
+							}}
+						/>
+						<Field>
+							<Button type="submit" className="w-full" disabled={isLoading}>
+								{isLoading ? m.loggingIn() : m.login()}
+							</Button>
+						</Field>
+					</FieldGroup>
+				</form>
+			)}
+			{hasProviders && localAuthEnabled && (
+				<div className="flex items-center gap-4">
+					<Separator className="flex-1" />
+					<span className="text-muted-foreground text-xs uppercase">{m.or()}</span>
+					<Separator className="flex-1" />
 				</div>
-			</CardContent>
-		</Card>
+			)}
+			{hasProviders && (
+				<div className="flex flex-col gap-2">
+					{providers.map((provider) => (
+						<Button key={provider.id} variant="outline" className="w-full" asChild>
+							<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
+								{m.continueWith({ providerName: provider.name })}
+							</a>
+						</Button>
+					))}
+				</div>
+			)}
+			{!localAuthEnabled && !hasProviders && (
+				<p className="text-center text-sm text-muted-foreground">{m.noLoginMethodsAvailable()}</p>
+			)}
+		</div>
 	);
 }
 
