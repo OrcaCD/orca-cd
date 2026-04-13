@@ -49,7 +49,7 @@ function metricValue(value?: number | string) {
 		return "n/a";
 	}
 
-	return String(`${value} %`);
+	return `${value} %`;
 }
 
 export function AgentDataCards({ data }: AgentDataCardsProps) {
