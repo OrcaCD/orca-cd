@@ -14,6 +14,8 @@ import (
 
 type giteaProvider struct{}
 
+const httpsScheme = "https"
+
 func init() {
 	Register(models.Gitea, giteaProvider{})
 }
@@ -25,8 +27,8 @@ func parseGiteaURL(rawURL string) (owner, repo string, err error) {
 	if err != nil {
 		return "", "", errors.New("invalid URL")
 	}
-	if u.Scheme != "https" {
-		return "", "", errors.New("URL must use https")
+	if u.Scheme != httpsScheme {
+		return "", "", fmt.Errorf("URL must use %s", httpsScheme)
 	}
 	if u.Host == "" {
 		return "", "", errors.New("URL must have a valid host")
@@ -38,7 +40,7 @@ func parseGiteaURL(rawURL string) (owner, repo string, err error) {
 
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", errors.New("URL must be in the format https://{host}/{owner}/{repo}")
+		return "", "", fmt.Errorf("URL must be in the format %s://{host}/{owner}/{repo}", httpsScheme)
 	}
 
 	owner, repo = parts[0], parts[1]
@@ -110,6 +112,6 @@ func (giteaProvider) TestConnection(ctx context.Context, repo *models.Repository
 	case http.StatusNotFound:
 		return errors.New("repository not found or access denied")
 	default:
-		return fmt.Errorf("Gitea API returned unexpected status: %d", resp.StatusCode)
+		return fmt.Errorf("gitea API returned unexpected status: %d", resp.StatusCode)
 	}
 }
