@@ -9,7 +9,6 @@ export interface Agent {
 	id: string;
 	name: string;
 	ip: string;
-	url: string;
 	status: AgentStatus;
 	cpuUsage?: number;
 	memoryUsage?: number;
@@ -18,12 +17,12 @@ export interface Agent {
 
 export interface CreateAgentRequest {
 	name: string;
-	url: string;
+	ip: string;
 }
 
 export interface UpdateAgentRequest {
 	name: string;
-	url: string;
+	ip: string;
 }
 
 export function createAgent(data: CreateAgentRequest): Promise<Agent> {

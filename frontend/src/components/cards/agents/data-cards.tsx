@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Cpu, EllipsisVertical, Globe, HardDrive, Search, Trash2 } from "lucide-react";
+import { Cpu, EllipsisVertical, HardDrive, Search, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
@@ -146,11 +146,6 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 
 							<CardContent className="space-y-3">
 								{renderStatusBadge(agent.status)}
-
-								<div className="flex items-start gap-2 text-sm text-muted-foreground">
-									<Globe className="mt-0.5 h-4 w-4 shrink-0" />
-									<span className="break-all">{agent.url}</span>
-								</div>
 
 								<div className="grid grid-cols-2 gap-2 text-xs">
 									<div className="rounded-lg border bg-muted/50 p-2">

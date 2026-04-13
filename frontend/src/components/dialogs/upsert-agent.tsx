@@ -19,11 +19,10 @@ import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { createAgent, updateAgent, type Agent } from "@/lib/agents";
 
-const repositorySchema = z.object({
+const agentSchema = z.object({
 	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
-	url: z.url({
-		error: "Repository URL must be a valid URL",
-		protocol: /^https?$/,
+	ip: z.ipv4({
+		error: "IP address must be a valid IP address",
 	}),
 });
 
@@ -41,10 +40,10 @@ export default function UpsertAgentDialog({
 	const form = useForm({
 		defaultValues: {
 			name: agent?.name ?? "",
-			url: agent?.url ?? "",
+			ip: agent?.ip ?? "",
 		},
 		validators: {
-			onSubmit: repositorySchema,
+			onSubmit: agentSchema,
 		},
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
@@ -52,19 +51,19 @@ export default function UpsertAgentDialog({
 				if (isEditing && agent) {
 					await updateAgent(agent.id, {
 						name: value.name,
-						url: value.url,
+						ip: value.ip,
 					});
-					toast.success("Repository updated");
+					toast.success("Agent updated");
 				} else {
 					await createAgent({
 						name: value.name,
-						url: value.url,
+						ip: value.ip,
 					});
-					toast.success("Repository connected");
+					toast.success("Agent connected");
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save repository");
+				toast.error(err instanceof Error ? err.message : "Failed to save agent");
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -130,18 +129,18 @@ export default function UpsertAgentDialog({
 							}}
 						/>
 						<form.Field
-							name="url"
+							name="ip"
 							children={(field) => {
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Agent URL</Label>
+										<Label htmlFor={field.name}>Agent IP</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="https://prod-server-01.example.com"
+											placeholder="192.168.1.1"
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
