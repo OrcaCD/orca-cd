@@ -2,9 +2,13 @@ package db
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -258,4 +262,192 @@ func TestRunMigrations_UserOIDCIdentitiesIndexes(t *testing.T) {
 			t.Errorf("user_oidc_identities missing index %q", idx)
 		}
 	}
+}
+
+func initTestCrypto(t *testing.T) {
+	t.Helper()
+	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+		t.Fatalf("crypto.Init() error: %v", err)
+	}
+}
+
+func assertDemoSeedCounts(t *testing.T, gormDB *gorm.DB) {
+	t.Helper()
+
+	var userCount int64
+	if err := gormDB.Model(&models.User{}).Where("email = ?", demoSeedUserEmail).Count(&userCount).Error; err != nil {
+		t.Fatalf("failed to count demo users: %v", err)
+	}
+	if userCount != 1 {
+		t.Fatalf("expected exactly 1 demo user, got %d", userCount)
+	}
+
+	var agentCount int64
+	if err := gormDB.Model(&models.Agent{}).Where("id = ?", demoSeedAgentID).Count(&agentCount).Error; err != nil {
+		t.Fatalf("failed to count demo agents: %v", err)
+	}
+	if agentCount != 1 {
+		t.Fatalf("expected exactly 1 demo agent, got %d", agentCount)
+	}
+
+	var repoCount int64
+	if err := gormDB.Model(&models.Repository{}).Where("url = ? AND sync_type = ?", demoSeedRepositoryURL, models.SyncTypeManual).Count(&repoCount).Error; err != nil {
+		t.Fatalf("failed to count demo repositories: %v", err)
+	}
+	if repoCount != 1 {
+		t.Fatalf("expected exactly 1 demo repository, got %d", repoCount)
+	}
+}
+
+func closeGlobalDB(t *testing.T) {
+	t.Helper()
+	if DB == nil {
+		return
+	}
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB from global DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("failed to close global DB: %v", err)
+	}
+	DB = nil
+}
+
+func TestSeedDemoData_SeedsExpectedRecords(t *testing.T) {
+	initTestCrypto(t)
+
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("seedDemoData() error: %v", err)
+	}
+
+	assertDemoSeedCounts(t, gormDB)
+
+	var user models.User
+	if err := gormDB.Where("email = ?", demoSeedUserEmail).First(&user).Error; err != nil {
+		t.Fatalf("failed to fetch demo user: %v", err)
+	}
+
+	var agent models.Agent
+	if err := gormDB.Where("id = ?", demoSeedAgentID).First(&agent).Error; err != nil {
+		t.Fatalf("failed to fetch demo agent: %v", err)
+	}
+	if agent.Name.String() != demoSeedAgentName {
+		t.Fatalf("expected demo agent name %q, got %q", demoSeedAgentName, agent.Name.String())
+	}
+	if agent.KeyId.String() != demoSeedAgentKeyID {
+		t.Fatalf("expected demo agent key_id %q, got %q", demoSeedAgentKeyID, agent.KeyId.String())
+	}
+
+	var repository models.Repository
+	if err := gormDB.Where("url = ? AND sync_type = ?", demoSeedRepositoryURL, models.SyncTypeManual).First(&repository).Error; err != nil {
+		t.Fatalf("failed to fetch demo repository: %v", err)
+	}
+	if repository.CreatedBy != user.Id {
+		t.Fatalf("expected demo repository created_by to be %q, got %q", user.Id, repository.CreatedBy)
+	}
+}
+
+func TestSeedDemoData_IsIdempotent(t *testing.T) {
+	initTestCrypto(t)
+
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("first seedDemoData() error: %v", err)
+	}
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("second seedDemoData() error: %v", err)
+	}
+
+	assertDemoSeedCounts(t, gormDB)
+}
+
+func TestSeedDemoData_SkipsWhenMoreThanOneUserExists(t *testing.T) {
+	initTestCrypto(t)
+
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	users := []models.User{
+		{Email: "first@orcacd.dev", Name: "First", Role: models.UserRoleAdmin, PasswordChangeRequired: false},
+		{Email: "second@orcacd.dev", Name: "Second", Role: models.UserRoleUser, PasswordChangeRequired: false},
+	}
+	if err := gormDB.Create(&users).Error; err != nil {
+		t.Fatalf("failed to create initial users: %v", err)
+	}
+
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("seedDemoData() error: %v", err)
+	}
+
+	var demoUserCount int64
+	if err := gormDB.Model(&models.User{}).Where("email = ?", demoSeedUserEmail).Count(&demoUserCount).Error; err != nil {
+		t.Fatalf("failed to count demo users: %v", err)
+	}
+	if demoUserCount != 0 {
+		t.Fatalf("expected no demo user to be seeded, got %d", demoUserCount)
+	}
+
+	var demoAgentCount int64
+	if err := gormDB.Model(&models.Agent{}).Where("id = ?", demoSeedAgentID).Count(&demoAgentCount).Error; err != nil {
+		t.Fatalf("failed to count demo agents: %v", err)
+	}
+	if demoAgentCount != 0 {
+		t.Fatalf("expected no demo agent to be seeded, got %d", demoAgentCount)
+	}
+
+	var demoRepositoryCount int64
+	if err := gormDB.Model(&models.Repository{}).Where("id = ?", demoSeedRepositoryID).Count(&demoRepositoryCount).Error; err != nil {
+		t.Fatalf("failed to count demo repositories: %v", err)
+	}
+	if demoRepositoryCount != 0 {
+		t.Fatalf("expected no demo repository to be seeded, got %d", demoRepositoryCount)
+	}
+}
+
+func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
+	initTestCrypto(t)
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to read current working directory: %v", err)
+	}
+
+	workDir := t.TempDir()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+		if DB != nil {
+			if sqlDB, err := DB.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+			DB = nil
+		}
+	})
+
+	if err := Connect(zerolog.Nop(), false, true); err != nil {
+		t.Fatalf("first Connect() error: %v", err)
+	}
+	assertDemoSeedCounts(t, DB)
+
+	closeGlobalDB(t)
+
+	if err := Connect(zerolog.Nop(), false, true); err != nil {
+		t.Fatalf("second Connect() error: %v", err)
+	}
+	assertDemoSeedCounts(t, DB)
 }

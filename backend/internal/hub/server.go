@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -29,16 +30,19 @@ type Config struct {
 	AppURL           string
 	AppSecret        string
 	DisableLocalAuth bool
+	Demo             bool
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
-	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
+
+	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
+	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
+	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
 
 	if port == "" {
 		port = "8080"
@@ -68,7 +72,7 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Debug:            debug == "true",
+		Debug:            debug,
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
@@ -76,7 +80,8 @@ func DefaultConfig() (Config, error) {
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth == "true",
+		DisableLocalAuth: disableLocalAuth,
+		Demo:             demo,
 	}, nil
 }
 
@@ -109,7 +114,7 @@ func Run(cfg Config) error {
 	}
 
 	dbLogger := Log.With().Str("component", "gorm").Logger()
-	err := db.Connect(dbLogger, cfg.Debug)
+	err := db.Connect(dbLogger, cfg.Debug, cfg.Demo)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
@@ -125,6 +130,10 @@ func Run(cfg Config) error {
 
 	if cfg.Debug {
 		router.Use(middleware.RequestLogger(Log))
+	}
+
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
 	}
 
 	router.Use(middleware.Recovery(Log))
