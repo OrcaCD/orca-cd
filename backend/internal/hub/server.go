@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -33,14 +34,29 @@ type Config struct {
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
-	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
-	demo := os.Getenv("DEMO")
+
+	debug, err := strconv.ParseBool(os.Getenv("DEBUG"))
+
+	if err != nil {
+		return Config{}, err
+	}
+
+	disableLocalAuth, err := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
+
+	if err != nil {
+		return Config{}, err
+	}
+
+	demo, err := strconv.ParseBool(os.Getenv("DEMO"))
+
+	if err != nil {
+		return Config{}, err
+	}
 
 	if port == "" {
 		port = "8080"
@@ -69,10 +85,8 @@ func DefaultConfig() (Config, error) {
 		return Config{}, errors.New("invalid app secret: must be minimum 32 characters")
 	}
 
-	trueString := "true"
-
 	return Config{
-		Debug:            debug == trueString,
+		Debug:            debug,
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
@@ -80,8 +94,8 @@ func DefaultConfig() (Config, error) {
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth == trueString,
-		Demo:             demo == trueString,
+		DisableLocalAuth: disableLocalAuth,
+		Demo:             demo,
 	}, nil
 }
 

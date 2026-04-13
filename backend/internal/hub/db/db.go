@@ -30,14 +30,15 @@ func Connect(logger zerolog.Logger, debug bool, demo bool) error {
 	}
 
 	dbPath := "data/hub.db"
-
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
 			LogLevel:                  logLevel,
 			IgnoreRecordNotFoundError: true,
 		}),
-	})
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbPath), gormConfig)
 	if err != nil {
 		return err
 	}
@@ -59,13 +60,7 @@ func Connect(logger zerolog.Logger, debug bool, demo bool) error {
 			return err
 		}
 
-		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"?mode=ro"), &gorm.Config{
-			Logger: NewGormLogger(logger, GormLoggerConfig{
-				SlowThreshold:             200 * time.Millisecond,
-				LogLevel:                  logLevel,
-				IgnoreRecordNotFoundError: true,
-			}),
-		})
+		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"?mode=ro"), gormConfig)
 		if err != nil {
 			return err
 		}

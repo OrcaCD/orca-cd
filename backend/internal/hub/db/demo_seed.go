@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -24,8 +25,23 @@ const (
 )
 
 func seedDemoData(db *gorm.DB) error {
+	ctx := context.Background()
+
+	userCount, err := gorm.G[models.User](db).Count(ctx, "*")
+	if err != nil {
+		return err
+	}
+
+	// Assume seed already done
+	if userCount > 1 {
+		return nil
+	}
+
 	return db.Transaction(func(tx *gorm.DB) error {
-		hashedPassword, _ := auth.HashPassword(demoSeedUserPassword)
+		hashedPassword, err := auth.HashPassword(demoSeedUserPassword)
+		if err != nil {
+			return err
+		}
 
 		user := models.User{
 			Base:                   models.Base{Id: demoSeedUserID},
@@ -35,16 +51,16 @@ func seedDemoData(db *gorm.DB) error {
 			PasswordChangeRequired: false,
 			PasswordHash:           &hashedPassword,
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Select("*").Create(&user).Error; err != nil {
+		if err := gorm.G[models.User](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &user); err != nil {
 			return err
 		}
 
-		var userIDs []string
-		if err := tx.Model(&models.User{}).Where("email = ?", demoSeedUserEmail).Limit(1).Pluck("id", &userIDs).Error; err != nil {
+		resolvedUser, err := gorm.G[models.User](tx).Where("email = ?", demoSeedUserEmail).First(ctx)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("failed to resolve demo user after seeding")
+			}
 			return err
-		}
-		if len(userIDs) == 0 {
-			return errors.New("failed to resolve demo user after seeding")
 		}
 
 		agent := models.Agent{
@@ -53,7 +69,7 @@ func seedDemoData(db *gorm.DB) error {
 			KeyId:  crypto.EncryptedString(demoSeedAgentKeyID),
 			Status: models.AgentStatusOffline,
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Select("*").Create(&agent).Error; err != nil {
+		if err := gorm.G[models.Agent](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &agent); err != nil {
 			return err
 		}
 
@@ -65,9 +81,9 @@ func seedDemoData(db *gorm.DB) error {
 			AuthMethod: models.AuthMethodNone,
 			SyncType:   models.SyncTypeManual,
 			SyncStatus: models.SyncStatusUnknown,
-			CreatedBy:  userIDs[0],
+			CreatedBy:  resolvedUser.Id,
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Select("*").Create(&repository).Error; err != nil {
+		if err := gorm.G[models.Repository](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &repository); err != nil {
 			return err
 		}
 

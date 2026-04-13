@@ -372,6 +372,51 @@ func TestSeedDemoData_IsIdempotent(t *testing.T) {
 	assertDemoSeedCounts(t, gormDB)
 }
 
+func TestSeedDemoData_SkipsWhenMoreThanOneUserExists(t *testing.T) {
+	initTestCrypto(t)
+
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	users := []models.User{
+		{Email: "first@orcacd.dev", Name: "First", Role: models.UserRoleAdmin, PasswordChangeRequired: false},
+		{Email: "second@orcacd.dev", Name: "Second", Role: models.UserRoleUser, PasswordChangeRequired: false},
+	}
+	if err := gormDB.Create(&users).Error; err != nil {
+		t.Fatalf("failed to create initial users: %v", err)
+	}
+
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("seedDemoData() error: %v", err)
+	}
+
+	var demoUserCount int64
+	if err := gormDB.Model(&models.User{}).Where("email = ?", demoSeedUserEmail).Count(&demoUserCount).Error; err != nil {
+		t.Fatalf("failed to count demo users: %v", err)
+	}
+	if demoUserCount != 0 {
+		t.Fatalf("expected no demo user to be seeded, got %d", demoUserCount)
+	}
+
+	var demoAgentCount int64
+	if err := gormDB.Model(&models.Agent{}).Where("id = ?", demoSeedAgentID).Count(&demoAgentCount).Error; err != nil {
+		t.Fatalf("failed to count demo agents: %v", err)
+	}
+	if demoAgentCount != 0 {
+		t.Fatalf("expected no demo agent to be seeded, got %d", demoAgentCount)
+	}
+
+	var demoRepositoryCount int64
+	if err := gormDB.Model(&models.Repository{}).Where("id = ?", demoSeedRepositoryID).Count(&demoRepositoryCount).Error; err != nil {
+		t.Fatalf("failed to count demo repositories: %v", err)
+	}
+	if demoRepositoryCount != 0 {
+		t.Fatalf("expected no demo repository to be seeded, got %d", demoRepositoryCount)
+	}
+}
+
 func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	initTestCrypto(t)
 
