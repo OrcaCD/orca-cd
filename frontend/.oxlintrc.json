@@ -6,7 +6,6 @@
 	},
 	"rules": {
 		"no-alert": "error",
-		"no-console": "error",
 		"no-empty": "error",
 		"no-empty-function": "error",
 		"no-proto": "error",

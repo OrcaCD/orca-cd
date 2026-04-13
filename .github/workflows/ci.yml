@@ -42,6 +42,10 @@ jobs:
         working-directory: ./frontend
         run: node --run typecheck
 
+      - name: Check translations
+        working-directory: ./frontend
+        run: node --run translations:check
+        
       - name: Build
         working-directory: ./frontend
         run: node --run build
