@@ -273,6 +273,35 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	}
 }
 
+func TestGenerateAndValidateAgentToken_SetsKeyIdWhenMissing(t *testing.T) {
+	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("initJWT() error: %v", err)
+	}
+
+	agent := &models.Agent{Base: models.Base{Id: "agent-789"}}
+	tokenStr, err := GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("GenerateAgentToken() error: %v", err)
+	}
+	if tokenStr == "" {
+		t.Fatal("GenerateAgentToken() returned empty token")
+	}
+	if agent.KeyId.String() == "" {
+		t.Fatal("GenerateAgentToken() expected to set KeyId when missing")
+	}
+
+	claims, err := ValidateAgentToken(tokenStr)
+	if err != nil {
+		t.Fatalf("ValidateAgentToken() error: %v", err)
+	}
+	if claims.Subject != "agent-789" {
+		t.Errorf("expected Subject %q, got %q", "agent-789", claims.Subject)
+	}
+	if claims.KeyId != agent.KeyId.String() {
+		t.Errorf("expected KeyId %q, got %q", agent.KeyId.String(), claims.KeyId)
+	}
+}
+
 func TestGenerateAgentToken_MissingId(t *testing.T) {
 	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
 		t.Fatalf("initJWT() error: %v", err)
