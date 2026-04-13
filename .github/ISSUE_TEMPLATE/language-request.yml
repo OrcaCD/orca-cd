@@ -1,0 +1,20 @@
+name: "🌐 Language request"
+description: "You want to contribute to a language that isn't on Crowdin yet?"
+title: "🌐 Language Request: <language name in english>"
+type: 'Language Request'
+body:
+  - type: input
+    id: language-name-native
+    attributes:
+      label: "🌐 Language Name (native)"
+      placeholder: "Schweizerdeutsch"
+    validations:
+      required: true
+  - type: input
+    id: language-code
+    attributes:
+      label: "🌐 ISO 639-1 Language Code"
+      description: "You can find your language code [here](https://www.andiamo.co.uk/resources/iso-language-codes/)."
+      placeholder: "de-CH"
+    validations:
+      required: true
