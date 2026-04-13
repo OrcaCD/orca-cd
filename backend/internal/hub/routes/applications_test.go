@@ -82,6 +82,32 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 	return app
 }
 
+func validApplicationRequestBody(repoID, agentID string) map[string]any {
+	return map[string]any{
+		"name":          "Billing Service",
+		"repositoryId":  repoID,
+		"agentId":       agentID,
+		"syncStatus":    "progressing",
+		"healthStatus":  "healthy",
+		"branch":        "main",
+		"commit":        "abc123",
+		"commitMessage": "deploy billing",
+		"path":          "services/billing",
+	}
+}
+
+func closeDBForErrorPath(t *testing.T) {
+	t.Helper()
+
+	sqlDB, err := db.DB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("failed to close sql db: %v", err)
+	}
+}
+
 func TestListApplicationsHandler_Empty(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -294,6 +320,166 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 }
 
+func TestCreateApplicationHandler_InvalidSyncStatus(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-sync")
+	agent := seedTestAgent(t, "agent-create-invalid-sync")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["syncStatus"] = "invalid"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_InvalidHealthStatus(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-health")
+	agent := seedTestAgent(t, "agent-create-invalid-health")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["healthStatus"] = "invalid"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-synced-at")
+	agent := seedTestAgent(t, "agent-create-invalid-synced-at")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["lastSyncedAt"] = "not-rfc3339"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_RepositoryNotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	agent := seedTestAgent(t, "agent-create-missing-repo")
+	req := validApplicationRequestBody("missing-repo", agent.Id)
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_AgentNotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-missing-agent")
+	req := validApplicationRequestBody(repo.Id, "missing-agent")
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_EmptyLastSyncedAt(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-empty-synced-at")
+	agent := seedTestAgent(t, "agent-create-empty-synced-at")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["lastSyncedAt"] = ""
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.LastSyncedAt != nil {
+		t.Fatalf("expected lastSyncedAt to be null, got %v", *body.LastSyncedAt)
+	}
+
+	stored, err := gorm.G[models.Application](db.DB).Where("id = ?", body.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to find application in DB: %v", err)
+	}
+	if stored.LastSyncedAt != nil {
+		t.Fatal("expected LastSyncedAt to be nil in DB")
+	}
+}
+
+func TestCreateApplicationHandler_DBError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-db-error")
+	agent := seedTestAgent(t, "agent-create-db-error")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+
+	closeDBForErrorPath(t)
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestUpdateApplicationHandler_Success(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -379,6 +565,164 @@ func TestUpdateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 	}
 }
 
+func TestUpdateApplicationHandler_InvalidRequest(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-request")
+	agent := seedTestAgent(t, "agent-update-invalid-request")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Request App")
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"repositoryId": repo.Id,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_InvalidHealthStatus(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-health")
+	agent := seedTestAgent(t, "agent-update-invalid-health")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Health App")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["healthStatus"] = "invalid"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-synced-at")
+	agent := seedTestAgent(t, "agent-update-invalid-synced-at")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Synced App")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["lastSyncedAt"] = "not-rfc3339"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_NotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-not-found")
+	agent := seedTestAgent(t, "agent-update-not-found")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/missing-app", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "missing-app"}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_RepositoryNotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-missing-repo")
+	agent := seedTestAgent(t, "agent-update-missing-repo")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Repo App")
+	req := validApplicationRequestBody("missing-repo", agent.Id)
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_AgentNotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-missing-agent")
+	agent := seedTestAgent(t, "agent-update-missing-agent")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Agent App")
+	req := validApplicationRequestBody(repo.Id, "missing-agent")
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateApplicationHandler_DBError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-db-error")
+	agent := seedTestAgent(t, "agent-update-db-error")
+	app := seedTestApplication(t, repo.Id, agent.Id, "DB Error App")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+
+	closeDBForErrorPath(t)
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestDeleteApplicationHandler_NotFound(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -414,5 +758,107 @@ func TestDeleteApplicationHandler_Success(t *testing.T) {
 	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
 	if count != 0 {
 		t.Error("expected application to be deleted from DB")
+	}
+}
+
+func TestListApplicationsHandler_DBError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	closeDBForErrorPath(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+
+	ListApplicationsHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetApplicationHandler_DBError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	closeDBForErrorPath(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/any-id", nil)
+	c.Params = gin.Params{{Key: "id", Value: "any-id"}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteApplicationHandler_DBError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	closeDBForErrorPath(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/any-id", nil)
+	c.Params = gin.Params{{Key: "id", Value: "any-id"}}
+
+	DeleteApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestIsValidHealthStatus(t *testing.T) {
+	if !isValidHealthStatus(models.Healthy) {
+		t.Error("expected healthy to be valid")
+	}
+	if !isValidHealthStatus(models.Unhealthy) {
+		t.Error("expected unhealthy to be valid")
+	}
+	if !isValidHealthStatus(models.UnknownHealth) {
+		t.Error("expected unknown to be valid")
+	}
+	if isValidHealthStatus(models.HealthStatus("invalid")) {
+		t.Error("expected invalid health status to be rejected")
+	}
+}
+
+func TestParseRFC3339Timestamp(t *testing.T) {
+	t.Run("nil value", func(t *testing.T) {
+		parsed, ok := parseRFC3339Timestamp(nil)
+		if !ok {
+			t.Fatal("expected nil value to be accepted")
+		}
+		if parsed != nil {
+			t.Fatal("expected parsed time to be nil")
+		}
+	})
+
+	t.Run("empty value", func(t *testing.T) {
+		empty := ""
+		parsed, ok := parseRFC3339Timestamp(&empty)
+		if !ok {
+			t.Fatal("expected empty value to be accepted")
+		}
+		if parsed != nil {
+			t.Fatal("expected parsed time to be nil")
+		}
+	})
+
+	t.Run("invalid value", func(t *testing.T) {
+		invalid := "not-rfc3339"
+		parsed, ok := parseRFC3339Timestamp(&invalid)
+		if ok {
+			t.Fatal("expected invalid value to be rejected")
+		}
+		if parsed != nil {
+			t.Fatal("expected parsed time to be nil on invalid input")
+		}
+	})
+}
+
+func TestFormatTimestamp_Nil(t *testing.T) {
+	if value := formatTimestamp(nil); value != nil {
+		t.Fatalf("expected nil, got %v", *value)
 	}
 }
