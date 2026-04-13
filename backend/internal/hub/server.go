@@ -40,23 +40,9 @@ func DefaultConfig() (Config, error) {
 	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 
-	debug, err := strconv.ParseBool(os.Getenv("DEBUG"))
-
-	if err != nil {
-		return Config{}, err
-	}
-
-	disableLocalAuth, err := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
-
-	if err != nil {
-		return Config{}, err
-	}
-
-	demo, err := strconv.ParseBool(os.Getenv("DEMO"))
-
-	if err != nil {
-		return Config{}, err
-	}
+	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
+	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
+	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
 
 	if port == "" {
 		port = "8080"
