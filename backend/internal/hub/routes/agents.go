@@ -35,6 +35,8 @@ type updateAgentRequest struct {
 	Name string `json:"name" binding:"required,min=1,max=128"`
 }
 
+const agentStatusOffline = "offline"
+
 func toAgentStatus(status models.AgentStatus) string {
 	switch status {
 	case models.AgentStatusOnline:
@@ -42,7 +44,7 @@ func toAgentStatus(status models.AgentStatus) string {
 	case models.AgentStatusError:
 		return "error"
 	default:
-		return "offline"
+		return agentStatusOffline
 	}
 }
 

@@ -17,6 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const testUpdatedName = "Updated Name"
+
 func setupTestDBWithAgents(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
@@ -100,8 +102,8 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Offline Agent in response")
 	}
-	if offline.Status != "offline" {
-		t.Fatalf("expected offline status %q, got %q", "offline", offline.Status)
+	if offline.Status != agentStatusOffline {
+		t.Fatalf("expected offline status %q, got %q", agentStatusOffline, offline.Status)
 	}
 	if offline.LastSeen != nil {
 		t.Fatal("expected lastSeen=nil for Offline Agent")
@@ -197,8 +199,8 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 	if body.Name != "New Agent" {
 		t.Fatalf("expected name %q, got %q", "New Agent", body.Name)
 	}
-	if body.Status != "offline" {
-		t.Fatalf("expected status %q, got %q", "offline", body.Status)
+	if body.Status != agentStatusOffline {
+		t.Fatalf("expected status %q, got %q", agentStatusOffline, body.Status)
 	}
 	if body.AuthToken == "" {
 		t.Fatal("expected authToken to be set")
@@ -250,7 +252,7 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 
 	agent := createTestAgentRecord(t, "Old Name", "existing-key", models.AgentStatusOffline, nil)
 
-	reqBody, _ := json.Marshal(map[string]any{"name": "Updated Name"})
+	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName})
 
 	router := gin.New()
 	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)
@@ -268,8 +270,8 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load updated agent: %v", err)
 	}
-	if updated.Name.String() != "Updated Name" {
-		t.Fatalf("expected updated name %q, got %q", "Updated Name", updated.Name.String())
+	if updated.Name.String() != testUpdatedName {
+		t.Fatalf("expected updated name %q, got %q", testUpdatedName, updated.Name.String())
 	}
 	if updated.KeyId.String() != "existing-key" {
 		t.Fatalf("expected KeyId %q to stay unchanged, got %q", "existing-key", updated.KeyId.String())
@@ -279,7 +281,7 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 func TestUpdateAgentHandler_NotFound(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	reqBody, _ := json.Marshal(map[string]any{"name": "Updated Name"})
+	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName})
 
 	router := gin.New()
 	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)

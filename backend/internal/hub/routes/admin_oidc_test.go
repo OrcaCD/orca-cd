@@ -265,8 +265,9 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	enabled := true
 	requireVerifiedEmail := true
 	autoSignup := false
+	updatedName := "Updated Name"
 	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
-		Name:                 "Updated Name",
+		Name:                 updatedName,
 		IssuerURL:            p.IssuerURL, // same issuer — no OIDC discovery needed
 		ClientId:             "new-client-id",
 		Enabled:              &enabled,
@@ -287,8 +288,8 @@ func TestAdminUpdateOIDCProviderHandler_SameIssuer(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Name != "Updated Name" {
-		t.Errorf("expected name %q, got %q", "Updated Name", body.Name)
+	if body.Name != updatedName {
+		t.Errorf("expected name %q, got %q", updatedName, body.Name)
 	}
 	if body.ClientId != "new-client-id" {
 		t.Errorf("expected clientId %q, got %q", "new-client-id", body.ClientId)
