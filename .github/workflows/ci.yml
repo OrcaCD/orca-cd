@@ -38,6 +38,10 @@ jobs:
         working-directory: ./frontend
         run: node --run format:check
 
+      - name: Build
+        working-directory: ./frontend
+        run: node --run build
+
       - name: Type Checking
         working-directory: ./frontend
         run: node --run typecheck
@@ -45,10 +49,6 @@ jobs:
       - name: Check translations
         working-directory: ./frontend
         run: node --run translations:check
-        
-      - name: Build
-        working-directory: ./frontend
-        run: node --run build
 
   backend:
     runs-on: ubuntu-latest

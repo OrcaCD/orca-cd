@@ -18,6 +18,7 @@ export async function setLocaleForLibraries(locale: Locale = getLocale() || base
 	if (zodResult.status === "fulfilled") {
 		z.config(zodResult.value.default());
 	} else {
+		// oxlint-disable-next-line no-console
 		console.warn(`Failed to load zod locale for ${locale}:`, zodResult.reason);
 	}
 }
