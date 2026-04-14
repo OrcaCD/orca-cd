@@ -91,7 +91,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
 	}
 
-	if !cfg.Debug {
+	if !cfg.DevMode {
 		err := middleware.RegisterStatic(router)
 		if err != nil {
 			return err

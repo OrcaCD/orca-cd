@@ -31,6 +31,7 @@ type Config struct {
 	AppSecret        string
 	DisableLocalAuth bool
 	Demo             bool
+	DevMode          bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -43,7 +44,7 @@ func DefaultConfig() (Config, error) {
 	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
 	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
-
+	devMode, _ := strconv.ParseBool(os.Getenv("DEV_MODE"))
 	if port == "" {
 		port = "8080"
 	}
@@ -82,6 +83,7 @@ func DefaultConfig() (Config, error) {
 		AppSecret:        appSecret,
 		DisableLocalAuth: disableLocalAuth,
 		Demo:             demo,
+		DevMode:          devMode,
 	}, nil
 }
 
@@ -140,7 +142,7 @@ func Run(cfg Config) error {
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
-	if !cfg.Debug && len(cfg.TrustedProxies) == 0 {
+	if !cfg.DevMode && len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())
