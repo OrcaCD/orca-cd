@@ -19,21 +19,21 @@ var migrationFiles embed.FS
 
 var DB *gorm.DB
 
-func Connect(logger zerolog.Logger, debug bool, demo bool) error {
+func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 	if err := os.MkdirAll("data", 0750); err != nil {
 		return err
 	}
 
-	logLevel := gormlogger.Error
-	if debug {
-		logLevel = gormlogger.Info
+	gormLogLevel := gormlogger.Error
+	if logLevel <= zerolog.DebugLevel {
+		gormLogLevel = gormlogger.Info
 	}
 
 	dbPath := "data/hub.db"
 	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logLevel,
+			LogLevel:                  gormLogLevel,
 			IgnoreRecordNotFoundError: true,
 		}),
 	}

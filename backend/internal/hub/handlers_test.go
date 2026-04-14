@@ -15,7 +15,7 @@ func init() {
 
 func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 	router := gin.New()
-	cfg := Config{Debug: true}
+	cfg := Config{DisableUI: true}
 	err := RegisterRoutes(router, cfg)
 	if err != nil {
 		t.Fatalf("Failed to register routes: %v", err)
@@ -38,20 +38,20 @@ func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestRegisterRoutes_DebugMode_NoStaticFiles(t *testing.T) {
+func TestRegisterRoutes_DisableUI_NoStaticFiles(t *testing.T) {
 	router := gin.New()
-	cfg := Config{Debug: true}
+	cfg := Config{DisableUI: true}
 	err := RegisterRoutes(router, cfg)
 	if err != nil {
 		t.Fatalf("Failed to register routes: %v", err)
 	}
 
-	// In debug mode, requesting a non-API path should 404 (no static serving)
+	// In DisableUI mode, requesting a non-API path should 404 (no static serving)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404 in debug mode for non-API path, got %d", w.Code)
+		t.Errorf("expected 404 in DisableUI mode for non-API path, got %d", w.Code)
 	}
 }

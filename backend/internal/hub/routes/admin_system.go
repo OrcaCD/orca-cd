@@ -7,7 +7,6 @@ import (
 )
 
 type AdminSystemInfoConfig struct {
-	Debug            bool
 	Host             string
 	Port             string
 	LogLevel         string
@@ -22,7 +21,6 @@ type AdminSystemInfoConfig struct {
 var adminSystemInfoConfig AdminSystemInfoConfig
 
 type adminSystemInfoResponse struct {
-	Debug            bool     `json:"debug"`
 	Host             string   `json:"host"`
 	Port             string   `json:"port"`
 	LogLevel         string   `json:"logLevel"`
@@ -36,7 +34,6 @@ type adminSystemInfoResponse struct {
 
 func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 	adminSystemInfoConfig = AdminSystemInfoConfig{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel,
@@ -53,7 +50,6 @@ func AdminSystemInfoHandler(c *gin.Context) {
 	cfg := adminSystemInfoConfig
 
 	c.JSON(http.StatusOK, adminSystemInfoResponse{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel,
