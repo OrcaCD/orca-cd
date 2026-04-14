@@ -253,6 +253,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 		LogLevel:  zerolog.Disabled,
 		AppURL:    "http://" + host + ":" + port,
 		AppSecret: "a-test-secret-that-is-at-least-32-chars!!",
+		DisableUI: true,
 	}
 
 	done := make(chan error, 1)
