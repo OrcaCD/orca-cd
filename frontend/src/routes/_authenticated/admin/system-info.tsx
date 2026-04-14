@@ -127,12 +127,6 @@ function SystemInfoPage() {
 								<Badge variant="secondary">{data.logLevel}</Badge>
 							</InfoRow>
 
-							<InfoRow label="Debug Mode">
-								<Badge variant={data.debug ? "success" : "outline"}>
-									{data.debug ? "Enabled" : "Disabled"}
-								</Badge>
-							</InfoRow>
-
 							<InfoRow label="Password Authentication">
 								<Badge variant={data.disableLocalAuth ? "destructive" : "outline"}>
 									{data.disableLocalAuth ? "Enabled" : "Disabled"}

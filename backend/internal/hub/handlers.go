@@ -15,7 +15,6 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
 	routes.SetAdminSystemInfoConfig(routes.AdminSystemInfoConfig{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel.String(),
@@ -91,7 +90,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
 	}
 
-	if !cfg.Debug {
+	if !cfg.DisableUI {
 		err := middleware.RegisterStatic(router)
 		if err != nil {
 			return err
