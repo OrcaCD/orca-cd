@@ -88,6 +88,21 @@ func createTestAgent(t *testing.T, keyId string) *models.Agent {
 	return agent
 }
 
+func issueTokenAndPersistKeyID(t *testing.T, agent *models.Agent) string {
+	t.Helper()
+
+	token, err := auth.GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Update(t.Context(), "key_id", agent.KeyId); err != nil {
+		t.Fatalf("failed to persist rotated key id: %v", err)
+	}
+
+	return token
+}
+
 func newHandlerTestServer(t *testing.T, h *Hub) *httptest.Server {
 	t.Helper()
 	log := zerolog.New(os.Stderr).Level(zerolog.Disabled)
@@ -228,10 +243,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-1")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -291,10 +303,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-2")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -362,10 +371,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-3")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
