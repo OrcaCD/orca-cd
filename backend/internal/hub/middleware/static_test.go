@@ -600,15 +600,15 @@ func setupDistDir(t *testing.T, files map[string][]byte) (cleanup func()) {
 
 	tmpDir := t.TempDir()
 	distDir := filepath.Join(tmpDir, "frontend", "dist")
-	if err := os.MkdirAll(distDir, 0o755); err != nil {
+	if err := os.MkdirAll(distDir, 0o750); err != nil {
 		t.Fatalf("failed to create frontend/dist: %v", err)
 	}
 	for name, data := range files {
 		path := filepath.Join(distDir, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatalf("failed to create dir for %s: %v", name, err)
 		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
 			t.Fatalf("failed to write %s: %v", name, err)
 		}
 	}
