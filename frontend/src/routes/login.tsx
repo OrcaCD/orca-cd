@@ -42,7 +42,11 @@ function getLoginErrorMessage(error?: string): string | null {
 		return null;
 	}
 
-	return getOidcErrorMessages()[error] ?? m.oidcErrorAuthenticationFailed();
+	if (!Object.keys(getOidcErrorMessages()).includes(error)) {
+		return m.oidcErrorAuthenticationFailed();
+	}
+
+	return getOidcErrorMessages()[error];
 }
 
 export const Route = createFileRoute("/login")({
