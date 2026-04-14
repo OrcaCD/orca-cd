@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 )
@@ -19,6 +20,14 @@ type Provider interface {
 }
 
 var registry = map[models.RepositoryProvider]Provider{}
+
+// ownerRe matches usernames/org names: 1–39 alphanumeric chars or hyphens,
+// not starting or ending with a hyphen
+var ownerRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$`)
+
+// repoRe matches repository names: 1–100 chars, alphanumeric, hyphens,
+// underscores, or dots
+var repoRe = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,100}$`)
 
 func Register(t models.RepositoryProvider, p Provider) {
 	registry[t] = p
