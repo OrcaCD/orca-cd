@@ -51,6 +51,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
 
+			protected.GET("/applications", routes.ListApplicationsHandler)
+			protected.GET("/applications/:id", routes.GetApplicationHandler)
+			protected.POST("/applications", routes.CreateApplicationHandler)
+			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
+			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
+
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
 			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
