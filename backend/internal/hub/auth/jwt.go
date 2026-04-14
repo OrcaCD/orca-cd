@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -115,9 +116,19 @@ func ValidateUserToken(tokenString string) (*UserClaims, error) {
 }
 
 func GenerateAgentToken(agent *models.Agent) (string, error) {
+	if agent == nil {
+		return "", fmt.Errorf("agent is required for token generation")
+	}
+
 	if agent.Id == "" {
 		return "", fmt.Errorf("agent Id is required for token generation")
 	}
+
+	keyId, err := GenerateRandomString(32)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate agent key Id: %w", err)
+	}
+	agent.KeyId = crypto.EncryptedString(keyId)
 
 	now := time.Now()
 
