@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { fileURLToPath, URL } from "node:url";
+import { compression } from "vite-plugin-compression2";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -22,6 +23,9 @@ export default defineConfig(({ mode }) => ({
 		}),
 		viteReact(),
 		tailwindcss(),
+		compression({
+			algorithms: ["gzip", "brotli", "zstd"],
+		}),
 	],
 	resolve: {
 		alias: {

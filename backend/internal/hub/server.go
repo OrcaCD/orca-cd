@@ -147,7 +147,10 @@ func Run(cfg Config) error {
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
-	RegisterRoutes(router, cfg)
+	err = RegisterRoutes(router, cfg)
+	if err != nil {
+		return err
+	}
 
 	addr := cfg.Host + ":" + cfg.Port
 
