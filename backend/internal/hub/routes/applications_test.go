@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var invaligStatus = "invalid"
+var invalidStatus = "invalid"
 var notRfc3339 = "not-rfc3339"
 
 func setupTestDBWithApplications(t *testing.T) {
@@ -87,15 +87,11 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 
 func validApplicationRequestBody(repoID, agentID string) map[string]any {
 	return map[string]any{
-		"name":          "Billing Service",
-		"repositoryId":  repoID,
-		"agentId":       agentID,
-		"syncStatus":    "progressing",
-		"healthStatus":  "healthy",
-		"branch":        "main",
-		"commit":        "abc123",
-		"commitMessage": "deploy billing",
-		"path":          "services/billing",
+		"name":         "Billing Service",
+		"repositoryId": repoID,
+		"agentId":      agentID,
+		"branch":       "main",
+		"path":         "services/billing",
 	}
 }
 
@@ -245,8 +241,8 @@ func TestCreateApplicationHandler_InvalidRequest(t *testing.T) {
 		body any
 	}{
 		{name: "empty body", body: nil},
-		{name: "missing name", body: map[string]any{"repositoryId": "repo", "agentId": "agent", "syncStatus": "unknown", "healthStatus": "unknown", "branch": "main", "commit": "abc", "commitMessage": "msg", "path": "deploy"}},
-		{name: "missing repositoryId", body: map[string]any{"name": "app", "agentId": "agent", "syncStatus": "unknown", "healthStatus": "unknown", "branch": "main", "commit": "abc", "commitMessage": "msg", "path": "deploy"}},
+		{name: "missing name", body: map[string]any{"repositoryId": "repo", "agentId": "agent", "branch": "main", "path": "deploy"}},
+		{name: "missing repositoryId", body: map[string]any{"name": "app", "agentId": "agent", "branch": "main", "path": "deploy"}},
 	}
 
 	for _, tt := range tests {
@@ -274,19 +270,13 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create")
 	agent := seedTestAgent(t, "agent-create")
-	syncedAt := time.Now().UTC().Truncate(time.Second)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":          "Billing Service",
-		"repositoryId":  repo.Id,
-		"agentId":       agent.Id,
-		"syncStatus":    "progressing",
-		"healthStatus":  "healthy",
-		"branch":        "main",
-		"commit":        "abc123",
-		"commitMessage": "deploy billing",
-		"lastSyncedAt":  syncedAt.Format(time.RFC3339),
-		"path":          "services/billing",
+		"name":         "Billing Service",
+		"repositoryId": repo.Id,
+		"agentId":      agent.Id,
+		"branch":       "main",
+		"path":         "services/billing",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -310,8 +300,20 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if body.Name != "Billing Service" {
 		t.Errorf("expected name %q, got %q", "Billing Service", body.Name)
 	}
-	if body.SyncStatus != "progressing" {
-		t.Errorf("expected syncStatus %q, got %q", "progressing", body.SyncStatus)
+	if body.SyncStatus != string(models.UnknownSync) {
+		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, body.SyncStatus)
+	}
+	if body.HealthStatus != string(models.UnknownHealth) {
+		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, body.HealthStatus)
+	}
+	if body.Commit != "" {
+		t.Errorf("expected commit %q, got %q", "", body.Commit)
+	}
+	if body.CommitMessage != "" {
+		t.Errorf("expected commitMessage %q, got %q", "", body.CommitMessage)
+	}
+	if body.LastSyncedAt != nil {
+		t.Errorf("expected lastSyncedAt to be null, got %v", *body.LastSyncedAt)
 	}
 
 	stored, err := gorm.G[models.Application](db.DB).Where("id = ?", body.Id).First(t.Context())
@@ -321,15 +323,30 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if stored.Name.String() != "Billing Service" {
 		t.Errorf("expected encrypted/decrypted name %q, got %q", "Billing Service", stored.Name.String())
 	}
+	if stored.SyncStatus != models.UnknownSync {
+		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, stored.SyncStatus)
+	}
+	if stored.HealthStatus != models.UnknownHealth {
+		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, stored.HealthStatus)
+	}
+	if stored.Commit != "" {
+		t.Errorf("expected commit %q, got %q", "", stored.Commit)
+	}
+	if stored.CommitMessage != "" {
+		t.Errorf("expected commitMessage %q, got %q", "", stored.CommitMessage)
+	}
+	if stored.LastSyncedAt != nil {
+		t.Fatal("expected LastSyncedAt to be nil in DB")
+	}
 }
 
-func TestCreateApplicationHandler_InvalidSyncStatus(t *testing.T) {
+func TestCreateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-sync")
 	agent := seedTestAgent(t, "agent-create-invalid-sync")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["syncStatus"] = invaligStatus
+	req["syncStatus"] = invalidStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -339,18 +356,26 @@ func TestCreateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 
 	CreateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.SyncStatus != string(models.UnknownSync) {
+		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, body.SyncStatus)
 	}
 }
 
-func TestCreateApplicationHandler_InvalidHealthStatus(t *testing.T) {
+func TestCreateApplicationHandler_IgnoresHealthStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-health")
 	agent := seedTestAgent(t, "agent-create-invalid-health")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["healthStatus"] = invaligStatus
+	req["healthStatus"] = invalidStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -360,12 +385,20 @@ func TestCreateApplicationHandler_InvalidHealthStatus(t *testing.T) {
 
 	CreateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.HealthStatus != string(models.UnknownHealth) {
+		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, body.HealthStatus)
 	}
 }
 
-func TestCreateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
+func TestCreateApplicationHandler_IgnoresLastSyncedAtInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-synced-at")
@@ -381,8 +414,16 @@ func TestCreateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
 
 	CreateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.LastSyncedAt != nil {
+		t.Fatalf("expected lastSyncedAt to be null, got %v", *body.LastSyncedAt)
 	}
 }
 
@@ -492,19 +533,13 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	newRepo := seedTestRepository(t, "https://github.com/owner/repo-update-2")
 	newAgent := seedTestAgent(t, "agent-update-2")
-	syncedAt := time.Now().UTC().Truncate(time.Second)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":          "New Name",
-		"repositoryId":  newRepo.Id,
-		"agentId":       newAgent.Id,
-		"syncStatus":    "synced",
-		"healthStatus":  "healthy",
-		"branch":        "release",
-		"commit":        "def456",
-		"commitMessage": "deploy release",
-		"lastSyncedAt":  syncedAt.Format(time.RFC3339),
-		"path":          "deployments/release",
+		"name":         "New Name",
+		"repositoryId": newRepo.Id,
+		"agentId":      newAgent.Id,
+		"branch":       "release",
+		"path":         "deployments/release",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -532,12 +567,27 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	if updated.AgentId != newAgent.Id {
 		t.Errorf("expected agentId %q, got %q", newAgent.Id, updated.AgentId)
 	}
-	if updated.SyncStatus != models.Synced {
-		t.Errorf("expected syncStatus %q, got %q", models.Synced, updated.SyncStatus)
+	if updated.Branch != "release" {
+		t.Errorf("expected branch %q, got %q", "release", updated.Branch)
+	}
+	if updated.Path != "deployments/release" {
+		t.Errorf("expected path %q, got %q", "deployments/release", updated.Path)
+	}
+	if updated.SyncStatus != models.UnknownSync {
+		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
+	}
+	if updated.HealthStatus != models.UnknownHealth {
+		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, updated.HealthStatus)
+	}
+	if updated.Commit != "abcdef123" {
+		t.Errorf("expected commit %q, got %q", "abcdef123", updated.Commit)
+	}
+	if updated.CommitMessage != "initial commit" {
+		t.Errorf("expected commitMessage %q, got %q", "initial commit", updated.CommitMessage)
 	}
 }
 
-func TestUpdateApplicationHandler_InvalidSyncStatus(t *testing.T) {
+func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-invalid-sync")
@@ -548,7 +598,7 @@ func TestUpdateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 		"name":          "Sync App",
 		"repositoryId":  repo.Id,
 		"agentId":       agent.Id,
-		"syncStatus":    invaligStatus,
+		"syncStatus":    invalidStatus,
 		"healthStatus":  "unknown",
 		"branch":        "main",
 		"commit":        "abc",
@@ -563,8 +613,16 @@ func TestUpdateApplicationHandler_InvalidSyncStatus(t *testing.T) {
 
 	UpdateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated application: %v", err)
+	}
+	if updated.SyncStatus != models.UnknownSync {
+		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
 	}
 }
 
@@ -591,14 +649,14 @@ func TestUpdateApplicationHandler_InvalidRequest(t *testing.T) {
 	}
 }
 
-func TestUpdateApplicationHandler_InvalidHealthStatus(t *testing.T) {
+func TestUpdateApplicationHandler_IgnoresHealthStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-health")
 	agent := seedTestAgent(t, "agent-update-invalid-health")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Health App")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["healthStatus"] = invaligStatus
+	req["healthStatus"] = invalidStatus
 
 	reqBody, _ := json.Marshal(req)
 
@@ -609,12 +667,20 @@ func TestUpdateApplicationHandler_InvalidHealthStatus(t *testing.T) {
 
 	UpdateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated application: %v", err)
+	}
+	if updated.HealthStatus != models.UnknownHealth {
+		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, updated.HealthStatus)
 	}
 }
 
-func TestUpdateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
+func TestUpdateApplicationHandler_IgnoresLastSyncedAtInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-synced-at")
@@ -632,8 +698,16 @@ func TestUpdateApplicationHandler_InvalidLastSyncedAt(t *testing.T) {
 
 	UpdateApplicationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated application: %v", err)
+	}
+	if updated.LastSyncedAt == nil {
+		t.Fatal("expected LastSyncedAt to remain unchanged")
 	}
 }
 
@@ -808,21 +882,6 @@ func TestDeleteApplicationHandler_DBError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestIsValidHealthStatus(t *testing.T) {
-	if !isValidHealthStatus(models.Healthy) {
-		t.Error("expected healthy to be valid")
-	}
-	if !isValidHealthStatus(models.Unhealthy) {
-		t.Error("expected unhealthy to be valid")
-	}
-	if !isValidHealthStatus(models.UnknownHealth) {
-		t.Error("expected unknown to be valid")
-	}
-	if isValidHealthStatus(models.HealthStatus(invaligStatus)) {
-		t.Error("expected invalid health status to be rejected")
 	}
 }
 

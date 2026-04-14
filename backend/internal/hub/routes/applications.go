@@ -13,29 +13,19 @@ import (
 )
 
 type createApplicationRequest struct {
-	Name          string              `json:"name" binding:"required"`
-	RepositoryId  string              `json:"repositoryId" binding:"required"`
-	AgentId       string              `json:"agentId" binding:"required"`
-	SyncStatus    models.SyncStatus   `json:"syncStatus" binding:"required"`
-	HealthStatus  models.HealthStatus `json:"healthStatus" binding:"required"`
-	Branch        string              `json:"branch" binding:"required"`
-	Commit        string              `json:"commit" binding:"required"`
-	CommitMessage string              `json:"commitMessage" binding:"required"`
-	LastSyncedAt  *string             `json:"lastSyncedAt"`
-	Path          string              `json:"path" binding:"required"`
+	Name         string `json:"name" binding:"required"`
+	RepositoryId string `json:"repositoryId" binding:"required"`
+	AgentId      string `json:"agentId" binding:"required"`
+	Branch       string `json:"branch" binding:"required"`
+	Path         string `json:"path" binding:"required"`
 }
 
 type updateApplicationRequest struct {
-	Name          string              `json:"name" binding:"required"`
-	RepositoryId  string              `json:"repositoryId" binding:"required"`
-	AgentId       string              `json:"agentId" binding:"required"`
-	SyncStatus    models.SyncStatus   `json:"syncStatus" binding:"required"`
-	HealthStatus  models.HealthStatus `json:"healthStatus" binding:"required"`
-	Branch        string              `json:"branch" binding:"required"`
-	Commit        string              `json:"commit" binding:"required"`
-	CommitMessage string              `json:"commitMessage" binding:"required"`
-	LastSyncedAt  *string             `json:"lastSyncedAt"`
-	Path          string              `json:"path" binding:"required"`
+	Name         string `json:"name" binding:"required"`
+	RepositoryId string `json:"repositoryId" binding:"required"`
+	AgentId      string `json:"agentId" binding:"required"`
+	Branch       string `json:"branch" binding:"required"`
+	Path         string `json:"path" binding:"required"`
 }
 
 type applicationListResponse struct {
@@ -64,8 +54,8 @@ type applicationResponse struct {
 }
 
 func ListApplicationsHandler(c *gin.Context) {
-	var applications []models.Application
-	if err := db.DB.WithContext(c.Request.Context()).Order("created_at ASC").Find(&applications).Error; err != nil {
+	applications, err := gorm.G[models.Application](db.DB).Order("created_at ASC").Find(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -101,23 +91,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	if !isValidSyncStatus(req.SyncStatus) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid syncStatus: must be synced, out_of_sync, progressing, or unknown"})
-		return
-	}
-
-	if !isValidHealthStatus(req.HealthStatus) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid healthStatus: must be healthy, unhealthy, or unknown"})
-		return
-	}
-
-	lastSyncedAt, ok := parseRFC3339Timestamp(req.LastSyncedAt)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid lastSyncedAt: must be RFC3339"})
-		return
-	}
-
-	repoExists, err := hasRecord(c, &models.Repository{}, req.RepositoryId)
+	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -127,7 +101,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	agentExists, err := hasRecord(c, &models.Agent{}, req.AgentId)
+	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -141,16 +115,16 @@ func CreateApplicationHandler(c *gin.Context) {
 		Name:          crypto.EncryptedString(req.Name),
 		RepositoryId:  req.RepositoryId,
 		AgentId:       req.AgentId,
-		SyncStatus:    req.SyncStatus,
-		HealthStatus:  req.HealthStatus,
+		SyncStatus:    models.UnknownSync,
+		HealthStatus:  models.UnknownHealth,
 		Branch:        req.Branch,
-		Commit:        req.Commit,
-		CommitMessage: req.CommitMessage,
-		LastSyncedAt:  lastSyncedAt,
+		Commit:        "",
+		CommitMessage: "",
+		LastSyncedAt:  nil,
 		Path:          req.Path,
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&application).Error; err != nil {
+	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
 			return
@@ -171,22 +145,6 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	if !isValidSyncStatus(req.SyncStatus) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid syncStatus: must be synced, out_of_sync, progressing, or unknown"})
-		return
-	}
-
-	if !isValidHealthStatus(req.HealthStatus) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid healthStatus: must be healthy, unhealthy, or unknown"})
-		return
-	}
-
-	lastSyncedAt, ok := parseRFC3339Timestamp(req.LastSyncedAt)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid lastSyncedAt: must be RFC3339"})
-		return
-	}
-
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -197,7 +155,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	repoExists, err := hasRecord(c, &models.Repository{}, req.RepositoryId)
+	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -207,7 +165,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	agentExists, err := hasRecord(c, &models.Agent{}, req.AgentId)
+	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -220,15 +178,10 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Name = crypto.EncryptedString(req.Name)
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
-	application.SyncStatus = req.SyncStatus
-	application.HealthStatus = req.HealthStatus
 	application.Branch = req.Branch
-	application.Commit = req.Commit
-	application.CommitMessage = req.CommitMessage
-	application.LastSyncedAt = lastSyncedAt
 	application.Path = req.Path
 
-	if err := db.DB.WithContext(c.Request.Context()).Save(&application).Error; err != nil {
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
 			return
@@ -243,12 +196,12 @@ func UpdateApplicationHandler(c *gin.Context) {
 func DeleteApplicationHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	result := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&models.Application{})
-	if result.Error != nil {
+	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	if result.RowsAffected == 0 {
+	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
@@ -285,24 +238,6 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 	}
 }
 
-func isValidSyncStatus(status models.SyncStatus) bool {
-	switch status {
-	case models.Synced, models.OutOfSync, models.Progressing, models.UnknownSync:
-		return true
-	default:
-		return false
-	}
-}
-
-func isValidHealthStatus(status models.HealthStatus) bool {
-	switch status {
-	case models.Healthy, models.Unhealthy, models.UnknownHealth:
-		return true
-	default:
-		return false
-	}
-}
-
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {
 	if value == nil || *value == "" {
 		return nil, true
@@ -325,9 +260,8 @@ func formatTimestamp(value *time.Time) *string {
 	return &formatted
 }
 
-func hasRecord(c *gin.Context, model any, id string) (bool, error) {
-	var count int64
-	err := db.DB.WithContext(c.Request.Context()).Model(model).Where("id = ?", id).Count(&count).Error
+func hasRecord[T any](c *gin.Context, id string) (bool, error) {
+	count, err := gorm.G[T](db.DB).Where("id = ?", id).Count(c.Request.Context(), "*")
 	if err != nil {
 		return false, err
 	}

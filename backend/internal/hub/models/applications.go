@@ -11,7 +11,7 @@ type SyncStatus string
 const (
 	Synced      SyncStatus = "synced"
 	OutOfSync   SyncStatus = "out_of_sync"
-	Progressing SyncStatus = "progressing"
+	Syncing     SyncStatus = "syncing"
 	UnknownSync SyncStatus = "unknown"
 )
 
