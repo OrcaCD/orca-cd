@@ -44,7 +44,7 @@ func parseGiteaURL(rawURL string) (owner, repo string, err error) {
 	}
 
 	owner, repo = parts[0], parts[1]
-	if !repoRe.MatchString(owner) {
+	if !ownerRe.MatchString(owner) {
 		return "", "", errors.New("invalid Gitea owner name")
 	}
 	if !repoRe.MatchString(repo) {
