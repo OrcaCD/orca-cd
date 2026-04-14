@@ -69,6 +69,8 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			return
 		}
 
+		conn.SetReadLimit(20 << 20) // 20MB max message size to prevent DoS with large messages
+
 		client, err := h.Register(claims.Subject, conn)
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to register client")
