@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(router *gin.Engine, cfg Config) {
+func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
@@ -92,10 +92,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 	}
 
 	if !cfg.Debug {
-		router.Static("/assets", "./frontend/dist/assets")
-		router.StaticFile("/", "./frontend/dist/index.html")
-		router.NoRoute(func(c *gin.Context) {
-			c.File("./frontend/dist/index.html")
-		})
+		err := middleware.RegisterStatic(router)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

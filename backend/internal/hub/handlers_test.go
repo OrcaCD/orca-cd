@@ -16,7 +16,10 @@ func init() {
 func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 	router := gin.New()
 	cfg := Config{Debug: true}
-	RegisterRoutes(router, cfg)
+	err := RegisterRoutes(router, cfg)
+	if err != nil {
+		t.Fatalf("Failed to register routes: %v", err)
+	}
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
@@ -38,7 +41,10 @@ func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 func TestRegisterRoutes_DebugMode_NoStaticFiles(t *testing.T) {
 	router := gin.New()
 	cfg := Config{Debug: true}
-	RegisterRoutes(router, cfg)
+	err := RegisterRoutes(router, cfg)
+	if err != nil {
+		t.Fatalf("Failed to register routes: %v", err)
+	}
 
 	// In debug mode, requesting a non-API path should 404 (no static serving)
 	w := httptest.NewRecorder()
