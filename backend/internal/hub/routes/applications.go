@@ -1,0 +1,269 @@
+package routes
+
+import (
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+type createApplicationRequest struct {
+	Name         string `json:"name" binding:"required"`
+	RepositoryId string `json:"repositoryId" binding:"required"`
+	AgentId      string `json:"agentId" binding:"required"`
+	Branch       string `json:"branch" binding:"required"`
+	Path         string `json:"path" binding:"required"`
+}
+
+type updateApplicationRequest struct {
+	Name         string `json:"name" binding:"required"`
+	RepositoryId string `json:"repositoryId" binding:"required"`
+	AgentId      string `json:"agentId" binding:"required"`
+	Branch       string `json:"branch" binding:"required"`
+	Path         string `json:"path" binding:"required"`
+}
+
+type applicationListResponse struct {
+	Id           string  `json:"id"`
+	HealthStatus string  `json:"healthStatus"`
+	SyncStatus   string  `json:"syncStatus"`
+	Branch       string  `json:"branch"`
+	Commit       string  `json:"commit"`
+	LastSyncedAt *string `json:"lastSyncedAt"`
+}
+
+type applicationResponse struct {
+	Id            string  `json:"id"`
+	Name          string  `json:"name"`
+	RepositoryId  string  `json:"repositoryId"`
+	AgentId       string  `json:"agentId"`
+	SyncStatus    string  `json:"syncStatus"`
+	HealthStatus  string  `json:"healthStatus"`
+	Branch        string  `json:"branch"`
+	Commit        string  `json:"commit"`
+	CommitMessage string  `json:"commitMessage"`
+	LastSyncedAt  *string `json:"lastSyncedAt"`
+	Path          string  `json:"path"`
+	CreatedAt     string  `json:"createdAt"`
+	UpdatedAt     string  `json:"updatedAt"`
+}
+
+func ListApplicationsHandler(c *gin.Context) {
+	applications, err := gorm.G[models.Application](db.DB).Order("created_at ASC").Find(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	response := make([]applicationListResponse, 0, len(applications))
+	for i := range applications {
+		response = append(response, toApplicationListResponse(&applications[i]))
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func GetApplicationHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toApplicationResponse(&application))
+}
+
+func CreateApplicationHandler(c *gin.Context) {
+	var req createApplicationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
+		return
+	}
+
+	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !repoExists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "repository not found"})
+		return
+	}
+
+	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !agentExists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
+		return
+	}
+
+	application := models.Application{
+		Name:          crypto.EncryptedString(req.Name),
+		RepositoryId:  req.RepositoryId,
+		AgentId:       req.AgentId,
+		SyncStatus:    models.UnknownSync,
+		HealthStatus:  models.UnknownHealth,
+		Branch:        req.Branch,
+		Commit:        "",
+		CommitMessage: "",
+		LastSyncedAt:  nil,
+		Path:          req.Path,
+	}
+
+	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
+		if errors.Is(err, gorm.ErrForeignKeyViolated) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, toApplicationResponse(&application))
+}
+
+func UpdateApplicationHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var req updateApplicationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
+		return
+	}
+
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !repoExists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "repository not found"})
+		return
+	}
+
+	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !agentExists {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
+		return
+	}
+
+	application.Name = crypto.EncryptedString(req.Name)
+	application.RepositoryId = req.RepositoryId
+	application.AgentId = req.AgentId
+	application.Branch = req.Branch
+	application.Path = req.Path
+
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
+		if errors.Is(err, gorm.ErrForeignKeyViolated) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toApplicationResponse(&application))
+}
+
+func DeleteApplicationHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
+}
+
+func toApplicationListResponse(app *models.Application) applicationListResponse {
+	return applicationListResponse{
+		Id:           app.Id,
+		HealthStatus: string(app.HealthStatus),
+		SyncStatus:   string(app.SyncStatus),
+		Branch:       app.Branch,
+		Commit:       app.Commit,
+		LastSyncedAt: formatTimestamp(app.LastSyncedAt),
+	}
+}
+
+func toApplicationResponse(app *models.Application) applicationResponse {
+	return applicationResponse{
+		Id:            app.Id,
+		Name:          app.Name.String(),
+		RepositoryId:  app.RepositoryId,
+		AgentId:       app.AgentId,
+		SyncStatus:    string(app.SyncStatus),
+		HealthStatus:  string(app.HealthStatus),
+		Branch:        app.Branch,
+		Commit:        app.Commit,
+		CommitMessage: app.CommitMessage,
+		LastSyncedAt:  formatTimestamp(app.LastSyncedAt),
+		Path:          app.Path,
+		CreatedAt:     app.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     app.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
+func parseRFC3339Timestamp(value *string) (*time.Time, bool) {
+	if value == nil || *value == "" {
+		return nil, true
+	}
+
+	parsed, err := time.Parse(time.RFC3339, *value)
+	if err != nil {
+		return nil, false
+	}
+
+	return &parsed, true
+}
+
+func formatTimestamp(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+
+	formatted := value.Format(time.RFC3339)
+	return &formatted
+}
+
+func hasRecord[T any](c *gin.Context, id string) (bool, error) {
+	count, err := gorm.G[T](db.DB).Where("id = ?", id).Count(c.Request.Context(), "*")
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(router *gin.Engine, cfg Config) {
+func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
@@ -50,6 +50,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+
+			protected.GET("/applications", routes.ListApplicationsHandler)
+			protected.GET("/applications/:id", routes.GetApplicationHandler)
+			protected.POST("/applications", routes.CreateApplicationHandler)
+			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
+			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
 
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
@@ -92,10 +98,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 	}
 
 	if !cfg.Debug {
-		router.Static("/assets", "./frontend/dist/assets")
-		router.StaticFile("/", "./frontend/dist/index.html")
-		router.NoRoute(func(c *gin.Context) {
-			c.File("./frontend/dist/index.html")
-		})
+		err := middleware.RegisterStatic(router)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

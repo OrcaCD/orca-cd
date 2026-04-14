@@ -45,9 +45,9 @@ import CopyButton from "../copy-btn";
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false },
 	{ id: "gitlab", label: "GitLab", disabled: false },
+	{ id: "gitea", label: "Gitea", disabled: false },
 	{ id: "bitbucket", label: "Bitbucket", disabled: true },
 	{ id: "azure_devops", label: "Azure DevOps", disabled: true },
-	{ id: "gitea", label: "Gitea", disabled: true },
 	{ id: "generic", label: "Generic", disabled: true },
 ] as const;
 
@@ -74,7 +74,7 @@ const { Stepper } = defineStepper(
 
 const repositorySchema = z.object({
 	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }).trim(),
-	provider: z.enum(["github", "gitlab", "generic"]),
+	provider: z.enum(["github", "gitlab", "gitea", "generic"]),
 	authToken: z.string().trim().max(1024, "Auth token must be at most 1024 characters"),
 	syncType: z.enum(["webhook", "polling", "manual"]),
 });
