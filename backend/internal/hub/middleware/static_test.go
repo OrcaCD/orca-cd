@@ -3,9 +3,13 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 var testModTime = time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)
@@ -588,5 +592,138 @@ func TestFileServerWithCaching_IndexHtml_PreCompressedBrotli(t *testing.T) {
 	}
 	if vary := w.Header().Get("Vary"); vary == "" {
 		t.Error("expected Vary header for pre-compressed index.html")
+	}
+}
+
+func setupDistDir(t *testing.T, files map[string][]byte) (cleanup func()) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	distDir := filepath.Join(tmpDir, "frontend", "dist")
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatalf("failed to create frontend/dist: %v", err)
+	}
+	for name, data := range files {
+		path := filepath.Join(distDir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("failed to create dir for %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir to %s: %v", tmpDir, err)
+	}
+	return func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
+	}
+}
+
+func TestRegisterStatic_ReturnsNoError(t *testing.T) {
+	cleanup := setupDistDir(t, map[string][]byte{
+		"index.html": []byte("<html></html>"),
+	})
+	defer cleanup()
+
+	router := gin.New()
+	if err := RegisterStatic(router); err != nil {
+		t.Fatalf("RegisterStatic() unexpected error: %v", err)
+	}
+}
+
+func TestRegisterStatic_ErrorWhenDistMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
+	}()
+
+	router := gin.New()
+	if err := RegisterStatic(router); err == nil {
+		t.Fatal("RegisterStatic() expected error when frontend/dist is missing, got nil")
+	}
+}
+
+func TestRegisterStatic_HandlerBehaviors(t *testing.T) {
+	cleanup := setupDistDir(t, map[string][]byte{
+		"index.html":      []byte("<html></html>"),
+		"app.js":          []byte("console.log('hi')"),
+		"assets/logo.png": []byte("pngdata"),
+	})
+	defer cleanup()
+
+	router := gin.New()
+	if err := RegisterStatic(router); err != nil {
+		t.Fatalf("RegisterStatic() unexpected error: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		path          string
+		wantStatus    int
+		wantCacheCtrl string
+		wantLocation  string
+	}{
+		{
+			name:          "known static asset served with default cache header",
+			path:          "/app.js",
+			wantStatus:    http.StatusOK,
+			wantCacheCtrl: defaultCacheHeader,
+		},
+		{
+			name:          "nested static asset served with default cache header",
+			path:          "/assets/logo.png",
+			wantStatus:    http.StatusOK,
+			wantCacheCtrl: defaultCacheHeader,
+		},
+		{
+			name:       "api route returns 404",
+			path:       "/api/v1/health",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:         "trailing slash redirects",
+			path:         "/some/path/",
+			wantStatus:   http.StatusFound,
+			wantLocation: "/some/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			router.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
+			}
+			if tt.wantCacheCtrl != "" {
+				if got := w.Header().Get("Cache-Control"); got != tt.wantCacheCtrl {
+					t.Errorf("Cache-Control = %q, want %q", got, tt.wantCacheCtrl)
+				}
+			}
+			if tt.wantLocation != "" {
+				if got := w.Header().Get("Location"); got != tt.wantLocation {
+					t.Errorf("Location = %q, want %q", got, tt.wantLocation)
+				}
+			}
+		})
 	}
 }
