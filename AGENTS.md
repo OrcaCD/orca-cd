@@ -110,3 +110,4 @@ Agent (Go)
 - Do not add useless comments, but do add comments to explain complex logic or decisions.
 - The repo uses squash merges, so commit history should be clean and focused on the feature/bug being implemented.
 - Do not try modify files in frontend/src/components/ui
+- Always try to use the Gorm Generics API for database operations

@@ -5,7 +5,6 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -125,13 +124,11 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 		return "", fmt.Errorf("agent Id is required for token generation")
 	}
 
-	if strings.TrimSpace(agent.KeyId.String()) == "" {
-		keyId, err := GenerateRandomString(32)
-		if err != nil {
-			return "", fmt.Errorf("failed to generate agent key Id: %w", err)
-		}
-		agent.KeyId = crypto.EncryptedString(keyId)
+	keyId, err := GenerateRandomString(32)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate agent key Id: %w", err)
 	}
+	agent.KeyId = crypto.EncryptedString(keyId)
 
 	now := time.Now()
 

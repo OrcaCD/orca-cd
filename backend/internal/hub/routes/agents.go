@@ -66,8 +66,8 @@ func toAgentResponse(agent *models.Agent) agentResponse {
 }
 
 func ListAgentsHandler(c *gin.Context) {
-	var agents []models.Agent
-	if err := db.DB.WithContext(c.Request.Context()).Order("created_at ASC").Find(&agents).Error; err != nil {
+	agents, err := gorm.G[models.Agent](db.DB).Order("created_at ASC").Find(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -83,8 +83,8 @@ func ListAgentsHandler(c *gin.Context) {
 func GetAgentHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	var agent models.Agent
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).First(&agent).Error; err != nil {
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 			return
@@ -103,18 +103,20 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	var (
 		agent     models.Agent
 		authToken string
 	)
 
-	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		agent = models.Agent{
 			Name:   crypto.EncryptedString(req.Name),
 			Status: models.AgentStatusOffline,
 		}
 
-		if err := tx.Create(&agent).Error; err != nil {
+		if err := gorm.G[models.Agent](tx).Create(ctx, &agent); err != nil {
 			return err
 		}
 
@@ -125,12 +127,18 @@ func CreateAgentHandler(c *gin.Context) {
 
 		authToken = token
 
-		if err := tx.Save(&agent).Error; err != nil {
+		if _, err := gorm.G[models.Agent](tx).Where("id = ?", agent.Id).Update(ctx, "key_id", agent.KeyId); err != nil {
 			return err
 		}
 
 		return nil
 	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -151,19 +159,24 @@ func UpdateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	var agent models.Agent
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).First(&agent).Error; err != nil {
+	ctx := c.Request.Context()
+
+	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Update(ctx, "name", crypto.EncryptedString(req.Name))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+		return
+	}
+
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	agent.Name = crypto.EncryptedString(req.Name)
-
-	if err := db.DB.WithContext(c.Request.Context()).Save(&agent).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -174,12 +187,12 @@ func UpdateAgentHandler(c *gin.Context) {
 func DeleteAgentHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	result := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&models.Agent{})
-	if result.Error != nil {
+	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	if result.RowsAffected == 0 {
+	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 		return
 	}
