@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -14,14 +13,6 @@ import (
 )
 
 const githubAPIBase = "https://api.github.com"
-
-// ownerRe matches GitHub usernames/org names: 1–39 alphanumeric chars or hyphens,
-// not starting or ending with a hyphen
-var ownerRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$`)
-
-// repoRe matches GitHub repository names: 1–100 chars, alphanumeric, hyphens,
-// underscores, or dots
-var repoRe = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,100}$`)
 
 type githubProvider struct{}
 
