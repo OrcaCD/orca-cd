@@ -244,12 +244,19 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	}
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
+	initialKeyId := agent.KeyId.String()
 	tokenStr, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
 	}
 	if tokenStr == "" {
 		t.Fatal("GenerateAgentToken() returned empty token")
+	}
+	if agent.KeyId.String() == "" {
+		t.Fatal("GenerateAgentToken() expected to set KeyId")
+	}
+	if agent.KeyId.String() == initialKeyId {
+		t.Fatal("GenerateAgentToken() expected to rotate KeyId")
 	}
 
 	claims, err := ValidateAgentToken(tokenStr)
@@ -262,8 +269,8 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	if claims.Subject != "agent-456" {
 		t.Errorf("expected Subject %q, got %q", "agent-456", claims.Subject)
 	}
-	if claims.KeyId != "key-abc" {
-		t.Errorf("expected KeyId %q, got %q", "key-abc", claims.KeyId)
+	if claims.KeyId != agent.KeyId.String() {
+		t.Errorf("expected KeyId %q, got %q", agent.KeyId.String(), claims.KeyId)
 	}
 	if len(claims.Audience) != 1 || claims.Audience[0] != "agent" {
 		t.Errorf("expected Audience [\"agent\"], got %v", claims.Audience)
