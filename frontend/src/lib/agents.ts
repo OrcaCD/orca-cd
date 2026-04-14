@@ -18,12 +18,10 @@ export interface Agent {
 
 export interface CreateAgentRequest {
 	name: string;
-	ip: string;
 }
 
 export interface UpdateAgentRequest {
 	name: string;
-	ip: string;
 }
 
 export function createAgent(data: CreateAgentRequest): Promise<Agent> {

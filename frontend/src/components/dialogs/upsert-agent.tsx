@@ -21,9 +21,6 @@ import { createAgent, updateAgent, type Agent } from "@/lib/agents";
 
 const agentSchema = z.object({
 	name: z.string().min(1, "Name is required").max(100, "Name must be at most 100 characters"),
-	ip: z.ipv4({
-		error: "IP address must be a valid IP address",
-	}),
 });
 
 export default function UpsertAgentDialog({
@@ -40,7 +37,6 @@ export default function UpsertAgentDialog({
 	const form = useForm({
 		defaultValues: {
 			name: agent?.name ?? "",
-			ip: agent?.ip ?? "",
 		},
 		validators: {
 			onSubmit: agentSchema,
@@ -51,13 +47,11 @@ export default function UpsertAgentDialog({
 				if (isEditing && agent) {
 					await updateAgent(agent.id, {
 						name: value.name,
-						ip: value.ip,
 					});
 					toast.success("Agent updated");
 				} else {
 					await createAgent({
 						name: value.name,
-						ip: value.ip,
 					});
 					toast.success("Agent connected");
 				}
@@ -122,25 +116,6 @@ export default function UpsertAgentDialog({
 											onChange={(e) => field.handleChange(e.target.value)}
 											placeholder='e.g. "prod-server-01"'
 											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="ip"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Agent IP</Label>
-										<Input
-											id={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="192.168.1.1"
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
