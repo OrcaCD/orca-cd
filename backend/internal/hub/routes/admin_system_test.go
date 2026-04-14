@@ -18,7 +18,6 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 
 	trustedProxies := []string{"10.0.0.1", "10.0.0.2"}
 	SetAdminSystemInfoConfig(AdminSystemInfoConfig{
-		Debug:            true,
 		Host:             "127.0.0.1",
 		Port:             "8080",
 		LogLevel:         "debug",
@@ -46,9 +45,6 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	if body["debug"] != true {
-		t.Fatalf("expected debug=true, got %v", body["debug"])
-	}
 	if body["host"] != "127.0.0.1" {
 		t.Fatalf("expected host=127.0.0.1, got %v", body["host"])
 	}

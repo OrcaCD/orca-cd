@@ -9,7 +9,6 @@ import (
 func TestDefaultConfig_Valid(t *testing.T) {
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", "test-token")
-	t.Setenv("DEBUG", "true")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_JSON", "true")
 
@@ -18,9 +17,6 @@ func TestDefaultConfig_Valid(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !cfg.Debug {
-		t.Error("Debug = false, want true")
-	}
 	if cfg.LogLevel != zerolog.DebugLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.DebugLevel)
 	}
@@ -38,7 +34,6 @@ func TestDefaultConfig_Valid(t *testing.T) {
 func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", "test-token")
-	t.Setenv("DEBUG", "")
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("LOG_JSON", "")
 
@@ -47,9 +42,6 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.Debug {
-		t.Error("Debug = true, want false by default")
-	}
 	if cfg.LogLevel != zerolog.InfoLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.InfoLevel)
 	}
