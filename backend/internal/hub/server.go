@@ -21,7 +21,6 @@ import (
 )
 
 type Config struct {
-	Debug            bool
 	Host             string
 	Port             string
 	LogLevel         zerolog.Level
@@ -31,6 +30,7 @@ type Config struct {
 	AppSecret        string
 	DisableLocalAuth bool
 	Demo             bool
+	DisableUI        bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -40,10 +40,9 @@ func DefaultConfig() (Config, error) {
 	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 
-	debug, _ := strconv.ParseBool(os.Getenv("DEBUG"))
 	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
 	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
-
+	disableUI, _ := strconv.ParseBool(os.Getenv("DISABLE_UI"))
 	if port == "" {
 		port = "8080"
 	}
@@ -72,7 +71,6 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Debug:            debug,
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
@@ -82,6 +80,7 @@ func DefaultConfig() (Config, error) {
 		AppSecret:        appSecret,
 		DisableLocalAuth: disableLocalAuth,
 		Demo:             demo,
+		DisableUI:        disableUI,
 	}, nil
 }
 
@@ -97,10 +96,7 @@ func newLogger(logJSON bool) zerolog.Logger {
 var Log = newLogger(false)
 
 func Run(cfg Config) error {
-	if !cfg.Debug {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
+	gin.SetMode(gin.ReleaseMode)
 	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
@@ -114,7 +110,7 @@ func Run(cfg Config) error {
 	}
 
 	dbLogger := Log.With().Str("component", "gorm").Logger()
-	err := db.Connect(dbLogger, cfg.Debug, cfg.Demo)
+	err := db.Connect(dbLogger, cfg.LogLevel, cfg.Demo)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
@@ -128,9 +124,7 @@ func Run(cfg Config) error {
 
 	router := gin.New()
 
-	if cfg.Debug {
-		router.Use(middleware.RequestLogger(Log))
-	}
+	router.Use(middleware.RequestLogger(Log))
 
 	if cfg.Demo {
 		router.Use(middleware.DemoBlocking())
@@ -140,7 +134,7 @@ func Run(cfg Config) error {
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
-	if !cfg.Debug && len(cfg.TrustedProxies) == 0 {
+	if len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())

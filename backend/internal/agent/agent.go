@@ -20,7 +20,6 @@ import (
 )
 
 type Config struct {
-	Debug     bool
 	LogLevel  zerolog.Level
 	LogJSON   bool
 	HubUrl    string
@@ -28,7 +27,6 @@ type Config struct {
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	logLevelStr := os.Getenv("LOG_LEVEL")
 	logJSONStr := os.Getenv("LOG_JSON")
 	hubUrl := os.Getenv("HUB_URL")
@@ -51,7 +49,6 @@ func DefaultConfig() (Config, error) {
 	logJSON := strings.EqualFold(logJSONStr, "true")
 
 	return Config{
-		Debug:     debug == "true",
 		LogLevel:  logLevel,
 		LogJSON:   logJSON,
 		HubUrl:    hubUrl,

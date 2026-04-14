@@ -17,7 +17,6 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	t.Setenv("APP_SECRET", "a-test-secret-that-is-at-least-32-chars!!")
 	t.Setenv("PORT", "9090")
 	t.Setenv("HOST", "127.0.0.1")
-	t.Setenv("DEBUG", "true")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_JSON", "true")
 	t.Setenv("TRUSTED_PROXIES", "10.0.0.1, 10.0.0.2")
@@ -31,9 +30,6 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	}
 	if cfg.Host != "127.0.0.1" {
 		t.Errorf("Host = %q, want %q", cfg.Host, "127.0.0.1")
-	}
-	if !cfg.Debug {
-		t.Error("Debug = false, want true")
 	}
 	if cfg.LogLevel != zerolog.DebugLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.DebugLevel)
@@ -53,7 +49,6 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("APP_URL", "https://example.com")
 	t.Setenv("APP_SECRET", "a-test-secret-that-is-at-least-32-chars!!")
 	t.Setenv("PORT", "")
-	t.Setenv("DEBUG", "")
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("LOG_JSON", "")
 	t.Setenv("TRUSTED_PROXIES", "")
@@ -64,9 +59,6 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 	if cfg.Port != "8080" {
 		t.Errorf("Port = %q, want default %q", cfg.Port, "8080")
-	}
-	if cfg.Debug {
-		t.Error("Debug = true, want false by default")
 	}
 	if cfg.LogLevel != zerolog.InfoLevel {
 		t.Errorf("LogLevel = %v, want %v", cfg.LogLevel, zerolog.InfoLevel)
@@ -256,12 +248,12 @@ func TestRun_GracefulShutdown(t *testing.T) {
 
 	host, port := freePort(t)
 	cfg := Config{
-		Debug:     true,
 		Host:      host,
 		Port:      port,
 		LogLevel:  zerolog.Disabled,
 		AppURL:    "http://" + host + ":" + port,
 		AppSecret: "a-test-secret-that-is-at-least-32-chars!!",
+		DisableUI: true,
 	}
 
 	done := make(chan error, 1)
@@ -305,7 +297,6 @@ func TestRun_PortInUse(t *testing.T) {
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
 
 	cfg := Config{
-		Debug:     true,
 		Host:      "127.0.0.1",
 		Port:      port,
 		LogLevel:  zerolog.Disabled,

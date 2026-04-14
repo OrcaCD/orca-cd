@@ -439,14 +439,14 @@ func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 		}
 	})
 
-	if err := Connect(zerolog.Nop(), false, true); err != nil {
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
 		t.Fatalf("first Connect() error: %v", err)
 	}
 	assertDemoSeedCounts(t, DB)
 
 	closeGlobalDB(t)
 
-	if err := Connect(zerolog.Nop(), false, true); err != nil {
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
 		t.Fatalf("second Connect() error: %v", err)
 	}
 	assertDemoSeedCounts(t, DB)

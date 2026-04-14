@@ -45,8 +45,9 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 2. Clone the repository and navigate to the project directory.
 3. For the frontend, navigate to the `frontend/` directory and run `npm ci` to install dependencies.
 4. Run the frontend development server with `node --run dev` from the `frontend/` directory.
-5. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
-6. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
+5. Copy the `.env.dev.example` file in the `backend/` directory to `.env` and adjust any necessary environment variables.
+6. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
+7. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
 
 ### Running locally with Docker
 
