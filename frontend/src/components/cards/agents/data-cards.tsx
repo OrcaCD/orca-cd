@@ -16,6 +16,7 @@ import {
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -111,8 +112,8 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 											</Button>
 										</DropdownMenuTrigger>
 										<DropdownMenuContent align="end">
+											<DropdownMenuLabel>Actions</DropdownMenuLabel>
 											<UpsertAgentDialog agent={agent} asDropdownItem />
-											<DropdownMenuSeparator />
 											<ConfirmationDialog
 												onConfirm={() => handleDeleteCard(agent)}
 												title="Delete agent card?"

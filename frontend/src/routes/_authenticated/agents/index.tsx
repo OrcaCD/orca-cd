@@ -1,6 +1,7 @@
 import { AgentDataCards } from "@/components/cards/agents/data-cards";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
-import { AgentStatus, type Agent } from "@/lib/agents";
+import { type Agent } from "@/lib/agents";
+import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
@@ -14,41 +15,9 @@ export const Route = createFileRoute("/_authenticated/agents/")({
 	}),
 });
 
-const mockAgents: Agent[] = [
-	{
-		id: "1",
-		name: "prod-server-01",
-		ip: "192.168.1.10",
-		status: AgentStatus.Online,
-		dockerVersion: "28.2.2",
-		appsCount: 5,
-	},
-	{
-		id: "2",
-		name: "staging-server-02",
-		ip: "192.168.1.22",
-		status: AgentStatus.Offline,
-		dockerVersion: "27.5.1",
-		appsCount: 3,
-	},
-	{
-		id: "3",
-		name: "edge-node-eu-01",
-		ip: "10.0.20.8",
-		status: AgentStatus.Online,
-		dockerVersion: "28.1.0",
-		appsCount: 53,
-	},
-	{
-		id: "4",
-		name: "backup-host-01",
-		ip: "172.18.0.3",
-		status: AgentStatus.Online,
-		dockerVersion: "27.3.1",
-	},
-];
-
 function RouteComponent() {
+	const { data: agents, isLoading } = useFetch<Agent[]>("/agents");
+
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -59,7 +28,9 @@ function RouteComponent() {
 				<UpsertAgentDialog agent={null} />
 			</div>
 
-			<AgentDataCards data={mockAgents} />
+			{isLoading && <p className="text-muted-foreground text-sm">Loading repositories...</p>}
+
+			{agents && <AgentDataCards data={agents} />}
 		</div>
 	);
 }
