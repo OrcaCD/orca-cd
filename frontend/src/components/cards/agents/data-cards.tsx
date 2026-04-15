@@ -17,7 +17,6 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuLabel,
-	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -130,18 +129,20 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 									</DropdownMenu>
 								</CardAction>
 
-								<div className="flex items-center gap-3">
+								<div className="flex min-w-0 items-center gap-3">
 									<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
 										<Server className="h-5 w-5 text-muted-foreground" />
 									</div>
-									<div className="space-y-1">
-										<CardTitle>{agent.name}</CardTitle>
+									<div className="min-w-0 space-y-1">
+										<CardTitle className="truncate" title={agent.name}>
+											{agent.name}
+										</CardTitle>
 										<CardDescription>{agent.ip}</CardDescription>
 									</div>
 								</div>
 							</CardHeader>
 
-							<hr />
+							<hr className="mx-4" />
 
 							<CardContent className="space-y-3">
 								{renderStatusBadge(agent.status)}
