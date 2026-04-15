@@ -12,6 +12,13 @@ export interface Agent {
 	name: string;
 	status: AgentStatus;
 	appsCount?: number;
+	lastSeen?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface AgentWithTokenResponse extends Agent {
+	authToken: string;
 }
 
 export interface CreateAgentRequest {
@@ -22,8 +29,8 @@ export interface UpdateAgentRequest {
 	name: string;
 }
 
-export async function createAgent(data: CreateAgentRequest): Promise<Agent> {
-	const res = await fetcher<Agent>("/agents", "POST", data);
+export async function createAgent(data: CreateAgentRequest): Promise<AgentWithTokenResponse> {
+	const res = await fetcher<AgentWithTokenResponse>("/agents", "POST", data);
 	await mutate(`${API_BASE}/agents`);
 	return res;
 }

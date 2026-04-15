@@ -5,7 +5,6 @@ import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -23,7 +22,7 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
 import { mutate } from "swr";
 import { API_BASE } from "@/lib/api";
-import CopyButton from "../copy-btn";
+import CopyValueDialog from "./copy-value-dialog";
 
 const baseSchema = z.object({
 	name: z.string().trim().min(3, "Name must be at least 3 characters").max(64),
@@ -262,7 +261,7 @@ export default function UpsertUserDialog({
 				</DialogContent>
 			</Dialog>
 
-			<Dialog
+			<CopyValueDialog
 				open={isGeneratedPasswordOpen}
 				onOpenChange={(nextOpen) => {
 					setIsGeneratedPasswordOpen(nextOpen);
@@ -270,34 +269,13 @@ export default function UpsertUserDialog({
 						setGeneratedPassword(null);
 					}
 				}}
-			>
-				<DialogContent className="sm:max-w-md">
-					<DialogHeader>
-						<DialogTitle>Generated Password</DialogTitle>
-						<DialogDescription>
-							Copy this password now. It will not be shown again.
-						</DialogDescription>
-					</DialogHeader>
-
-					<div className="space-y-2">
-						<Label htmlFor="generated-password">Password</Label>
-						<Input id="generated-password" value={generatedPassword ?? ""} readOnly />
-					</div>
-
-					<DialogFooter>
-						<CopyButton text={generatedPassword ?? ""} title="Copy generated password" />
-						<Button
-							type="button"
-							onClick={() => {
-								setIsGeneratedPasswordOpen(false);
-								setGeneratedPassword(null);
-							}}
-						>
-							Done
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+				title="Generated Password"
+				description="Copy this password now. It will not be shown again."
+				label="Password"
+				value={generatedPassword ?? ""}
+				inputId="generated-password"
+				copyTitle="Copy generated password"
+			/>
 		</>
 	);
 }
