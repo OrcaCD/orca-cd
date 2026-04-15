@@ -2,8 +2,9 @@ import { mutate } from "swr";
 import { API_BASE, fetcher } from "./api";
 
 export enum AgentStatus {
-	Online = 0,
-	Offline = 1,
+	Offline = "offline",
+	Online = "online",
+	Error = "error",
 }
 
 export interface Agent {

@@ -27,15 +27,16 @@ interface AgentStatusBadgeProps {
 
 function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
 	const isOnline = status === AgentStatus.Online;
+	const isError = status === AgentStatus.Error;
+	const badgeVariant = isOnline ? "success" : isError ? "destructive" : "secondary";
+	const statusLabel = isOnline ? "Online" : isError ? "Error" : "Offline";
+	const statusDotClass = isOnline ? "bg-emerald-500" : isError ? "bg-red-500" : "bg-zinc-400";
 
 	return (
 		<div className="flex items-center gap-2">
-			<Badge variant={isOnline ? "success" : "secondary"}>
-				<span
-					className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-zinc-400"}`}
-					aria-hidden="true"
-				/>
-				{isOnline ? "Online" : "Offline"}
+			<Badge variant={badgeVariant}>
+				<span className={`h-2 w-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
+				{statusLabel}
 			</Badge>
 		</div>
 	);
@@ -64,7 +65,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 		return data.filter((agent) => {
 			const searchableAgent = {
 				...agent,
-				status: agent.status === AgentStatus.Online ? "online" : "offline",
+				status: agent.status,
 			};
 
 			return toSearchableText(searchableAgent).includes(query);
