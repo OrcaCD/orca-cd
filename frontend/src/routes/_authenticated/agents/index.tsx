@@ -28,7 +28,7 @@ function RouteComponent() {
 				<UpsertAgentDialog agent={null} />
 			</div>
 
-			{isLoading && <p className="text-muted-foreground text-sm">Loading repositories...</p>}
+			{isLoading && <p className="text-muted-foreground text-sm">Loading agents...</p>}
 
 			{agents && <AgentDataCards data={agents} />}
 		</div>
