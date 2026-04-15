@@ -5,14 +5,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-	Card,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -141,7 +134,6 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 										<CardTitle className="truncate" title={agent.name}>
 											{agent.name}
 										</CardTitle>
-										<CardDescription>{agent.ip}</CardDescription>
 									</div>
 								</div>
 							</CardHeader>
@@ -159,10 +151,6 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 										</p>
 										<p className="mt-1 font-medium">{agent.appsCount || "n/a"}</p>
 									</div>
-								</div>
-
-								<div className="flex items-center gap-2 text-xs text-muted-foreground">
-									<span>Docker {agent.dockerVersion ? agent.dockerVersion : "n/a"}</span>
 								</div>
 							</CardContent>
 						</Card>

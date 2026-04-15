@@ -9,10 +9,8 @@ export enum AgentStatus {
 export interface Agent {
 	id: string;
 	name: string;
-	ip: string;
 	status: AgentStatus;
 	appsCount?: number;
-	dockerVersion?: string;
 }
 
 export interface CreateAgentRequest {
