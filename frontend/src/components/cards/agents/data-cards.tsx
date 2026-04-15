@@ -28,7 +28,11 @@ interface AgentDataCardsProps {
 	data: Agent[];
 }
 
-function renderStatusBadge(status: AgentStatus) {
+interface AgentStatusBadgeProps {
+	status: AgentStatus;
+}
+
+function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
 	const isOnline = status === AgentStatus.Online;
 
 	return (
@@ -145,7 +149,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 							<hr className="mx-4" />
 
 							<CardContent className="space-y-3">
-								{renderStatusBadge(agent.status)}
+								<AgentStatusBadge status={agent.status} />
 
 								<div className="grid grid-cols-1 gap-2 text-xs">
 									<div className="rounded-lg border bg-muted/50 p-2">
