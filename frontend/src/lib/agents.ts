@@ -10,8 +10,6 @@ export interface Agent {
 	name: string;
 	ip: string;
 	status: AgentStatus;
-	cpuUsage?: number;
-	memoryUsage?: number;
 	appsCount?: number;
 	dockerVersion?: string;
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AppWindow, Cpu, EllipsisVertical, HardDrive, Search, Server, Trash2 } from "lucide-react";
+import { AppWindow, EllipsisVertical, Search, Server, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
@@ -42,14 +42,6 @@ function renderStatusBadge(status: AgentStatus) {
 			</Badge>
 		</div>
 	);
-}
-
-function metricValue(value?: number | string) {
-	if (value === undefined || value === "") {
-		return "n/a";
-	}
-
-	return `${value} %`;
 }
 
 export function AgentDataCards({ data }: AgentDataCardsProps) {
@@ -153,29 +145,13 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 							<CardContent className="space-y-3">
 								{renderStatusBadge(agent.status)}
 
-								<div className="grid grid-cols-3 gap-2 text-xs">
-									<div className="rounded-lg border bg-muted/50 p-2">
-										<p className="flex items-center gap-1 text-muted-foreground">
-											<Cpu className="h-3 w-3" />
-											CPU Usage
-										</p>
-										<p className="mt-1 font-medium">{metricValue(agent.cpuUsage)}</p>
-									</div>
-
+								<div className="grid grid-cols-1 gap-2 text-xs">
 									<div className="rounded-lg border bg-muted/50 p-2">
 										<p className="flex items-center gap-1 text-muted-foreground">
 											<AppWindow className="h-3 w-3" />
 											Apps count
 										</p>
 										<p className="mt-1 font-medium">{agent.appsCount || "n/a"}</p>
-									</div>
-
-									<div className="rounded-lg border bg-muted/50 p-2">
-										<p className="flex items-center gap-1 text-muted-foreground">
-											<HardDrive className="h-3 w-3" />
-											Memory Usage
-										</p>
-										<p className="mt-1 font-medium">{metricValue(agent.memoryUsage)}</p>
 									</div>
 								</div>
 
