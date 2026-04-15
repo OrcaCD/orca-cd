@@ -150,7 +150,7 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 											<AppWindow className="h-3 w-3" />
 											Apps count
 										</p>
-										<p className="mt-1 font-medium">{agent.appsCount || "n/a"}</p>
+										<p className="mt-1 font-medium">{agent.appsCount ?? "n/a"}</p>
 									</div>
 								</div>
 							</CardContent>
