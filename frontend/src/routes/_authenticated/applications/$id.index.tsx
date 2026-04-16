@@ -28,9 +28,9 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useEffect, useState } from "react";
-import { codeToHtml } from "shiki";
+import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
+import { highlighter } from "@/lib/highlighter";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -122,7 +122,6 @@ function ApplicationDetailsPage() {
 	const { theme } = useTheme();
 
 	const [syncing, setSyncing] = useState(false);
-	const [manifestCode, setManifestCode] = useState("");
 
 	const handleSync = async () => {
 		setSyncing(true);
@@ -130,16 +129,10 @@ function ApplicationDetailsPage() {
 		setSyncing(false);
 	};
 
-	useEffect(() => {
-		const fetchCode = async () => {
-			const html = await codeToHtml(mockManifest, {
-				lang: "yaml",
-				theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-			});
-			setManifestCode(html);
-		};
-		void fetchCode();
-	}, [theme]);
+	const html = highlighter.codeToHtml(mockManifest, {
+		lang: "yaml",
+		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+	});
 	return (
 		<div className="p-6 space-y-6">
 			<Breadcrumb>
@@ -231,7 +224,7 @@ function ApplicationDetailsPage() {
 				<TabsContent value="manifest" className="space-y-4">
 					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
 						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
-							<div dangerouslySetInnerHTML={{ __html: manifestCode }} />
+							<div dangerouslySetInnerHTML={{ __html: html }} />
 						</div>
 					</div>
 				</TabsContent>
