@@ -1,9 +1,16 @@
-import { Breadcrumb } from "@/components/application/details/breadcrumb";
 import { Header } from "@/components/application/details/header";
 import { InfoCards } from "@/components/application/details/info-cards";
 import { Properties } from "@/components/application/details/properties";
 import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -30,11 +37,25 @@ const mockApp: Application = {
 	agent: "prod-server-01",
 };
 
-export default function ApplicationDetailsPage() {
+function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 	return (
 		<div className="p-6 space-y-6">
-			<Breadcrumb app={mockApp} />
+			{/* <Breadcrumb app={mockApp} /> */}
+			<Breadcrumb>
+				<BreadcrumbList>
+					<BreadcrumbItem>
+						<BreadcrumbLink asChild>
+							<Link to="/applications">Applications</Link>
+						</BreadcrumbLink>
+					</BreadcrumbItem>
+					<BreadcrumbSeparator />
+					<BreadcrumbItem>
+						<BreadcrumbPage>{mockApp.name}</BreadcrumbPage>
+					</BreadcrumbItem>
+				</BreadcrumbList>
+			</Breadcrumb>
+
 			<Header app={mockApp} id={id} />
 			<InfoCards app={mockApp} />
 			<Properties />

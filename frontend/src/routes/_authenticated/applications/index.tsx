@@ -103,12 +103,9 @@ const mockApps: Application[] = [
 function ApplicationsPage() {
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 	const [searchQuery, setSearchQuery] = useState("");
-	const [projectFilter] = useState<string>("all");
 
 	const filteredApps = mockApps.filter((app) => {
-		const matchesSearch = app.name.toLowerCase().includes(searchQuery.toLowerCase());
-		const matchesProject = projectFilter === "all";
-		return matchesSearch && matchesProject;
+		return app.name.toLowerCase().includes(searchQuery.toLowerCase());
 	});
 
 	const stats = {

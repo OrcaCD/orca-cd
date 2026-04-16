@@ -17,7 +17,7 @@ export function ApplicationView({ viewMode, apps }: Props) {
 					key={app.id}
 					to="/applications/$id"
 					params={{ id: app.id }}
-					className="group bg-card border border-border rounded-lg p-4 hover:border-primary/50 transition-colors"
+					className="group bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
 				>
 					<div className="flex items-start justify-between">
 						<div className="flex items-center gap-3">
