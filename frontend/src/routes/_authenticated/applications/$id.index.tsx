@@ -28,7 +28,9 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { codeToHtml } from "shiki";
+import { useTheme } from "@/components/theme-provider";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -88,16 +90,56 @@ function InfoCard({
 	);
 }
 
+const mockManifest = `version: "3.8"
+services:
+  api-gateway:
+    image: org/api-gateway:v2.1.0
+    ports:
+      - "8080:80"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - redis-cache
+
+  redis-cache:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+
+  nginx-proxy:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+
+volumes:
+  redis-data:`;
+
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
+	const { theme } = useTheme();
 
 	const [syncing, setSyncing] = useState(false);
+	const [manifestCode, setManifestCode] = useState("");
 
 	const handleSync = async () => {
 		setSyncing(true);
 		await new Promise((resolve) => setTimeout(resolve, 2000));
 		setSyncing(false);
 	};
+
+	useEffect(() => {
+		const fetchCode = async () => {
+			const html = await codeToHtml(mockManifest, {
+				lang: "yaml",
+				theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+			});
+			setManifestCode(html);
+		};
+		fetchCode();
+	}, [theme]);
 	return (
 		<div className="p-6 space-y-6">
 			<Breadcrumb>
@@ -187,35 +229,10 @@ function ApplicationDetailsPage() {
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
-					<div className="bg-card border border-border rounded-lg p-4">
-						<pre className="text-sm font-mono text-muted-foreground overflow-x-auto">
-							{`version: "3.8"
-services:
-  api-gateway:
-    image: org/api-gateway:v2.1.0
-    ports:
-      - "8080:80"
-    environment:
-      - NODE_ENV=production
-    depends_on:
-      - redis-cache
-
-  redis-cache:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data
-
-  nginx-proxy:
-    image: nginx:alpine
-    ports:
-      - "443:443"
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-
-volumes:
-  redis-data:`}
-						</pre>
+					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
+						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
+							<div dangerouslySetInnerHTML={{ __html: manifestCode }} />
+						</div>
 					</div>
 				</TabsContent>
 			</Tabs>
