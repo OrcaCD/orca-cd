@@ -138,7 +138,7 @@ function ApplicationDetailsPage() {
 			});
 			setManifestCode(html);
 		};
-		fetchCode();
+		void fetchCode();
 	}, [theme]);
 	return (
 		<div className="p-6 space-y-6">
