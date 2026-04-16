@@ -39,7 +39,7 @@ export const columns: ColumnDef<Application>[] = [
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return <StatusBadge status={app.syncStatus} />;
+			return <StatusBadge status={app.syncStatus} type="sync" />;
 		},
 	},
 	{
@@ -50,7 +50,7 @@ export const columns: ColumnDef<Application>[] = [
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return <StatusBadge status={app.healthStatus} />;
+			return <StatusBadge status={app.healthStatus} type="health" />;
 		},
 	},
 	{

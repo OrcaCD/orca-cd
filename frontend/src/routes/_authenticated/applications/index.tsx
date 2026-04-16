@@ -241,8 +241,8 @@ function ApplicationsPage() {
 								</div>
 
 								<div className="flex gap-2 mt-4">
-									<StatusBadge status={app.syncStatus} />
-									<StatusBadge status={app.healthStatus} />
+									<StatusBadge status={app.syncStatus} type="sync" />
+									<StatusBadge status={app.healthStatus} type="health" />
 								</div>
 
 								<div className="mt-4 pt-4 border-t border-border space-y-2">

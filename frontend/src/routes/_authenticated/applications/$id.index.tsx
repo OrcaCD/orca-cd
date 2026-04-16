@@ -164,8 +164,8 @@ function ApplicationDetailsPage() {
 					<div>
 						<div className="flex items-center gap-3">
 							<h1 className="text-2xl font-bold">{mockApp.name}</h1>
-							<StatusBadge status={mockApp.syncStatus} />
-							<StatusBadge status={mockApp.healthStatus} />
+							<StatusBadge status={mockApp.syncStatus} type="sync" />
+							<StatusBadge status={mockApp.healthStatus} type="health" />
 						</div>
 					</div>
 				</div>
