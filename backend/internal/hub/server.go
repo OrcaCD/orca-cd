@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,24 +21,28 @@ import (
 )
 
 type Config struct {
-	Debug            bool
 	Host             string
 	Port             string
 	LogLevel         zerolog.Level
+	LogJSON          bool
 	TrustedProxies   []string
 	AppURL           string
 	AppSecret        string
 	DisableLocalAuth bool
+	Demo             bool
+	DisableUI        bool
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
-	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
 
+	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
+	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
+	disableUI, _ := strconv.ParseBool(os.Getenv("DISABLE_UI"))
 	if port == "" {
 		port = "8080"
 	}
@@ -46,6 +51,8 @@ func DefaultConfig() (Config, error) {
 	if err != nil || logLevelStr == "" {
 		logLevel = zerolog.InfoLevel
 	}
+
+	logJSON := strings.EqualFold(logJSONStr, "true")
 
 	var trustedProxies []string
 	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {
@@ -64,26 +71,33 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Debug:            debug == "true",
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
+		LogJSON:          logJSON,
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth == "true",
+		DisableLocalAuth: disableLocalAuth,
+		Demo:             demo,
+		DisableUI:        disableUI,
 	}, nil
 }
 
-var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Str("service", "hub").Logger()
-
-func Run(cfg Config) error {
-	if !cfg.Debug {
-		gin.SetMode(gin.ReleaseMode)
+func newLogger(logJSON bool) zerolog.Logger {
+	if logJSON {
+		return zerolog.New(os.Stderr).With().Timestamp().Str("service", "hub").Logger()
 	}
 
-	Log = Log.Level(cfg.LogLevel)
+	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
+		With().Timestamp().Str("service", "hub").Logger()
+}
+
+var Log = newLogger(false)
+
+func Run(cfg Config) error {
+	gin.SetMode(gin.ReleaseMode)
+	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
@@ -96,7 +110,7 @@ func Run(cfg Config) error {
 	}
 
 	dbLogger := Log.With().Str("component", "gorm").Logger()
-	err := db.Connect(dbLogger, cfg.Debug)
+	err := db.Connect(dbLogger, cfg.LogLevel, cfg.Demo)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
@@ -110,22 +124,27 @@ func Run(cfg Config) error {
 
 	router := gin.New()
 
-	if cfg.Debug {
-		router.Use(middleware.RequestLogger(Log))
+	router.Use(middleware.RequestLogger(Log))
+
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
 	}
 
 	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
-	if !cfg.Debug && len(cfg.TrustedProxies) == 0 {
+	if len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
-	RegisterRoutes(router, cfg)
+	err = RegisterRoutes(router, cfg)
+	if err != nil {
+		return err
+	}
 
 	addr := cfg.Host + ":" + cfg.Port
 

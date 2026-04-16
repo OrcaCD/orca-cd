@@ -1,8 +1,7 @@
 // oxlint-disable react/no-children-prop
 import { createFileRoute } from "@tanstack/react-router";
-import useSWR from "swr";
 import { toast } from "sonner";
-import { Copy, EllipsisVertical, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { EllipsisVertical, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import {
 	Card,
 	CardAction,
@@ -21,10 +20,11 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import fetcher, { API_BASE } from "@/lib/api";
+import { useFetch } from "@/lib/api";
 import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
+import CopyButton from "@/components/copy-btn";
 
 export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
@@ -42,7 +42,7 @@ function OIDCProvidersPage() {
 		data: providers,
 		mutate,
 		isLoading,
-	} = useSWR<OIDCProviderDetail[]>(`${API_BASE}/admin/oidc-providers`, fetcher);
+	} = useFetch<OIDCProviderDetail[]>("/admin/oidc-providers");
 
 	async function handleDelete(provider: OIDCProviderDetail) {
 		try {
@@ -56,15 +56,6 @@ function OIDCProvidersPage() {
 
 	async function handleSave() {
 		await mutate();
-	}
-
-	async function handleCopyCallbackUrl(callbackUrl: string) {
-		try {
-			await navigator.clipboard.writeText(callbackUrl);
-			toast.success("Callback URL copied");
-		} catch {
-			toast.error("Failed to copy callback URL");
-		}
 	}
 
 	return (
@@ -162,17 +153,7 @@ function OIDCProvidersPage() {
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
 									{provider.callbackUrl}
 								</code>
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									onClick={() => handleCopyCallbackUrl(provider.callbackUrl)}
-									className="h-7 w-7 shrink-0"
-									aria-label="Copy callback URL"
-									title="Copy callback URL"
-								>
-									<Copy className="h-3.5 w-3.5" />
-								</Button>
+								<CopyButton text={provider.callbackUrl} title="Copy callback URL" />
 							</div>
 						</CardFooter>
 					</Card>

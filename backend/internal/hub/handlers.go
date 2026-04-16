@@ -10,20 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(router *gin.Engine, cfg Config) {
+func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
 	routes.SetAdminSystemInfoConfig(routes.AdminSystemInfoConfig{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel.String(),
 		TrustedProxies:   cfg.TrustedProxies,
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
-		Version:          version.Full(),
+		Version:          version.Version,
+		Commit:           version.Commit,
+		BuildDate:        version.BuildDate,
 	})
+	routes.SetRepositoriesConfig(cfg.AppURL)
 
 	api := router.Group("/api/v1")
 	{
@@ -44,8 +46,27 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
+			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+
+			protected.GET("/applications", routes.ListApplicationsHandler)
+			protected.GET("/applications/:id", routes.GetApplicationHandler)
+			protected.POST("/applications", routes.CreateApplicationHandler)
+			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
+			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
+
+			protected.GET("/repositories", routes.ListRepositoriesHandler)
+			protected.POST("/repositories", routes.CreateRepositoryHandler)
+			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
+			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
+			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
+
+			protected.GET("/agents", routes.ListAgentsHandler)
+			protected.POST("/agents", routes.CreateAgentHandler)
+			protected.GET("/agents/:id", routes.GetAgentHandler)
+			protected.PUT("/agents/:id", routes.UpdateAgentHandler)
+			protected.DELETE("/agents/:id", routes.DeleteAgentHandler)
 		}
 
 		// Admin routes (authentication + admin role required)
@@ -75,11 +96,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
 	}
 
-	if !cfg.Debug {
-		router.Static("/assets", "./frontend/dist/assets")
-		router.StaticFile("/", "./frontend/dist/index.html")
-		router.NoRoute(func(c *gin.Context) {
-			c.File("./frontend/dist/index.html")
-		})
+	if !cfg.DisableUI {
+		err := middleware.RegisterStatic(router)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

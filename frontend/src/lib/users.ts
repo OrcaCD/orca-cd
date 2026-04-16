@@ -1,4 +1,4 @@
-import fetcher, { API_BASE } from "./api";
+import { fetcher } from "./api";
 
 export interface UserDetail {
 	id: string;
@@ -33,24 +33,16 @@ export interface UpdateUserRequest {
 }
 
 export function createUser(data: CreateUserRequest): Promise<UserDetailWithGeneratedPassword> {
-	return fetcher<UserDetailWithGeneratedPassword>(`${API_BASE}/admin/users`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	return fetcher<UserDetailWithGeneratedPassword>("/admin/users", "POST", data);
 }
 
 export function updateUser(
 	id: string,
 	data: UpdateUserRequest,
 ): Promise<UserDetailWithOptionalGeneratedPassword> {
-	return fetcher<UserDetailWithOptionalGeneratedPassword>(`${API_BASE}/admin/users/${id}`, {
-		method: "PUT",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(data),
-	});
+	return fetcher<UserDetailWithOptionalGeneratedPassword>(`/admin/users/${id}`, "PUT", data);
 }
 
 export async function deleteUser(id: string): Promise<void> {
-	await fetcher(`${API_BASE}/admin/users/${id}`, { method: "DELETE" });
+	await fetcher(`/admin/users/${id}`, "DELETE");
 }

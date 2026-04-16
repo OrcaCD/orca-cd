@@ -7,7 +7,6 @@ import (
 )
 
 type AdminSystemInfoConfig struct {
-	Debug            bool
 	Host             string
 	Port             string
 	LogLevel         string
@@ -15,12 +14,13 @@ type AdminSystemInfoConfig struct {
 	AppURL           string
 	DisableLocalAuth bool
 	Version          string
+	Commit           string
+	BuildDate        string
 }
 
 var adminSystemInfoConfig AdminSystemInfoConfig
 
 type adminSystemInfoResponse struct {
-	Debug            bool     `json:"debug"`
 	Host             string   `json:"host"`
 	Port             string   `json:"port"`
 	LogLevel         string   `json:"logLevel"`
@@ -28,11 +28,12 @@ type adminSystemInfoResponse struct {
 	AppURL           string   `json:"appUrl"`
 	DisableLocalAuth bool     `json:"disableLocalAuth"`
 	Version          string   `json:"version"`
+	Commit           string   `json:"commit"`
+	BuildDate        string   `json:"buildDate"`
 }
 
 func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 	adminSystemInfoConfig = AdminSystemInfoConfig{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel,
@@ -40,6 +41,8 @@ func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          cfg.Version,
+		Commit:           cfg.Commit,
+		BuildDate:        cfg.BuildDate,
 	}
 }
 
@@ -47,7 +50,6 @@ func AdminSystemInfoHandler(c *gin.Context) {
 	cfg := adminSystemInfoConfig
 
 	c.JSON(http.StatusOK, adminSystemInfoResponse{
-		Debug:            cfg.Debug,
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel,
@@ -55,5 +57,7 @@ func AdminSystemInfoHandler(c *gin.Context) {
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          cfg.Version,
+		Commit:           cfg.Commit,
+		BuildDate:        cfg.BuildDate,
 	})
 }

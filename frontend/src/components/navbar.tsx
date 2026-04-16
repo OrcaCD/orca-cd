@@ -91,7 +91,7 @@ export default function Navbar() {
 
 				<div className="flex items-center gap-3">
 					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
-						<a href="https://orcacd.github.io/docs/" target="_blank" rel="noopener noreferrer">
+						<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
 							<FileText className="h-5 w-5 text-muted-foreground" />
 						</a>
 					</Button>
@@ -114,7 +114,7 @@ export default function Navbar() {
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-48">
 							<DropdownMenuItem asChild>
-								<Link to="/" className="flex items-center">
+								<Link to="/settings" className="flex items-center">
 									<User className="mr-2 h-4 w-4" />
 									User Settings
 								</Link>

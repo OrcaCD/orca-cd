@@ -19,29 +19,53 @@ var migrationFiles embed.FS
 
 var DB *gorm.DB
 
-func Connect(logger zerolog.Logger, debug bool) error {
+func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 	if err := os.MkdirAll("data", 0750); err != nil {
 		return err
 	}
 
-	logLevel := gormlogger.Error
-	if debug {
-		logLevel = gormlogger.Info
+	gormLogLevel := gormlogger.Error
+	if logLevel <= zerolog.DebugLevel {
+		gormLogLevel = gormlogger.Info
 	}
 
-	db, err := gorm.Open(sqlite.Open("data/hub.db"), &gorm.Config{
+	dbPath := "data/hub.db"
+	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logLevel,
+			LogLevel:                  gormLogLevel,
 			IgnoreRecordNotFoundError: true,
 		}),
-	})
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbPath), gormConfig)
 	if err != nil {
 		return err
 	}
 
 	if err := runMigrations(db); err != nil {
 		return err
+	}
+
+	if demo {
+		if err := seedDemoData(db); err != nil {
+			return err
+		}
+
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+		if err := sqlDB.Close(); err != nil {
+			return err
+		}
+
+		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"?mode=ro"), gormConfig)
+		if err != nil {
+			return err
+		}
+
+		db = readOnlyDB
 	}
 
 	DB = db

@@ -1,11 +1,10 @@
 // oxlint-disable react/no-children-prop
-import { Copy, Pencil, Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -23,10 +22,11 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
 import { mutate } from "swr";
 import { API_BASE } from "@/lib/api";
+import CopyValueDialog from "./copy-value-dialog";
 
 const baseSchema = z.object({
-	name: z.string().min(3, "Name must be at least 3 characters").max(64),
-	email: z.email("Must be a valid email address"),
+	name: z.string().trim().min(3, "Name must be at least 3 characters").max(64),
+	email: z.email("Must be a valid email address").trim(),
 	role: z.enum(["admin", "user"]),
 	resetPassword: z.boolean(),
 });
@@ -45,19 +45,6 @@ export default function UpsertUserDialog({
 	const [open, setOpen] = useState(false);
 	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
-
-	async function handleCopyGeneratedPassword() {
-		if (!generatedPassword) {
-			return;
-		}
-
-		try {
-			await navigator.clipboard.writeText(generatedPassword);
-			toast.success("Password copied to clipboard");
-		} catch {
-			toast.error("Failed to copy password");
-		}
-	}
 
 	const form = useForm({
 		defaultValues: {
@@ -274,7 +261,7 @@ export default function UpsertUserDialog({
 				</DialogContent>
 			</Dialog>
 
-			<Dialog
+			<CopyValueDialog
 				open={isGeneratedPasswordOpen}
 				onOpenChange={(nextOpen) => {
 					setIsGeneratedPasswordOpen(nextOpen);
@@ -282,37 +269,13 @@ export default function UpsertUserDialog({
 						setGeneratedPassword(null);
 					}
 				}}
-			>
-				<DialogContent className="sm:max-w-md">
-					<DialogHeader>
-						<DialogTitle>Generated Password</DialogTitle>
-						<DialogDescription>
-							Copy this password now. It will not be shown again.
-						</DialogDescription>
-					</DialogHeader>
-
-					<div className="space-y-2">
-						<Label htmlFor="generated-password">Password</Label>
-						<Input id="generated-password" value={generatedPassword ?? ""} readOnly />
-					</div>
-
-					<DialogFooter>
-						<Button type="button" variant="outline" onClick={handleCopyGeneratedPassword}>
-							<Copy className="mr-2 h-4 w-4" />
-							Copy
-						</Button>
-						<Button
-							type="button"
-							onClick={() => {
-								setIsGeneratedPasswordOpen(false);
-								setGeneratedPassword(null);
-							}}
-						>
-							Done
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+				title="Generated Password"
+				description="Copy this password now. It will not be shown again."
+				label="Password"
+				value={generatedPassword ?? ""}
+				inputId="generated-password"
+				copyTitle="Copy generated password"
+			/>
 		</>
 	);
 }

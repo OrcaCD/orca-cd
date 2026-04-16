@@ -15,7 +15,7 @@ import {
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import fetcher, { API_BASE } from "@/lib/api";
+import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 const changePasswordSchema = z
@@ -49,13 +49,9 @@ export default function ForcePasswordChangeDialog() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				await fetcher(`${API_BASE}/auth/change-password`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						currentPassword: value.currentPassword,
-						newPassword: value.newPassword,
-					}),
+				await fetcher("/auth/change-password", "POST", {
+					currentPassword: value.currentPassword,
+					newPassword: value.newPassword,
 				});
 				await refreshAuth();
 				form.reset();
