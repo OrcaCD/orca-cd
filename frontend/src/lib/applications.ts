@@ -26,20 +26,6 @@ export enum HealthStatus {
 	Unknown = "Unknown",
 }
 
-export interface Container {
-	id: string;
-	name: string;
-	image: string;
-	status: string;
-	ports: string;
-}
-
-export interface Event {
-	time: string;
-	message: string;
-	type: Type;
-}
-
 export enum Type {
 	Success = "success",
 	Info = "info",
