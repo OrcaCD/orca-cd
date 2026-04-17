@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -89,7 +89,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 	},
 	{
 		id: "actions",
-		cell: ({ row }) => {
+		cell: () => {
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
@@ -99,11 +99,9 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							<DropdownMenuItem>Sync</DropdownMenuItem>
-							<DropdownMenuItem asChild>
-								<Link to="/applications/$id/settings" params={{ id: row.original.id }}>
-									Settings
-								</Link>
+							<DropdownMenuItem>
+								<RefreshCw className="mr-2 h-4 w-4" />
+								Sync
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>

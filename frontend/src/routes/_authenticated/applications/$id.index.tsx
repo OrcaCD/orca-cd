@@ -1,5 +1,5 @@
-import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { deleteApplication, HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -16,8 +16,9 @@ import {
 	GitCommit,
 	MoreVertical,
 	RefreshCw,
+	RotateCcw,
 	Server,
-	Settings,
+	Trash2,
 } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,6 +35,9 @@ import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
+import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
+import { toast } from "sonner";
+import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -113,6 +118,7 @@ volumes:
 
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
+	const navigate = useNavigate();
 	const { theme } = useTheme();
 
 	const { data } = useFetch<Application>("/applications/" + id);
@@ -129,6 +135,16 @@ function ApplicationDetailsPage() {
 		lang: "yaml",
 		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
 	});
+
+	async function deleteApp() {
+		try {
+			await deleteApplication(id);
+			toast.success(`Application ${data?.name} deleted successfully`);
+			navigate({ to: "/applications" });
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Failed to delete application");
+		}
+	}
 	return (
 		<div className="p-6 space-y-6">
 			<Breadcrumb>
@@ -163,21 +179,33 @@ function ApplicationDetailsPage() {
 						<RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
 						{syncing ? "Syncing..." : "Sync"}
 					</Button>
-					<Button variant="outline" asChild>
-						<Link to="/applications/$id/settings" params={{ id: id }}>
-							<Settings className="mr-2 h-4 w-4" />
-							Settings
-						</Link>
-					</Button>
+
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
 							<Button variant="outline" size="icon">
 								<MoreVertical className="h-4 w-4" />
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							<DropdownMenuItem>Hard Refresh</DropdownMenuItem>
-							<DropdownMenuItem>Rollback</DropdownMenuItem>
+						<DropdownMenuContent align="end" className="w-full">
+							<DropdownMenuItem>
+								<RotateCcw className="mr-2 h-4 w-4" />
+								Rollback
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
+							<UpsertApplicationDialog application={data ?? null} asDropdownItem />
+							<DropdownMenuSeparator />
+							<ConfirmationDialog
+								onConfirm={async () => await deleteApp()}
+								triggerProps={{ variant: "destructive" }}
+								asDropdownItem
+								triggerText={
+									<>
+										<Trash2 className="mr-2 h-4 w-4" />
+										Delete
+									</>
+								}
+								description="Are you sure you want to delete this application? This action cannot be undone."
+							></ConfirmationDialog>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>

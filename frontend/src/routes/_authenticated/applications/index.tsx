@@ -168,11 +168,9 @@ function ApplicationsPage() {
 														</Button>
 													</DropdownMenuTrigger>
 													<DropdownMenuContent align="end">
-														<DropdownMenuItem>Sync</DropdownMenuItem>
-														<DropdownMenuItem asChild>
-															<Link to="/applications/$id/settings" params={{ id: app.id }}>
-																Settings
-															</Link>
+														<DropdownMenuItem>
+															<RefreshCw className="mr-2 h-4 w-4" />
+															Sync
 														</DropdownMenuItem>
 													</DropdownMenuContent>
 												</DropdownMenu>
