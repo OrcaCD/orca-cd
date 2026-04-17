@@ -14,7 +14,6 @@ import {
 	Search,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
 import {
 	DropdownMenu,
@@ -26,6 +25,8 @@ import { ApplicationsDataTable } from "@/components/tables/applications/data-tab
 import { columns } from "@/components/tables/applications/columns";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -73,9 +74,7 @@ function ApplicationsPage() {
 			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<h1 className="text-2xl font-bold">Applications</h1>
-					<p className="text-muted-foreground text-sm mt-1">
-						Manage and monitor your Docker deployments
-					</p>
+					<p className="text-muted-foreground text-sm mt-1">Manage and monitor your deployments</p>
 				</div>
 				<UpsertApplicationDialog application={null} />
 			</div>
@@ -110,25 +109,20 @@ function ApplicationsPage() {
 							<RefreshCw className="h-4 w-4" />
 						</Button>
 
-						<div className="flex border border-border rounded-md">
-							<Button
-								variant="ghost"
-								size="icon"
-								className={cn(viewMode === "grid" && "bg-muted")}
-								onClick={() => setViewMode("grid")}
-							>
+						<ToggleGroup
+							type="single"
+							variant="outline"
+							defaultValue="grid"
+							onValueChange={(v) => setViewMode(v as "grid" | "list")}
+						>
+							<ToggleGroupItem value="grid">
 								<LayoutGrid className="h-4 w-4" />
-							</Button>
+							</ToggleGroupItem>
 
-							<Button
-								variant="ghost"
-								size="icon"
-								className={cn(viewMode === "list" && "bg-muted")}
-								onClick={() => setViewMode("list")}
-							>
+							<ToggleGroupItem value="list">
 								<List className="h-4 w-4" />
-							</Button>
-						</div>
+							</ToggleGroupItem>
+						</ToggleGroup>
 					</div>
 				</div>
 			</div>
@@ -177,12 +171,14 @@ function ApplicationsPage() {
 											</CardAction>
 										</CardHeader>
 										<CardContent>
-											<div className="flex gap-2 mt-4">
+											<div className="flex gap-2">
 												<StatusBadge status={app.syncStatus} type="sync" />
 												<StatusBadge status={app.healthStatus} type="health" />
 											</div>
 
-											<div className="mt-4 pt-4 border-t border-border space-y-2">
+											<Separator className="my-4" />
+
+											<div className="space-y-2">
 												<div className="flex items-center gap-2 text-sm text-muted-foreground">
 													<GitBranch className="h-4 w-4" />
 													<span className="truncate">{app.repositoryName}</span>

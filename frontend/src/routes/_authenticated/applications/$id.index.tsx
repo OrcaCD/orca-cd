@@ -140,7 +140,7 @@ function ApplicationDetailsPage() {
 		try {
 			await deleteApplication(id);
 			toast.success(`Application ${data?.name} deleted successfully`);
-			navigate({ to: "/applications" });
+			await navigate({ to: "/applications" });
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Failed to delete application");
 		}
