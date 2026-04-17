@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -71,22 +72,28 @@ function InfoCard({
 	isLink?: boolean;
 }) {
 	return (
-		<div className="bg-card border border-border rounded-lg p-4">
-			<div className="flex items-center gap-2 text-muted-foreground mb-2">
-				{icon}
-				<span className="text-sm">{label}</span>
-			</div>
-			<div className="font-medium truncate">
-				{isLink ? (
-					<a href="#" className="hover:text-primary flex items-center gap-1">
-						{value} <ExternalLink className="h-3 w-3" />
-					</a>
-				) : (
-					<span className={label.includes("Commit") ? "font-mono" : ""}>{value}</span>
-				)}
-			</div>
-			{subValue && <p className="text-sm text-muted-foreground mt-1 truncate">{subValue}</p>}
-		</div>
+		<Card>
+			<CardHeader>
+				<CardTitle>
+					<div className="flex items-center gap-2 text-muted-foreground mb-2">
+						{icon}
+						<span className="text-sm">{label}</span>
+					</div>
+				</CardTitle>
+			</CardHeader>
+			<CardContent>
+				<div className="font-medium truncate">
+					{isLink ? (
+						<a href="#" className="hover:text-primary flex items-center gap-1">
+							{value} <ExternalLink className="h-3 w-3" />
+						</a>
+					) : (
+						<span className={label.includes("Commit") ? "font-mono" : ""}>{value}</span>
+					)}
+				</div>
+				{subValue && <p className="text-sm text-muted-foreground mt-1 truncate">{subValue}</p>}
+			</CardContent>
+		</Card>
 	);
 }
 
@@ -219,6 +226,7 @@ function ApplicationDetailsPage() {
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">
 					<TabsTrigger value="manifest">Manifest</TabsTrigger>
+					<TabsTrigger value="events">Events</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
@@ -227,6 +235,10 @@ function ApplicationDetailsPage() {
 							<div dangerouslySetInnerHTML={{ __html: html }} />
 						</div>
 					</div>
+				</TabsContent>
+
+				<TabsContent value="events" className="space-y-4">
+					Coming soon...
 				</TabsContent>
 			</Tabs>
 		</div>

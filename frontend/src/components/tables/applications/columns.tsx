@@ -85,7 +85,7 @@ export const columns: ColumnDef<Application>[] = [
 	},
 	{
 		id: "actions",
-		cell: () => {
+		cell: ({ row }) => {
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
@@ -96,8 +96,11 @@ export const columns: ColumnDef<Application>[] = [
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
 							<DropdownMenuItem>Sync</DropdownMenuItem>
-							<DropdownMenuItem>Refresh</DropdownMenuItem>
-							<DropdownMenuItem>Settings</DropdownMenuItem>
+							<DropdownMenuItem asChild>
+								<Link to="/applications/$id/settings" params={{ id: row.original.id }}>
+									Settings
+								</Link>
+							</DropdownMenuItem>
 							<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>

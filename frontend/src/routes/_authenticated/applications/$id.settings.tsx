@@ -35,6 +35,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings")({
 	component: SettingsPage,
@@ -47,16 +48,32 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings"
 	}),
 });
 
+const mockApp: Application = {
+	id: "1",
+	name: "api-gateway",
+	syncStatus: SyncStatus.Synced,
+	healthStatus: HealthStatus.Healthy,
+	repo: "github.com/org/api-gateway",
+	branch: "main",
+	commit: "a3f2b1c",
+	commitMessage: "fix: update rate limiting configuration",
+	lastSync: "2 minutes ago",
+	path: "/docker-compose.yml",
+	agent: "prod-server-01",
+};
+
 const settingsSections = [
 	{ id: "general", label: "General", icon: Server },
 	{ id: "source", label: "Source", icon: GitBranch },
 	{ id: "sync", label: "Sync Policy", icon: RefreshCw },
 	{ id: "danger", label: "Danger Zone", icon: Shield },
-];
+] as const;
+
+type Sections = (typeof settingsSections)[number]["id"];
 
 function SettingsPage() {
 	const { id } = Route.useParams();
-	const [activeSection, setActiveSection] = useState("general");
+	const [activeSection, setActiveSection] = useState<Sections>("general");
 
 	const [autoSync, setAutoSync] = useState(true);
 	const [selfHeal, setSelfHeal] = useState(true);
@@ -107,7 +124,7 @@ function SettingsPage() {
 									<BreadcrumbItem>
 										<BreadcrumbLink asChild>
 											<Link to="/applications/$id" params={{ id: id }}>
-												api-gateway
+												{mockApp.name}
 											</Link>
 										</BreadcrumbLink>
 									</BreadcrumbItem>
@@ -130,7 +147,7 @@ function SettingsPage() {
 														<Label htmlFor="name">Application Name</Label>
 														<Input
 															id="name"
-															defaultValue="api-gateway"
+															defaultValue={mockApp.name}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -156,7 +173,7 @@ function SettingsPage() {
 														<Label htmlFor="repo">Repository URL</Label>
 														<Input
 															id="repo"
-															defaultValue="https://github.com/org/api-gateway"
+															defaultValue={mockApp.repo}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -165,7 +182,7 @@ function SettingsPage() {
 														<Label htmlFor="branch">Target Branch</Label>
 														<Input
 															id="branch"
-															defaultValue="main"
+															defaultValue={mockApp.branch}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -174,7 +191,7 @@ function SettingsPage() {
 														<Label htmlFor="path">Compose File Path</Label>
 														<Input
 															id="path"
-															defaultValue="/docker-compose.yml"
+															defaultValue={mockApp.path}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -192,7 +209,7 @@ function SettingsPage() {
 												<div className="space-y-4">
 													<div className="space-y-2">
 														<Label htmlFor="host">Host</Label>
-														<Select defaultValue="prod-server-01">
+														<Select defaultValue={mockApp.agent}>
 															<SelectTrigger className="bg-muted border-border">
 																<SelectValue />
 															</SelectTrigger>
@@ -202,15 +219,6 @@ function SettingsPage() {
 																<SelectItem value="staging-server">staging-server</SelectItem>
 															</SelectContent>
 														</Select>
-													</div>
-
-													<div className="space-y-2">
-														<Label htmlFor="deployPath">Deployment Path</Label>
-														<Input
-															id="deployPath"
-															defaultValue="/opt/apps/api-gateway"
-															className="bg-muted border-border"
-														/>
 													</div>
 												</div>
 
@@ -309,8 +317,8 @@ function SettingsSidebarMenuItem({
 	setActiveSection,
 }: {
 	item: (typeof settingsSections)[number];
-	activeSection: string;
-	setActiveSection: (id: string) => void;
+	activeSection: Sections;
+	setActiveSection: (id: Sections) => void;
 }) {
 	const { isMobile, setOpenMobile } = useSidebar();
 	const isActive = activeSection === item.id;

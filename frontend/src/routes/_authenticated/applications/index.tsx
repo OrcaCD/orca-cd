@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -158,10 +159,14 @@ function ApplicationsPage() {
 			<div>
 				<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 					{statItems.map((item) => (
-						<div key={item.label} className="bg-card border border-border rounded-lg p-4">
-							<p className="text-muted-foreground text-sm">{item.label}</p>
-							<p className={`text-2xl font-bold mt-1 ${item.color ?? ""}`}>{item.value}</p>
-						</div>
+						<Card key={item.label}>
+							<CardHeader>
+								<CardTitle>{item.label}</CardTitle>
+								<CardContent className={`text-2xl font-bold mt-1 ${item.color ?? ""}`}>
+									{item.value}
+								</CardContent>
+							</CardHeader>
+						</Card>
 					))}
 				</div>
 			</div>
@@ -208,56 +213,61 @@ function ApplicationsPage() {
 				{viewMode === "grid" ? (
 					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 						{filteredApps.map((app) => (
-							<Link
-								key={app.id}
-								to="/applications/$id"
-								params={{ id: app.id }}
-								className="group bg-card border border-border rounded-lg p-4 hover:border-primary transition-colors"
-							>
-								<div className="flex items-start justify-between">
-									<div className="flex items-center gap-3">
-										<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-											<Box className="h-5 w-5 text-primary" />
+							<Link key={app.id} to="/applications/$id" params={{ id: app.id }}>
+								<Card className="border border-border hover:border-primary transition-colors">
+									<CardHeader>
+										<CardTitle>
+											<div className="flex items-center gap-3">
+												<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+													<Box className="h-5 w-5 text-primary" />
+												</div>
+												<div>
+													<h3 className="font-medium group-hover:text-primary transition-colors">
+														{app.name}
+													</h3>
+												</div>
+											</div>
+										</CardTitle>
+										<CardAction>
+											<DropdownMenu>
+												<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+													<Button variant="ghost" size="icon" className="h-8 w-8">
+														<MoreVertical className="h-4 w-4" />
+													</Button>
+												</DropdownMenuTrigger>
+												<DropdownMenuContent align="end">
+													<DropdownMenuItem>Sync</DropdownMenuItem>
+													<DropdownMenuItem asChild>
+														<Link to="/applications/$id/settings" params={{ id: app.id }}>
+															Settings
+														</Link>
+													</DropdownMenuItem>
+													<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+												</DropdownMenuContent>
+											</DropdownMenu>
+										</CardAction>
+									</CardHeader>
+									<CardContent>
+										<div className="flex gap-2 mt-4">
+											<StatusBadge status={app.syncStatus} type="sync" />
+											<StatusBadge status={app.healthStatus} type="health" />
 										</div>
-										<div>
-											<h3 className="font-medium group-hover:text-primary transition-colors">
-												{app.name}
-											</h3>
-										</div>
-									</div>
-									<DropdownMenu>
-										<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-											<Button variant="ghost" size="icon" className="h-8 w-8">
-												<MoreVertical className="h-4 w-4" />
-											</Button>
-										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end">
-											<DropdownMenuItem>Sync</DropdownMenuItem>
-											<DropdownMenuItem>Refresh</DropdownMenuItem>
-											<DropdownMenuItem>Settings</DropdownMenuItem>
-											<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-										</DropdownMenuContent>
-									</DropdownMenu>
-								</div>
 
-								<div className="flex gap-2 mt-4">
-									<StatusBadge status={app.syncStatus} type="sync" />
-									<StatusBadge status={app.healthStatus} type="health" />
-								</div>
-
-								<div className="mt-4 pt-4 border-t border-border space-y-2">
-									<div className="flex items-center gap-2 text-sm text-muted-foreground">
-										<GitBranch className="h-4 w-4" />
-										<span className="truncate">{app.repo}</span>
-									</div>
-									<div className="flex items-center justify-between text-sm">
-										<div className="flex items-center gap-2 text-muted-foreground">
-											<GitCommit className="h-4 w-4" />
-											<span>{app.commit}</span>
+										<div className="mt-4 pt-4 border-t border-border space-y-2">
+											<div className="flex items-center gap-2 text-sm text-muted-foreground">
+												<GitBranch className="h-4 w-4" />
+												<span className="truncate">{app.repo}</span>
+											</div>
+											<div className="flex items-center justify-between text-sm">
+												<div className="flex items-center gap-2 text-muted-foreground">
+													<GitCommit className="h-4 w-4" />
+													<span>{app.commit}</span>
+												</div>
+												<span className="text-muted-foreground">{app.lastSync}</span>
+											</div>
 										</div>
-										<span className="text-muted-foreground">{app.lastSync}</span>
-									</div>
-								</div>
+									</CardContent>
+								</Card>
 							</Link>
 						))}
 					</div>

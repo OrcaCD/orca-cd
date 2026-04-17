@@ -1,5 +1,6 @@
 import type { HealthStatus, SyncStatus } from "@/lib/applications";
 import { cn } from "@/lib/utils";
+import { Badge } from "./ui/badge";
 
 type StatusBadgeProps =
 	| { type: "sync"; status: SyncStatus }
@@ -58,14 +59,9 @@ export function StatusBadge(props: StatusBadgeProps) {
 			: healthConfig[props.status as HealthStatus];
 
 	return (
-		<span
-			className={cn(
-				"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border",
-				config.className,
-			)}
-		>
+		<Badge variant="outline" className={cn("px-2.5 py-1", config.className)}>
 			<span className={cn("h-1.5 w-1.5 rounded-full", config.dotClass)} />
 			{config.label}
-		</span>
+		</Badge>
 	);
 }
