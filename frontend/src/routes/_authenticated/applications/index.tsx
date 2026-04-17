@@ -12,6 +12,7 @@ import {
 	MoreVertical,
 	RefreshCw,
 	Search,
+	Server,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
@@ -180,8 +181,14 @@ function ApplicationsPage() {
 
 											<div className="space-y-2">
 												<div className="flex items-center gap-2 text-sm text-muted-foreground">
+													<Server className="h-4 w-4" />
+													<span className="truncate">{app.agentName}</span>
+												</div>
+												<div className="flex items-center gap-2 text-sm text-muted-foreground">
 													<GitBranch className="h-4 w-4" />
-													<span className="truncate">{app.repositoryName}</span>
+													<span className="truncate">
+														{app.repositoryName} @ {app.branch}
+													</span>
 												</div>
 												<div className="flex items-center justify-between text-sm">
 													<div className="flex items-center gap-2 text-muted-foreground">

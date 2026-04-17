@@ -24,7 +24,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 				<Link
 					to="/applications/$id"
 					params={{ id: app.id }}
-					className="font-medium hover:text-primary"
+					className="font-medium hover:text-primary underline underline-offset-2"
 				>
 					{app.name}
 				</Link>
@@ -32,7 +32,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 	},
 	{
-		id: "syncStatus",
+		id: "sync status",
 		accessorFn: (row) => row.syncStatus,
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Sync Status" />;
@@ -43,7 +43,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 	},
 	{
-		id: "healthStatus",
+		id: "health status",
 		accessorFn: (row) => row.healthStatus,
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Health Status" />;
@@ -54,12 +54,14 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 	},
 	{
+		id: "repository",
 		accessorKey: "repositoryName",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Repository" />;
 		},
 	},
 	{
+		id: "agent",
 		accessorKey: "agentName",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Agent" />;
@@ -78,6 +80,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 	},
 	{
+		id: "last sync",
 		accessorKey: "lastSyncedAt",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Last Sync" />;
