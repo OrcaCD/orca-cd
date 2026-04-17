@@ -29,32 +29,42 @@ type updateApplicationRequest struct {
 }
 
 type applicationListResponse struct {
-	Id           string  `json:"id"`
-	HealthStatus string  `json:"healthStatus"`
-	SyncStatus   string  `json:"syncStatus"`
-	Branch       string  `json:"branch"`
-	Commit       string  `json:"commit"`
-	LastSyncedAt *string `json:"lastSyncedAt"`
+	Id             string  `json:"id"`
+	Name           string  `json:"name"`
+	HealthStatus   string  `json:"healthStatus"`
+	SyncStatus     string  `json:"syncStatus"`
+	Branch         string  `json:"branch"`
+	Commit         string  `json:"commit"`
+	LastSyncedAt   *string `json:"lastSyncedAt"`
+	Path           string  `json:"path"`
+	AgentName      string  `json:"agentName"`
+	RepositoryName string  `json:"repositoryName"`
 }
 
 type applicationResponse struct {
-	Id            string  `json:"id"`
-	Name          string  `json:"name"`
-	RepositoryId  string  `json:"repositoryId"`
-	AgentId       string  `json:"agentId"`
-	SyncStatus    string  `json:"syncStatus"`
-	HealthStatus  string  `json:"healthStatus"`
-	Branch        string  `json:"branch"`
-	Commit        string  `json:"commit"`
-	CommitMessage string  `json:"commitMessage"`
-	LastSyncedAt  *string `json:"lastSyncedAt"`
-	Path          string  `json:"path"`
-	CreatedAt     string  `json:"createdAt"`
-	UpdatedAt     string  `json:"updatedAt"`
+	Id             string  `json:"id"`
+	Name           string  `json:"name"`
+	RepositoryId   string  `json:"repositoryId"`
+	RepositoryName string  `json:"repositoryName"`
+	AgentId        string  `json:"agentId"`
+	AgentName      string  `json:"agentName"`
+	SyncStatus     string  `json:"syncStatus"`
+	HealthStatus   string  `json:"healthStatus"`
+	Branch         string  `json:"branch"`
+	Commit         string  `json:"commit"`
+	CommitMessage  string  `json:"commitMessage"`
+	LastSyncedAt   *string `json:"lastSyncedAt"`
+	Path           string  `json:"path"`
+	CreatedAt      string  `json:"createdAt"`
+	UpdatedAt      string  `json:"updatedAt"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
-	applications, err := gorm.G[models.Application](db.DB).Order("created_at ASC").Find(c.Request.Context())
+	applications, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Order("created_at ASC").
+		Find(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -71,7 +81,11 @@ func ListApplicationsHandler(c *gin.Context) {
 func GetApplicationHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	application, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Where("id = ?", id).
+		First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
@@ -133,7 +147,17 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toApplicationResponse(&application))
+	createdApplication, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Where("id = ?", application.Id).
+		First(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
@@ -190,7 +214,17 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toApplicationResponse(&application))
+	updatedApplication, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Where("id = ?", id).
+		First(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 }
 
 func DeleteApplicationHandler(c *gin.Context) {
@@ -211,30 +245,36 @@ func DeleteApplicationHandler(c *gin.Context) {
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
-		Id:           app.Id,
-		HealthStatus: string(app.HealthStatus),
-		SyncStatus:   string(app.SyncStatus),
-		Branch:       app.Branch,
-		Commit:       app.Commit,
-		LastSyncedAt: formatTimestamp(app.LastSyncedAt),
+		Id:             app.Id,
+		Name:           app.Name.String(),
+		HealthStatus:   string(app.HealthStatus),
+		SyncStatus:     string(app.SyncStatus),
+		Branch:         app.Branch,
+		Commit:         app.Commit,
+		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
+		Path:           app.Path,
+		RepositoryName: app.Repository.Name,
+		AgentName:      app.Agent.Name.String(),
 	}
 }
 
 func toApplicationResponse(app *models.Application) applicationResponse {
 	return applicationResponse{
-		Id:            app.Id,
-		Name:          app.Name.String(),
-		RepositoryId:  app.RepositoryId,
-		AgentId:       app.AgentId,
-		SyncStatus:    string(app.SyncStatus),
-		HealthStatus:  string(app.HealthStatus),
-		Branch:        app.Branch,
-		Commit:        app.Commit,
-		CommitMessage: app.CommitMessage,
-		LastSyncedAt:  formatTimestamp(app.LastSyncedAt),
-		Path:          app.Path,
-		CreatedAt:     app.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:     app.UpdatedAt.Format(time.RFC3339),
+		Id:             app.Id,
+		Name:           app.Name.String(),
+		RepositoryId:   app.RepositoryId,
+		RepositoryName: app.Repository.Name,
+		AgentId:        app.AgentId,
+		AgentName:      app.Agent.Name.String(),
+		SyncStatus:     string(app.SyncStatus),
+		HealthStatus:   string(app.HealthStatus),
+		Branch:         app.Branch,
+		Commit:         app.Commit,
+		CommitMessage:  app.CommitMessage,
+		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
+		Path:           app.Path,
+		CreatedAt:      app.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      app.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

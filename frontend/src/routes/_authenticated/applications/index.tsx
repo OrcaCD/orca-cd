@@ -1,5 +1,5 @@
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
-import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -37,107 +38,29 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 	}),
 });
 
-const mockApps: Application[] = [
-	{
-		id: "1",
-		name: "api-gateway",
-		syncStatus: SyncStatus.Synced,
-		healthStatus: HealthStatus.Healthy,
-		repo: "org/api-gateway",
-		branch: "main",
-		commit: "a3f2b1c",
-		commitMessage: "Initial commit",
-		lastSync: "2m ago",
-		path: "apps/api-gateway",
-		agent: "agent-01",
-	},
-	{
-		id: "2",
-		name: "user-service",
-		syncStatus: SyncStatus.OutOfSync,
-		healthStatus: HealthStatus.Healthy,
-		repo: "org/user-service",
-		branch: "main",
-		commit: "b4e5d2f",
-		commitMessage: "Fix user authentication bug",
-		lastSync: "15m ago",
-		agent: "agent-02",
-		path: "apps/user-service",
-	},
-	{
-		id: "3",
-		name: "notification-service",
-		syncStatus: SyncStatus.Progressing,
-		healthStatus: HealthStatus.Progressing,
-		repo: "org/notifications",
-		branch: "main",
-		commit: "c5f6e3g",
-		commitMessage: "Add email notification support",
-		lastSync: "1m ago",
-		agent: "agent-01",
-		path: "apps/notification-service",
-	},
-	{
-		id: "4",
-		name: "analytics-dashboard",
-		syncStatus: SyncStatus.Synced,
-		healthStatus: HealthStatus.Healthy,
-		repo: "org/analytics",
-		branch: "develop",
-		commit: "d6g7f4h",
-		commitMessage: "Update dashboard layout",
-		lastSync: "1h ago",
-		agent: "agent-03",
-		path: "apps/analytics-dashboard",
-	},
-	{
-		id: "5",
-		name: "payment-processor",
-		syncStatus: SyncStatus.Synced,
-		healthStatus: HealthStatus.Degraded,
-		repo: "org/payments",
-		branch: "main",
-		commit: "e7h8g5i",
-		commitMessage: "Fix payment processing bug",
-		lastSync: "5m ago",
-		agent: "agent-02",
-		path: "apps/payment-processor",
-	},
-	{
-		id: "6",
-		name: "frontend-app",
-		syncStatus: SyncStatus.Synced,
-		healthStatus: HealthStatus.Healthy,
-		repo: "org/frontend",
-		branch: "feature/new-ui",
-		commit: "f8i9h6j",
-		commitMessage: "Add new UI components",
-		lastSync: "30m ago",
-		agent: "agent-03",
-		path: "apps/frontend",
-	},
-];
-
 function ApplicationsPage() {
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 	const [searchQuery, setSearchQuery] = useState("");
 
-	const filteredApps = mockApps.filter((app) => {
-		return (
-			app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			app.repo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			app.branch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			app.path.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			app.agent.toLowerCase().includes(searchQuery.toLowerCase()) ||
-			app.commit.toLowerCase().includes(searchQuery.toLowerCase())
-		);
-	});
+	const { data } = useFetch<ApplicationListItem[]>("/applications");
+
+	const filteredApps =
+		data?.filter((app) => {
+			return (
+				app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				app.repositoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				app.branch.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				app.path.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				app.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				app.commit.toLowerCase().includes(searchQuery.toLowerCase())
+			);
+		}) ?? [];
 
 	const stats = {
-		total: mockApps.length,
-		synced: mockApps.filter((a) => a.syncStatus === SyncStatus.Synced).length,
-		outOfSync: mockApps.filter((a) => a.syncStatus === SyncStatus.OutOfSync).length,
-		healthy: mockApps.filter((a) => a.healthStatus === HealthStatus.Healthy).length,
+		total: data?.length ?? 0,
+		synced: data?.filter((a) => a.syncStatus === SyncStatus.Synced).length ?? 0,
+		outOfSync: data?.filter((a) => a.syncStatus === SyncStatus.OutOfSync).length ?? 0,
+		healthy: data?.filter((a) => a.healthStatus === HealthStatus.Healthy).length ?? 0,
 	};
 	const statItems = [
 		{ label: "Total Apps", value: stats.total },
@@ -211,66 +134,75 @@ function ApplicationsPage() {
 			</div>
 			<div>
 				{viewMode === "grid" ? (
-					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-						{filteredApps.map((app) => (
-							<Link key={app.id} to="/applications/$id" params={{ id: app.id }}>
-								<Card className="border border-border hover:border-primary transition-colors">
-									<CardHeader>
-										<CardTitle>
-											<div className="flex items-center gap-3">
-												<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-													<Box className="h-5 w-5 text-primary" />
+					<>
+						{data && data.length === 0 ? (
+							<div className="rounded-xl border border-dashed p-10 text-center">
+								<p className="text-sm font-medium">No applications found</p>
+								<p className="mt-1 text-sm text-muted-foreground">
+									Adjust your search to see matching applications.
+								</p>
+							</div>
+						) : null}
+						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+							{filteredApps.map((app) => (
+								<Link key={app.id} to="/applications/$id" params={{ id: app.id }}>
+									<Card className="border border-border hover:border-primary transition-colors">
+										<CardHeader>
+											<CardTitle>
+												<div className="flex items-center gap-3">
+													<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+														<Box className="h-5 w-5 text-primary" />
+													</div>
+													<div>
+														<h3 className="font-medium group-hover:text-primary transition-colors">
+															{app.name}
+														</h3>
+													</div>
 												</div>
-												<div>
-													<h3 className="font-medium group-hover:text-primary transition-colors">
-														{app.name}
-													</h3>
-												</div>
+											</CardTitle>
+											<CardAction>
+												<DropdownMenu>
+													<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+														<Button variant="ghost" size="icon" className="h-8 w-8">
+															<MoreVertical className="h-4 w-4" />
+														</Button>
+													</DropdownMenuTrigger>
+													<DropdownMenuContent align="end">
+														<DropdownMenuItem>Sync</DropdownMenuItem>
+														<DropdownMenuItem asChild>
+															<Link to="/applications/$id/settings" params={{ id: app.id }}>
+																Settings
+															</Link>
+														</DropdownMenuItem>
+													</DropdownMenuContent>
+												</DropdownMenu>
+											</CardAction>
+										</CardHeader>
+										<CardContent>
+											<div className="flex gap-2 mt-4">
+												<StatusBadge status={app.syncStatus} type="sync" />
+												<StatusBadge status={app.healthStatus} type="health" />
 											</div>
-										</CardTitle>
-										<CardAction>
-											<DropdownMenu>
-												<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<MoreVertical className="h-4 w-4" />
-													</Button>
-												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
-													<DropdownMenuItem>Sync</DropdownMenuItem>
-													<DropdownMenuItem asChild>
-														<Link to="/applications/$id/settings" params={{ id: app.id }}>
-															Settings
-														</Link>
-													</DropdownMenuItem>
-													<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</CardAction>
-									</CardHeader>
-									<CardContent>
-										<div className="flex gap-2 mt-4">
-											<StatusBadge status={app.syncStatus} type="sync" />
-											<StatusBadge status={app.healthStatus} type="health" />
-										</div>
 
-										<div className="mt-4 pt-4 border-t border-border space-y-2">
-											<div className="flex items-center gap-2 text-sm text-muted-foreground">
-												<GitBranch className="h-4 w-4" />
-												<span className="truncate">{app.repo}</span>
-											</div>
-											<div className="flex items-center justify-between text-sm">
-												<div className="flex items-center gap-2 text-muted-foreground">
-													<GitCommit className="h-4 w-4" />
-													<span>{app.commit}</span>
+											<div className="mt-4 pt-4 border-t border-border space-y-2">
+												<div className="flex items-center gap-2 text-sm text-muted-foreground">
+													<GitBranch className="h-4 w-4" />
+													<span className="truncate">{app.repositoryName}</span>
 												</div>
-												<span className="text-muted-foreground">{app.lastSync}</span>
+												<div className="flex items-center justify-between text-sm">
+													<div className="flex items-center gap-2 text-muted-foreground">
+														<GitCommit className="h-4 w-4" />
+														<span>{app.commit}</span>
+													</div>
+													<span className="text-muted-foreground">{app.lastSyncedAt}</span>
+												</div>
 											</div>
-										</div>
-									</CardContent>
-								</Card>
-							</Link>
-						))}
-					</div>
+										</CardContent>
+									</Card>
+								</Link>
+							))}
+						</div>
+					</>
 				) : (
 					<ApplicationsDataTable columns={columns} data={filteredApps} />
 				)}

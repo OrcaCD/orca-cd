@@ -7,22 +7,22 @@ type StatusBadgeProps =
 	| { type: "health"; status: HealthStatus };
 
 const syncConfig: Record<SyncStatus, { label: string; className: string; dotClass: string }> = {
-	Synced: {
+	synced: {
 		label: "Synced",
 		className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
 		dotClass: "bg-emerald-400",
 	},
-	OutOfSync: {
+	out_of_sync: {
 		label: "Out of Sync",
 		className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 		dotClass: "bg-amber-400",
 	},
-	Progressing: {
+	syncing: {
 		label: "Syncing",
 		className: "bg-blue-500/20 text-blue-400 border-blue-500/30",
 		dotClass: "bg-blue-400 animate-pulse",
 	},
-	Unknown: {
+	unknown: {
 		label: "Unknown",
 		className: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 		dotClass: "bg-zinc-400",
@@ -30,22 +30,17 @@ const syncConfig: Record<SyncStatus, { label: string; className: string; dotClas
 };
 
 const healthConfig: Record<HealthStatus, { label: string; className: string; dotClass: string }> = {
-	Healthy: {
+	healthy: {
 		label: "Healthy",
 		className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
 		dotClass: "bg-emerald-400",
 	},
-	Degraded: {
-		label: "Degraded",
+	unhealthy: {
+		label: "Unhealthy",
 		className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 		dotClass: "bg-amber-400",
 	},
-	Progressing: {
-		label: "Unhealthy",
-		className: "bg-red-500/20 text-red-400 border-red-500/30",
-		dotClass: "bg-red-400",
-	},
-	Unknown: {
+	unknown: {
 		label: "Unknown",
 		className: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 		dotClass: "bg-zinc-400",

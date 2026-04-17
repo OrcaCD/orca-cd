@@ -35,7 +35,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import { deleteApplication, type Application } from "@/lib/applications";
+import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import { toast } from "sonner";
+import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings")({
 	component: SettingsPage,
@@ -48,20 +51,6 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings"
 	}),
 });
 
-const mockApp: Application = {
-	id: "1",
-	name: "api-gateway",
-	syncStatus: SyncStatus.Synced,
-	healthStatus: HealthStatus.Healthy,
-	repo: "github.com/org/api-gateway",
-	branch: "main",
-	commit: "a3f2b1c",
-	commitMessage: "fix: update rate limiting configuration",
-	lastSync: "2 minutes ago",
-	path: "/docker-compose.yml",
-	agent: "prod-server-01",
-};
-
 const settingsSections = [
 	{ id: "general", label: "General", icon: Server },
 	{ id: "source", label: "Source", icon: GitBranch },
@@ -73,11 +62,22 @@ type Sections = (typeof settingsSections)[number]["id"];
 
 function SettingsPage() {
 	const { id } = Route.useParams();
+	const { data } = useFetch<Application>("/applications/" + id);
+
 	const [activeSection, setActiveSection] = useState<Sections>("general");
 
 	const [autoSync, setAutoSync] = useState(true);
 	const [selfHeal, setSelfHeal] = useState(true);
 	const [pruneResources, setPruneResources] = useState(false);
+
+	async function deleteApp() {
+		try {
+			await deleteApplication(id);
+			toast.success(`Application ${data?.name} deleted successfully`);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Failed to delete application");
+		}
+	}
 	return (
 		<div className="space-y-6">
 			<div className="flex flex-col lg:flex-row gap-6">
@@ -124,7 +124,7 @@ function SettingsPage() {
 									<BreadcrumbItem>
 										<BreadcrumbLink asChild>
 											<Link to="/applications/$id" params={{ id: id }}>
-												{mockApp.name}
+												{data?.name}
 											</Link>
 										</BreadcrumbLink>
 									</BreadcrumbItem>
@@ -147,7 +147,7 @@ function SettingsPage() {
 														<Label htmlFor="name">Application Name</Label>
 														<Input
 															id="name"
-															defaultValue={mockApp.name}
+															defaultValue={data?.name}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -173,7 +173,7 @@ function SettingsPage() {
 														<Label htmlFor="repo">Repository URL</Label>
 														<Input
 															id="repo"
-															defaultValue={mockApp.repo}
+															defaultValue={data?.repositoryName}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -182,7 +182,7 @@ function SettingsPage() {
 														<Label htmlFor="branch">Target Branch</Label>
 														<Input
 															id="branch"
-															defaultValue={mockApp.branch}
+															defaultValue={data?.branch}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -191,7 +191,7 @@ function SettingsPage() {
 														<Label htmlFor="path">Compose File Path</Label>
 														<Input
 															id="path"
-															defaultValue={mockApp.path}
+															defaultValue={data?.path}
 															className="bg-muted border-border"
 														/>
 													</div>
@@ -209,7 +209,7 @@ function SettingsPage() {
 												<div className="space-y-4">
 													<div className="space-y-2">
 														<Label htmlFor="host">Host</Label>
-														<Select defaultValue={mockApp.agent}>
+														<Select defaultValue={data?.agentName}>
 															<SelectTrigger className="bg-muted border-border">
 																<SelectValue />
 															</SelectTrigger>
@@ -292,10 +292,17 @@ function SettingsPage() {
 																Permanently delete this application and all its data
 															</p>
 														</div>
-														<Button variant="destructive">
-															<Trash2 className="mr-2 h-4 w-4" />
-															Delete
-														</Button>
+														<ConfirmationDialog
+															onConfirm={async () => await deleteApp()}
+															triggerProps={{ variant: "destructive" }}
+															triggerText={
+																<>
+																	<Trash2 className="mr-2 h-4 w-4" />
+																	Delete
+																</>
+															}
+															description="Are you sure you want to delete this application? This action cannot be undone."
+														></ConfirmationDialog>
 													</div>
 												</div>
 											</div>

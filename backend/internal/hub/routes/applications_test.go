@@ -169,8 +169,14 @@ func TestListApplicationsHandler_ReturnsSummaryFields(t *testing.T) {
 	if item["commit"] != "abcdef123" {
 		t.Errorf("expected commit %q, got %v", "abcdef123", item["commit"])
 	}
-	if _, ok := item["name"]; ok {
-		t.Error("list response should not include name field")
+	if item["name"] != "Summary App" {
+		t.Errorf("expected name %q, got %v", "Summary App", item["name"])
+	}
+	if item["repositoryName"] != repo.Name {
+		t.Errorf("expected repositoryName %q, got %v", repo.Name, item["repositoryName"])
+	}
+	if item["agentName"] != "agent-summary" {
+		t.Errorf("expected agentName %q, got %v", "agent-summary", item["agentName"])
 	}
 }
 
@@ -221,6 +227,12 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	}
 	if body.AgentId != agent.Id {
 		t.Errorf("expected agentId %q, got %q", agent.Id, body.AgentId)
+	}
+	if body.RepositoryName != repo.Name {
+		t.Errorf("expected repositoryName %q, got %q", repo.Name, body.RepositoryName)
+	}
+	if body.AgentName != "agent-detail" {
+		t.Errorf("expected agentName %q, got %q", "agent-detail", body.AgentName)
 	}
 	if body.CommitMessage != "initial commit" {
 		t.Errorf("expected commitMessage %q, got %q", "initial commit", body.CommitMessage)
@@ -299,6 +311,12 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if body.Name != "Billing Service" {
 		t.Errorf("expected name %q, got %q", "Billing Service", body.Name)
+	}
+	if body.RepositoryName != repo.Name {
+		t.Errorf("expected repositoryName %q, got %q", repo.Name, body.RepositoryName)
+	}
+	if body.AgentName != "agent-create" {
+		t.Errorf("expected agentName %q, got %q", "agent-create", body.AgentName)
 	}
 	if body.SyncStatus != string(models.UnknownSync) {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, body.SyncStatus)
@@ -551,6 +569,17 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.RepositoryName != newRepo.Name {
+		t.Errorf("expected repositoryName %q, got %q", newRepo.Name, body.RepositoryName)
+	}
+	if body.AgentName != "agent-update-2" {
+		t.Errorf("expected agentName %q, got %q", "agent-update-2", body.AgentName)
 	}
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())

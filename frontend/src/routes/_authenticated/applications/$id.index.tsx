@@ -32,6 +32,7 @@ import { useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -43,20 +44,6 @@ export const Route = createFileRoute("/_authenticated/applications/$id/")({
 		],
 	}),
 });
-
-const mockApp: Application = {
-	id: "1",
-	name: "api-gateway",
-	syncStatus: SyncStatus.Synced,
-	healthStatus: HealthStatus.Healthy,
-	repo: "github.com/org/api-gateway",
-	branch: "main",
-	commit: "a3f2b1c",
-	commitMessage: "fix: update rate limiting configuration",
-	lastSync: "2 minutes ago",
-	path: "/docker-compose.yml",
-	agent: "prod-server-01",
-};
 
 function InfoCard({
 	icon,
@@ -128,6 +115,8 @@ function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 	const { theme } = useTheme();
 
+	const { data } = useFetch<Application>("/applications/" + id);
+
 	const [syncing, setSyncing] = useState(false);
 
 	const handleSync = async () => {
@@ -151,7 +140,7 @@ function ApplicationDetailsPage() {
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
-						<BreadcrumbPage>{mockApp.name}</BreadcrumbPage>
+						<BreadcrumbPage>{data?.name}</BreadcrumbPage>
 					</BreadcrumbItem>
 				</BreadcrumbList>
 			</Breadcrumb>
@@ -163,9 +152,9 @@ function ApplicationDetailsPage() {
 					</div>
 					<div>
 						<div className="flex items-center gap-3">
-							<h1 className="text-2xl font-bold">{mockApp.name}</h1>
-							<StatusBadge status={mockApp.syncStatus} type="sync" />
-							<StatusBadge status={mockApp.healthStatus} type="health" />
+							<h1 className="text-2xl font-bold">{data?.name}</h1>
+							<StatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
+							<StatusBadge status={data?.healthStatus ?? HealthStatus.Unknown} type="health" />
 						</div>
 					</div>
 				</div>
@@ -189,7 +178,6 @@ function ApplicationDetailsPage() {
 						<DropdownMenuContent align="end">
 							<DropdownMenuItem>Hard Refresh</DropdownMenuItem>
 							<DropdownMenuItem>Rollback</DropdownMenuItem>
-							<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>
@@ -199,26 +187,26 @@ function ApplicationDetailsPage() {
 				<InfoCard
 					icon={<GitBranch className="h-4 w-4" />}
 					label="Repository"
-					value={mockApp.repo}
-					subValue={mockApp.branch}
+					value={data?.repositoryName ?? ""}
+					subValue={data?.branch}
 					isLink
 				/>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
 					label="Latest Commit"
-					value={mockApp.commit}
-					subValue={mockApp.commitMessage}
+					value={data?.commit ?? ""}
+					subValue={data?.commitMessage}
 				/>
 				<InfoCard
 					icon={<Server className="h-4 w-4" />}
 					label="Target Host"
-					value={mockApp.agent}
-					subValue={mockApp.path}
+					value={data?.agentName ?? ""}
+					subValue={data?.path}
 				/>
 				<InfoCard
 					icon={<Clock className="h-4 w-4" />}
 					label="Last Sync"
-					value={mockApp.lastSync}
+					value={data?.lastSyncedAt ?? ""}
 					subValue="Auto-sync enabled"
 				/>
 			</div>

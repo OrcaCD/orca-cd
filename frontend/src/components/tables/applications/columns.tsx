@@ -8,11 +8,11 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
-import type { Application } from "@/lib/applications";
+import type { ApplicationListItem } from "@/lib/applications";
 import { Link } from "@tanstack/react-router";
 import { StatusBadge } from "@/components/status-badge";
 
-export const columns: ColumnDef<Application>[] = [
+export const columns: ColumnDef<ApplicationListItem>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {
@@ -54,13 +54,13 @@ export const columns: ColumnDef<Application>[] = [
 		},
 	},
 	{
-		accessorKey: "repo",
+		accessorKey: "repositoryName",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Repository" />;
 		},
 	},
 	{
-		accessorKey: "agent",
+		accessorKey: "agentName",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Agent" />;
 		},
@@ -78,9 +78,13 @@ export const columns: ColumnDef<Application>[] = [
 		},
 	},
 	{
-		accessorKey: "lastSync",
+		accessorKey: "lastSyncedAt",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title="Last Sync" />;
+		},
+		cell: ({ row }) => {
+			const app = row.original;
+			return app.lastSyncedAt ? new Date(app.lastSyncedAt).toLocaleString() : "Never";
 		},
 	},
 	{
@@ -101,7 +105,6 @@ export const columns: ColumnDef<Application>[] = [
 									Settings
 								</Link>
 							</DropdownMenuItem>
-							<DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>
