@@ -152,7 +152,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="form-tanstack-select-language">Repository</FieldLabel>
+											<FieldLabel htmlFor="repository-select">Repository</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -161,11 +161,11 @@ export default function UpsertApplicationDialog({
 											onValueChange={field.handleChange}
 										>
 											<SelectTrigger
-												id="form-tanstack-select-language"
+												id="repository-select"
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select" />
+												<SelectValue placeholder="Select a repository" />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isReposLoading ? (
@@ -191,7 +191,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="form-tanstack-select-language">Agent</FieldLabel>
+											<FieldLabel htmlFor="agent-select">Agent</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -200,11 +200,11 @@ export default function UpsertApplicationDialog({
 											onValueChange={field.handleChange}
 										>
 											<SelectTrigger
-												id="form-tanstack-select-language"
+												id="agent-select"
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select" />
+												<SelectValue placeholder="Select an agent" />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isAgentsLoading ? (

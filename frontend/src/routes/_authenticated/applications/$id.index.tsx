@@ -206,7 +206,7 @@ function ApplicationDetailsPage() {
 				<InfoCard
 					icon={<Clock className="h-4 w-4" />}
 					label="Last Sync"
-					value={data?.lastSyncedAt ?? ""}
+					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : "Never"}
 					subValue="Auto-sync enabled"
 				/>
 			</div>

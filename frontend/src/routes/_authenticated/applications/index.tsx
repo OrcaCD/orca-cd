@@ -194,7 +194,11 @@ function ApplicationsPage() {
 														<GitCommit className="h-4 w-4" />
 														<span>{app.commit}</span>
 													</div>
-													<span className="text-muted-foreground">{app.lastSyncedAt}</span>
+													<span className="text-muted-foreground">
+														{app.lastSyncedAt
+															? new Date(app.lastSyncedAt).toLocaleString()
+															: "Never"}
+													</span>
 												</div>
 											</div>
 										</CardContent>
