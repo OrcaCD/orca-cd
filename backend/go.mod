@@ -7,7 +7,7 @@ require (
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/docker/cli v29.4.0+incompatible
-	github.com/docker/compose/v5 v5.1.2
+	github.com/docker/compose/v5 v5.1.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -44,7 +44,7 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.10.2 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.10.0 // indirect
-	github.com/containerd/containerd/v2 v2.2.2 // indirect
+	github.com/containerd/containerd/v2 v2.2.3 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
