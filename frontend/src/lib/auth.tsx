@@ -54,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		} else {
 			disconnect();
 		}
+		return disconnect;
 	}, [isLoading, auth.isAuthenticated, refreshAuth]);
 
 	const logout = useCallback(async () => {

@@ -20,8 +20,6 @@ import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
-import { mutate } from "swr";
-import { API_BASE } from "@/lib/api";
 import CopyValueDialog from "./copy-value-dialog";
 
 const baseSchema = z.object({
@@ -85,7 +83,6 @@ export default function UpsertUserDialog({
 					setIsGeneratedPasswordOpen(true);
 				}
 
-				await mutate(`${API_BASE}/admin/users`);
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save user");

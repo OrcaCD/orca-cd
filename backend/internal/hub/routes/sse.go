@@ -42,6 +42,9 @@ func SSEHandler(c *gin.Context) {
 	timer := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer timer.Stop()
 
+	keepAlive := time.NewTicker(30 * time.Second)
+	defer keepAlive.Stop()
+
 	for {
 		select {
 		case <-timer.C:
@@ -59,6 +62,11 @@ func SSEHandler(c *gin.Context) {
 				continue
 			}
 			if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event.Type, data); err != nil {
+				return
+			}
+			c.Writer.Flush()
+		case <-keepAlive.C:
+			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
 				return
 			}
 			c.Writer.Flush()

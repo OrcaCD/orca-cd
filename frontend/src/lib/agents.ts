@@ -1,5 +1,4 @@
-import { mutate } from "swr";
-import { API_BASE, fetcher } from "./api";
+import { fetcher } from "./api";
 
 export enum AgentStatus {
 	Offline = "offline",
@@ -29,19 +28,14 @@ export interface UpdateAgentRequest {
 	name: string;
 }
 
-export async function createAgent(data: CreateAgentRequest): Promise<AgentWithTokenResponse> {
-	const res = await fetcher<AgentWithTokenResponse>("/agents", "POST", data);
-	await mutate(`${API_BASE}/agents`);
-	return res;
+export function createAgent(data: CreateAgentRequest): Promise<AgentWithTokenResponse> {
+	return fetcher<AgentWithTokenResponse>("/agents", "POST", data);
 }
 
-export async function updateAgent(id: string, data: UpdateAgentRequest): Promise<Agent> {
-	const res = await fetcher<Agent>(`/agents/${id}`, "PUT", data);
-	await mutate(`${API_BASE}/agents`);
-	return res;
+export function updateAgent(id: string, data: UpdateAgentRequest): Promise<Agent> {
+	return fetcher<Agent>(`/agents/${id}`, "PUT", data);
 }
 
-export async function deleteAgent(id: string): Promise<void> {
-	await fetcher(`/agents/${id}`, "DELETE");
-	await mutate(`${API_BASE}/agents`);
+export function deleteAgent(id: string): Promise<void> {
+	return fetcher(`/agents/${id}`, "DELETE");
 }

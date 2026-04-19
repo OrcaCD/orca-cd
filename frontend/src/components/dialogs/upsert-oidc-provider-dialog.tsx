@@ -37,11 +37,9 @@ const providerSchema = z.object({
 
 export default function UpsertOIDCProviderDialog({
 	provider,
-	onSave,
 	asDropdownItem = false,
 }: {
 	provider: OIDCProviderDetail | null;
-	onSave: () => void;
 	asDropdownItem?: boolean;
 }) {
 	const isEditing = !!provider;
@@ -95,7 +93,6 @@ export default function UpsertOIDCProviderDialog({
 					});
 					toast.success("Provider created");
 				}
-				onSave();
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to save provider");

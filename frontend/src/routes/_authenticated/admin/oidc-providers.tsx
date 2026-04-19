@@ -38,24 +38,15 @@ export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 });
 
 function OIDCProvidersPage() {
-	const {
-		data: providers,
-		mutate,
-		isLoading,
-	} = useFetch<OIDCProviderDetail[]>("/admin/oidc-providers");
+	const { data: providers, isLoading } = useFetch<OIDCProviderDetail[]>("/admin/oidc-providers");
 
 	async function handleDelete(provider: OIDCProviderDetail) {
 		try {
 			await deleteOIDCProvider(provider.id);
 			toast.success("Provider deleted");
-			await mutate();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Failed to delete provider");
 		}
-	}
-
-	async function handleSave() {
-		await mutate();
 	}
 
 	return (
@@ -68,7 +59,7 @@ function OIDCProvidersPage() {
 					</p>
 				</div>
 
-				<UpsertOIDCProviderDialog provider={null} onSave={handleSave} />
+				<UpsertOIDCProviderDialog provider={null} />
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">Loading providers...</p>}
@@ -98,11 +89,7 @@ function OIDCProvidersPage() {
 										</Button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent align="end">
-										<UpsertOIDCProviderDialog
-											provider={provider}
-											onSave={handleSave}
-											asDropdownItem
-										/>
+										<UpsertOIDCProviderDialog provider={provider} asDropdownItem />
 										<DropdownMenuSeparator />
 										<ConfirmationDialog
 											onConfirm={() => handleDelete(provider)}

@@ -8,9 +8,12 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const ApplicationsPath = "/api/v1/applications"
 
 type createApplicationRequest struct {
 	Name         string `json:"name" binding:"required"`
@@ -158,6 +161,7 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
+	sse.PublishUpdate(ApplicationsPath)
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
@@ -225,6 +229,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
+	sse.PublishUpdate(ApplicationsPath)
 }
 
 func DeleteApplicationHandler(c *gin.Context) {
@@ -241,6 +246,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
+	sse.PublishUpdate(ApplicationsPath)
 }
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {

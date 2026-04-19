@@ -21,8 +21,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const repositoriesAPIPath = "/api/v1/repositories"
-
 func setupTestDBWithRepos(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
@@ -939,8 +937,8 @@ func TestCreateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != repositoriesAPIPath {
-			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		if event.URL != RepositoriesPath {
+			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -988,8 +986,8 @@ func TestUpdateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != repositoriesAPIPath {
-			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		if event.URL != RepositoriesPath {
+			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -1030,8 +1028,8 @@ func TestDeleteRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != repositoriesAPIPath {
-			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		if event.URL != RepositoriesPath {
+			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")

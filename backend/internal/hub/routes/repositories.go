@@ -17,6 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const RepositoriesPath = "/api/v1/repositories"
+
 var appUrl string
 
 func SetRepositoriesConfig(url string) {
@@ -189,7 +191,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true))
-	sse.PublishUpdate("/api/v1/repositories")
+	sse.PublishUpdate(RepositoriesPath)
 }
 
 type testConnectionRequest struct {
@@ -257,7 +259,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
-	sse.PublishUpdate("/api/v1/repositories")
+	sse.PublishUpdate(RepositoriesPath)
 }
 
 type updateRepositoryRequest struct {
@@ -366,7 +368,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret))
-	sse.PublishUpdate("/api/v1/repositories")
+	sse.PublishUpdate(RepositoriesPath)
 }
 
 // resolveProvider validates the provider enum, URL, and authMethod, returning the

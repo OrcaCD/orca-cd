@@ -9,9 +9,12 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const AgentsPath = "/api/v1/agents"
 
 type agentResponse struct {
 	Id        string  `json:"id"`
@@ -148,6 +151,7 @@ func CreateAgentHandler(c *gin.Context) {
 		agentResponse: toAgentResponse(&agent),
 		AuthToken:     authToken,
 	})
+	sse.PublishUpdate(AgentsPath)
 }
 
 func UpdateAgentHandler(c *gin.Context) {
@@ -182,6 +186,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent))
+	sse.PublishUpdate(AgentsPath)
 }
 
 func DeleteAgentHandler(c *gin.Context) {
@@ -198,4 +203,5 @@ func DeleteAgentHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
+	sse.PublishUpdate(AgentsPath)
 }
