@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext } from "react";
+import { createContext, useCallback, useContext, useEffect } from "react";
 import { API_BASE, fetcher, useFetch } from "./api";
+import { connect, disconnect } from "./sse";
 
 export interface AuthState {
 	isAuthenticated: boolean;
@@ -43,6 +44,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const refreshAuth = useCallback(async () => {
 		await mutate();
 	}, [mutate]);
+
+	useEffect(() => {
+		if (isLoading) {
+			return;
+		}
+		if (auth.isAuthenticated) {
+			connect(refreshAuth);
+		} else {
+			disconnect();
+		}
+		return disconnect;
+	}, [isLoading, auth.isAuthenticated, refreshAuth]);
 
 	const logout = useCallback(async () => {
 		await fetch(`${API_BASE}/auth/logout`, { method: "POST" });

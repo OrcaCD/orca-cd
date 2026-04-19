@@ -1,5 +1,4 @@
-import { mutate } from "swr";
-import { API_BASE, fetcher } from "./api";
+import { fetcher } from "./api";
 
 export interface Application {
 	id: string;
@@ -68,22 +67,17 @@ interface UpdateApplicationRequest {
 	path: string;
 }
 
-export async function createApplication(data: CreateApplicationRequest): Promise<Application> {
-	const res = await fetcher<Application>("/applications", "POST", data);
-	await mutate(`${API_BASE}/applications`);
-	return res;
+export function createApplication(data: CreateApplicationRequest): Promise<Application> {
+	return fetcher<Application>("/applications", "POST", data);
 }
 
-export async function updateApplication(
+export function updateApplication(
 	id: string,
 	data: UpdateApplicationRequest,
 ): Promise<Application> {
-	const res = await fetcher<Application>(`/applications/${id}`, "PUT", data);
-	await mutate(`${API_BASE}/applications`);
-	return res;
+	return fetcher<Application>(`/applications/${id}`, "PUT", data);
 }
 
-export async function deleteApplication(id: string): Promise<void> {
-	await fetcher(`/applications/${id}`, "DELETE");
-	await mutate(`${API_BASE}/applications`);
+export function deleteApplication(id: string): Promise<void> {
+	return fetcher(`/applications/${id}`, "DELETE");
 }

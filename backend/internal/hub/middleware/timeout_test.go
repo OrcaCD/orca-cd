@@ -96,6 +96,51 @@ func TestTimeoutMiddleware_SkipsWebSocketRequests(t *testing.T) {
 	}
 }
 
+func TestTimeoutMiddleware_SkipsSSERoute(t *testing.T) {
+	t.Parallel()
+
+	router := gin.New()
+	router.Use(TimeoutMiddleware(100 * time.Millisecond))
+	router.GET("/api/v1/events", func(c *gin.Context) {
+		_, ok := c.Request.Context().Deadline()
+		if ok {
+			t.Fatal("expected no deadline for SSE route")
+		}
+		c.Status(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestTimeoutMiddleware_AcceptHeaderAloneDoesNotBypassTimeout(t *testing.T) {
+	t.Parallel()
+
+	router := gin.New()
+	router.Use(TimeoutMiddleware(100 * time.Millisecond))
+	router.GET("/other", func(c *gin.Context) {
+		_, ok := c.Request.Context().Deadline()
+		if !ok {
+			t.Fatal("expected deadline to be set despite Accept: text/event-stream header")
+		}
+		c.Status(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/other", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
 func TestTimeoutMiddleware_CancelsContextAfterHandlerReturns(t *testing.T) {
 	t.Parallel()
 

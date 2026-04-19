@@ -10,9 +10,12 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const AdminUsersPath = "/api/v1/admin/users"
 
 type adminUserResponse struct {
 	Id                     string   `json:"id"`
@@ -155,6 +158,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
+	sse.PublishUpdate(AdminUsersPath)
 }
 
 func AdminUpdateUserHandler(c *gin.Context) {
@@ -233,6 +237,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
+	sse.PublishUpdate(AdminUsersPath)
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
@@ -266,6 +271,7 @@ func AdminDeleteUserHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
+	sse.PublishUpdate(AdminUsersPath)
 }
 
 func countAdminUsers(c *gin.Context) (int64, error) {

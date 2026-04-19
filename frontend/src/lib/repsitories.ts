@@ -1,5 +1,4 @@
-import { mutate } from "swr";
-import { API_BASE, fetcher } from "./api";
+import { fetcher } from "./api";
 
 export type RepositoryProvider =
 	| "github"
@@ -53,28 +52,20 @@ export interface TestConnectionRequest {
 	authToken?: string;
 }
 
-export async function createRepository(data: CreateRepositoryRequest): Promise<Repository> {
-	const res = await fetcher<Repository>("/repositories", "POST", data);
-	await mutate(`${API_BASE}/repositories`);
-	return res;
+export function createRepository(data: CreateRepositoryRequest): Promise<Repository> {
+	return fetcher<Repository>("/repositories", "POST", data);
 }
 
 export function testRepositoryConnection(data: TestConnectionRequest): Promise<void> {
 	return fetcher("/repositories/test-connection", "POST", data);
 }
 
-export async function deleteRepository(id: string): Promise<void> {
-	await fetcher(`/repositories/${id}`, "DELETE");
-	await mutate(`${API_BASE}/repositories`);
+export function deleteRepository(id: string): Promise<void> {
+	return fetcher(`/repositories/${id}`, "DELETE");
 }
 
-export async function updateRepository(
-	id: string,
-	data: UpdateRepositoryRequest,
-): Promise<Repository> {
-	const res = await fetcher<Repository>(`/repositories/${id}`, "PUT", data);
-	await mutate(`${API_BASE}/repositories`);
-	return res;
+export function updateRepository(id: string, data: UpdateRepositoryRequest): Promise<Repository> {
+	return fetcher<Repository>(`/repositories/${id}`, "PUT", data);
 }
 
 export function getGitProviderIconPath(provider: RepositoryProvider): string {
