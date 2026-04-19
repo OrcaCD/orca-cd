@@ -19,11 +19,8 @@ func SSEHandler(c *gin.Context) {
 	}
 
 	// Clear the write deadline so the server's WriteTimeout doesn't kill long-lived SSE connections.
-	rc := http.NewResponseController(c.Writer)
-	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	// Ignore errors: some ResponseWriter implementations (e.g. httptest.ResponseRecorder) don't support deadlines.
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache, no-transform")
