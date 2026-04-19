@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef } from "react";
 import { API_BASE, fetcher, useFetch } from "./api";
 import { connect, disconnect } from "./sse";
+
+const AUTH_BROADCAST_CHANNEL = "orca-auth";
 
 export interface AuthState {
 	isAuthenticated: boolean;
@@ -56,6 +58,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		}
 		return disconnect;
 	}, [isLoading, auth.isAuthenticated, refreshAuth]);
+
+	const channelRef = useRef<BroadcastChannel | null>(null);
+	const prevAuthRef = useRef<boolean | null>(null);
+
+	useEffect(() => {
+		const channel = new BroadcastChannel(AUTH_BROADCAST_CHANNEL);
+		channelRef.current = channel;
+
+		channel.addEventListener("message", async (event: MessageEvent<{ type: string }>) => {
+			if (event.data.type === "logout") {
+				await mutate(undefined, false);
+			} else if (event.data.type === "login") {
+				await mutate();
+			}
+		});
+
+		return () => {
+			channel.close();
+			channelRef.current = null;
+		};
+	}, [mutate]);
+
+	useEffect(() => {
+		if (isLoading) {
+			return;
+		}
+
+		if (prevAuthRef.current === null) {
+			prevAuthRef.current = auth.isAuthenticated;
+			return;
+		}
+
+		if (prevAuthRef.current !== auth.isAuthenticated) {
+			prevAuthRef.current = auth.isAuthenticated;
+			channelRef.current?.postMessage({ type: auth.isAuthenticated ? "login" : "logout" });
+		}
+	}, [isLoading, auth.isAuthenticated]);
 
 	const logout = useCallback(async () => {
 		await fetch(`${API_BASE}/auth/logout`, { method: "POST" });
