@@ -8,16 +8,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
+
+const repositoriesAPIPath = "/api/v1/repositories"
 
 func setupTestDBWithRepos(t *testing.T) {
 	t.Helper()
@@ -904,6 +908,133 @@ func TestUpdateRepositoryHandler_SwitchFromWebhook(t *testing.T) {
 	}
 	if updated.WebhookSecret != nil {
 		t.Error("expected webhookSecret to be cleared in DB")
+	}
+}
+
+func TestCreateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
+	setupTestDBWithRepos(t)
+	broker := newTestSSEBroker(t)
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/sse-repo",
+		"provider":   "github",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case event := <-ch:
+		if event.Type != sse.EventTypeUpdate {
+			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
+		}
+		if event.URL != repositoriesAPIPath {
+			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SSE event")
+	}
+}
+
+func TestUpdateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
+	setupTestDBWithRepos(t)
+	broker := newTestSSEBroker(t)
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/repo",
+		"authMethod": "none",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case event := <-ch:
+		if event.Type != sse.EventTypeUpdate {
+			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
+		}
+		if event.URL != repositoriesAPIPath {
+			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SSE event")
+	}
+}
+
+func TestDeleteRepositoryHandler_PublishesSSEEvent(t *testing.T) {
+	setupTestDBWithRepos(t)
+	broker := newTestSSEBroker(t)
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	repo := models.Repository{
+		Name:       "To Delete SSE",
+		Url:        "https://github.com/owner/sse-delete",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case event := <-ch:
+		if event.Type != sse.EventTypeUpdate {
+			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
+		}
+		if event.URL != repositoriesAPIPath {
+			t.Errorf("expected URL %q, got %q", repositoriesAPIPath, event.URL)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SSE event")
 	}
 }
 

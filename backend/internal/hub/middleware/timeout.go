@@ -10,8 +10,9 @@ import (
 
 func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// WebSocket connections are long-lived; skip the timeout.
-		if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
+		// WebSocket and SSE connections are long-lived; skip the timeout.
+		if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") ||
+			strings.Contains(c.Request.Header.Get("Accept"), "text/event-stream") {
 			c.Next()
 			return
 		}

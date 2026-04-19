@@ -96,6 +96,35 @@ func TestTimeoutMiddleware_SkipsWebSocketRequests(t *testing.T) {
 	}
 }
 
+func TestTimeoutMiddleware_SkipsSSERequests(t *testing.T) {
+	t.Parallel()
+
+	for _, acceptVal := range []string{"text/event-stream", "text/event-stream, text/html"} {
+		t.Run(acceptVal, func(t *testing.T) {
+			t.Parallel()
+
+			router := gin.New()
+			router.Use(TimeoutMiddleware(100 * time.Millisecond))
+			router.GET("/events", func(c *gin.Context) {
+				_, ok := c.Request.Context().Deadline()
+				if ok {
+					t.Fatal("expected no deadline for SSE request")
+				}
+				c.Status(http.StatusOK)
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/events", nil)
+			req.Header.Set("Accept", acceptVal)
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", w.Code)
+			}
+		})
+	}
+}
+
 func TestTimeoutMiddleware_CancelsContextAfterHandlerReturns(t *testing.T) {
 	t.Parallel()
 

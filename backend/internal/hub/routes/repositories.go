@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -188,6 +189,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true))
+	sse.PublishUpdate("/api/v1/repositories")
 }
 
 type testConnectionRequest struct {
@@ -255,6 +257,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
+	sse.PublishUpdate("/api/v1/repositories")
 }
 
 type updateRepositoryRequest struct {
@@ -363,6 +366,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret))
+	sse.PublishUpdate("/api/v1/repositories")
 }
 
 // resolveProvider validates the provider enum, URL, and authMethod, returning the

@@ -5,6 +5,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
@@ -67,6 +68,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.GET("/agents/:id", routes.GetAgentHandler)
 			protected.PUT("/agents/:id", routes.UpdateAgentHandler)
 			protected.DELETE("/agents/:id", routes.DeleteAgentHandler)
+
+			protected.GET("/events", routes.SSEHandler)
 		}
 
 		// Admin routes (authentication + admin role required)
@@ -86,6 +89,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			admin.PUT("/oidc-providers/:id", routes.AdminUpdateOIDCProviderHandler)
 			admin.DELETE("/oidc-providers/:id", routes.AdminDeleteOIDCProviderHandler)
 		}
+
+		sse.DefaultBroker = sse.NewBroker(&Log)
 
 		h := websocket.NewHub(&Log)
 		w := websocket.NewWorker(h, &Log)
