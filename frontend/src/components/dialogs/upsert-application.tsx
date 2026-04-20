@@ -172,6 +172,7 @@ function TreeNodeList({
 						size="sm"
 						onClick={() => onSelectPath(node.path)}
 						className={cn("text-foreground mr-auto", isSelected ? "font-medium" : "")}
+						disabled={!node.name.endsWith(".yml") && !node.name.endsWith(".yaml")}
 					>
 						<FileText className="h-4 w-4" />
 						<span className="truncate">{node.name}</span>
@@ -474,8 +475,7 @@ export default function UpsertApplicationDialog({
 										</div>
 										<Input
 											id={field.name}
-											value={field.state.value}
-											readOnly
+											defaultValue={field.state.value}
 											className="mt-2"
 											placeholder="Selected file path"
 										/>
