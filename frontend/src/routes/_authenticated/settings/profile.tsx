@@ -9,10 +9,19 @@ import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { useAuth, updateProfile } from "@/lib/auth";
 import { AlertTriangleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { m } from "@/lib/paraglide/messages";
+import { getLocale, locales, toLocale, type Locale } from "@/lib/paraglide/runtime";
+import { setLocale as setAppLocale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_authenticated/settings/profile")({
 	component: ProfileSettingsPage,
@@ -33,6 +42,7 @@ const profileSchema = z.object({
 function ProfileSettingsPage() {
 	const { auth, refreshAuth } = useAuth();
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isChangingLanguage, setIsChangingLanguage] = useState(false);
 
 	const form = useForm({
 		defaultValues: {
@@ -56,6 +66,32 @@ function ProfileSettingsPage() {
 
 	const isLocal = auth.profile?.isLocal ?? false;
 	const isReady = !auth.isLoading;
+
+	function getLocaleLabel(locale: Locale): string {
+		switch (locale) {
+			case "de":
+				return m.languageGerman();
+			case "en":
+				return m.languageEnglish();
+			default:
+				return locale;
+		}
+	}
+
+	async function handleLanguageChange(value: string) {
+		const nextLocale = toLocale(value);
+		if (!nextLocale || nextLocale === getLocale()) {
+			return;
+		}
+
+		setIsChangingLanguage(true);
+		try {
+			await setAppLocale(nextLocale);
+		} catch (err) {
+			setIsChangingLanguage(false);
+			toast.error(err instanceof Error ? err.message : m.failedUpdateLanguage());
+		}
+	}
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -136,6 +172,34 @@ function ProfileSettingsPage() {
 							</Field>
 						</FieldGroup>
 					</form>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>{m.language()}</CardTitle>
+					<CardDescription>{m.languageDescription()}</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<div className="max-w-xs space-y-2">
+						<Label htmlFor="language-select">{m.language()}</Label>
+						<Select
+							value={getLocale()}
+							onValueChange={handleLanguageChange}
+							disabled={isChangingLanguage}
+						>
+							<SelectTrigger id="language-select">
+								<SelectValue placeholder={m.selectLanguage()} />
+							</SelectTrigger>
+							<SelectContent>
+								{locales.map((locale) => (
+									<SelectItem key={locale} value={locale}>
+										{getLocaleLabel(locale)}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
 				</CardContent>
 			</Card>
 		</div>

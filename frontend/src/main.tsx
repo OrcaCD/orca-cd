@@ -10,6 +10,7 @@ import { Button } from "./components/ui/button";
 import { AuthProvider, useAuth } from "./lib/auth";
 import type { RouterContext } from "./routes/__root";
 import { m } from "@/lib/paraglide/messages";
+import { initializeI18n } from "@/lib/i18n";
 
 // Create a new router instance
 const router = createRouter({
@@ -63,15 +64,26 @@ function InnerApp() {
 	return <RouterProvider router={router} context={{ auth }} />;
 }
 
-// Render the app
-const rootElement = document.getElementById("app");
-if (rootElement && !rootElement.innerHTML) {
-	const root = ReactDOM.createRoot(rootElement);
-	root.render(
-		<StrictMode>
-			<AuthProvider>
-				<InnerApp />
-			</AuthProvider>
-		</StrictMode>,
-	);
+function renderApp() {
+	const rootElement = document.getElementById("app");
+	if (rootElement && !rootElement.innerHTML) {
+		const root = ReactDOM.createRoot(rootElement);
+		root.render(
+			<StrictMode>
+				<AuthProvider>
+					<InnerApp />
+				</AuthProvider>
+			</StrictMode>,
+		);
+	}
 }
+
+async function bootstrap() {
+	try {
+		await initializeI18n();
+	} finally {
+		renderApp();
+	}
+}
+
+void bootstrap();
