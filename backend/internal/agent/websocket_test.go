@@ -112,7 +112,7 @@ func TestHandleServerMessage_Ping(t *testing.T) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		t.Fatalf("unmarshal ping: %v", err)
 	}
-	handleServerMessage(msg, clientConn)
+	handleServerMessage(msg, clientConn, nil)
 
 	select {
 	case <-done:
@@ -144,7 +144,7 @@ func TestHandleServerMessage_UnknownPayload(t *testing.T) {
 	clientConn := dialServer(t, srv)
 	defer clientConn.Close() //nolint:errcheck
 
-	handleServerMessage(&messages.ServerMessage{}, clientConn)
+	handleServerMessage(&messages.ServerMessage{}, clientConn, nil)
 
 	select {
 	case <-writeReceived:

@@ -6,15 +6,17 @@ import (
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
 
 type Client struct {
-	Id   string
-	conn *websocket.Conn
-	Send chan *messages.ServerMessage
+	Id      string
+	conn    *websocket.Conn
+	Send    chan *messages.ServerMessage
+	session *wscrypto.Session
 }
 
 // Close signals the WritePump to stop.
@@ -98,7 +100,30 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 	}()
 
 	for msg := range c.Send {
-		data, err := proto.Marshal(msg)
+		allowedUnencrypted := wscrypto.AllowedUnencrypted(msg)
+
+		// Refuse to send sensitive messages before the handshake is complete.
+		if c.session == nil && !allowedUnencrypted {
+			log.Error().Str("client", c.Id).Msg("dropping message: session not established")
+			continue
+		}
+
+		outMsg := msg
+
+		if !allowedUnencrypted {
+			env, err := c.session.Encrypt(msg)
+			if err != nil {
+				log.Error().Err(err).Msg("encrypt error")
+				continue
+			}
+			outMsg = &messages.ServerMessage{
+				Payload: &messages.ServerMessage_EncryptedPayload{
+					EncryptedPayload: env,
+				},
+			}
+		}
+
+		data, err := proto.Marshal(outMsg)
 		if err != nil {
 			log.Error().Err(err).Msg("Marshal error")
 			continue

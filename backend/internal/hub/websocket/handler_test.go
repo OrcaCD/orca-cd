@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -142,6 +143,52 @@ func waitForOffline(t *testing.T, agentId string) {
 	t.Errorf("timed out waiting for agent %s to go offline", agentId)
 }
 
+func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Errorf("doHandshake: set deadline: %v", err)
+		return
+	}
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		t.Errorf("doHandshake: read: %v", err)
+		return
+	}
+	serverMsg := &messages.ServerMessage{}
+	if err := proto.Unmarshal(data, serverMsg); err != nil {
+		t.Errorf("doHandshake: unmarshal: %v", err)
+		return
+	}
+	init := serverMsg.GetKeyExchangeInit()
+	if init == nil {
+		t.Errorf("doHandshake: expected KeyExchangeInit, got %T", serverMsg.Payload)
+		return
+	}
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		init.MlkemEncapsulationKey,
+		init.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Errorf("doHandshake: AgentHandshake: %v", err)
+		return
+	}
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+			},
+		},
+	}
+	respData, _ := proto.Marshal(resp)
+	if err := conn.WriteMessage(websocket.BinaryMessage, respData); err != nil {
+		t.Errorf("doHandshake: send response: %v", err)
+		return
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+}
+
 func TestWsHandler_MissingAuthHeader(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
@@ -252,6 +299,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for the server to register the client (with timeout).
 	msg := &messages.ServerMessage{
@@ -312,6 +360,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for registration.
 	deadline := time.Now().Add(time.Second)
@@ -380,6 +429,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for registration then close the connection.
 	deadline := time.Now().Add(time.Second)

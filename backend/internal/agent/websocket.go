@@ -2,22 +2,105 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
 
-func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn) {
+const handshakeTimeout = 15 * time.Second
+
+func performHandshake(conn *websocket.Conn, agentID string) (*wscrypto.Session, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		return nil, fmt.Errorf("read KeyExchangeInit: %w", err)
+	}
+
+	serverMsg := &messages.ServerMessage{}
+	if err := proto.Unmarshal(data, serverMsg); err != nil {
+		return nil, fmt.Errorf("unmarshal KeyExchangeInit: %w", err)
+	}
+
+	init, ok := serverMsg.Payload.(*messages.ServerMessage_KeyExchangeInit)
+	if !ok {
+		return nil, fmt.Errorf("expected KeyExchangeInit, got %T", serverMsg.Payload)
+	}
+
+	mlkemCiphertext, agentX25519Pub, sessionKey, err := wscrypto.AgentHandshake(
+		init.KeyExchangeInit.MlkemEncapsulationKey,
+		init.KeyExchangeInit.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("agent handshake: %w", err)
+	}
+
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("marshal KeyExchangeResponse: %w", err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, respData); err != nil {
+		return nil, fmt.Errorf("send KeyExchangeResponse: %w", err)
+	}
+
+	// Clear the handshake deadline — the hub's read loop will set its own deadline.
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return nil, fmt.Errorf("clear read deadline: %w", err)
+	}
+
+	Log.Debug().Str("agent_id", agentID).Msg("WS handshake complete")
+	return wscrypto.NewSession(sessionKey)
+}
+
+func sendMessage(conn *websocket.Conn, session *wscrypto.Session, msg *messages.ClientMessage) error {
+	outMsg := msg
+	if !wscrypto.AllowedUnencrypted(msg) {
+		env, err := session.Encrypt(msg)
+		if err != nil {
+			return fmt.Errorf("encrypt: %w", err)
+		}
+		outMsg = &messages.ClientMessage{
+			Payload: &messages.ClientMessage_EncryptedPayload{
+				EncryptedPayload: env,
+			},
+		}
+	}
+	data, err := proto.Marshal(outMsg)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	return conn.WriteMessage(websocket.BinaryMessage, data)
+}
+
+func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, session *wscrypto.Session) {
+	_, isEncrypted := msg.Payload.(*messages.ServerMessage_EncryptedPayload)
+	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
+		Log.Warn().Msgf("dropping unencrypted message of type %T", msg.Payload)
+		return
+	}
+
 	switch p := msg.Payload.(type) {
 	case *messages.ServerMessage_Ping:
 		latency := time.Now().UnixMilli() - p.Ping.Timestamp
 		Log.Debug().Msgf("ping received, latency: %dms", latency)
 
-		// Respond with Pong
 		pong := &messages.ClientMessage{
 			Payload: &messages.ClientMessage_Pong{
 				Pong: &messages.PongResponse{
@@ -25,16 +108,16 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn) {
 				},
 			},
 		}
-		data, err := proto.Marshal(pong)
-
-		if err != nil {
-			Log.Error().Err(err).Msg("failed to marshal Pong response")
-			return
-		}
-		if err := conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		if err := sendMessage(conn, session, pong); err != nil {
 			Log.Error().Err(err).Msg("failed to send Pong response")
+		}
+	case *messages.ServerMessage_EncryptedPayload:
+		inner := &messages.ServerMessage{}
+		if err := session.Decrypt(p.EncryptedPayload, inner); err != nil {
+			Log.Error().Err(err).Msg("failed to decrypt message")
 			return
 		}
+		handleServerMessage(inner, conn, session)
 	default:
 		Log.Warn().Msg("unknown message type received")
 	}
@@ -47,7 +130,7 @@ func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Co
 	)
 
 	if strings.HasPrefix(url, "ws://") {
-		Log.Warn().Msg("connecting over unencrypted WebSocket. Do not use this in production or over untrusted networks")
+		Log.Warn().Msg("connecting over http. Do not use this in production or over untrusted networks")
 	}
 
 	delay := initialDelay
