@@ -18,7 +18,7 @@ func RequestLogger(logger zerolog.Logger) gin.HandlerFunc {
 		case status >= http.StatusInternalServerError:
 			level = zerolog.ErrorLevel
 		case status >= http.StatusBadRequest:
-			level = zerolog.WarnLevel
+			level = zerolog.DebugLevel
 		default:
 			level = zerolog.DebugLevel
 		}
