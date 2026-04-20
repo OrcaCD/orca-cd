@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -69,12 +70,29 @@ func TestGitHubParseURL(t *testing.T) {
 		"ftp://github.com/owner/repo",         // wrong scheme
 		"https://github.com/-owner/repo",      // owner starts with hyphen
 		"https://github.com/owner-/repo",      // owner ends with hyphen
+		"https://github.com/owner/",           // missing repo segment
+		"https://github.com/owner/%20repo",    // invalid repo characters
 	}
 
 	for _, u := range invalid {
 		if _, _, err := p.ParseURL(u); err == nil {
 			t.Errorf("expected %q to be invalid, but got no error", u)
 		}
+	}
+}
+
+func TestGitHubSupportedAuthMethods(t *testing.T) {
+	p := githubProvider{}
+	got := p.SupportedAuthMethods()
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 auth methods, got %d", len(got))
+	}
+	if got[0] != models.AuthMethodNone {
+		t.Fatalf("expected first auth method to be %q, got %q", models.AuthMethodNone, got[0])
+	}
+	if got[1] != models.AuthMethodToken {
+		t.Fatalf("expected second auth method to be %q, got %q", models.AuthMethodToken, got[1])
 	}
 }
 
@@ -152,6 +170,42 @@ func TestGitHubTestConnection(t *testing.T) {
 			t.Fatalf("expected not found/access denied error, got: %v", err)
 		}
 	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		err := p.TestConnection(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+	})
+
+	t.Run("unexpected status code", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusInternalServerError), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		err := p.TestConnection(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		err := p.TestConnection(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to connect to GitHub") {
+			t.Fatalf("expected connect error, got: %v", err)
+		}
+	})
 }
 
 func TestGitHubListBranches(t *testing.T) {
@@ -194,6 +248,110 @@ func TestGitHubListBranches(t *testing.T) {
 	}
 }
 
+func TestGitHubListBranchesErrors(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		branches, err := p.ListBranches(context.Background(), nil)
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://github.com/invalid-only-owner"}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial timeout")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitHub branches") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub branches response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadGateway), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+}
+
 func TestGitHubListTree(t *testing.T) {
 	p := githubProvider{}
 	originalClient := httpclient.Default
@@ -211,7 +369,9 @@ func TestGitHubListTree(t *testing.T) {
 			"tree": [
 				{"path":"docker-compose.yml","type":"blob"},
 				{"path":"services","type":"tree"},
-				{"path":"README.md","type":"blob"}
+				{"path":"README.md","type":"blob"},
+				{"path":"submodule","type":"commit"},
+				{"path":"","type":"blob"}
 			]
 		}`), nil
 	})
@@ -238,4 +398,119 @@ func TestGitHubListTree(t *testing.T) {
 	if byPath["services"] != TreeEntryTypeDir {
 		t.Fatalf("expected services to be dir, got %q", byPath["services"])
 	}
+}
+
+func TestGitHubListTreeErrors(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		tree, err := p.ListTree(context.Background(), nil, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("branch is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "   ")
+		if err == nil || !strings.Contains(err.Error(), "branch is required") {
+			t.Fatalf("expected branch is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://github.com/invalid-only-owner"}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("temporary network error")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitHub repository tree") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{"tree": [invalid-json]}`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub tree response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadGateway), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
 }

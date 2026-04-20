@@ -2,8 +2,10 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,12 +64,29 @@ func TestGiteaParseURL(t *testing.T) {
 		"https://gitea.com",                  // missing path
 		"https:///owner/repo",                // empty host
 		"https://gitea.com/owner/repo/extra", // extra path segment
+		"https://gitea.com/-owner/repo",      // invalid owner
+		"https://gitea.com/owner/re po",      // invalid repo
 	}
 
 	for _, u := range invalid {
 		if _, _, err := p.ParseURL(u); err == nil {
 			t.Errorf("expected %q to be invalid, but got no error", u)
 		}
+	}
+}
+
+func TestGiteaSupportedAuthMethods(t *testing.T) {
+	p := giteaProvider{}
+	got := p.SupportedAuthMethods()
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 auth methods, got %d", len(got))
+	}
+	if got[0] != models.AuthMethodNone {
+		t.Fatalf("expected first auth method to be %q, got %q", models.AuthMethodNone, got[0])
+	}
+	if got[1] != models.AuthMethodToken {
+		t.Fatalf("expected second auth method to be %q, got %q", models.AuthMethodToken, got[1])
 	}
 }
 
@@ -187,6 +206,18 @@ func TestGiteaTestConnection(t *testing.T) {
 			t.Fatalf("expected unexpected status error, got: %v", err)
 		}
 	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("connection refused")
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		err := p.TestConnection(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to connect to Gitea") {
+			t.Fatalf("expected connect error, got: %v", err)
+		}
+	})
 }
 
 func TestGiteaListBranches(t *testing.T) {
@@ -229,6 +260,167 @@ func TestGiteaListBranches(t *testing.T) {
 	}
 }
 
+func TestGiteaListBranchesPagination(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			expectedURL := "https://gitea.com/api/v1/repos/OrcaCD/orca-cd/branches?page=1&limit=100"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 1 URL: %s", req.URL.String())
+			}
+
+			var b strings.Builder
+			b.WriteString("[")
+			for i := range 100 {
+				if i > 0 {
+					b.WriteString(",")
+				}
+				b.WriteString(`{"name":"branch-` + strconv.Itoa(i) + `"}`)
+			}
+			b.WriteString("]")
+			return jsonResponseWithBody(http.StatusOK, b.String()), nil
+		case 2:
+			expectedURL := "https://gitea.com/api/v1/repos/OrcaCD/orca-cd/branches?page=2&limit=100"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 2 URL: %s", req.URL.String())
+			}
+			return jsonResponseWithBody(http.StatusOK, `[{"name":"main"}]`), nil
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+			return nil, nil
+		}
+	})
+
+	repo := &models.Repository{Url: testGiteaRepoURL, AuthMethod: models.AuthMethodNone}
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 101 {
+		t.Fatalf("expected 101 branches, got %d", len(branches))
+	}
+	if branches[0] != "branch-0" {
+		t.Fatalf("expected first sorted branch to be branch-0, got %q", branches[0])
+	}
+	if branches[len(branches)-1] != "main" {
+		t.Fatalf("expected last sorted branch to be main, got %q", branches[len(branches)-1])
+	}
+}
+
+func TestGiteaListBranchesErrors(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		branches, err := p.ListBranches(context.Background(), nil)
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://gitea.com/owner"}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("timeout")
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch Gitea branches") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to decode Gitea branches response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusInternalServerError), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+}
+
 func TestGiteaListTree(t *testing.T) {
 	p := giteaProvider{}
 	originalClient := httpclient.Default
@@ -245,7 +437,9 @@ func TestGiteaListTree(t *testing.T) {
 		return jsonResponseWithBody(http.StatusOK, `{
 			"tree": [
 				{"path":"docker-compose.yml","type":"blob"},
-				{"path":"services","type":"tree"}
+				{"path":"services","type":"tree"},
+				{"path":"ignored","type":"commit"},
+				{"path":"","type":"blob"}
 			]
 		}`), nil
 	})
@@ -271,4 +465,119 @@ func TestGiteaListTree(t *testing.T) {
 	if byPath["docker-compose.yml"] != TreeEntryTypeFile {
 		t.Fatalf("expected docker-compose.yml to be file, got %q", byPath["docker-compose.yml"])
 	}
+}
+
+func TestGiteaListTreeErrors(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		tree, err := p.ListTree(context.Background(), nil, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("branch is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "   ")
+		if err == nil || !strings.Contains(err.Error(), "branch is required") {
+			t.Fatalf("expected branch is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://gitea.com/owner"}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial tcp timeout")
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch Gitea repository tree") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{"tree": [invalid-json]}`), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode Gitea tree response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusInternalServerError), nil
+		})
+
+		repo := &models.Repository{Url: testGiteaRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
 }
