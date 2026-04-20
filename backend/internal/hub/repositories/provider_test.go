@@ -12,6 +12,8 @@ type stubProvider struct {
 	parseURLErr      error
 	authMethods      []models.RepositoryAuthMethod
 	testConnectionFn func(ctx context.Context, repo *models.Repository) error
+	listBranchesFn   func(ctx context.Context, repo *models.Repository) ([]string, error)
+	listTreeFn       func(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error)
 }
 
 func (s *stubProvider) ParseURL(url string) (string, string, error) {
@@ -27,6 +29,20 @@ func (s *stubProvider) TestConnection(ctx context.Context, repo *models.Reposito
 		return s.testConnectionFn(ctx, repo)
 	}
 	return nil
+}
+
+func (s *stubProvider) ListBranches(ctx context.Context, repo *models.Repository) ([]string, error) {
+	if s.listBranchesFn != nil {
+		return s.listBranchesFn(ctx, repo)
+	}
+	return []string{}, nil
+}
+
+func (s *stubProvider) ListTree(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error) {
+	if s.listTreeFn != nil {
+		return s.listTreeFn(ctx, repo, branch)
+	}
+	return []TreeEntry{}, nil
 }
 
 func withIsolatedRegistry(t *testing.T, fn func()) {

@@ -188,3 +188,87 @@ func TestGiteaTestConnection(t *testing.T) {
 		}
 	})
 }
+
+func TestGiteaListBranches(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitea.com/api/v1/repos/OrcaCD/orca-cd/branches?page=1&limit=100"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		if req.Header.Get(testGiteaTokenHeaderName) != "token secret-token" {
+			t.Fatalf("unexpected authorization header: %q", req.Header.Get(testGiteaTokenHeaderName))
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"release"},{"name":"main"}]`), nil
+	})
+
+	token := crypto.EncryptedString("secret-token")
+	repo := &models.Repository{
+		Url:        testGiteaRepoURL,
+		AuthMethod: models.AuthMethodToken,
+		AuthToken:  &token,
+	}
+
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(branches))
+	}
+	if branches[0] != "main" || branches[1] != "release" {
+		t.Fatalf("expected sorted branches [main release], got %v", branches)
+	}
+}
+
+func TestGiteaListTree(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitea.com/api/v1/repos/OrcaCD/orca-cd/git/trees/release%2Fprod?recursive=true"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `{
+			"tree": [
+				{"path":"docker-compose.yml","type":"blob"},
+				{"path":"services","type":"tree"}
+			]
+		}`), nil
+	})
+
+	repo := &models.Repository{Url: testGiteaRepoURL, AuthMethod: models.AuthMethodNone}
+	tree, err := p.ListTree(context.Background(), repo, "release/prod")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(tree) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(tree))
+	}
+
+	byPath := map[string]TreeEntryType{}
+	for _, entry := range tree {
+		byPath[entry.Path] = entry.Type
+	}
+
+	if byPath["services"] != TreeEntryTypeDir {
+		t.Fatalf("expected services to be dir, got %q", byPath["services"])
+	}
+	if byPath["docker-compose.yml"] != TreeEntryTypeFile {
+		t.Fatalf("expected docker-compose.yml to be file, got %q", byPath["docker-compose.yml"])
+	}
+}

@@ -241,3 +241,90 @@ func TestGitLabTestConnection(t *testing.T) {
 		}
 	})
 }
+
+func TestGitLabListBranches(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/branches?per_page=100&page=1"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"release"},{"name":"main"}]`), nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(branches))
+	}
+	if branches[0] != "main" || branches[1] != "release" {
+		t.Fatalf("expected sorted branches [main release], got %v", branches)
+	}
+}
+
+func TestGitLabListTree(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/tree?ref=release%2Fprod&recursive=true&per_page=100&page=1"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 1 URL: %s", req.URL.String())
+			}
+
+			resp := jsonResponseWithBody(http.StatusOK, `[{"path":"services","type":"tree"}]`)
+			resp.Header.Set("X-Next-Page", "2")
+			return resp, nil
+		case 2:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/tree?ref=release%2Fprod&recursive=true&per_page=100&page=2"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 2 URL: %s", req.URL.String())
+			}
+
+			return jsonResponseWithBody(http.StatusOK, `[{"path":"docker-compose.yml","type":"blob"}]`), nil
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+			return nil, nil
+		}
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	tree, err := p.ListTree(context.Background(), repo, "release/prod")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(tree) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(tree))
+	}
+
+	byPath := map[string]TreeEntryType{}
+	for _, entry := range tree {
+		byPath[entry.Path] = entry.Type
+	}
+
+	if byPath["services"] != TreeEntryTypeDir {
+		t.Fatalf("expected services to be dir, got %q", byPath["services"])
+	}
+	if byPath["docker-compose.yml"] != TreeEntryTypeFile {
+		t.Fatalf("expected docker-compose.yml to be file, got %q", byPath["docker-compose.yml"])
+	}
+}

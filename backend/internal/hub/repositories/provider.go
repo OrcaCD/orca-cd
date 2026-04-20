@@ -15,8 +15,22 @@ type Provider interface {
 	SupportedAuthMethods() []models.RepositoryAuthMethod
 	// Tests the connection to the repository using the provided credentials.
 	TestConnection(ctx context.Context, repo *models.Repository) error
-	// ListBranches(ctx context.Context, repo *models.Repository) ([]string, error)
-	// ...
+	// Lists available branches for the repository.
+	ListBranches(ctx context.Context, repo *models.Repository) ([]string, error)
+	// Lists repository tree entries for a branch.
+	ListTree(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error)
+}
+
+type TreeEntryType string
+
+const (
+	TreeEntryTypeFile TreeEntryType = "file"
+	TreeEntryTypeDir  TreeEntryType = "dir"
+)
+
+type TreeEntry struct {
+	Path string        `json:"path"`
+	Type TreeEntryType `json:"type"`
 }
 
 var registry = map[models.RepositoryProvider]Provider{}
