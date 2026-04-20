@@ -43,12 +43,37 @@ import SuccessAlert from "../alerts/success-alert";
 import CopyButton from "../copy-btn";
 
 const PROVIDERS = [
-	{ id: "github", label: "GitHub", disabled: false },
-	{ id: "gitlab", label: "GitLab", disabled: false },
-	{ id: "gitea", label: "Gitea", disabled: false },
-	{ id: "bitbucket", label: "Bitbucket", disabled: true },
-	{ id: "azure_devops", label: "Azure DevOps", disabled: true },
-	{ id: "generic", label: "Generic", disabled: true },
+	{ id: "github", label: "GitHub", disabled: false, placeholderUrl: "https://github.com/org/repo" },
+	{
+		id: "gitlab",
+		label: "GitLab",
+		disabled: false,
+		placeholderUrl: "https://gitlab.com/group/project",
+	},
+	{
+		id: "gitea",
+		label: "Gitea",
+		disabled: false,
+		placeholderUrl: "https://gitea.example.com/org/repo",
+	},
+	{
+		id: "bitbucket",
+		label: "Bitbucket",
+		disabled: true,
+		placeholderUrl: "https://bitbucket.org/workspace/repository",
+	},
+	{
+		id: "azure_devops",
+		label: "Azure DevOps",
+		disabled: true,
+		placeholderUrl: "https://dev.azure.com/org/project/_git/repository",
+	},
+	{
+		id: "generic",
+		label: "Generic",
+		disabled: true,
+		placeholderUrl: "https://git.example.com/org/repo",
+	},
 ] as const;
 
 const syncTypes = [
@@ -193,55 +218,65 @@ function ProviderStepContent({ form }: { form: RepoFormApi }) {
 
 function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: string | undefined }) {
 	return (
-		<>
-			<p className="text-muted-foreground text-sm mb-4">
-				Enter the repository URL and an auth token.
-			</p>
-			<FieldGroup>
-				<form.Field name="url" validators={{ onSubmit: repositorySchema.shape.url }}>
-					{(field) => {
-						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-						return (
-							<Field data-invalid={isInvalid}>
-								<Label htmlFor={field.name}>Repository URL</Label>
-								<Input
-									id={field.name}
-									value={field.state.value}
-									onBlur={field.handleBlur}
-									onChange={(e) => field.handleChange(e.target.value)}
-									placeholder="https://github.com/org/repo"
-									autoFocus
-								/>
-								{isInvalid && <FieldError errors={field.state.meta.errors} />}
-							</Field>
-						);
-					}}
-				</form.Field>
-				<form.Field name="authToken" validators={{ onSubmit: repositorySchema.shape.authToken }}>
-					{(field) => {
-						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-						return (
-							<Field data-invalid={isInvalid}>
-								<Label htmlFor={field.name}>Auth Token</Label>
-								<Input
-									id={field.name}
-									type="password"
-									value={field.state.value}
-									onBlur={field.handleBlur}
-									onChange={(e) => field.handleChange(e.target.value)}
-									placeholder="Paste a personal access token"
-								/>
-								<p className="text-muted-foreground text-xs">
-									Recommended, but not required for public repositories.
-								</p>
-								{isInvalid && <FieldError errors={field.state.meta.errors} />}
-							</Field>
-						);
-					}}
-				</form.Field>
-				{error && <ErrorAlert title="Can't connect to repository" description={error} />}
-			</FieldGroup>
-		</>
+		<form.Subscribe selector={(state) => state.values.provider}>
+			{(provider) => (
+				<>
+					<p className="text-muted-foreground text-sm mb-4">
+						Enter the repository URL and an auth token.
+					</p>
+					<FieldGroup>
+						<form.Field name="url" validators={{ onSubmit: repositorySchema.shape.url }}>
+							{(field) => {
+								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+								return (
+									<Field data-invalid={isInvalid}>
+										<Label htmlFor={field.name}>Repository URL</Label>
+										<Input
+											id={field.name}
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(e) => field.handleChange(e.target.value)}
+											placeholder={
+												PROVIDERS.find((p) => p.id === provider)?.placeholderUrl ||
+												"https://github.com/org/repo"
+											}
+											autoFocus
+										/>
+										{isInvalid && <FieldError errors={field.state.meta.errors} />}
+									</Field>
+								);
+							}}
+						</form.Field>
+						<form.Field
+							name="authToken"
+							validators={{ onSubmit: repositorySchema.shape.authToken }}
+						>
+							{(field) => {
+								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+								return (
+									<Field data-invalid={isInvalid}>
+										<Label htmlFor={field.name}>Auth Token</Label>
+										<Input
+											id={field.name}
+											type="password"
+											value={field.state.value}
+											onBlur={field.handleBlur}
+											onChange={(e) => field.handleChange(e.target.value)}
+											placeholder="Paste a personal access token"
+										/>
+										<p className="text-muted-foreground text-xs">
+											Recommended, but not required for public repositories.
+										</p>
+										{isInvalid && <FieldError errors={field.state.meta.errors} />}
+									</Field>
+								);
+							}}
+						</form.Field>
+						{error && <ErrorAlert title="Can't connect to repository" description={error} />}
+					</FieldGroup>
+				</>
+			)}
+		</form.Subscribe>
 	);
 }
 
