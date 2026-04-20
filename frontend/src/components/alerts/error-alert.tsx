@@ -1,5 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangleIcon } from "lucide-react";
+import { m } from "@/lib/paraglide/messages";
 
 export default function ErrorAlert({
 	title,
@@ -10,12 +11,12 @@ export default function ErrorAlert({
 }) {
 	const desc = description
 		? description.at(0)?.toUpperCase() + description.slice(1)
-		: "An error occurred.";
+		: m.errorAlertDefaultDescription();
 
 	return (
 		<Alert className="mt-2 border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-50">
 			<AlertTriangleIcon />
-			<AlertTitle>{title || "Error"}</AlertTitle>
+			<AlertTitle>{title || m.errorAlertTitle()}</AlertTitle>
 			<AlertDescription className="text-foreground text-wrap">{desc}</AlertDescription>
 		</Alert>
 	);

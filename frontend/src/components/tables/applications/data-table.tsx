@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { useState } from "react";
 import { DataTableViewOptions } from "../data-table-view-options";
+import { m } from "@/lib/paraglide/messages";
 
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
@@ -82,7 +83,7 @@ export function ApplicationsDataTable<TData, TValue>({
 						) : (
 							<TableRow>
 								<TableCell colSpan={columns.length} className="h-24 text-center">
-									No applications found.
+									{m.noApplicationsFound()}.
 								</TableCell>
 							</TableRow>
 						)}

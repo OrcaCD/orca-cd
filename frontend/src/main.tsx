@@ -9,6 +9,7 @@ import "./styles.css";
 import { Button } from "./components/ui/button";
 import { AuthProvider, useAuth } from "./lib/auth";
 import type { RouterContext } from "./routes/__root";
+import { m } from "@/lib/paraglide/messages";
 
 // Create a new router instance
 const router = createRouter({
@@ -24,9 +25,9 @@ const router = createRouter({
 		return (
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>Page Not Found</p>
+					<p>{m.pageNotFound()}</p>
 					<Link to="/">
-						<Button size="lg">Go Home</Button>
+						<Button size="lg">{m.goHome()}</Button>
 					</Link>
 				</div>
 			</div>
@@ -36,10 +37,10 @@ const router = createRouter({
 		return (
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>Something went wrong</p>
+					<p>{m.somethingWentWrong()}</p>
 					<pre>{error.message}</pre>
 					<Link to="/">
-						<Button size="lg">Go Home</Button>
+						<Button size="lg">{m.goHome()}</Button>
 					</Link>
 				</div>
 			</div>

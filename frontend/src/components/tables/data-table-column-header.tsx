@@ -10,6 +10,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { m } from "@/lib/paraglide/messages";
 
 interface DataTableColumnHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
 	column: Column<TData, TValue>;
@@ -43,16 +44,16 @@ export function DataTableColumnHeader<TData, TValue>({
 				<DropdownMenuContent align="start">
 					<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
 						<ArrowUp />
-						Asc
+						{m.sortAscending()}
 					</DropdownMenuItem>
 					<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
 						<ArrowDown />
-						Desc
+						{m.sortDescending()}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
 						<EyeOff />
-						Hide
+						{m.hideColumn()}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

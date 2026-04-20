@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import CopyButton from "../copy-btn";
+import { m } from "@/lib/paraglide/messages";
 
 interface CopyValueDialogProps {
 	open: boolean;
@@ -31,8 +32,8 @@ export default function CopyValueDialog({
 	label,
 	value,
 	inputId = "copy-value",
-	copyTitle = "Copy value",
-	doneLabel = "Done",
+	copyTitle = m.copyValue(),
+	doneLabel = m.done(),
 }: CopyValueDialogProps) {
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>

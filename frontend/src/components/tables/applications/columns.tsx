@@ -11,12 +11,13 @@ import { DataTableColumnHeader } from "../data-table-column-header";
 import type { ApplicationListItem } from "@/lib/applications";
 import { Link } from "@tanstack/react-router";
 import { StatusBadge } from "@/components/status-badge";
+import { m } from "@/lib/paraglide/messages";
 
 export const columns: ColumnDef<ApplicationListItem>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Name" />;
+			return <DataTableColumnHeader column={column} title={m.columnName()} />;
 		},
 		cell: ({ row }) => {
 			const app = row.original;
@@ -35,7 +36,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		id: "sync status",
 		accessorFn: (row) => row.syncStatus,
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Sync Status" />;
+			return <DataTableColumnHeader column={column} title={m.columnSyncStatus()} />;
 		},
 		cell: ({ row }) => {
 			const app = row.original;
@@ -46,7 +47,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		id: "health status",
 		accessorFn: (row) => row.healthStatus,
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Health Status" />;
+			return <DataTableColumnHeader column={column} title={m.columnHealthStatus()} />;
 		},
 		cell: ({ row }) => {
 			const app = row.original;
@@ -57,37 +58,37 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		id: "repository",
 		accessorKey: "repositoryName",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Repository" />;
+			return <DataTableColumnHeader column={column} title={m.columnRepository()} />;
 		},
 	},
 	{
 		id: "agent",
 		accessorKey: "agentName",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Agent" />;
+			return <DataTableColumnHeader column={column} title={m.columnAgent()} />;
 		},
 	},
 	{
 		accessorKey: "branch",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Branch" />;
+			return <DataTableColumnHeader column={column} title={m.columnBranch()} />;
 		},
 	},
 	{
 		accessorKey: "path",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Path" />;
+			return <DataTableColumnHeader column={column} title={m.columnPath()} />;
 		},
 	},
 	{
 		id: "last sync",
 		accessorKey: "lastSyncedAt",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Last Sync" />;
+			return <DataTableColumnHeader column={column} title={m.columnLastSync()} />;
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return app.lastSyncedAt ? new Date(app.lastSyncedAt).toLocaleString() : "Never";
+			return app.lastSyncedAt ? new Date(app.lastSyncedAt).toLocaleString() : m.never();
 		},
 	},
 	{
@@ -104,7 +105,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 						<DropdownMenuContent align="end">
 							<DropdownMenuItem>
 								<RefreshCw className="mr-2 h-4 w-4" />
-								Sync
+								{m.sync()}
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>

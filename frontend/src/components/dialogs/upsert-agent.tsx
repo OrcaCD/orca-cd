@@ -19,13 +19,14 @@ import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { createAgent, updateAgent, type Agent } from "@/lib/agents";
 import CopyValueDialog from "./copy-value-dialog";
+import { m } from "@/lib/paraglide/messages";
 
 const agentSchema = z.object({
 	name: z
 		.string()
 		.trim()
-		.min(1, "Name is required")
-		.max(128, "Name must be at most 128 characters"),
+		.min(1, m.validationAgentNameRequired())
+		.max(128, m.validationAgentNameMaxLength()),
 });
 
 export default function UpsertAgentDialog({
@@ -55,7 +56,7 @@ export default function UpsertAgentDialog({
 					await updateAgent(agent.id, {
 						name: value.name,
 					});
-					toast.success("Agent updated");
+					toast.success(m.agentUpdated());
 				} else {
 					const response = await createAgent({
 						name: value.name,
@@ -64,11 +65,11 @@ export default function UpsertAgentDialog({
 						setAuthToken(response.authToken);
 						setIsAuthTokenOpen(true);
 					}
-					toast.success("Agent connected");
+					toast.success(m.agentConnected());
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save agent");
+				toast.error(err instanceof Error ? err.message : m.failedSaveAgent());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -82,7 +83,7 @@ export default function UpsertAgentDialog({
 					{asDropdownItem ? (
 						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
 							<Pencil className="h-4 w-4" />
-							Edit
+							{m.edit()}
 						</DropdownMenuItem>
 					) : isEditing ? (
 						<Button variant="ghost" size="icon">
@@ -91,19 +92,17 @@ export default function UpsertAgentDialog({
 					) : (
 						<Button>
 							<Plus className="h-4 w-4" />
-							Add Agent
+							{m.addAgent()}
 						</Button>
 					)}
 				</DialogTrigger>
 				<DialogContent className="sm:max-w-106.25">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
-							{isEditing ? "Edit Agent" : "Add Agent"}
+							{isEditing ? m.editAgent() : m.addAgent()}
 						</DialogTitle>
 						<DialogDescription className="py-2">
-							{isEditing
-								? "Update the agent configuration."
-								: "Add a new agent to manage Docker hosts and servers."}
+							{isEditing ? m.editAgentDescription() : m.addAgentDescription()}
 						</DialogDescription>
 					</DialogHeader>
 
@@ -120,13 +119,13 @@ export default function UpsertAgentDialog({
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Name</Label>
+											<Label htmlFor={field.name}>{m.name()}</Label>
 											<Input
 												id={field.name}
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder='e.g. "prod-server-01"'
+												placeholder={m.agentNamePlaceholder()}
 												autoFocus
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -137,7 +136,7 @@ export default function UpsertAgentDialog({
 
 							<div className="flex gap-2 pt-2">
 								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting ? "Saving..." : isEditing ? "Update Agent" : "Add Agent"}
+									{isSubmitting ? m.savingDots() : isEditing ? m.update() : m.addAgent()}
 								</Button>
 								<Button
 									type="button"
@@ -148,7 +147,7 @@ export default function UpsertAgentDialog({
 									}}
 									disabled={isSubmitting}
 								>
-									Cancel
+									{m.cancel()}
 								</Button>
 							</div>
 						</FieldGroup>
@@ -164,12 +163,12 @@ export default function UpsertAgentDialog({
 						setAuthToken(null);
 					}
 				}}
-				title="Agent Auth Token"
-				description="Copy this token now. It will not be shown again."
-				label="Auth token"
+				title={m.agentAuthTokenTitle()}
+				description={m.copyTokenNow()}
+				label={m.authToken()}
 				value={authToken ?? ""}
 				inputId="agent-auth-token"
-				copyTitle="Copy agent auth token"
+				copyTitle={m.copyAgentAuthToken()}
 			/>
 		</>
 	);

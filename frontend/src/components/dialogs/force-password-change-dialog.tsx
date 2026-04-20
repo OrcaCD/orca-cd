@@ -17,18 +17,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { m } from "@/lib/paraglide/messages";
 
 const changePasswordSchema = z
 	.object({
-		currentPassword: z.string().min(1, "Current password is required"),
+		currentPassword: z.string().min(1, m.validationCurrentPasswordRequired()),
 		newPassword: z
 			.string()
-			.min(8, "New password must be at least 8 characters")
-			.max(128, "New password must be at most 128 characters"),
-		confirmPassword: z.string().min(1, "Please confirm your new password"),
+			.min(8, m.validationNewPasswordMinLength())
+			.max(128, m.validationNewPasswordMaxLength()),
+		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((value) => value.newPassword === value.confirmPassword, {
-		message: "Passwords do not match",
+		message: m.validationPasswordsMustMatch(),
 		path: ["confirmPassword"],
 	});
 
@@ -55,9 +56,9 @@ export default function ForcePasswordChangeDialog() {
 				});
 				await refreshAuth();
 				form.reset();
-				toast.success("Password updated");
+				toast.success(m.passwordUpdated());
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to update password");
+				toast.error(err instanceof Error ? err.message : m.failedUpdatePassword());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -77,10 +78,8 @@ export default function ForcePasswordChangeDialog() {
 				className="sm:max-w-md"
 			>
 				<DialogHeader>
-					<DialogTitle>Password Change Required</DialogTitle>
-					<DialogDescription>
-						Your administrator reset your password. Update it now to continue.
-					</DialogDescription>
+					<DialogTitle>{m.forcePasswordChangeRequired()}</DialogTitle>
+					<DialogDescription>{m.forcePasswordChangeDescription()}</DialogDescription>
 				</DialogHeader>
 
 				<form
@@ -96,7 +95,7 @@ export default function ForcePasswordChangeDialog() {
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Current Password</Label>
+										<Label htmlFor={field.name}>{m.currentPassword()}</Label>
 										<Input
 											id={field.name}
 											type="password"
@@ -118,7 +117,7 @@ export default function ForcePasswordChangeDialog() {
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>New Password</Label>
+										<Label htmlFor={field.name}>{m.newPassword()}</Label>
 										<Input
 											id={field.name}
 											type="password"
@@ -139,7 +138,7 @@ export default function ForcePasswordChangeDialog() {
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Confirm New Password</Label>
+										<Label htmlFor={field.name}>{m.confirmNewPassword()}</Label>
 										<Input
 											id={field.name}
 											type="password"
@@ -164,10 +163,10 @@ export default function ForcePasswordChangeDialog() {
 								}}
 								disabled={isSubmitting}
 							>
-								Sign Out
+								{m.signOut()}
 							</Button>
 							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Updating..." : "Update Password"}
+								{isSubmitting ? m.updatingDots() : m.updatePassword()}
 							</Button>
 						</div>
 					</FieldGroup>

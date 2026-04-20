@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { Search } from "lucide-react";
 import { toSearchableText } from "@/lib/utils";
+import { m } from "@/lib/paraglide/messages";
 
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
@@ -72,7 +73,7 @@ export function UserDataTable<TData, TValue>({
 				<div className="relative w-md mt-6">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 					<Input
-						placeholder="Search users..."
+						placeholder={m.searchUsers()}
 						className="pl-9 bg-muted border-border"
 						value={globalFilter}
 						onChange={(event) => setGlobalFilter(event.target.value)}
@@ -112,7 +113,7 @@ export function UserDataTable<TData, TValue>({
 						) : (
 							<TableRow>
 								<TableCell colSpan={columns.length} className="h-24 text-center">
-									No results.
+									{m.noResults()}
 								</TableCell>
 							</TableRow>
 						)}

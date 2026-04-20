@@ -19,15 +19,16 @@ import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { m } from "@/lib/paraglide/messages";
 
 const providerSchema = z.object({
 	name: z
 		.string()
 		.trim()
-		.min(1, "Name is required")
-		.max(100, "Name must be at most 100 characters"),
-	issuerUrl: z.url({ error: "Issuer URL must be a valid URL", protocol: /^https?$/ }).trim(),
-	clientId: z.string().trim().min(1, "Client Id is required"),
+		.min(1, m.validationProviderNameRequired())
+		.max(100, m.validationProviderNameMaxLength()),
+	issuerUrl: z.url({ error: m.validationIssuerUrlInvalid(), protocol: /^https?$/ }).trim(),
+	clientId: z.string().trim().min(1, m.validationClientIdRequired()),
 	clientSecret: z.string().trim(),
 	scopes: z.string().trim(),
 	enabled: z.boolean(),
@@ -61,7 +62,7 @@ export default function UpsertOIDCProviderDialog({
 			onSubmit: isEditing
 				? providerSchema
 				: providerSchema.refine((d) => !!d.clientSecret, {
-						message: "Client secret is required",
+						message: m.validationClientSecretRequired(),
 						path: ["clientSecret"],
 					}),
 		},
@@ -79,7 +80,7 @@ export default function UpsertOIDCProviderDialog({
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
 					});
-					toast.success("Provider updated");
+					toast.success(m.providerUpdated());
 				} else {
 					await createOIDCProvider({
 						name: value.name,
@@ -91,11 +92,11 @@ export default function UpsertOIDCProviderDialog({
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
 					});
-					toast.success("Provider created");
+					toast.success(m.providerCreated());
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save provider");
+				toast.error(err instanceof Error ? err.message : m.failedSaveProvider());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -107,7 +108,7 @@ export default function UpsertOIDCProviderDialog({
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
 						<Pencil className="h-4 w-4" />
-						Edit
+						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
@@ -116,19 +117,17 @@ export default function UpsertOIDCProviderDialog({
 				) : (
 					<Button>
 						<Plus className="h-4 w-4" />
-						Add Provider
+						{m.addProvider()}
 					</Button>
 				)}
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						{isEditing ? "Edit Provider" : "Add Provider"}
+						{isEditing ? m.editProvider() : m.addProvider()}
 					</DialogTitle>
 					<DialogDescription className="py-2">
-						{isEditing
-							? "Update the OIDC provider configuration."
-							: "Configure a new OpenID Connect provider."}
+						{isEditing ? m.editProviderDescription() : m.addProviderDescription()}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -145,13 +144,13 @@ export default function UpsertOIDCProviderDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Display Name</Label>
+										<Label htmlFor={field.name}>{m.displayName()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "Google" or "Corporate SSO"'
+											placeholder={m.displayNamePlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -165,13 +164,13 @@ export default function UpsertOIDCProviderDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Issuer URL</Label>
+										<Label htmlFor={field.name}>{m.issuerUrl()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="https://accounts.google.com"
+											placeholder={m.issuerUrlPlaceholder()}
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
@@ -184,7 +183,7 @@ export default function UpsertOIDCProviderDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Client Id</Label>
+										<Label htmlFor={field.name}>{m.clientId()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
@@ -203,11 +202,11 @@ export default function UpsertOIDCProviderDialog({
 								return (
 									<Field data-invalid={isInvalid}>
 										<Label htmlFor={field.name}>
-											Client Secret
+											{m.clientSecret()}
 											{isEditing && (
 												<span className="text-muted-foreground font-normal">
 													{" "}
-													(leave blank to keep current)
+													{m.leaveBlankKeepCurrent()}
 												</span>
 											)}
 										</Label>
@@ -229,15 +228,15 @@ export default function UpsertOIDCProviderDialog({
 							children={(field) => (
 								<Field>
 									<Label htmlFor={field.name}>
-										Additional Scopes{" "}
-										<span className="text-muted-foreground font-normal">(optional)</span>
+										{m.additionalScopes()}{" "}
+										<span className="text-muted-foreground font-normal">{m.optional()}</span>
 									</Label>
 									<Input
 										id={field.name}
 										value={field.state.value}
 										onBlur={field.handleBlur}
 										onChange={(e) => field.handleChange(e.target.value)}
-										placeholder="e.g. groups,offline_access"
+										placeholder={m.additionalScopesPlaceholder()}
 									/>
 								</Field>
 							)}
@@ -253,7 +252,7 @@ export default function UpsertOIDCProviderDialog({
 											onCheckedChange={(checked) => field.handleChange(checked === true)}
 											className="h-4 w-4 rounded border-gray-300"
 										/>
-										<Label htmlFor={field.name}>Enabled</Label>
+										<Label htmlFor={field.name}>{m.enabled()}</Label>
 									</div>
 								</Field>
 							)}
@@ -269,7 +268,7 @@ export default function UpsertOIDCProviderDialog({
 											onCheckedChange={(checked) => field.handleChange(checked === true)}
 											className="h-4 w-4 rounded border-gray-300"
 										/>
-										<Label htmlFor={field.name}>Require verified emails</Label>
+										<Label htmlFor={field.name}>{m.requireVerifiedEmails()}</Label>
 									</div>
 								</Field>
 							)}
@@ -285,7 +284,7 @@ export default function UpsertOIDCProviderDialog({
 											onCheckedChange={(checked) => field.handleChange(checked === true)}
 											className="h-4 w-4 rounded border-gray-300"
 										/>
-										<Label htmlFor={field.name}>Allow auto signup</Label>
+										<Label htmlFor={field.name}>{m.allowAutoSignup()}</Label>
 									</div>
 								</Field>
 							)}
@@ -293,7 +292,11 @@ export default function UpsertOIDCProviderDialog({
 
 						<div className="flex gap-2 pt-2">
 							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving..." : isEditing ? "Update Provider" : "Create Provider"}
+								{isSubmitting
+									? m.savingDots()
+									: isEditing
+										? m.updateProvider()
+										: m.createProvider()}
 							</Button>
 							<Button
 								type="button"
@@ -304,7 +307,7 @@ export default function UpsertOIDCProviderDialog({
 								}}
 								disabled={isSubmitting}
 							>
-								Cancel
+								{m.cancel()}
 							</Button>
 						</div>
 					</FieldGroup>

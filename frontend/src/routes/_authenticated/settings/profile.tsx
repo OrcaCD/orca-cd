@@ -12,25 +12,22 @@ import { Button } from "@/components/ui/button";
 import { useAuth, updateProfile } from "@/lib/auth";
 import { AlertTriangleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/settings/profile")({
 	component: ProfileSettingsPage,
 	head: () => ({
 		meta: [
 			{
-				title: "Settings - Profile",
+				title: m.settingsProfileHeadTitle(),
 			},
 		],
 	}),
 });
 
 const profileSchema = z.object({
-	name: z
-		.string()
-		.trim()
-		.min(3, "Name must be at least 3 characters")
-		.max(64, "Name must be at most 64 characters"),
-	email: z.email("Must be a valid email address").trim(),
+	name: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
+	email: z.email(m.validationMustBeValidEmailAddress()).trim(),
 });
 
 function ProfileSettingsPage() {
@@ -48,9 +45,9 @@ function ProfileSettingsPage() {
 			try {
 				await updateProfile(value);
 				await refreshAuth();
-				toast.success("Profile updated");
+				toast.success(m.profileUpdated());
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to update profile");
+				toast.error(err instanceof Error ? err.message : m.failedUpdateProfile());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -63,21 +60,19 @@ function ProfileSettingsPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<div>
-				<h1 className="text-2xl font-bold">Profile</h1>
-				<p className="text-muted-foreground text-sm">Manage your name and email address.</p>
+				<h1 className="text-2xl font-bold">{m.profile()}</h1>
+				<p className="text-muted-foreground text-sm">{m.profileDescription()}</p>
 			</div>
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Personal Information</CardTitle>
+					<CardTitle>{m.personalInformation()}</CardTitle>
 					{isReady && !isLocal && (
 						<CardDescription>
 							<Alert className="mt-2 border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
 								<AlertTriangleIcon />
-								<AlertTitle>Managed Profile</AlertTitle>
-								<AlertDescription>
-									Your profile is managed by your identity provider and cannot be edited here.
-								</AlertDescription>
+								<AlertTitle>{m.managedProfile()}</AlertTitle>
+								<AlertDescription>{m.managedProfileReadOnlyDescription()}</AlertDescription>
 							</Alert>
 						</CardDescription>
 					)}
@@ -97,7 +92,7 @@ function ProfileSettingsPage() {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Name</Label>
+											<Label htmlFor={field.name}>{m.name()}</Label>
 											<Input
 												id={field.name}
 												name={field.name}
@@ -118,7 +113,7 @@ function ProfileSettingsPage() {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Email</Label>
+											<Label htmlFor={field.name}>{m.email()}</Label>
 											<Input
 												id={field.name}
 												name={field.name}
@@ -136,7 +131,7 @@ function ProfileSettingsPage() {
 							/>
 							<Field>
 								<Button type="submit" disabled={isSubmitting || !isLocal} className="max-w-fit">
-									{isSubmitting ? "Saving..." : "Save Changes"}
+									{isSubmitting ? m.savingDots() : m.saveChanges()}
 								</Button>
 							</Field>
 						</FieldGroup>

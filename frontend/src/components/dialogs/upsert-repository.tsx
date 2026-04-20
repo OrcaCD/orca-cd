@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import ErrorAlert from "../alerts/error-alert";
 import SuccessAlert from "../alerts/success-alert";
 import CopyButton from "../copy-btn";
+import { m } from "@/lib/paraglide/messages";
 
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false, placeholderUrl: "https://github.com/org/repo" },
@@ -76,19 +77,25 @@ const PROVIDERS = [
 	},
 ] as const;
 
-const syncTypes = [
-	{
-		id: "webhook",
-		label: "Webhook (Recommended)",
-		description: "Real-time updates with minimal resource usage.",
-	},
-	{
-		id: "polling",
-		label: "Polling",
-		description: "Periodic checks for updates. May have a delay.",
-	},
-	{ id: "manual", label: "Manual", description: "Updates must be triggered manually." },
-] as const satisfies { id: RepositorySyncType; label: string; description: string }[];
+function getSyncTypes(): { id: RepositorySyncType; label: string; description: string }[] {
+	return [
+		{
+			id: "webhook",
+			label: m.syncTypeWebhookRecommended(),
+			description: m.syncTypeWebhookDescription(),
+		},
+		{
+			id: "polling",
+			label: m.syncTypePolling(),
+			description: m.syncTypePollingDescription(),
+		},
+		{
+			id: "manual",
+			label: m.syncTypeManual(),
+			description: m.syncTypeManualDescription(),
+		},
+	];
+}
 
 const { Stepper } = defineStepper(
 	{ id: "provider" },
@@ -98,9 +105,9 @@ const { Stepper } = defineStepper(
 );
 
 const repositorySchema = z.object({
-	url: z.url({ error: "Repository URL must be a valid URL", protocol: /^https?$/ }).trim(),
+	url: z.url({ error: m.validationRepositoryUrlInvalid(), protocol: /^https?$/ }).trim(),
 	provider: z.enum(["github", "gitlab", "gitea", "generic"]),
-	authToken: z.string().trim().max(1024, "Auth token must be at most 1024 characters"),
+	authToken: z.string().trim().max(1024, m.validationAuthTokenMaxLength()),
 	syncType: z.enum(["webhook", "polling", "manual"]),
 });
 
@@ -168,9 +175,7 @@ function ProviderStepContent({ form }: { form: RepoFormApi }) {
 		<form.Field name="provider">
 			{(field) => (
 				<>
-					<p className="text-muted-foreground text-sm mb-4">
-						Select the Git provider for this repository.
-					</p>
+					<p className="text-muted-foreground text-sm mb-4">{m.selectProviderDescription()}</p>
 					<RadioGroup
 						value={field.state.value}
 						onValueChange={(v) => field.handleChange(v as RepositoryProvider)}
@@ -222,7 +227,7 @@ function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: stri
 			{(provider) => (
 				<>
 					<p className="text-muted-foreground text-sm mb-4">
-						Enter the repository URL and an auth token.
+						{m.repositoryConnectionDescription()}
 					</p>
 					<FieldGroup>
 						<form.Field name="url" validators={{ onSubmit: repositorySchema.shape.url }}>
@@ -230,7 +235,7 @@ function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: stri
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Repository URL</Label>
+										<Label htmlFor={field.name}>{m.repository()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
@@ -255,24 +260,22 @@ function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: stri
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Auth Token</Label>
+										<Label htmlFor={field.name}>{m.authToken()}</Label>
 										<Input
 											id={field.name}
 											type="password"
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder="Paste a personal access token"
+											placeholder={m.authTokenPlaceholder()}
 										/>
-										<p className="text-muted-foreground text-xs">
-											Recommended, but not required for public repositories.
-										</p>
+										<p className="text-muted-foreground text-xs">{m.authTokenRecommendedHint()}</p>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
 								);
 							}}
 						</form.Field>
-						{error && <ErrorAlert title="Can't connect to repository" description={error} />}
+						{error && <ErrorAlert title={m.cantConnectToRepository()} description={error} />}
 					</FieldGroup>
 				</>
 			)}
@@ -281,11 +284,11 @@ function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: stri
 }
 
 function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
+	const syncTypes = getSyncTypes();
+
 	return (
 		<>
-			<p className="text-muted-foreground text-sm mb-4">
-				Decide how OrcaCD should check for updates in this repository.
-			</p>
+			<p className="text-muted-foreground text-sm mb-4">{m.syncTypeDescription()}</p>
 			<FieldGroup>
 				<form.Field name="syncType" validators={{ onSubmit: repositorySchema.shape.syncType }}>
 					{(field) => (
@@ -332,34 +335,28 @@ function SyncTypeSummaryContent({
 	return (
 		<>
 			<SuccessAlert
-				title={isEditing ? "Repository updated" : "Repository connected"}
+				title={isEditing ? m.repositoryUpdatedTitle() : m.repositoryConnectedTitle()}
 				description={
-					isEditing
-						? "The repository has been successfully updated."
-						: "The repository has been successfully connected."
+					isEditing ? m.repositoryUpdatedDescription() : m.repositoryConnectedDescription()
 				}
 			/>
 
 			{!webhookSecret ? (
-				<p className="text-sm text-muted-foreground mt-4">
-					No further action is needed. OrcaCD will start syncing with the repository shortly.
-				</p>
+				<p className="text-sm text-muted-foreground mt-4">{m.repositoryNoFurtherAction()}</p>
 			) : (
 				<div className="space-y-3 mt-4">
-					<p className="text-sm text-muted-foreground">
-						Set up a webhook in your repository to enable real-time updates:
-					</p>
+					<p className="text-sm text-muted-foreground">{m.repositoryWebhookSetupDescription()}</p>
 
 					<div className="space-y-1">
-						<p className="text-xs font-medium">Webhook URL</p>
+						<p className="text-xs font-medium">{m.webhookUrl()}</p>
 						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
 							<code className="flex-1 truncate font-mono text-sm">{webhookUrl}</code>
-							<CopyButton text={webhookUrl ?? ""} title="Copy webhook URL" />
+							<CopyButton text={webhookUrl ?? ""} title={m.copyWebhookUrl()} />
 						</div>
 					</div>
 
 					<div className="space-y-1">
-						<p className="text-xs font-medium">Webhook Secret</p>
+						<p className="text-xs font-medium">{m.webhookSecret()}</p>
 						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
 							<code className="flex-1 truncate font-mono text-sm">
 								{visible ? webhookSecret : "•".repeat(32)}
@@ -370,17 +367,15 @@ function SyncTypeSummaryContent({
 								size="icon"
 								className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
 								onClick={() => setVisible((v) => !v)}
-								title={visible ? "Hide secret" : "Reveal secret"}
+								title={visible ? m.hideSecret() : m.revealSecret()}
 							>
 								{visible ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
 							</Button>
-							<CopyButton text={webhookSecret} title="Copy webhook secret" />
+							<CopyButton text={webhookSecret} title={m.copyWebhookSecret()} />
 						</div>
-						<p className="text-xs text-muted-foreground">
-							Save this secret now — it won't be shown again.
-						</p>
+						<p className="text-xs text-muted-foreground">{m.saveSecretNow()}</p>
 					</div>
-					<div className="text-destructive">TODO: Link to docs</div>
+					<div className="text-destructive">{m.docsLinkComingSoon()}</div>
 				</div>
 			)}
 		</>
@@ -405,20 +400,20 @@ function StepperNavigation({
 	return (
 		<div className="flex items-center justify-between gap-4 pt-2">
 			<Button type="button" variant="outline" onClick={handleClose}>
-				{stepper.state.isLast ? "Close" : "Cancel"}
+				{stepper.state.isLast ? m.close() : m.cancel()}
 			</Button>
 			<div className="flex gap-2">
 				{!isAtFirstVisibleStep && !stepper.state.isLast && (
 					<Stepper.Prev
 						render={(domProps) => (
 							<Button type="button" variant="outline" {...domProps}>
-								Previous
+								{m.previous()}
 							</Button>
 						)}
 					/>
 				)}
 				{stepper.state.current.data.id === "syncType" ? (
-					<Button type="submit">{isEditing ? "Update Repository" : "Connect Repository"}</Button>
+					<Button type="submit">{isEditing ? m.updateRepository() : m.connectRepository()}</Button>
 				) : !stepper.state.isLast ? (
 					<Stepper.Next
 						render={(domProps) => (
@@ -426,7 +421,7 @@ function StepperNavigation({
 								type="button"
 								onClick={(e) => onNext(stepper.state.current.data.id, () => domProps.onClick?.(e))}
 							>
-								Next
+								{m.next()}
 							</Button>
 						)}
 					/>
@@ -493,7 +488,7 @@ export default function UpsertRepositoryDialog({
 
 				stepperRef.current?.navigation.next();
 			} catch (err: any) {
-				toast.error(err?.message || "An unexpected error occurred");
+				toast.error(err?.message || m.unexpectedError());
 			} finally {
 				setIsLoading(false);
 			}
@@ -527,9 +522,7 @@ export default function UpsertRepositoryDialog({
 			try {
 				await testRepositoryConnection({ provider, url, authToken: authToken, authMethod });
 			} catch (err: any) {
-				setError(
-					err?.message || "Failed to connect to repository. Please check the URL and auth token.",
-				);
+				setError(err?.message || m.failedConnectRepository());
 				return;
 			} finally {
 				setIsLoading(false);
@@ -546,7 +539,7 @@ export default function UpsertRepositoryDialog({
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
 						<PencilIcon className="h-4 w-4" />
-						Edit
+						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
@@ -555,7 +548,7 @@ export default function UpsertRepositoryDialog({
 				) : (
 					<Button>
 						<PlusIcon className="h-4 w-4" />
-						Add Repository
+						{m.addRepository()}
 					</Button>
 				)}
 			</DialogTrigger>
@@ -567,11 +560,11 @@ export default function UpsertRepositoryDialog({
 				{isLoading && (
 					<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
 						<Loader2Icon className="h-8 w-8 animate-spin text-primary" />
-						<p className="text-sm text-muted-foreground">Loading…</p>
+						<p className="text-sm text-muted-foreground">{m.loadingDots()}</p>
 					</div>
 				)}
 				<DialogHeader>
-					<DialogTitle>{isEditing ? "Edit Repository" : "Add Repository"}</DialogTitle>
+					<DialogTitle>{isEditing ? m.editRepository() : m.addRepository()}</DialogTitle>
 				</DialogHeader>
 				<form
 					className="max-w-[calc(var(--container-md)-2rem)]"

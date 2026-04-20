@@ -22,25 +22,22 @@ import { useFetch } from "@/lib/api";
 import type { Agent } from "@/lib/agents";
 import type { Repository } from "@/lib/repsitories";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { m } from "@/lib/paraglide/messages";
 
 const applicationSchema = z.object({
 	name: z
 		.string()
 		.trim()
-		.min(1, "Name is required")
-		.max(128, "Name must be at most 128 characters"),
-	repositoryId: z.string().min(1, "Repository is required"),
-	agentId: z.string().min(1, "Agent is required"),
+		.min(1, m.validationApplicationNameRequired())
+		.max(128, m.validationApplicationNameMaxLength()),
+	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
+	agentId: z.string().min(1, m.validationAgentRequired()),
 	branch: z
 		.string()
 		.trim()
-		.min(1, "Branch is required")
-		.max(256, "Branch must be at most 256 characters"),
-	path: z
-		.string()
-		.trim()
-		.min(1, "Path is required")
-		.max(512, "Path must be at most 512 characters"),
+		.min(1, m.validationBranchRequired())
+		.max(256, m.validationBranchMaxLength()),
+	path: z.string().trim().min(1, m.validationPathRequired()).max(512, m.validationPathMaxLength()),
 });
 
 export default function UpsertApplicationDialog({
@@ -73,14 +70,14 @@ export default function UpsertApplicationDialog({
 			try {
 				if (isEditing && application) {
 					await updateApplication(application.id, value);
-					toast.success("Application updated");
+					toast.success(m.applicationUpdated());
 				} else {
 					await createApplication(value);
-					toast.success("Application created");
+					toast.success(m.applicationCreated());
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save application");
+				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -92,7 +89,7 @@ export default function UpsertApplicationDialog({
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
 						<Pencil className="h-4 w-4" />
-						Edit
+						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
@@ -101,19 +98,17 @@ export default function UpsertApplicationDialog({
 				) : (
 					<Button>
 						<Plus className="h-4 w-4" />
-						New Application
+						{m.newApplication()}
 					</Button>
 				)}
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						{isEditing ? "Edit Application" : "Add Application"}
+						{isEditing ? m.editApplication() : m.addApplication()}
 					</DialogTitle>
 					<DialogDescription className="py-2">
-						{isEditing
-							? "Update the application configuration."
-							: "Add a new application to monitor and manage."}
+						{isEditing ? m.editApplicationDescription() : m.addApplicationDescription()}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -130,13 +125,13 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Name</Label>
+										<Label htmlFor={field.name}>{m.name()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "notifications-service"'
+											placeholder={m.applicationNamePlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -152,7 +147,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="repository-select">Repository</FieldLabel>
+											<FieldLabel htmlFor="repository-select">{m.repository()}</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -165,11 +160,11 @@ export default function UpsertApplicationDialog({
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select a repository" />
+												<SelectValue placeholder={m.selectRepository()} />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isReposLoading ? (
-													<div className="p-2">Loading...</div>
+													<div className="p-2">{m.loadingDots()}</div>
 												) : (
 													repos?.map((repo) => (
 														<SelectItem key={repo.id} value={repo.id}>
@@ -191,7 +186,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="agent-select">Agent</FieldLabel>
+											<FieldLabel htmlFor="agent-select">{m.columnAgent()}</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -204,11 +199,11 @@ export default function UpsertApplicationDialog({
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select an agent" />
+												<SelectValue placeholder={m.selectAgent()} />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isAgentsLoading ? (
-													<div className="p-2">Loading...</div>
+													<div className="p-2">{m.loadingDots()}</div>
 												) : (
 													agents?.map((agent) => (
 														<SelectItem key={agent.id} value={agent.id}>
@@ -229,13 +224,13 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Branch</Label>
+										<Label htmlFor={field.name}>{m.branch()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "main"'
+											placeholder={m.branchPlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -250,13 +245,13 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Path</Label>
+										<Label htmlFor={field.name}>{m.path()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "/docker-compose.yml"'
+											placeholder={m.pathPlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -267,7 +262,11 @@ export default function UpsertApplicationDialog({
 
 						<div className="flex gap-2 pt-2">
 							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving..." : isEditing ? "Update Application" : "Add Application"}
+								{isSubmitting
+									? m.savingDots()
+									: isEditing
+										? m.updateApplication()
+										: m.addApplication()}
 							</Button>
 							<Button
 								type="button"
@@ -278,7 +277,7 @@ export default function UpsertApplicationDialog({
 								}}
 								disabled={isSubmitting}
 							>
-								Cancel
+								{m.cancel()}
 							</Button>
 						</div>
 					</FieldGroup>

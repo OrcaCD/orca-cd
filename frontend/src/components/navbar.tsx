@@ -24,6 +24,7 @@ import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
+import { m } from "@/lib/paraglide/messages";
 import {
 	NavigationMenuItem,
 	NavigationMenuLink,
@@ -31,13 +32,30 @@ import {
 	NavigationMenuList,
 } from "@/components/ui/navigation-menu";
 
+type NavKey = "applications" | "agents" | "repositories" | "admin";
+
 const navItems = [
-	{ name: "Applications", href: "/applications", icon: LayoutGrid },
-	{ name: "Agents", href: "/agents", icon: Server },
-	{ name: "Repositories", href: "/repositories", icon: GitBranch },
+	{ key: "applications" as NavKey, href: "/applications", icon: LayoutGrid },
+	{ key: "agents" as NavKey, href: "/agents", icon: Server },
+	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
 ];
 
-const adminNavItems = [{ name: "Admin", href: "/admin", icon: Settings }];
+const adminNavItems = [{ key: "admin" as NavKey, href: "/admin", icon: Settings }];
+
+function getNavLabel(key: NavKey): string {
+	switch (key) {
+		case "applications":
+			return m.navApplications();
+		case "agents":
+			return m.navAgents();
+		case "repositories":
+			return m.navRepositories();
+		case "admin":
+			return m.navAdmin();
+		default:
+			return "";
+	}
+}
 
 export default function Navbar() {
 	const { auth, logout } = useAuth();
@@ -63,24 +81,24 @@ export default function Navbar() {
 			<div className="flex h-14 items-center justify-between px-4">
 				<div className="flex items-center gap-6">
 					<Link to="/" className="flex items-center gap-3">
-						<img src="/assets/logo-dark.svg" alt="OrcaCD Logo" className="h-9 w-9" />
+						<img src="/assets/logo-dark.svg" alt={m.appLogoAlt()} className="h-9 w-9" />
 						<span className="font-semibold text-lg hidden sm:inline">OrcaCD</span>
 					</Link>
 
 					<NavigationMenu className="hidden md:flex">
 						<NavigationMenuList className="gap-2">
 							{allNavItems.map((item) => (
-								<NavigationMenuItem key={item.name}>
+								<NavigationMenuItem key={item.key}>
 									<NavigationMenuLink asChild>
 										<Link
-											key={item.name}
+											key={item.key}
 											to={item.href}
 											className={cn(
 												location.pathname.startsWith(item.href) &&
 													"bg-sidebar-accent text-primary-foreground hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 											)}
 										>
-											<item.icon className="h-4 w-4" /> {item.name}
+											<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
 										</Link>
 									</NavigationMenuLink>
 								</NavigationMenuItem>
@@ -116,7 +134,7 @@ export default function Navbar() {
 							<DropdownMenuItem asChild>
 								<Link to="/settings" className="flex items-center">
 									<User className="mr-2 h-4 w-4" />
-									User Settings
+									{m.userSettings()}
 								</Link>
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
@@ -128,7 +146,7 @@ export default function Navbar() {
 								}}
 							>
 								<LogOut className="mr-2 h-4 w-4" />
-								Sign Out
+								{m.signOut()}
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
@@ -138,6 +156,7 @@ export default function Navbar() {
 						size="icon"
 						className="md:hidden"
 						onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+						aria-label={mobileMenuOpen ? m.close() : m.openMenu()}
 					>
 						{mobileMenuOpen ? <XIcon className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
 					</Button>
@@ -154,10 +173,10 @@ export default function Navbar() {
 					<NavigationMenu className="border-t border-border p-4 max-w-full w-full [&>div]:w-full">
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
 							{allNavItems.map((item) => (
-								<NavigationMenuItem key={item.name} className="w-full">
+								<NavigationMenuItem key={item.key} className="w-full">
 									<NavigationMenuLink asChild>
 										<Link
-											key={item.name}
+											key={item.key}
 											to={item.href}
 											className={cn(
 												"w-full",
@@ -166,7 +185,7 @@ export default function Navbar() {
 											)}
 											onClick={() => setMobileMenuOpen(false)}
 										>
-											<item.icon className="h-4 w-4" /> {item.name}
+											<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
 										</Link>
 									</NavigationMenuLink>
 								</NavigationMenuItem>
