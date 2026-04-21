@@ -181,7 +181,10 @@ func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 			},
 		},
 	}
-	respData, _ := proto.Marshal(resp)
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("doHandshake: marshal response: %v", err)
+	}
 	if err := conn.WriteMessage(websocket.BinaryMessage, respData); err != nil {
 		t.Errorf("doHandshake: send response: %v", err)
 		return

@@ -96,6 +96,21 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, sess
 		return
 	}
 
+	// Unwrap at most one layer of encryption to prevent a malicious server from
+	// crafting a chain of nested EncryptedPayloads that causes unbounded recursion.
+	if p, ok := msg.Payload.(*messages.ServerMessage_EncryptedPayload); ok {
+		inner := &messages.ServerMessage{}
+		if err := session.Decrypt(p.EncryptedPayload, inner); err != nil {
+			Log.Error().Err(err).Msg("failed to decrypt message")
+			return
+		}
+		if _, stillEncrypted := inner.Payload.(*messages.ServerMessage_EncryptedPayload); stillEncrypted {
+			Log.Warn().Msg("dropping doubly-encrypted message")
+			return
+		}
+		msg = inner
+	}
+
 	switch p := msg.Payload.(type) {
 	case *messages.ServerMessage_Ping:
 		latency := time.Now().UnixMilli() - p.Ping.Timestamp
@@ -111,13 +126,6 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, sess
 		if err := sendMessage(conn, session, pong); err != nil {
 			Log.Error().Err(err).Msg("failed to send Pong response")
 		}
-	case *messages.ServerMessage_EncryptedPayload:
-		inner := &messages.ServerMessage{}
-		if err := session.Decrypt(p.EncryptedPayload, inner); err != nil {
-			Log.Error().Err(err).Msg("failed to decrypt message")
-			return
-		}
-		handleServerMessage(inner, conn, session)
 	default:
 		Log.Warn().Msg("unknown message type received")
 	}
@@ -130,7 +138,7 @@ func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Co
 	)
 
 	if strings.HasPrefix(url, "ws://") {
-		Log.Warn().Msg("connecting over http. Do not use this in production or over untrusted networks")
+		Log.Warn().Msg("connecting over unencrypted WebSocket. Do not use this in production or over untrusted networks")
 	}
 
 	delay := initialDelay

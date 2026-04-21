@@ -142,23 +142,31 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		return
 	}
 
-	switch p := msg.Payload.(type) {
-	case *messages.ClientMessage_Pong:
-		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		lastSeen := time.Unix(p.Pong.Timestamp, 0)
-		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(ctx, "last_seen", lastSeen)
-		if err != nil {
-			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
-		}
-	case *messages.ClientMessage_EncryptedPayload:
+	// Unwrap at most one layer of encryption to prevent a malicious client from
+	// crafting a chain of nested EncryptedPayloads that causes unbounded recursion.
+	if p, ok := msg.Payload.(*messages.ClientMessage_EncryptedPayload); ok {
 		inner := &messages.ClientMessage{}
 		if err := client.session.Decrypt(p.EncryptedPayload, inner); err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to decrypt message")
 			return
 		}
-		handleClientMessage(client, inner, log)
+		if _, stillEncrypted := inner.Payload.(*messages.ClientMessage_EncryptedPayload); stillEncrypted {
+			log.Warn().Str("client", client.Id).Msg("Dropping doubly-encrypted message")
+			return
+		}
+		msg = inner
+	}
+
+	switch p := msg.Payload.(type) {
+	case *messages.ClientMessage_Pong:
+		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		lastSeen := time.UnixMilli(p.Pong.Timestamp)
+		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(ctx, "last_seen", lastSeen)
+		if err != nil {
+			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
+		}
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}
