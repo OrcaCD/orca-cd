@@ -148,13 +148,16 @@ func parseWebhookPushDetails(c *gin.Context, body []byte) (webhookPushDetails, e
 	}
 
 	var payload pushPayload
-	if len(decodedBody) > 0 {
+	switch {
+	case len(decodedBody) > 0:
 		if err := json.Unmarshal(decodedBody, &payload); err != nil {
 			return webhookPushDetails{}, err
 		}
-	} else {
+	case form != nil:
 		payload.Ref = form.Get("ref")
 		payload.After = form.Get("after")
+	default:
+		return webhookPushDetails{}, errors.New("empty webhook payload")
 	}
 
 	branch := extractBranchFromRef(payload.Ref)

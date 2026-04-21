@@ -3,16 +3,17 @@ package applications
 import (
 	"context"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/rs/zerolog"
-	"gorm.io/gorm"
 )
 
 const defaultWorkerCount = 4
 const maxQueueSize = defaultWorkerCount * 6
+
+// TODO
+// Prevent multiple concurrent syncs for the same application
 
 type Queue struct {
 	jobs    chan syncJob
@@ -54,16 +55,6 @@ func (q *Queue) Enqueue(ctx context.Context, repo *models.Repository, provider r
 				continue
 			}
 			resolvedCommit = commitInfo.Hash
-		}
-
-		if _, err := gorm.G[models.Application](db.DB).
-			Where("id = ?", app.Id).
-			Updates(ctx, models.Application{
-				SyncStatus: models.Syncing,
-			}); err != nil {
-			q.log.Error().Err(err).Str("applicationId", app.Id).
-				Msg("failed to set application sync status to syncing")
-			continue
 		}
 
 		job := syncJob{

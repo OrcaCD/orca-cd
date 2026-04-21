@@ -21,10 +21,11 @@ import (
 
 // mockProvider is a test double for repositories.Provider.
 type mockProvider struct {
-	latestCommit    repositories.CommitInfo
-	latestCommitErr error
-	fileContent     string
-	fileContentErr  error
+	latestCommit      repositories.CommitInfo
+	latestCommitErr   error
+	fileContent       string
+	fileContentErr    error
+	onGetLatestCommit func()
 }
 
 func (m *mockProvider) ParseURL(url string) (string, string, error)                  { return "", "", nil }
@@ -40,6 +41,9 @@ func (m *mockProvider) GetFileContent(_ context.Context, _ *models.Repository, _
 	return m.fileContent, m.fileContentErr
 }
 func (m *mockProvider) GetLatestCommit(_ context.Context, _ *models.Repository, _ string) (repositories.CommitInfo, error) {
+	if m.onGetLatestCommit != nil {
+		m.onGetLatestCommit()
+	}
 	return m.latestCommit, m.latestCommitErr
 }
 
@@ -295,7 +299,7 @@ func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *test
 	}
 }
 
-func TestProcessSyncJob_GetLatestCommitError_LeavesDBUnchanged(t *testing.T) {
+func TestProcessSyncJob_GetLatestCommitError_SetsStatusOutOfSync(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
@@ -313,19 +317,19 @@ func TestProcessSyncJob_GetLatestCommitError_LeavesDBUnchanged(t *testing.T) {
 		Commit:             "somesha",
 	}, &nop)
 
-	unchanged, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("failed to load application: %v", err)
 	}
-	if unchanged.SyncStatus != models.UnknownSync {
-		t.Errorf("expected SyncStatus unchanged (%q), got %q", models.UnknownSync, unchanged.SyncStatus)
+	if got.SyncStatus != models.OutOfSync {
+		t.Errorf("expected SyncStatus %q after commit fetch error, got %q", models.OutOfSync, got.SyncStatus)
 	}
-	if unchanged.LastSyncedAt != nil {
+	if got.LastSyncedAt != nil {
 		t.Error("expected LastSyncedAt to remain nil")
 	}
 }
 
-func TestProcessSyncJob_GetFileContentError_LeavesDBUnchanged(t *testing.T) {
+func TestProcessSyncJob_GetFileContentError_SetsStatusOutOfSync(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
@@ -344,14 +348,14 @@ func TestProcessSyncJob_GetFileContentError_LeavesDBUnchanged(t *testing.T) {
 		Commit:             "sha",
 	}, &nop)
 
-	unchanged, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("failed to load application: %v", err)
 	}
-	if unchanged.SyncStatus != models.UnknownSync {
-		t.Errorf("expected SyncStatus unchanged (%q), got %q", models.UnknownSync, unchanged.SyncStatus)
+	if got.SyncStatus != models.OutOfSync {
+		t.Errorf("expected SyncStatus %q after file fetch error, got %q", models.OutOfSync, got.SyncStatus)
 	}
-	if unchanged.LastSyncedAt != nil {
+	if got.LastSyncedAt != nil {
 		t.Error("expected LastSyncedAt to remain nil")
 	}
 }
@@ -372,25 +376,47 @@ func TestNewQueue_HasCorrectProperties(t *testing.T) {
 	}
 }
 
-func TestQueue_Enqueue_SetsSyncStatusToSyncing(t *testing.T) {
+func TestProcessSyncJob_SetsSyncStatusToSyncing(t *testing.T) {
+	// processSyncJob is responsible for the Syncing transition; Enqueue no longer touches the DB.
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
 	app := seedApp(t, repo.Id, agent.Id, "compose: v1")
 
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	provider := &mockProvider{
+		onGetLatestCommit: func() {
+			close(started)
+			<-release
+		},
+		latestCommitErr: errors.New("stop here"),
+	}
 	nop := zerolog.Nop()
-	q := NewQueue(&nop)
 
-	provider := &mockProvider{}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{app}, "abc123")
+	go func() {
+		processSyncJob(t.Context(), syncJob{
+			Application:        app,
+			Repository:         repo,
+			RepositoryProvider: provider,
+			Commit:             "sha",
+		}, &nop)
+		close(done)
+	}()
 
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	<-started // GetLatestCommit was called, meaning Syncing was already written
+
+	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("failed to load application: %v", err)
 	}
-	if updated.SyncStatus != models.Syncing {
-		t.Errorf("expected SyncStatus %q, got %q", models.Syncing, updated.SyncStatus)
+	if got.SyncStatus != models.Syncing {
+		t.Errorf("expected SyncStatus %q at start of processing, got %q", models.Syncing, got.SyncStatus)
 	}
+
+	close(release)
+	<-done
 }
 
 func TestQueue_Enqueue_JobAddedToChannel(t *testing.T) {
@@ -487,6 +513,16 @@ func TestQueue_Enqueue_FullQueue_DropsJob(t *testing.T) {
 
 	if len(q.jobs) != capacity {
 		t.Errorf("expected queue at capacity (%d), got %d", capacity, len(q.jobs))
+	}
+
+	// The one dropped app must not have had its status touched — it was never queued.
+	droppedApp := apps[capacity]
+	got, err := gorm.G[models.Application](db.DB).Where("id = ?", droppedApp.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load dropped application: %v", err)
+	}
+	if got.SyncStatus != models.UnknownSync {
+		t.Errorf("expected dropped app SyncStatus %q, got %q", models.UnknownSync, got.SyncStatus)
 	}
 }
 

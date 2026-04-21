@@ -158,7 +158,9 @@ func TestWebhookHandler_GitHub_NonPushEvent(t *testing.T) {
 	}
 	// Sync status must not have changed
 	var got models.Repository
-	db.DB.First(&got, "id = ?", repo.Id)
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to load repo: %v", err)
+	}
 	if got.SyncStatus != models.SyncStatusUnknown {
 		t.Errorf("expected sync_status unchanged (%s), got %s", models.SyncStatusUnknown, got.SyncStatus)
 	}
@@ -570,6 +572,18 @@ func TestParseWebhookPushDetails_GitLab_FormFields(t *testing.T) {
 	}
 	if details.Commit != "sha-after" {
 		t.Errorf("expected commit sha-after, got %q", details.Commit)
+	}
+}
+
+func TestParseWebhookPushDetails_EmptyBody_NonForm_ReturnsError(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	_, err := parseWebhookPushDetails(c, []byte{})
+	if err == nil {
+		t.Fatal("expected error for empty non-form body, got nil")
 	}
 }
 
