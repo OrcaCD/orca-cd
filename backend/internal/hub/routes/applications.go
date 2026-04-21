@@ -3,7 +3,6 @@ package routes
 import (
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -131,13 +130,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	validatedPath, statusCode, validationErr := validateApplicationPath(c, req.RepositoryId, req.Branch, req.Path)
-	if validationErr != "" {
-		c.JSON(statusCode, gin.H{"error": validationErr})
-		return
-	}
-
-	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, validatedPath)
+	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
 	if sourceErr != "" {
 		c.JSON(statusCode, gin.H{"error": sourceErr})
 		return
@@ -153,7 +146,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		Commit:        latestCommit.Hash,
 		CommitMessage: latestCommit.Message,
 		LastSyncedAt:  nil,
-		Path:          validatedPath,
+		Path:          req.Path,
 		ComposeFile:   crypto.EncryptedString(composeFile),
 	}
 
@@ -219,13 +212,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	validatedPath, statusCode, validationErr := validateApplicationPath(c, req.RepositoryId, req.Branch, req.Path)
-	if validationErr != "" {
-		c.JSON(statusCode, gin.H{"error": validationErr})
-		return
-	}
-
-	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, validatedPath)
+	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
 	if sourceErr != "" {
 		c.JSON(statusCode, gin.H{"error": sourceErr})
 		return
@@ -237,7 +224,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Branch = req.Branch
 	application.Commit = latestCommit.Hash
 	application.CommitMessage = latestCommit.Message
-	application.Path = validatedPath
+	application.Path = req.Path
 	application.ComposeFile = crypto.EncryptedString(composeFile)
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
@@ -314,45 +301,6 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		UpdatedAt:      app.UpdatedAt.Format(time.RFC3339),
 		ComposeFile:    app.ComposeFile.String(),
 	}
-}
-
-func validateApplicationPath(c *gin.Context, repositoryID, branch, path string) (string, int, string) {
-	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
-	if normalizedPath == "" {
-		return "", http.StatusBadRequest, "path is required"
-	}
-
-	lowerPath := strings.ToLower(normalizedPath)
-	if !strings.HasSuffix(lowerPath, ".yml") && !strings.HasSuffix(lowerPath, ".yaml") {
-		return "", http.StatusBadRequest, "invalid path: must point to a .yml or .yaml file"
-	}
-
-	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(c.Request.Context())
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", http.StatusBadRequest, "repository not found"
-		}
-		return "", http.StatusInternalServerError, "internal server error"
-	}
-
-	provider, err := repositories.Get(repo.Provider)
-	if err != nil {
-		return "", http.StatusBadRequest, "unsupported provider"
-	}
-
-	// TODO: Get single file from repository instead of listing entire tree for better performance
-	entries, err := provider.ListTree(c.Request.Context(), &repo, branch)
-	if err != nil {
-		return "", http.StatusUnprocessableEntity, err.Error()
-	}
-
-	for _, entry := range entries {
-		if entry.Type == repositories.TreeEntryTypeFile && entry.Path == normalizedPath {
-			return normalizedPath, 0, ""
-		}
-	}
-
-	return "", http.StatusBadRequest, "invalid path: file not found in repository branch"
 }
 
 func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {

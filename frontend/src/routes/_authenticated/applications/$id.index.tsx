@@ -198,7 +198,7 @@ function ApplicationDetailsPage() {
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
 					label={m.applicationInfoLatestCommit()}
-					value={data?.commit.slice(0, 7) ?? ""}
+					value={data?.commit?.slice(0, 7) ?? ""}
 					subValue={data?.commitMessage}
 					isMonoValue
 				/>
