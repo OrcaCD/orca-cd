@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,14 @@ func setupTestDBWithApplications(t *testing.T) {
 
 	restore := mockApplicationRepositoryHTTPClient()
 	t.Cleanup(restore)
+}
+
+func jsonResponseWithBody(code int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: code,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
 }
 
 func mockApplicationRepositoryHTTPClient() func() {
