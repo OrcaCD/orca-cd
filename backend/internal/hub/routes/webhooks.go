@@ -57,7 +57,7 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	if !isPushEvent(c, repo.Provider) {
-		c.Status(http.StatusNoContent)
+		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
 
@@ -72,7 +72,7 @@ func WebhookHandler(c *gin.Context) {
 
 	// Todo trigger application sync
 
-	c.Status(http.StatusNoContent)
+	c.AbortWithStatus(http.StatusNoContent)
 }
 
 func validateSignature(c *gin.Context, provider models.RepositoryProvider, secret string, body []byte) bool {
