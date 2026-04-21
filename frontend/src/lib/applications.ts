@@ -16,6 +16,7 @@ export interface Application {
 	agentName: string;
 	createdAt: string;
 	updatedAt: string;
+	composeFile?: string;
 }
 
 export interface ApplicationListItem {

@@ -62,6 +62,7 @@ type applicationResponse struct {
 	Path           string  `json:"path"`
 	CreatedAt      string  `json:"createdAt"`
 	UpdatedAt      string  `json:"updatedAt"`
+	ComposeFile    string  `json:"composeFile,omitempty"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
@@ -311,6 +312,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		Path:           app.Path,
 		CreatedAt:      app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      app.UpdatedAt.Format(time.RFC3339),
+		ComposeFile:    app.ComposeFile.String(),
 	}
 }
 
