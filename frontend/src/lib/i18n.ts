@@ -12,7 +12,7 @@ const zodLocaleLoaders: Record<Locale, () => Promise<{ default: typeof z.locales
 };
 
 export async function initializeI18n() {
-	const locale = getPreferredLocale();
+	const locale = getLocale() || baseLocale;
 
 	// Set in background to speed up initial load
 	// oxlint-disable-next-line no-floating-promises
@@ -46,8 +46,4 @@ export async function setLocaleForLibraries(locale: Locale = getLocale() || base
 		// oxlint-disable-next-line no-console
 		console.warn(`Failed to load zod locale for ${locale}:`, error);
 	}
-}
-
-function getPreferredLocale(): Locale {
-	return getLocale() || baseLocale;
 }
