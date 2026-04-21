@@ -9,6 +9,8 @@ import "./styles.css";
 import { Button } from "./components/ui/button";
 import { AuthProvider, useAuth } from "./lib/auth";
 import type { RouterContext } from "./routes/__root";
+import { m } from "@/lib/paraglide/messages";
+import { initializeI18n } from "@/lib/i18n";
 
 // Create a new router instance
 const router = createRouter({
@@ -24,9 +26,9 @@ const router = createRouter({
 		return (
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>Page Not Found</p>
+					<p>{m.pageNotFound()}</p>
 					<Link to="/">
-						<Button size="lg">Go Home</Button>
+						<Button size="lg">{m.goHome()}</Button>
 					</Link>
 				</div>
 			</div>
@@ -36,10 +38,10 @@ const router = createRouter({
 		return (
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>Something went wrong</p>
+					<p>{m.somethingWentWrong()}</p>
 					<pre>{error.message}</pre>
 					<Link to="/">
-						<Button size="lg">Go Home</Button>
+						<Button size="lg">{m.goHome()}</Button>
 					</Link>
 				</div>
 			</div>
@@ -62,15 +64,26 @@ function InnerApp() {
 	return <RouterProvider router={router} context={{ auth }} />;
 }
 
-// Render the app
-const rootElement = document.getElementById("app");
-if (rootElement && !rootElement.innerHTML) {
-	const root = ReactDOM.createRoot(rootElement);
-	root.render(
-		<StrictMode>
-			<AuthProvider>
-				<InnerApp />
-			</AuthProvider>
-		</StrictMode>,
-	);
+function renderApp() {
+	const rootElement = document.getElementById("app");
+	if (rootElement && !rootElement.innerHTML) {
+		const root = ReactDOM.createRoot(rootElement);
+		root.render(
+			<StrictMode>
+				<AuthProvider>
+					<InnerApp />
+				</AuthProvider>
+			</StrictMode>,
+		);
+	}
 }
+
+async function bootstrap() {
+	try {
+		await initializeI18n();
+	} finally {
+		renderApp();
+	}
+}
+
+void bootstrap();

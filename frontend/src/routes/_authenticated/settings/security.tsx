@@ -12,13 +12,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth, updatePassword } from "@/lib/auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/settings/security")({
 	component: SecuritySettingsPage,
 	head: () => ({
 		meta: [
 			{
-				title: "Settings - Security",
+				title: m.settingsSecurityHeadTitle(),
 			},
 		],
 	}),
@@ -26,15 +27,15 @@ export const Route = createFileRoute("/_authenticated/settings/security")({
 
 const passwordSchema = z
 	.object({
-		currentPassword: z.string().min(1, "Current password is required"),
+		currentPassword: z.string().min(1, m.validationCurrentPasswordRequired()),
 		newPassword: z
 			.string()
-			.min(8, "New password must be at least 8 characters")
-			.max(128, "New password must be at most 128 characters"),
-		confirmPassword: z.string().min(1, "Please confirm your new password"),
+			.min(8, m.validationNewPasswordMinLength())
+			.max(128, m.validationNewPasswordMaxLength()),
+		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((data) => data.newPassword === data.confirmPassword, {
-		message: "Passwords do not match",
+		message: m.validationPasswordsMustMatch(),
 		path: ["confirmPassword"],
 	});
 
@@ -52,7 +53,7 @@ function PasswordInput({
 				size="icon"
 				className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
 				onClick={onToggle}
-				aria-label={showPassword ? "Hide password" : "Show password"}
+				aria-label={showPassword ? m.hidePassword() : m.showPassword()}
 			>
 				{showPassword ? (
 					<EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -85,10 +86,10 @@ function SecuritySettingsPage() {
 			setIsSubmitting(true);
 			try {
 				await updatePassword(value.currentPassword, value.newPassword);
-				toast.success("Password updated successfully");
+				toast.success(m.passwordUpdatedSuccessfully());
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to update password");
+				toast.error(err instanceof Error ? err.message : m.failedUpdatePassword());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -98,21 +99,19 @@ function SecuritySettingsPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<div>
-				<h1 className="text-2xl font-bold">Security</h1>
-				<p className="text-muted-foreground text-sm">Manage your password.</p>
+				<h1 className="text-2xl font-bold">{m.security()}</h1>
+				<p className="text-muted-foreground text-sm">{m.securityDescription()}</p>
 			</div>
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Change Password</CardTitle>
+					<CardTitle>{m.changePassword()}</CardTitle>
 					{isReady && !isLocal && (
 						<CardDescription>
 							<Alert className="mt-2 border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
 								<AlertTriangleIcon />
-								<AlertTitle>Managed Profile</AlertTitle>
-								<AlertDescription>
-									Password management is not available for SSO accounts.
-								</AlertDescription>
+								<AlertTitle>{m.managedProfile()}</AlertTitle>
+								<AlertDescription>{m.passwordManagementUnavailableForSso()}</AlertDescription>
 							</Alert>
 						</CardDescription>
 					)}
@@ -132,7 +131,7 @@ function SecuritySettingsPage() {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Current Password</Label>
+											<Label htmlFor={field.name}>{m.currentPassword()}</Label>
 											<PasswordInput
 												id={field.name}
 												name={field.name}
@@ -155,7 +154,7 @@ function SecuritySettingsPage() {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>New Password</Label>
+											<Label htmlFor={field.name}>{m.newPassword()}</Label>
 											<PasswordInput
 												id={field.name}
 												name={field.name}
@@ -178,7 +177,7 @@ function SecuritySettingsPage() {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Confirm New Password</Label>
+											<Label htmlFor={field.name}>{m.confirmNewPassword()}</Label>
 											<PasswordInput
 												id={field.name}
 												name={field.name}
@@ -197,7 +196,7 @@ function SecuritySettingsPage() {
 							/>
 							<Field>
 								<Button type="submit" disabled={isSubmitting || !isLocal} className="max-w-fit">
-									{isSubmitting ? "Updating..." : "Update Password"}
+									{isSubmitting ? m.updatingDots() : m.updatePassword()}
 								</Button>
 							</Field>
 						</FieldGroup>

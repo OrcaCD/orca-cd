@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import { useFetch } from "@/lib/api";
+import { m } from "@/lib/paraglide/messages";
 
 interface SystemInfo {
 	debug: boolean;
@@ -27,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/admin/system-info")({
 	head: () => ({
 		meta: [
 			{
-				title: "Admin - System Info",
+				title: `${m.admin()} - ${m.adminSystemInfo()}`,
 			},
 		],
 	}),
@@ -55,7 +56,7 @@ function SystemVersion({ systemInfo }: { systemInfo: SystemInfo }) {
 		return (
 			<div className="text-xs text-green-500 font-medium flex gap-1">
 				<CircleCheck className="w-4 h-4" />
-				<span>Up to date</span>
+				<span>{m.upToDate()}</span>
 			</div>
 		);
 	}
@@ -68,7 +69,7 @@ function SystemVersion({ systemInfo }: { systemInfo: SystemInfo }) {
 			className="text-xs text-red-500 font-medium flex gap-1"
 		>
 			<TriangleAlert className="w-4 h-4" />
-			<span>Update available: {data.tag_name}</span>
+			<span>{m.updateAvailable({ version: data.tag_name })}</span>
 		</a>
 	);
 }
@@ -80,23 +81,24 @@ function SystemInfoPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<div>
-				<h1 className="text-2xl font-bold">System Information</h1>
-				<p className="text-muted-foreground text-sm">
-					Current server configuration and environment settings.
-				</p>
+				<h1 className="text-2xl font-bold">{m.adminSystemInfo()}</h1>
+				<p className="text-muted-foreground text-sm">{m.adminSystemInfoDescription()}</p>
 			</div>
 
-			{isLoading && <p className="text-muted-foreground text-sm">Loading system info...</p>}
+			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingSystemInfo()}</p>}
 
 			{data && (
 				<Card>
 					<CardHeader>
-						<CardTitle>Server Configuration</CardTitle>
+						<CardTitle>{m.serverConfiguration()}</CardTitle>
 						<CardDescription>
 							<div className="flex flex-col gap-1">
 								<span>
-									Version: {data.version} (commit: {data.commit}, built:{" "}
-									{new Date(data.buildDate).toLocaleString()})
+									{m.versionDetails({
+										version: data.version,
+										commit: data.commit,
+										buildDate: new Date(data.buildDate).toLocaleString(),
+									})}
 								</span>
 								{isTagVersion ? <SystemVersion systemInfo={data} /> : null}
 							</div>
@@ -105,35 +107,35 @@ function SystemInfoPage() {
 					<Separator />
 					<CardContent className="pt-4">
 						<div className="flex flex-col gap-4">
-							<InfoRow label="App URL">
+							<InfoRow label={m.appUrl()}>
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
 									{data.appUrl || "—"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="Host">
+							<InfoRow label={m.host()}>
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.host || "0.0.0.0"}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="Port">
+							<InfoRow label={m.port()}>
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
 									{data.port}
 								</code>
 							</InfoRow>
 
-							<InfoRow label="Log Level">
+							<InfoRow label={m.logLevel()}>
 								<Badge variant="secondary">{data.logLevel}</Badge>
 							</InfoRow>
 
-							<InfoRow label="Password Authentication">
+							<InfoRow label={m.passwordAuthentication()}>
 								<Badge variant={data.disableLocalAuth ? "destructive" : "outline"}>
-									{data.disableLocalAuth ? "Enabled" : "Disabled"}
+									{data.disableLocalAuth ? m.enabled() : m.disabled()}
 								</Badge>
 							</InfoRow>
 
-							<InfoRow label="Trusted Proxies">
+							<InfoRow label={m.trustedProxies()}>
 								{data.trustedProxies && data.trustedProxies.length > 0 ? (
 									<div className="flex flex-wrap gap-1.5">
 										{data.trustedProxies.map((proxy) => (
@@ -146,7 +148,7 @@ function SystemInfoPage() {
 										))}
 									</div>
 								) : (
-									<span className="text-muted-foreground text-xs italic">None configured</span>
+									<span className="text-muted-foreground text-xs italic">{m.noneConfigured()}</span>
 								)}
 							</InfoRow>
 						</div>

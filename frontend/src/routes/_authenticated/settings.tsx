@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Key, Settings, User } from "lucide-react";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/settings")({
 	component: SettingsLayout,
@@ -22,12 +23,12 @@ export const Route = createFileRoute("/_authenticated/settings")({
 
 const settingsPages = [
 	{
-		title: "Profile",
+		title: () => m.profile(),
 		icon: User,
 		path: "/settings/profile",
 	},
 	{
-		title: "Security",
+		title: () => m.security(),
 		icon: Key,
 		path: "/settings/security",
 	},
@@ -42,17 +43,17 @@ function SettingsLayout() {
 				<SidebarHeader className="px-4 py-5">
 					<div className="flex items-center gap-2 font-semibold">
 						<Settings className="size-4" />
-						Settings
+						{m.settings()}
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
 					<SidebarGroup>
-						<SidebarGroupLabel>Account</SidebarGroupLabel>
+						<SidebarGroupLabel>{m.account()}</SidebarGroupLabel>
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{settingsPages.map((item) => (
 									<SettingsSidebarMenuItem
-										key={item.title}
+										key={item.path}
 										item={item}
 										pathname={location.pathname}
 									/>
@@ -66,7 +67,7 @@ function SettingsLayout() {
 				<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
 					<div className="flex items-center gap-2 md:hidden">
 						<SidebarTrigger className="-ml-1" />
-						<span className="font-semibold">Settings</span>
+						<span className="font-semibold">{m.settings()}</span>
 					</div>
 					<Outlet />
 				</div>
@@ -97,7 +98,7 @@ function SettingsSidebarMenuItem({
 					}}
 				>
 					<item.icon />
-					<span>{item.title}</span>
+					<span>{item.title()}</span>
 				</Link>
 			</SidebarMenuButton>
 		</SidebarMenuItem>

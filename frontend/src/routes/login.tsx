@@ -117,7 +117,7 @@ function LoginComponent() {
 						<Button variant="ghost" size="icon-lg">
 							<img
 								src="/assets/icons/github.svg"
-								alt="GitHub Logo"
+								alt={m.githubLogoAlt()}
 								className="size-6 dark:invert"
 							/>
 						</Button>
@@ -132,8 +132,8 @@ function LoginComponent() {
 			<div className="relative hidden bg-muted lg:block">
 				<img
 					src="/assets/wallpaper/lachlan-gowen-lleHA3cpZXo-unsplash.jpg"
-					alt="Orca swimming away from shore by Lachlan Gowen on Unsplash"
-					title="Orca swimming away from shore by Lachlan Gowen on Unsplash"
+					alt={m.loginWallpaperAlt()}
+					title={m.loginWallpaperAlt()}
 					className="absolute inset-0 h-full w-full object-cover"
 				/>
 			</div>

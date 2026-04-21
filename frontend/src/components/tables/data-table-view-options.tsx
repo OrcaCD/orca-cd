@@ -12,6 +12,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { m } from "@/lib/paraglide/messages";
 
 export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) {
 	return (
@@ -19,11 +20,11 @@ export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) 
 			<DropdownMenuTrigger asChild>
 				<Button variant="outline" size="sm" className="ml-auto hidden h-8 lg:flex">
 					<Settings2 />
-					Column Options
+					{m.columnOptions()}
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="w-37.5">
-				<DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+				<DropdownMenuLabel>{m.toggleColumns()}</DropdownMenuLabel>
 				<DropdownMenuSeparator />
 				{table
 					.getAllColumns()

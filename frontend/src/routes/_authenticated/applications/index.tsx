@@ -28,13 +28,14 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { useFetch } from "@/lib/api";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
 	head: () => ({
 		meta: [
 			{
-				title: "Applications",
+				title: m.pageApplications(),
 			},
 		],
 	}),
@@ -65,17 +66,17 @@ function ApplicationsPage() {
 		healthy: data?.filter((a) => a.healthStatus === HealthStatus.Healthy).length ?? 0,
 	};
 	const statItems = [
-		{ label: "Total Apps", value: stats.total },
-		{ label: "Synced", value: stats.synced, color: "text-emerald-400" },
-		{ label: "Out of Sync", value: stats.outOfSync, color: "text-amber-400" },
-		{ label: "Healthy", value: stats.healthy, color: "text-emerald-400" },
+		{ label: m.applicationsStatTotalApps(), value: stats.total },
+		{ label: m.applicationsStatSynced(), value: stats.synced, color: "text-emerald-400" },
+		{ label: m.applicationsStatOutOfSync(), value: stats.outOfSync, color: "text-amber-400" },
+		{ label: m.applicationsStatHealthy(), value: stats.healthy, color: "text-emerald-400" },
 	];
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
-					<h1 className="text-2xl font-bold">Applications</h1>
-					<p className="text-muted-foreground text-sm mt-1">Manage and monitor your deployments</p>
+					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
+					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
 				</div>
 				<UpsertApplicationDialog application={null} />
 			</div>
@@ -98,7 +99,7 @@ function ApplicationsPage() {
 					<div className="relative flex-1">
 						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 						<Input
-							placeholder="Search applications..."
+							placeholder={m.searchApplications()}
 							className="pl-9 bg-muted border-border"
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
@@ -132,9 +133,9 @@ function ApplicationsPage() {
 					<>
 						{data && data.length === 0 ? (
 							<div className="rounded-xl border border-dashed p-10 text-center">
-								<p className="text-sm font-medium">No applications found</p>
+								<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
 								<p className="mt-1 text-sm text-muted-foreground">
-									Adjust your search to see matching applications.
+									{m.noApplicationsFoundDescription()}
 								</p>
 							</div>
 						) : null}
@@ -162,10 +163,10 @@ function ApplicationsPage() {
 															<MoreVertical className="h-4 w-4" />
 														</Button>
 													</DropdownMenuTrigger>
-													<DropdownMenuContent align="end">
+													<DropdownMenuContent align="end" className="w-full">
 														<DropdownMenuItem>
 															<RefreshCw className="mr-2 h-4 w-4" />
-															Sync
+															{m.sync()}
 														</DropdownMenuItem>
 													</DropdownMenuContent>
 												</DropdownMenu>
@@ -198,7 +199,7 @@ function ApplicationsPage() {
 													<span className="text-muted-foreground">
 														{app.lastSyncedAt
 															? new Date(app.lastSyncedAt).toLocaleString()
-															: "Never"}
+															: m.never()}
 													</span>
 												</div>
 											</div>
