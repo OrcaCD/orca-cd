@@ -309,11 +309,11 @@ func TestGiteaListBranchesPagination(t *testing.T) {
 	if len(branches) != 101 {
 		t.Fatalf("expected 101 branches, got %d", len(branches))
 	}
-	if branches[0] != "branch-0" {
-		t.Fatalf("expected first sorted branch to be branch-0, got %q", branches[0])
+	if branches[0] != "main" {
+		t.Fatalf("expected first sorted branch to be main, got %q", branches[0])
 	}
-	if branches[len(branches)-1] != "main" {
-		t.Fatalf("expected last sorted branch to be main, got %q", branches[len(branches)-1])
+	if branches[1] != "branch-0" {
+		t.Fatalf("expected second sorted branch to be branch-0, got %q", branches[1])
 	}
 }
 

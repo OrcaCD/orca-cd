@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -131,4 +132,15 @@ func TestRegister_MultipleProviders(t *testing.T) {
 func TestStubProvider_Interface(t *testing.T) {
 	// Compile-time check: *stubProvider must satisfy Provider.
 	var _ Provider = (*stubProvider)(nil)
+}
+
+func TestSortBranches_PrioritizesCommonBranches(t *testing.T) {
+	branches := []string{"release", "production", "feature/auth", "master", "main", "develop"}
+
+	sortBranches(branches)
+
+	expected := []string{"main", "master", "production", "develop", "feature/auth", "release"}
+	if !reflect.DeepEqual(branches, expected) {
+		t.Fatalf("expected %v, got %v", expected, branches)
+	}
 }

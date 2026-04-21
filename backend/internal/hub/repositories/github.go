@@ -39,8 +39,8 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 	if err != nil {
 		return "", "", errors.New("invalid URL")
 	}
-	if u.Scheme != "https" {
-		return "", "", errors.New("URL must use https")
+	if u.Scheme != httpsScheme {
+		return "", "", fmt.Errorf("URL must use %s", httpsScheme)
 	}
 	if u.Host != "github.com" {
 		return "", "", errors.New("URL host must be github.com")
@@ -127,45 +127,74 @@ func (githubProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	apiURL := fmt.Sprintf("%s/repos/%s/%s/branches?per_page=100", githubAPIBase, owner, repoName)
-	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build GitHub request: %w", err)
-	}
-	addGitHubHeaders(req, repo)
+	branches := make([]string, 0)
 
-	resp, err := httpclient.Default.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GitHub branches: %w", err)
-	}
-	defer func() {
-		err := resp.Body.Close()
+	for page := 1; ; page++ {
+		apiURL := fmt.Sprintf(
+			"%s/repos/%s/%s/branches?per_page=%d&page=%d",
+			githubAPIBase,
+			owner,
+			repoName,
+			providerPageSize,
+			page,
+		)
+		req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 		if err != nil {
-			fmt.Printf("warning: failed to close GitHub response body: %v\n", err)
+			return nil, fmt.Errorf("failed to build GitHub request: %w", err)
 		}
-	}()
+		addGitHubHeaders(req, repo)
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var parsed []githubBranch
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return nil, fmt.Errorf("failed to decode GitHub branches response: %w", err)
+		resp, err := httpclient.Default.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch GitHub branches: %w", err)
 		}
 
-		branches := make([]string, 0, len(parsed))
-		for _, branch := range parsed {
-			if branch.Name != "" {
-				branches = append(branches, branch.Name)
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var parsed []githubBranch
+			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+				closeErr := resp.Body.Close()
+				if closeErr != nil {
+					fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
+				}
+				return nil, fmt.Errorf("failed to decode GitHub branches response: %w", err)
 			}
+
+			closeErr := resp.Body.Close()
+			if closeErr != nil {
+				fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
+			}
+
+			for _, branch := range parsed {
+				if branch.Name != "" {
+					branches = append(branches, branch.Name)
+				}
+			}
+
+			if len(parsed) < providerPageSize {
+				sortBranches(branches)
+				return branches, nil
+			}
+		case http.StatusUnauthorized, http.StatusForbidden:
+			closeErr := resp.Body.Close()
+			if closeErr != nil {
+				fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
+			}
+			return nil, errors.New("authentication failed or access denied")
+		case http.StatusNotFound:
+			closeErr := resp.Body.Close()
+			if closeErr != nil {
+				fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
+			}
+			return nil, errors.New("repository not found or access denied")
+		default:
+			statusCode := resp.StatusCode
+			closeErr := resp.Body.Close()
+			if closeErr != nil {
+				fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
+			}
+			return nil, fmt.Errorf("GitHub API returned unexpected status: %d", statusCode)
 		}
-		sort.Strings(branches)
-		return branches, nil
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, errors.New("authentication failed or access denied")
-	case http.StatusNotFound:
-		return nil, errors.New("repository not found or access denied")
-	default:
-		return nil, fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 

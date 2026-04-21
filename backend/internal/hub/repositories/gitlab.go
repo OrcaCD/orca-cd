@@ -17,6 +17,12 @@ import (
 
 type gitlabProvider struct{}
 
+type parsedGitLabRepositoryURL struct {
+	baseURL   string
+	namespace string
+	project   string
+}
+
 type gitlabBranch struct {
 	Name string `json:"name"`
 }
@@ -34,18 +40,27 @@ func init() {
 // and returns the namespace and project name. The host is not constrained to gitlab.com
 // to support self-hosted deployments.
 func parseGitLabURL(rawURL string) (namespace, project string, err error) {
+	parsedRepoURL, err := parseGitLabRepositoryURL(rawURL)
+	if err != nil {
+		return "", "", err
+	}
+
+	return parsedRepoURL.namespace, parsedRepoURL.project, nil
+}
+
+func parseGitLabRepositoryURL(rawURL string) (parsedGitLabRepositoryURL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", "", errors.New("invalid URL")
+		return parsedGitLabRepositoryURL{}, errors.New("invalid URL")
 	}
-	if u.Scheme != "https" {
-		return "", "", errors.New("URL must use https")
+	if u.Scheme != httpsScheme {
+		return parsedGitLabRepositoryURL{}, fmt.Errorf("URL must use %s", httpsScheme)
 	}
 	if u.Host == "" {
-		return "", "", errors.New("URL must have a valid host")
+		return parsedGitLabRepositoryURL{}, errors.New("URL must have a valid host")
 	}
 	if u.Host == "github.com" {
-		return "", "", errors.New("github.com is not a valid GitLab host")
+		return parsedGitLabRepositoryURL{}, errors.New("github.com is not a valid GitLab host")
 	}
 
 	// Allow URLs ending with .git
@@ -55,20 +70,24 @@ func parseGitLabURL(rawURL string) (namespace, project string, err error) {
 	// Need at least namespace/project (two path segments)
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 || parts[0] == "" || parts[len(parts)-1] == "" {
-		return "", "", errors.New("URL must be in the format https://{host}/{namespace}/{project}")
+		return parsedGitLabRepositoryURL{}, fmt.Errorf("URL must be in the format %s://{host}/{namespace}/{project}", httpsScheme)
 	}
 
 	// Validate each path segment
 	for _, seg := range parts {
 		if !repoRe.MatchString(seg) {
-			return "", "", fmt.Errorf("invalid path segment %q in URL", seg)
+			return parsedGitLabRepositoryURL{}, fmt.Errorf("invalid path segment %q in URL", seg)
 		}
 	}
 
-	project = parts[len(parts)-1]
-	namespace = strings.Join(parts[:len(parts)-1], "/")
+	project := parts[len(parts)-1]
+	namespace := strings.Join(parts[:len(parts)-1], "/")
 
-	return namespace, project, nil
+	return parsedGitLabRepositoryURL{
+		baseURL:   fmt.Sprintf("%s://%s", u.Scheme, u.Host),
+		namespace: namespace,
+		project:   project,
+	}, nil
 }
 
 func (gitlabProvider) ParseURL(rawURL string) (string, string, error) {
@@ -87,17 +106,14 @@ func (gitlabProvider) TestConnection(ctx context.Context, repo *models.Repositor
 		return errors.New("repository is required")
 	}
 
-	namespace, project, err := parseGitLabURL(repo.Url)
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
 	if err != nil {
 		return fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-
 	// GitLab API: GET /api/v4/projects/:id where :id is the URL-encoded namespace/project path
-	projectPath := url.PathEscape(namespace + "/" + project)
-	apiURL := fmt.Sprintf("%s/api/v4/projects/%s", baseURL, projectPath)
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s", parsedRepoURL.baseURL, projectPath)
 
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -133,23 +149,21 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		return nil, errors.New("repository is required")
 	}
 
-	namespace, project, err := parseGitLabURL(repo.Url)
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
-
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-	projectPath := url.PathEscape(namespace + "/" + project)
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
 
 	branches := make([]string, 0)
 	page := 1
 
 	for {
 		apiURL := fmt.Sprintf(
-			"%s/api/v4/projects/%s/repository/branches?per_page=100&page=%d",
-			baseURL,
+			"%s/api/v4/projects/%s/repository/branches?per_page=%d&page=%d",
+			parsedRepoURL.baseURL,
 			projectPath,
+			providerPageSize,
 			page,
 		)
 
@@ -165,6 +179,7 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		}
 
 		nextPage := strings.TrimSpace(resp.Header.Get("X-Next-Page"))
+		responseCount := 0
 
 		switch resp.StatusCode {
 		case http.StatusOK:
@@ -187,6 +202,8 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 					branches = append(branches, branch.Name)
 				}
 			}
+
+			responseCount = len(parsed)
 		case http.StatusUnauthorized, http.StatusForbidden:
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
@@ -209,18 +226,28 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		}
 
 		if nextPage == "" {
-			break
+			if responseCount < providerPageSize {
+				break
+			}
+
+			page++
+			continue
 		}
 
 		nextPageNumber, err := strconv.Atoi(nextPage)
 		if err != nil || nextPageNumber <= 0 {
-			break
+			if responseCount < providerPageSize {
+				break
+			}
+
+			page++
+			continue
 		}
 
 		page = nextPageNumber
 	}
 
-	sort.Strings(branches)
+	sortBranches(branches)
 	return branches, nil
 }
 
@@ -233,24 +260,22 @@ func (gitlabProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 		return nil, errors.New("branch is required")
 	}
 
-	namespace, project, err := parseGitLabURL(repo.Url)
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
-
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-	projectPath := url.PathEscape(namespace + "/" + project)
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
 
 	entries := make([]TreeEntry, 0)
 	page := 1
 
 	for {
 		apiURL := fmt.Sprintf(
-			"%s/api/v4/projects/%s/repository/tree?ref=%s&recursive=true&per_page=100&page=%d",
-			baseURL,
+			"%s/api/v4/projects/%s/repository/tree?ref=%s&recursive=true&per_page=%d&page=%d",
+			parsedRepoURL.baseURL,
 			projectPath,
 			url.QueryEscape(branch),
+			providerPageSize,
 			page,
 		)
 

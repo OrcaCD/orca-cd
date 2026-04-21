@@ -16,6 +16,12 @@ import (
 
 type giteaProvider struct{}
 
+type parsedGiteaRepositoryURL struct {
+	baseURL string
+	owner   string
+	repo    string
+}
+
 type giteaBranch struct {
 	Name string `json:"name"`
 }
@@ -27,8 +33,6 @@ type giteaTreeResponse struct {
 	} `json:"tree"`
 }
 
-const httpsScheme = "https"
-
 func init() {
 	Register(models.Gitea, giteaProvider{})
 }
@@ -36,15 +40,24 @@ func init() {
 // parseGiteaURL validates a Gitea repository URL (including self-hosted instances)
 // and returns the owner and repository name.
 func parseGiteaURL(rawURL string) (owner, repo string, err error) {
+	parsedRepoURL, err := parseGiteaRepositoryURL(rawURL)
+	if err != nil {
+		return "", "", err
+	}
+
+	return parsedRepoURL.owner, parsedRepoURL.repo, nil
+}
+
+func parseGiteaRepositoryURL(rawURL string) (parsedGiteaRepositoryURL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", "", errors.New("invalid URL")
+		return parsedGiteaRepositoryURL{}, errors.New("invalid URL")
 	}
 	if u.Scheme != httpsScheme {
-		return "", "", fmt.Errorf("URL must use %s", httpsScheme)
+		return parsedGiteaRepositoryURL{}, fmt.Errorf("URL must use %s", httpsScheme)
 	}
 	if u.Host == "" {
-		return "", "", errors.New("URL must have a valid host")
+		return parsedGiteaRepositoryURL{}, errors.New("URL must have a valid host")
 	}
 
 	// Allow URLs ending with .git
@@ -53,18 +66,22 @@ func parseGiteaURL(rawURL string) (owner, repo string, err error) {
 
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("URL must be in the format %s://{host}/{owner}/{repo}", httpsScheme)
+		return parsedGiteaRepositoryURL{}, fmt.Errorf("URL must be in the format %s://{host}/{owner}/{repo}", httpsScheme)
 	}
 
-	owner, repo = parts[0], parts[1]
+	owner, repo := parts[0], parts[1]
 	if !ownerRe.MatchString(owner) {
-		return "", "", errors.New("invalid Gitea owner name")
+		return parsedGiteaRepositoryURL{}, errors.New("invalid Gitea owner name")
 	}
 	if !repoRe.MatchString(repo) {
-		return "", "", errors.New("invalid Gitea repository name")
+		return parsedGiteaRepositoryURL{}, errors.New("invalid Gitea repository name")
 	}
 
-	return owner, repo, nil
+	return parsedGiteaRepositoryURL{
+		baseURL: fmt.Sprintf("%s://%s", u.Scheme, u.Host),
+		owner:   owner,
+		repo:    repo,
+	}, nil
 }
 
 func (giteaProvider) ParseURL(rawURL string) (string, string, error) {
@@ -83,15 +100,17 @@ func (giteaProvider) TestConnection(ctx context.Context, repo *models.Repository
 		return errors.New("repository is required")
 	}
 
-	owner, repoName, err := parseGiteaURL(repo.Url)
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
 	if err != nil {
 		return fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-
-	apiURL := fmt.Sprintf("%s/api/v1/repos/%s/%s", baseURL, url.PathEscape(owner), url.PathEscape(repoName))
+	apiURL := fmt.Sprintf(
+		"%s/api/v1/repos/%s/%s",
+		parsedRepoURL.baseURL,
+		url.PathEscape(parsedRepoURL.owner),
+		url.PathEscape(parsedRepoURL.repo),
+	)
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to build Gitea request: %w", err)
@@ -126,25 +145,21 @@ func (giteaProvider) ListBranches(ctx context.Context, repo *models.Repository) 
 		return nil, errors.New("repository is required")
 	}
 
-	owner, repoName, err := parseGiteaURL(repo.Url)
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-
 	branches := make([]string, 0)
-	limit := 100
 
 	for page := 1; ; page++ {
 		apiURL := fmt.Sprintf(
 			"%s/api/v1/repos/%s/%s/branches?page=%d&limit=%d",
-			baseURL,
-			url.PathEscape(owner),
-			url.PathEscape(repoName),
+			parsedRepoURL.baseURL,
+			url.PathEscape(parsedRepoURL.owner),
+			url.PathEscape(parsedRepoURL.repo),
 			page,
-			limit,
+			providerPageSize,
 		)
 
 		req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
@@ -180,8 +195,8 @@ func (giteaProvider) ListBranches(ctx context.Context, repo *models.Repository) 
 				}
 			}
 
-			if len(parsed) < limit {
-				sort.Strings(branches)
+			if len(parsed) < providerPageSize {
+				sortBranches(branches)
 				return branches, nil
 			}
 		case http.StatusUnauthorized, http.StatusForbidden:
@@ -216,19 +231,16 @@ func (giteaProvider) ListTree(ctx context.Context, repo *models.Repository, bran
 		return nil, errors.New("branch is required")
 	}
 
-	owner, repoName, err := parseGiteaURL(repo.Url)
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
 	if err != nil {
 		return nil, fmt.Errorf("invalid repository URL: %w", err)
 	}
 
-	u, _ := url.Parse(repo.Url)
-	baseURL := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-
 	apiURL := fmt.Sprintf(
 		"%s/api/v1/repos/%s/%s/git/trees/%s?recursive=true",
-		baseURL,
-		url.PathEscape(owner),
-		url.PathEscape(repoName),
+		parsedRepoURL.baseURL,
+		url.PathEscape(parsedRepoURL.owner),
+		url.PathEscape(parsedRepoURL.repo),
 		url.PathEscape(branch),
 	)
 

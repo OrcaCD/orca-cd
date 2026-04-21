@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -216,7 +217,7 @@ func TestGitHubListBranches(t *testing.T) {
 	})
 
 	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
-		expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/branches?per_page=100"
+		expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/branches?per_page=100&page=1"
 		if req.URL.String() != expectedURL {
 			t.Fatalf("unexpected URL: %s", req.URL.String())
 		}
@@ -245,6 +246,63 @@ func TestGitHubListBranches(t *testing.T) {
 
 	if branches[0] != "main" || branches[1] != "release" {
 		t.Fatalf("expected sorted branches [main release], got %v", branches)
+	}
+}
+
+func TestGitHubListBranchesPagination(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/branches?per_page=100&page=1"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 1 URL: %s", req.URL.String())
+			}
+
+			var b strings.Builder
+			b.WriteString("[")
+			for i := range 100 {
+				if i > 0 {
+					b.WriteString(",")
+				}
+				b.WriteString(`{"name":"branch-` + strconv.Itoa(i) + `"}`)
+			}
+			b.WriteString("]")
+			return jsonResponseWithBody(http.StatusOK, b.String()), nil
+		case 2:
+			expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/branches?per_page=100&page=2"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 2 URL: %s", req.URL.String())
+			}
+			return jsonResponseWithBody(http.StatusOK, `[{"name":"main"}]`), nil
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+			return nil, nil
+		}
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 101 {
+		t.Fatalf("expected 101 branches, got %d", len(branches))
+	}
+	if branches[0] != "main" {
+		t.Fatalf("expected first sorted branch to be main, got %q", branches[0])
+	}
+	if branches[1] != "branch-0" {
+		t.Fatalf("expected second sorted branch to be branch-0, got %q", branches[1])
 	}
 }
 
