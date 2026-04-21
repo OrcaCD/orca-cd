@@ -194,7 +194,7 @@ function ApplicationsPage() {
 												<div className="flex items-center justify-between text-sm">
 													<div className="flex items-center gap-2 text-muted-foreground">
 														<GitCommit className="h-4 w-4" />
-														<span>{app.commit}</span>
+														<span>{app.commit.slice(0, 7)}</span>
 													</div>
 													<span className="text-muted-foreground">
 														{app.lastSyncedAt

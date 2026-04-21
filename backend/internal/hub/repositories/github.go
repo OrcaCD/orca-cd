@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,18 @@ type githubTreeResponse struct {
 		Path string `json:"path"`
 		Type string `json:"type"`
 	} `json:"tree"`
+}
+
+type githubFileResponse struct {
+	Content  string `json:"content"`
+	Encoding string `json:"encoding"`
+}
+
+type githubCommitResponse struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Message string `json:"message"`
+	} `json:"commit"`
 }
 
 func init() {
@@ -268,6 +281,139 @@ func (githubProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 		return nil, errors.New("repository not found or access denied")
 	default:
 		return nil, fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func (githubProvider) GetFileContent(ctx context.Context, repo *models.Repository, ref string, path string) (string, error) {
+	if repo == nil {
+		return "", errors.New("repository is required")
+	}
+
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", errors.New("ref is required")
+	}
+
+	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if normalizedPath == "" {
+		return "", errors.New("path is required")
+	}
+
+	owner, repoName, err := parseGitHubURL(repo.Url)
+	if err != nil {
+		return "", fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/repos/%s/%s/contents/%s?ref=%s",
+		githubAPIBase,
+		owner,
+		repoName,
+		url.PathEscape(normalizedPath),
+		url.QueryEscape(ref),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to build GitHub request: %w", err)
+	}
+	addGitHubHeaders(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch GitHub file content: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close GitHub response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed githubFileResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", fmt.Errorf("failed to decode GitHub file response: %w", err)
+		}
+
+		if !strings.EqualFold(parsed.Encoding, "base64") {
+			return "", fmt.Errorf("unsupported GitHub file encoding: %q", parsed.Encoding)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(parsed.Content, "\n", ""))
+		if err != nil {
+			return "", fmt.Errorf("failed to decode GitHub file content: %w", err)
+		}
+
+		return string(decoded), nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "", errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return "", errors.New("file not found in repository branch or access denied")
+	default:
+		return "", fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func (githubProvider) GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error) {
+	if repo == nil {
+		return CommitInfo{}, errors.New("repository is required")
+	}
+
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return CommitInfo{}, errors.New("branch is required")
+	}
+
+	owner, repoName, err := parseGitHubURL(repo.Url)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/repos/%s/%s/commits/%s",
+		githubAPIBase,
+		owner,
+		repoName,
+		url.PathEscape(branch),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to build GitHub request: %w", err)
+	}
+	addGitHubHeaders(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to fetch GitHub commit: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close GitHub response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed githubCommitResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return CommitInfo{}, fmt.Errorf("failed to decode GitHub commit response: %w", err)
+		}
+
+		if parsed.SHA == "" {
+			return CommitInfo{}, errors.New("missing commit hash in GitHub response")
+		}
+
+		return CommitInfo{Hash: parsed.SHA, Message: parsed.Commit.Message}, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return CommitInfo{}, errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return CommitInfo{}, errors.New("repository or branch not found or access denied")
+	default:
+		return CommitInfo{}, fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 

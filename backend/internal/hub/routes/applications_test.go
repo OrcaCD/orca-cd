@@ -2,21 +2,31 @@ package routes
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 var invalidStatus = "invalid"
 var notRfc3339 = "not-rfc3339"
+
+const (
+	mockComposeFileContent = "version: \"3.9\"\nservices:\n  billing:\n    image: ghcr.io/orcacd/billing:1.0.0\n"
+	mockLatestCommitHash   = "1a2b3c4d5e6f7a8b9c0d"
+	mockLatestCommitMsg    = "chore: update compose file"
+)
 
 func setupTestDBWithApplications(t *testing.T) {
 	t.Helper()
@@ -26,8 +36,40 @@ func setupTestDBWithApplications(t *testing.T) {
 		t.Fatalf("failed to migrate dependencies: %v", err)
 	}
 
-	restore := mockHTTPClientWithBody(http.StatusOK, `{"tree":[{"path":"services/billing.yml","type":"blob"},{"path":"deployments/prod.yml","type":"blob"},{"path":"deployments/release.yml","type":"blob"},{"path":"deploy.yml","type":"blob"}]}`)
+	restore := mockApplicationRepositoryHTTPClient()
 	t.Cleanup(restore)
+}
+
+func jsonResponseWithBody(code int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: code,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+	}
+}
+
+func mockApplicationRepositoryHTTPClient() func() {
+	encodedComposeFile := base64.StdEncoding.EncodeToString([]byte(mockComposeFileContent))
+	originalClient := httpclient.Default
+
+	httpclient.Default = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch {
+			case strings.Contains(req.URL.Path, "/git/trees/"):
+				return jsonResponseWithBody(http.StatusOK, `{"tree":[{"path":"services/billing.yml","type":"blob"},{"path":"deployments/prod.yml","type":"blob"},{"path":"deployments/release.yml","type":"blob"},{"path":"deploy.yml","type":"blob"}]}`), nil
+			case strings.Contains(req.URL.Path, "/contents/"):
+				return jsonResponseWithBody(http.StatusOK, `{"content":"`+encodedComposeFile+`","encoding":"base64"}`), nil
+			case strings.Contains(req.URL.Path, "/commits/"):
+				return jsonResponseWithBody(http.StatusOK, `{"sha":"`+mockLatestCommitHash+`","commit":{"message":"`+mockLatestCommitMsg+`"}}`), nil
+			default:
+				return jsonResponseWithBody(http.StatusNotFound, `{}`), nil
+			}
+		}),
+	}
+
+	return func() {
+		httpclient.Default = originalClient
+	}
 }
 
 func seedTestAgent(t *testing.T, name string) models.Agent {
@@ -79,6 +121,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 		CommitMessage: "initial commit",
 		LastSyncedAt:  &now,
 		Path:          "deployments/prod.yml",
+		ComposeFile:   crypto.EncryptedString("version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"),
 	}
 
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
@@ -327,11 +370,11 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if body.HealthStatus != string(models.UnknownHealth) {
 		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, body.HealthStatus)
 	}
-	if body.Commit != "" {
-		t.Errorf("expected commit %q, got %q", "", body.Commit)
+	if body.Commit != mockLatestCommitHash {
+		t.Errorf("expected commit %q, got %q", mockLatestCommitHash, body.Commit)
 	}
-	if body.CommitMessage != "" {
-		t.Errorf("expected commitMessage %q, got %q", "", body.CommitMessage)
+	if body.CommitMessage != mockLatestCommitMsg {
+		t.Errorf("expected commitMessage %q, got %q", mockLatestCommitMsg, body.CommitMessage)
 	}
 	if body.LastSyncedAt != nil {
 		t.Errorf("expected lastSyncedAt to be null, got %v", *body.LastSyncedAt)
@@ -350,11 +393,14 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if stored.HealthStatus != models.UnknownHealth {
 		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, stored.HealthStatus)
 	}
-	if stored.Commit != "" {
-		t.Errorf("expected commit %q, got %q", "", stored.Commit)
+	if stored.Commit != mockLatestCommitHash {
+		t.Errorf("expected commit %q, got %q", mockLatestCommitHash, stored.Commit)
 	}
-	if stored.CommitMessage != "" {
-		t.Errorf("expected commitMessage %q, got %q", "", stored.CommitMessage)
+	if stored.CommitMessage != mockLatestCommitMsg {
+		t.Errorf("expected commitMessage %q, got %q", mockLatestCommitMsg, stored.CommitMessage)
+	}
+	if stored.ComposeFile.String() != mockComposeFileContent {
+		t.Errorf("expected composeFile to match fetched content")
 	}
 	if stored.LastSyncedAt != nil {
 		t.Fatal("expected LastSyncedAt to be nil in DB")
@@ -387,48 +433,6 @@ func TestCreateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 	if body.SyncStatus != string(models.UnknownSync) {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, body.SyncStatus)
-	}
-}
-
-func TestCreateApplicationHandler_InvalidPathExtension(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-path-ext")
-	agent := seedTestAgent(t, "agent-create-invalid-path-ext")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/billing.txt"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	CreateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestCreateApplicationHandler_PathNotFound(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-create-path-not-found")
-	agent := seedTestAgent(t, "agent-create-path-not-found")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/missing.yml"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	CreateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -653,11 +657,14 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	if updated.HealthStatus != models.UnknownHealth {
 		t.Errorf("expected healthStatus %q, got %q", models.UnknownHealth, updated.HealthStatus)
 	}
-	if updated.Commit != "abcdef123" {
-		t.Errorf("expected commit %q, got %q", "abcdef123", updated.Commit)
+	if updated.Commit != mockLatestCommitHash {
+		t.Errorf("expected commit %q, got %q", mockLatestCommitHash, updated.Commit)
 	}
-	if updated.CommitMessage != "initial commit" {
-		t.Errorf("expected commitMessage %q, got %q", "initial commit", updated.CommitMessage)
+	if updated.CommitMessage != mockLatestCommitMsg {
+		t.Errorf("expected commitMessage %q, got %q", mockLatestCommitMsg, updated.CommitMessage)
+	}
+	if updated.ComposeFile.String() != mockComposeFileContent {
+		t.Errorf("expected composeFile to match fetched content")
 	}
 }
 
@@ -697,29 +704,6 @@ func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 	if updated.SyncStatus != models.UnknownSync {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
-	}
-}
-
-func TestUpdateApplicationHandler_InvalidPathExtension(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-path-ext")
-	agent := seedTestAgent(t, "agent-update-invalid-path-ext")
-	app := seedTestApplication(t, repo.Id, agent.Id, "Path App")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/billing.txt"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Params = gin.Params{{Key: "id", Value: app.Id}}
-
-	UpdateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

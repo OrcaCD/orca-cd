@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -569,6 +570,324 @@ func TestGitHubListTreeErrors(t *testing.T) {
 		}
 		if tree != nil {
 			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+}
+
+func TestGitHubGetFileContent(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	encodedContent := base64.StdEncoding.EncodeToString([]byte("version: \"3.9\"\nservices:\n  api:\n    image: app:v1\n"))
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/contents/services%2Fbilling.yml?ref=feature%2Fprod"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `{"content":"`+encodedContent+`","encoding":"base64"}`), nil
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	content, err := p.GetFileContent(context.Background(), repo, "feature/prod", "services/billing.yml")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if !strings.Contains(content, "services:") {
+		t.Fatalf("expected decoded compose content, got %q", content)
+	}
+}
+
+func TestGitHubGetFileContentErrors(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		content, err := p.GetFileContent(context.Background(), nil, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitHub file content") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "missing.yml")
+		if err == nil || !strings.Contains(err.Error(), "file not found") {
+			t.Fatalf("expected file not found error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("ref is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "   ", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "ref is required") {
+			t.Fatalf("expected ref is required error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("path is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "   ")
+		if err == nil || !strings.Contains(err.Error(), "path is required") {
+			t.Fatalf("expected path is required error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://github.com/invalid-only-owner"}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub file response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("unsupported encoding", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{"content":"hello","encoding":"utf-8"}`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "unsupported GitHub file encoding") {
+			t.Fatalf("expected unsupported encoding error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("invalid base64", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{"content":"***","encoding":"base64"}`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub file content") {
+			t.Fatalf("expected invalid base64 error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadGateway), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		content, err := p.GetFileContent(context.Background(), repo, "main", "docker-compose.yml")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if content != "" {
+			t.Fatalf("expected empty content, got %q", content)
+		}
+	})
+}
+
+func TestGitHubGetLatestCommit(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := githubAPIBase + "/repos/OrcaCD/orca-cd/commits/feature%2Fprod"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `{"sha":"abc123","commit":{"message":"feat: update compose"}}`), nil
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	commit, err := p.GetLatestCommit(context.Background(), repo, "feature/prod")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if commit.Hash != "abc123" {
+		t.Fatalf("expected commit hash %q, got %q", "abc123", commit.Hash)
+	}
+	if commit.Message != "feat: update compose" {
+		t.Fatalf("expected commit message %q, got %q", "feat: update compose", commit.Message)
+	}
+}
+
+func TestGitHubGetLatestCommitErrors(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("branch is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, " ")
+		if err == nil || !strings.Contains(err.Error(), "branch is required") {
+			t.Fatalf("expected branch is required error, got: %v", err)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub commit response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository or branch not found") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		_, err := p.GetLatestCommit(context.Background(), nil, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://github.com/invalid-only-owner"}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitHub commit") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+	})
+
+	t.Run("missing commit hash", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{"sha":"","commit":{"message":"msg"}}`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "missing commit hash") {
+			t.Fatalf("expected missing hash error, got: %v", err)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadGateway), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
 		}
 	})
 }

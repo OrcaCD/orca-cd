@@ -92,33 +92,6 @@ function InfoCard({
 	);
 }
 
-const mockManifest = `version: "3.8"
-services:
-  api-gateway:
-    image: org/api-gateway:v2.1.0
-    ports:
-      - "8080:80"
-    environment:
-      - NODE_ENV=production
-    depends_on:
-      - redis-cache
-
-  redis-cache:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data
-
-  nginx-proxy:
-    image: nginx:alpine
-    ports:
-      - "443:443"
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-
-volumes:
-  redis-data:`;
-
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 	const navigate = useNavigate();
@@ -134,7 +107,7 @@ function ApplicationDetailsPage() {
 		setSyncing(false);
 	};
 
-	const html = highlighter.codeToHtml(mockManifest, {
+	const html = highlighter.codeToHtml(data?.composeFile ?? "", {
 		lang: "yaml",
 		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
 	});
@@ -225,7 +198,7 @@ function ApplicationDetailsPage() {
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
 					label={m.applicationInfoLatestCommit()}
-					value={data?.commit ?? ""}
+					value={data?.commit?.slice(0, 7) ?? ""}
 					subValue={data?.commitMessage}
 					isMonoValue
 				/>
