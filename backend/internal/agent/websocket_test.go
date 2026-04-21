@@ -10,6 +10,7 @@ import (
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
@@ -284,6 +285,279 @@ func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
 	if conn != nil {
 		t.Errorf("expected nil conn, got non-nil")
 	}
+}
+
+func TestPerformHandshake_Success(t *testing.T) {
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("GenerateHubKeys: %v", err)
+	}
+
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		init := &messages.ServerMessage{
+			Payload: &messages.ServerMessage_KeyExchangeInit{
+				KeyExchangeInit: &messages.KeyExchangeInit{
+					MlkemEncapsulationKey: hubKeys.MLKEMEncapKey,
+					X25519PublicKey:       hubKeys.X25519PublicKey,
+				},
+			},
+		}
+		data, _ := proto.Marshal(init)
+		if err := serverConn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Errorf("write init: %v", err)
+			return
+		}
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, respData, err := serverConn.ReadMessage()
+		if err != nil {
+			t.Errorf("read response: %v", err)
+			return
+		}
+		clientMsg := &messages.ClientMessage{}
+		if err := proto.Unmarshal(respData, clientMsg); err != nil {
+			t.Errorf("unmarshal response: %v", err)
+			return
+		}
+		resp := clientMsg.GetKeyExchangeResponse()
+		if resp == nil {
+			t.Error("expected KeyExchangeResponse")
+		}
+	})
+
+	conn := dialServer(t, srv)
+	session, err := performHandshake(conn, "agent-1")
+	if err != nil {
+		t.Fatalf("performHandshake: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil session")
+	}
+}
+
+func TestPerformHandshake_WrongMessageType(t *testing.T) {
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		// Send a Ping instead of KeyExchangeInit.
+		msg := &messages.ServerMessage{
+			Payload: &messages.ServerMessage_Ping{Ping: &messages.PingRequest{Timestamp: 1}},
+		}
+		data, _ := proto.Marshal(msg)
+		if err := serverConn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			t.Errorf("write: %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	})
+
+	conn := dialServer(t, srv)
+	_, err := performHandshake(conn, "agent-1")
+	if err == nil {
+		t.Fatal("expected error when server sends wrong message type")
+	}
+}
+
+func TestPerformHandshake_InvalidProtoData(t *testing.T) {
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		// Send bytes that are not valid protobuf.
+		if err := serverConn.WriteMessage(websocket.BinaryMessage, []byte{0xFF, 0xFF, 0xFF}); err != nil {
+			t.Errorf("write: %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	})
+
+	conn := dialServer(t, srv)
+	_, err := performHandshake(conn, "agent-1")
+	if err == nil {
+		t.Fatal("expected error for invalid protobuf data")
+	}
+}
+
+func TestSendMessage_AllowedUnencrypted(t *testing.T) {
+	var received *messages.ClientMessage
+	done := make(chan struct{})
+
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		defer close(done)
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, data, err := serverConn.ReadMessage()
+		if err != nil {
+			t.Errorf("read: %v", err)
+			return
+		}
+		msg := &messages.ClientMessage{}
+		if err := proto.Unmarshal(data, msg); err != nil {
+			t.Errorf("unmarshal: %v", err)
+			return
+		}
+		received = msg
+	})
+
+	conn := dialServer(t, srv)
+	pong := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{Timestamp: 42}},
+	}
+	if err := sendMessage(conn, nil, pong); err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server to receive message")
+	}
+
+	if received == nil || received.GetPong() == nil {
+		t.Fatal("expected pong message to arrive unencrypted")
+	}
+	if received.GetPong().Timestamp != 42 {
+		t.Errorf("expected timestamp 42, got %d", received.GetPong().Timestamp)
+	}
+}
+
+func TestSendMessage_Encrypted(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var received *messages.ClientMessage
+	done := make(chan struct{})
+
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		defer close(done)
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, data, err := serverConn.ReadMessage()
+		if err != nil {
+			t.Errorf("read: %v", err)
+			return
+		}
+		msg := &messages.ClientMessage{}
+		if err := proto.Unmarshal(data, msg); err != nil {
+			t.Errorf("unmarshal: %v", err)
+			return
+		}
+		received = msg
+	})
+
+	conn := dialServer(t, srv)
+	// KeyExchangeResponse is not allowed unencrypted — sendMessage must encrypt it.
+	innerMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{},
+		},
+	}
+	if err := sendMessage(conn, session, innerMsg); err != nil {
+		t.Fatalf("sendMessage: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server to receive message")
+	}
+
+	if received == nil || received.GetEncryptedPayload() == nil {
+		t.Fatal("expected encrypted payload on the wire")
+	}
+}
+
+func TestHandleServerMessage_EncryptedPing(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var receivedPong *messages.ClientMessage
+	done := make(chan struct{})
+
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		defer close(done)
+		serverConn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck,gosec
+		_, data, err := serverConn.ReadMessage()
+		if err != nil {
+			t.Errorf("read pong: %v", err)
+			return
+		}
+		msg := &messages.ClientMessage{}
+		if err := proto.Unmarshal(data, msg); err != nil {
+			t.Errorf("unmarshal pong: %v", err)
+			return
+		}
+		receivedPong = msg
+	})
+
+	conn := dialServer(t, srv)
+
+	pingMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_Ping{Ping: &messages.PingRequest{Timestamp: time.Now().UnixMilli()}},
+	}
+	env, err := session.Encrypt(pingMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	encryptedMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+
+	handleServerMessage(encryptedMsg, conn, session)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server to receive pong response")
+	}
+
+	if receivedPong == nil || receivedPong.GetPong() == nil {
+		t.Fatal("expected a Pong response after handling encrypted Ping")
+	}
+}
+
+func TestHandleServerMessage_EncryptedDecryptError(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	// Invalid ciphertext — AEGIS authentication will fail.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{
+				Nonce:      make([]byte, 32),
+				Ciphertext: []byte{0x01, 0x02},
+			},
+		},
+	}
+	handleServerMessage(msg, nil, session) // must return without panic
+}
+
+func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	// Inner payload is itself an EncryptedPayload — should be dropped after one unwrap.
+	innerMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{Nonce: make([]byte, 32), Ciphertext: []byte{0x01}},
+		},
+	}
+	env, err := session.Encrypt(innerMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+	handleServerMessage(msg, nil, session) // must drop without panic
+}
+
+func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
+	// KeyExchangeInit is not a Ping and not wrapped in EncryptedPayload — must be dropped.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_KeyExchangeInit{KeyExchangeInit: &messages.KeyExchangeInit{}},
+	}
+	handleServerMessage(msg, nil, nil) // must return without panic
 }
 
 func TestConnTracker_CloseNilConn(t *testing.T) {

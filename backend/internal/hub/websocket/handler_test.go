@@ -416,6 +416,88 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	waitForOffline(t, agent.Id)
 }
 
+func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
+	log := testLogger()
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1)}
+	// KeyExchangeResponse is neither encrypted nor a Pong — must be dropped silently.
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{},
+		},
+	}
+	handleClientMessage(client, msg, &log) // must not panic or block
+}
+
+func TestHandleClientMessage_DecryptError(t *testing.T) {
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{
+				Nonce:      make([]byte, 32),
+				Ciphertext: []byte{0x01, 0x02}, // invalid ciphertext — auth tag will fail
+			},
+		},
+	}
+	handleClientMessage(client, msg, &log) // must return without panic
+}
+
+func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+
+	// Encrypt a message whose inner payload is itself an EncryptedPayload.
+	innerMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{Nonce: make([]byte, 32), Ciphertext: []byte{0x01}},
+		},
+	}
+	env, err := session.Encrypt(innerMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+	handleClientMessage(client, msg, &log) // doubly-encrypted — must be dropped
+}
+
+func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+
+	// Encrypt a message type that falls into the default switch branch.
+	innerMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{},
+		},
+	}
+	env, err := session.Encrypt(innerMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
+}
+
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()

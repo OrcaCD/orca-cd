@@ -82,3 +82,52 @@ func TestHandshakeSessionKeyLength(t *testing.T) {
 		t.Errorf("hubSessionKey: got %d bytes, want 32", len(hubKey))
 	}
 }
+
+func TestAgentHandshake_InvalidMLKEMKey(t *testing.T) {
+	_, _, _, err := AgentHandshake([]byte("not-a-valid-mlkem-key"), make([]byte, 32), "agent-1")
+	if err == nil {
+		t.Fatal("expected error for invalid ML-KEM encapsulation key")
+	}
+}
+
+func TestAgentHandshake_InvalidX25519Key(t *testing.T) {
+	hubKeys, err := GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("GenerateHubKeys: %v", err)
+	}
+	_, _, _, err = AgentHandshake(hubKeys.MLKEMEncapKey, []byte("not-a-valid-x25519-key"), "agent-1")
+	if err == nil {
+		t.Fatal("expected error for invalid X25519 public key")
+	}
+}
+
+func TestHubDeriveSessionKey_InvalidCiphertextSize(t *testing.T) {
+	hubKeys, err := GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("GenerateHubKeys: %v", err)
+	}
+	_, agentX25519Pub, _, err := AgentHandshake(hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, "agent-1")
+	if err != nil {
+		t.Fatalf("AgentHandshake: %v", err)
+	}
+	// ML-KEM-768 ciphertext must be exactly 1088 bytes; wrong size causes an error.
+	_, err = HubDeriveSessionKey(hubKeys, []byte("too-short-ciphertext"), agentX25519Pub, "agent-1")
+	if err == nil {
+		t.Fatal("expected error for wrong-size ML-KEM ciphertext")
+	}
+}
+
+func TestHubDeriveSessionKey_InvalidX25519Key(t *testing.T) {
+	hubKeys, err := GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("GenerateHubKeys: %v", err)
+	}
+	mlkemCiphertext, _, _, err := AgentHandshake(hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, "agent-1")
+	if err != nil {
+		t.Fatalf("AgentHandshake: %v", err)
+	}
+	_, err = HubDeriveSessionKey(hubKeys, mlkemCiphertext, []byte("not-a-valid-x25519-key"), "agent-1")
+	if err == nil {
+		t.Fatal("expected error for invalid agent X25519 public key")
+	}
+}

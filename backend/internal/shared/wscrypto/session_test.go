@@ -88,3 +88,21 @@ func TestDecryptInvalidNonceLength(t *testing.T) {
 		t.Fatal("expected error for invalid nonce length")
 	}
 }
+
+func TestNewSession_InvalidKeySize(t *testing.T) {
+	_, err := NewSession([]byte{0x01, 0x02}) // too short, aegis256 requires 32 bytes
+	if err == nil {
+		t.Fatal("expected error for invalid key size")
+	}
+}
+
+func TestDecrypt_InvalidProtoBytes(t *testing.T) {
+	s := newTestSession(t)
+	nonce := make([]byte, 32) // aegis256.NonceSize == 32
+	invalidProto := []byte{0xFF, 0xFF, 0xFF}
+	ct := s.aead.Seal(nil, nonce, invalidProto, nil)
+	env := &messages.EncryptedPayload{Nonce: nonce, Ciphertext: ct}
+	if err := s.Decrypt(env, &messages.PingRequest{}); err == nil {
+		t.Fatal("expected error when decrypted bytes are not valid protobuf")
+	}
+}

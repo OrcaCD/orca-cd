@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 )
 
@@ -119,6 +122,42 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 				t.Errorf("LogJSON = %v, want %v", cfg.LogJSON, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseAgentID_MissingSubject(t *testing.T) {
+	// JWT with empty subject field.
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":""}`))
+	token := header + "." + payload + ".fakesig"
+
+	_, err := parseAgentID(token)
+	if err == nil {
+		t.Fatal("expected error for token with empty subject")
+	}
+}
+
+func TestParseAgentID_InvalidToken(t *testing.T) {
+	_, err := parseAgentID("not.a.jwt")
+	if err == nil {
+		t.Fatal("expected error for malformed JWT")
+	}
+}
+
+func TestConnTracker_SetAndCancelled_CancelledCtx(t *testing.T) {
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)) //nolint:errcheck,gosec
+		_, _, _ = serverConn.ReadMessage()
+	})
+
+	clientConn := dialServer(t, srv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so ctx.Err() != nil
+
+	var tracker connTracker
+	if cancelled := tracker.setAndCancelled(ctx, clientConn); !cancelled {
+		t.Error("expected setAndCancelled to return true for a pre-cancelled context")
 	}
 }
 
