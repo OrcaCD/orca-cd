@@ -62,7 +62,7 @@ type applicationResponse struct {
 	Path           string  `json:"path"`
 	CreatedAt      string  `json:"createdAt"`
 	UpdatedAt      string  `json:"updatedAt"`
-	ComposeFile    string  `json:"composeFile,omitempty"`
+	ComposeFile    string  `json:"composeFile"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
