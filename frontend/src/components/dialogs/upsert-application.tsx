@@ -42,7 +42,10 @@ const applicationSchema = z.object({
 		.string()
 		.trim()
 		.min(1, "Path is required")
-		.max(512, "Path must be at most 512 characters"),
+		.max(512, "Path must be at most 512 characters")
+		.refine((val) => val.endsWith(".yml") || val.endsWith(".yaml"), {
+			message: "Path must point to a YAML file",
+		}),
 });
 
 type FileTreeNode = {
@@ -473,7 +476,8 @@ export default function UpsertApplicationDialog({
 										</div>
 										<Input
 											id={field.name}
-											defaultValue={field.state.value}
+											value={field.state.value}
+											readOnly
 											className="mt-2"
 											placeholder="Selected file path"
 										/>

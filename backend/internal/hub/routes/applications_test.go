@@ -25,6 +25,9 @@ func setupTestDBWithApplications(t *testing.T) {
 	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}); err != nil {
 		t.Fatalf("failed to migrate dependencies: %v", err)
 	}
+
+	restore := mockHTTPClientWithBody(http.StatusOK, `{"tree":[{"path":"services/billing.yml","type":"blob"},{"path":"deployments/prod.yml","type":"blob"},{"path":"deployments/release.yml","type":"blob"},{"path":"deploy.yml","type":"blob"}]}`)
+	t.Cleanup(restore)
 }
 
 func seedTestAgent(t *testing.T, name string) models.Agent {
@@ -75,7 +78,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 		Commit:        "abcdef123",
 		CommitMessage: "initial commit",
 		LastSyncedAt:  &now,
-		Path:          "deployments/prod",
+		Path:          "deployments/prod.yml",
 	}
 
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
@@ -91,7 +94,7 @@ func validApplicationRequestBody(repoID, agentID string) map[string]any {
 		"repositoryId": repoID,
 		"agentId":      agentID,
 		"branch":       "main",
-		"path":         "services/billing",
+		"path":         "services/billing.yml",
 	}
 }
 
@@ -288,7 +291,7 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 		"repositoryId": repo.Id,
 		"agentId":      agent.Id,
 		"branch":       "main",
-		"path":         "services/billing",
+		"path":         "services/billing.yml",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -384,6 +387,48 @@ func TestCreateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 	if body.SyncStatus != string(models.UnknownSync) {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, body.SyncStatus)
+	}
+}
+
+func TestCreateApplicationHandler_InvalidPathExtension(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-path-ext")
+	agent := seedTestAgent(t, "agent-create-invalid-path-ext")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["path"] = "services/billing.txt"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_PathNotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-path-not-found")
+	agent := seedTestAgent(t, "agent-create-path-not-found")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["path"] = "services/missing.yml"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -557,7 +602,7 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 		"repositoryId": newRepo.Id,
 		"agentId":      newAgent.Id,
 		"branch":       "release",
-		"path":         "deployments/release",
+		"path":         "deployments/release.yml",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -599,8 +644,8 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	if updated.Branch != "release" {
 		t.Errorf("expected branch %q, got %q", "release", updated.Branch)
 	}
-	if updated.Path != "deployments/release" {
-		t.Errorf("expected path %q, got %q", "deployments/release", updated.Path)
+	if updated.Path != "deployments/release.yml" {
+		t.Errorf("expected path %q, got %q", "deployments/release.yml", updated.Path)
 	}
 	if updated.SyncStatus != models.UnknownSync {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
@@ -632,7 +677,7 @@ func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 		"branch":        "main",
 		"commit":        "abc",
 		"commitMessage": "msg",
-		"path":          "deploy",
+		"path":          "deploy.yml",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -652,6 +697,29 @@ func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 	if updated.SyncStatus != models.UnknownSync {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
+	}
+}
+
+func TestUpdateApplicationHandler_InvalidPathExtension(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-path-ext")
+	agent := seedTestAgent(t, "agent-update-invalid-path-ext")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Path App")
+	req := validApplicationRequestBody(repo.Id, agent.Id)
+	req["path"] = "services/billing.txt"
+
+	reqBody, _ := json.Marshal(req)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
