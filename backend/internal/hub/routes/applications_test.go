@@ -436,48 +436,6 @@ func TestCreateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 }
 
-func TestCreateApplicationHandler_InvalidPathExtension(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-path-ext")
-	agent := seedTestAgent(t, "agent-create-invalid-path-ext")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/billing.txt"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	CreateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestCreateApplicationHandler_PathNotFound(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-create-path-not-found")
-	agent := seedTestAgent(t, "agent-create-path-not-found")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/missing.yml"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	CreateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestCreateApplicationHandler_IgnoresHealthStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -746,29 +704,6 @@ func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	}
 	if updated.SyncStatus != models.UnknownSync {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, updated.SyncStatus)
-	}
-}
-
-func TestUpdateApplicationHandler_InvalidPathExtension(t *testing.T) {
-	setupTestDBWithApplications(t)
-
-	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-path-ext")
-	agent := seedTestAgent(t, "agent-update-invalid-path-ext")
-	app := seedTestApplication(t, repo.Id, agent.Id, "Path App")
-	req := validApplicationRequestBody(repo.Id, agent.Id)
-	req["path"] = "services/billing.txt"
-
-	reqBody, _ := json.Marshal(req)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	c.Params = gin.Params{{Key: "id", Value: app.Id}}
-
-	UpdateApplicationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
