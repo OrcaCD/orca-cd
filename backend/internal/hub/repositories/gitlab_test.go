@@ -796,11 +796,11 @@ func TestGitLabGetFileContentErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("branch is required", func(t *testing.T) {
+	t.Run("ref is required", func(t *testing.T) {
 		repo := &models.Repository{Url: testGitLabRepoURL}
 		content, err := p.GetFileContent(context.Background(), repo, "   ", "docker-compose.yml")
-		if err == nil || !strings.Contains(err.Error(), "branch is required") {
-			t.Fatalf("expected branch is required error, got: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "ref is required") {
+			t.Fatalf("expected ref is required error, got: %v", err)
 		}
 		if content != "" {
 			t.Fatalf("expected empty content, got %q", content)
