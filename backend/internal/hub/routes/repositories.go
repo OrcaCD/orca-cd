@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -245,6 +246,44 @@ func TestConnectionHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "connection successful"})
 }
 
+func ListRepositoryBranchesHandler(c *gin.Context) {
+	repoID := c.Param("id")
+	repo, provider, ok := resolveRepositoryByID(c, repoID)
+	if !ok {
+		return
+	}
+
+	branches, err := provider.ListBranches(c.Request.Context(), &repo)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, branches)
+}
+
+func ListRepositoryTreeHandler(c *gin.Context) {
+	repoID := c.Param("id")
+	branch := strings.TrimSpace(c.Query("branch"))
+	if branch == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "branch query parameter is required"})
+		return
+	}
+
+	repo, provider, ok := resolveRepositoryByID(c, repoID)
+	if !ok {
+		return
+	}
+
+	entries, err := provider.ListTree(c.Request.Context(), &repo, branch)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, entries)
+}
+
 func DeleteRepositoryHandler(c *gin.Context) {
 	id := c.Param("id")
 
@@ -403,4 +442,25 @@ func resolveProvider(
 
 func isAuthMethodSupported(method models.RepositoryAuthMethod, supported []models.RepositoryAuthMethod) bool {
 	return slices.Contains(supported, method)
+}
+
+func resolveRepositoryByID(c *gin.Context, id string) (models.Repository, repositories.Provider, bool) {
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			return models.Repository{}, nil, false
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return models.Repository{}, nil, false
+	}
+
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported provider"})
+		return models.Repository{}, nil, false
+	}
+
+	return repo, provider, true
 }

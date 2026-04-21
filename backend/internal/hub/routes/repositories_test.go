@@ -362,12 +362,16 @@ func TestCreateRepositoryHandler_Success_Polling(t *testing.T) {
 }
 
 func mockHTTPClient(statusCode int) func() {
+	return mockHTTPClientWithBody(statusCode, "{}")
+}
+
+func mockHTTPClientWithBody(statusCode int, body string) func() {
 	original := httpclient.Default
 	httpclient.Default = &http.Client{
 		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: statusCode,
-				Body:       io.NopCloser(strings.NewReader("{}")),
+				Body:       io.NopCloser(strings.NewReader(body)),
 				Header:     make(http.Header),
 			}, nil
 		}),
@@ -378,6 +382,150 @@ func mockHTTPClient(statusCode int) func() {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestListRepositoryBranchesHandler_NotFound(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/nonexistent/branches", nil)
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent"}}
+
+	ListRepositoryBranchesHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListRepositoryBranchesHandler_Success(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	restore := mockHTTPClientWithBody(http.StatusOK, `[{"name":"release"},{"name":"main"}]`)
+	t.Cleanup(restore)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/"+repo.Id+"/branches", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	ListRepositoryBranchesHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body []string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if len(body) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(body))
+	}
+	if body[0] != "main" || body[1] != "release" {
+		t.Fatalf("expected sorted branches [main release], got %v", body)
+	}
+}
+
+func TestListRepositoryBranchesHandler_UnsupportedProvider(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://bitbucket.org/owner/repo",
+		Provider:   models.Bitbucket,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/"+repo.Id+"/branches", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	ListRepositoryBranchesHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListRepositoryTreeHandler_RequiresBranch(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/repo-id/tree", nil)
+	c.Params = gin.Params{{Key: "id", Value: "repo-id"}}
+
+	ListRepositoryTreeHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListRepositoryTreeHandler_Success(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	restore := mockHTTPClientWithBody(http.StatusOK, `{
+		"tree": [
+			{"path":"services","type":"tree"},
+			{"path":"docker-compose.yml","type":"blob"}
+		]
+	}`)
+	t.Cleanup(restore)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/"+repo.Id+"/tree?branch=main", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	ListRepositoryTreeHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body []struct {
+		Path string `json:"path"`
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	if len(body) != 2 {
+		t.Fatalf("expected 2 tree entries, got %d", len(body))
+	}
+}
 
 func TestCreateRepositoryHandler_DuplicateUrlAndSyncType(t *testing.T) {
 	setupTestDBWithRepos(t)

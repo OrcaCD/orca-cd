@@ -76,8 +76,8 @@ export async function fetcher<JSON extends Record<string, any> | void = any>(
 }
 
 export const useFetch = <JSON extends Record<string, any> = any>(
-	url: string,
+	url: string | null,
 	config?: SWRConfiguration,
 ) => {
-	return useSWR<JSON>(API_BASE + url, fetchWrapper, config);
+	return useSWR<JSON>(url ? API_BASE + url : null, fetchWrapper, config);
 };

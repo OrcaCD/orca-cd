@@ -62,6 +62,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
 			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
+			protected.GET("/repositories/:id/branches", routes.ListRepositoryBranchesHandler)
+			protected.GET("/repositories/:id/tree", routes.ListRepositoryTreeHandler)
 
 			protected.GET("/agents", routes.ListAgentsHandler)
 			protected.POST("/agents", routes.CreateAgentHandler)

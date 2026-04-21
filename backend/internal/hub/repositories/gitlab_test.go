@@ -2,9 +2,11 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,19 +64,36 @@ func TestGitLabParseURL(t *testing.T) {
 	invalid := []string{
 		"",
 		"not-a-url",
-		"http://gitlab.com/owner/repo",  // http not allowed
-		"ftp://gitlab.com/owner/repo",   // wrong scheme
-		"https://gitlab.com/owner",      // missing project
-		"https://gitlab.com/",           // missing namespace and project
-		"https://gitlab.com",            // missing path
-		"https:///owner/repo",           // empty host
-		"https://github.com/owner/repo", // github.com not allowed
+		"http://gitlab.com/owner/repo",   // http not allowed
+		"ftp://gitlab.com/owner/repo",    // wrong scheme
+		"https://gitlab.com/owner",       // missing project
+		"https://gitlab.com/",            // missing namespace and project
+		"https://gitlab.com",             // missing path
+		"https:///owner/repo",            // empty host
+		"https://github.com/owner/repo",  // github.com not allowed
+		"https://gitlab.com/owner//repo", // empty path segment
+		"https://gitlab.com/owner/re po", // invalid project name
 	}
 
 	for _, u := range invalid {
 		if _, _, err := p.ParseURL(u); err == nil {
 			t.Errorf("expected %q to be invalid, but got no error", u)
 		}
+	}
+}
+
+func TestGitLabSupportedAuthMethods(t *testing.T) {
+	p := gitlabProvider{}
+	got := p.SupportedAuthMethods()
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 auth methods, got %d", len(got))
+	}
+	if got[0] != models.AuthMethodNone {
+		t.Fatalf("expected first auth method to be %q, got %q", models.AuthMethodNone, got[0])
+	}
+	if got[1] != models.AuthMethodToken {
+		t.Fatalf("expected second auth method to be %q, got %q", models.AuthMethodToken, got[1])
 	}
 }
 
@@ -240,4 +259,434 @@ func TestGitLabTestConnection(t *testing.T) {
 			t.Fatalf("expected unexpected status error, got: %v", err)
 		}
 	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("connection reset")
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		err := p.TestConnection(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to connect to GitLab") {
+			t.Fatalf("expected connect error, got: %v", err)
+		}
+	})
+}
+
+func TestGitLabListBranches(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/branches?per_page=100&page=1"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"release"},{"name":"main"}]`), nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(branches))
+	}
+	if branches[0] != "main" || branches[1] != "release" {
+		t.Fatalf("expected sorted branches [main release], got %v", branches)
+	}
+}
+
+func TestGitLabListBranchesPagination(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/branches?per_page=100&page=1"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 1 URL: %s", req.URL.String())
+			}
+			resp := jsonResponseWithBody(http.StatusOK, `[{"name":"branch-z"}]`)
+			resp.Header.Set("X-Next-Page", "2")
+			return resp, nil
+		case 2:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/branches?per_page=100&page=2"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 2 URL: %s", req.URL.String())
+			}
+			resp := jsonResponseWithBody(http.StatusOK, `[{"name":"branch-a"}]`)
+			resp.Header.Set("X-Next-Page", "not-a-number")
+			return resp, nil
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+			return nil, nil
+		}
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL}
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(branches))
+	}
+	if branches[0] != "branch-a" || branches[1] != "branch-z" {
+		t.Fatalf("expected sorted branches [branch-a branch-z], got %v", branches)
+	}
+}
+
+func TestGitLabListBranchesErrors(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		branches, err := p.ListBranches(context.Background(), nil)
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://gitlab.com/owner"}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("dial timeout")
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitLab branches") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitLab branches response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusInternalServerError), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		branches, err := p.ListBranches(context.Background(), repo)
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+}
+
+func TestGitLabListTree(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/tree?ref=release%2Fprod&recursive=true&per_page=100&page=1"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 1 URL: %s", req.URL.String())
+			}
+
+			resp := jsonResponseWithBody(http.StatusOK, `[{"path":"services","type":"tree"}]`)
+			resp.Header.Set("X-Next-Page", "2")
+			return resp, nil
+		case 2:
+			expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/tree?ref=release%2Fprod&recursive=true&per_page=100&page=2"
+			if req.URL.String() != expectedURL {
+				t.Fatalf("unexpected page 2 URL: %s", req.URL.String())
+			}
+
+			resp := jsonResponseWithBody(http.StatusOK, `[
+				{"path":"docker-compose.yml","type":"blob"},
+				{"path":"","type":"blob"},
+				{"path":"ignored","type":"commit"}
+			]`)
+			resp.Header.Set("X-Next-Page", "abc")
+			return resp, nil
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+			return nil, nil
+		}
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	tree, err := p.ListTree(context.Background(), repo, "release/prod")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(tree) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(tree))
+	}
+
+	byPath := map[string]TreeEntryType{}
+	for _, entry := range tree {
+		byPath[entry.Path] = entry.Type
+	}
+
+	if byPath["services"] != TreeEntryTypeDir {
+		t.Fatalf("expected services to be dir, got %q", byPath["services"])
+	}
+	if byPath["docker-compose.yml"] != TreeEntryTypeFile {
+		t.Fatalf("expected docker-compose.yml to be file, got %q", byPath["docker-compose.yml"])
+	}
+}
+
+func TestGitLabListTreeErrors(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		tree, err := p.ListTree(context.Background(), nil, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("branch is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, " ")
+		if err == nil || !strings.Contains(err.Error(), "branch is required") {
+			t.Fatalf("expected branch is required error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://gitlab.com/owner"}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("connection failed")
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch GitLab repository tree") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitLab tree response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "repository not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusInternalServerError), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		tree, err := p.ListTree(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if tree != nil {
+			t.Fatalf("expected nil tree, got %v", tree)
+		}
+	})
+}
+
+func TestGitLabListBranchesAuthHeader(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	token := crypto.EncryptedString("secret-token")
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Authorization") != "Bearer secret-token" {
+			t.Fatalf("unexpected authorization header: %q", req.Header.Get("Authorization"))
+		}
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"main"}]`), nil
+	})
+
+	repo := &models.Repository{
+		Url:        testGitLabRepoURL,
+		AuthMethod: models.AuthMethodToken,
+		AuthToken:  &token,
+	}
+
+	branches, err := p.ListBranches(context.Background(), repo)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "main" {
+		t.Fatalf("expected [main], got %v", branches)
+	}
+}
+
+func TestGitLabListTreeNextPageInvalidStops(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		if requestCount != 1 {
+			t.Fatalf("expected single request, got %d", requestCount)
+		}
+
+		resp := jsonResponseWithBody(http.StatusOK, `[{"path":"app.yaml","type":"blob"}]`)
+		resp.Header.Set("X-Next-Page", strconv.Itoa(0))
+		return resp, nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL}
+	tree, err := p.ListTree(context.Background(), repo, "main")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(tree) != 1 || tree[0].Path != "app.yaml" {
+		t.Fatalf("unexpected tree: %v", tree)
+	}
 }
