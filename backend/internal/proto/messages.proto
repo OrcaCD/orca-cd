@@ -7,18 +7,38 @@ option go_package = "./messages";
 message ClientMessage {
   oneof payload {
     PongResponse pong = 1;
+    KeyExchangeResponse key_exchange_response = 2;
+    EncryptedPayload encrypted_payload = 3;
   }
 }
 
 message ServerMessage {
   oneof payload {
     PingRequest ping = 1;
+    KeyExchangeInit key_exchange_init = 2;
+    EncryptedPayload encrypted_payload = 3;
   }
 }
 
 message PingRequest {
   int64 timestamp = 1;
 }
+
 message PongResponse {
   int64 timestamp = 1;
+}
+
+message KeyExchangeInit {
+  bytes mlkem_encapsulation_key = 1;
+  bytes x25519_public_key = 2;
+}
+
+message KeyExchangeResponse {
+  bytes mlkem_ciphertext = 1;
+  bytes agent_x25519_public_key = 2;
+}
+
+message EncryptedPayload {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
 }
