@@ -10,11 +10,13 @@ import (
 )
 
 type stubProvider struct {
-	parseURLErr      error
-	authMethods      []models.RepositoryAuthMethod
-	testConnectionFn func(ctx context.Context, repo *models.Repository) error
-	listBranchesFn   func(ctx context.Context, repo *models.Repository) ([]string, error)
-	listTreeFn       func(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error)
+	parseURLErr       error
+	authMethods       []models.RepositoryAuthMethod
+	testConnectionFn  func(ctx context.Context, repo *models.Repository) error
+	listBranchesFn    func(ctx context.Context, repo *models.Repository) ([]string, error)
+	listTreeFn        func(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error)
+	getFileContentFn  func(ctx context.Context, repo *models.Repository, branch, path string) (string, error)
+	getLatestCommitFn func(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error)
 }
 
 func (s *stubProvider) ParseURL(url string) (string, string, error) {
@@ -44,6 +46,20 @@ func (s *stubProvider) ListTree(ctx context.Context, repo *models.Repository, br
 		return s.listTreeFn(ctx, repo, branch)
 	}
 	return []TreeEntry{}, nil
+}
+
+func (s *stubProvider) GetFileContent(ctx context.Context, repo *models.Repository, branch, path string) (string, error) {
+	if s.getFileContentFn != nil {
+		return s.getFileContentFn(ctx, repo, branch, path)
+	}
+	return "", nil
+}
+
+func (s *stubProvider) GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error) {
+	if s.getLatestCommitFn != nil {
+		return s.getLatestCommitFn(ctx, repo, branch)
+	}
+	return CommitInfo{}, nil
 }
 
 func withIsolatedRegistry(t *testing.T, fn func()) {

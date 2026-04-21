@@ -136,6 +136,12 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, validatedPath)
+	if sourceErr != "" {
+		c.JSON(statusCode, gin.H{"error": sourceErr})
+		return
+	}
+
 	application := models.Application{
 		Name:          crypto.EncryptedString(req.Name),
 		RepositoryId:  req.RepositoryId,
@@ -143,10 +149,11 @@ func CreateApplicationHandler(c *gin.Context) {
 		SyncStatus:    models.UnknownSync,
 		HealthStatus:  models.UnknownHealth,
 		Branch:        req.Branch,
-		Commit:        "",
-		CommitMessage: "",
+		Commit:        latestCommit.Hash,
+		CommitMessage: latestCommit.Message,
 		LastSyncedAt:  nil,
 		Path:          validatedPath,
+		ComposeFile:   crypto.EncryptedString(composeFile),
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
@@ -217,11 +224,20 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, validatedPath)
+	if sourceErr != "" {
+		c.JSON(statusCode, gin.H{"error": sourceErr})
+		return
+	}
+
 	application.Name = crypto.EncryptedString(req.Name)
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
 	application.Branch = req.Branch
+	application.Commit = latestCommit.Hash
+	application.CommitMessage = latestCommit.Message
 	application.Path = validatedPath
+	application.ComposeFile = crypto.EncryptedString(composeFile)
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -335,6 +351,33 @@ func validateApplicationPath(c *gin.Context, repositoryID, branch, path string) 
 	}
 
 	return "", http.StatusBadRequest, "invalid path: file not found in repository branch"
+}
+
+func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", repositories.CommitInfo{}, http.StatusBadRequest, "repository not found"
+		}
+		return "", repositories.CommitInfo{}, http.StatusInternalServerError, "internal server error"
+	}
+
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil {
+		return "", repositories.CommitInfo{}, http.StatusBadRequest, "unsupported provider"
+	}
+
+	composeFile, err := provider.GetFileContent(c.Request.Context(), &repo, branch, path)
+	if err != nil {
+		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+	}
+
+	latestCommit, err := provider.GetLatestCommit(c.Request.Context(), &repo, branch)
+	if err != nil {
+		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+	}
+
+	return composeFile, latestCommit, 0, ""
 }
 
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {

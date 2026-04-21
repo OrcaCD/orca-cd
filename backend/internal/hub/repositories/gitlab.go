@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,17 @@ type gitlabBranch struct {
 type gitlabTreeEntry struct {
 	Path string `json:"path"`
 	Type string `json:"type"`
+}
+
+type gitlabFileResponse struct {
+	Content  string `json:"content"`
+	Encoding string `json:"encoding"`
+}
+
+type gitlabCommit struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+	Title   string `json:"title"`
 }
 
 func init() {
@@ -358,6 +370,149 @@ func (gitlabProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 	})
 
 	return entries, nil
+}
+
+func (gitlabProvider) GetFileContent(ctx context.Context, repo *models.Repository, branch, path string) (string, error) {
+	if repo == nil {
+		return "", errors.New("repository is required")
+	}
+
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return "", errors.New("branch is required")
+	}
+
+	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if normalizedPath == "" {
+		return "", errors.New("path is required")
+	}
+
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
+	if err != nil {
+		return "", fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
+	apiURL := fmt.Sprintf(
+		"%s/api/v4/projects/%s/repository/files/%s?ref=%s",
+		parsedRepoURL.baseURL,
+		projectPath,
+		url.PathEscape(normalizedPath),
+		url.QueryEscape(branch),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to build GitLab request: %w", err)
+	}
+	addGitLabAuthHeader(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch GitLab file content: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close GitLab response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed gitlabFileResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", fmt.Errorf("failed to decode GitLab file response: %w", err)
+		}
+
+		if !strings.EqualFold(parsed.Encoding, "base64") {
+			return "", fmt.Errorf("unsupported GitLab file encoding: %q", parsed.Encoding)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(parsed.Content, "\n", ""))
+		if err != nil {
+			return "", fmt.Errorf("failed to decode GitLab file content: %w", err)
+		}
+
+		return string(decoded), nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "", errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return "", errors.New("file not found in repository branch or access denied")
+	default:
+		return "", fmt.Errorf("GitLab API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func (gitlabProvider) GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error) {
+	if repo == nil {
+		return CommitInfo{}, errors.New("repository is required")
+	}
+
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return CommitInfo{}, errors.New("branch is required")
+	}
+
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
+	apiURL := fmt.Sprintf(
+		"%s/api/v4/projects/%s/repository/commits?ref_name=%s&per_page=1",
+		parsedRepoURL.baseURL,
+		projectPath,
+		url.QueryEscape(branch),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to build GitLab request: %w", err)
+	}
+	addGitLabAuthHeader(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to fetch GitLab commit: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close GitLab response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed []gitlabCommit
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return CommitInfo{}, fmt.Errorf("failed to decode GitLab commit response: %w", err)
+		}
+
+		if len(parsed) == 0 {
+			return CommitInfo{}, errors.New("no commits found for branch")
+		}
+
+		commit := parsed[0]
+		if commit.ID == "" {
+			return CommitInfo{}, errors.New("missing commit hash in GitLab response")
+		}
+
+		message := commit.Message
+		if message == "" {
+			message = commit.Title
+		}
+
+		return CommitInfo{Hash: commit.ID, Message: message}, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return CommitInfo{}, errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return CommitInfo{}, errors.New("repository or branch not found or access denied")
+	default:
+		return CommitInfo{}, fmt.Errorf("GitLab API returned unexpected status: %d", resp.StatusCode)
+	}
 }
 
 func addGitLabAuthHeader(req *http.Request, repo *models.Repository) {

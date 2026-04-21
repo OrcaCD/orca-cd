@@ -59,6 +59,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"oidc_providers",
 		"user_oidc_identities",
 		"repositories",
+		"applications",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -214,6 +215,32 @@ func TestRunMigrations_RepositoriesTableSchema(t *testing.T) {
 	for _, col := range required {
 		if !cols[col] {
 			t.Errorf("repositories table missing column %q", col)
+		}
+	}
+}
+
+func TestRunMigrations_ApplicationsTableSchema(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	cols := columnNames(t, sqlDB, "applications")
+
+	required := []string{
+		"id", "name", "repository_id", "agent_id",
+		"sync_status", "health_status",
+		"branch", "commit", "commit_message",
+		"last_synced_at", "path", "compose_file",
+		"created_at", "updated_at",
+	}
+	for _, col := range required {
+		if !cols[col] {
+			t.Errorf("applications table missing column %q", col)
 		}
 	}
 }

@@ -37,6 +37,7 @@ type Application struct {
 	CommitMessage string                 `gorm:"type:text;not null"`
 	LastSyncedAt  *time.Time             `gorm:"type:timestamp;"`
 	Path          string                 `gorm:"type:text;not null"`
+	ComposeFile   crypto.EncryptedString `gorm:"type:text;not null"`
 }
 
 func (Application) TableName() string {

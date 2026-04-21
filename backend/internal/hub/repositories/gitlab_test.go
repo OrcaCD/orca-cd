@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -689,4 +690,91 @@ func TestGitLabListTreeNextPageInvalidStops(t *testing.T) {
 	if len(tree) != 1 || tree[0].Path != "app.yaml" {
 		t.Fatalf("unexpected tree: %v", tree)
 	}
+}
+
+func TestGitLabGetFileContent(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	encodedContent := base64.StdEncoding.EncodeToString([]byte("version: \"3.9\"\nservices:\n  api:\n    image: app:v1\n"))
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/files/services%2Fbilling.yml?ref=release%2Fprod"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `{"content":"`+encodedContent+`","encoding":"base64"}`), nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	content, err := p.GetFileContent(context.Background(), repo, "release/prod", "services/billing.yml")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if !strings.Contains(content, "services:") {
+		t.Fatalf("expected decoded compose content, got %q", content)
+	}
+}
+
+func TestGitLabGetLatestCommit(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := "https://gitlab.com/api/v4/projects/OrcaCD%2Forca-cd/repository/commits?ref_name=release%2Fprod&per_page=1"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+
+		return jsonResponseWithBody(http.StatusOK, `[{"id":"abc123","message":"chore: update compose"}]`), nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL, AuthMethod: models.AuthMethodNone}
+	commit, err := p.GetLatestCommit(context.Background(), repo, "release/prod")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if commit.Hash != "abc123" {
+		t.Fatalf("expected commit hash %q, got %q", "abc123", commit.Hash)
+	}
+	if commit.Message != "chore: update compose" {
+		t.Fatalf("expected commit message %q, got %q", "chore: update compose", commit.Message)
+	}
+}
+
+func TestGitLabGetLatestCommitErrors(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("branch is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, " ")
+		if err == nil || !strings.Contains(err.Error(), "branch is required") {
+			t.Fatalf("expected branch is required error, got: %v", err)
+		}
+	})
+
+	t.Run("no commits in response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `[]`), nil
+		})
+
+		repo := &models.Repository{Url: testGitLabRepoURL}
+		_, err := p.GetLatestCommit(context.Background(), repo, "main")
+		if err == nil || !strings.Contains(err.Error(), "no commits found") {
+			t.Fatalf("expected no commits error, got: %v", err)
+		}
+	})
 }

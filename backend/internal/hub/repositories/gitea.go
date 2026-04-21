@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,18 @@ type giteaTreeResponse struct {
 		Path string `json:"path"`
 		Type string `json:"type"`
 	} `json:"tree"`
+}
+
+type giteaFileResponse struct {
+	Content  string `json:"content"`
+	Encoding string `json:"encoding"`
+}
+
+type giteaCommit struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Message string `json:"message"`
+	} `json:"commit"`
 }
 
 func init() {
@@ -293,6 +306,144 @@ func (giteaProvider) ListTree(ctx context.Context, repo *models.Repository, bran
 		return nil, errors.New("repository not found or access denied")
 	default:
 		return nil, fmt.Errorf("gitea API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func (giteaProvider) GetFileContent(ctx context.Context, repo *models.Repository, branch, path string) (string, error) {
+	if repo == nil {
+		return "", errors.New("repository is required")
+	}
+
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return "", errors.New("branch is required")
+	}
+
+	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if normalizedPath == "" {
+		return "", errors.New("path is required")
+	}
+
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
+	if err != nil {
+		return "", fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/api/v1/repos/%s/%s/contents/%s?ref=%s",
+		parsedRepoURL.baseURL,
+		url.PathEscape(parsedRepoURL.owner),
+		url.PathEscape(parsedRepoURL.repo),
+		url.PathEscape(normalizedPath),
+		url.QueryEscape(branch),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to build Gitea request: %w", err)
+	}
+	addGiteaHeaders(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch Gitea file content: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close Gitea response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed giteaFileResponse
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return "", fmt.Errorf("failed to decode Gitea file response: %w", err)
+		}
+
+		if !strings.EqualFold(parsed.Encoding, "base64") {
+			return "", fmt.Errorf("unsupported Gitea file encoding: %q", parsed.Encoding)
+		}
+
+		decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(parsed.Content, "\n", ""))
+		if err != nil {
+			return "", fmt.Errorf("failed to decode Gitea file content: %w", err)
+		}
+
+		return string(decoded), nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "", errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return "", errors.New("file not found in repository branch or access denied")
+	default:
+		return "", fmt.Errorf("gitea API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
+func (giteaProvider) GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error) {
+	if repo == nil {
+		return CommitInfo{}, errors.New("repository is required")
+	}
+
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return CommitInfo{}, errors.New("branch is required")
+	}
+
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/api/v1/repos/%s/%s/commits?sha=%s&page=1&limit=1",
+		parsedRepoURL.baseURL,
+		url.PathEscape(parsedRepoURL.owner),
+		url.PathEscape(parsedRepoURL.repo),
+		url.QueryEscape(branch),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to build Gitea request: %w", err)
+	}
+	addGiteaHeaders(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return CommitInfo{}, fmt.Errorf("failed to fetch Gitea commit: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close Gitea response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed []giteaCommit
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return CommitInfo{}, fmt.Errorf("failed to decode Gitea commit response: %w", err)
+		}
+
+		if len(parsed) == 0 {
+			return CommitInfo{}, errors.New("no commits found for branch")
+		}
+
+		commit := parsed[0]
+		if commit.SHA == "" {
+			return CommitInfo{}, errors.New("missing commit hash in Gitea response")
+		}
+
+		return CommitInfo{Hash: commit.SHA, Message: commit.Commit.Message}, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return CommitInfo{}, errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return CommitInfo{}, errors.New("repository or branch not found or access denied")
+	default:
+		return CommitInfo{}, fmt.Errorf("gitea API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 
