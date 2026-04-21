@@ -322,6 +322,7 @@ func validateApplicationPath(c *gin.Context, repositoryID, branch, path string) 
 		return "", http.StatusBadRequest, "unsupported provider"
 	}
 
+	// TODO: Get single file from repository instead of listing entire tree for better performance
 	entries, err := provider.ListTree(c.Request.Context(), &repo, branch)
 	if err != nil {
 		return "", http.StatusUnprocessableEntity, err.Error()
