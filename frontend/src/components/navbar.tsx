@@ -95,7 +95,7 @@ export default function Navbar() {
 											to={item.href}
 											className={cn(
 												location.pathname.startsWith(item.href) &&
-													"bg-sidebar-accent text-primary-foreground hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+													"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 											)}
 										>
 											<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
@@ -181,7 +181,7 @@ export default function Navbar() {
 											className={cn(
 												"w-full",
 												location.pathname.startsWith(item.href) &&
-													"bg-sidebar-accent text-primary-foreground hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+													"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 											)}
 											onClick={() => setMobileMenuOpen(false)}
 										>
