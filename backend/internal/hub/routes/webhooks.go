@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -19,6 +21,16 @@ import (
 
 // maxWebhookBodySize caps the request body to guard against memory exhaustion from oversized payloads.
 const maxWebhookBodySize = 10 * 1024 * 1024 // 10 MB
+
+type webhookPushDetails struct {
+	Branch string
+	Commit string
+}
+
+type pushPayload struct {
+	Ref   string `json:"ref"`
+	After string `json:"after"`
+}
 
 func WebhookHandler(c *gin.Context) {
 	id := c.Param("id")
@@ -61,16 +73,24 @@ func WebhookHandler(c *gin.Context) {
 		return
 	}
 
+	pushDetails, err := parseWebhookPushDetails(c, body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook payload"})
+		return
+	}
+
 	now := time.Now()
 	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).Updates(c.Request.Context(), models.Repository{
-		SyncStatus:   models.SyncStatusSuccess,
-		LastSyncedAt: &now,
+		SyncStatus:    models.SyncStatusSuccess,
+		LastSyncError: nil,
+		LastSyncedAt:  &now,
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	// Todo trigger application sync
+	_ = pushDetails
 
 	c.AbortWithStatus(http.StatusNoContent)
 }
@@ -113,4 +133,59 @@ func isPushEvent(c *gin.Context, provider models.RepositoryProvider) bool {
 	default:
 		return false
 	}
+}
+
+func parseWebhookPushDetails(c *gin.Context, body []byte) (webhookPushDetails, error) {
+	decodedBody, form, err := decodeWebhookBody(c, body)
+	if err != nil {
+		return webhookPushDetails{}, err
+	}
+
+	var payload pushPayload
+	if len(decodedBody) > 0 {
+		if err := json.Unmarshal(decodedBody, &payload); err != nil {
+			return webhookPushDetails{}, err
+		}
+	} else {
+		payload.Ref = form.Get("ref")
+		payload.After = form.Get("after")
+	}
+
+	branch := extractBranchFromRef(payload.Ref)
+	if branch == "" {
+		return webhookPushDetails{}, errors.New("missing branch ref")
+	}
+
+	return webhookPushDetails{
+		Branch: branch,
+		Commit: strings.TrimSpace(payload.After),
+	}, nil
+}
+
+func decodeWebhookBody(c *gin.Context, body []byte) ([]byte, url.Values, error) {
+	contentType := strings.ToLower(c.GetHeader("Content-Type"))
+	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		form, err := url.ParseQuery(string(body))
+		if err != nil {
+			return nil, nil, err
+		}
+		payload := strings.TrimSpace(form.Get("payload"))
+		if payload != "" {
+			return []byte(payload), form, nil
+		}
+		return nil, form, nil
+	}
+	return body, nil, nil
+}
+
+func extractBranchFromRef(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	const headsPrefix = "refs/heads/"
+	if strings.HasPrefix(ref, headsPrefix) {
+		return strings.TrimSpace(strings.TrimPrefix(ref, headsPrefix))
+	}
+	return ref
 }
