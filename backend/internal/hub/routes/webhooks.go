@@ -13,8 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -89,8 +91,12 @@ func WebhookHandler(c *gin.Context) {
 		return
 	}
 
-	// Todo trigger application sync
-	_ = pushDetails
+	apps, err := applications.GetMatchingApplications(c.Request.Context(), &repo, pushDetails.Branch)
+	if err == nil && len(apps) > 0 {
+		if provider, err := repositories.Get(repo.Provider); err == nil {
+			applications.DefaultQueue.Enqueue(c.Request.Context(), &repo, provider, apps, pushDetails.Commit)
+		}
+	}
 
 	c.AbortWithStatus(http.StatusNoContent)
 }
@@ -184,8 +190,8 @@ func extractBranchFromRef(ref string) string {
 		return ""
 	}
 	const headsPrefix = "refs/heads/"
-	if strings.HasPrefix(ref, headsPrefix) {
-		return strings.TrimSpace(strings.TrimPrefix(ref, headsPrefix))
+	if branch, ok := strings.CutPrefix(ref, headsPrefix); ok {
+		return strings.TrimSpace(branch)
 	}
 	return ref
 }

@@ -11,16 +11,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
 func setupTestDBWithWebhookRepos(t *testing.T) {
 	t.Helper()
 	setupTestDBWithRepos(t)
+	nop := zerolog.Nop()
+	applications.DefaultQueue = applications.NewQueue(&nop)
+	applications.DefaultQueue.Start()
+	t.Cleanup(func() { applications.DefaultQueue = nil })
 }
 
 // githubSig computes the X-Hub-Signature-256 header value for a given secret and body.
