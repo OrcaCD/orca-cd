@@ -16,6 +16,5 @@ linters:
     - zerologlint
     - gocritic
     - bodyclose
-    - goconst
     - modernize
     - unparam

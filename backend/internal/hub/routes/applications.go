@@ -3,11 +3,13 @@ package routes
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -128,6 +130,12 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	validatedPath, statusCode, validationErr := validateApplicationPath(c, req.RepositoryId, req.Branch, req.Path)
+	if validationErr != "" {
+		c.JSON(statusCode, gin.H{"error": validationErr})
+		return
+	}
+
 	application := models.Application{
 		Name:          crypto.EncryptedString(req.Name),
 		RepositoryId:  req.RepositoryId,
@@ -138,7 +146,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		Commit:        "",
 		CommitMessage: "",
 		LastSyncedAt:  nil,
-		Path:          req.Path,
+		Path:          validatedPath,
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
@@ -203,11 +211,17 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	validatedPath, statusCode, validationErr := validateApplicationPath(c, req.RepositoryId, req.Branch, req.Path)
+	if validationErr != "" {
+		c.JSON(statusCode, gin.H{"error": validationErr})
+		return
+	}
+
 	application.Name = crypto.EncryptedString(req.Name)
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
 	application.Branch = req.Branch
-	application.Path = req.Path
+	application.Path = validatedPath
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -282,6 +296,45 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		CreatedAt:      app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      app.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+func validateApplicationPath(c *gin.Context, repositoryID, branch, path string) (string, int, string) {
+	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
+	if normalizedPath == "" {
+		return "", http.StatusBadRequest, "path is required"
+	}
+
+	lowerPath := strings.ToLower(normalizedPath)
+	if !strings.HasSuffix(lowerPath, ".yml") && !strings.HasSuffix(lowerPath, ".yaml") {
+		return "", http.StatusBadRequest, "invalid path: must point to a .yml or .yaml file"
+	}
+
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", http.StatusBadRequest, "repository not found"
+		}
+		return "", http.StatusInternalServerError, "internal server error"
+	}
+
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil {
+		return "", http.StatusBadRequest, "unsupported provider"
+	}
+
+	// TODO: Get single file from repository instead of listing entire tree for better performance
+	entries, err := provider.ListTree(c.Request.Context(), &repo, branch)
+	if err != nil {
+		return "", http.StatusUnprocessableEntity, err.Error()
+	}
+
+	for _, entry := range entries {
+		if entry.Type == repositories.TreeEntryTypeFile && entry.Path == normalizedPath {
+			return normalizedPath, 0, ""
+		}
+	}
+
+	return "", http.StatusBadRequest, "invalid path: file not found in repository branch"
 }
 
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {
