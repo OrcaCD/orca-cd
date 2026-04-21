@@ -8,6 +8,11 @@ import {
 } from "@/lib/paraglide/runtime";
 import { z } from "zod";
 
+const zodLocaleLoaders: Record<Locale, () => Promise<{ default: typeof z.locales.en }>> = {
+	en: () => import("zod/v4/locales/en.js"),
+	de: () => import("zod/v4/locales/de.js"),
+};
+
 export async function initializeI18n() {
 	const locale = getPreferredLocale();
 	await setLocaleForLibraries(locale);
@@ -35,13 +40,14 @@ export async function setLocale(locale: Locale, options: { reload?: boolean } = 
 }
 
 export async function setLocaleForLibraries(locale: Locale = getLocale() || baseLocale) {
-	const zodResult = await import(`zod/v4/locales/${locale}.js`);
+	const loadLocale = zodLocaleLoaders[locale] || zodLocaleLoaders[baseLocale];
 
-	if (zodResult.status === "fulfilled") {
-		z.config(zodResult.value.default());
-	} else {
+	try {
+		const { default: createLocale } = await loadLocale();
+		z.config(createLocale());
+	} catch (error) {
 		// oxlint-disable-next-line no-console
-		console.warn(`Failed to load zod locale for ${locale}:`, zodResult.reason);
+		console.warn(`Failed to load zod locale for ${locale}:`, error);
 	}
 }
 

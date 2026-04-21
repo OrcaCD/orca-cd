@@ -102,7 +102,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 								<MoreHorizontal className="h-4 w-4" />
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" className="w-full">
 							<DropdownMenuItem>
 								<RefreshCw className="mr-2 h-4 w-4" />
 								{m.sync()}

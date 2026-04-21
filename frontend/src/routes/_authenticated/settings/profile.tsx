@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -41,6 +41,7 @@ const profileSchema = z.object({
 
 function ProfileSettingsPage() {
 	const { auth, refreshAuth } = useAuth();
+	const router = useRouter();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [isChangingLanguage, setIsChangingLanguage] = useState(false);
 
@@ -86,11 +87,13 @@ function ProfileSettingsPage() {
 
 		setIsChangingLanguage(true);
 		try {
-			await setAppLocale(nextLocale);
+			await setAppLocale(nextLocale, { reload: true });
 		} catch (err) {
-			setIsChangingLanguage(false);
 			toast.error(err instanceof Error ? err.message : m.failedUpdateLanguage());
 		}
+
+		setIsChangingLanguage(false);
+		router.invalidate();
 	}
 
 	return (

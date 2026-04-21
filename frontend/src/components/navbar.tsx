@@ -130,7 +130,7 @@ export default function Navbar() {
 								</Avatar>
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-48">
+						<DropdownMenuContent align="end" className="w-full">
 							<DropdownMenuItem asChild>
 								<Link to="/settings" className="flex items-center">
 									<User className="mr-2 h-4 w-4" />
