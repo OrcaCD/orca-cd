@@ -93,7 +93,7 @@ function ProfileSettingsPage() {
 		}
 
 		setIsChangingLanguage(false);
-		router.invalidate();
+		await router.invalidate();
 	}
 
 	return (

@@ -15,7 +15,10 @@ const zodLocaleLoaders: Record<Locale, () => Promise<{ default: typeof z.locales
 
 export async function initializeI18n() {
 	const locale = getPreferredLocale();
-	await setLocaleForLibraries(locale);
+
+	// Set in background to speed up initial load
+	// oxlint-disable-next-line no-floating-promises
+	setLocaleForLibraries(locale);
 
 	if (locale !== getLocale()) {
 		await setParaglideLocale(locale, { reload: false });
