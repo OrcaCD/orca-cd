@@ -137,6 +137,7 @@ function TreeNodeList({
 						<Collapsible key={node.path}>
 							<CollapsibleTrigger asChild>
 								<Button
+									type="button"
 									variant="ghost"
 									size="sm"
 									className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
