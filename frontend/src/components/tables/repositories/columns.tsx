@@ -29,6 +29,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
+import { m } from "@/lib/paraglide/messages";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
@@ -61,6 +62,19 @@ function getSyncStatusColor(syncStatus: RepositorySyncStatus): string {
 	}
 }
 
+function getSyncStatusLabel(syncStatus: RepositorySyncStatus): string {
+	switch (syncStatus) {
+		case "syncing":
+			return m.repoSyncStatusSyncing();
+		case "failed":
+			return m.repoSyncStatusFailed();
+		case "success":
+			return m.repoSyncStatusSuccess();
+		default:
+			return m.unknown();
+	}
+}
+
 function getSyncTypeIcon(syncType: RepositorySyncType) {
 	switch (syncType) {
 		case "webhook":
@@ -74,12 +88,25 @@ function getSyncTypeIcon(syncType: RepositorySyncType) {
 	}
 }
 
+function getSyncTypeLabel(syncType: RepositorySyncType): string {
+	switch (syncType) {
+		case "webhook":
+			return m.repoSyncTypeWebhook();
+		case "polling":
+			return m.repoSyncTypePolling();
+		case "manual":
+			return m.repoSyncTypeManual();
+		default:
+			return m.unknown();
+	}
+}
+
 export const columns: ColumnDef<Repository>[] = [
 	{
 		id: "name",
 		accessorFn: (row) => `${row.provider} ${row.url} ${row.name}`,
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Name" />;
+			return <DataTableColumnHeader column={column} title={m.columnName()} />;
 		},
 		cell: ({ row }) => {
 			const name = row.original.name;
@@ -90,7 +117,7 @@ export const columns: ColumnDef<Repository>[] = [
 				<div className="flex flex-row gap-3 items-center">
 					<img
 						src={getGitProviderIconPath(provider)}
-						alt="Git Provider"
+						alt={m.gitProviderAlt()}
 						className={`h-7 w-7 ${getGitProviderIconClass(provider)}`}
 					/>
 
@@ -114,7 +141,7 @@ export const columns: ColumnDef<Repository>[] = [
 		id: "syncStatus",
 		accessorFn: (row) => row.syncStatus,
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Status" />;
+			return <DataTableColumnHeader column={column} title={m.columnStatus()} />;
 		},
 		cell: ({ row }) => {
 			const syncStatus = row.original.syncStatus;
@@ -122,7 +149,7 @@ export const columns: ColumnDef<Repository>[] = [
 			return (
 				<div className="flex items-center gap-2">
 					<span className={`inline-flex h-2 w-2 rounded-full ${getSyncStatusColor(syncStatus)}`} />
-					{syncStatus.charAt(0).toUpperCase() + syncStatus.slice(1)}
+					{getSyncStatusLabel(syncStatus)}
 				</div>
 			);
 		},
@@ -131,14 +158,14 @@ export const columns: ColumnDef<Repository>[] = [
 		id: "syncType",
 		accessorFn: (row) => row.syncType,
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Sync Type" />;
+			return <DataTableColumnHeader column={column} title={m.columnSyncType()} />;
 		},
 		cell: ({ row }) => {
 			const syncType = row.original.syncType;
 			return (
 				<div className="flex items-center gap-2">
 					{getSyncTypeIcon(syncType)}
-					{syncType.charAt(0).toUpperCase() + syncType.slice(1)}
+					{getSyncTypeLabel(syncType)}
 				</div>
 			);
 		},
@@ -157,31 +184,31 @@ export const columns: ColumnDef<Repository>[] = [
 			return firstSync - secondSync;
 		},
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Last Sync" />;
+			return <DataTableColumnHeader column={column} title={m.columnLastSync()} />;
 		},
 		cell: ({ row }) => {
 			const lastSyncedAt = row.original.lastSyncedAt;
 
-			return <span>{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "Never"}</span>;
+			return <span>{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : m.never()}</span>;
 		},
 	},
 	{
 		accessorKey: "authMethod",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Auth Method" />;
+			return <DataTableColumnHeader column={column} title={m.columnAuthMethod()} />;
 		},
 	},
 	{
 		accessorKey: "appCount",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Apps" />;
+			return <DataTableColumnHeader column={column} title={m.columnApps()} />;
 		},
 	},
 	{
 		id: "createdAt",
 		accessorFn: (row) => toSearchableText(row.createdAt),
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Created At" />;
+			return <DataTableColumnHeader column={column} title={m.columnCreatedAt()} />;
 		},
 		cell: ({ row }) => {
 			const createdAt = row.original.createdAt;
@@ -194,9 +221,9 @@ export const columns: ColumnDef<Repository>[] = [
 			async function handleDelete() {
 				try {
 					await deleteRepository(row.original.id);
-					toast.success(`Repository ${row.original.name} deleted successfully`);
+					toast.success(m.repositoryDeleted({ name: row.original.name }));
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : "Failed to delete repository");
+					toast.error(err instanceof Error ? err.message : m.failedDeleteRepository());
 				}
 			}
 
@@ -205,15 +232,15 @@ export const columns: ColumnDef<Repository>[] = [
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
 							<Button variant="ghost" className="h-8 w-8 p-0">
-								<span className="sr-only">Open menu</span>
+								<span className="sr-only">{m.openMenu()}</span>
 								<MoreHorizontal className="h-4 w-4" />
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
-							<DropdownMenuLabel>Actions</DropdownMenuLabel>
+							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<DropdownMenuItem>
 								<RefreshCw className="h-4 w-4" />
-								Refresh
+								{m.refresh()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<UpsertRepositoryDialog existingRepository={row.original} asDropdownItem />
@@ -221,7 +248,7 @@ export const columns: ColumnDef<Repository>[] = [
 								triggerText={
 									<>
 										<Trash2 className="h-4 w-4" />
-										Disconnect
+										{m.disconnect()}
 									</>
 								}
 								onConfirm={async () => await handleDelete()}

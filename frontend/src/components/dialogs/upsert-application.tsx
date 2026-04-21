@@ -22,6 +22,7 @@ import { useFetch } from "@/lib/api";
 import type { Agent } from "@/lib/agents";
 import { type Repository } from "@/lib/repsitories";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { m } from "@/lib/paraglide/messages";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -29,22 +30,22 @@ const applicationSchema = z.object({
 	name: z
 		.string()
 		.trim()
-		.min(1, "Name is required")
-		.max(128, "Name must be at most 128 characters"),
-	repositoryId: z.string().min(1, "Repository is required"),
-	agentId: z.string().min(1, "Agent is required"),
+		.min(1, m.validationApplicationNameRequired())
+		.max(128, m.validationApplicationNameMaxLength()),
+	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
+	agentId: z.string().min(1, m.validationAgentRequired()),
 	branch: z
 		.string()
 		.trim()
-		.min(1, "Branch is required")
-		.max(256, "Branch must be at most 256 characters"),
+		.min(1, m.validationBranchRequired())
+		.max(256, m.validationBranchMaxLength()),
 	path: z
 		.string()
 		.trim()
-		.min(1, "Path is required")
-		.max(512, "Path must be at most 512 characters")
+		.min(1, m.validationPathRequired())
+		.max(512, m.validationPathMaxLength())
 		.refine((val) => val.endsWith(".yml") || val.endsWith(".yaml"), {
-			message: "Path must point to a YAML file",
+			message: m.validationPathMustBeYAML(),
 		}),
 });
 
@@ -214,14 +215,14 @@ export default function UpsertApplicationDialog({
 			try {
 				if (isEditing && application) {
 					await updateApplication(application.id, value);
-					toast.success("Application updated");
+					toast.success(m.applicationUpdated());
 				} else {
 					await createApplication(value);
-					toast.success("Application created");
+					toast.success(m.applicationCreated());
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save application");
+				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -257,7 +258,7 @@ export default function UpsertApplicationDialog({
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
 						<Pencil className="h-4 w-4" />
-						Edit
+						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
@@ -266,19 +267,17 @@ export default function UpsertApplicationDialog({
 				) : (
 					<Button>
 						<Plus className="h-4 w-4" />
-						New Application
+						{m.newApplication()}
 					</Button>
 				)}
 			</DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						{isEditing ? "Edit Application" : "Add Application"}
+						{isEditing ? m.editApplication() : m.addApplication()}
 					</DialogTitle>
 					<DialogDescription className="py-2">
-						{isEditing
-							? "Update the application configuration."
-							: "Add a new application to monitor and manage."}
+						{isEditing ? m.editApplicationDescription() : m.addApplicationDescription()}
 					</DialogDescription>
 				</DialogHeader>
 
@@ -295,13 +294,13 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Name</Label>
+										<Label htmlFor={field.name}>{m.name()}</Label>
 										<Input
 											id={field.name}
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder='e.g. "notifications-service"'
+											placeholder={m.applicationNamePlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -317,7 +316,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="repository-select">Repository</FieldLabel>
+											<FieldLabel htmlFor="repository-select">{m.repository()}</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -334,11 +333,11 @@ export default function UpsertApplicationDialog({
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select a repository" />
+												<SelectValue placeholder={m.selectRepository()} />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isReposLoading ? (
-													<div className="p-2">Loading...</div>
+													<div className="p-2">{m.loadingDots()}</div>
 												) : (
 													repos?.map((repo) => (
 														<SelectItem key={repo.id} value={repo.id}>
@@ -360,7 +359,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="agent-select">Agent</FieldLabel>
+											<FieldLabel htmlFor="agent-select">{m.columnAgent()}</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -373,11 +372,11 @@ export default function UpsertApplicationDialog({
 												aria-invalid={isInvalid}
 												className="min-w-30"
 											>
-												<SelectValue placeholder="Select an agent" />
+												<SelectValue placeholder={m.selectAgent()} />
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isAgentsLoading ? (
-													<div className="p-2">Loading...</div>
+													<div className="p-2">{m.loadingDots()}</div>
 												) : (
 													agents?.map((agent) => (
 														<SelectItem key={agent.id} value={agent.id}>
@@ -399,7 +398,7 @@ export default function UpsertApplicationDialog({
 								return (
 									<Field orientation="responsive" data-invalid={isInvalid}>
 										<FieldContent>
-											<FieldLabel htmlFor="branch-select">Branch</FieldLabel>
+											<FieldLabel htmlFor="branch-select">{m.branch()}</FieldLabel>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</FieldContent>
 										<Select
@@ -417,14 +416,12 @@ export default function UpsertApplicationDialog({
 												className="min-w-30"
 											>
 												<SelectValue
-													placeholder={
-														repositoryId ? "Select a branch" : "Select a repository first"
-													}
+													placeholder={repositoryId ? m.selectBranch() : m.selectRepositoryFirst()}
 												/>
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isBranchesLoading ? (
-													<div className="p-2">Loading branches...</div>
+													<div className="p-2">{m.loadingBranchesDots()}</div>
 												) : (
 													branches?.map((branch) => (
 														<SelectItem key={branch} value={branch}>
@@ -445,23 +442,23 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Compose File</Label>
+										<Label htmlFor={field.name}>{m.composeFile()}</Label>
 										<div className="max-h-64 overflow-auto rounded-md border p-1">
 											{!repositoryId ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Select a repository first.
+													{m.selectRepositoryFirst()}
 												</div>
 											) : !branch ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Select a branch first.
+													{m.selectBranchFirst()}
 												</div>
 											) : isFileTreeLoading ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Loading repository tree...
+													{m.loadingRepositoryTreeDots()}
 												</div>
 											) : fileTree.length === 0 ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													No files found in this branch.
+													{m.noFilesFoundInBranch()}
 												</div>
 											) : (
 												<div className="flex flex-col gap-1">
@@ -479,7 +476,7 @@ export default function UpsertApplicationDialog({
 											value={field.state.value}
 											readOnly
 											className="mt-2"
-											placeholder="Selected file path"
+											placeholder={m.selectedFilePath()}
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
@@ -489,7 +486,11 @@ export default function UpsertApplicationDialog({
 
 						<div className="flex gap-2 pt-2">
 							<Button type="submit" disabled={isSubmitting}>
-								{isSubmitting ? "Saving..." : isEditing ? "Update Application" : "Add Application"}
+								{isSubmitting
+									? m.savingDots()
+									: isEditing
+										? m.updateApplication()
+										: m.addApplication()}
 							</Button>
 							<Button
 								type="button"
@@ -500,7 +501,7 @@ export default function UpsertApplicationDialog({
 								}}
 								disabled={isSubmitting}
 							>
-								Cancel
+								{m.cancel()}
 							</Button>
 						</div>
 					</FieldGroup>

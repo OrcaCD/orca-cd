@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckIcon, ClipboardIcon } from "lucide-react";
+import { m } from "@/lib/paraglide/messages";
 
 export default function CopyButton({
 	text,
-	title = "Copy to clipboard",
+	title = m.copyToClipboard(),
 }: {
 	text: string;
 	title?: string;

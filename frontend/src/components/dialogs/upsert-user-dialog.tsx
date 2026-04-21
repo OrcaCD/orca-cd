@@ -21,10 +21,11 @@ import { Input } from "../ui/input";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
 import CopyValueDialog from "./copy-value-dialog";
+import { m } from "@/lib/paraglide/messages";
 
 const baseSchema = z.object({
-	name: z.string().trim().min(3, "Name must be at least 3 characters").max(64),
-	email: z.email("Must be a valid email address").trim(),
+	name: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
+	email: z.email(m.validationMustBeValidEmailAddress()).trim(),
 	role: z.enum(["admin", "user"]),
 	resetPassword: z.boolean(),
 });
@@ -67,7 +68,7 @@ export default function UpsertUserDialog({
 						resetPassword: value.resetPassword,
 					});
 					generated = response.generatedPassword ?? null;
-					toast.success(value.resetPassword ? "User updated and password reset" : "User updated");
+					toast.success(value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated());
 				} else {
 					const response = await createUser({
 						name: value.name,
@@ -75,7 +76,7 @@ export default function UpsertUserDialog({
 						role: value.role,
 					});
 					generated = response.generatedPassword;
-					toast.success("User created");
+					toast.success(m.userCreated());
 				}
 
 				if (generated) {
@@ -85,7 +86,7 @@ export default function UpsertUserDialog({
 
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save user");
+				toast.error(err instanceof Error ? err.message : m.failedSaveUser());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -99,7 +100,7 @@ export default function UpsertUserDialog({
 					{asDropdownItem ? (
 						<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
 							<Pencil className="h-4 w-4" />
-							Edit
+							{m.edit()}
 						</DropdownMenuItem>
 					) : isEditing ? (
 						<Button variant="ghost" size="icon" disabled={disabled}>
@@ -108,17 +109,15 @@ export default function UpsertUserDialog({
 					) : (
 						<Button disabled={disabled}>
 							<Plus className="mr-2 h-4 w-4" />
-							Add User
+							{m.addUser()}
 						</Button>
 					)}
 				</DialogTrigger>
 				<DialogContent className="sm:max-w-106.25">
 					<DialogHeader>
-						<DialogTitle>{isEditing ? "Edit User" : "Add User"}</DialogTitle>
+						<DialogTitle>{isEditing ? m.editUser() : m.addUser()}</DialogTitle>
 						<DialogDescription className="py-2">
-							{isEditing
-								? "Update user details and permissions. Optionally reset the password."
-								: "Create a new local user account. A temporary password will be generated."}
+							{isEditing ? m.editUserDescription() : m.addUserDescription()}
 						</DialogDescription>
 					</DialogHeader>
 
@@ -135,13 +134,13 @@ export default function UpsertUserDialog({
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Name</Label>
+											<Label htmlFor={field.name}>{m.name()}</Label>
 											<Input
 												id={field.name}
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder="Full name"
+												placeholder={m.fullNamePlaceholder()}
 												autoFocus
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -155,14 +154,14 @@ export default function UpsertUserDialog({
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
 										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>Email</Label>
+											<Label htmlFor={field.name}>{m.email()}</Label>
 											<Input
 												id={field.name}
 												type="email"
 												value={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder="user@example.com"
+												placeholder={m.emailPlaceholder()}
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
@@ -173,7 +172,7 @@ export default function UpsertUserDialog({
 								name="role"
 								children={(field) => (
 									<Field>
-										<Label htmlFor={field.name}>Role</Label>
+										<Label htmlFor={field.name}>{m.role()}</Label>
 										<div className="flex gap-4">
 											<RadioGroup
 												name={field.name}
@@ -186,7 +185,7 @@ export default function UpsertUserDialog({
 														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
 													>
 														<FieldContent>
-															<FieldTitle>Admin</FieldTitle>
+															<FieldTitle>{m.roleAdmin()}</FieldTitle>
 														</FieldContent>
 														<RadioGroupItem
 															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
@@ -200,7 +199,7 @@ export default function UpsertUserDialog({
 														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
 													>
 														<FieldContent>
-															<FieldTitle>User</FieldTitle>
+															<FieldTitle>{m.roleUser()}</FieldTitle>
 														</FieldContent>
 														<RadioGroupItem
 															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
@@ -226,9 +225,9 @@ export default function UpsertUserDialog({
 													className="h-4 w-4 rounded border-gray-300"
 												/>
 												<div className="space-y-1">
-													<Label htmlFor={field.name}>Reset password</Label>
+													<Label htmlFor={field.name}>{m.resetPassword()}</Label>
 													<p className="text-muted-foreground text-xs">
-														Generate a new password and require the user to change it after sign-in.
+														{m.resetPasswordDescription()}
 													</p>
 												</div>
 											</div>
@@ -239,7 +238,7 @@ export default function UpsertUserDialog({
 
 							<div className="flex gap-2 pt-2">
 								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting ? "Saving..." : isEditing ? "Update User" : "Create User"}
+									{isSubmitting ? m.savingDots() : isEditing ? m.updateUser() : m.createUser()}
 								</Button>
 								<Button
 									type="button"
@@ -250,7 +249,7 @@ export default function UpsertUserDialog({
 									}}
 									disabled={isSubmitting}
 								>
-									Cancel
+									{m.cancel()}
 								</Button>
 							</div>
 						</FieldGroup>
@@ -266,12 +265,12 @@ export default function UpsertUserDialog({
 						setGeneratedPassword(null);
 					}
 				}}
-				title="Generated Password"
-				description="Copy this password now. It will not be shown again."
-				label="Password"
+				title={m.generatedPassword()}
+				description={m.copyPasswordNow()}
+				label={m.password()}
 				value={generatedPassword ?? ""}
 				inputId="generated-password"
-				copyTitle="Copy generated password"
+				copyTitle={m.copyGeneratedPassword()}
 			/>
 		</>
 	);

@@ -14,12 +14,13 @@ import { deleteUser, type UserDetail } from "@/lib/users";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
+import { m } from "@/lib/paraglide/messages";
 
 export const columns: ColumnDef<UserDetail>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Name" />;
+			return <DataTableColumnHeader column={column} title={m.columnName()} />;
 		},
 		cell: ({ row }) => {
 			const { auth } = useAuth();
@@ -31,7 +32,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 					{user.name}
 					{isSelf && (
 						<Badge variant="outline" className="ml-2">
-							You
+							{m.you()}
 						</Badge>
 					)}
 				</>
@@ -41,23 +42,27 @@ export const columns: ColumnDef<UserDetail>[] = [
 	{
 		accessorKey: "email",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Email" />;
+			return <DataTableColumnHeader column={column} title={m.columnEmail()} />;
 		},
 	},
 	{
 		accessorKey: "role",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Role" />;
+			return <DataTableColumnHeader column={column} title={m.columnRole()} />;
 		},
 		cell: ({ row }) => {
 			const role = row.original.role;
-			return <Badge variant={role === "admin" ? "default" : "secondary"}>{role}</Badge>;
+			return (
+				<Badge variant={role === "admin" ? "default" : "secondary"}>
+					{role === "admin" ? m.roleAdmin() : role === "user" ? m.roleUser() : role}
+				</Badge>
+			);
 		},
 	},
 	{
 		accessorKey: "providers",
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title="Providers" />;
+			return <DataTableColumnHeader column={column} title={m.columnProviders()} />;
 		},
 		cell: ({ row }) => {
 			const providers = row.original.providers;
@@ -66,7 +71,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 					{providers.map((provider) => (
 						<Badge key={provider} variant="outline">
 							{provider === "password" && <KeyRound className="mr-1 h-3 w-3" />}
-							{provider}
+							{provider === "password" ? m.providerPassword() : provider}
 						</Badge>
 					))}
 				</div>
@@ -81,9 +86,9 @@ export const columns: ColumnDef<UserDetail>[] = [
 			async function handleDelete() {
 				try {
 					await deleteUser(row.original.id);
-					toast.success("User deleted");
+					toast.success(m.userDeleted());
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : "Failed to delete user");
+					toast.error(err instanceof Error ? err.message : m.failedDeleteUser());
 				}
 			}
 
@@ -93,7 +98,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 						<DropdownMenuTrigger asChild>
 							<Button variant="ghost" size="icon" className="h-8 w-8">
 								<EllipsisVertical className="h-4 w-4" />
-								<span className="sr-only">Actions</span>
+								<span className="sr-only">{m.actions()}</span>
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
@@ -105,12 +110,15 @@ export const columns: ColumnDef<UserDetail>[] = [
 							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={() => handleDelete()}
-								title="Delete user?"
-								description={`This will permanently delete "${row.original.name}" (${row.original.email}). This action cannot be undone.`}
+								title={m.deleteUserTitle()}
+								description={m.deleteUserDescription({
+									name: row.original.name,
+									email: row.original.email,
+								})}
 								triggerText={
 									<>
 										<Trash2 className="h-4 w-4" />
-										Delete
+										{m.delete()}
 									</>
 								}
 								asDropdownItem

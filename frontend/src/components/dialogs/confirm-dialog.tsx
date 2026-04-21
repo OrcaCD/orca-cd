@@ -12,6 +12,7 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import type { VariantProps } from "class-variance-authority";
+import { m } from "@/lib/paraglide/messages";
 
 interface ConfirmationDialogProps {
 	triggerText?: string | React.ReactNode;
@@ -25,11 +26,11 @@ interface ConfirmationDialogProps {
 }
 
 export default function ConfirmationDialog({
-	triggerText = "Confirm action",
-	title = "Are you sure?",
-	description = "Do you really want to perform this action? This action cannot be undone.",
-	confirmText = "Yes, proceed",
-	cancelText = "Cancel",
+	triggerText = m.confirmAction(),
+	title = m.areYouSure(),
+	description = m.confirmDialogDefaultDescription(),
+	confirmText = m.confirmProceed(),
+	cancelText = m.cancel(),
 	onConfirm,
 	triggerProps = { variant: "outline" },
 	asDropdownItem = false,

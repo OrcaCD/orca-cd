@@ -25,13 +25,14 @@ import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
 import CopyButton from "@/components/copy-btn";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
 	head: () => ({
 		meta: [
 			{
-				title: "Admin - OIDC Providers",
+				title: `${m.admin()} - ${m.adminOidcProviders()}`,
 			},
 		],
 	}),
@@ -43,9 +44,9 @@ function OIDCProvidersPage() {
 	async function handleDelete(provider: OIDCProviderDetail) {
 		try {
 			await deleteOIDCProvider(provider.id);
-			toast.success("Provider deleted");
+			toast.success(m.providerDeleted());
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to delete provider");
+			toast.error(err instanceof Error ? err.message : m.failedDeleteProvider());
 		}
 	}
 
@@ -53,21 +54,19 @@ function OIDCProvidersPage() {
 		<div className="flex flex-col gap-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold">SSO Providers</h1>
-					<p className="text-muted-foreground text-sm">
-						Configure OpenID Connect providers for single sign-on.
-					</p>
+					<h1 className="text-2xl font-bold">{m.adminOidcProviders()}</h1>
+					<p className="text-muted-foreground text-sm">{m.adminOidcProvidersDescription()}</p>
 				</div>
 
 				<UpsertOIDCProviderDialog provider={null} />
 			</div>
 
-			{isLoading && <p className="text-muted-foreground text-sm">Loading providers...</p>}
+			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingProviders()}</p>}
 
 			{providers && providers.length === 0 && (
 				<Card>
 					<CardContent className="py-8 text-center text-muted-foreground">
-						No SSO providers configured yet. Click "Add Provider" to get started.
+						{m.noSsoProvidersConfigured()}
 					</CardContent>
 				</Card>
 			)}
@@ -78,14 +77,14 @@ function OIDCProvidersPage() {
 						<CardHeader>
 							<CardAction className="flex items-center gap-3">
 								<Badge variant={provider.enabled ? "success" : "secondary"}>
-									{provider.enabled ? "Enabled" : "Disabled"}
+									{provider.enabled ? m.enabled() : m.disabled()}
 								</Badge>
 
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
 										<Button variant="ghost" size="icon" className="h-8 w-8">
 											<EllipsisVertical className="h-4 w-4" />
-											<span className="sr-only">Actions</span>
+											<span className="sr-only">{m.actions()}</span>
 										</Button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent align="end">
@@ -96,7 +95,7 @@ function OIDCProvidersPage() {
 											triggerText={
 												<>
 													<Trash2 className="h-4 w-4" />
-													Delete
+													{m.delete()}
 												</>
 											}
 											asDropdownItem
@@ -111,12 +110,12 @@ function OIDCProvidersPage() {
 						<CardContent className="pt-4">
 							<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
 								<div>
-									<span className="text-muted-foreground">Client ID</span>
+									<span className="text-muted-foreground">{m.clientId()}</span>
 									<p className="font-mono text-xs mt-0.5">{provider.clientId}</p>
 								</div>
 								{provider.scopes && (
 									<div>
-										<span className="text-muted-foreground">Extra Scopes</span>
+										<span className="text-muted-foreground">{m.extraScopes()}</span>
 										<p className="font-mono text-xs mt-0.5">{provider.scopes}</p>
 									</div>
 								)}
@@ -125,22 +124,22 @@ function OIDCProvidersPage() {
 								<Badge variant={provider.requireVerifiedEmail ? "default" : "outline"}>
 									<ShieldCheck className="mr-1 h-3 w-3" />
 									{provider.requireVerifiedEmail
-										? "Verified email required"
-										: "Unverified email allowed"}
+										? m.verifiedEmailRequired()
+										: m.unverifiedEmailAllowed()}
 								</Badge>
 								<Badge variant={provider.autoSignup ? "default" : "outline"}>
 									<UserPlus className="mr-1 h-3 w-3" />
-									{provider.autoSignup ? "Auto signup" : "No auto signup"}
+									{provider.autoSignup ? m.autoSignup() : m.noAutoSignup()}
 								</Badge>
 							</div>
 						</CardContent>
 						<CardFooter className="bg-card flex flex-col items-start text-sm">
-							<span className="text-muted-foreground shrink-0">Callback URL</span>
+							<span className="text-muted-foreground shrink-0">{m.callbackUrl()}</span>
 							<div className="mt-0.5 flex items-center gap-2">
 								<code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
 									{provider.callbackUrl}
 								</code>
-								<CopyButton text={provider.callbackUrl} title="Copy callback URL" />
+								<CopyButton text={provider.callbackUrl} title={m.copyCallbackUrl()} />
 							</div>
 						</CardFooter>
 					</Card>

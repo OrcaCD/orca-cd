@@ -3,8 +3,8 @@ import { AppWindow, EllipsisVertical, Search, Server, Trash2 } from "lucide-reac
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	DropdownMenu,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { AgentStatus, deleteAgent, type Agent } from "@/lib/agents";
+import { m } from "@/lib/paraglide/messages";
 import { toSearchableText } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -29,7 +30,7 @@ function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
 	const isOnline = status === AgentStatus.Online;
 	const isError = status === AgentStatus.Error;
 	const badgeVariant = isOnline ? "success" : isError ? "destructive" : "secondary";
-	const statusLabel = isOnline ? "Online" : isError ? "Error" : "Offline";
+	const statusLabel = isOnline ? m.statusOnline() : isError ? m.statusError() : m.statusOffline();
 	const statusDotClass = isOnline ? "bg-emerald-500" : isError ? "bg-red-500" : "bg-zinc-400";
 
 	return (
@@ -49,9 +50,9 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 		try {
 			await deleteAgent(agent.id);
 			const agentIdentifier = agent?.name?.trim() || agent.id;
-			toast.success(`Agent ${agentIdentifier} deleted successfully`);
+			toast.success(m.agentDeleted({ name: agentIdentifier }));
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to delete agent");
+			toast.error(err instanceof Error ? err.message : m.failedDeleteAgent());
 		}
 	}
 
@@ -70,55 +71,55 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 
 			return toSearchableText(searchableAgent).includes(query);
 		});
-	}, [searchQuery, data]);
+	}, [data, searchQuery]);
 
 	return (
 		<div className="space-y-4">
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div className="relative w-full sm:max-w-md">
+				<div className="relative max-w-sm flex-1">
 					<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						value={searchQuery}
 						onChange={(event) => setSearchQuery(event.target.value)}
-						placeholder="Search agents..."
+						placeholder={m.searchAgents()}
 						className="bg-muted pl-9"
 					/>
 				</div>
 
-				<div className="text-sm text-muted-foreground">There are {data.length} agents in total</div>
+				<div className="text-sm text-muted-foreground">
+					{m.totalAgentsCount({ count: data.length })}
+				</div>
 			</div>
 
 			{filteredAgents.length === 0 ? (
 				<div className="rounded-xl border border-dashed p-10 text-center">
-					<p className="text-sm font-medium">No agents found</p>
-					<p className="mt-1 text-sm text-muted-foreground">
-						Adjust your search to see matching agents.
-					</p>
+					<p className="text-sm font-medium">{m.noAgentsFound()}</p>
+					<p className="mt-1 text-sm text-muted-foreground">{m.noAgentsFoundDescription()}</p>
 				</div>
 			) : (
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 					{filteredAgents.map((agent) => (
-						<Card key={agent.id} className="h-full border hover:border-primary duration-300">
+						<Card key={agent.id} className="h-full border duration-300 hover:border-primary">
 							<CardHeader>
 								<CardAction>
 									<DropdownMenu>
 										<DropdownMenuTrigger asChild>
 											<Button variant="ghost" size="icon" className="h-8 w-8">
 												<EllipsisVertical className="h-4 w-4" />
-												<span className="sr-only">Card actions</span>
+												<span className="sr-only">{m.cardActions()}</span>
 											</Button>
 										</DropdownMenuTrigger>
 										<DropdownMenuContent align="end">
-											<DropdownMenuLabel>Actions</DropdownMenuLabel>
+											<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 											<UpsertAgentDialog agent={agent} asDropdownItem />
 											<ConfirmationDialog
 												onConfirm={() => handleDeleteCard(agent)}
-												title="Delete agent card?"
-												description={`This will permanently delete "${agent.name}". This action cannot be undone.`}
+												title={m.deleteAgentCardTitle()}
+												description={m.deleteAgentCardDescription({ name: agent.name })}
 												triggerText={
 													<>
 														<Trash2 className="h-4 w-4" />
-														Delete
+														{m.delete()}
 													</>
 												}
 												asDropdownItem
@@ -148,9 +149,9 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 									<div className="rounded-lg border bg-muted/50 p-2">
 										<p className="flex items-center gap-1 text-muted-foreground">
 											<AppWindow className="h-3 w-3" />
-											Apps count
+											{m.appsCount()}
 										</p>
-										<p className="mt-1 font-medium">{agent.appsCount ?? "n/a"}</p>
+										<p className="mt-1 font-medium">{agent.appsCount ?? m.notAvailableShort()}</p>
 									</div>
 								</div>
 							</CardContent>

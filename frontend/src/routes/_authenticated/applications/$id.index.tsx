@@ -38,13 +38,14 @@ import { useFetch } from "@/lib/api";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
 	head: () => ({
 		meta: [
 			{
-				title: "Applications",
+				title: m.pageApplications(),
 			},
 		],
 	}),
@@ -56,12 +57,14 @@ function InfoCard({
 	value,
 	subValue,
 	isLink,
+	isMonoValue,
 }: {
 	icon: React.ReactNode;
 	label: string;
 	value: string;
 	subValue?: string;
 	isLink?: boolean;
+	isMonoValue?: boolean;
 }) {
 	return (
 		<Card>
@@ -80,7 +83,7 @@ function InfoCard({
 							{value} <ExternalLink className="h-3 w-3" />
 						</a>
 					) : (
-						<span className={label.includes("Commit") ? "font-mono" : ""}>{value}</span>
+						<span className={isMonoValue ? "font-mono" : ""}>{value}</span>
 					)}
 				</div>
 				{subValue && <p className="text-sm text-muted-foreground mt-1 truncate">{subValue}</p>}
@@ -139,10 +142,10 @@ function ApplicationDetailsPage() {
 	async function deleteApp() {
 		try {
 			await deleteApplication(id);
-			toast.success(`Application ${data?.name} deleted successfully`);
+			toast.success(m.toastApplicationDeleted({ name: data?.name ?? "" }));
 			await navigate({ to: "/applications" });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to delete application");
+			toast.error(err instanceof Error ? err.message : m.toastDeleteApplicationFailed());
 		}
 	}
 	return (
@@ -151,7 +154,7 @@ function ApplicationDetailsPage() {
 				<BreadcrumbList>
 					<BreadcrumbItem>
 						<BreadcrumbLink asChild>
-							<Link to="/applications">Applications</Link>
+							<Link to="/applications">{m.pageApplications()}</Link>
 						</BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
@@ -177,7 +180,7 @@ function ApplicationDetailsPage() {
 				<div className="flex items-center gap-2">
 					<Button variant="outline" onClick={handleSync} disabled={syncing}>
 						<RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-						{syncing ? "Syncing..." : "Sync"}
+						{syncing ? m.syncing() : m.sync()}
 					</Button>
 
 					<DropdownMenu>
@@ -189,7 +192,7 @@ function ApplicationDetailsPage() {
 						<DropdownMenuContent align="end" className="w-full">
 							<DropdownMenuItem>
 								<RotateCcw className="mr-2 h-4 w-4" />
-								Rollback
+								{m.rollback()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<UpsertApplicationDialog application={data ?? null} asDropdownItem />
@@ -201,10 +204,10 @@ function ApplicationDetailsPage() {
 								triggerText={
 									<>
 										<Trash2 className="mr-2 h-4 w-4" />
-										Delete
+										{m.delete()}
 									</>
 								}
-								description="Are you sure you want to delete this application? This action cannot be undone."
+								description={m.deleteApplicationDescription()}
 							></ConfirmationDialog>
 						</DropdownMenuContent>
 					</DropdownMenu>
@@ -214,35 +217,36 @@ function ApplicationDetailsPage() {
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 				<InfoCard
 					icon={<GitBranch className="h-4 w-4" />}
-					label="Repository"
+					label={m.applicationInfoRepository()}
 					value={data?.repositoryName ?? ""}
 					subValue={data?.branch}
 					isLink
 				/>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
-					label="Latest Commit"
+					label={m.applicationInfoLatestCommit()}
 					value={data?.commit ?? ""}
 					subValue={data?.commitMessage}
+					isMonoValue
 				/>
 				<InfoCard
 					icon={<Server className="h-4 w-4" />}
-					label="Target Host"
+					label={m.applicationInfoTargetHost()}
 					value={data?.agentName ?? ""}
 					subValue={data?.path}
 				/>
 				<InfoCard
 					icon={<Clock className="h-4 w-4" />}
-					label="Last Sync"
-					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : "Never"}
-					subValue="Auto-sync enabled"
+					label={m.applicationInfoLastSync()}
+					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : m.never()}
+					subValue={m.applicationInfoAutoSyncEnabled()}
 				/>
 			</div>
 
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">
-					<TabsTrigger value="manifest">Manifest</TabsTrigger>
-					<TabsTrigger value="events">Events</TabsTrigger>
+					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
+					<TabsTrigger value="events">{m.events()}</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
@@ -254,7 +258,7 @@ function ApplicationDetailsPage() {
 				</TabsContent>
 
 				<TabsContent value="events" className="space-y-4">
-					Coming soon...
+					{m.comingSoon()}
 				</TabsContent>
 			</Tabs>
 		</div>

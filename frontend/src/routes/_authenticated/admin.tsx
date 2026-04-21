@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { IdCard, Info, Shield, Users } from "lucide-react";
+import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/admin")({
 	beforeLoad: ({ context }) => {
@@ -27,17 +28,17 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 const adminPages = [
 	{
-		title: "System Info",
+		title: () => m.adminSystemInfo(),
 		icon: Info,
 		path: "/admin/system-info",
 	},
 	{
-		title: "OIDC Providers",
+		title: () => m.adminOidcProviders(),
 		icon: IdCard,
 		path: "/admin/oidc-providers",
 	},
 	{
-		title: "User Management",
+		title: () => m.adminUserManagement(),
 		icon: Users,
 		path: "/admin/users",
 	},
@@ -52,16 +53,16 @@ function AdminLayout() {
 				<SidebarHeader className="px-4 py-5">
 					<div className="flex items-center gap-2 font-semibold">
 						<Shield className="size-4" />
-						Admin
+						{m.admin()}
 					</div>
 				</SidebarHeader>
 				<SidebarContent>
 					<SidebarGroup>
-						<SidebarGroupLabel>Management</SidebarGroupLabel>
+						<SidebarGroupLabel>{m.management()}</SidebarGroupLabel>
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{adminPages.map((item) => (
-									<AdminSidebarMenuItem key={item.title} item={item} pathname={location.pathname} />
+									<AdminSidebarMenuItem key={item.path} item={item} pathname={location.pathname} />
 								))}
 							</SidebarMenu>
 						</SidebarGroupContent>
@@ -72,7 +73,7 @@ function AdminLayout() {
 				<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
 					<div className="flex items-center gap-2 md:hidden">
 						<SidebarTrigger className="-ml-1" />
-						<span className="font-semibold">Admin</span>
+						<span className="font-semibold">{m.admin()}</span>
 					</div>
 					<Outlet />
 				</div>
@@ -103,7 +104,7 @@ function AdminSidebarMenuItem({
 					}}
 				>
 					<item.icon />
-					<span>{item.title}</span>
+					<span>{item.title()}</span>
 				</Link>
 			</SidebarMenuButton>
 		</SidebarMenuItem>
