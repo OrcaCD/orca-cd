@@ -10,6 +10,7 @@ import (
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
@@ -335,6 +336,88 @@ func TestHub_WritePump(t *testing.T) {
 	}
 
 	// Close the send channel to stop WritePump
+	client.Close()
+}
+
+func TestHub_WritePump_DropsMessageWithNilSession(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	serverConn, clientConn := newWSPair(t)
+	defer clientConn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-nil-session", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	// session is intentionally nil
+	go h.WritePump(client, &log)
+
+	// KeyExchangeInit is not allowed unencrypted and session is nil — must be dropped.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_KeyExchangeInit{
+			KeyExchangeInit: &messages.KeyExchangeInit{},
+		},
+	}
+	client.Send <- msg
+	time.Sleep(50 * time.Millisecond)
+
+	// Close WritePump; the underlying serverConn will also be closed.
+	client.Close()
+
+	// clientConn should not have received any data message.
+	if err := clientConn.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, _, readErr := clientConn.ReadMessage()
+	if readErr == nil {
+		t.Error("expected no message (should have been dropped), but client received data")
+	}
+}
+
+func TestHub_WritePump_EncryptsNonPingMessages(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	serverConn, clientConn := newWSPair(t)
+	defer clientConn.Close() //nolint:errcheck
+
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	client, err := h.Register("agent-encrypted", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	client.session = session
+	go h.WritePump(client, &log)
+
+	// KeyExchangeInit is not allowed unencrypted — WritePump must encrypt it.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_KeyExchangeInit{
+			KeyExchangeInit: &messages.KeyExchangeInit{},
+		},
+	}
+	client.Send <- msg
+
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, data, err := clientConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	received := &messages.ServerMessage{}
+	if err := proto.Unmarshal(data, received); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if received.GetEncryptedPayload() == nil {
+		t.Error("expected encrypted payload from WritePump")
+	}
+
 	client.Close()
 }
 

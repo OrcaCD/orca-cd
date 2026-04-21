@@ -14,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/version"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +25,7 @@ type Config struct {
 	LogJSON   bool
 	HubUrl    string
 	AuthToken string
+	AgentID   string
 }
 
 func DefaultConfig() (Config, error) {
@@ -41,6 +43,11 @@ func DefaultConfig() (Config, error) {
 		return Config{}, errors.New("AUTH_TOKEN is required")
 	}
 
+	agentID, err := parseAgentID(authToken)
+	if err != nil {
+		return Config{}, fmt.Errorf("AUTH_TOKEN: %w", err)
+	}
+
 	logLevel, err := zerolog.ParseLevel(logLevelStr)
 	if err != nil || logLevelStr == "" {
 		logLevel = zerolog.InfoLevel
@@ -53,7 +60,21 @@ func DefaultConfig() (Config, error) {
 		LogJSON:   logJSON,
 		HubUrl:    hubUrl,
 		AuthToken: authToken,
+		AgentID:   agentID,
 	}, nil
+}
+
+func parseAgentID(authToken string) (string, error) {
+	p := jwt.NewParser()
+	token, _, err := p.ParseUnverified(authToken, &jwt.RegisteredClaims{})
+	if err != nil {
+		return "", fmt.Errorf("could not parse token to extract agent ID: %w", err)
+	}
+	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	if !ok || claims.Subject == "" {
+		return "", errors.New("token is missing subject claim")
+	}
+	return claims.Subject, nil
 }
 
 func newLogger(logJSON bool) zerolog.Logger {
@@ -120,6 +141,13 @@ func Run(cfg Config) error {
 		return nil
 	}
 
+	session, err := performHandshake(conn, cfg.AgentID)
+	if err != nil {
+		Log.Error().Err(err).Msg("handshake failed")
+		_ = conn.Close()
+		return fmt.Errorf("handshake: %w", err)
+	}
+
 	for {
 		_, data, readErr := conn.ReadMessage()
 		if readErr != nil {
@@ -136,6 +164,12 @@ func Run(cfg Config) error {
 				Log.Info().Msg("agent stopped")
 				return nil
 			}
+			session, err = performHandshake(conn, cfg.AgentID)
+			if err != nil {
+				Log.Error().Err(err).Msg("handshake failed on reconnect")
+				_ = conn.Close()
+				return fmt.Errorf("handshake on reconnect: %w", err)
+			}
 			continue
 		}
 		msg := &messages.ServerMessage{}
@@ -143,6 +177,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(msg, conn)
+		handleServerMessage(msg, conn, session)
 	}
 }

@@ -1,14 +1,27 @@
 package agent
 
 import (
+	"context"
+	"encoding/base64"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 )
 
+// testAgentToken is a minimal JWT-format string with a known subject.
+// The signature is intentionally fake; DefaultConfig only calls jwt.ParseUnverified,
+// which does not check the signature.
+var testAgentToken = func() string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"test-agent-id"}`))
+	return header + "." + payload + ".fakesig"
+}()
+
 func TestDefaultConfig_Valid(t *testing.T) {
 	t.Setenv("HUB_URL", "https://hub.example.com")
-	t.Setenv("AUTH_TOKEN", "test-token")
+	t.Setenv("AUTH_TOKEN", testAgentToken)
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_JSON", "true")
 
@@ -26,14 +39,17 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if cfg.HubUrl != "wss://hub.example.com/api/v1/ws" {
 		t.Errorf("HubUrl = %q, want %q", cfg.HubUrl, "wss://hub.example.com/api/v1/ws")
 	}
-	if cfg.AuthToken != "test-token" {
-		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, "test-token")
+	if cfg.AuthToken != testAgentToken {
+		t.Errorf("AuthToken = %q, want %q", cfg.AuthToken, testAgentToken)
+	}
+	if cfg.AgentID != "test-agent-id" {
+		t.Errorf("AgentID = %q, want %q", cfg.AgentID, "test-agent-id")
 	}
 }
 
 func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("HUB_URL", "https://hub.example.com")
-	t.Setenv("AUTH_TOKEN", "test-token")
+	t.Setenv("AUTH_TOKEN", testAgentToken)
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("LOG_JSON", "")
 
@@ -66,7 +82,7 @@ func TestDefaultConfig_LogLevels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Setenv("HUB_URL", "https://hub.example.com")
-			t.Setenv("AUTH_TOKEN", "test-token")
+			t.Setenv("AUTH_TOKEN", testAgentToken)
 			t.Setenv("LOG_LEVEL", tt.input)
 
 			cfg, err := DefaultConfig()
@@ -95,7 +111,7 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Setenv("HUB_URL", "https://hub.example.com")
-			t.Setenv("AUTH_TOKEN", "test-token")
+			t.Setenv("AUTH_TOKEN", testAgentToken)
 			t.Setenv("LOG_JSON", tt.input)
 
 			cfg, err := DefaultConfig()
@@ -109,6 +125,42 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 	}
 }
 
+func TestParseAgentID_MissingSubject(t *testing.T) {
+	// JWT with empty subject field.
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"EdDSA","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":""}`))
+	token := header + "." + payload + ".fakesig"
+
+	_, err := parseAgentID(token)
+	if err == nil {
+		t.Fatal("expected error for token with empty subject")
+	}
+}
+
+func TestParseAgentID_InvalidToken(t *testing.T) {
+	_, err := parseAgentID("not.a.jwt")
+	if err == nil {
+		t.Fatal("expected error for malformed JWT")
+	}
+}
+
+func TestConnTracker_SetAndCancelled_CancelledCtx(t *testing.T) {
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		serverConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)) //nolint:errcheck,gosec
+		_, _, _ = serverConn.ReadMessage()
+	})
+
+	clientConn := dialServer(t, srv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so ctx.Err() != nil
+
+	var tracker connTracker
+	if cancelled := tracker.setAndCancelled(ctx, clientConn); !cancelled {
+		t.Error("expected setAndCancelled to return true for a pre-cancelled context")
+	}
+}
+
 func TestDefaultConfig_Errors(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -116,7 +168,7 @@ func TestDefaultConfig_Errors(t *testing.T) {
 		authToken string
 	}{
 		{"missing auth token", "https://hub.example.com", ""},
-		{"invalid hub url", "not-a-url", "test-token"},
+		{"invalid hub url", "not-a-url", testAgentToken},
 	}
 
 	for _, tt := range tests {
