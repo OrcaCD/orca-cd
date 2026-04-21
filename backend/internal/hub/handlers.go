@@ -38,6 +38,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
 		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
 
+		// Webhook endpoint for Repo providers
+		api.POST("/webhooks/:id", routes.WebhookHandler)
+
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
 		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
