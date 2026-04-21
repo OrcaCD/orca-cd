@@ -148,15 +148,12 @@ function TreeNodeList({
 							</CollapsibleTrigger>
 							<CollapsibleContent className="mt-1 ml-5 style-lyra:ml-4">
 								<div className="flex flex-col gap-1">
-									{node.children.map((child) => (
-										<TreeNodeList
-											key={child.path}
-											nodes={node.children}
-											depth={depth + 1}
-											selectedPath={selectedPath}
-											onSelectPath={onSelectPath}
-										/>
-									))}
+									<TreeNodeList
+										nodes={node.children}
+										depth={depth + 1}
+										selectedPath={selectedPath}
+										onSelectPath={onSelectPath}
+									/>
 								</div>
 							</CollapsibleContent>
 						</Collapsible>
