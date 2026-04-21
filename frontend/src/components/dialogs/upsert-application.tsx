@@ -416,14 +416,12 @@ export default function UpsertApplicationDialog({
 												className="min-w-30"
 											>
 												<SelectValue
-													placeholder={
-														repositoryId ? "Select a branch" : "Select a repository first"
-													}
+													placeholder={repositoryId ? m.selectBranch() : m.selectRepositoryFirst()}
 												/>
 											</SelectTrigger>
 											<SelectContent position="item-aligned">
 												{isBranchesLoading ? (
-													<div className="p-2">Loading branches...</div>
+													<div className="p-2">{m.loadingBranchesDots()}</div>
 												) : (
 													branches?.map((branch) => (
 														<SelectItem key={branch} value={branch}>
@@ -444,23 +442,23 @@ export default function UpsertApplicationDialog({
 								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 								return (
 									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>Compose File</Label>
+										<Label htmlFor={field.name}>{m.composeFile()}</Label>
 										<div className="max-h-64 overflow-auto rounded-md border p-1">
 											{!repositoryId ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Select a repository first.
+													{m.selectRepositoryFirst()}
 												</div>
 											) : !branch ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Select a branch first.
+													{m.selectBranchFirst()}
 												</div>
 											) : isFileTreeLoading ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													Loading repository tree...
+													{m.loadingRepositoryTreeDots()}
 												</div>
 											) : fileTree.length === 0 ? (
 												<div className="p-2 text-sm text-muted-foreground">
-													No files found in this branch.
+													{m.noFilesFoundInBranch()}
 												</div>
 											) : (
 												<div className="flex flex-col gap-1">
@@ -478,7 +476,7 @@ export default function UpsertApplicationDialog({
 											value={field.state.value}
 											readOnly
 											className="mt-2"
-											placeholder="Selected file path"
+											placeholder={m.selectedFilePath()}
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}
 									</Field>
