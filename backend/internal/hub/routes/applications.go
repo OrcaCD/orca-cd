@@ -317,12 +317,12 @@ func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path
 		return "", repositories.CommitInfo{}, http.StatusBadRequest, "unsupported provider"
 	}
 
-	composeFile, err := provider.GetFileContent(c.Request.Context(), &repo, branch, path)
+	latestCommit, err := provider.GetLatestCommit(c.Request.Context(), &repo, branch)
 	if err != nil {
 		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
 	}
 
-	latestCommit, err := provider.GetLatestCommit(c.Request.Context(), &repo, branch)
+	composeFile, err := provider.GetFileContent(c.Request.Context(), &repo, latestCommit.Hash, path)
 	if err != nil {
 		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
 	}

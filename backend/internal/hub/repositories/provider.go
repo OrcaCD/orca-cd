@@ -21,8 +21,8 @@ type Provider interface {
 	ListBranches(ctx context.Context, repo *models.Repository) ([]string, error)
 	// Lists repository tree entries for a branch.
 	ListTree(ctx context.Context, repo *models.Repository, branch string) ([]TreeEntry, error)
-	// Returns decoded file content for a repository file at the given branch.
-	GetFileContent(ctx context.Context, repo *models.Repository, branch, path string) (string, error)
+	// Returns decoded file content for a repository file at the given ref.
+	GetFileContent(ctx context.Context, repo *models.Repository, ref string, path string) (string, error)
 	// Returns latest commit metadata for the given branch.
 	GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error)
 }

@@ -372,14 +372,14 @@ func (gitlabProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 	return entries, nil
 }
 
-func (gitlabProvider) GetFileContent(ctx context.Context, repo *models.Repository, branch, path string) (string, error) {
+func (gitlabProvider) GetFileContent(ctx context.Context, repo *models.Repository, ref string, path string) (string, error) {
 	if repo == nil {
 		return "", errors.New("repository is required")
 	}
 
-	branch = strings.TrimSpace(branch)
-	if branch == "" {
-		return "", errors.New("branch is required")
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", errors.New("ref is required")
 	}
 
 	normalizedPath := strings.TrimPrefix(strings.TrimSpace(path), "/")
@@ -398,7 +398,7 @@ func (gitlabProvider) GetFileContent(ctx context.Context, repo *models.Repositor
 		parsedRepoURL.baseURL,
 		projectPath,
 		url.PathEscape(normalizedPath),
-		url.QueryEscape(branch),
+		url.QueryEscape(ref),
 	)
 
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
