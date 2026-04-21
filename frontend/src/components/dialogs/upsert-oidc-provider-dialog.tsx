@@ -150,7 +150,7 @@ export default function UpsertOIDCProviderDialog({
 											value={field.state.value}
 											onBlur={field.handleBlur}
 											onChange={(e) => field.handleChange(e.target.value)}
-											placeholder={m.displayNamePlaceholder()}
+											placeholder={m.displayOIDCNamePlaceholder()}
 											autoFocus
 										/>
 										{isInvalid && <FieldError errors={field.state.meta.errors} />}

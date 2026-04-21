@@ -226,7 +226,7 @@
 	"addProviderDescription": "Configure a new OpenID Connect provider.",
 	"editProviderDescription": "Update the OIDC provider configuration.",
 	"displayName": "Display Name",
-	"displayNamePlaceholder": "e.g. \"Google\" or \"Corporate SSO\"",
+	"displayOIDCNamePlaceholder": "e.g. \"Google\" or \"Corporate SSO\"",
 	"issuerUrl": "Issuer URL",
 	"issuerUrlPlaceholder": "https://accounts.google.com",
 	"clientSecret": "Client Secret",
