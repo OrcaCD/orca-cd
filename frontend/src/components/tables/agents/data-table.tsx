@@ -80,7 +80,7 @@ export function AgentsDataTable<TData, TValue>({ columns, data }: AgentsDataTabl
 						) : (
 							<TableRow>
 								<TableCell colSpan={columns.length} className="h-24 text-center">
-									{m.noApplicationsFound()}.
+									{m.noAgentsFound()}.
 								</TableCell>
 							</TableRow>
 						)}

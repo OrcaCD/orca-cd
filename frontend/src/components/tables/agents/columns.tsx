@@ -28,8 +28,8 @@ export const columns: ColumnDef<Agent>[] = [
 			return <DataTableColumnHeader column={column} title={m.columnStatus()} />;
 		},
 		cell: ({ row }) => {
-			const app = row.original;
-			return <AgentStatusBadge status={app.status} />;
+			const agent = row.original;
+			return <AgentStatusBadge status={agent.status} />;
 		},
 	},
 	{
@@ -38,8 +38,8 @@ export const columns: ColumnDef<Agent>[] = [
 			return <DataTableColumnHeader column={column} title={m.columnAppsCount()} />;
 		},
 		cell: ({ row }) => {
-			const app = row.original;
-			return app.appsCount ?? 0;
+			const agent = row.original;
+			return agent.appsCount ?? 0;
 		},
 	},
 	{
@@ -48,8 +48,8 @@ export const columns: ColumnDef<Agent>[] = [
 			return <DataTableColumnHeader column={column} title={m.columnLastSeen()} />;
 		},
 		cell: ({ row }) => {
-			const app = row.original;
-			return app.lastSeen ? new Date(app.lastSeen).toLocaleString() : m.never();
+			const agent = row.original;
+			return agent.lastSeen ? new Date(agent.lastSeen).toLocaleString() : m.never();
 		},
 	},
 	{
@@ -58,8 +58,8 @@ export const columns: ColumnDef<Agent>[] = [
 			return <DataTableColumnHeader column={column} title={m.columnCreatedAt()} />;
 		},
 		cell: ({ row }) => {
-			const app = row.original;
-			return app.createdAt ? new Date(app.createdAt).toLocaleString() : m.never();
+			const agent = row.original;
+			return agent.createdAt ? new Date(agent.createdAt).toLocaleString() : m.never();
 		},
 	},
 	{
@@ -68,8 +68,8 @@ export const columns: ColumnDef<Agent>[] = [
 			return <DataTableColumnHeader column={column} title={m.columnUpdatedAt()} />;
 		},
 		cell: ({ row }) => {
-			const app = row.original;
-			return app.updatedAt ? new Date(app.updatedAt).toLocaleString() : m.never();
+			const agent = row.original;
+			return agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : m.never();
 		},
 	},
 	{
