@@ -126,6 +126,42 @@ func TestCompareWithDummy_DoesNotPanic(t *testing.T) {
 	CompareWithDummy(strings.Repeat("a", 1000))
 }
 
+func TestValidatePasswordStrength(t *testing.T) {
+	tests := []struct {
+		password string
+		want     bool
+	}{
+		{"short", false},
+		{"alllowercase123!", false},
+		{"ALLUPPERCASE123!", false},
+		{"NoNumbers!NoNumbers!", false},
+		{"NoSpecial1234ABCDEF", false},
+		{"ValidPass1!ValidPass", true},
+		{"Abcdefghijk1!", true},
+		// Non-ASCII: Ä counts as uppercase, ß as lowercase, @ as special.
+		{"Äbcdefghijk1@", true},
+		// Non-ASCII-only upper/lower still satisfies the policy.
+		{"Äßöüàé1234!!", true},
+	}
+	for _, tc := range tests {
+		if got := ValidatePasswordStrength(tc.password); got != tc.want {
+			t.Errorf("ValidatePasswordStrength(%q) = %v, want %v", tc.password, got, tc.want)
+		}
+	}
+}
+
+func TestGenerateRandomPassword_MeetsStrengthPolicy(t *testing.T) {
+	for range 20 {
+		pw, err := GenerateRandomPassword()
+		if err != nil {
+			t.Fatalf("GenerateRandomPassword() error: %v", err)
+		}
+		if !ValidatePasswordStrength(pw) {
+			t.Errorf("generated password failed strength check: %q", pw)
+		}
+	}
+}
+
 func TestCompareWithDummy_Timing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping timing test in short mode")

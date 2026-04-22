@@ -192,7 +192,7 @@ func TestRegisterHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "password123"})
+	reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "Password123!"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
@@ -215,7 +215,7 @@ func TestRegisterHandler_RejectsSecondUser(t *testing.T) {
 	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "password456"})
+	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "Password456!"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
@@ -310,7 +310,7 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 
 	reqBody, _ := json.Marshal(changePasswordRequest{
 		CurrentPassword: "password123",
-		NewPassword:     "new-password-123",
+		NewPassword:     "NewPassword-123!",
 	})
 
 	w := httptest.NewRecorder()
@@ -332,7 +332,7 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load updated user: %v", err)
 	}
-	if updated.PasswordHash == nil || !auth.CheckPassword("new-password-123", *updated.PasswordHash) {
+	if updated.PasswordHash == nil || !auth.CheckPassword("NewPassword-123!", *updated.PasswordHash) {
 		t.Fatal("expected password to be updated")
 	}
 	if updated.PasswordChangeRequired {
@@ -360,7 +360,7 @@ func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
 
 	reqBody, _ := json.Marshal(changePasswordRequest{
 		CurrentPassword: "wrong-password",
-		NewPassword:     "new-password-123",
+		NewPassword:     "NewPassword-123!",
 	})
 
 	w := httptest.NewRecorder()
@@ -379,7 +379,7 @@ func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
 func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 	setupTestDB(t)
 
-	hash, _ := auth.HashPassword("password123")
+	hash, _ := auth.HashPassword("Password123!")
 	user := models.User{Base: models.Base{Id: "user-change-password"}, Email: "test@example.com", Name: "Test", PasswordHash: &hash}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
@@ -395,8 +395,8 @@ func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 	}
 
 	reqBody, _ := json.Marshal(changePasswordRequest{
-		CurrentPassword: "password123",
-		NewPassword:     "password123",
+		CurrentPassword: "Password123!",
+		NewPassword:     "Password123!",
 	})
 
 	w := httptest.NewRecorder()
@@ -642,7 +642,7 @@ func TestRegisterHandler_AssignsAdminRole(t *testing.T) {
 	setupTestDB(t)
 
 	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "First User", Email: "admin@example.com", Password: "password123"})
+	reqBody, _ := json.Marshal(registerRequest{Name: "First User", Email: "admin@example.com", Password: "Password123!"})
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))

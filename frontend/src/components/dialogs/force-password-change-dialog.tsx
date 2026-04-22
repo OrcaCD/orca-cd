@@ -18,14 +18,23 @@ import { Label } from "@/components/ui/label";
 import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { m } from "@/lib/paraglide/messages";
+import { passwordStrengthRefine } from "@/lib/utils";
 
 const changePasswordSchema = z
 	.object({
 		currentPassword: z.string().min(1, m.validationCurrentPasswordRequired()),
 		newPassword: z
 			.string()
-			.min(8, m.validationNewPasswordMinLength())
-			.max(128, m.validationNewPasswordMaxLength()),
+			.min(12, m.validationNewPasswordMinLength())
+			.max(128, m.validationNewPasswordMaxLength())
+			.superRefine(
+				passwordStrengthRefine({
+					uppercase: m.validationNewPasswordMissingUppercase(),
+					lowercase: m.validationNewPasswordMissingLowercase(),
+					number: m.validationNewPasswordMissingNumber(),
+					special: m.validationNewPasswordMissingSpecial(),
+				}),
+			),
 		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((value) => value.newPassword === value.confirmPassword, {

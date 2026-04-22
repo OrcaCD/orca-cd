@@ -5,11 +5,33 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/alexedwards/argon2id"
 )
 
 var ErrEmptyPassword = errors.New("password must not be empty")
+
+func ValidatePasswordStrength(password string) bool {
+	if utf8.RuneCountInString(password) < 12 {
+		return false
+	}
+	var hasUpper, hasLower, hasNumber, hasSpecial bool
+	for _, c := range password {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
+			hasNumber = true
+		default:
+			hasSpecial = true
+		}
+	}
+	return hasUpper && hasLower && hasNumber && hasSpecial
+}
 
 var (
 	params = &argon2id.Params{
@@ -62,7 +84,62 @@ func CompareWithDummy(password string) {
 }
 
 func GenerateRandomPassword() (string, error) {
-	return GenerateRandomString(20)
+	const (
+		uppers  = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lowers  = "abcdefghijklmnopqrstuvwxyz"
+		digits  = "0123456789"
+		special = "!@#$%^&*()-_=+[]{}|;:,.<>?"
+	)
+	all := uppers + lowers + digits + special
+
+	// randIndex returns a uniform random integer in [0, n) via rejection sampling.
+	randIndex := func(n int) (int, error) {
+		limit := n * (256 / n)
+		b := make([]byte, 1)
+		for {
+			if _, err := rand.Read(b); err != nil {
+				return 0, err
+			}
+			if int(b[0]) < limit {
+				return int(b[0]) % n, nil
+			}
+		}
+	}
+
+	pick := func(charset string) (byte, error) {
+		i, err := randIndex(len(charset))
+		if err != nil {
+			return 0, err
+		}
+		return charset[i], nil
+	}
+
+	result := make([]byte, 20)
+	// Guarantee one character from each required category.
+	for i, charset := range []string{uppers, lowers, digits, special} {
+		c, err := pick(charset)
+		if err != nil {
+			return "", err
+		}
+		result[i] = c
+	}
+	// Fill remaining positions from the full charset.
+	for i := 4; i < 20; i++ {
+		c, err := pick(all)
+		if err != nil {
+			return "", err
+		}
+		result[i] = c
+	}
+	// Fisher-Yates shuffle using rejection sampling for unbiased j.
+	for i := len(result) - 1; i > 0; i-- {
+		j, err := randIndex(i + 1)
+		if err != nil {
+			return "", err
+		}
+		result[i], result[j] = result[j], result[i]
+	}
+	return string(result), nil
 }
 
 func GenerateRandomString(length int) (string, error) {

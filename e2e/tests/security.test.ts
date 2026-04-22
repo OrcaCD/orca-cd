@@ -14,7 +14,7 @@ test.describe("registration is disabled after initial setup", () => {
 
 	test("registration is blocked", async ({ request }) => {
 		const response = await request.post("/api/v1/auth/register", {
-			data: { email: "attacker@example.com", password: "password123456!", name: "Attacker" },
+			data: { email: "attacker@example.com", password: "Password123456!", name: "Attacker" },
 			headers: {
 				Origin: APP_URL,
 			},

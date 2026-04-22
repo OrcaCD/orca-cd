@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth, updatePassword } from "@/lib/auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { m } from "@/lib/paraglide/messages";
+import { passwordStrengthRefine } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/settings/security")({
 	component: SecuritySettingsPage,
@@ -30,8 +31,16 @@ const passwordSchema = z
 		currentPassword: z.string().min(1, m.validationCurrentPasswordRequired()),
 		newPassword: z
 			.string()
-			.min(8, m.validationNewPasswordMinLength())
-			.max(128, m.validationNewPasswordMaxLength()),
+			.min(12, m.validationNewPasswordMinLength())
+			.max(128, m.validationNewPasswordMaxLength())
+			.superRefine(
+				passwordStrengthRefine({
+					uppercase: m.validationNewPasswordMissingUppercase(),
+					lowercase: m.validationNewPasswordMissingLowercase(),
+					number: m.validationNewPasswordMissingNumber(),
+					special: m.validationNewPasswordMissingSpecial(),
+				}),
+			),
 		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((data) => data.newPassword === data.confirmPassword, {
