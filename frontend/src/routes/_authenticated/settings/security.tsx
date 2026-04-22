@@ -30,8 +30,18 @@ const passwordSchema = z
 		currentPassword: z.string().min(1, m.validationCurrentPasswordRequired()),
 		newPassword: z
 			.string()
-			.min(8, m.validationNewPasswordMinLength())
-			.max(128, m.validationNewPasswordMaxLength()),
+			.min(12, m.validationNewPasswordMinLength())
+			.max(128, m.validationNewPasswordMaxLength())
+			.superRefine((val, ctx) => {
+				if (!/[A-Z]/.test(val))
+					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingUppercase() });
+				if (!/[a-z]/.test(val))
+					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingLowercase() });
+				if (!/[0-9]/.test(val))
+					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingNumber() });
+				if (!/[^A-Za-z0-9]/.test(val))
+					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingSpecial() });
+			}),
 		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((data) => data.newPassword === data.confirmPassword, {

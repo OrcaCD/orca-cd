@@ -5,11 +5,32 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"unicode"
 
 	"github.com/alexedwards/argon2id"
 )
 
 var ErrEmptyPassword = errors.New("password must not be empty")
+
+func ValidatePasswordStrength(password string) bool {
+	if len([]rune(password)) < 12 {
+		return false
+	}
+	var hasUpper, hasLower, hasNumber, hasSpecial bool
+	for _, c := range password {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
+			hasNumber = true
+		default:
+			hasSpecial = true
+		}
+	}
+	return hasUpper && hasLower && hasNumber && hasSpecial
+}
 
 var (
 	params = &argon2id.Params{
@@ -62,7 +83,55 @@ func CompareWithDummy(password string) {
 }
 
 func GenerateRandomPassword() (string, error) {
-	return GenerateRandomString(20)
+	const (
+		uppers  = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lowers  = "abcdefghijklmnopqrstuvwxyz"
+		digits  = "0123456789"
+		special = "!@#$%^&*()-_=+[]{}|;:,.<>?"
+	)
+	all := uppers + lowers + digits + special
+
+	// Rejection sampling: returns a random byte uniformly distributed over charset.
+	pick := func(charset string) (byte, error) {
+		limit := byte(len(charset) * (256 / len(charset)))
+		b := make([]byte, 1)
+		for {
+			if _, err := rand.Read(b); err != nil {
+				return 0, err
+			}
+			if b[0] < limit {
+				return charset[int(b[0])%len(charset)], nil
+			}
+		}
+	}
+
+	result := make([]byte, 20)
+	// Guarantee one character from each required category.
+	for i, charset := range []string{uppers, lowers, digits, special} {
+		c, err := pick(charset)
+		if err != nil {
+			return "", err
+		}
+		result[i] = c
+	}
+	// Fill remaining positions from the full charset.
+	for i := 4; i < 20; i++ {
+		c, err := pick(all)
+		if err != nil {
+			return "", err
+		}
+		result[i] = c
+	}
+	// Fisher-Yates shuffle using crypto/rand.
+	for i := len(result) - 1; i > 0; i-- {
+		b := make([]byte, 1)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		j := int(b[0]) % (i + 1)
+		result[i], result[j] = result[j], result[i]
+	}
+	return string(result), nil
 }
 
 func GenerateRandomString(length int) (string, error) {

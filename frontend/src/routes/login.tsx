@@ -158,8 +158,18 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 			email: z.email(m.validationInvalidEmail()).trim(),
 			password: z
 				.string()
-				.min(8, m.validationPasswordMinLength())
-				.max(128, m.validationPasswordMaxLength()),
+				.min(12, m.validationPasswordMinLength())
+				.max(128, m.validationPasswordMaxLength())
+				.superRefine((val, ctx) => {
+					if (!/[A-Z]/.test(val))
+						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingUppercase() });
+					if (!/[a-z]/.test(val))
+						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingLowercase() });
+					if (!/[0-9]/.test(val))
+						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingNumber() });
+					if (!/[^A-Za-z0-9]/.test(val))
+						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingSpecial() });
+				}),
 			confirmPassword: z.string().min(1, m.validationConfirmPasswordRequired()),
 		})
 		.refine((data) => data.password === data.confirmPassword, {
