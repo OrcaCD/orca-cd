@@ -1,0 +1,18 @@
+{
+	"name": "orca-cd-e2e-tests",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "playwright test",
+		"test:ui": "playwright test --headed --ui",
+		"install:browsers": "playwright install"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.59.1",
+		"@types/node": "^25.6.0",
+		"typescript": "^6.0.3"
+	},
+	"engines": {
+		"node": ">=24.0.0"
+	}
+}
