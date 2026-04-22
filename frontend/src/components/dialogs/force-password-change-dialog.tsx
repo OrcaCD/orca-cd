@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { fetcher } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { m } from "@/lib/paraglide/messages";
+import { passwordStrengthRefine } from "@/lib/utils";
 
 const changePasswordSchema = z
 	.object({
@@ -26,16 +27,14 @@ const changePasswordSchema = z
 			.string()
 			.min(12, m.validationNewPasswordMinLength())
 			.max(128, m.validationNewPasswordMaxLength())
-			.superRefine((val, ctx) => {
-				if (!/[A-Z]/.test(val))
-					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingUppercase() });
-				if (!/[a-z]/.test(val))
-					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingLowercase() });
-				if (!/[0-9]/.test(val))
-					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingNumber() });
-				if (!/[^A-Za-z0-9]/.test(val))
-					ctx.addIssue({ code: "custom", message: m.validationNewPasswordMissingSpecial() });
-			}),
+			.superRefine(
+				passwordStrengthRefine({
+					uppercase: m.validationNewPasswordMissingUppercase(),
+					lowercase: m.validationNewPasswordMissingLowercase(),
+					number: m.validationNewPasswordMissingNumber(),
+					special: m.validationNewPasswordMissingSpecial(),
+				}),
+			),
 		confirmPassword: z.string().min(1, m.validationConfirmNewPasswordRequired()),
 	})
 	.refine((value) => value.newPassword === value.confirmPassword, {

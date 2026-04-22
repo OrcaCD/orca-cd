@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/alexedwards/argon2id"
 )
@@ -13,7 +14,7 @@ import (
 var ErrEmptyPassword = errors.New("password must not be empty")
 
 func ValidatePasswordStrength(password string) bool {
-	if len([]rune(password)) < 12 {
+	if utf8.RuneCountInString(password) < 12 {
 		return false
 	}
 	var hasUpper, hasLower, hasNumber, hasSpecial bool
@@ -91,18 +92,26 @@ func GenerateRandomPassword() (string, error) {
 	)
 	all := uppers + lowers + digits + special
 
-	// Rejection sampling: returns a random byte uniformly distributed over charset.
-	pick := func(charset string) (byte, error) {
-		limit := byte(len(charset) * (256 / len(charset)))
+	// randIndex returns a uniform random integer in [0, n) via rejection sampling.
+	randIndex := func(n int) (int, error) {
+		limit := n * (256 / n)
 		b := make([]byte, 1)
 		for {
 			if _, err := rand.Read(b); err != nil {
 				return 0, err
 			}
-			if b[0] < limit {
-				return charset[int(b[0])%len(charset)], nil
+			if int(b[0]) < limit {
+				return int(b[0]) % n, nil
 			}
 		}
+	}
+
+	pick := func(charset string) (byte, error) {
+		i, err := randIndex(len(charset))
+		if err != nil {
+			return 0, err
+		}
+		return charset[i], nil
 	}
 
 	result := make([]byte, 20)
@@ -122,13 +131,12 @@ func GenerateRandomPassword() (string, error) {
 		}
 		result[i] = c
 	}
-	// Fisher-Yates shuffle using crypto/rand.
+	// Fisher-Yates shuffle using rejection sampling for unbiased j.
 	for i := len(result) - 1; i > 0; i-- {
-		b := make([]byte, 1)
-		if _, err := rand.Read(b); err != nil {
+		j, err := randIndex(i + 1)
+		if err != nil {
 			return "", err
 		}
-		j := int(b[0]) % (i + 1)
 		result[i], result[j] = result[j], result[i]
 	}
 	return string(result), nil

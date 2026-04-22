@@ -138,6 +138,10 @@ func TestValidatePasswordStrength(t *testing.T) {
 		{"NoSpecial1234ABCDEF", false},
 		{"ValidPass1!ValidPass", true},
 		{"Abcdefghijk1!", true},
+		// Non-ASCII: Ä counts as uppercase, ß as lowercase, @ as special.
+		{"Äbcdefghijk1@", true},
+		// Non-ASCII-only upper/lower still satisfies the policy.
+		{"Äßöüàé1234!!", true},
 	}
 	for _, tc := range tests {
 		if got := ValidatePasswordStrength(tc.password); got != tc.want {

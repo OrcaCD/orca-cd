@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
 import { API_BASE, fetcher } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { passwordStrengthRefine } from "@/lib/utils";
 
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
@@ -160,16 +161,14 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 				.string()
 				.min(12, m.validationPasswordMinLength())
 				.max(128, m.validationPasswordMaxLength())
-				.superRefine((val, ctx) => {
-					if (!/[A-Z]/.test(val))
-						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingUppercase() });
-					if (!/[a-z]/.test(val))
-						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingLowercase() });
-					if (!/[0-9]/.test(val))
-						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingNumber() });
-					if (!/[^A-Za-z0-9]/.test(val))
-						ctx.addIssue({ code: "custom", message: m.validationPasswordMissingSpecial() });
-				}),
+				.superRefine(
+					passwordStrengthRefine({
+						uppercase: m.validationPasswordMissingUppercase(),
+						lowercase: m.validationPasswordMissingLowercase(),
+						number: m.validationPasswordMissingNumber(),
+						special: m.validationPasswordMissingSpecial(),
+					}),
+				),
 			confirmPassword: z.string().min(1, m.validationConfirmPasswordRequired()),
 		})
 		.refine((data) => data.password === data.confirmPassword, {
