@@ -98,6 +98,23 @@ func TestValidateOrigin_OriginWithTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestValidateOrigin_WebhookRoute_NoOriginAllowed(t *testing.T) {
+	mw := ValidateOrigin("https://example.com")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/some-repo-id", nil)
+
+	mw(c)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected webhook POST without Origin to pass (200), got %d", w.Code)
+	}
+	if c.IsAborted() {
+		t.Error("webhook request should not be aborted")
+	}
+}
+
 func TestValidateOrigin_PutDeletePatch(t *testing.T) {
 	mw := ValidateOrigin("https://example.com")
 

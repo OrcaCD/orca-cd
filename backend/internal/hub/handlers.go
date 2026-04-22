@@ -3,6 +3,7 @@ package hub
 import (
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -37,6 +38,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		// OIDC auth flow (public)
 		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
 		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
+
+		// Webhook endpoint for Repo providers: 1 req/s per IP, burst of 10
+		webhookRateLimit := middleware.RateLimit(time.Second, 10)
+		api.POST("/webhooks/:id", webhookRateLimit, routes.WebhookHandler)
 
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
@@ -97,6 +102,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		h := websocket.NewHub(&Log)
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
+
+		applications.DefaultQueue = applications.NewQueue(&Log)
+		applications.DefaultQueue.Start()
 
 		// Rate-limit reconnects: 20 req/min per IP, burst of 5
 		wsRateLimit := middleware.RateLimit(3*time.Second, 5)
