@@ -7,6 +7,7 @@ export interface Application {
 	healthStatus: HealthStatus;
 	repositoryId: string;
 	repositoryName: string;
+	repositoryUrl: string;
 	branch: string;
 	commit: string;
 	commitMessage: string;

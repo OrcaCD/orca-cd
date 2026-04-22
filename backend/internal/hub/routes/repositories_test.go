@@ -24,8 +24,8 @@ import (
 func setupTestDBWithRepos(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}); err != nil {
-		t.Fatalf("failed to migrate Repository: %v", err)
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
+		t.Fatalf("failed to migrate Repository/Agent/Application: %v", err)
 	}
 }
 
@@ -93,6 +93,59 @@ func TestListRepositoriesHandler_ReturnsAll(t *testing.T) {
 		}
 	}
 
+	agent := models.Agent{
+		Name:   crypto.EncryptedString("Test Agent"),
+		KeyId:  crypto.EncryptedString("test-agent-key"),
+		Status: models.AgentStatusOffline,
+	}
+	if err := db.DB.WithContext(t.Context()).Create(&agent).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+
+	applications := []models.Application{
+		{
+			Name:          crypto.EncryptedString("App A"),
+			RepositoryId:  repos[0].Id,
+			AgentId:       agent.Id,
+			SyncStatus:    models.UnknownSync,
+			HealthStatus:  models.UnknownHealth,
+			Branch:        "main",
+			Commit:        "abc123",
+			CommitMessage: "seed",
+			Path:          "/",
+			ComposeFile:   crypto.EncryptedString("services: {}"),
+		},
+		{
+			Name:          crypto.EncryptedString("App B"),
+			RepositoryId:  repos[0].Id,
+			AgentId:       agent.Id,
+			SyncStatus:    models.UnknownSync,
+			HealthStatus:  models.UnknownHealth,
+			Branch:        "main",
+			Commit:        "def456",
+			CommitMessage: "seed",
+			Path:          "/",
+			ComposeFile:   crypto.EncryptedString("services: {}"),
+		},
+		{
+			Name:          crypto.EncryptedString("App C"),
+			RepositoryId:  repos[1].Id,
+			AgentId:       agent.Id,
+			SyncStatus:    models.UnknownSync,
+			HealthStatus:  models.UnknownHealth,
+			Branch:        "main",
+			Commit:        "ghi789",
+			CommitMessage: "seed",
+			Path:          "/",
+			ComposeFile:   crypto.EncryptedString("services: {}"),
+		},
+	}
+	for i := range applications {
+		if err := db.DB.WithContext(t.Context()).Select("*").Create(&applications[i]).Error; err != nil {
+			t.Fatalf("failed to seed application: %v", err)
+		}
+	}
+
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories", nil)
 
@@ -108,6 +161,27 @@ func TestListRepositoriesHandler_ReturnsAll(t *testing.T) {
 	}
 	if len(body) != 2 {
 		t.Errorf("expected 2 repositories, got %d", len(body))
+	}
+
+	byName := map[string]repositoryResponse{}
+	for i := range body {
+		byName[body[i].Name] = body[i]
+	}
+
+	repoA, ok := byName["Repo A"]
+	if !ok {
+		t.Fatal("expected Repo A in response")
+	}
+	if repoA.AppCount != 2 {
+		t.Fatalf("expected Repo A appCount %d, got %d", 2, repoA.AppCount)
+	}
+
+	repoB, ok := byName["Repo B"]
+	if !ok {
+		t.Fatal("expected Repo B in response")
+	}
+	if repoB.AppCount != 1 {
+		t.Fatalf("expected Repo B appCount %d, got %d", 1, repoB.AppCount)
 	}
 }
 

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,7 +56,7 @@ type repositoryResponse struct {
 	AppCount               int     `json:"appCount"`
 }
 
-func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryResponse {
+func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
 	resp := repositoryResponse{
 		Id:            r.Id,
 		Name:          r.Name,
@@ -68,7 +69,7 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryR
 		CreatedBy:     r.CreatedBy,
 		CreatedAt:     r.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     r.UpdatedAt.Format(time.RFC3339),
-		AppCount:      0, // This will be populated in the future
+		AppCount:      appCount,
 	}
 
 	if r.PollingInterval != nil {
@@ -93,16 +94,66 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool) repositoryR
 	return resp
 }
 
+type appCountByRepositoryRow struct {
+	RepositoryId string `gorm:"column:repository_id"`
+	AppCount     int64  `gorm:"column:app_count"`
+}
+
+func countApplicationsByRepositoryID(ctx context.Context, repositoryId string) (int, error) {
+	count, err := gorm.G[models.Application](db.DB).Where("repository_id = ?", repositoryId).Count(ctx, "*")
+	if err != nil {
+		return 0, err
+	}
+
+	return int(count), nil
+}
+
+func countApplicationsByRepositoryIDs(ctx context.Context, repositoryIds []string) (map[string]int, error) {
+	counts := make(map[string]int, len(repositoryIds))
+	if len(repositoryIds) == 0 {
+		return counts, nil
+	}
+
+	rows := []appCountByRepositoryRow{}
+	if err := db.DB.WithContext(ctx).
+		Model(&models.Application{}).
+		Select("repository_id, COUNT(*) AS app_count").
+		Where("repository_id IN ?", repositoryIds).
+		Group("repository_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range rows {
+		counts[rows[i].RepositoryId] = int(rows[i].AppCount)
+	}
+
+	return counts, nil
+}
+
 func ListRepositoriesHandler(c *gin.Context) {
-	repos, err := gorm.G[models.Repository](db.DB).Find(c.Request.Context())
+	ctx := c.Request.Context()
+
+	repos, err := gorm.G[models.Repository](db.DB).Find(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	repositoryIds := make([]string, 0, len(repos))
+	for i := range repos {
+		repositoryIds = append(repositoryIds, repos[i].Id)
+	}
+
+	appCountsByRepositoryId, err := countApplicationsByRepositoryIDs(ctx, repositoryIds)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	result := make([]repositoryResponse, 0, len(repos))
-	for _, r := range repos {
-		result = append(result, toRepositoryResponse(&r, false))
+	for i := range repos {
+		result = append(result, toRepositoryResponse(&repos[i], false, appCountsByRepositoryId[repos[i].Id]))
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -191,7 +242,13 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true))
+	appCount, err := countApplicationsByRepositoryID(c.Request.Context(), repo.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
 	sse.PublishUpdate(RepositoriesPath)
 }
 
@@ -405,8 +462,14 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	appCount, err := countApplicationsByRepositoryID(c.Request.Context(), repo.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
-	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret))
+	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
 	sse.PublishUpdate(RepositoriesPath)
 }
 

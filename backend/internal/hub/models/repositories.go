@@ -59,6 +59,7 @@ type Repository struct {
 	WebhookSecret   *crypto.EncryptedString `gorm:"type:text;"`
 	LastSyncedAt    *time.Time              `gorm:"type:timestamp;"`
 	CreatedBy       string                  `gorm:"type:text;not null;"`
+	Applications    []Application           `gorm:"many2many:application_repositories;constraint:OnDelete:CASCADE;"`
 }
 
 func (Repository) TableName() string {

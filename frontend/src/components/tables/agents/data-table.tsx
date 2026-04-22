@@ -21,20 +21,16 @@ import { useState } from "react";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { m } from "@/lib/paraglide/messages";
 
-interface ApplicationsDataTable<TData, TValue> {
+interface AgentsDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
 	data: TData[];
 }
 
-export function ApplicationsDataTable<TData, TValue>({
-	columns,
-	data,
-}: ApplicationsDataTable<TData, TValue>) {
+export function AgentsDataTable<TData, TValue>({ columns, data }: AgentsDataTable<TData, TValue>) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-		branch: false,
-		path: false,
-		commit: false,
+		createdAt: false,
+		updatedAt: false,
 	});
 
 	const table = useReactTable({
@@ -92,6 +88,9 @@ export function ApplicationsDataTable<TData, TValue>({
 				</Table>
 			</div>
 			<div className="flex items-center pt-6">
+				<div className="text-sm ml-1 text-muted-foreground">
+					{m.totalAgentsCount({ count: data.length })}
+				</div>
 				<DataTableViewOptions table={table} />
 			</div>
 		</div>
