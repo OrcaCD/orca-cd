@@ -64,7 +64,7 @@ func createTestRepositoryRecord(t *testing.T, name, url string) models.Repositor
 	return repository
 }
 
-func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId string) models.Application {
+func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId string) {
 	t.Helper()
 
 	application := models.Application{
@@ -83,8 +83,6 @@ func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId strin
 	if err := db.DB.WithContext(t.Context()).Select("*").Create(&application).Error; err != nil {
 		t.Fatalf("failed to create application: %v", err)
 	}
-
-	return application
 }
 
 func TestListAgentsHandler_Empty(t *testing.T) {
