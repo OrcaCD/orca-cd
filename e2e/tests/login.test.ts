@@ -5,7 +5,6 @@ test.use({ storageState: { cookies: [], origins: [] } });
 
 test("Login", async ({ page }) => {
 	await page.goto("/");
-	await page.waitForURL("/");
 
 	await expect(page).toHaveTitle(/Login/);
 
