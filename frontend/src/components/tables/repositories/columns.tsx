@@ -3,18 +3,9 @@ import {
 	getGitProviderIconPath,
 	getGitProviderIconClass,
 	type Repository,
-	type RepositorySyncStatus,
-	type RepositorySyncType,
 } from "@/lib/repsitories";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-	ExternalLink,
-	MoreHorizontal,
-	MousePointerClickIcon,
-	RefreshCw,
-	Trash2,
-	WebhookIcon,
-} from "lucide-react";
+import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -30,6 +21,8 @@ import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
+import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
+import { RepositorySyncTypeBadge } from "@/components/repository-sync-type";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
@@ -47,58 +40,6 @@ function getLastSyncSearchText(lastSync?: string | null): string {
 		parsedDate.toLocaleTimeString(),
 		parsedDate.toLocaleString(),
 	].join(" ");
-}
-
-function getSyncStatusColor(syncStatus: RepositorySyncStatus): string {
-	switch (syncStatus) {
-		case "syncing":
-			return "bg-blue-500";
-		case "failed":
-			return "bg-red-500";
-		case "success":
-			return "bg-green-500";
-		default:
-			return "bg-gray-500";
-	}
-}
-
-function getSyncStatusLabel(syncStatus: RepositorySyncStatus): string {
-	switch (syncStatus) {
-		case "syncing":
-			return m.repoSyncStatusSyncing();
-		case "failed":
-			return m.repoSyncStatusFailed();
-		case "success":
-			return m.repoSyncStatusSuccess();
-		default:
-			return m.unknown();
-	}
-}
-
-function getSyncTypeIcon(syncType: RepositorySyncType) {
-	switch (syncType) {
-		case "webhook":
-			return <WebhookIcon className="h-4 w-4" />;
-		case "polling":
-			return <RefreshCw className="h-4 w-4" />;
-		case "manual":
-			return <MousePointerClickIcon className="h-4 w-4" />;
-		default:
-			return null;
-	}
-}
-
-function getSyncTypeLabel(syncType: RepositorySyncType): string {
-	switch (syncType) {
-		case "webhook":
-			return m.repoSyncTypeWebhook();
-		case "polling":
-			return m.repoSyncTypePolling();
-		case "manual":
-			return m.repoSyncTypeManual();
-		default:
-			return m.unknown();
-	}
 }
 
 export const columns: ColumnDef<Repository>[] = [
@@ -145,13 +86,7 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 		cell: ({ row }) => {
 			const syncStatus = row.original.syncStatus;
-
-			return (
-				<div className="flex items-center gap-2">
-					<span className={`inline-flex h-2 w-2 rounded-full ${getSyncStatusColor(syncStatus)}`} />
-					{getSyncStatusLabel(syncStatus)}
-				</div>
-			);
+			return <RepositoryStatusBadge status={syncStatus} />;
 		},
 	},
 	{
@@ -162,12 +97,7 @@ export const columns: ColumnDef<Repository>[] = [
 		},
 		cell: ({ row }) => {
 			const syncType = row.original.syncType;
-			return (
-				<div className="flex items-center gap-2">
-					{getSyncTypeIcon(syncType)}
-					{getSyncTypeLabel(syncType)}
-				</div>
-			);
+			return <RepositorySyncTypeBadge syncType={syncType} />;
 		},
 	},
 	{

@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
+	ArrowRight,
 	Box,
 	GitBranch,
 	GitCommit,
@@ -15,12 +16,13 @@ import {
 	Server,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/status-badge";
+import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
@@ -29,6 +31,7 @@ import { useFetch } from "@/lib/api";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
 import { m } from "@/lib/paraglide/messages";
+import { toPreferredLayout, usePreferredLayout } from "@/lib/layout-preference";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -42,7 +45,7 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 });
 
 function ApplicationsPage() {
-	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
 
 	const { data } = useFetch<ApplicationListItem[]>("/applications");
@@ -110,14 +113,19 @@ function ApplicationsPage() {
 						<ToggleGroup
 							type="single"
 							variant="outline"
-							defaultValue="grid"
-							onValueChange={(v) => setViewMode(v as "grid" | "list")}
+							value={viewMode}
+							onValueChange={(value) => {
+								const nextLayout = toPreferredLayout(value);
+								if (nextLayout) {
+									setViewMode(nextLayout);
+								}
+							}}
 						>
 							<ToggleGroupItem value="grid">
 								<LayoutGrid className="h-4 w-4" />
 							</ToggleGroupItem>
 
-							<ToggleGroupItem value="list">
+							<ToggleGroupItem value="table">
 								<List className="h-4 w-4" />
 							</ToggleGroupItem>
 						</ToggleGroup>
@@ -160,6 +168,13 @@ function ApplicationsPage() {
 														</Button>
 													</DropdownMenuTrigger>
 													<DropdownMenuContent align="end" className="w-full">
+														<DropdownMenuItem asChild>
+															<Link to="/applications/$id" params={{ id: app.id }}>
+																<ArrowRight className="mr-2 h-4 w-4" />
+																{m.details()}
+															</Link>
+														</DropdownMenuItem>
+														<DropdownMenuSeparator />
 														<DropdownMenuItem>
 															<RefreshCw className="mr-2 h-4 w-4" />
 															{m.sync()}
@@ -170,8 +185,8 @@ function ApplicationsPage() {
 										</CardHeader>
 										<CardContent>
 											<div className="flex gap-2">
-												<StatusBadge status={app.syncStatus} type="sync" />
-												<StatusBadge status={app.healthStatus} type="health" />
+												<ApplicationStatusBadge status={app.syncStatus} type="sync" />
+												<ApplicationStatusBadge status={app.healthStatus} type="health" />
 											</div>
 
 											<Separator className="my-4" />

@@ -20,7 +20,7 @@ import {
 	Server,
 	Trash2,
 } from "lucide-react";
-import { StatusBadge } from "@/components/status-badge";
+import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -150,8 +150,11 @@ function ApplicationDetailsPage() {
 					<div>
 						<div className="flex items-center gap-3">
 							<h1 className="text-2xl font-bold">{data?.name}</h1>
-							<StatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
-							<StatusBadge status={data?.healthStatus ?? HealthStatus.Unknown} type="health" />
+							<ApplicationStatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
+							<ApplicationStatusBadge
+								status={data?.healthStatus ?? HealthStatus.Unknown}
+								type="health"
+							/>
 						</div>
 					</div>
 				</div>
