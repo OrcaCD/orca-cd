@@ -120,7 +120,7 @@ function RepositoriesPage() {
 
 				{viewMode === "grid" ? (
 					<>
-						{filteredRepositories.length === 0 ? (
+						{filteredRepositories.length === 0 && !isLoading ? (
 							<div className="rounded-xl border border-dashed p-10 text-center">
 								<p className="text-sm font-medium">{m.noRepositoriesFound()}</p>
 								<p className="mt-1 text-sm text-muted-foreground">

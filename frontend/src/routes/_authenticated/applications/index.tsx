@@ -48,7 +48,7 @@ function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
 
-	const { data } = useFetch<ApplicationListItem[]>("/applications");
+	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
 
 	const filteredApps =
 		data?.filter((app) => {
@@ -135,7 +135,7 @@ function ApplicationsPage() {
 			<div>
 				{viewMode === "grid" ? (
 					<>
-						{data && data.length === 0 ? (
+						{data && data.length === 0 && !isLoading ? (
 							<div className="rounded-xl border border-dashed p-10 text-center">
 								<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
 								<p className="mt-1 text-sm text-muted-foreground">
