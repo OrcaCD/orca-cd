@@ -20,5 +20,5 @@ type Agent struct {
 	KeyId        crypto.EncryptedString `gorm:"type:text;not null;"`
 	Status       AgentStatus            `gorm:"type:integer;default:0"`
 	LastSeen     *time.Time
-	Applications []Application `gorm:"foreignKey:AgentId;constraint:OnDelete:CASCADE;"`
+	Applications []Application `gorm:"foreignKey:AgentId;"`
 }
