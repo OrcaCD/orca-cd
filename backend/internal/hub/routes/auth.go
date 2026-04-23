@@ -21,7 +21,7 @@ var LocalAuthDisabled bool
 type registerRequest struct {
 	Name     string `json:"name" binding:"required,min=3,max=64"`
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8,max=128"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 type loginRequest struct {
@@ -36,7 +36,7 @@ type updateOwnProfileRequest struct {
 
 type changePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword" binding:"required,min=1,max=128"`
-	NewPassword     string `json:"newPassword" binding:"required,min=8,max=128"`
+	NewPassword     string `json:"newPassword" binding:"required,max=128"`
 }
 
 type providerInfo struct {
@@ -173,10 +173,15 @@ func SetupHandler(c *gin.Context) {
 func RegisterHandler(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 8 chars) and valid email are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 12 chars, must include uppercase, lowercase, number and special character) and valid email are required"})
 		return
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	if !auth.ValidatePasswordStrength(req.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
+		return
+	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -277,7 +282,12 @@ func ChangePasswordHandler(c *gin.Context) {
 
 	var req changePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "currentPassword and newPassword are required, and newPassword must be at least 8 characters"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "currentPassword and newPassword are required, and newPassword must be at least 12 characters and include uppercase, lowercase, number and special character"})
+		return
+	}
+
+	if !auth.ValidatePasswordStrength(req.NewPassword) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
 		return
 	}
 

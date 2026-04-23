@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
 import { API_BASE, fetcher } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { passwordStrengthRefine } from "@/lib/utils";
 
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
@@ -158,8 +159,16 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 			email: z.email(m.validationInvalidEmail()).trim(),
 			password: z
 				.string()
-				.min(8, m.validationPasswordMinLength())
-				.max(128, m.validationPasswordMaxLength()),
+				.min(12, m.validationPasswordMinLength())
+				.max(128, m.validationPasswordMaxLength())
+				.superRefine(
+					passwordStrengthRefine({
+						uppercase: m.validationPasswordMissingUppercase(),
+						lowercase: m.validationPasswordMissingLowercase(),
+						number: m.validationPasswordMissingNumber(),
+						special: m.validationPasswordMissingSpecial(),
+					}),
+				),
 			confirmPassword: z.string().min(1, m.validationConfirmPasswordRequired()),
 		})
 		.refine((data) => data.password === data.confirmPassword, {

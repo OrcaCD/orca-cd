@@ -119,5 +119,5 @@ export async function updateProfile(data: { name: string; email: string }): Prom
 }
 
 export async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
-	await fetcher(`/auth/change-password`, "PUT", { currentPassword, newPassword });
+	await fetcher(`/auth/change-password`, "POST", { currentPassword, newPassword });
 }
