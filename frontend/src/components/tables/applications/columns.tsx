@@ -55,6 +55,14 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 	},
 	{
+		id: "commit",
+		accessorKey: "commit",
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title={m.columnCommit()} />;
+		},
+		cell: ({ row }) => row.original.commit.slice(0, 7),
+	},
+	{
 		id: "repository",
 		accessorKey: "repositoryName",
 		header: ({ column }) => {

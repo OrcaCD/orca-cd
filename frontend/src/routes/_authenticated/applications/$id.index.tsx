@@ -56,14 +56,14 @@ function InfoCard({
 	label,
 	value,
 	subValue,
-	isLink,
+	link,
 	isMonoValue,
 }: {
 	icon: React.ReactNode;
 	label: string;
 	value: string;
 	subValue?: string;
-	isLink?: boolean;
+	link?: string;
 	isMonoValue?: boolean;
 }) {
 	return (
@@ -78,8 +78,13 @@ function InfoCard({
 			</CardHeader>
 			<CardContent>
 				<div className="font-medium truncate">
-					{isLink ? (
-						<a href="#" className="hover:text-primary flex items-center gap-1">
+					{link ? (
+						<a
+							href={link}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="hover:text-primary flex items-center gap-1"
+						>
 							{value} <ExternalLink className="h-3 w-3" />
 						</a>
 					) : (
@@ -193,7 +198,7 @@ function ApplicationDetailsPage() {
 					label={m.applicationInfoRepository()}
 					value={data?.repositoryName ?? ""}
 					subValue={data?.branch}
-					isLink
+					link={data?.repositoryUrl}
 				/>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}

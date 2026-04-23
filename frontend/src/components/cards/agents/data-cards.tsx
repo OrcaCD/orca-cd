@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, Search, Server, Trash2 } from "lucide-react";
+import {
+	AppWindow,
+	EllipsisVertical,
+	LayoutGrid,
+	List,
+	Search,
+	Server,
+	Trash2,
+} from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
@@ -17,6 +25,9 @@ import { AgentStatus, deleteAgent, type Agent } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import { toSearchableText } from "@/lib/utils";
 import { toast } from "sonner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { AgentsDataTable } from "@/components/tables/agents/data-table";
+import { columns } from "@/components/tables/agents/columns";
 
 interface AgentDataCardsProps {
 	data: Agent[];
@@ -26,7 +37,7 @@ interface AgentStatusBadgeProps {
 	status: AgentStatus;
 }
 
-function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
+export function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
 	const isOnline = status === AgentStatus.Online;
 	const isError = status === AgentStatus.Error;
 	const badgeVariant = isOnline ? "success" : isError ? "destructive" : "secondary";
@@ -44,6 +55,7 @@ function AgentStatusBadge({ status }: AgentStatusBadgeProps) {
 }
 
 export function AgentDataCards({ data }: AgentDataCardsProps) {
+	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 	const [searchQuery, setSearchQuery] = useState("");
 
 	async function handleDeleteCard(agent: Agent) {
@@ -75,89 +87,107 @@ export function AgentDataCards({ data }: AgentDataCardsProps) {
 
 	return (
 		<div className="space-y-4">
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div className="relative max-w-sm flex-1">
-					<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+			<div className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div className="relative flex-1 ">
+					<Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 					<Input
 						value={searchQuery}
 						onChange={(event) => setSearchQuery(event.target.value)}
 						placeholder={m.searchAgents()}
-						className="bg-muted pl-9"
+						className="pl-9 bg-muted border-border"
 					/>
 				</div>
 
-				<div className="text-sm text-muted-foreground">
-					{m.totalAgentsCount({ count: data.length })}
+				<div className="flex gap-2 ">
+					<ToggleGroup
+						type="single"
+						variant="outline"
+						defaultValue="grid"
+						onValueChange={(v) => setViewMode(v as "grid" | "list")}
+					>
+						<ToggleGroupItem value="grid">
+							<LayoutGrid className="h-4 w-4" />
+						</ToggleGroupItem>
+
+						<ToggleGroupItem value="list">
+							<List className="h-4 w-4" />
+						</ToggleGroupItem>
+					</ToggleGroup>
 				</div>
 			</div>
 
-			{filteredAgents.length === 0 ? (
-				<div className="rounded-xl border border-dashed p-10 text-center">
-					<p className="text-sm font-medium">{m.noAgentsFound()}</p>
-					<p className="mt-1 text-sm text-muted-foreground">{m.noAgentsFoundDescription()}</p>
-				</div>
+			{viewMode === "grid" ? (
+				<>
+					{filteredAgents.length === 0 ? (
+						<div className="rounded-xl border border-dashed p-10 text-center">
+							<p className="text-sm font-medium">{m.noAgentsFound()}</p>
+							<p className="mt-1 text-sm text-muted-foreground">{m.noAgentsFoundDescription()}</p>
+						</div>
+					) : null}
+					<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						{filteredAgents.map((agent) => (
+							<Card key={agent.id} className="h-full border duration-300 hover:border-primary">
+								<CardHeader>
+									<CardAction>
+										<DropdownMenu>
+											<DropdownMenuTrigger asChild>
+												<Button variant="ghost" size="icon" className="h-8 w-8">
+													<EllipsisVertical className="h-4 w-4" />
+													<span className="sr-only">{m.cardActions()}</span>
+												</Button>
+											</DropdownMenuTrigger>
+											<DropdownMenuContent align="end">
+												<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+												<UpsertAgentDialog agent={agent} asDropdownItem />
+												<ConfirmationDialog
+													onConfirm={() => handleDeleteCard(agent)}
+													title={m.deleteAgentCardTitle()}
+													description={m.deleteAgentCardDescription({ name: agent.name })}
+													triggerText={
+														<>
+															<Trash2 className="h-4 w-4" />
+															{m.delete()}
+														</>
+													}
+													asDropdownItem
+												/>
+											</DropdownMenuContent>
+										</DropdownMenu>
+									</CardAction>
+
+									<div className="flex min-w-0 items-center gap-3">
+										<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
+											<Server className="h-5 w-5 text-muted-foreground" />
+										</div>
+										<div className="min-w-0 space-y-1">
+											<CardTitle className="truncate" title={agent.name}>
+												{agent.name}
+											</CardTitle>
+										</div>
+									</div>
+								</CardHeader>
+
+								<hr className="mx-4" />
+
+								<CardContent className="space-y-3">
+									<AgentStatusBadge status={agent.status} />
+
+									<div className="grid grid-cols-1 gap-2 text-xs">
+										<div className="rounded-lg border bg-muted/50 p-2">
+											<p className="flex items-center gap-1 text-muted-foreground">
+												<AppWindow className="h-3 w-3" />
+												{m.appsCount()}
+											</p>
+											<p className="mt-1 font-medium">{agent.appsCount ?? m.notAvailableShort()}</p>
+										</div>
+									</div>
+								</CardContent>
+							</Card>
+						))}
+					</div>
+				</>
 			) : (
-				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-					{filteredAgents.map((agent) => (
-						<Card key={agent.id} className="h-full border duration-300 hover:border-primary">
-							<CardHeader>
-								<CardAction>
-									<DropdownMenu>
-										<DropdownMenuTrigger asChild>
-											<Button variant="ghost" size="icon" className="h-8 w-8">
-												<EllipsisVertical className="h-4 w-4" />
-												<span className="sr-only">{m.cardActions()}</span>
-											</Button>
-										</DropdownMenuTrigger>
-										<DropdownMenuContent align="end">
-											<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-											<UpsertAgentDialog agent={agent} asDropdownItem />
-											<ConfirmationDialog
-												onConfirm={() => handleDeleteCard(agent)}
-												title={m.deleteAgentCardTitle()}
-												description={m.deleteAgentCardDescription({ name: agent.name })}
-												triggerText={
-													<>
-														<Trash2 className="h-4 w-4" />
-														{m.delete()}
-													</>
-												}
-												asDropdownItem
-											/>
-										</DropdownMenuContent>
-									</DropdownMenu>
-								</CardAction>
-
-								<div className="flex min-w-0 items-center gap-3">
-									<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-										<Server className="h-5 w-5 text-muted-foreground" />
-									</div>
-									<div className="min-w-0 space-y-1">
-										<CardTitle className="truncate" title={agent.name}>
-											{agent.name}
-										</CardTitle>
-									</div>
-								</div>
-							</CardHeader>
-
-							<hr className="mx-4" />
-
-							<CardContent className="space-y-3">
-								<AgentStatusBadge status={agent.status} />
-
-								<div className="grid grid-cols-1 gap-2 text-xs">
-									<div className="rounded-lg border bg-muted/50 p-2">
-										<p className="flex items-center gap-1 text-muted-foreground">
-											<AppWindow className="h-3 w-3" />
-											{m.appsCount()}
-										</p>
-										<p className="mt-1 font-medium">{agent.appsCount ?? m.notAvailableShort()}</p>
-									</div>
-								</div>
-							</CardContent>
-						</Card>
-					))}
-				</div>
+				<AgentsDataTable columns={columns} data={filteredAgents} />
 			)}
 		</div>
 	);

@@ -50,6 +50,7 @@ type applicationResponse struct {
 	Name           string  `json:"name"`
 	RepositoryId   string  `json:"repositoryId"`
 	RepositoryName string  `json:"repositoryName"`
+	RepositoryUrl  string  `json:"repositoryUrl"`
 	AgentId        string  `json:"agentId"`
 	AgentName      string  `json:"agentName"`
 	SyncStatus     string  `json:"syncStatus"`
@@ -288,6 +289,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		Name:           app.Name.String(),
 		RepositoryId:   app.RepositoryId,
 		RepositoryName: app.Repository.Name,
+		RepositoryUrl:  app.Repository.Url,
 		AgentId:        app.AgentId,
 		AgentName:      app.Agent.Name.String(),
 		SyncStatus:     string(app.SyncStatus),

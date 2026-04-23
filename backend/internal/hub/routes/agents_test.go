@@ -22,8 +22,8 @@ const testUpdatedName = "Updated Name"
 func setupTestDBWithAgents(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Agent{}); err != nil {
-		t.Fatalf("failed to migrate Agent: %v", err)
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
+		t.Fatalf("failed to migrate Agent/Repository/Application: %v", err)
 	}
 }
 
@@ -42,6 +42,47 @@ func createTestAgentRecord(t *testing.T, name, keyId string, status models.Agent
 	}
 
 	return agent
+}
+
+func createTestRepositoryRecord(t *testing.T, name, url string) models.Repository {
+	t.Helper()
+
+	repository := models.Repository{
+		Name:       name,
+		Url:        url,
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "test-user",
+	}
+
+	if err := db.DB.WithContext(t.Context()).Create(&repository).Error; err != nil {
+		t.Fatalf("failed to create repository: %v", err)
+	}
+
+	return repository
+}
+
+func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId string) {
+	t.Helper()
+
+	application := models.Application{
+		Name:          crypto.EncryptedString(name),
+		RepositoryId:  repositoryId,
+		AgentId:       agentId,
+		SyncStatus:    models.UnknownSync,
+		HealthStatus:  models.UnknownHealth,
+		Branch:        "main",
+		Commit:        "abc123",
+		CommitMessage: "test commit",
+		Path:          "/",
+		ComposeFile:   crypto.EncryptedString("services: {}"),
+	}
+
+	if err := db.DB.WithContext(t.Context()).Select("*").Create(&application).Error; err != nil {
+		t.Fatalf("failed to create application: %v", err)
+	}
 }
 
 func TestListAgentsHandler_Empty(t *testing.T) {
@@ -71,8 +112,12 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	setupTestDBWithAgents(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	createTestAgentRecord(t, "Offline Agent", "offline-key", models.AgentStatusOffline, nil)
-	createTestAgentRecord(t, "Error Agent", "error-key", models.AgentStatusError, &now)
+	offlineAgent := createTestAgentRecord(t, "Offline Agent", "offline-key", models.AgentStatusOffline, nil)
+	errorAgentModel := createTestAgentRecord(t, "Error Agent", "error-key", models.AgentStatusError, &now)
+	repository := createTestRepositoryRecord(t, "Repo", "https://github.com/orcacd/test-repo")
+	createTestApplicationRecord(t, "App One", repository.Id, errorAgentModel.Id)
+	createTestApplicationRecord(t, "App Two", repository.Id, errorAgentModel.Id)
+	createTestApplicationRecord(t, "App Three", repository.Id, offlineAgent.Id)
 
 	router := gin.New()
 	router.GET("/api/v1/agents", ListAgentsHandler)
@@ -108,6 +153,9 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	if offline.LastSeen != nil {
 		t.Fatal("expected lastSeen=nil for Offline Agent")
 	}
+	if offline.AppsCount != 1 {
+		t.Fatalf("expected appsCount %d, got %d", 1, offline.AppsCount)
+	}
 
 	errorAgent, ok := byName["Error Agent"]
 	if !ok {
@@ -119,6 +167,9 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	if errorAgent.LastSeen == nil {
 		t.Fatal("expected lastSeen to be set for Error Agent")
 	}
+	if errorAgent.AppsCount != 2 {
+		t.Fatalf("expected appsCount %d, got %d", 2, errorAgent.AppsCount)
+	}
 }
 
 func TestGetAgentHandler_Success(t *testing.T) {
@@ -126,6 +177,8 @@ func TestGetAgentHandler_Success(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	agent := createTestAgentRecord(t, "My Agent", "my-key", models.AgentStatusOnline, &now)
+	repository := createTestRepositoryRecord(t, "Repo", "https://github.com/orcacd/get-agent-test")
+	createTestApplicationRecord(t, "My App", repository.Id, agent.Id)
 
 	router := gin.New()
 	router.GET("/api/v1/agents/:id", GetAgentHandler)
@@ -154,6 +207,9 @@ func TestGetAgentHandler_Success(t *testing.T) {
 	}
 	if body.LastSeen == nil {
 		t.Fatal("expected lastSeen to be set")
+	}
+	if body.AppsCount != 1 {
+		t.Fatalf("expected appsCount %d, got %d", 1, body.AppsCount)
 	}
 }
 

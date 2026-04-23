@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -20,6 +21,7 @@ type agentResponse struct {
 	Id        string  `json:"id"`
 	Name      string  `json:"name"`
 	Status    string  `json:"status"`
+	AppsCount int64   `json:"appsCount"`
 	LastSeen  *string `json:"lastSeen"`
 	CreatedAt string  `json:"createdAt"`
 	UpdatedAt string  `json:"updatedAt"`
@@ -51,11 +53,12 @@ func toAgentStatus(status models.AgentStatus) string {
 	}
 }
 
-func toAgentResponse(agent *models.Agent) agentResponse {
+func toAgentResponse(agent *models.Agent, appsCount int64) agentResponse {
 	response := agentResponse{
 		Id:        agent.Id,
 		Name:      agent.Name.String(),
 		Status:    toAgentStatus(agent.Status),
+		AppsCount: appsCount,
 		CreatedAt: agent.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: agent.UpdatedAt.Format(time.RFC3339),
 	}
@@ -68,8 +71,53 @@ func toAgentResponse(agent *models.Agent) agentResponse {
 	return response
 }
 
+type appCountByAgentRow struct {
+	AgentId   string `gorm:"column:agent_id"`
+	AppsCount int64  `gorm:"column:apps_count"`
+}
+
+func countApplicationsByAgentID(ctx context.Context, agentId string) (int64, error) {
+	return gorm.G[models.Application](db.DB).Where("agent_id = ?", agentId).Count(ctx, "*")
+}
+
+func countApplicationsByAgentIDs(ctx context.Context, agentIds []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(agentIds))
+	if len(agentIds) == 0 {
+		return counts, nil
+	}
+
+	rows := []appCountByAgentRow{}
+	if err := db.DB.WithContext(ctx).
+		Model(&models.Application{}).
+		Select("agent_id, COUNT(*) AS apps_count").
+		Where("agent_id IN ?", agentIds).
+		Group("agent_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range rows {
+		counts[rows[i].AgentId] = rows[i].AppsCount
+	}
+
+	return counts, nil
+}
+
 func ListAgentsHandler(c *gin.Context) {
-	agents, err := gorm.G[models.Agent](db.DB).Order("created_at ASC").Find(c.Request.Context())
+	ctx := c.Request.Context()
+
+	agents, err := gorm.G[models.Agent](db.DB).Order("created_at ASC").Find(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	agentIds := make([]string, 0, len(agents))
+	for i := range agents {
+		agentIds = append(agentIds, agents[i].Id)
+	}
+
+	appsCountByAgentId, err := countApplicationsByAgentIDs(ctx, agentIds)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -77,16 +125,17 @@ func ListAgentsHandler(c *gin.Context) {
 
 	response := make([]agentResponse, 0, len(agents))
 	for i := range agents {
-		response = append(response, toAgentResponse(&agents[i]))
+		response = append(response, toAgentResponse(&agents[i], appsCountByAgentId[agents[i].Id]))
 	}
 
 	c.JSON(http.StatusOK, response)
 }
 
 func GetAgentHandler(c *gin.Context) {
+	ctx := c.Request.Context()
 	id := c.Param("id")
 
-	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(c.Request.Context())
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
@@ -96,7 +145,13 @@ func GetAgentHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAgentResponse(&agent))
+	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
 }
 
 func CreateAgentHandler(c *gin.Context) {
@@ -147,8 +202,14 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	c.JSON(http.StatusCreated, agentWithTokenResponse{
-		agentResponse: toAgentResponse(&agent),
+		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
 	})
 	sse.PublishUpdate(AgentsPath)
@@ -185,7 +246,13 @@ func UpdateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAgentResponse(&agent))
+	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
 	sse.PublishUpdate(AgentsPath)
 }
 
