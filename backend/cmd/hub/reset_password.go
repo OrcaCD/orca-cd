@@ -141,11 +141,15 @@ func resetUserPassword(ctx context.Context, target resetPasswordTarget) (models.
 		return models.User{}, "", fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Updates(ctx, models.User{
+	rowsAffected, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Updates(ctx, models.User{
 		PasswordHash:           &hash,
 		PasswordChangeRequired: true,
-	}); err != nil {
+	})
+	if err != nil {
 		return models.User{}, "", fmt.Errorf("failed to update user password: %w", err)
+	}
+	if rowsAffected == 0 {
+		return models.User{}, "", fmt.Errorf("failed to update user password: %w", gorm.ErrRecordNotFound)
 	}
 
 	user.PasswordHash = &hash
