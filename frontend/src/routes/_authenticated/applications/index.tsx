@@ -8,8 +8,6 @@ import {
 	Box,
 	GitBranch,
 	GitCommit,
-	LayoutGrid,
-	List,
 	MoreVertical,
 	RefreshCw,
 	Search,
@@ -28,10 +26,10 @@ import { ApplicationsDataTable } from "@/components/tables/applications/data-tab
 import { columns } from "@/components/tables/applications/columns";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
 import { m } from "@/lib/paraglide/messages";
-import { toPreferredLayout, usePreferredLayout } from "@/lib/layout-preference";
+import { usePreferredLayout } from "@/lib/layout-preference";
+import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -110,25 +108,7 @@ function ApplicationsPage() {
 					</div>
 
 					<div className="flex gap-2">
-						<ToggleGroup
-							type="single"
-							variant="outline"
-							value={viewMode}
-							onValueChange={(value) => {
-								const nextLayout = toPreferredLayout(value);
-								if (nextLayout) {
-									setViewMode(nextLayout);
-								}
-							}}
-						>
-							<ToggleGroupItem value="grid">
-								<LayoutGrid className="h-4 w-4" />
-							</ToggleGroupItem>
-
-							<ToggleGroupItem value="table">
-								<List className="h-4 w-4" />
-							</ToggleGroupItem>
-						</ToggleGroup>
+						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>
 			</div>

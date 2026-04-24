@@ -3,15 +3,7 @@ import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import {
-	AppWindow,
-	EllipsisVertical,
-	LayoutGrid,
-	List,
-	Search,
-	Server,
-	Trash2,
-} from "lucide-react";
+import { AppWindow, EllipsisVertical, Search, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,11 +17,11 @@ import { Input } from "@/components/ui/input";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import { toSearchableText } from "@/lib/utils";
 import { toast } from "sonner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { AgentsDataTable } from "@/components/tables/agents/data-table";
 import { columns } from "@/components/tables/agents/columns";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
-import { toPreferredLayout, usePreferredLayout } from "@/lib/layout-preference";
+import { usePreferredLayout } from "@/lib/layout-preference";
+import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -102,25 +94,7 @@ function RouteComponent() {
 					</div>
 
 					<div className="flex gap-2 ">
-						<ToggleGroup
-							type="single"
-							variant="outline"
-							value={viewMode}
-							onValueChange={(value) => {
-								const nextLayout = toPreferredLayout(value);
-								if (nextLayout) {
-									setViewMode(nextLayout);
-								}
-							}}
-						>
-							<ToggleGroupItem value="grid">
-								<LayoutGrid className="h-4 w-4" />
-							</ToggleGroupItem>
-
-							<ToggleGroupItem value="table">
-								<List className="h-4 w-4" />
-							</ToggleGroupItem>
-						</ToggleGroup>
+						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>
 

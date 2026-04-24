@@ -11,7 +11,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, LayoutGrid, List, Search, Trash2 } from "lucide-react";
+import { AppWindow, EllipsisVertical, Search, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -23,12 +23,12 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
-import { toPreferredLayout, usePreferredLayout } from "@/lib/layout-preference";
+import { usePreferredLayout } from "@/lib/layout-preference";
+import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 
 export const Route = createFileRoute("/_authenticated/repositories/")({
 	component: RepositoriesPage,
@@ -96,25 +96,7 @@ function RepositoriesPage() {
 					</div>
 
 					<div className="flex gap-2 ">
-						<ToggleGroup
-							type="single"
-							variant="outline"
-							value={viewMode}
-							onValueChange={(value) => {
-								const nextLayout = toPreferredLayout(value);
-								if (nextLayout) {
-									setViewMode(nextLayout);
-								}
-							}}
-						>
-							<ToggleGroupItem value="grid">
-								<LayoutGrid className="h-4 w-4" />
-							</ToggleGroupItem>
-
-							<ToggleGroupItem value="table">
-								<List className="h-4 w-4" />
-							</ToggleGroupItem>
-						</ToggleGroup>
+						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>
 
