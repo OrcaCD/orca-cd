@@ -1,16 +1,17 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, RefreshCw } from "lucide-react";
+import { ArrowRight, MoreHorizontal, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import type { ApplicationListItem } from "@/lib/applications";
 import { Link } from "@tanstack/react-router";
-import { StatusBadge } from "@/components/status-badge";
+import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { m } from "@/lib/paraglide/messages";
 
 export const columns: ColumnDef<ApplicationListItem>[] = [
@@ -40,7 +41,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return <StatusBadge status={app.syncStatus} type="sync" />;
+			return <ApplicationStatusBadge status={app.syncStatus} type="sync" />;
 		},
 	},
 	{
@@ -51,7 +52,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return <StatusBadge status={app.healthStatus} type="health" />;
+			return <ApplicationStatusBadge status={app.healthStatus} type="health" />;
 		},
 	},
 	{
@@ -101,7 +102,8 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 	},
 	{
 		id: "actions",
-		cell: () => {
+		cell: ({ row }) => {
+			const app = row.original;
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
@@ -111,6 +113,13 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 							</Button>
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-full">
+							<DropdownMenuItem asChild>
+								<Link to="/applications/$id" params={{ id: app.id }}>
+									<ArrowRight className="mr-2 h-4 w-4" />
+									{m.details()}
+								</Link>
+							</DropdownMenuItem>
+							<DropdownMenuSeparator />
 							<DropdownMenuItem>
 								<RefreshCw className="mr-2 h-4 w-4" />
 								{m.sync()}

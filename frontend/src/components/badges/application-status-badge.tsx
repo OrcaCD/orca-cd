@@ -1,6 +1,6 @@
 import type { HealthStatus, SyncStatus } from "@/lib/applications";
 import { cn } from "@/lib/utils";
-import { Badge } from "./ui/badge";
+import { Badge } from "../ui/badge";
 import { m } from "@/lib/paraglide/messages";
 
 type StatusBadgeProps =
@@ -52,7 +52,7 @@ const healthConfig: Record<
 	},
 };
 
-export function StatusBadge(props: StatusBadgeProps) {
+export function ApplicationStatusBadge(props: StatusBadgeProps) {
 	let config =
 		props.type === "sync"
 			? syncConfig[props.status as SyncStatus]

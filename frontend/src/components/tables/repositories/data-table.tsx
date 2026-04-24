@@ -19,9 +19,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
-import { Search } from "lucide-react";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 
@@ -72,19 +70,6 @@ export function RepositoryDataTable<TData, TValue>({
 
 	return (
 		<div>
-			<div className="flex items-center pb-6">
-				<div className="relative w-md mt-6">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-					<Input
-						placeholder={m.searchRepositories()}
-						className="pl-9 bg-muted border-border"
-						value={globalFilter}
-						onChange={(event) => setGlobalFilter(event.target.value)}
-					/>
-				</div>
-
-				<DataTableViewOptions table={table} />
-			</div>
 			<div className="overflow-hidden rounded-md border">
 				<Table>
 					<TableHeader>
@@ -122,6 +107,12 @@ export function RepositoryDataTable<TData, TValue>({
 						)}
 					</TableBody>
 				</Table>
+			</div>
+			<div className="flex items-center pt-6">
+				<div className="text-sm ml-1 text-muted-foreground">
+					{m.totalRepositoriesCount({ count: data.length })}
+				</div>
+				<DataTableViewOptions table={table} />
 			</div>
 		</div>
 	);

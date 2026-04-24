@@ -10,10 +10,10 @@ import {
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
 import { deleteAgent, type Agent } from "@/lib/agents";
-import { AgentStatusBadge } from "@/components/cards/agents/data-cards";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "sonner";
+import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 
 export const columns: ColumnDef<Agent>[] = [
 	{

@@ -468,7 +468,8 @@ export default function UpsertRepositoryDialog({
 						authMethod,
 						authToken,
 						syncType: value.syncType,
-						// To-Do add sync interval setting to edit form
+						// oxlint-disable-next-line no-warning-comments
+						// TODO add sync interval setting to edit form
 						// I intentionally skipped it in inital setup form now to reduce complexity, but it should be editable when updating
 						pollingIntervalSeconds: existingRepository.pollingIntervalSeconds ?? undefined,
 					});
@@ -514,7 +515,8 @@ export default function UpsertRepositoryDialog({
 			const authToken = form.getFieldValue("authToken")?.trim() || undefined;
 			const provider = form.getFieldValue("provider");
 
-			// To-Do support other auth methods
+			// oxlint-disable-next-line no-warning-comments
+			// TODO support other auth methods
 			const authMethod = authToken?.length ? "token" : "none";
 
 			setIsLoading(true);

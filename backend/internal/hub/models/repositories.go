@@ -32,7 +32,7 @@ const (
 	SyncTypePolling RepositorySyncType = "polling"
 	SyncTypeWebhook RepositorySyncType = "webhook"
 	SyncTypeManual  RepositorySyncType = "manual"
-	// Todo add "scheduled" and maybe "github-app"
+	// TODO add "scheduled" and maybe "github-app"
 )
 
 type RepositorySyncStatus string
