@@ -27,7 +27,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
-import { RepositorySyncTypeBadge } from "@/components/repository-sync-type";
+import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
 import { toPreferredLayout, usePreferredLayout } from "@/lib/layout-preference";
 
 export const Route = createFileRoute("/_authenticated/repositories/")({

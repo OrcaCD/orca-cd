@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
-import { RepositorySyncTypeBadge } from "@/components/repository-sync-type";
+import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
