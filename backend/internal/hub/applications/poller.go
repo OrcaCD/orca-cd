@@ -90,14 +90,12 @@ func (p *Poller) TriggerSync(repo *models.Repository) {
 		return
 	}
 	repoCopy := *repo
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		defer p.syncing.Delete(repoCopy.Id)
 		ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 		defer cancel()
 		SyncRepository(ctx, &repoCopy, p.log)
-	}()
+	})
 }
 
 // isDue reports whether a polling repository should be synced right now.
