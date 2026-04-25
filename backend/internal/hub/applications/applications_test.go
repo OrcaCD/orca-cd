@@ -21,11 +21,11 @@ import (
 
 // mockProvider is a test double for repositories.Provider.
 type mockProvider struct {
-	latestCommit      repositories.CommitInfo
-	latestCommitErr   error
-	fileContent       string
-	fileContentErr    error
-	onGetLatestCommit func()
+	latestCommit     repositories.CommitInfo
+	latestCommitErr  error
+	fileContent      string
+	fileContentErr   error
+	onGetFileContent func()
 }
 
 func (m *mockProvider) ParseURL(url string) (string, string, error)                  { return "", "", nil }
@@ -38,12 +38,12 @@ func (m *mockProvider) ListTree(_ context.Context, _ *models.Repository, _ strin
 	return nil, nil
 }
 func (m *mockProvider) GetFileContent(_ context.Context, _ *models.Repository, _ string, _ string) (string, error) {
+	if m.onGetFileContent != nil {
+		m.onGetFileContent()
+	}
 	return m.fileContent, m.fileContentErr
 }
 func (m *mockProvider) GetLatestCommit(_ context.Context, _ *models.Repository, _ string) (repositories.CommitInfo, error) {
-	if m.onGetLatestCommit != nil {
-		m.onGetLatestCommit()
-	}
 	return m.latestCommit, m.latestCommitErr
 }
 
@@ -223,10 +223,7 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 	const compose = "services:\n  app:\n    image: myimage:1.0\n"
 	app := seedApp(t, repo.Id, agent.Id, compose)
 
-	provider := &mockProvider{
-		latestCommit: repositories.CommitInfo{Hash: "newsha", Message: "new commit"},
-		fileContent:  compose,
-	}
+	provider := &mockProvider{fileContent: compose}
 	nop := zerolog.Nop()
 
 	processSyncJob(t.Context(), syncJob{
@@ -234,6 +231,7 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 		Repository:         repo,
 		RepositoryProvider: provider,
 		Commit:             "newsha",
+		CommitMessage:      "new commit",
 	}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
@@ -265,10 +263,7 @@ func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *test
 	const newCompose = "services:\n  app:\n    image: myimage:2.0\n"
 	app := seedApp(t, repo.Id, agent.Id, oldCompose)
 
-	provider := &mockProvider{
-		latestCommit: repositories.CommitInfo{Hash: "newsha", Message: "bump version"},
-		fileContent:  newCompose,
-	}
+	provider := &mockProvider{fileContent: newCompose}
 	nop := zerolog.Nop()
 
 	processSyncJob(t.Context(), syncJob{
@@ -276,6 +271,7 @@ func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *test
 		Repository:         repo,
 		RepositoryProvider: provider,
 		Commit:             "newsha",
+		CommitMessage:      "bump version",
 	}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
@@ -296,36 +292,6 @@ func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *test
 	}
 	if updated.ComposeFile.String() != newCompose {
 		t.Errorf("expected ComposeFile %q, got %q", newCompose, updated.ComposeFile.String())
-	}
-}
-
-func TestProcessSyncJob_GetLatestCommitError_SetsStatusOutOfSync(t *testing.T) {
-	setupTestDB(t)
-	repo := seedRepo(t)
-	agent := seedAgent(t)
-	app := seedApp(t, repo.Id, agent.Id, "compose: v1")
-
-	provider := &mockProvider{
-		latestCommitErr: errors.New("network error"),
-	}
-	nop := zerolog.Nop()
-
-	processSyncJob(t.Context(), syncJob{
-		Application:        app,
-		Repository:         repo,
-		RepositoryProvider: provider,
-		Commit:             "somesha",
-	}, &nop)
-
-	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load application: %v", err)
-	}
-	if got.SyncStatus != models.OutOfSync {
-		t.Errorf("expected SyncStatus %q after commit fetch error, got %q", models.OutOfSync, got.SyncStatus)
-	}
-	if got.LastSyncedAt != nil {
-		t.Error("expected LastSyncedAt to remain nil")
 	}
 }
 
@@ -387,11 +353,11 @@ func TestProcessSyncJob_SetsSyncStatusToSyncing(t *testing.T) {
 	release := make(chan struct{})
 	done := make(chan struct{})
 	provider := &mockProvider{
-		onGetLatestCommit: func() {
+		onGetFileContent: func() {
 			close(started)
 			<-release
 		},
-		latestCommitErr: errors.New("stop here"),
+		fileContentErr: errors.New("stop here"),
 	}
 	nop := zerolog.Nop()
 
@@ -405,7 +371,7 @@ func TestProcessSyncJob_SetsSyncStatusToSyncing(t *testing.T) {
 		close(done)
 	}()
 
-	<-started // GetLatestCommit was called, meaning Syncing was already written
+	<-started // GetFileContent was called, meaning Syncing was already written
 
 	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
@@ -429,14 +395,14 @@ func TestQueue_Enqueue_JobAddedToChannel(t *testing.T) {
 	q := NewQueue(&nop)
 
 	provider := &mockProvider{}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{app}, "abc123")
+	q.Enqueue(&repo, provider, []models.Application{app}, "abc123", "")
 
 	if len(q.jobs) != 1 {
 		t.Errorf("expected 1 job in channel, got %d", len(q.jobs))
 	}
 }
 
-func TestQueue_Enqueue_EmptyCommit_FetchesLatestCommit(t *testing.T) {
+func TestQueue_Enqueue_EmptyCommit_EnqueuesEmptyCommit(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
@@ -445,36 +411,15 @@ func TestQueue_Enqueue_EmptyCommit_FetchesLatestCommit(t *testing.T) {
 	nop := zerolog.Nop()
 	q := NewQueue(&nop)
 
-	provider := &mockProvider{
-		latestCommit: repositories.CommitInfo{Hash: "resolved-sha", Message: "msg"},
-	}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{app}, "")
+	provider := &mockProvider{}
+	q.Enqueue(&repo, provider, []models.Application{app}, "", "")
 
 	if len(q.jobs) != 1 {
 		t.Fatalf("expected 1 job in channel, got %d", len(q.jobs))
 	}
 	job := <-q.jobs
-	if job.Commit != "resolved-sha" {
-		t.Errorf("expected resolved commit %q, got %q", "resolved-sha", job.Commit)
-	}
-}
-
-func TestQueue_Enqueue_EmptyCommit_GetLatestCommitError_SkipsApp(t *testing.T) {
-	setupTestDB(t)
-	repo := seedRepo(t)
-	agent := seedAgent(t)
-	app := seedApp(t, repo.Id, agent.Id, "compose: v1")
-
-	nop := zerolog.Nop()
-	q := NewQueue(&nop)
-
-	provider := &mockProvider{
-		latestCommitErr: errors.New("provider error"),
-	}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{app}, "")
-
-	if len(q.jobs) != 0 {
-		t.Errorf("expected 0 jobs in channel, got %d", len(q.jobs))
+	if job.Commit != "" {
+		t.Errorf("expected empty commit %q, got %q", "", job.Commit)
 	}
 }
 
@@ -486,7 +431,7 @@ func TestQueue_Enqueue_EmptyApps_NoOp(t *testing.T) {
 	q := NewQueue(&nop)
 
 	provider := &mockProvider{}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{}, "abc123")
+	q.Enqueue(&repo, provider, []models.Application{}, "abc123", "")
 
 	if len(q.jobs) != 0 {
 		t.Errorf("expected 0 jobs in channel, got %d", len(q.jobs))
@@ -509,7 +454,7 @@ func TestQueue_Enqueue_FullQueue_DropsJob(t *testing.T) {
 		apps[i] = seedApp(t, repo.Id, agent.Id, "compose: v1")
 	}
 
-	q.Enqueue(t.Context(), &repo, provider, apps, "abc123")
+	q.Enqueue(&repo, provider, apps, "abc123", "")
 
 	if len(q.jobs) != capacity {
 		t.Errorf("expected queue at capacity (%d), got %d", capacity, len(q.jobs))
@@ -541,7 +486,7 @@ func TestQueue_Start_ProcessesJobs(t *testing.T) {
 		latestCommit: repositories.CommitInfo{Hash: "sha", Message: "msg"},
 		fileContent:  compose,
 	}
-	q.Enqueue(t.Context(), &repo, provider, []models.Application{app}, "sha")
+	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "")
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

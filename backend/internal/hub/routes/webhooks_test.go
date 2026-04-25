@@ -169,7 +169,7 @@ func TestWebhookHandler_GitHub_NonPushEvent(t *testing.T) {
 func TestWebhookHandler_GitHub_PushEvent_UpdatesDB(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 	const secret = "mysecret"
-	const body = `{"ref":"refs/heads/main"}`
+	const body = `{"ref":"refs/heads/main","after":"sha-after"}`
 	repo := seedWebhookRepo(t, models.GitHub, secret)
 
 	c, w := makeWebhookRequest(repo.Id, body)
@@ -210,7 +210,7 @@ func TestWebhookHandler_Gitea_InvalidSignature(t *testing.T) {
 func TestWebhookHandler_Gitea_PushEvent_UpdatesDB(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 	const secret = "giteasecret"
-	const body = `{"ref":"refs/heads/main"}`
+	const body = `{"ref":"refs/heads/main","after":"sha-after"}`
 	repo := seedWebhookRepo(t, models.Gitea, secret)
 
 	c, w := makeWebhookRequest(repo.Id, body)
@@ -251,7 +251,7 @@ func TestWebhookHandler_GitLab_InvalidToken(t *testing.T) {
 func TestWebhookHandler_GitLab_PushEvent_UpdatesDB(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 	const secret = "gitlabsecret"
-	const body = `{"ref":"refs/heads/main"}`
+	const body = `{"ref":"refs/heads/main","after":"sha-after"}`
 	repo := seedWebhookRepo(t, models.GitLab, secret)
 
 	c, w := makeWebhookRequest(repo.Id, body)
@@ -598,5 +598,19 @@ func TestParseWebhookPushDetails_MissingRef_ReturnsError(t *testing.T) {
 	_, err := parseWebhookPushDetails(c, []byte(body))
 	if err == nil {
 		t.Fatal("expected error for missing ref, got nil")
+	}
+}
+
+func TestParseWebhookPushDetails_MissingAfter_ReturnsError(t *testing.T) {
+	body := `{"ref":"refs/heads/main"}`
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	_, err := parseWebhookPushDetails(c, []byte(body))
+	if err == nil {
+		t.Fatal("expected error for missing commit hash, got nil")
 	}
 }

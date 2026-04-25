@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -19,7 +20,11 @@ import (
 	"gorm.io/gorm"
 )
 
-const RepositoriesPath = "/api/v1/repositories"
+const (
+	RepositoriesPath                    = "/api/v1/repositories"
+	DefaultPollingIntervalSeconds int64 = 60
+	MinPollingIntervalSeconds     int64 = 30
+)
 
 var appUrl string
 
@@ -73,7 +78,7 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 	}
 
 	if r.PollingInterval != nil {
-		secs := int64(*r.PollingInterval / time.Second)
+		secs := int64(*r.PollingInterval)
 		resp.PollingIntervalSeconds = &secs
 	}
 
@@ -182,8 +187,13 @@ func CreateRepositoryHandler(c *gin.Context) {
 
 	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
 		// Default to 60 seconds if polling is selected but no interval is provided
-		var defaultInterval int64 = 60
+		var defaultInterval = DefaultPollingIntervalSeconds
 		req.PollingInterval = &defaultInterval
+	}
+
+	if req.SyncType == models.SyncTypePolling && req.PollingInterval != nil && *req.PollingInterval < MinPollingIntervalSeconds {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("pollingIntervalSeconds must be at least %d", MinPollingIntervalSeconds)})
+		return
 	}
 
 	provider, httpStatus, validationErr := resolveProvider(req.Provider, req.AuthMethod)
@@ -229,7 +239,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.PollingInterval != nil {
-		d := time.Duration(*req.PollingInterval) * time.Second
+		d := time.Duration(*req.PollingInterval)
 		repo.PollingInterval = &d
 	}
 
@@ -384,8 +394,13 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
-		var defaultInterval int64 = 60
+		var defaultInterval = DefaultPollingIntervalSeconds
 		req.PollingInterval = &defaultInterval
+	}
+
+	if req.SyncType == models.SyncTypePolling && req.PollingInterval != nil && *req.PollingInterval < MinPollingIntervalSeconds {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("pollingIntervalSeconds must be at least %d", MinPollingIntervalSeconds)})
+		return
 	}
 
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
@@ -447,7 +462,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.PollingInterval != nil {
-		d := time.Duration(*req.PollingInterval) * time.Second
+		d := time.Duration(*req.PollingInterval)
 		repo.PollingInterval = &d
 	} else {
 		repo.PollingInterval = nil
@@ -471,6 +486,33 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
 	sse.PublishUpdate(RepositoriesPath)
+}
+
+func SyncRepositoryHandler(c *gin.Context) {
+	id := c.Param("id")
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if _, err := repositories.Get(repo.Provider); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported provider"})
+		return
+	}
+
+	if applications.DefaultPoller == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "application poller not initialized"})
+		return
+	}
+
+	applications.DefaultPoller.TriggerSync(&repo)
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "sync triggered"})
 }
 
 // resolveProvider validates the provider enum, URL, and authMethod, returning the

@@ -297,6 +297,32 @@ func TestCreateRepositoryHandler_DefaultPollingInterval(t *testing.T) {
 	}
 }
 
+func TestCreateRepositoryHandler_PollingIntervalBelowMinimum(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                    "https://github.com/owner/repo",
+		"provider":               "github",
+		"authMethod":             "none",
+		"syncType":               "polling",
+		"pollingIntervalSeconds": MinPollingIntervalSeconds - 1,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if !strings.Contains(w.Body.String(), "pollingIntervalSeconds must be at least") {
+		t.Fatalf("expected minimum interval validation error, got: %s", w.Body.String())
+	}
+}
+
 func TestCreateRepositoryHandler_InvalidURL(t *testing.T) {
 	setupTestDBWithRepos(t)
 
@@ -973,6 +999,45 @@ func TestUpdateRepositoryHandler_InvalidURL(t *testing.T) {
 	}
 }
 
+func TestUpdateRepositoryHandler_PollingIntervalBelowMinimum(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                    "https://github.com/owner/repo",
+		"authMethod":             "none",
+		"syncType":               "polling",
+		"pollingIntervalSeconds": MinPollingIntervalSeconds - 1,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if !strings.Contains(w.Body.String(), "pollingIntervalSeconds must be at least") {
+		t.Fatalf("expected minimum interval validation error, got: %s", w.Body.String())
+	}
+}
+
 func TestUpdateRepositoryHandler_Success(t *testing.T) {
 	setupTestDBWithRepos(t)
 
@@ -1286,5 +1351,74 @@ func TestTestConnectionHandler_Success(t *testing.T) {
 	}
 	if body["message"] != "connection successful" {
 		t.Errorf("expected message %q, got %q", "connection successful", body["message"])
+	}
+}
+
+func TestSyncRepositoryHandler_NotFound(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories/nonexistent/sync", nil)
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent"}}
+
+	SyncRepositoryHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncRepositoryHandler_UnsupportedProvider(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	// Insert a repository with an unregistered provider directly into the DB.
+	repo := models.Repository{
+		Name:       "Bitbucket Repo",
+		Url:        "https://bitbucket.org/owner/repo",
+		Provider:   models.Bitbucket,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories/"+repo.Id+"/sync", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	SyncRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncRepositoryHandler_Accepted(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "GitHub Sync Repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories/"+repo.Id+"/sync", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	SyncRepositoryHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
 }

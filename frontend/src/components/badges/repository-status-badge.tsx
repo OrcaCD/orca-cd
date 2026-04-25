@@ -1,6 +1,6 @@
 import { Badge } from "../ui/badge";
 import { m } from "@/lib/paraglide/messages";
-import type { RepositorySyncStatus } from "@/lib/repsitories";
+import type { RepositorySyncStatus } from "@/lib/repositories";
 
 function getSyncStatusColor(syncStatus: RepositorySyncStatus): string {
 	switch (syncStatus) {

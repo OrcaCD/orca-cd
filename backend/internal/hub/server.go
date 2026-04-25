@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -122,6 +124,15 @@ func Run(cfg Config) error {
 		db.DB = nil
 	}()
 
+	// Reset repositories stuck in syncing status from a previous crash.
+	db.DB.WithContext(context.Background()).
+		Model(&models.Repository{}).
+		Where("sync_status = ?", models.SyncStatusSyncing).
+		Update("sync_status", models.SyncStatusUnknown)
+
+	applications.DefaultPoller = applications.NewPoller(&Log)
+	applications.DefaultPoller.Start()
+
 	router := gin.New()
 
 	router.Use(middleware.RequestLogger(Log))
@@ -177,6 +188,10 @@ func Run(cfg Config) error {
 		return err
 	case sig := <-quit:
 		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
+	}
+
+	if applications.DefaultPoller != nil {
+		applications.DefaultPoller.Stop()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

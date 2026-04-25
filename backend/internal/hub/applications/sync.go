@@ -18,14 +18,11 @@ type syncJob struct {
 	Repository         models.Repository
 	RepositoryProvider repositories.Provider
 	Commit             string
+	CommitMessage      string
 }
 
 func GetMatchingApplications(ctx context.Context, repository *models.Repository, branch string) ([]models.Application, error) {
-	applications, err := gorm.G[models.Application](db.DB).Where("repository_id = ? AND branch = ?", repository.Id, branch).Find(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return applications, nil
+	return gorm.G[models.Application](db.DB).Where("repository_id = ? AND branch = ?", repository.Id, branch).Find(ctx)
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
@@ -54,15 +51,6 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		}
 	}()
 
-	// TODO: Do not fetch latest commit but specified commit
-	// This requires to add a new method to the repositories.Provider interface to fetch commit info by commit hash
-	commitInfo, err := job.RepositoryProvider.GetLatestCommit(ctx, &job.Repository, job.Application.Branch)
-	if err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).
-			Msg("failed to get latest commit info during sync")
-		return
-	}
-
 	content, err := job.RepositoryProvider.GetFileContent(ctx, &job.Repository, job.Commit, job.Application.Path)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).
@@ -73,14 +61,13 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	now := time.Now()
 
 	if content == job.Application.ComposeFile.String() {
-		// Compose file did not change
+		// No changes in compose file, just update commit and sync status
 		success = true
-
 		if _, err := gorm.G[models.Application](db.DB).
 			Where("id = ?", job.Application.Id).
 			Updates(ctx, models.Application{
 				Commit:        job.Commit,
-				CommitMessage: commitInfo.Message,
+				CommitMessage: job.CommitMessage,
 				SyncStatus:    models.Synced,
 				LastSyncedAt:  &now,
 			}); err != nil {
@@ -100,7 +87,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		Updates(ctx, models.Application{
 			ComposeFile:   crypto.EncryptedString(content),
 			Commit:        job.Commit,
-			CommitMessage: commitInfo.Message,
+			CommitMessage: job.CommitMessage,
 			SyncStatus:    models.Synced,
 			LastSyncedAt:  &now,
 		}); err != nil {

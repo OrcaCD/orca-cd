@@ -172,7 +172,7 @@ function ApplicationDetailsPage() {
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-full">
 							<DropdownMenuItem>
-								<RotateCcw className="mr-2 h-4 w-4" />
+								<RotateCcw />
 								{m.rollback()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
@@ -184,7 +184,7 @@ function ApplicationDetailsPage() {
 								asDropdownItem
 								triggerText={
 									<>
-										<Trash2 className="mr-2 h-4 w-4" />
+										<Trash2 />
 										{m.delete()}
 									</>
 								}
