@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,7 +17,7 @@ import (
 
 const handshakeTimeout = 15 * time.Second
 
-func performHandshake(conn *websocket.Conn, agentID string) (*wscrypto.Session, error) {
+func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.PublicKey) (*wscrypto.Session, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
 		return nil, fmt.Errorf("set read deadline: %w", err)
 	}
@@ -33,6 +35,14 @@ func performHandshake(conn *websocket.Conn, agentID string) (*wscrypto.Session, 
 	init, ok := serverMsg.Payload.(*messages.ServerMessage_KeyExchangeInit)
 	if !ok {
 		return nil, fmt.Errorf("expected KeyExchangeInit, got %T", serverMsg.Payload)
+	}
+
+	toVerify := make([]byte, 0, len(init.KeyExchangeInit.MlkemEncapsulationKey)+len(init.KeyExchangeInit.X25519PublicKey)+len(agentID))
+	toVerify = append(toVerify, init.KeyExchangeInit.MlkemEncapsulationKey...)
+	toVerify = append(toVerify, init.KeyExchangeInit.X25519PublicKey...)
+	toVerify = append(toVerify, []byte(agentID)...)
+	if !ed25519.Verify(hubPubKey, toVerify, init.KeyExchangeInit.HubSignature) {
+		return nil, errors.New("hub signature verification failed: hub identity not confirmed")
 	}
 
 	mlkemCiphertext, agentX25519Pub, sessionKey, err := wscrypto.AgentHandshake(

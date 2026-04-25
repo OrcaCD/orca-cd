@@ -178,11 +178,18 @@ func performHandshake(conn *websocket.Conn, agentID string, log *zerolog.Logger)
 		return nil, err
 	}
 
+	toSign := make([]byte, 0, len(hubKeys.MLKEMEncapKey)+len(hubKeys.X25519PublicKey)+len(agentID))
+	toSign = append(toSign, hubKeys.MLKEMEncapKey...)
+	toSign = append(toSign, hubKeys.X25519PublicKey...)
+	toSign = append(toSign, []byte(agentID)...)
+	sig := auth.SignHandshake(toSign)
+
 	init := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_KeyExchangeInit{
 			KeyExchangeInit: &messages.KeyExchangeInit{
 				MlkemEncapsulationKey: hubKeys.MLKEMEncapKey,
 				X25519PublicKey:       hubKeys.X25519PublicKey,
+				HubSignature:          sig,
 			},
 		},
 	}

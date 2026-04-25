@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -287,11 +289,28 @@ func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
 	}
 }
 
+// signHandshakeInit signs the hub's KeyExchangeInit payload for testing.
+func signHandshakeInit(t *testing.T, priv ed25519.PrivateKey, mlkemKey, x25519Key []byte, agentID string) []byte {
+	t.Helper()
+	payload := make([]byte, 0, len(mlkemKey)+len(x25519Key)+len(agentID))
+	payload = append(payload, mlkemKey...)
+	payload = append(payload, x25519Key...)
+	payload = append(payload, []byte(agentID)...)
+	return ed25519.Sign(priv, payload)
+}
+
 func TestPerformHandshake_Success(t *testing.T) {
 	hubKeys, err := wscrypto.GenerateHubKeys()
 	if err != nil {
 		t.Fatalf("GenerateHubKeys: %v", err)
 	}
+	hubPub, hubPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	const agentID = "agent-1"
+	sig := signHandshakeInit(t, hubPriv, hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, agentID)
 
 	srv := newTestServer(t, func(serverConn *websocket.Conn) {
 		init := &messages.ServerMessage{
@@ -299,6 +318,7 @@ func TestPerformHandshake_Success(t *testing.T) {
 				KeyExchangeInit: &messages.KeyExchangeInit{
 					MlkemEncapsulationKey: hubKeys.MLKEMEncapKey,
 					X25519PublicKey:       hubKeys.X25519PublicKey,
+					HubSignature:          sig,
 				},
 			},
 		}
@@ -325,7 +345,7 @@ func TestPerformHandshake_Success(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	session, err := performHandshake(conn, "agent-1")
+	session, err := performHandshake(conn, agentID, hubPub)
 	if err != nil {
 		t.Fatalf("performHandshake: %v", err)
 	}
@@ -334,7 +354,47 @@ func TestPerformHandshake_Success(t *testing.T) {
 	}
 }
 
+func TestPerformHandshake_InvalidSignature(t *testing.T) {
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("GenerateHubKeys: %v", err)
+	}
+	hubPub, hubPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	// Sign with the correct key but for a different agentID — signature will not verify.
+	badSig := signHandshakeInit(t, hubPriv, hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, "different-agent")
+
+	srv := newTestServer(t, func(serverConn *websocket.Conn) {
+		init := &messages.ServerMessage{
+			Payload: &messages.ServerMessage_KeyExchangeInit{
+				KeyExchangeInit: &messages.KeyExchangeInit{
+					MlkemEncapsulationKey: hubKeys.MLKEMEncapKey,
+					X25519PublicKey:       hubKeys.X25519PublicKey,
+					HubSignature:          badSig,
+				},
+			},
+		}
+		data, _ := proto.Marshal(init)
+		serverConn.WriteMessage(websocket.BinaryMessage, data) //nolint:errcheck,gosec
+		time.Sleep(500 * time.Millisecond)
+	})
+
+	conn := dialServer(t, srv)
+	_, err = performHandshake(conn, "agent-1", hubPub)
+	if err == nil {
+		t.Fatal("expected error for invalid hub signature")
+	}
+}
+
 func TestPerformHandshake_WrongMessageType(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
 	srv := newTestServer(t, func(serverConn *websocket.Conn) {
 		// Send a Ping instead of KeyExchangeInit.
 		msg := &messages.ServerMessage{
@@ -348,13 +408,18 @@ func TestPerformHandshake_WrongMessageType(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	_, err := performHandshake(conn, "agent-1")
+	_, err = performHandshake(conn, "agent-1", pub)
 	if err == nil {
 		t.Fatal("expected error when server sends wrong message type")
 	}
 }
 
 func TestPerformHandshake_InvalidProtoData(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
 	srv := newTestServer(t, func(serverConn *websocket.Conn) {
 		// Send bytes that are not valid protobuf.
 		if err := serverConn.WriteMessage(websocket.BinaryMessage, []byte{0xFF, 0xFF, 0xFF}); err != nil {
@@ -364,7 +429,7 @@ func TestPerformHandshake_InvalidProtoData(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	_, err := performHandshake(conn, "agent-1")
+	_, err = performHandshake(conn, "agent-1", pub)
 	if err == nil {
 		t.Fatal("expected error for invalid protobuf data")
 	}

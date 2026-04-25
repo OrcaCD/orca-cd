@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -21,11 +23,12 @@ import (
 )
 
 type Config struct {
-	LogLevel  zerolog.Level
-	LogJSON   bool
-	HubUrl    string
-	AuthToken string
-	AgentID   string
+	LogLevel     zerolog.Level
+	LogJSON      bool
+	HubUrl       string
+	AuthToken    string
+	AgentID      string
+	HubPublicKey ed25519.PublicKey
 }
 
 func DefaultConfig() (Config, error) {
@@ -43,7 +46,7 @@ func DefaultConfig() (Config, error) {
 		return Config{}, errors.New("AUTH_TOKEN is required")
 	}
 
-	agentID, err := parseAgentID(authToken)
+	agentID, hubPublicKey, err := parseTokenClaims(authToken)
 	if err != nil {
 		return Config{}, fmt.Errorf("AUTH_TOKEN: %w", err)
 	}
@@ -56,25 +59,43 @@ func DefaultConfig() (Config, error) {
 	logJSON := strings.EqualFold(logJSONStr, "true")
 
 	return Config{
-		LogLevel:  logLevel,
-		LogJSON:   logJSON,
-		HubUrl:    hubUrl,
-		AuthToken: authToken,
-		AgentID:   agentID,
+		LogLevel:     logLevel,
+		LogJSON:      logJSON,
+		HubUrl:       hubUrl,
+		AuthToken:    authToken,
+		AgentID:      agentID,
+		HubPublicKey: hubPublicKey,
 	}, nil
 }
 
-func parseAgentID(authToken string) (string, error) {
+type agentTokenClaims struct {
+	jwt.RegisteredClaims
+	HubPublicKey string `json:"hub_pubkey"`
+}
+
+// parseTokenClaims extracts the agent ID and hub Ed25519 public key from the AUTH_TOKEN
+func parseTokenClaims(authToken string) (agentID string, hubPublicKey ed25519.PublicKey, err error) {
 	p := jwt.NewParser()
-	token, _, err := p.ParseUnverified(authToken, &jwt.RegisteredClaims{})
+	unverified, _, err := p.ParseUnverified(authToken, &agentTokenClaims{})
 	if err != nil {
-		return "", fmt.Errorf("could not parse token to extract agent ID: %w", err)
+		return "", nil, fmt.Errorf("could not parse token: %w", err)
 	}
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
+	claims, ok := unverified.Claims.(*agentTokenClaims)
+	if !ok || claims.HubPublicKey == "" {
+		return "", nil, errors.New("token is missing hub_pubkey claim; re-issue the agent token from the hub")
+	}
+
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(claims.HubPublicKey)
+	if err != nil || len(pubKeyBytes) != ed25519.PublicKeySize {
+		return "", nil, errors.New("token has invalid hub_pubkey claim")
+	}
+	hubPubKey := ed25519.PublicKey(pubKeyBytes)
+
 	if !ok || claims.Subject == "" {
-		return "", errors.New("token is missing subject claim")
+		return "", nil, errors.New("token is missing subject claim")
 	}
-	return claims.Subject, nil
+
+	return claims.Subject, hubPubKey, nil
 }
 
 func newLogger(logJSON bool) zerolog.Logger {
@@ -141,7 +162,7 @@ func Run(cfg Config) error {
 		return nil
 	}
 
-	session, err := performHandshake(conn, cfg.AgentID)
+	session, err := performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
 	if err != nil {
 		Log.Error().Err(err).Msg("handshake failed")
 		_ = conn.Close()
@@ -164,7 +185,7 @@ func Run(cfg Config) error {
 				Log.Info().Msg("agent stopped")
 				return nil
 			}
-			session, err = performHandshake(conn, cfg.AgentID)
+			session, err = performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
 			if err != nil {
 				Log.Error().Err(err).Msg("handshake failed on reconnect")
 				_ = conn.Close()

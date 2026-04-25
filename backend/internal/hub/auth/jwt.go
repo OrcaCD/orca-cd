@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -33,7 +34,8 @@ type UserClaims struct {
 
 type AgentClaims struct {
 	jwt.RegisteredClaims
-	KeyId string `json:"kid"` // To invalidate old tokens when a new one is issued
+	KeyId        string `json:"kid"`        // To invalidate old tokens when a new one is issued
+	HubPublicKey string `json:"hub_pubkey"` // Base64-encoded Ed25519 public key for hub identity verification
 }
 
 func initJWT(appSecret, appURL string) error {
@@ -140,7 +142,8 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 			NotBefore: jwt.NewNumericDate(now),
 			Audience:  []string{"agent"},
 		},
-		KeyId: agent.KeyId.String(),
+		KeyId:        agent.KeyId.String(),
+		HubPublicKey: base64.StdEncoding.EncodeToString(handshakePrivKey.Public().(ed25519.PublicKey)),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
