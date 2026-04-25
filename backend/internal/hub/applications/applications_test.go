@@ -21,11 +21,12 @@ import (
 
 // mockProvider is a test double for repositories.Provider.
 type mockProvider struct {
-	latestCommit     repositories.CommitInfo
-	latestCommitErr  error
-	fileContent      string
-	fileContentErr   error
-	onGetFileContent func()
+	latestCommit      repositories.CommitInfo
+	latestCommitErr   error
+	fileContent       string
+	fileContentErr    error
+	onGetFileContent  func()
+	onGetLatestCommit func()
 }
 
 func (m *mockProvider) ParseURL(url string) (string, string, error)                  { return "", "", nil }
@@ -44,6 +45,9 @@ func (m *mockProvider) GetFileContent(_ context.Context, _ *models.Repository, _
 	return m.fileContent, m.fileContentErr
 }
 func (m *mockProvider) GetLatestCommit(_ context.Context, _ *models.Repository, _ string) (repositories.CommitInfo, error) {
+	if m.onGetLatestCommit != nil {
+		m.onGetLatestCommit()
+	}
 	return m.latestCommit, m.latestCommitErr
 }
 
