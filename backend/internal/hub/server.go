@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -121,6 +123,22 @@ func Run(cfg Config) error {
 		}
 		db.DB = nil
 	}()
+
+	// Reset repositories stuck in syncing status from a previous crash.
+	resetSyncStatus := db.DB.WithContext(context.Background()).
+		Model(&models.Repository{}).
+		Where("sync_status = ?", models.SyncStatusSyncing).
+		Update("sync_status", models.SyncStatusUnknown)
+	if resetSyncStatus.Error != nil {
+		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
+	}
+
+	applications.DefaultQueue = applications.NewQueue(&Log)
+	applications.DefaultQueue.Start()
+
+	applications.DefaultPoller = applications.NewPoller(&Log)
+	applications.DefaultPoller.Start()
+	defer applications.DefaultPoller.Stop()
 
 	router := gin.New()
 

@@ -178,11 +178,14 @@ func performHandshake(conn *websocket.Conn, agentID string, log *zerolog.Logger)
 		return nil, err
 	}
 
+	sig := auth.SignHandshake(wscrypto.HandshakeSignaturePayload(hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, agentID))
+
 	init := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_KeyExchangeInit{
 			KeyExchangeInit: &messages.KeyExchangeInit{
 				MlkemEncapsulationKey: hubKeys.MLKEMEncapKey,
 				X25519PublicKey:       hubKeys.X25519PublicKey,
+				HubSignature:          sig,
 			},
 		},
 	}

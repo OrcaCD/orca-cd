@@ -31,6 +31,7 @@ message PongResponse {
 message KeyExchangeInit {
   bytes mlkem_encapsulation_key = 1;
   bytes x25519_public_key = 2;
+  bytes hub_signature = 3;
 }
 
 message KeyExchangeResponse {

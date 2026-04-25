@@ -3,7 +3,8 @@ import {
 	getGitProviderIconPath,
 	getGitProviderIconClass,
 	type Repository,
-} from "@/lib/repsitories";
+	syncRepository,
+} from "@/lib/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -157,6 +158,15 @@ export const columns: ColumnDef<Repository>[] = [
 				}
 			}
 
+			async function handleSyncRepo(repository: Repository) {
+				try {
+					await syncRepository(repository.id);
+					toast.success(m.syncTriggered());
+				} catch (err) {
+					toast.error(err instanceof Error ? err.message : m.failedTriggerSync());
+				}
+			}
+
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
@@ -168,9 +178,9 @@ export const columns: ColumnDef<Repository>[] = [
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-							<DropdownMenuItem>
+							<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>
 								<RefreshCw className="h-4 w-4" />
-								{m.refresh()}
+								{m.sync()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<UpsertRepositoryDialog existingRepository={row.original} asDropdownItem />
@@ -178,7 +188,7 @@ export const columns: ColumnDef<Repository>[] = [
 								triggerText={
 									<>
 										<Trash2 className="h-4 w-4" />
-										{m.disconnect()}
+										{m.delete()}
 									</>
 								}
 								onConfirm={async () => await handleDelete()}

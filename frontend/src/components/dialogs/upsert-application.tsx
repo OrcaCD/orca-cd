@@ -20,7 +20,7 @@ import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { useFetch } from "@/lib/api";
 import type { Agent } from "@/lib/agents";
-import { type Repository } from "@/lib/repsitories";
+import { type Repository } from "@/lib/repositories";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { m } from "@/lib/paraglide/messages";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
@@ -257,16 +257,16 @@ export default function UpsertApplicationDialog({
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<Pencil className="h-4 w-4" />
+						<Pencil />
 						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
 					<Button variant="ghost" size="icon">
-						<Pencil className="h-4 w-4" />
+						<Pencil />
 					</Button>
 				) : (
 					<Button>
-						<Plus className="h-4 w-4" />
+						<Plus />
 						{m.newApplication()}
 					</Button>
 				)}
