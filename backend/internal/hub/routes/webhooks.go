@@ -94,7 +94,10 @@ func WebhookHandler(c *gin.Context) {
 	apps, err := applications.GetMatchingApplications(c.Request.Context(), &repo, pushDetails.Branch)
 	if err == nil && len(apps) > 0 {
 		if provider, err := repositories.Get(repo.Provider); err == nil {
-			applications.DefaultQueue.Enqueue(c.Request.Context(), &repo, provider, apps, pushDetails.Commit)
+			// TODO: get commit message for push event and pass it to the queue
+			// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers
+			// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit
+			applications.DefaultQueue.Enqueue(&repo, provider, apps, pushDetails.Commit, "")
 		}
 	}
 
@@ -165,9 +168,14 @@ func parseWebhookPushDetails(c *gin.Context, body []byte) (webhookPushDetails, e
 		return webhookPushDetails{}, errors.New("missing branch ref")
 	}
 
+	commit := strings.TrimSpace(payload.After)
+	if commit == "" {
+		return webhookPushDetails{}, errors.New("missing commit hash")
+	}
+
 	return webhookPushDetails{
 		Branch: branch,
-		Commit: strings.TrimSpace(payload.After),
+		Commit: commit,
 	}, nil
 }
 

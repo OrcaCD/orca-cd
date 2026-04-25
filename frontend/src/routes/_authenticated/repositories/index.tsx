@@ -3,15 +3,16 @@ import { RepositoryDataTable } from "@/components/tables/repositories/data-table
 import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
 import {
 	deleteRepository,
+	syncRepository,
 	getGitProviderIconClass,
 	getGitProviderIconPath,
 	type Repository,
-} from "@/lib/repsitories";
+} from "@/lib/repositories";
 import { createFileRoute } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, Search, Trash2 } from "lucide-react";
+import { AppWindow, EllipsisVertical, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -54,6 +56,15 @@ function RepositoriesPage() {
 			toast.success(m.repositoryDeleted({ name: repoIdentifier }));
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.failedDeleteRepository());
+		}
+	}
+
+	async function handleSyncRepo(repository: Repository) {
+		try {
+			await syncRepository(repository.id);
+			toast.success(m.syncTriggered());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedTriggerSync());
 		}
 	}
 
@@ -127,6 +138,10 @@ function RepositoriesPage() {
 												</DropdownMenuTrigger>
 												<DropdownMenuContent align="end">
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+														<RefreshCw className="h-4 w-4" />
+														{m.sync()}
+													</DropdownMenuItem>
 													<UpsertRepositoryDialog existingRepository={repository} asDropdownItem />
 													<ConfirmationDialog
 														onConfirm={() => handleDeleteRepo(repository)}

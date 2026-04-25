@@ -18,7 +18,7 @@ import {
 	type RepositorySyncType,
 	getGitProviderIconPath,
 	getGitProviderIconClass,
-} from "@/lib/repsitories";
+} from "@/lib/repositories";
 import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
@@ -471,6 +471,7 @@ export default function UpsertRepositoryDialog({
 						// oxlint-disable-next-line no-warning-comments
 						// TODO add sync interval setting to edit form
 						// I intentionally skipped it in inital setup form now to reduce complexity, but it should be editable when updating
+						// Move edit to a new component (maybe two dialogs, one for editing sync type and another for editing connection details)
 						pollingIntervalSeconds: existingRepository.pollingIntervalSeconds ?? undefined,
 					});
 					setWebhookSecret(repo.webhookSecret);

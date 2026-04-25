@@ -1,5 +1,5 @@
 import { m } from "@/lib/paraglide/messages";
-import type { RepositorySyncType } from "@/lib/repsitories";
+import type { RepositorySyncType } from "@/lib/repositories";
 import { MousePointerClickIcon, RefreshCw, WebhookIcon } from "lucide-react";
 
 function getSyncTypeIcon(syncType: RepositorySyncType) {
