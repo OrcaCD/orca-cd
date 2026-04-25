@@ -29,7 +29,7 @@ func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 		gormLogLevel = gormlogger.Info
 	}
 
-	dbPath := "data/hub.db"
+	dbPath := "data/hub.db?_locking_mode=exclusive&_busy_timeout=1"
 	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
@@ -60,7 +60,7 @@ func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 			return err
 		}
 
-		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"?mode=ro"), gormConfig)
+		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"&mode=ro"), gormConfig)
 		if err != nil {
 			return err
 		}

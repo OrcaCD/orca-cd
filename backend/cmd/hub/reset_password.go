@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
@@ -65,6 +65,10 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, logLevel, false); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
+			renderResetPasswordSafetyInfo(out)
+		}
+
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer closeHubDatabase()
@@ -76,6 +80,24 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 
 	renderResetPasswordResult(out, user, generatedPassword)
 	return nil
+}
+
+func renderResetPasswordSafetyInfo(out io.Writer) {
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	bodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	body := strings.Join([]string{
+		"Stop the hub before running this command.",
+		"Running this command while the hub is active can cause database corruption.",
+	}, "\n")
+
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("214")).
+		Padding(1, 2).
+		Render(titleStyle.Render("Safety Notice") + "\n\n" + bodyStyle.Render(body))
+
+	_, _ = lipgloss.Fprintln(out, card)
 }
 
 func closeHubDatabase() {
@@ -189,5 +211,5 @@ func renderResetPasswordResult(out io.Writer, user models.User, generatedPasswor
 		Padding(1, 2).
 		Render(titleStyle.Render("Password Reset Successful") + "\n\n" + body)
 
-	fmt.Fprintln(out, card) //nolint:errcheck
+	_, _ = lipgloss.Fprintln(out, card)
 }
