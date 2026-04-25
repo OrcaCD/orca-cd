@@ -26,7 +26,7 @@ type Poller struct {
 }
 
 func NewPoller(log *zerolog.Logger) *Poller {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec
 	return &Poller{
 		log:    log,
 		done:   make(chan struct{}),
