@@ -125,10 +125,16 @@ func Run(cfg Config) error {
 	}()
 
 	// Reset repositories stuck in syncing status from a previous crash.
-	db.DB.WithContext(context.Background()).
+	resetSyncStatus := db.DB.WithContext(context.Background()).
 		Model(&models.Repository{}).
 		Where("sync_status = ?", models.SyncStatusSyncing).
 		Update("sync_status", models.SyncStatusUnknown)
+	if resetSyncStatus.Error != nil {
+		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
+	}
+
+	applications.DefaultQueue = applications.NewQueue(&Log)
+	applications.DefaultQueue.Start()
 
 	applications.DefaultPoller = applications.NewPoller(&Log)
 	applications.DefaultPoller.Start()

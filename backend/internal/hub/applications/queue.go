@@ -38,8 +38,8 @@ func (q *Queue) Start() {
 		go func() {
 			for job := range q.jobs {
 				ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
-				defer cancel()
 				processSyncJob(ctx, job, q.log)
+				cancel()
 			}
 		}()
 	}

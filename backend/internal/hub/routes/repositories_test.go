@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -18,6 +19,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -1398,6 +1400,13 @@ func TestSyncRepositoryHandler_UnsupportedProvider(t *testing.T) {
 
 func TestSyncRepositoryHandler_Accepted(t *testing.T) {
 	setupTestDBWithRepos(t)
+	nop := zerolog.Nop()
+	poller := applications.NewPoller(&nop)
+	applications.DefaultPoller = poller
+	t.Cleanup(func() {
+		poller.Stop()
+		applications.DefaultPoller = nil
+	})
 
 	repo := models.Repository{
 		Name:       "GitHub Sync Repo",

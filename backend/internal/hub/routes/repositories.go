@@ -78,7 +78,7 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 	}
 
 	if r.PollingInterval != nil {
-		secs := int64(*r.PollingInterval)
+		secs := int64(*r.PollingInterval / time.Second)
 		resp.PollingIntervalSeconds = &secs
 	}
 
@@ -239,7 +239,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.PollingInterval != nil {
-		d := time.Duration(*req.PollingInterval)
+		d := time.Duration(*req.PollingInterval) * time.Second
 		repo.PollingInterval = &d
 	}
 
@@ -462,7 +462,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	}
 
 	if req.PollingInterval != nil {
-		d := time.Duration(*req.PollingInterval)
+		d := time.Duration(*req.PollingInterval) * time.Second
 		repo.PollingInterval = &d
 	} else {
 		repo.PollingInterval = nil

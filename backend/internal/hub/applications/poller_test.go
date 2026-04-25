@@ -9,7 +9,7 @@ import (
 
 func TestIsDue(t *testing.T) {
 	now := time.Now()
-	interval := time.Duration(60)
+	interval := 60 * time.Second
 
 	repoWithInterval := func(lastSyncedAt *time.Time) models.Repository {
 		return models.Repository{
@@ -41,7 +41,7 @@ func TestIsDue(t *testing.T) {
 	})
 
 	t.Run("exactly at interval boundary is due", func(t *testing.T) {
-		boundary := now.Add(-(interval * time.Second))
+		boundary := now.Add(-interval)
 		repo := repoWithInterval(&boundary)
 		if !isDue(&repo, now) {
 			t.Error("expected isDue=true at exact interval boundary")
@@ -49,7 +49,7 @@ func TestIsDue(t *testing.T) {
 	})
 
 	t.Run("overdue is due", func(t *testing.T) {
-		old := now.Add(-(2 * interval * time.Second))
+		old := now.Add(-2 * interval)
 		repo := repoWithInterval(&old)
 		if !isDue(&repo, now) {
 			t.Error("expected isDue=true when overdue")

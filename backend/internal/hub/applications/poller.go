@@ -19,12 +19,18 @@ type Poller struct {
 	log     *zerolog.Logger
 	done    chan struct{}
 	syncing sync.Map // repo ID → struct{}, prevents concurrent syncs for the same repo
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup // tracks in-flight TriggerSync goroutines
 }
 
 func NewPoller(log *zerolog.Logger) *Poller {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Poller{
-		log:  log,
-		done: make(chan struct{}),
+		log:    log,
+		done:   make(chan struct{}),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -32,8 +38,11 @@ func (p *Poller) Start() {
 	go p.run()
 }
 
+// Stop cancels in-flight syncs and waits for them to finish.
 func (p *Poller) Stop() {
+	p.cancel()
 	close(p.done)
+	p.wg.Wait()
 }
 
 func (p *Poller) run() {
@@ -74,13 +83,18 @@ func (p *Poller) pollRepositories() {
 // TriggerSync initiates an async sync for the given repository. If a sync for this
 // repository is already in progress it is silently skipped.
 func (p *Poller) TriggerSync(repo *models.Repository) {
+	if db.DB == nil {
+		return
+	}
 	if _, loaded := p.syncing.LoadOrStore(repo.Id, struct{}{}); loaded {
 		return
 	}
 	repoCopy := *repo
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		defer p.syncing.Delete(repoCopy.Id)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 		defer cancel()
 		SyncRepository(ctx, &repoCopy, p.log)
 	}()
@@ -91,7 +105,7 @@ func isDue(repo *models.Repository, now time.Time) bool {
 	if repo.PollingInterval == nil {
 		return false
 	}
-	interval := time.Duration(*repo.PollingInterval) * time.Second
+	interval := *repo.PollingInterval
 	if repo.LastSyncedAt == nil {
 		return true
 	}
