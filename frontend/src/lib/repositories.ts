@@ -68,6 +68,10 @@ export function updateRepository(id: string, data: UpdateRepositoryRequest): Pro
 	return fetcher<Repository>(`/repositories/${id}`, "PUT", data);
 }
 
+export function syncRepository(id: string): Promise<void> {
+	return fetcher(`/repositories/${id}/sync`, "POST");
+}
+
 export function getGitProviderIconPath(provider: RepositoryProvider): string {
 	const iconName = provider === "generic" ? "git" : provider;
 

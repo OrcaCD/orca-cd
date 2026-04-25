@@ -30,7 +30,8 @@ lint:
     buf lint
 
 # Format source code using golangci-lint
-fmt:
+alias fmt := format
+format:
     golangci-lint fmt
     buf format -w
 

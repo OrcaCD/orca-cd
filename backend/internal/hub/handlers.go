@@ -3,7 +3,6 @@ package hub
 import (
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -69,6 +68,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
 			protected.GET("/repositories/:id/branches", routes.ListRepositoryBranchesHandler)
 			protected.GET("/repositories/:id/tree", routes.ListRepositoryTreeHandler)
+			protected.POST("/repositories/:id/sync", routes.SyncRepositoryHandler)
 
 			protected.GET("/agents", routes.ListAgentsHandler)
 			protected.POST("/agents", routes.CreateAgentHandler)
@@ -102,9 +102,6 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		h := websocket.NewHub(&Log)
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
-
-		applications.DefaultQueue = applications.NewQueue(&Log)
-		applications.DefaultQueue.Start()
 
 		// Rate-limit reconnects: 20 req/min per IP, burst of 5
 		wsRateLimit := middleware.RateLimit(3*time.Second, 5)
