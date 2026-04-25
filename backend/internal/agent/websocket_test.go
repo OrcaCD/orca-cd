@@ -292,11 +292,7 @@ func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
 // signHandshakeInit signs the hub's KeyExchangeInit payload for testing.
 func signHandshakeInit(t *testing.T, priv ed25519.PrivateKey, mlkemKey, x25519Key []byte, agentID string) []byte {
 	t.Helper()
-	payload := make([]byte, 0, len(mlkemKey)+len(x25519Key)+len(agentID))
-	payload = append(payload, mlkemKey...)
-	payload = append(payload, x25519Key...)
-	payload = append(payload, []byte(agentID)...)
-	return ed25519.Sign(priv, payload)
+	return ed25519.Sign(priv, wscrypto.HandshakeSignaturePayload(mlkemKey, x25519Key, agentID))
 }
 
 func TestPerformHandshake_Success(t *testing.T) {

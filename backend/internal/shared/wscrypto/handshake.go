@@ -101,3 +101,11 @@ func deriveSessionKey(mlkemShared, x25519Shared []byte, agentID string) ([]byte,
 	}
 	return key, nil
 }
+
+func HandshakeSignaturePayload(mlkemEncapKey, x25519PublicKey []byte, agentID string) []byte {
+	payload := make([]byte, 0, len(mlkemEncapKey)+len(x25519PublicKey)+len(agentID))
+	payload = append(payload, mlkemEncapKey...)
+	payload = append(payload, x25519PublicKey...)
+	payload = append(payload, agentID...)
+	return payload
+}

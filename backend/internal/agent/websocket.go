@@ -37,11 +37,7 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 		return nil, fmt.Errorf("expected KeyExchangeInit, got %T", serverMsg.Payload)
 	}
 
-	toVerify := make([]byte, 0, len(init.KeyExchangeInit.MlkemEncapsulationKey)+len(init.KeyExchangeInit.X25519PublicKey)+len(agentID))
-	toVerify = append(toVerify, init.KeyExchangeInit.MlkemEncapsulationKey...)
-	toVerify = append(toVerify, init.KeyExchangeInit.X25519PublicKey...)
-	toVerify = append(toVerify, []byte(agentID)...)
-	if !ed25519.Verify(hubPubKey, toVerify, init.KeyExchangeInit.HubSignature) {
+	if !ed25519.Verify(hubPubKey, wscrypto.HandshakeSignaturePayload(init.KeyExchangeInit.MlkemEncapsulationKey, init.KeyExchangeInit.X25519PublicKey, agentID), init.KeyExchangeInit.HubSignature) {
 		return nil, errors.New("hub signature verification failed: hub identity not confirmed")
 	}
 

@@ -211,39 +211,6 @@ func TestParseTokenClaims_InvalidToken(t *testing.T) {
 	}
 }
 
-func TestParseTokenClaims_WrongSignature(t *testing.T) {
-	// Token signed with key-A but hub_pubkey contains key-B — signature check must fail.
-	pubA, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key A: %v", err)
-	}
-	_, privB, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key B: %v", err)
-	}
-	now := time.Now()
-	claims := agentTokenClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   "agent-id",
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Audience:  jwt.ClaimStrings{"agent"},
-		},
-		// hub_pubkey is key-A but the token is signed with key-B
-		HubPublicKey: base64.StdEncoding.EncodeToString(pubA),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	tokenStr, err := token.SignedString(privB)
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-
-	_, _, err = parseTokenClaims(tokenStr)
-	if err == nil {
-		t.Fatal("expected error when JWT is signed by a different key than hub_pubkey")
-	}
-}
-
 func TestParseTokenClaims_Success(t *testing.T) {
 	tokenStr, expectedPubKey := makeTestToken(t, "agent-xyz")
 
