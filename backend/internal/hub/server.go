@@ -138,6 +138,7 @@ func Run(cfg Config) error {
 
 	applications.DefaultPoller = applications.NewPoller(&Log)
 	applications.DefaultPoller.Start()
+	defer applications.DefaultPoller.Stop()
 
 	router := gin.New()
 
@@ -194,10 +195,6 @@ func Run(cfg Config) error {
 		return err
 	case sig := <-quit:
 		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
-	}
-
-	if applications.DefaultPoller != nil {
-		applications.DefaultPoller.Stop()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

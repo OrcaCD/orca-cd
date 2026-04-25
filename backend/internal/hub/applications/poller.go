@@ -16,12 +16,13 @@ const pollerCheckInterval = 30 * time.Second
 var DefaultPoller *Poller
 
 type Poller struct {
-	log     *zerolog.Logger
-	done    chan struct{}
-	syncing sync.Map // repo ID → struct{}, prevents concurrent syncs for the same repo
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup // tracks in-flight TriggerSync goroutines
+	log      *zerolog.Logger
+	done     chan struct{}
+	syncing  sync.Map // repo ID → struct{}, prevents concurrent syncs for the same repo
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup // tracks in-flight TriggerSync goroutines
+	stopOnce sync.Once
 }
 
 func NewPoller(log *zerolog.Logger) *Poller {
@@ -40,9 +41,11 @@ func (p *Poller) Start() {
 
 // Stop cancels in-flight syncs and waits for them to finish.
 func (p *Poller) Stop() {
-	p.cancel()
-	close(p.done)
-	p.wg.Wait()
+	p.stopOnce.Do(func() {
+		p.cancel()
+		close(p.done)
+		p.wg.Wait()
+	})
 }
 
 func (p *Poller) run() {
