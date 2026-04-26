@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
+
+func TestMain(m *testing.M) {
+	// Tests spin up local httptest servers; swap in an unrestricted client so
+	// the SSRF-safe production client does not block 127.0.0.1.
+	oidcHTTPClient = http.DefaultClient
+	os.Exit(m.Run())
+}
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

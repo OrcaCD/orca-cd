@@ -2,6 +2,8 @@ package httpclient
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -11,8 +13,32 @@ import (
 
 const DefaultTimeout = 15 * time.Second
 
+var safeTransport = func() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = dialer.DialContext
+	transport.ForceAttemptHTTP2 = true
+	transport.MaxIdleConns = 100
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ExpectContinueTimeout = 2 * time.Second
+	return transport
+}()
+
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	host := req.URL.Hostname()
+	if IsPrivateIP(host) && !isInternalIPAllowed(host) {
+		return fmt.Errorf("SSRF detected: redirect to %s is prohibited", host)
+	}
+	return nil
+}
+
 var Default = &http.Client{
-	Timeout: DefaultTimeout,
+	Timeout:       DefaultTimeout,
+	Transport:     safeTransport,
+	CheckRedirect: checkRedirect,
 }
 
 func UserAgent() string {
