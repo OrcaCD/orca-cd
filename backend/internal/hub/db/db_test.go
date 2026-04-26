@@ -546,6 +546,17 @@ func TestStartVacuumScheduler_StopDoesNotBlock(t *testing.T) {
 	}
 }
 
+func TestStartVacuumScheduler_StopIsIdempotent(t *testing.T) {
+	stop := StartVacuumScheduler()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("calling stop() twice panicked: %v", r)
+		}
+	}()
+	stop()
+	stop()
+}
+
 func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	initTestCrypto(t)
 

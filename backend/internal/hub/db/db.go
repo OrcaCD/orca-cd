@@ -4,6 +4,7 @@ import (
 	"embed"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -172,7 +173,8 @@ func StartVacuumScheduler() (stop func()) {
 			}
 		}
 	}()
-	return func() { close(done) }
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }
 
 func IncrementalVacuum() error {

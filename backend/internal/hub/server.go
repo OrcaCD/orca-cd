@@ -140,7 +140,9 @@ func Run(cfg Config) error {
 	applications.DefaultPoller.Start()
 	defer applications.DefaultPoller.Stop()
 
-	defer db.StartVacuumScheduler()()
+	if !cfg.Demo {
+		defer db.StartVacuumScheduler()()
+	}
 
 	router := gin.New()
 
