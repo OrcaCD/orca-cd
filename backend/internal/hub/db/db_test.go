@@ -2,9 +2,12 @@ package db
 
 import (
 	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -442,6 +445,116 @@ func TestSeedDemoData_SkipsWhenMoreThanOneUserExists(t *testing.T) {
 	if demoRepositoryCount != 0 {
 		t.Fatalf("expected no demo repository to be seeded, got %d", demoRepositoryCount)
 	}
+}
+
+// setupGlobalDB sets the package-level DB and logger for the duration of a test,
+// restoring the originals via t.Cleanup.
+func setupGlobalDB(t *testing.T) {
+	t.Helper()
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+	originalDB := DB
+	originalLogger := logger
+	DB = gormDB
+	logger = zerolog.Nop()
+	t.Cleanup(func() {
+		DB = originalDB
+		logger = originalLogger
+	})
+}
+
+func TestSqliteDSN_ReadWriteParams(t *testing.T) {
+	dsn := sqliteDSN(false)
+	_, rawQuery, _ := strings.Cut(dsn, "?")
+	q, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		t.Fatalf("url.ParseQuery() error: %v", err)
+	}
+
+	cases := map[string]string{
+		"_busy_timeout": "5000",
+		"_foreign_keys": "ON",
+		"_journal_mode": "WAL",
+		"_synchronous":  "NORMAL",
+		"_auto_vacuum":  "2",
+		"_cache_size":   "-12000",
+	}
+	for param, want := range cases {
+		if got := q.Get(param); got != want {
+			t.Errorf("sqliteDSN(false): %s = %q, want %q", param, got, want)
+		}
+	}
+	if got := q.Get("mode"); got != "" {
+		t.Errorf("sqliteDSN(false): mode = %q, want empty", got)
+	}
+}
+
+func TestSqliteDSN_ReadOnlyParams(t *testing.T) {
+	dsn := sqliteDSN(true)
+	_, rawQuery, _ := strings.Cut(dsn, "?")
+	q, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		t.Fatalf("url.ParseQuery() error: %v", err)
+	}
+
+	if got := q.Get("mode"); got != "ro" {
+		t.Errorf("sqliteDSN(true): mode = %q, want %q", got, "ro")
+	}
+	if got := q.Get("_cache_size"); got != "-12000" {
+		t.Errorf("sqliteDSN(true): _cache_size = %q, want %q", got, "-12000")
+	}
+}
+
+func TestIncrementalVacuum_Succeeds(t *testing.T) {
+	setupGlobalDB(t)
+	if err := IncrementalVacuum(); err != nil {
+		t.Fatalf("IncrementalVacuum() unexpected error: %v", err)
+	}
+}
+
+func TestIncrementalVacuum_ReturnsErrorOnClosedDB(t *testing.T) {
+	setupGlobalDB(t)
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("failed to close sql.DB: %v", err)
+	}
+
+	if err := IncrementalVacuum(); err == nil {
+		t.Fatal("IncrementalVacuum() expected error on closed DB, got nil")
+	}
+}
+
+func TestStartVacuumScheduler_StopDoesNotBlock(t *testing.T) {
+	stop := StartVacuumScheduler()
+
+	done := make(chan struct{})
+	go func() {
+		stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stop() blocked for more than 1 second")
+	}
+}
+
+func TestStartVacuumScheduler_StopIsIdempotent(t *testing.T) {
+	stop := StartVacuumScheduler()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("calling stop() twice panicked: %v", r)
+		}
+	}()
+	stop()
+	stop()
 }
 
 func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
