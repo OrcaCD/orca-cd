@@ -56,11 +56,13 @@ func configureSQLitePool(db *gorm.DB) error {
 		return err
 	}
 
-	// SQLite allows a single writer; limiting the pool to one connection avoids
-	// internal lock contention from multiple pooled connections.
+	// Allow maximum 10 concurrent connections (default is unlimited)
+	// This allows multiple readers to access the database concurrently
 	sqlDB.SetMaxOpenConns(10)
 	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetConnMaxLifetime(0)
+
+	// Set connection max lifetime to 1 hour to close connections periodically and allow SQLite to clean up resources
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return nil
 }
