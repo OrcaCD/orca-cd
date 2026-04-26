@@ -209,7 +209,10 @@ func TestGet_BlocksNipIODNSRebinding(t *testing.T) {
 func TestGet_BlocksSSRFViaRedirect(t *testing.T) {
 	resp, err := Get(context.Background(), "http://ssrf-redirects.testssandbox.com/ssrf-test")
 	if err == nil {
-		resp.Body.Close()
+		err := resp.Body.Close()
+		if err != nil {
+			t.Errorf("failed to close response body: %v", err)
+		}
 		t.Fatal("expected SSRF error for redirect to 127.0.0.1, got nil")
 	}
 	if !strings.Contains(err.Error(), "SSRF") {
@@ -220,7 +223,10 @@ func TestGet_BlocksSSRFViaRedirect(t *testing.T) {
 func TestGet_BlocksSSRFViaIPv6RedirectChain(t *testing.T) {
 	resp, err := Get(context.Background(), "http://ssrf-redirects.testssandbox.com/ssrf-test-ipv6-twice")
 	if err == nil {
-		resp.Body.Close()
+		err := resp.Body.Close()
+		if err != nil {
+			t.Errorf("failed to close response body: %v", err)
+		}
 		t.Fatal("expected SSRF error for redirect chain ending at [::1], got nil")
 	}
 	if !strings.Contains(err.Error(), "SSRF") {
@@ -295,7 +301,10 @@ func TestGet_AllowsAllowlistedLocalhostIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful response for allow-listed IP, got: %v", err)
 	}
-	resp.Body.Close()
+	err = resp.Body.Close()
+	if err != nil {
+		t.Errorf("failed to close response body: %v", err)
+	}
 }
 
 func TestCheckRedirect_AllowsAllowlistedPrivateIP(t *testing.T) {
