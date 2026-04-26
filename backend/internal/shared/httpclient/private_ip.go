@@ -1,6 +1,9 @@
 package httpclient
 
-import "net/netip"
+import (
+	"net/netip"
+	"strings"
+)
 
 var privateIPRangesStr = []string{
 	"0.0.0.0/8",          // "This" network (RFC 1122)
@@ -32,16 +35,21 @@ var privateIPRangesStr = []string{
 	"3fff::/20",     // Documentation prefix (RFC 9637)
 }
 
-var privateIpRanges []netip.Prefix
+var privateIPRanges []netip.Prefix
 
 func init() {
 	for _, cidr := range privateIPRangesStr {
 		prefix := netip.MustParsePrefix(cidr)
-		privateIpRanges = append(privateIpRanges, prefix)
+		privateIPRanges = append(privateIPRanges, prefix)
 	}
 }
 
 func ParseIP(ip string) (netip.Addr, error) {
+	// Strip IPv6 zone identifier (e.g. "fe80::1%eth0" → "fe80::1").
+	if i := strings.IndexByte(ip, '%'); i != -1 {
+		ip = ip[:i]
+	}
+
 	result, err := netip.ParseAddr(ip)
 	if err != nil {
 		return netip.Addr{}, err
@@ -64,7 +72,7 @@ func IsPrivateIP(ip string) bool {
 		return false
 	}
 
-	for _, p := range privateIpRanges {
+	for _, p := range privateIPRanges {
 		if p.Contains(ipAddress) {
 			return true
 		}

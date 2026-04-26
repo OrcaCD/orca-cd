@@ -13,14 +13,16 @@ import (
 
 const DefaultTimeout = 15 * time.Second
 
-var safeTransport = &http.Transport{
-	DialContext:           dialer.DialContext,
-	ForceAttemptHTTP2:     true,
-	MaxIdleConns:          100,
-	IdleConnTimeout:       90 * time.Second,
-	TLSHandshakeTimeout:   10 * time.Second,
-	ExpectContinueTimeout: 2 * time.Second,
-}
+var safeTransport = func() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = dialer.DialContext
+	transport.ForceAttemptHTTP2 = true
+	transport.MaxIdleConns = 100
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ExpectContinueTimeout = 2 * time.Second
+	return transport
+}()
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {

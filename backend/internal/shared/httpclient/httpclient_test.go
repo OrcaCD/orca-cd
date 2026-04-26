@@ -320,6 +320,35 @@ func TestCheckRedirect_AllowsAllowlistedPrivateIP(t *testing.T) {
 	}
 }
 
+func TestIsPrivateIP_ZoneQualifiedIPv6(t *testing.T) {
+	cases := []string{
+		"fe80::1%eth0",
+		"fe80::1%lo",
+		"fe80::dead:beef%en0",
+	}
+	for _, ip := range cases {
+		if !IsPrivateIP(ip) {
+			t.Errorf("expected zone-qualified link-local %q to be private", ip)
+		}
+	}
+}
+
+func TestCheckRedirect_BlocksZoneQualifiedIPv6(t *testing.T) {
+	cases := []string{
+		"http://[fe80::1%25eth0]/",
+		"http://[fe80::dead:beef%25lo]/secret",
+	}
+	for _, u := range cases {
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatalf("failed to build request for %s: %v", u, err)
+		}
+		if err := checkRedirect(req, nil); err == nil {
+			t.Errorf("expected SSRF error for redirect to zone-qualified IPv6 %s, got nil", u)
+		}
+	}
+}
+
 func TestCheckRedirect_LimitsRedirects(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "https://orcacd.dev/", nil)
 	if err != nil {
