@@ -19,6 +19,31 @@ var migrationFiles embed.FS
 
 var DB *gorm.DB
 
+const sqliteFilePath = "data/hub.db"
+
+func sqliteReadWriteDSN() string {
+	return sqliteFilePath + "?_busy_timeout=5000&_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON"
+}
+
+func sqliteReadOnlyDSN() string {
+	return sqliteFilePath + "?mode=ro&_busy_timeout=5000&_foreign_keys=ON"
+}
+
+func configureSQLitePool(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+
+	// SQLite allows a single writer; limiting the pool to one connection avoids
+	// internal lock contention from multiple pooled connections.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0)
+
+	return nil
+}
+
 func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 	if err := os.MkdirAll("data", 0750); err != nil {
 		return err
@@ -29,7 +54,6 @@ func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 		gormLogLevel = gormlogger.Info
 	}
 
-	dbPath := "data/hub.db"
 	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
@@ -38,8 +62,12 @@ func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 		}),
 	}
 
-	db, err := gorm.Open(sqlite.Open(dbPath), gormConfig)
+	db, err := gorm.Open(sqlite.Open(sqliteReadWriteDSN()), gormConfig)
 	if err != nil {
+		return err
+	}
+
+	if err := configureSQLitePool(db); err != nil {
 		return err
 	}
 
@@ -60,8 +88,12 @@ func Connect(logger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 			return err
 		}
 
-		readOnlyDB, err := gorm.Open(sqlite.Open(dbPath+"?mode=ro"), gormConfig)
+		readOnlyDB, err := gorm.Open(sqlite.Open(sqliteReadOnlyDSN()), gormConfig)
 		if err != nil {
+			return err
+		}
+
+		if err := configureSQLitePool(readOnlyDB); err != nil {
 			return err
 		}
 

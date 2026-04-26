@@ -66,6 +66,7 @@ func main() {
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
+	rootCmd.AddCommand(newResetPasswordCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
