@@ -29,7 +29,7 @@ func startHealthServer(ctx context.Context, port string, dockerReady func() bool
 		IdleTimeout:  10 * time.Second,
 	}
 
-	go func() { //nolint:gosec // ctx is already cancelled here; a fresh context is required for graceful shutdown
+	go func() { //nolint:gosec // once ctx is cancelled, Shutdown needs a fresh context because the original is already done
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

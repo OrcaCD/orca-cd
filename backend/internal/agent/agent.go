@@ -46,6 +46,9 @@ func DefaultConfig() (Config, error) {
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
+	if hubUrl == "" {
+		return Config{}, &FatalConfigError{"HUB_URL is not set — set the HUB_URL environment variable and recreate the container"}
+	}
 	hubUrl, err := parseHubURL(hubUrl)
 	if err != nil {
 		return Config{}, fmt.Errorf("HUB_URL: %w", err)

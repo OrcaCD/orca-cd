@@ -19,7 +19,10 @@ func freePort(t *testing.T) string {
 		t.Fatalf("find free port: %v", err)
 	}
 	port := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
-	ln.Close()
+	err = ln.Close()
+	if err != nil {
+		t.Fatalf("failed to close listener: %v", err)
+	}
 	return port
 }
 
@@ -36,7 +39,10 @@ func startTestHealthServer(t *testing.T, dockerReady, wsConnected func() bool) (
 	for {
 		resp, err := healthTestClient.Get(baseURL + "/api/v1/health")
 		if err == nil {
-			resp.Body.Close()
+			err := resp.Body.Close()
+			if err != nil {
+				t.Errorf("failed to close response body: %v", err)
+			}
 			return
 		}
 		if time.Now().After(deadline) {
@@ -70,7 +76,11 @@ func TestHealthHandler_Status(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GET /api/v1/health: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() {
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					t.Errorf("failed to close response body: %v", closeErr)
+				}
+			}()
 
 			if resp.StatusCode != tt.wantStatus {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
@@ -91,7 +101,11 @@ func TestHealthHandler_ResponseHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/v1/health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("failed to close response body: %v", closeErr)
+		}
+	}()
 
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want %q", ct, "application/json")
@@ -109,7 +123,11 @@ func TestHealthHandler_WrongMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/health: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("failed to close response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("POST status = %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
@@ -124,7 +142,11 @@ func TestHealthHandler_UnknownPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /api/v1/unknown: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("failed to close response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
@@ -138,13 +160,27 @@ func TestHealthServer_GracefulShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pre-shutdown health check: %v", err)
 	}
-	resp.Body.Close()
+	err = resp.Body.Close()
+	if err != nil {
+		t.Errorf("failed to close response body: %v", err)
+	}
 
 	cancel()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if _, err := healthTestClient.Get(baseURL + "/api/v1/health"); err != nil {
+		resp, err := healthTestClient.Get(baseURL + "/api/v1/health")
+
+		defer func() {
+			if resp != nil {
+				err := resp.Body.Close()
+				if err != nil {
+					t.Errorf("failed to close response body: %v", err)
+				}
+			}
+		}()
+
+		if err != nil {
 			return
 		}
 		if time.Now().After(deadline) {

@@ -255,6 +255,7 @@ func TestDefaultConfig_Errors(t *testing.T) {
 		authToken string
 		fatal     bool
 	}{
+		{"missing hub url", "", validToken, true},
 		{"missing auth token", "https://hub.example.com", "", true},
 		{"invalid hub url", "not-a-url", validToken, false},
 	}
