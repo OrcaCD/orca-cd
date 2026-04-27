@@ -238,7 +238,7 @@ func TestRunMigrations_ApplicationsTableSchema(t *testing.T) {
 		"id", "name", "repository_id", "agent_id",
 		"sync_status", "health_status",
 		"branch", "commit", "commit_message",
-		"last_synced_at", "path", "compose_file",
+		"last_synced_at", "path", "compose_file", "previous_compose_file",
 		"created_at", "updated_at",
 	}
 	for _, col := range required {

@@ -39,6 +39,7 @@ import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { m } from "@/lib/paraglide/messages";
+import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -97,6 +98,81 @@ function InfoCard({
 	);
 }
 
+function withDiffMarker(line: string, marker: "++" | "--"): string {
+	if (line.length === 0) {
+		return line;
+	}
+
+	return `${line} # [!code ${marker}]`;
+}
+
+function splitComposeLines(composeFile: string): string[] {
+	if (composeFile.length === 0) {
+		return [];
+	}
+
+	const lines = composeFile.split("\n");
+	if (lines.at(-1) === "") {
+		lines.pop();
+	}
+
+	return lines;
+}
+
+function buildComposeDiff(previousComposeFile: string, composeFile: string): string {
+	const previousLines = splitComposeLines(previousComposeFile);
+	const currentLines = splitComposeLines(composeFile);
+
+	const lcs = Array.from({ length: previousLines.length + 1 }, () =>
+		Array<number>(currentLines.length + 1).fill(0),
+	);
+
+	for (let i = previousLines.length - 1; i >= 0; i -= 1) {
+		for (let j = currentLines.length - 1; j >= 0; j -= 1) {
+			if (previousLines[i] === currentLines[j]) {
+				lcs[i][j] = lcs[i + 1][j + 1] + 1;
+				continue;
+			}
+
+			lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+		}
+	}
+
+	const lines: string[] = [];
+	let i = 0;
+	let j = 0;
+
+	while (i < previousLines.length && j < currentLines.length) {
+		if (previousLines[i] === currentLines[j]) {
+			lines.push(currentLines[j]);
+			i += 1;
+			j += 1;
+			continue;
+		}
+
+		if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+			lines.push(withDiffMarker(previousLines[i], "--"));
+			i += 1;
+			continue;
+		}
+
+		lines.push(withDiffMarker(currentLines[j], "++"));
+		j += 1;
+	}
+
+	while (i < previousLines.length) {
+		lines.push(withDiffMarker(previousLines[i], "--"));
+		i += 1;
+	}
+
+	while (j < currentLines.length) {
+		lines.push(withDiffMarker(currentLines[j], "++"));
+		j += 1;
+	}
+
+	return lines.join("\n");
+}
+
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 	const navigate = useNavigate();
@@ -112,9 +188,17 @@ function ApplicationDetailsPage() {
 		setSyncing(false);
 	};
 
-	const html = highlighter.codeToHtml(data?.composeFile ?? "", {
+	const manifestHtml = highlighter.codeToHtml(data?.composeFile ?? "", {
 		lang: "yaml",
 		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+		transformers: [transformerRenderWhitespace()],
+	});
+
+	const composeDiff = buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? "");
+	const diffHtml = highlighter.codeToHtml(composeDiff, {
+		lang: "yaml",
+		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+		transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
 	});
 
 	async function deleteApp() {
@@ -227,13 +311,22 @@ function ApplicationDetailsPage() {
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
+					<TabsTrigger value="diff">Diff</TabsTrigger>
 					<TabsTrigger value="events">{m.events()}</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
 					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
 						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
-							<div dangerouslySetInnerHTML={{ __html: html }} />
+							<div dangerouslySetInnerHTML={{ __html: manifestHtml }} />
+						</div>
+					</div>
+				</TabsContent>
+
+				<TabsContent value="diff" className="space-y-4">
+					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
+						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
+							<div dangerouslySetInnerHTML={{ __html: diffHtml }} />
 						</div>
 					</div>
 				</TabsContent>

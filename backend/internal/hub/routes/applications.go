@@ -46,23 +46,24 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id             string  `json:"id"`
-	Name           string  `json:"name"`
-	RepositoryId   string  `json:"repositoryId"`
-	RepositoryName string  `json:"repositoryName"`
-	RepositoryUrl  string  `json:"repositoryUrl"`
-	AgentId        string  `json:"agentId"`
-	AgentName      string  `json:"agentName"`
-	SyncStatus     string  `json:"syncStatus"`
-	HealthStatus   string  `json:"healthStatus"`
-	Branch         string  `json:"branch"`
-	Commit         string  `json:"commit"`
-	CommitMessage  string  `json:"commitMessage"`
-	LastSyncedAt   *string `json:"lastSyncedAt"`
-	Path           string  `json:"path"`
-	CreatedAt      string  `json:"createdAt"`
-	UpdatedAt      string  `json:"updatedAt"`
-	ComposeFile    string  `json:"composeFile"`
+	Id                  string  `json:"id"`
+	Name                string  `json:"name"`
+	RepositoryId        string  `json:"repositoryId"`
+	RepositoryName      string  `json:"repositoryName"`
+	RepositoryUrl       string  `json:"repositoryUrl"`
+	AgentId             string  `json:"agentId"`
+	AgentName           string  `json:"agentName"`
+	SyncStatus          string  `json:"syncStatus"`
+	HealthStatus        string  `json:"healthStatus"`
+	Branch              string  `json:"branch"`
+	Commit              string  `json:"commit"`
+	CommitMessage       string  `json:"commitMessage"`
+	LastSyncedAt        *string `json:"lastSyncedAt"`
+	Path                string  `json:"path"`
+	CreatedAt           string  `json:"createdAt"`
+	UpdatedAt           string  `json:"updatedAt"`
+	ComposeFile         string  `json:"composeFile"`
+	PreviousComposeFile string  `json:"previousComposeFile"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
@@ -138,17 +139,18 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 
 	application := models.Application{
-		Name:          crypto.EncryptedString(req.Name),
-		RepositoryId:  req.RepositoryId,
-		AgentId:       req.AgentId,
-		SyncStatus:    models.UnknownSync,
-		HealthStatus:  models.UnknownHealth,
-		Branch:        req.Branch,
-		Commit:        latestCommit.Hash,
-		CommitMessage: latestCommit.Message,
-		LastSyncedAt:  nil,
-		Path:          req.Path,
-		ComposeFile:   crypto.EncryptedString(composeFile),
+		Name:                crypto.EncryptedString(req.Name),
+		RepositoryId:        req.RepositoryId,
+		AgentId:             req.AgentId,
+		SyncStatus:          models.UnknownSync,
+		HealthStatus:        models.UnknownHealth,
+		Branch:              req.Branch,
+		Commit:              latestCommit.Hash,
+		CommitMessage:       latestCommit.Message,
+		LastSyncedAt:        nil,
+		Path:                req.Path,
+		ComposeFile:         crypto.EncryptedString(composeFile),
+		PreviousComposeFile: crypto.EncryptedString(""),
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
@@ -226,6 +228,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Commit = latestCommit.Hash
 	application.CommitMessage = latestCommit.Message
 	application.Path = req.Path
+	application.PreviousComposeFile = application.ComposeFile
 	application.ComposeFile = crypto.EncryptedString(composeFile)
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
@@ -285,23 +288,24 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 
 func toApplicationResponse(app *models.Application) applicationResponse {
 	return applicationResponse{
-		Id:             app.Id,
-		Name:           app.Name.String(),
-		RepositoryId:   app.RepositoryId,
-		RepositoryName: app.Repository.Name,
-		RepositoryUrl:  app.Repository.Url,
-		AgentId:        app.AgentId,
-		AgentName:      app.Agent.Name.String(),
-		SyncStatus:     string(app.SyncStatus),
-		HealthStatus:   string(app.HealthStatus),
-		Branch:         app.Branch,
-		Commit:         app.Commit,
-		CommitMessage:  app.CommitMessage,
-		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
-		Path:           app.Path,
-		CreatedAt:      app.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:      app.UpdatedAt.Format(time.RFC3339),
-		ComposeFile:    app.ComposeFile.String(),
+		Id:                  app.Id,
+		Name:                app.Name.String(),
+		RepositoryId:        app.RepositoryId,
+		RepositoryName:      app.Repository.Name,
+		RepositoryUrl:       app.Repository.Url,
+		AgentId:             app.AgentId,
+		AgentName:           app.Agent.Name.String(),
+		SyncStatus:          string(app.SyncStatus),
+		HealthStatus:        string(app.HealthStatus),
+		Branch:              app.Branch,
+		Commit:              app.Commit,
+		CommitMessage:       app.CommitMessage,
+		LastSyncedAt:        formatTimestamp(app.LastSyncedAt),
+		Path:                app.Path,
+		CreatedAt:           app.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:           app.UpdatedAt.Format(time.RFC3339),
+		ComposeFile:         app.ComposeFile.String(),
+		PreviousComposeFile: app.PreviousComposeFile.String(),
 	}
 }
 

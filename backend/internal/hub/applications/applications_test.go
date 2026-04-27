@@ -121,16 +121,17 @@ func seedAgent(t *testing.T) models.Agent {
 func seedApp(t *testing.T, repoId, agentId, composeFile string) models.Application {
 	t.Helper()
 	app := models.Application{
-		Name:          crypto.EncryptedString("test-app"),
-		RepositoryId:  repoId,
-		AgentId:       agentId,
-		SyncStatus:    models.UnknownSync,
-		HealthStatus:  models.UnknownHealth,
-		Branch:        "main",
-		Commit:        "abc123",
-		CommitMessage: "initial commit",
-		Path:          "deploy.yml",
-		ComposeFile:   crypto.EncryptedString(composeFile),
+		Name:                crypto.EncryptedString("test-app"),
+		RepositoryId:        repoId,
+		AgentId:             agentId,
+		SyncStatus:          models.UnknownSync,
+		HealthStatus:        models.UnknownHealth,
+		Branch:              "main",
+		Commit:              "abc123",
+		CommitMessage:       "initial commit",
+		Path:                "deploy.yml",
+		ComposeFile:         crypto.EncryptedString(composeFile),
+		PreviousComposeFile: crypto.EncryptedString(""),
 	}
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
 		t.Fatalf("failed to seed application: %v", err)
@@ -257,6 +258,9 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 	if updated.ComposeFile.String() != compose {
 		t.Errorf("expected ComposeFile unchanged, got %q", updated.ComposeFile.String())
 	}
+	if updated.PreviousComposeFile.String() != compose {
+		t.Errorf("expected PreviousComposeFile to match current compose when there are no changes")
+	}
 }
 
 func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *testing.T) {
@@ -296,6 +300,9 @@ func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *test
 	}
 	if updated.ComposeFile.String() != newCompose {
 		t.Errorf("expected ComposeFile %q, got %q", newCompose, updated.ComposeFile.String())
+	}
+	if updated.PreviousComposeFile.String() != oldCompose {
+		t.Errorf("expected PreviousComposeFile %q, got %q", oldCompose, updated.PreviousComposeFile.String())
 	}
 }
 

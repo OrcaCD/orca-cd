@@ -18,6 +18,7 @@ export interface Application {
 	createdAt: string;
 	updatedAt: string;
 	composeFile: string;
+	previousComposeFile?: string;
 }
 
 export interface ApplicationListItem {
