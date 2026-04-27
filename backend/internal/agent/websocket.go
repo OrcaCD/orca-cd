@@ -137,6 +137,20 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, sess
 	}
 }
 
+func connectAndHandshake(ctx context.Context, cfg Config, tracker *connTracker) (*websocket.Conn, *wscrypto.Session, error) {
+	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
+	if err != nil || tracker.setAndCancelled(ctx, conn) {
+		return nil, nil, nil
+	}
+	session, err := performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
+	if err != nil {
+		Log.Error().Err(err).Msg("handshake failed")
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("handshake: %w", err)
+	}
+	return conn, session, nil
+}
+
 func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Conn, error) {
 	const (
 		initialDelay = 1 * time.Second

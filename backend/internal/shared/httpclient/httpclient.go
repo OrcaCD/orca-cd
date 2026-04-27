@@ -41,6 +41,12 @@ var Default = &http.Client{
 	CheckRedirect: checkRedirect,
 }
 
+// UnsafeClient is a plain http.Client without SSRF protection.
+// Only use this for internal calls where the URL is not user-controlled.
+var UnsafeClient = &http.Client{
+	Timeout: DefaultTimeout,
+}
+
 func UserAgent() string {
 	return "OrcaCD/" + version.Version
 }
