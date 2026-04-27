@@ -45,7 +45,12 @@ func main() {
 				os.Exit(1)
 			}
 
-			resp, err := httpclient.Get(context.Background(), "http://localhost:"+cfg.Port+"/api/v1/health")
+			req, err := httpclient.NewRequest(context.Background(), http.MethodGet, "http://localhost:"+cfg.Port+"/api/v1/health", nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+				os.Exit(1)
+			}
+			resp, err := httpclient.UnsafeClient.Do(req)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)

@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,6 +23,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// FatalConfigError signals a misconfiguration that cannot be resolved by restarting.
+type FatalConfigError struct {
+	Msg string
+}
+
+func (e *FatalConfigError) Error() string { return e.Msg }
+
 type Config struct {
 	LogLevel     zerolog.Level
 	LogJSON      bool
@@ -29,6 +37,7 @@ type Config struct {
 	AuthToken    string
 	AgentID      string
 	HubPublicKey ed25519.PublicKey
+	HealthPort   string
 }
 
 func DefaultConfig() (Config, error) {
@@ -37,13 +46,16 @@ func DefaultConfig() (Config, error) {
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
+	if hubUrl == "" {
+		return Config{}, &FatalConfigError{"HUB_URL is not set — set the HUB_URL environment variable and recreate the container"}
+	}
 	hubUrl, err := parseHubURL(hubUrl)
 	if err != nil {
 		return Config{}, fmt.Errorf("HUB_URL: %w", err)
 	}
 
 	if authToken == "" {
-		return Config{}, errors.New("AUTH_TOKEN is required")
+		return Config{}, &FatalConfigError{"AUTH_TOKEN is not set — set the AUTH_TOKEN environment variable and recreate the container"}
 	}
 
 	agentID, hubPublicKey, err := parseTokenClaims(authToken)
@@ -58,6 +70,11 @@ func DefaultConfig() (Config, error) {
 
 	logJSON := strings.EqualFold(logJSONStr, "true")
 
+	healthPort := os.Getenv("HEALTHCHECK_PORT")
+	if healthPort == "" {
+		healthPort = "8090"
+	}
+
 	return Config{
 		LogLevel:     logLevel,
 		LogJSON:      logJSON,
@@ -65,6 +82,7 @@ func DefaultConfig() (Config, error) {
 		AuthToken:    authToken,
 		AgentID:      agentID,
 		HubPublicKey: hubPublicKey,
+		HealthPort:   healthPort,
 	}, nil
 }
 
@@ -144,10 +162,13 @@ func Run(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}
-	_ = dockerClient // will be passed to handlers once deployment logic is added
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	var wsConnected atomic.Bool
+
+	go startHealthServer(ctx, cfg.HealthPort, dockerClient.Ready, wsConnected.Load)
 
 	var tracker connTracker
 	go func() {
@@ -156,22 +177,17 @@ func Run(cfg Config) error {
 		tracker.close()
 	}()
 
-	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-	if err != nil || tracker.setAndCancelled(ctx, conn) {
+	conn, session, err := connectAndHandshake(ctx, cfg, &tracker)
+	if conn == nil {
 		Log.Info().Msg("agent stopped")
-		return nil
+		return err
 	}
-
-	session, err := performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
-	if err != nil {
-		Log.Error().Err(err).Msg("handshake failed")
-		_ = conn.Close()
-		return fmt.Errorf("handshake: %w", err)
-	}
+	wsConnected.Store(true)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
 		if readErr != nil {
+			wsConnected.Store(false)
 			if ctx.Err() != nil {
 				Log.Info().Msg("agent stopped")
 				return nil
@@ -180,17 +196,12 @@ func Run(cfg Config) error {
 			if closeErr := conn.Close(); closeErr != nil {
 				Log.Error().Err(closeErr).Msg("error closing connection")
 			}
-			conn, err = connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-			if err != nil || tracker.setAndCancelled(ctx, conn) {
+			conn, session, err = connectAndHandshake(ctx, cfg, &tracker)
+			if conn == nil {
 				Log.Info().Msg("agent stopped")
-				return nil
+				return err
 			}
-			session, err = performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
-			if err != nil {
-				Log.Error().Err(err).Msg("handshake failed on reconnect")
-				_ = conn.Close()
-				return fmt.Errorf("handshake on reconnect: %w", err)
-			}
+			wsConnected.Store(true)
 			continue
 		}
 		msg := &messages.ServerMessage{}

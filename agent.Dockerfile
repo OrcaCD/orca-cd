@@ -21,9 +21,9 @@ RUN buf generate
 
 RUN CGO_ENABLED=1 go build \
     -ldflags "-s -w \
-      -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
-      -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \
-      -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=${BUILD_DATE}" \
+    -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
+    -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \
+    -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=${BUILD_DATE}" \
     -o /bin/agent ./cmd/agent
 
 FROM alpine:3.23
@@ -31,5 +31,8 @@ FROM alpine:3.23
 WORKDIR /app
 
 COPY --from=builder /bin/agent /app/agent
+
+HEALTHCHECK --interval=60s --timeout=5s --start-period=15s --retries=1 \
+    CMD ["/app/agent", "healthcheck"]
 
 ENTRYPOINT ["/app/agent"]
