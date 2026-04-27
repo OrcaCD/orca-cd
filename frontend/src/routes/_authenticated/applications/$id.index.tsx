@@ -30,7 +30,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -188,18 +188,22 @@ function ApplicationDetailsPage() {
 		setSyncing(false);
 	};
 
-	const manifestHtml = highlighter.codeToHtml(data?.composeFile ?? "", {
-		lang: "yaml",
-		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-		transformers: [transformerRenderWhitespace()],
-	});
+	const manifestHtml = useMemo(() => {
+		return highlighter.codeToHtml(data?.composeFile ?? "", {
+			lang: "yaml",
+			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+			transformers: [transformerRenderWhitespace()],
+		});
+	}, [data?.composeFile, theme]);
 
-	const composeDiff = buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? "");
-	const diffHtml = highlighter.codeToHtml(composeDiff, {
-		lang: "yaml",
-		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-		transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
-	});
+	const diffHtml = useMemo(() => {
+		const composeDiff = buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? "");
+		return highlighter.codeToHtml(composeDiff, {
+			lang: "yaml",
+			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+			transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
+		});
+	}, [data?.previousComposeFile, data?.composeFile, theme]);
 
 	async function deleteApp() {
 		try {
