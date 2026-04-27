@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"testing"
 	"time"
 
@@ -252,9 +253,10 @@ func TestDefaultConfig_Errors(t *testing.T) {
 		name      string
 		hubURL    string
 		authToken string
+		fatal     bool
 	}{
-		{"missing auth token", "https://hub.example.com", ""},
-		{"invalid hub url", "not-a-url", validToken},
+		{"missing auth token", "https://hub.example.com", "", true},
+		{"invalid hub url", "not-a-url", validToken, false},
 	}
 
 	for _, tt := range tests {
@@ -265,6 +267,10 @@ func TestDefaultConfig_Errors(t *testing.T) {
 			_, err := DefaultConfig()
 			if err == nil {
 				t.Fatal("expected error, got nil")
+			}
+			var fatalErr *FatalConfigError
+			if got := errors.As(err, &fatalErr); got != tt.fatal {
+				t.Errorf("FatalConfigError = %v, want %v", got, tt.fatal)
 			}
 		})
 	}

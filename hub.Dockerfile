@@ -49,6 +49,6 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=90s --timeout=5s --start-period=10s --retries=3 CMD [ "/app/hub", "healthcheck" ]
+HEALTHCHECK --interval=90s --timeout=5s --start-period=10s --retries=1 CMD [ "/app/hub", "healthcheck" ]
 
 ENTRYPOINT ["/app/hub"]
