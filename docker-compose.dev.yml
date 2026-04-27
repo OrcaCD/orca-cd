@@ -1,36 +1,34 @@
+name: orca-cd-dev
+
 services:
   hub:
     build:
       context: .
       dockerfile: hub.Dockerfile
-    container_name: orca-hub
+    container_name: orca-hub-dev
     ports:
       - '127.0.0.1:8080:8080'
-    restart: unless-stopped
+    volumes:
+      - ./data/hub:/app/data
     environment:
       - APP_URL=http://localhost:8080
       - APP_SECRET=supersecretkey_minimum_32_characters
-    volumes:
-      - ./data/hub:/app/data
 
   agent:
     build:
       context: .
       dockerfile: agent.Dockerfile
-    container_name: orca-agent
-    restart: unless-stopped
+    container_name: orca-agent-dev
+    use_api_socket: true # Allows container to access Docker API on host
     depends_on:
       - hub
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - HUB_URL=ws://hub:8080/api/v1/ws
-      - AUTH_TOKEN=supersecrettoken
+      - AUTH_TOKEN=
 
   pocket-id:
-    container_name: pocket-id
+    container_name: pocket-id-dev
     image: ghcr.io/pocket-id/pocket-id:v2
-    restart: unless-stopped
     ports:
       - 127.0.0.1:1411:1411
     volumes:
