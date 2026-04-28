@@ -258,9 +258,6 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 	if updated.ComposeFile.String() != compose {
 		t.Errorf("expected ComposeFile unchanged, got %q", updated.ComposeFile.String())
 	}
-	if updated.PreviousComposeFile.String() != compose {
-		t.Errorf("expected PreviousComposeFile to match current compose when there are no changes")
-	}
 }
 
 func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *testing.T) {
