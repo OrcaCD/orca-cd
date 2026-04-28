@@ -63,7 +63,7 @@ type applicationResponse struct {
 	CreatedAt           string  `json:"createdAt"`
 	UpdatedAt           string  `json:"updatedAt"`
 	ComposeFile         string  `json:"composeFile"`
-	PreviousComposeFile string  `json:"previousComposeFile"`
+	PreviousComposeFile string  `json:"previousComposeFile,omitempty"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {

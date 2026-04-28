@@ -24,6 +24,7 @@
 		"@tanstack/router-plugin": "^1.167.26",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"diff": "^9.0.0",
 		"lucide-react": "^1.11.0",
 		"radix-ui": "^1.4.3",
 		"react": "^19.2.5",

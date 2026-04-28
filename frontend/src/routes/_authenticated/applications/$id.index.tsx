@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
+import { diffArrays } from "diff";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -123,51 +124,20 @@ function buildComposeDiff(previousComposeFile: string, composeFile: string): str
 	const previousLines = splitComposeLines(previousComposeFile);
 	const currentLines = splitComposeLines(composeFile);
 
-	const lcs = Array.from({ length: previousLines.length + 1 }, () =>
-		Array<number>(currentLines.length + 1).fill(0),
-	);
-
-	for (let i = previousLines.length - 1; i >= 0; i -= 1) {
-		for (let j = currentLines.length - 1; j >= 0; j -= 1) {
-			if (previousLines[i] === currentLines[j]) {
-				lcs[i][j] = lcs[i + 1][j + 1] + 1;
-				continue;
-			}
-
-			lcs[i][j] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
-		}
-	}
-
 	const lines: string[] = [];
-	let i = 0;
-	let j = 0;
 
-	while (i < previousLines.length && j < currentLines.length) {
-		if (previousLines[i] === currentLines[j]) {
-			lines.push(currentLines[j]);
-			i += 1;
-			j += 1;
+	for (const change of diffArrays(previousLines, currentLines)) {
+		if (change.added) {
+			lines.push(...change.value.map((line) => withDiffMarker(line, "++")));
 			continue;
 		}
 
-		if (lcs[i + 1][j] >= lcs[i][j + 1]) {
-			lines.push(withDiffMarker(previousLines[i], "--"));
-			i += 1;
+		if (change.removed) {
+			lines.push(...change.value.map((line) => withDiffMarker(line, "--")));
 			continue;
 		}
 
-		lines.push(withDiffMarker(currentLines[j], "++"));
-		j += 1;
-	}
-
-	while (i < previousLines.length) {
-		lines.push(withDiffMarker(previousLines[i], "--"));
-		i += 1;
-	}
-
-	while (j < currentLines.length) {
-		lines.push(withDiffMarker(currentLines[j], "++"));
-		j += 1;
+		lines.push(...change.value);
 	}
 
 	return lines.join("\n");
