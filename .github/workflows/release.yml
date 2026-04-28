@@ -33,7 +33,6 @@ jobs:
         id: release-please-action
         with:
           release-type: go
-          release-as: 0.1.0 # TODO: Remove this once the first release is cut
           token: ${{ steps.app-token.outputs.token }}
 
   build:
