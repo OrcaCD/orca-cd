@@ -30,7 +30,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,8 @@ import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { m } from "@/lib/paraglide/messages";
+import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
+import { diffArrays } from "diff";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -97,6 +99,50 @@ function InfoCard({
 	);
 }
 
+function withDiffMarker(line: string, marker: "++" | "--"): string {
+	if (line.length === 0) {
+		return line;
+	}
+
+	return `${line} # [!code ${marker}]`;
+}
+
+function splitComposeLines(composeFile: string): string[] {
+	if (composeFile.length === 0) {
+		return [];
+	}
+
+	const lines = composeFile.split("\n");
+	if (lines.at(-1) === "") {
+		lines.pop();
+	}
+
+	return lines;
+}
+
+function buildComposeDiff(previousComposeFile: string, composeFile: string): string {
+	const previousLines = splitComposeLines(previousComposeFile);
+	const currentLines = splitComposeLines(composeFile);
+
+	const lines: string[] = [];
+
+	for (const change of diffArrays(previousLines, currentLines)) {
+		if (change.added) {
+			lines.push(...change.value.map((line) => withDiffMarker(line, "++")));
+			continue;
+		}
+
+		if (change.removed) {
+			lines.push(...change.value.map((line) => withDiffMarker(line, "--")));
+			continue;
+		}
+
+		lines.push(...change.value);
+	}
+
+	return lines.join("\n");
+}
+
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 	const navigate = useNavigate();
@@ -112,10 +158,22 @@ function ApplicationDetailsPage() {
 		setSyncing(false);
 	};
 
-	const html = highlighter.codeToHtml(data?.composeFile ?? "", {
-		lang: "yaml",
-		theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-	});
+	const manifestHtml = useMemo(() => {
+		return highlighter.codeToHtml(data?.composeFile ?? "", {
+			lang: "yaml",
+			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+			transformers: [transformerRenderWhitespace()],
+		});
+	}, [data?.composeFile, theme]);
+
+	const diffHtml = useMemo(() => {
+		const composeDiff = buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? "");
+		return highlighter.codeToHtml(composeDiff, {
+			lang: "yaml",
+			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
+			transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
+		});
+	}, [data?.previousComposeFile, data?.composeFile, theme]);
 
 	async function deleteApp() {
 		try {
@@ -227,13 +285,22 @@ function ApplicationDetailsPage() {
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
+					<TabsTrigger value="diff">Diff</TabsTrigger>
 					<TabsTrigger value="events">{m.events()}</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
 					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
 						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
-							<div dangerouslySetInnerHTML={{ __html: html }} />
+							<div dangerouslySetInnerHTML={{ __html: manifestHtml }} />
+						</div>
+					</div>
+				</TabsContent>
+
+				<TabsContent value="diff" className="space-y-4">
+					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
+						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
+							<div dangerouslySetInnerHTML={{ __html: diffHtml }} />
 						</div>
 					</div>
 				</TabsContent>

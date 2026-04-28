@@ -85,11 +85,12 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", job.Application.Id).
 		Updates(ctx, models.Application{
-			ComposeFile:   crypto.EncryptedString(content),
-			Commit:        job.Commit,
-			CommitMessage: job.CommitMessage,
-			SyncStatus:    models.Synced,
-			LastSyncedAt:  &now,
+			ComposeFile:         crypto.EncryptedString(content),
+			PreviousComposeFile: job.Application.ComposeFile,
+			Commit:              job.Commit,
+			CommitMessage:       job.CommitMessage,
+			SyncStatus:          models.Synced,
+			LastSyncedAt:        &now,
 		}); err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).
 			Msg("failed to update application after sync (compose changed)")

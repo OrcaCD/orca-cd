@@ -131,3 +131,56 @@
     cursor: pointer;
   }
 }
+
+.shiki {
+  counter-reset: step;
+  counter-increment: step 0;
+  .tab,
+  .space {
+    position: relative;
+  }
+  .tab::before {
+    content: '⇥';
+    position: absolute;
+    opacity: 0.3;
+  }
+  .space::before {
+    content: '·';
+    position: absolute;
+    opacity: 0.3;
+  }
+  .line {
+    @apply border-l-4 border-transparent;
+    &::before {
+      counter-increment: step;
+      @apply mr-6 inline-block w-4 border-transparent text-right text-neutral-600 content-[counter(step)];
+    }
+    &.highlighted,
+    &.diff {
+      @apply -mr-5 -ml-4 inline-block w-[calc(100%+(--spacing(5)+(--spacing(4))))] pr-5 pl-4;
+    }
+    &.highlighted {
+      @apply border-neutral-500 bg-neutral-800;
+    }
+    &.diff {
+      &.add,
+      &.remove {
+        span:first-child::before {
+          @apply -ml-4 inline-flex w-4;
+        }
+      }
+      &.add {
+        @apply border-green-500 bg-green-500/25 before:text-green-500;
+        span:first-child::before {
+          @apply text-green-500 content-["+"];
+        }
+      }
+      &.remove {
+        @apply border-orange-500 bg-orange-500/30 opacity-70 *:text-neutral-400! before:text-orange-500;
+        span:first-child::before {
+          @apply text-orange-500 content-["-"];
+        }
+      }
+    }
+  }
+}

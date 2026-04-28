@@ -26,6 +26,7 @@ const (
 	mockComposeFileContent = "version: \"3.9\"\nservices:\n  billing:\n    image: ghcr.io/orcacd/billing:1.0.0\n"
 	mockLatestCommitHash   = "1a2b3c4d5e6f7a8b9c0d"
 	mockLatestCommitMsg    = "chore: update compose file"
+	seedComposeFileContent = "version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"
 )
 
 func setupTestDBWithApplications(t *testing.T) {
@@ -111,17 +112,18 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 
 	now := time.Now().UTC().Truncate(time.Second)
 	app := models.Application{
-		Name:          crypto.EncryptedString(name),
-		RepositoryId:  repoId,
-		AgentId:       agentId,
-		SyncStatus:    models.UnknownSync,
-		HealthStatus:  models.UnknownHealth,
-		Branch:        "main",
-		Commit:        "abcdef123",
-		CommitMessage: "initial commit",
-		LastSyncedAt:  &now,
-		Path:          "deployments/prod.yml",
-		ComposeFile:   crypto.EncryptedString("version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"),
+		Name:                crypto.EncryptedString(name),
+		RepositoryId:        repoId,
+		AgentId:             agentId,
+		SyncStatus:          models.UnknownSync,
+		HealthStatus:        models.UnknownHealth,
+		Branch:              "main",
+		Commit:              "abcdef123",
+		CommitMessage:       "initial commit",
+		LastSyncedAt:        &now,
+		Path:                "deployments/prod.yml",
+		ComposeFile:         crypto.EncryptedString(seedComposeFileContent),
+		PreviousComposeFile: crypto.EncryptedString(""),
 	}
 
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
@@ -283,6 +285,9 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	if body.CommitMessage != "initial commit" {
 		t.Errorf("expected commitMessage %q, got %q", "initial commit", body.CommitMessage)
 	}
+	if body.PreviousComposeFile != "" {
+		t.Errorf("expected previousComposeFile to be empty, got %q", body.PreviousComposeFile)
+	}
 	if body.CreatedAt == "" {
 		t.Error("expected createdAt to be set")
 	}
@@ -376,6 +381,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if body.CommitMessage != mockLatestCommitMsg {
 		t.Errorf("expected commitMessage %q, got %q", mockLatestCommitMsg, body.CommitMessage)
 	}
+	if body.PreviousComposeFile != "" {
+		t.Errorf("expected previousComposeFile to be empty, got %q", body.PreviousComposeFile)
+	}
 	if body.LastSyncedAt != nil {
 		t.Errorf("expected lastSyncedAt to be null, got %v", *body.LastSyncedAt)
 	}
@@ -401,6 +409,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if stored.ComposeFile.String() != mockComposeFileContent {
 		t.Errorf("expected composeFile to match fetched content")
+	}
+	if stored.PreviousComposeFile.String() != "" {
+		t.Errorf("expected previous compose file to be empty on create")
 	}
 	if stored.LastSyncedAt != nil {
 		t.Fatal("expected LastSyncedAt to be nil in DB")
@@ -665,6 +676,9 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	}
 	if updated.ComposeFile.String() != mockComposeFileContent {
 		t.Errorf("expected composeFile to match fetched content")
+	}
+	if updated.PreviousComposeFile.String() != seedComposeFileContent {
+		t.Errorf("expected previous compose file to be set to the pre-update content")
 	}
 }
 
