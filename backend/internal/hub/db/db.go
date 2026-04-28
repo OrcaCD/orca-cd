@@ -193,10 +193,9 @@ func Close() error {
 		return nil
 	}
 	sqlDB, err := DB.DB()
+	DB = nil
 	if err != nil {
 		return err
 	}
-	err = sqlDB.Close()
-	DB = nil
-	return err
+	return sqlDB.Close()
 }

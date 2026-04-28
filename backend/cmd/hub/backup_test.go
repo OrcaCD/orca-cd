@@ -113,6 +113,20 @@ func TestRunBackupCommand_FailsIfOutputExists(t *testing.T) {
 	}
 }
 
+func TestRunBackupCommand_FailsInDemoMode(t *testing.T) {
+	setupBackupTestEnv(t)
+	t.Setenv("DEMO", "true")
+
+	var out bytes.Buffer
+	err := runBackupCommand(&out, "backup.db")
+	if err == nil {
+		t.Fatal("runBackupCommand() expected error in demo mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "demo mode") {
+		t.Errorf("expected error to mention 'demo mode', got: %v", err)
+	}
+}
+
 func TestRunBackupCommand_AbsoluteOutputPath(t *testing.T) {
 	setupBackupTestEnv(t)
 

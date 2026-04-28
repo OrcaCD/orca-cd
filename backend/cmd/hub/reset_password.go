@@ -64,7 +64,7 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
-			renderResetPasswordLockInfo(out)
+			renderDatabaseBusyInfo(out)
 		}
 
 		return fmt.Errorf("failed to connect to database: %w", err)
@@ -80,25 +80,6 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 
 	renderResetPasswordResult(out, user, generatedPassword)
 	return nil
-}
-
-func renderResetPasswordLockInfo(out io.Writer) {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	bodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-
-	body := strings.Join([]string{
-		"The database is currently busy.",
-		"Retry this command in a few seconds.",
-		"If this persists, stop other processes using the database and try again.",
-	}, "\n")
-
-	card := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("214")).
-		Padding(1, 2).
-		Render(titleStyle.Render("Database Busy") + "\n\n" + bodyStyle.Render(body))
-
-	_, _ = lipgloss.Fprintln(out, card)
 }
 
 func normalizeResetPasswordTarget(target resetPasswordTarget) (resetPasswordTarget, error) {

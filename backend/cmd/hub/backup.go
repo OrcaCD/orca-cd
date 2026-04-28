@@ -58,10 +58,14 @@ func runBackupCommand(out io.Writer, outputPath string) error {
 		return fmt.Errorf("failed to load hub configuration: %w", err)
 	}
 
+	if cfg.Demo {
+		return fmt.Errorf("backup is not available in demo mode")
+	}
+
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
-			renderResetPasswordLockInfo(out)
+			renderDatabaseBusyInfo(out)
 		}
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
