@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/OrcaCD/orca-cd/internal/hub"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -53,25 +52,26 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 		return err
 	}
 
-	logLevel := zerolog.InfoLevel
-	if parsedLogLevel, parseErr := zerolog.ParseLevel(os.Getenv("LOG_LEVEL")); parseErr == nil {
-		logLevel = parsedLogLevel
+	cfg, err := hub.DefaultConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load hub configuration: %w", err)
 	}
 
-	isDemoMode, _ := strconv.ParseBool(os.Getenv("DEMO"))
-	if isDemoMode {
-		return errors.New("password reset is not available in demo mode")
+	if cfg.Demo {
+		return fmt.Errorf("password reset is not available in demo mode")
 	}
 
 	dbLogger := zerolog.New(io.Discard)
-	if err := db.Connect(dbLogger, logLevel, false); err != nil {
+	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
 			renderResetPasswordLockInfo(out)
 		}
 
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer closeHubDatabase()
+	defer func() {
+		_ = db.Close()
+	}()
 
 	user, generatedPassword, err := resetUserPassword(ctx, target)
 	if err != nil {
@@ -99,19 +99,6 @@ func renderResetPasswordLockInfo(out io.Writer) {
 		Render(titleStyle.Render("Database Busy") + "\n\n" + bodyStyle.Render(body))
 
 	_, _ = lipgloss.Fprintln(out, card)
-}
-
-func closeHubDatabase() {
-	if db.DB == nil {
-		return
-	}
-
-	sqlDB, err := db.DB.DB()
-	if err == nil {
-		_ = sqlDB.Close()
-	}
-
-	db.DB = nil
 }
 
 func normalizeResetPasswordTarget(target resetPasswordTarget) (resetPasswordTarget, error) {
@@ -192,9 +179,9 @@ func findUserForPasswordReset(ctx context.Context, target resetPasswordTarget) (
 }
 
 func renderResetPasswordResult(out io.Writer, user models.User, generatedPassword string) {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
-	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("250"))
-	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Green)
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White)
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.White)
 	passwordStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230")).Background(lipgloss.Color("24")).Padding(0, 1)
 	noteStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
 
@@ -208,7 +195,7 @@ func renderResetPasswordResult(out io.Writer, user models.User, generatedPasswor
 
 	card := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63")).
+		BorderForeground(lipgloss.Blue).
 		Padding(1, 2).
 		Render(titleStyle.Render("Password Reset Successful") + "\n\n" + body)
 

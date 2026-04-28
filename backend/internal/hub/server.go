@@ -118,10 +118,7 @@ func Run(cfg Config) error {
 		return err
 	}
 	defer func() {
-		if sqlDB, err := db.DB.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-		db.DB = nil
+		_ = db.Close()
 	}()
 
 	// Reset repositories stuck in syncing status from a previous crash.
