@@ -51,6 +51,8 @@ func runBackupCommand(out io.Writer, outputPath string) error {
 
 	if _, err := os.Stat(outputPath); err == nil {
 		return fmt.Errorf("output file already exists: %s", outputPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check output path: %w", err)
 	}
 
 	cfg, err := hub.DefaultConfig()
