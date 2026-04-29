@@ -187,3 +187,15 @@ func IncrementalVacuum() error {
 	}
 	return nil
 }
+
+func Close() error {
+	if DB == nil {
+		return nil
+	}
+	sqlDB, err := DB.DB()
+	DB = nil
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}

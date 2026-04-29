@@ -36,7 +36,7 @@ func NewPoller(log *zerolog.Logger) *Poller {
 }
 
 func (p *Poller) Start() {
-	go p.run()
+	p.wg.Go(p.run)
 }
 
 // Stop cancels in-flight syncs and waits for them to finish.
