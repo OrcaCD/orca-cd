@@ -1,12 +1,10 @@
 FROM bufbuild/buf:1.68 AS buf
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown
-
-RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -26,7 +24,9 @@ RUN CGO_ENABLED=1 go build \
     -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=${BUILD_DATE}" \
     -o /bin/agent ./cmd/agent
 
-FROM alpine:3.23
+# Not using nonroot variant as agent has access to the docker socket which is basically root access
+# Changing to nonroot user would complicate setup for users with minimal security benefits
+FROM gcr.io/distroless/base-nossl-debian13:latest
 
 WORKDIR /app
 

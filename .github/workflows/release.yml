@@ -50,10 +50,22 @@ jobs:
       matrix:
         include:
           - name: hub
+            base_image: gcr.io/distroless/base-nossl-debian13:nonroot
           - name: agent
+            base_image: gcr.io/distroless/base-nossl-debian13:latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
+      - name: Verify distroless base image signature
+        run: |
+          cosign verify \
+            ${{ matrix.base_image }} \
+            --certificate-oidc-issuer https://accounts.google.com \
+            --certificate-identity keyless@distroless.iam.gserviceaccount.com
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
@@ -82,6 +94,7 @@ jobs:
             type=raw,value=main,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push ${{ matrix.name }} image
+        id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
@@ -98,3 +111,8 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+      - name: Sign ${{ matrix.name }} image
+        run: |
+          cosign sign --yes \
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
