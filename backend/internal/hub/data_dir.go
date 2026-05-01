@@ -3,6 +3,7 @@ package hub
 import (
 	"fmt"
 	"os"
+	"runtime"
 )
 
 func initDataDir() error {
@@ -32,9 +33,11 @@ func checkWritable(dir string) error {
 	if !os.IsPermission(err) {
 		return err
 	}
-	uid := os.Getuid()
+	if runtime.GOOS == "windows" {
+		return fmt.Errorf("directory is not writable, check the folder permissions")
+	}
 	return fmt.Errorf(
 		"directory is not writable, run: sudo chown -R %d:%d ./data",
-		uid, os.Getgid(),
+		os.Getuid(), os.Getgid(),
 	)
 }

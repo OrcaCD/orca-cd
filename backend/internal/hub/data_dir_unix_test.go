@@ -13,12 +13,16 @@ func TestCheckWritable_ReadOnlyDir(t *testing.T) {
 		t.Skip("skipping: chmod has no effect when running as root")
 	}
 	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o444); err != nil {
+	if err := os.Chmod(dir, 0o400); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
 	// Restore before t.TempDir cleanup so the directory can be removed.
 	// t.Cleanup runs in LIFO order, so this runs before the TempDir cleanup.
-	t.Cleanup(func() { os.Chmod(dir, 0o750) })
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Errorf("cleanup chmod: %v", err)
+		}
+	})
 
 	err := checkWritable(dir)
 	if err == nil {

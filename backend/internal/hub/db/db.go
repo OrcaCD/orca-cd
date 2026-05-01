@@ -3,7 +3,6 @@ package db
 import (
 	"embed"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -70,9 +69,6 @@ func configureSQLitePool(db *gorm.DB) error {
 
 func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
 	logger = newLogger
-	if err := os.MkdirAll("data", 0750); err != nil {
-		return err
-	}
 
 	gormLogLevel := gormlogger.Error
 	if logLevel <= zerolog.DebugLevel {
