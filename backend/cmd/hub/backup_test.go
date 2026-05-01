@@ -46,6 +46,9 @@ func setupBackupTestEnv(t *testing.T) {
 	if err := os.Chdir(workDir); err != nil {
 		t.Fatalf("failed to change working directory: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(workDir, "data"), 0750); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = db.Close()
 		_ = os.Chdir(originalWD)
