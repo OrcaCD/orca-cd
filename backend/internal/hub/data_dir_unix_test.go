@@ -19,7 +19,7 @@ func TestCheckWritable_ReadOnlyDir(t *testing.T) {
 	// Restore before t.TempDir cleanup so the directory can be removed.
 	// t.Cleanup runs in LIFO order, so this runs before the TempDir cleanup.
 	t.Cleanup(func() {
-		if err := os.Chmod(dir, 0o700); err != nil {
+		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // restore perms so t.TempDir cleanup can remove it
 			t.Errorf("cleanup chmod: %v", err)
 		}
 	})
