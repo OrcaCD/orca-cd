@@ -569,6 +569,9 @@ func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	if err := os.Chdir(workDir); err != nil {
 		t.Fatalf("failed to change working directory: %v", err)
 	}
+	if err := os.MkdirAll(filepath.Join(workDir, "data"), 0750); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = os.Chdir(originalWD)
 		if DB != nil {

@@ -111,6 +111,11 @@ func Run(cfg Config) error {
 		return err
 	}
 
+	if err := initDataDir(); err != nil {
+		Log.Error().Err(err).Msg("failed to initialize data directory")
+		return err
+	}
+
 	dbLogger := Log.With().Str("component", "gorm").Logger()
 	err := db.Connect(dbLogger, cfg.LogLevel, cfg.Demo)
 	if err != nil {

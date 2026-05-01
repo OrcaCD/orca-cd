@@ -12,13 +12,11 @@ RUN npm run build
 
 FROM bufbuild/buf:1.68 AS buf
 
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_DATE=unknown
-
-RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
@@ -33,19 +31,17 @@ RUN buf generate
 
 RUN CGO_ENABLED=1 go build \
     -ldflags "-s -w \
-      -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
-      -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \
-      -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=${BUILD_DATE}" \
+    -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
+    -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \
+    -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=${BUILD_DATE}" \
     -o /bin/hub ./cmd/hub
 
-FROM alpine:3.23
+FROM gcr.io/distroless/base-nossl-debian13:nonroot
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates sqlite-libs
-
-COPY --from=builder /bin/hub /app/hub
-COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+COPY --from=builder --chown=nonroot:nonroot /bin/hub /app/hub
+COPY --from=frontend-builder --chown=nonroot:nonroot /app/frontend/dist ./frontend/dist
 
 EXPOSE 8080
 
