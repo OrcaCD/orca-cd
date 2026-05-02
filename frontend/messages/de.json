@@ -398,5 +398,21 @@
 	"loggingIn": "Anmeldung läuft...",
 	"noLoginMethodsAvailable": "Derzeit sind keine Anmeldemethoden verfügbar. Bitte kontaktiere deinen Administrator.",
 	"hidePassword": "Passwort verbergen",
-	"showPassword": "Passwort anzeigen"
+	"showPassword": "Passwort anzeigen",
+	"editRepositoryAuth": "Authentifizierung bearbeiten",
+	"editRepositoryAuthShort": "Auth",
+	"editRepositoryAuthDescription": "Aktualisiere das Auth-Token für dieses Repository.",
+	"editRepositorySync": "Synchronizierung bearbeiten",
+	"editRepositorySyncShort": "Sync",
+	"editRepositorySyncDescription": "Ändere, wie OrcaCD dieses Repository synchronisiert.",
+	"updateAuthentication": "Authentifizierung aktualisieren",
+	"authTokenLeaveBlankHint": "Leer lassen, um die Authentifizierung zu entfernen.",
+	"pollingIntervalSeconds": "Polling-Intervall (Sekunden)",
+	"pollingIntervalHint": "Minimum 60 s, Maximum 86 400 s (24 h).",
+	"validationPollingIntervalMin": "Polling-Intervall muss mindestens 60 Sekunden betragen",
+	"validationPollingIntervalMax": "Polling-Intervall darf maximal 86400 Sekunden betragen",
+	"repositoryAuthUpdated": "Authentifizierung aktualisiert",
+	"repositorySyncUpdatedTitle": "Sync-Einstellungen aktualisiert",
+	"repositorySyncUpdatedDescription": "Die Sync-Einstellungen wurden erfolgreich aktualisiert.",
+	"failedUpdateRepository": "Repository konnte nicht aktualisiert werden"
 }

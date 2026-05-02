@@ -369,12 +369,11 @@ func DeleteRepositoryHandler(c *gin.Context) {
 }
 
 type updateRepositoryRequest struct {
-	Url             string                      `json:"url" binding:"required"`
-	AuthMethod      models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
-	AuthUser        *string                     `json:"authUser"`
-	AuthToken       *string                     `json:"authToken"`
-	SyncType        models.RepositorySyncType   `json:"syncType" binding:"required"`
-	PollingInterval *int64                      `json:"pollingIntervalSeconds"`
+	AuthMethod      *models.RepositoryAuthMethod `json:"authMethod"`
+	AuthUser        *string                      `json:"authUser"`
+	AuthToken       *string                      `json:"authToken"`
+	SyncType        *models.RepositorySyncType   `json:"syncType"`
+	PollingInterval *int64                       `json:"pollingIntervalSeconds"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -382,25 +381,27 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	var req updateRepositoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: url, authMethod, and syncType are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 
-	switch req.SyncType {
-	case models.SyncTypePolling, models.SyncTypeWebhook, models.SyncTypeManual:
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid syncType: must be polling, webhook, or manual"})
-		return
-	}
+	if req.SyncType != nil {
+		switch *req.SyncType {
+		case models.SyncTypePolling, models.SyncTypeWebhook, models.SyncTypeManual:
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid syncType: must be polling, webhook, or manual"})
+			return
+		}
 
-	if req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
-		var defaultInterval = DefaultPollingIntervalSeconds
-		req.PollingInterval = &defaultInterval
-	}
+		if *req.SyncType == models.SyncTypePolling && req.PollingInterval == nil {
+			var defaultInterval = DefaultPollingIntervalSeconds
+			req.PollingInterval = &defaultInterval
+		}
 
-	if req.SyncType == models.SyncTypePolling && req.PollingInterval != nil && *req.PollingInterval < MinPollingIntervalSeconds {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("pollingIntervalSeconds must be at least %d", MinPollingIntervalSeconds)})
-		return
+		if *req.SyncType == models.SyncTypePolling && req.PollingInterval != nil && *req.PollingInterval < MinPollingIntervalSeconds {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("pollingIntervalSeconds must be at least %d", MinPollingIntervalSeconds)})
+			return
+		}
 	}
 
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
@@ -413,59 +414,54 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	provider, httpStatus, validationErr := resolveProvider(repo.Provider, req.AuthMethod)
-	if validationErr != "" {
-		c.JSON(httpStatus, gin.H{"error": validationErr})
-		return
-	}
-
-	if req.Url != repo.Url {
-		repoOwner, repoName, err := provider.ParseURL(req.Url)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid repository URL: %v", err)})
+	if req.AuthMethod != nil {
+		authMethod := *req.AuthMethod
+		_, httpStatus, validationErr := resolveProvider(repo.Provider, authMethod)
+		if validationErr != "" {
+			c.JSON(httpStatus, gin.H{"error": validationErr})
 			return
 		}
-		repo.Url = req.Url
-		repo.Name = fmt.Sprintf("%s/%s", repoOwner, repoName)
-	}
 
-	repo.AuthMethod = req.AuthMethod
+		repo.AuthMethod = authMethod
 
-	if req.AuthUser != nil && *req.AuthUser != "" {
-		enc := crypto.EncryptedString(*req.AuthUser)
-		repo.AuthUser = &enc
-	} else {
-		repo.AuthUser = nil
-	}
+		if req.AuthUser != nil && *req.AuthUser != "" {
+			enc := crypto.EncryptedString(*req.AuthUser)
+			repo.AuthUser = &enc
+		} else {
+			repo.AuthUser = nil
+		}
 
-	if req.AuthToken != nil && *req.AuthToken != "" {
-		enc := crypto.EncryptedString(*req.AuthToken)
-		repo.AuthToken = &enc
-	} else {
-		repo.AuthToken = nil
+		if req.AuthToken != nil && *req.AuthToken != "" {
+			enc := crypto.EncryptedString(*req.AuthToken)
+			repo.AuthToken = &enc
+		} else {
+			repo.AuthToken = nil
+		}
 	}
 
 	prevSyncType := repo.SyncType
-	repo.SyncType = req.SyncType
+	if req.SyncType != nil {
+		repo.SyncType = *req.SyncType
 
-	switch {
-	case req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook:
-		secret, err := auth.GenerateRandomString(32)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate webhook secret"})
-			return
+		switch {
+		case *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook:
+			secret, err := auth.GenerateRandomString(32)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate webhook secret"})
+				return
+			}
+			enc := crypto.EncryptedString(secret)
+			repo.WebhookSecret = &enc
+		case *req.SyncType != models.SyncTypeWebhook:
+			repo.WebhookSecret = nil
 		}
-		enc := crypto.EncryptedString(secret)
-		repo.WebhookSecret = &enc
-	case req.SyncType != models.SyncTypeWebhook:
-		repo.WebhookSecret = nil
-	}
 
-	if req.PollingInterval != nil {
-		d := time.Duration(*req.PollingInterval) * time.Second
-		repo.PollingInterval = &d
-	} else {
-		repo.PollingInterval = nil
+		if req.PollingInterval != nil {
+			d := time.Duration(*req.PollingInterval) * time.Second
+			repo.PollingInterval = &d
+		} else {
+			repo.PollingInterval = nil
+		}
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {
@@ -483,7 +479,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	newWebhookSecret := req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
+	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
 	sse.PublishUpdate(RepositoriesPath)
 }

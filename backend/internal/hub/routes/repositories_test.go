@@ -858,9 +858,6 @@ func TestUpdateRepositoryHandler_InvalidRequest(t *testing.T) {
 		body any
 	}{
 		{"empty body", nil},
-		{"missing url", map[string]any{"authMethod": "none", "syncType": "manual"}},
-		{"missing authMethod", map[string]any{"url": "https://github.com/o/r", "syncType": "manual"}},
-		{"missing syncType", map[string]any{"url": "https://github.com/o/r", "authMethod": "none"}},
 	}
 
 	for _, tt := range tests {
@@ -967,7 +964,7 @@ func TestUpdateRepositoryHandler_UnsupportedAuthMethod(t *testing.T) {
 	}
 }
 
-func TestUpdateRepositoryHandler_InvalidURL(t *testing.T) {
+func TestUpdateRepositoryHandler_InvalidAuthMethodValue(t *testing.T) {
 	setupTestDBWithRepos(t)
 
 	repo := models.Repository{
@@ -984,8 +981,7 @@ func TestUpdateRepositoryHandler_InvalidURL(t *testing.T) {
 	}
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"url":        "not-a-valid-github-url",
-		"authMethod": "none",
+		"authMethod": "oauth", // not a recognised auth method
 		"syncType":   "manual",
 	})
 
@@ -1058,7 +1054,6 @@ func TestUpdateRepositoryHandler_Success(t *testing.T) {
 
 	interval := int64(120)
 	reqBody, _ := json.Marshal(map[string]any{
-		"url":                    "https://github.com/owner/new-repo",
 		"authMethod":             "token",
 		"authToken":              "test-token", //nolint:gosec
 		"syncType":               "polling",
@@ -1080,11 +1075,11 @@ func TestUpdateRepositoryHandler_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Url != "https://github.com/owner/new-repo" {
-		t.Errorf("expected url %q, got %q", "https://github.com/owner/new-repo", body.Url)
+	if body.Url != "https://github.com/owner/old-repo" {
+		t.Errorf("expected url %q, got %q", "https://github.com/owner/old-repo", body.Url)
 	}
-	if body.Name != "owner/new-repo" {
-		t.Errorf("expected name %q, got %q", "owner/new-repo", body.Name)
+	if body.Name != "owner/old-repo" {
+		t.Errorf("expected name %q, got %q", "owner/old-repo", body.Name)
 	}
 	if body.AuthMethod != "token" {
 		t.Errorf("expected authMethod %q, got %q", "token", body.AuthMethod)
