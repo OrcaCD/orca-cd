@@ -31,6 +31,7 @@ import {
 	NavigationMenu,
 	NavigationMenuList,
 } from "@/components/ui/navigation-menu";
+import HotkeysDialog from "./dialogs/hotkeys-dialog";
 
 type NavKey = "applications" | "agents" | "repositories" | "admin";
 
@@ -108,6 +109,8 @@ export default function Navbar() {
 				</div>
 
 				<div className="flex items-center gap-3">
+					<HotkeysDialog />
+
 					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
 						<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
 							<FileText className="h-5 w-5 text-muted-foreground" />

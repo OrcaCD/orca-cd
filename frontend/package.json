@@ -18,6 +18,7 @@
 		"@tailwindcss/vite": "^4.2.4",
 		"@tanstack/react-devtools": "^0.10.2",
 		"@tanstack/react-form": "^1.29.1",
+		"@tanstack/react-hotkeys": "^0.10.0",
 		"@tanstack/react-router": "^1.169.1",
 		"@tanstack/react-router-devtools": "^1.166.13",
 		"@tanstack/react-table": "^8.21.3",
