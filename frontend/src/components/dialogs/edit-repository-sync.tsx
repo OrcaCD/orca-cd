@@ -189,23 +189,22 @@ export default function EditRepositorySyncDialog({
 									const unchanged =
 										values.syncType === repository.syncType &&
 										(values.syncType !== "polling" ||
-											values.pollingIntervalSeconds ===
-												(repository.pollingIntervalSeconds ?? 300));
+											values.pollingIntervalSeconds === (repository.pollingIntervalSeconds ?? 300));
 									return (
-									<div className="flex gap-2 pt-2">
-										<Button type="submit" disabled={isLoading || unchanged}>
-											{m.updateRepository()}
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											onClick={handleClose}
-											disabled={isLoading}
-										>
-											{m.cancel()}
-										</Button>
-									</div>
-								);
+										<div className="flex gap-2 pt-2">
+											<Button type="submit" disabled={isLoading || unchanged}>
+												{m.updateRepository()}
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												onClick={handleClose}
+												disabled={isLoading}
+											>
+												{m.cancel()}
+											</Button>
+										</div>
+									);
 								}}
 							</form.Subscribe>
 						</FieldGroup>
