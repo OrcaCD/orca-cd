@@ -77,7 +77,6 @@ export default function EditRepositorySyncDialog({
 				const repo = await updateRepository(repository.id, {
 					syncType: value.syncType,
 					pollingIntervalSeconds,
-					authMethod: repository.authMethod,
 				});
 
 				setSuccessData({ webhookUrl: repo.webhookUrl, webhookSecret: repo.webhookSecret });
@@ -185,10 +184,16 @@ export default function EditRepositorySyncDialog({
 								}
 							</form.Subscribe>
 
-							<form.Subscribe selector={(state) => state.values.syncType}>
-								{(syncType) => (
+							<form.Subscribe selector={(state) => state.values}>
+								{(values) => {
+									const unchanged =
+										values.syncType === repository.syncType &&
+										(values.syncType !== "polling" ||
+											values.pollingIntervalSeconds ===
+												(repository.pollingIntervalSeconds ?? 300));
+									return (
 									<div className="flex gap-2 pt-2">
-										<Button type="submit" disabled={isLoading || syncType === repository.syncType}>
+										<Button type="submit" disabled={isLoading || unchanged}>
 											{m.updateRepository()}
 										</Button>
 										<Button
@@ -200,7 +205,8 @@ export default function EditRepositorySyncDialog({
 											{m.cancel()}
 										</Button>
 									</div>
-								)}
+								);
+								}}
 							</form.Subscribe>
 						</FieldGroup>
 					</form>

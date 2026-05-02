@@ -402,7 +402,7 @@
 	"editRepositoryAuth": "Authentifizierung bearbeiten",
 	"editRepositoryAuthShort": "Auth",
 	"editRepositoryAuthDescription": "Aktualisiere das Auth-Token für dieses Repository.",
-	"editRepositorySync": "Synchronizierung bearbeiten",
+	"editRepositorySync": "Synchronisierung bearbeiten",
 	"editRepositorySyncShort": "Sync",
 	"editRepositorySyncDescription": "Ändere, wie OrcaCD dieses Repository synchronisiert.",
 	"updateAuthentication": "Authentifizierung aktualisieren",

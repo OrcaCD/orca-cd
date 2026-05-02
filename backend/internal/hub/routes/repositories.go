@@ -385,6 +385,11 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field must be provided"})
+		return
+	}
+
 	if req.SyncType != nil {
 		switch *req.SyncType {
 		case models.SyncTypePolling, models.SyncTypeWebhook, models.SyncTypeManual:

@@ -858,6 +858,8 @@ func TestUpdateRepositoryHandler_InvalidRequest(t *testing.T) {
 		body any
 	}{
 		{"empty body", nil},
+		{"no updatable fields", map[string]any{}},
+		{"only authUser without authMethod", map[string]any{"authUser": "user"}},
 	}
 
 	for _, tt := range tests {
