@@ -155,7 +155,9 @@ export default function HotkeysDialog() {
 							<KbdGroup>
 								{shortcut.sequence.map((key, index) => (
 									<Fragment key={`${shortcut.id}-${key}`}>
-										{index > 0 && <span className="text-xs text-muted-foreground">+</span>}
+										{index > 0 && (
+											<span className="text-xs text-muted-foreground">{m.hotkeysThen()}</span>
+										)}
 										<Kbd>{key}</Kbd>
 									</Fragment>
 								))}
