@@ -188,10 +188,7 @@ export default function EditRepositorySyncDialog({
 							<form.Subscribe selector={(state) => state.values.syncType}>
 								{(syncType) => (
 									<div className="flex gap-2 pt-2">
-										<Button
-											type="submit"
-											disabled={isLoading || syncType === repository.syncType}
-										>
+										<Button type="submit" disabled={isLoading || syncType === repository.syncType}>
 											{m.updateRepository()}
 										</Button>
 										<Button

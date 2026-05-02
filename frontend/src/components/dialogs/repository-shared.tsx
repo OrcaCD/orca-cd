@@ -2,13 +2,21 @@ import { EyeIcon, EyeOffIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@/components/ui/field";
+import {
+	Field,
+	FieldContent,
+	FieldDescription,
+	FieldLabel,
+	FieldTitle,
+} from "@/components/ui/field";
 import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import type { RepositorySyncType } from "@/lib/repositories";
 
 export function RepositoryDialogLoadingOverlay({ isLoading }: { isLoading: boolean }) {
-	if (!isLoading) { return null; }
+	if (!isLoading) {
+		return null;
+	}
 	return (
 		<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
 			<Loader2Icon className="h-8 w-8 animate-spin text-primary" />
@@ -26,7 +34,9 @@ export function WebhookSetupDetails({
 }) {
 	const [visible, setVisible] = useState(false);
 
-	if (!webhookSecret) { return null; }
+	if (!webhookSecret) {
+		return null;
+	}
 
 	return (
 		<div className="space-y-3 mt-4">
