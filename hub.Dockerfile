@@ -10,7 +10,7 @@ COPY frontend/ ./
 
 RUN npm run build
 
-FROM bufbuild/buf:1.68 AS buf
+FROM bufbuild/buf:1.69 AS buf
 
 FROM golang:1.26-trixie AS builder
 
