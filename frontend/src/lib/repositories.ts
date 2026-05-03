@@ -42,7 +42,14 @@ export interface CreateRepositoryRequest {
 	webhookSecret?: string;
 }
 
-type UpdateRepositoryRequest = Omit<CreateRepositoryRequest, "provider">;
+export interface UpdateRepositoryRequest {
+	authMethod?: RepositoryAuthMethod;
+	authUser?: string;
+	authToken?: string;
+	syncType?: RepositorySyncType;
+	pollingIntervalSeconds?: number;
+	webhookSecret?: string;
+}
 
 export interface TestConnectionRequest {
 	url: string;

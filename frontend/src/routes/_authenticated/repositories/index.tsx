@@ -1,6 +1,8 @@
 import { columns } from "@/components/tables/repositories/columns";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
-import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
+import CreateRepositoryDialog from "@/components/dialogs/create-repository";
+import EditRepositoryAuthDialog from "@/components/dialogs/edit-repository-auth";
+import EditRepositorySyncDialog from "@/components/dialogs/edit-repository-sync";
 import {
 	deleteRepository,
 	syncRepository,
@@ -89,7 +91,7 @@ function RepositoriesPage() {
 					<h1 className="text-2xl font-bold">{m.pageRepositories()}</h1>
 					<p className="text-muted-foreground text-sm mt-1">{m.repositoriesPageDescription()}</p>
 				</div>
-				<UpsertRepositoryDialog />
+				<CreateRepositoryDialog />
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingRepositories()}</p>}
@@ -142,7 +144,8 @@ function RepositoriesPage() {
 														<RefreshCw className="h-4 w-4" />
 														{m.sync()}
 													</DropdownMenuItem>
-													<UpsertRepositoryDialog existingRepository={repository} asDropdownItem />
+													<EditRepositoryAuthDialog repository={repository} asDropdownItem />
+													<EditRepositorySyncDialog repository={repository} asDropdownItem />
 													<ConfirmationDialog
 														onConfirm={() => handleDeleteRepo(repository)}
 														title={m.deleteRepositoryTitle()}

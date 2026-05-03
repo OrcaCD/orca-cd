@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { EyeIcon, EyeOffIcon, Loader2Icon, PencilIcon, PlusIcon } from "lucide-react";
+import { PencilIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -11,8 +11,6 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
 	createRepository,
-	updateRepository,
-	type Repository,
 	type RepositoryProvider,
 	testRepositoryConnection,
 	type RepositorySyncType,
@@ -30,7 +28,6 @@ import {
 	FieldContent,
 	FieldLabel,
 	FieldTitle,
-	FieldDescription,
 } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -40,8 +37,12 @@ import { useStepItemContext, type StepStatus } from "@stepperize/react/primitive
 import { cn } from "@/lib/utils";
 import ErrorAlert from "../alerts/error-alert";
 import SuccessAlert from "../alerts/success-alert";
-import CopyButton from "../copy-btn";
 import { m } from "@/lib/paraglide/messages";
+import {
+	RepositoryDialogLoadingOverlay,
+	SyncTypeRadioGroup,
+	WebhookSetupDetails,
+} from "./repository-shared";
 
 const PROVIDERS = [
 	{ id: "github", label: "GitHub", disabled: false, placeholderUrl: "https://github.com/org/repo" },
@@ -76,26 +77,6 @@ const PROVIDERS = [
 		placeholderUrl: "https://git.example.com/org/repo",
 	},
 ] as const;
-
-function getSyncTypes(): { id: RepositorySyncType; label: string; description: string }[] {
-	return [
-		{
-			id: "webhook",
-			label: m.syncTypeWebhookRecommended(),
-			description: m.syncTypeWebhookDescription(),
-		},
-		{
-			id: "polling",
-			label: m.syncTypePolling(),
-			description: m.syncTypePollingDescription(),
-		},
-		{
-			id: "manual",
-			label: m.syncTypeManual(),
-			description: m.syncTypeManualDescription(),
-		},
-	];
-}
 
 const { Stepper } = defineStepper(
 	{ id: "provider" },
@@ -284,36 +265,17 @@ function RepositoryStepContent({ form, error }: { form: RepoFormApi; error: stri
 }
 
 function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
-	const syncTypes = getSyncTypes();
-
 	return (
 		<>
 			<p className="text-muted-foreground text-sm mb-4">{m.syncTypeDescription()}</p>
 			<FieldGroup>
 				<form.Field name="syncType" validators={{ onSubmit: repositorySchema.shape.syncType }}>
 					{(field) => (
-						<RadioGroup
+						<SyncTypeRadioGroup
 							value={field.state.value}
+							onChange={field.handleChange}
 							onBlur={field.handleBlur}
-							onValueChange={(v) => field.handleChange(v as RepositorySyncType)}
-							className="w-fit"
-						>
-							{syncTypes.map((type) => (
-								<FieldLabel
-									htmlFor={`syncType-${type.id}`}
-									key={type.id}
-									className="cursor-pointer transition-colors"
-								>
-									<Field orientation="horizontal">
-										<FieldContent className="ps-1">
-											<FieldTitle>{type.label}</FieldTitle>
-											<FieldDescription>{type.description}</FieldDescription>
-										</FieldContent>
-										<RadioGroupItem value={type.id} id={`syncType-${type.id}`} />
-									</Field>
-								</FieldLabel>
-							))}
-						</RadioGroup>
+						/>
 					)}
 				</form.Field>
 			</FieldGroup>
@@ -322,61 +284,23 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 }
 
 function SyncTypeSummaryContent({
-	isEditing,
 	webhookUrl,
 	webhookSecret,
 }: {
-	isEditing: boolean;
 	webhookUrl: string | undefined;
 	webhookSecret: string | undefined;
 }) {
-	const [visible, setVisible] = useState(false);
-
 	return (
 		<>
 			<SuccessAlert
-				title={isEditing ? m.repositoryUpdatedTitle() : m.repositoryConnectedTitle()}
-				description={
-					isEditing ? m.repositoryUpdatedDescription() : m.repositoryConnectedDescription()
-				}
+				title={m.repositoryConnectedTitle()}
+				description={m.repositoryConnectedDescription()}
 			/>
 
 			{!webhookSecret ? (
 				<p className="text-sm text-muted-foreground mt-4">{m.repositoryNoFurtherAction()}</p>
 			) : (
-				<div className="space-y-3 mt-4">
-					<p className="text-sm text-muted-foreground">{m.repositoryWebhookSetupDescription()}</p>
-
-					<div className="space-y-1">
-						<p className="text-xs font-medium">{m.webhookUrl()}</p>
-						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
-							<code className="flex-1 truncate font-mono text-sm">{webhookUrl}</code>
-							<CopyButton text={webhookUrl ?? ""} title={m.copyWebhookUrl()} />
-						</div>
-					</div>
-
-					<div className="space-y-1">
-						<p className="text-xs font-medium">{m.webhookSecret()}</p>
-						<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
-							<code className="flex-1 truncate font-mono text-sm">
-								{visible ? webhookSecret : "•".repeat(32)}
-							</code>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-								onClick={() => setVisible((v) => !v)}
-								title={visible ? m.hideSecret() : m.revealSecret()}
-							>
-								{visible ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
-							</Button>
-							<CopyButton text={webhookSecret} title={m.copyWebhookSecret()} />
-						</div>
-						<p className="text-xs text-muted-foreground">{m.saveSecretNow()}</p>
-					</div>
-					<div className="text-destructive">{m.docsLinkComingSoon()}</div>
-				</div>
+				<WebhookSetupDetails webhookUrl={webhookUrl} webhookSecret={webhookSecret} />
 			)}
 		</>
 	);
@@ -386,16 +310,12 @@ function StepperNavigation({
 	stepper,
 	onNext,
 	handleClose,
-	isEditing,
 }: {
 	stepper: { state: { current: { index: number; data: { id: string } }; isLast: boolean } };
 	onNext: (stepId: string, advance: () => void) => void;
 	handleClose: () => void;
-	isEditing: boolean;
 }) {
-	const isAtFirstVisibleStep = isEditing
-		? stepper.state.current.data.id === "repository"
-		: stepper.state.current.index === 0;
+	const isAtFirstVisibleStep = stepper.state.current.index === 0;
 
 	return (
 		<div className="flex items-center justify-between gap-4 pt-2">
@@ -413,7 +333,7 @@ function StepperNavigation({
 					/>
 				)}
 				{stepper.state.current.data.id === "syncType" ? (
-					<Button type="submit">{isEditing ? m.updateRepository() : m.connectRepository()}</Button>
+					<Button type="submit">{m.connectRepository()}</Button>
 				) : !stepper.state.isLast ? (
 					<Stepper.Next
 						render={(domProps) => (
@@ -431,14 +351,11 @@ function StepperNavigation({
 	);
 }
 
-export default function UpsertRepositoryDialog({
-	existingRepository,
+export default function CreateRepositoryDialog({
 	asDropdownItem = false,
 }: {
-	existingRepository?: Repository | undefined;
 	asDropdownItem?: boolean;
 }) {
-	const isEditing = !!existingRepository;
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | undefined>();
@@ -448,10 +365,10 @@ export default function UpsertRepositoryDialog({
 
 	const form = useForm({
 		defaultValues: {
-			url: existingRepository?.url ?? "",
-			provider: existingRepository?.provider ?? "github",
+			url: "",
+			provider: "github" as RepositoryProvider,
 			authToken: "",
-			syncType: existingRepository?.syncType ?? "webhook",
+			syncType: "webhook" as RepositorySyncType,
 		},
 		validators: {
 			onSubmit: repositorySchema,
@@ -462,31 +379,15 @@ export default function UpsertRepositoryDialog({
 				const authToken = value.authToken?.trim() ? value.authToken.trim() : undefined;
 				const authMethod = authToken ? "token" : "none";
 
-				if (isEditing) {
-					const repo = await updateRepository(existingRepository.id, {
-						url: value.url,
-						authMethod,
-						authToken,
-						syncType: value.syncType,
-						// oxlint-disable-next-line no-warning-comments
-						// TODO add sync interval setting to edit form
-						// I intentionally skipped it in inital setup form now to reduce complexity, but it should be editable when updating
-						// Move edit to a new component (maybe two dialogs, one for editing sync type and another for editing connection details)
-						pollingIntervalSeconds: existingRepository.pollingIntervalSeconds ?? undefined,
-					});
-					setWebhookSecret(repo.webhookSecret);
-					setWebhookUrl(repo.webhookUrl);
-				} else {
-					const repo = await createRepository({
-						url: value.url,
-						provider: value.provider,
-						authMethod,
-						authToken,
-						syncType: value.syncType,
-					});
-					setWebhookSecret(repo.webhookSecret);
-					setWebhookUrl(repo.webhookUrl);
-				}
+				const repo = await createRepository({
+					url: value.url,
+					provider: value.provider,
+					authMethod,
+					authToken,
+					syncType: value.syncType,
+				});
+				setWebhookSecret(repo.webhookSecret);
+				setWebhookUrl(repo.webhookUrl);
 
 				stepperRef.current?.navigation.next();
 			} catch (err: any) {
@@ -544,10 +445,6 @@ export default function UpsertRepositoryDialog({
 						<PencilIcon className="h-4 w-4" />
 						{m.edit()}
 					</DropdownMenuItem>
-				) : isEditing ? (
-					<Button variant="ghost" size="icon">
-						<PencilIcon className="h-4 w-4" />
-					</Button>
 				) : (
 					<Button>
 						<PlusIcon className="h-4 w-4" />
@@ -560,14 +457,9 @@ export default function UpsertRepositoryDialog({
 				className="sm:max-w-md overflow-hidden"
 				aria-describedby={undefined}
 			>
-				{isLoading && (
-					<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm">
-						<Loader2Icon className="h-8 w-8 animate-spin text-primary" />
-						<p className="text-sm text-muted-foreground">{m.loadingDots()}</p>
-					</div>
-				)}
+				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<DialogHeader>
-					<DialogTitle>{isEditing ? m.editRepository() : m.addRepository()}</DialogTitle>
+					<DialogTitle>{m.addRepository()}</DialogTitle>
 				</DialogHeader>
 				<form
 					className="max-w-[calc(var(--container-md)-2rem)]"
@@ -576,31 +468,23 @@ export default function UpsertRepositoryDialog({
 						await form.handleSubmit();
 					}}
 				>
-					<Stepper.Root
-						key={String(open)}
-						className="w-full space-y-6"
-						orientation="horizontal"
-						initialStep={isEditing ? "repository" : undefined}
-					>
+					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
 						{({ stepper }) => {
 							stepperRef.current = stepper;
 							const allSteps = stepper.state.all;
-							const stepsToShow = isEditing
-								? allSteps.filter((s) => s.id !== "provider")
-								: allSteps;
-							const currentRealIndex = stepper.state.current.index;
+							const currentIndex = stepper.state.current.index;
+
 							return (
 								<>
 									<Stepper.List className="flex list-none gap-2 flex-row items-center justify-between">
-										{stepsToShow.map((stepData, displayIndex) => {
-											const realIndex = allSteps.findIndex((s) => s.id === stepData.id);
+										{allSteps.map((stepData, displayIndex) => {
 											const status: StepStatus =
-												realIndex < currentRealIndex
+												displayIndex < currentIndex
 													? "success"
-													: realIndex === currentRealIndex
+													: displayIndex === currentIndex
 														? "active"
 														: "inactive";
-											const isLast = displayIndex === stepsToShow.length - 1;
+											const isLast = displayIndex === allSteps.length - 1;
 											return (
 												<React.Fragment key={stepData.id}>
 													<Stepper.Item
@@ -652,7 +536,6 @@ export default function UpsertRepositoryDialog({
 												render={(props) => (
 													<div {...props}>
 														<SyncTypeSummaryContent
-															isEditing={isEditing}
 															webhookSecret={webhookSecret}
 															webhookUrl={webhookUrl}
 														/>
@@ -666,7 +549,6 @@ export default function UpsertRepositoryDialog({
 										stepper={stepper}
 										onNext={handleNext}
 										handleClose={handleClose}
-										isEditing={isEditing}
 									/>
 								</>
 							);
