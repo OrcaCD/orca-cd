@@ -398,5 +398,21 @@
 	"loggingIn": "Logging in...",
 	"noLoginMethodsAvailable": "No login methods are currently available. Please contact your administrator.",
 	"hidePassword": "Hide password",
-	"showPassword": "Show password"
+	"showPassword": "Show password",
+	"editRepositoryAuth": "Edit Authentication",
+	"editRepositoryAuthShort": "Auth",
+	"editRepositoryAuthDescription": "Update the authentication token for this repository.",
+	"editRepositorySync": "Edit Synchronization",
+	"editRepositorySyncShort": "Sync",
+	"editRepositorySyncDescription": "Change how OrcaCD syncs with this repository.",
+	"updateAuthentication": "Update Authentication",
+	"authTokenLeaveBlankHint": "Leave blank to remove authentication.",
+	"pollingIntervalSeconds": "Polling Interval (seconds)",
+	"pollingIntervalHint": "Minimum 60 s, maximum 86 400 s (24 h).",
+	"validationPollingIntervalMin": "Polling interval must be at least 60 seconds",
+	"validationPollingIntervalMax": "Polling interval must be at most 86400 seconds",
+	"repositoryAuthUpdated": "Authentication updated",
+	"repositorySyncUpdatedTitle": "Sync settings updated",
+	"repositorySyncUpdatedDescription": "The sync settings have been successfully updated.",
+	"failedUpdateRepository": "Failed to update repository"
 }

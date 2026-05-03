@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import UpsertRepositoryDialog from "@/components/dialogs/upsert-repository";
+import EditRepositoryAuthDialog from "@/components/dialogs/edit-repository-auth";
+import EditRepositorySyncDialog from "@/components/dialogs/edit-repository-sync";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
@@ -176,14 +177,17 @@ export const columns: ColumnDef<Repository>[] = [
 								<MoreHorizontal className="h-4 w-4" />
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" className="w-fit">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>
 								<RefreshCw className="h-4 w-4" />
 								{m.sync()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<UpsertRepositoryDialog existingRepository={row.original} asDropdownItem />
+							<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
+							<EditRepositoryAuthDialog repository={row.original} asDropdownItem />
+							<EditRepositorySyncDialog repository={row.original} asDropdownItem />
+							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								triggerText={
 									<>
