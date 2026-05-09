@@ -46,6 +46,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      artifact-metadata: write
     strategy:
       matrix:
         include:
@@ -109,8 +110,15 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
+          provenance: mode=max
           sbom: true
+
+      - name: Attest ${{ matrix.name }} image
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Sign ${{ matrix.name }} image
         run: |
