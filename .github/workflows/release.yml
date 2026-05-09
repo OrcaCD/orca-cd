@@ -122,5 +122,6 @@ jobs:
 
       - name: Sign ${{ matrix.name }} image
         run: |
+          LOWERCASE_IMAGE_PREFIX=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
           cosign sign --yes \
-            ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
+            "$LOWERCASE_IMAGE_PREFIX/${{ matrix.name }}@${{ steps.build.outputs.digest }}"
