@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -86,20 +87,11 @@ func DefaultConfig() (Config, error) {
 	}, nil
 }
 
-func newLogger(logJSON bool) zerolog.Logger {
-	if logJSON {
-		return zerolog.New(os.Stderr).With().Timestamp().Str("service", "hub").Logger()
-	}
-
-	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-		With().Timestamp().Str("service", "hub").Logger()
-}
-
-var Log = newLogger(false)
+var Log = logger.New("hub", false)
 
 func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
-	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
+	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
