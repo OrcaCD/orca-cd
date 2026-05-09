@@ -12,10 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
@@ -116,16 +116,7 @@ func parseTokenClaims(authToken string) (agentID string, hubPublicKey ed25519.Pu
 	return claims.Subject, hubPubKey, nil
 }
 
-func newLogger(logJSON bool) zerolog.Logger {
-	if logJSON {
-		return zerolog.New(os.Stderr).With().Timestamp().Str("service", "agent").Logger()
-	}
-
-	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-		With().Timestamp().Str("service", "agent").Logger()
-}
-
-var Log = newLogger(false)
+var Log = logger.New("agent", false)
 
 // connTracker holds the active WebSocket connection under a mutex so the
 // shutdown goroutine can safely close it from a different goroutine.
@@ -154,7 +145,7 @@ func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn)
 }
 
 func Run(cfg Config) error {
-	Log = newLogger(cfg.LogJSON).Level(cfg.LogLevel)
+	Log = logger.New("agent", cfg.LogJSON).Level(cfg.LogLevel)
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
