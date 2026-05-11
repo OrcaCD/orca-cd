@@ -47,6 +47,7 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 
 	composePath := filepath.Join(c.deploymentsDir, req.ApplicationName, composeFileName)
+	//nolint:gosec // composePath is built from t.TempDir() and a fixed test application id
 	content, err := os.ReadFile(composePath)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
