@@ -17,15 +17,19 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/backend"
     multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
 
   - package-ecosystem: "docker"
     directory: "/"
     multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     multi-ecosystem-group: "dependencies"
+    patterns: ["*"]

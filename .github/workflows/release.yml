@@ -104,6 +104,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             VERSION=${{ github.event_name == 'workflow_dispatch' && 'main' || needs.release-please.outputs.tag-name }}
             COMMIT=${{ github.sha }}
