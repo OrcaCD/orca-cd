@@ -130,12 +130,12 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(client, msg, log)
+			go handleClientMessage(h, client, msg, log)
 		}
 	}
 }
 
-func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -166,6 +166,13 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(ctx, "last_seen", lastSeen)
 		if err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
+		}
+	case *messages.ClientMessage_DeployResult:
+		if !h.ResolveDeploy(p.DeployResult) {
+			log.Warn().
+				Str("client", client.Id).
+				Str("request_id", p.DeployResult.RequestId).
+				Msg("received deploy result for unknown request")
 		}
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")

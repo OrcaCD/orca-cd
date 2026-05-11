@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
@@ -16,6 +18,35 @@ import (
 )
 
 const handshakeTimeout = 15 * time.Second
+const deploymentTimeout = 5 * time.Minute
+
+type outboundSender interface {
+	Send(msg *messages.ClientMessage) error
+}
+
+type deployExecutor interface {
+	Deploy(ctx context.Context, req docker.DeployRequest) error
+}
+
+type messageSender struct {
+	conn    *websocket.Conn
+	mu      sync.Mutex
+	session *wscrypto.Session
+}
+
+func newMessageSender(conn *websocket.Conn, session *wscrypto.Session) *messageSender {
+	return &messageSender{
+		conn:    conn,
+		session: session,
+	}
+}
+
+func (s *messageSender) Send(msg *messages.ClientMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return sendMessage(s.conn, s.session, msg)
+}
 
 func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.PublicKey) (*wscrypto.Session, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
@@ -95,7 +126,7 @@ func sendMessage(conn *websocket.Conn, session *wscrypto.Session, msg *messages.
 	return conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
-func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, session *wscrypto.Session) {
+func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor) {
 	_, isEncrypted := msg.Payload.(*messages.ServerMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		Log.Warn().Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -129,11 +160,56 @@ func handleServerMessage(msg *messages.ServerMessage, conn *websocket.Conn, sess
 				},
 			},
 		}
-		if err := sendMessage(conn, session, pong); err != nil {
+		if err := sender.Send(pong); err != nil {
 			Log.Error().Err(err).Msg("failed to send Pong response")
 		}
+	case *messages.ServerMessage_DeployRequest:
+		go executeDeployment(ctx, sender, deployer, p.DeployRequest)
 	default:
 		Log.Warn().Msg("unknown message type received")
+	}
+}
+
+func executeDeployment(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeployRequest) {
+	result := &messages.DeployResult{
+		RequestId:     req.RequestId,
+		ApplicationId: req.ApplicationId,
+	}
+
+	if deployer == nil {
+		result.ErrorMessage = "deployment executor not initialized"
+		sendDeployResult(sender, result)
+		return
+	}
+
+	deployCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
+	defer cancel()
+
+	if err := deployer.Deploy(deployCtx, docker.DeployRequest{
+		ApplicationID:   req.ApplicationId,
+		ApplicationName: req.ApplicationName,
+		ComposeFile:     req.ComposeFile,
+	}); err != nil {
+		result.ErrorMessage = err.Error()
+		sendDeployResult(sender, result)
+		return
+	}
+
+	result.Success = true
+	sendDeployResult(sender, result)
+}
+
+func sendDeployResult(sender outboundSender, result *messages.DeployResult) {
+	if err := sender.Send(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_DeployResult{
+			DeployResult: result,
+		},
+	}); err != nil {
+		Log.Error().
+			Err(err).
+			Str("application_id", result.ApplicationId).
+			Str("request_id", result.RequestId).
+			Msg("failed to send deploy result")
 	}
 }
 

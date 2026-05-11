@@ -1,0 +1,93 @@
+package docker
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
+)
+
+func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	originalLoadProject := loadProject
+	originalUpProject := upProject
+	t.Cleanup(func() {
+		loadProject = originalLoadProject
+		upProject = originalUpProject
+	})
+
+	var gotLoadOptions api.ProjectLoadOptions
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		gotLoadOptions = options
+		return &composetypes.Project{Name: options.ProjectName}, nil
+	}
+
+	var gotUpOptions api.UpOptions
+	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, options api.UpOptions) error {
+		if project.Name != "orca-billing" {
+			t.Fatalf("expected project name %q, got %q", "orca-billing", project.Name)
+		}
+		gotUpOptions = options
+		return nil
+	}
+
+	req := DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/app:1.0.0\n",
+	}
+
+	if err := c.Deploy(t.Context(), req); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	composePath := filepath.Join(c.deploymentsDir, req.ApplicationName, composeFileName)
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(content) != req.ComposeFile {
+		t.Fatalf("expected compose file to be written to deployment volume")
+	}
+
+	if gotLoadOptions.ProjectName != "orca-billing" {
+		t.Fatalf("expected load project name %q, got %q", "orca-billing", gotLoadOptions.ProjectName)
+	}
+	if len(gotLoadOptions.ConfigPaths) != 1 || gotLoadOptions.ConfigPaths[0] != composePath {
+		t.Fatalf("unexpected config paths: %#v", gotLoadOptions.ConfigPaths)
+	}
+	if gotLoadOptions.WorkingDir != filepath.Join(c.deploymentsDir, req.ApplicationName) {
+		t.Fatalf("expected working dir %q, got %q", filepath.Join(c.deploymentsDir, req.ApplicationName), gotLoadOptions.WorkingDir)
+	}
+
+	if !gotUpOptions.Start.Wait {
+		t.Fatal("expected compose up to wait for services to become ready")
+	}
+	if gotUpOptions.Start.WaitTimeout != deployWaitTimeout {
+		t.Fatalf("expected wait timeout %s, got %s", deployWaitTimeout, gotUpOptions.Start.WaitTimeout)
+	}
+	if !gotUpOptions.Create.RemoveOrphans {
+		t.Fatal("expected compose up to remove orphaned containers")
+	}
+	if gotUpOptions.Create.Recreate != api.RecreateDiverged {
+		t.Fatalf("expected recreate strategy %q, got %q", api.RecreateDiverged, gotUpOptions.Create.Recreate)
+	}
+}
+
+func TestDeploy_RejectsUnsafeApplicationID(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID: "bad/id",
+		ComposeFile:   "services: {}\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy to reject unsafe application ids")
+	}
+}

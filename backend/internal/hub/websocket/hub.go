@@ -1,6 +1,8 @@
 package websocket
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -19,19 +21,61 @@ type Client struct {
 	session *wscrypto.Session
 }
 
+type DeployHandle struct {
+	hub       *Hub
+	requestID string
+	outcome   chan deployOutcome
+}
+
+type deployOutcome struct {
+	err    error
+	result *messages.DeployResult
+}
+
+type pendingDeploy struct {
+	agentID string
+	outcome chan deployOutcome
+}
+
+var ErrAgentDisconnected = errors.New("agent disconnected before deployment completed")
+var ErrDeployUnavailable = errors.New("agent is not connected or unable to receive deploy requests")
+
+func (h *DeployHandle) Await(ctx context.Context) (*messages.DeployResult, error) {
+	select {
+	case outcome, ok := <-h.outcome:
+		if !ok {
+			return nil, ErrAgentDisconnected
+		}
+		return outcome.result, outcome.err
+	case <-ctx.Done():
+		h.Cancel()
+		return nil, ctx.Err()
+	}
+}
+
+func (h *DeployHandle) Cancel() {
+	h.hub.cancelDeploy(h.requestID)
+}
+
 // Close signals the WritePump to stop.
 func (c *Client) Close() {
 	close(c.Send)
 }
 
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]*Client
-	log     *zerolog.Logger
+	mu             sync.RWMutex
+	clients        map[string]*Client
+	deploysMu      sync.Mutex
+	pendingDeploys map[string]pendingDeploy
+	log            *zerolog.Logger
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
-	return &Hub{clients: make(map[string]*Client), log: log}
+	return &Hub{
+		clients:        make(map[string]*Client),
+		pendingDeploys: make(map[string]pendingDeploy),
+		log:            log,
+	}
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
@@ -54,6 +98,7 @@ func (h *Hub) Unregister(id string) {
 	h.mu.Lock()
 	delete(h.clients, id)
 	h.mu.Unlock()
+	h.failPendingDeploys(id, ErrAgentDisconnected)
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
@@ -85,6 +130,86 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 		default:
 			h.log.Warn().Str("client", c.Id).Msg("Client send buffer full, dropping message")
 		}
+	}
+}
+
+func (h *Hub) StartDeploy(agentID string, req *messages.DeployRequest) (*DeployHandle, error) {
+	handle := &DeployHandle{
+		hub:       h,
+		requestID: req.RequestId,
+		outcome:   make(chan deployOutcome, 1),
+	}
+
+	h.deploysMu.Lock()
+	h.pendingDeploys[req.RequestId] = pendingDeploy{
+		agentID: agentID,
+		outcome: handle.outcome,
+	}
+	h.deploysMu.Unlock()
+
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_DeployRequest{
+			DeployRequest: req,
+		},
+	}
+
+	if !h.Send(agentID, msg) {
+		h.cancelDeploy(req.RequestId)
+		return nil, ErrDeployUnavailable
+	}
+
+	return handle, nil
+}
+
+func (h *Hub) ResolveDeploy(result *messages.DeployResult) bool {
+	h.deploysMu.Lock()
+	pending, ok := h.pendingDeploys[result.RequestId]
+	if ok {
+		delete(h.pendingDeploys, result.RequestId)
+	}
+	h.deploysMu.Unlock()
+
+	if !ok {
+		return false
+	}
+
+	pending.outcome <- deployOutcome{result: result}
+	close(pending.outcome)
+
+	return true
+}
+
+func (h *Hub) cancelDeploy(requestID string) {
+	h.deploysMu.Lock()
+	pending, ok := h.pendingDeploys[requestID]
+	if ok {
+		delete(h.pendingDeploys, requestID)
+	}
+	h.deploysMu.Unlock()
+
+	if ok {
+		close(pending.outcome)
+	}
+}
+
+func (h *Hub) failPendingDeploys(agentID string, err error) {
+	h.deploysMu.Lock()
+	requestIDs := make([]string, 0)
+	pending := make([]pendingDeploy, 0)
+	for requestID, waiter := range h.pendingDeploys {
+		if waiter.agentID == agentID {
+			requestIDs = append(requestIDs, requestID)
+			pending = append(pending, waiter)
+		}
+	}
+	for _, requestID := range requestIDs {
+		delete(h.pendingDeploys, requestID)
+	}
+	h.deploysMu.Unlock()
+
+	for _, waiter := range pending {
+		waiter.outcome <- deployOutcome{err: err}
+		close(waiter.outcome)
 	}
 }
 

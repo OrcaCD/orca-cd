@@ -31,13 +31,14 @@ type FatalConfigError struct {
 func (e *FatalConfigError) Error() string { return e.Msg }
 
 type Config struct {
-	LogLevel     zerolog.Level
-	LogJSON      bool
-	HubUrl       string
-	AuthToken    string
-	AgentID      string
-	HubPublicKey ed25519.PublicKey
-	HealthPort   string
+	LogLevel       zerolog.Level
+	LogJSON        bool
+	HubUrl         string
+	AuthToken      string
+	AgentID        string
+	HubPublicKey   ed25519.PublicKey
+	HealthPort     string
+	DeploymentsDir string
 }
 
 func DefaultConfig() (Config, error) {
@@ -75,14 +76,20 @@ func DefaultConfig() (Config, error) {
 		healthPort = "8090"
 	}
 
+	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
+	if deploymentsDir == "" {
+		deploymentsDir = "/app/deployments"
+	}
+
 	return Config{
-		LogLevel:     logLevel,
-		LogJSON:      logJSON,
-		HubUrl:       hubUrl,
-		AuthToken:    authToken,
-		AgentID:      agentID,
-		HubPublicKey: hubPublicKey,
-		HealthPort:   healthPort,
+		LogLevel:       logLevel,
+		LogJSON:        logJSON,
+		HubUrl:         hubUrl,
+		AuthToken:      authToken,
+		AgentID:        agentID,
+		HubPublicKey:   hubPublicKey,
+		HealthPort:     healthPort,
+		DeploymentsDir: deploymentsDir,
 	}, nil
 }
 
@@ -158,7 +165,7 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}
@@ -183,6 +190,7 @@ func Run(cfg Config) error {
 		return err
 	}
 	wsConnected.Store(true)
+	sender := newMessageSender(conn, session)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -202,6 +210,7 @@ func Run(cfg Config) error {
 				return err
 			}
 			wsConnected.Store(true)
+			sender = newMessageSender(conn, session)
 			continue
 		}
 		msg := &messages.ServerMessage{}
@@ -209,6 +218,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(msg, conn, session)
+		handleServerMessage(ctx, msg, session, sender, dockerClient)
 	}
 }

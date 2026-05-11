@@ -418,6 +418,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 
 func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
 	log := testLogger()
+	h := NewHub(&log)
 	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1)}
 	// KeyExchangeResponse is neither encrypted nor a Pong — must be dropped silently.
 	msg := &messages.ClientMessage{
@@ -425,11 +426,12 @@ func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must not panic or block
+	handleClientMessage(h, client, msg, &log) // must not panic or block
 }
 
 func TestHandleClientMessage_DecryptError(t *testing.T) {
 	log := testLogger()
+	h := NewHub(&log)
 	sessionKey := make([]byte, 32)
 	session, err := wscrypto.NewSession(sessionKey)
 	if err != nil {
@@ -444,11 +446,12 @@ func TestHandleClientMessage_DecryptError(t *testing.T) {
 			},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must return without panic
+	handleClientMessage(h, client, msg, &log) // must return without panic
 }
 
 func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 	log := testLogger()
+	h := NewHub(&log)
 	sessionKey := make([]byte, 32)
 	session, err := wscrypto.NewSession(sessionKey)
 	if err != nil {
@@ -469,12 +472,13 @@ func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // doubly-encrypted — must be dropped
+	handleClientMessage(h, client, msg, &log) // doubly-encrypted — must be dropped
 }
 
 func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
+	h := NewHub(&log)
 	sessionKey := make([]byte, 32)
 	session, err := wscrypto.NewSession(sessionKey)
 	if err != nil {
@@ -495,7 +499,7 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
+	handleClientMessage(h, client, msg, &log) // hits the "unknown message type" default case
 }
 
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {

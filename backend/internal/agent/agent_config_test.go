@@ -68,6 +68,9 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if len(cfg.HubPublicKey) != ed25519.PublicKeySize {
 		t.Errorf("HubPublicKey length = %d, want %d", len(cfg.HubPublicKey), ed25519.PublicKeySize)
 	}
+	if cfg.DeploymentsDir != "/app/deployments" {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/app/deployments")
+	}
 }
 
 func TestDefaultConfig_Defaults(t *testing.T) {
@@ -87,6 +90,9 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 	if cfg.LogJSON {
 		t.Error("LogJSON = true, want false by default")
+	}
+	if cfg.DeploymentsDir != "/app/deployments" {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/app/deployments")
 	}
 }
 
@@ -148,6 +154,22 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 				t.Errorf("LogJSON = %v, want %v", cfg.LogJSON, tt.want)
 			}
 		})
+	}
+}
+
+func TestDefaultConfig_DeploymentsDirOverride(t *testing.T) {
+	token, _ := makeTestToken(t, "test-agent-id")
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", token)
+	t.Setenv("DEPLOYMENTS_DIR", "/srv/orca/deployments")
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.DeploymentsDir != "/srv/orca/deployments" {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/srv/orca/deployments")
 	}
 }
 
