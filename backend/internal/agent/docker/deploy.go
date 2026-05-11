@@ -50,7 +50,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	applicationDir := filepath.Join(c.deploymentsDir, req.ApplicationName)
 	composePath := filepath.Join(applicationDir, composeFileName)
 
-	if err := os.MkdirAll(applicationDir, 0o755); err != nil {
+	if err := os.MkdirAll(applicationDir, 0o750); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
 	if err := os.WriteFile(composePath, []byte(req.ComposeFile), 0o600); err != nil {
