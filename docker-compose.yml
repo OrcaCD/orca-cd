@@ -12,3 +12,16 @@ services:
       - '127.0.0.1:8080:8080'
     volumes:
       - ./data/hub:/app/data
+
+  agent:
+    image: ghcr.io/orcacd/agent:latest # Replace with your actual image version tag
+    container_name: orca-agent
+    restart: unless-stopped
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    use_api_socket: true # Allows container to access Docker API on host
+    depends_on: # Remove this if you are only deploying the agent on a host without the hub
+      - hub
