@@ -124,16 +124,16 @@ func TestIsPathWithinBase(t *testing.T) {
 	// Create temporary directories for testing
 	tmpDir := t.TempDir()
 	baseDir := filepath.Join(tmpDir, "base")
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
 		t.Fatalf("failed to create base directory: %v", err)
 	}
 
 	tests := []struct {
-		name    string
-		baseDir string
+		name     string
+		baseDir  string
 		filePath string
-		wantErr bool
-		errMsg  string
+		wantErr  bool
+		errMsg   string
 	}{
 		{
 			name:     "file directly in base directory",
@@ -203,10 +203,10 @@ func TestIsPathWithinBase(t *testing.T) {
 
 func TestIsPathWithinBaseInvalidInput(t *testing.T) {
 	tests := []struct {
-		name    string
-		baseDir string
+		name     string
+		baseDir  string
 		filePath string
-		wantErr bool
+		wantErr  bool
 	}{
 		{
 			name:     "invalid base directory path",

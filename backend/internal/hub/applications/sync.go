@@ -26,7 +26,7 @@ func GetMatchingApplications(ctx context.Context, repository *models.Repository,
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	markDeploymentInProgress(context.Background(), job.Application.Id, log)
+	_ = markDeploymentInProgress(context.Background(), job.Application.Id, log)
 
 	success := false
 	defer func() {
