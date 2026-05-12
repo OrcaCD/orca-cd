@@ -233,7 +233,7 @@ function ApplicationDetailsPage() {
 				<div className="flex items-center gap-2">
 					<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
 						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
-						{deploymentInProgress ? m.syncing() : m.sync()}
+						{deploymentInProgress ? m.deploying() : m.deploy()}
 					</Button>
 
 					<DropdownMenu>
