@@ -41,6 +41,7 @@ func newMessageSender(conn *websocket.Conn, session *wscrypto.Session) *messageS
 	}
 }
 
+// TODO: We should make this async by adding it to a goroutine
 func (s *messageSender) Send(msg *messages.ClientMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
