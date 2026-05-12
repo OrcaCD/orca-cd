@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 )
@@ -49,6 +50,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 
 	applicationDir := filepath.Join(c.deploymentsDir, req.ApplicationName)
 	composePath := filepath.Join(applicationDir, composeFileName)
+
+	if err := utils.DoesNotLookLikeFilePath(composePath); err != nil {
+		return fmt.Errorf("invalid compose file path: %w", err)
+	}
 
 	if err := os.MkdirAll(applicationDir, 0o750); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)

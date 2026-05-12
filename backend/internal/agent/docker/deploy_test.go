@@ -80,15 +80,32 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 }
 
-func TestDeploy_RejectsUnsafeApplicationID(t *testing.T) {
+func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
 	err := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID: "bad/id",
+		ApplicationID: "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "../bad",
 		ComposeFile:   "services: {}\n",
 	})
 	if err == nil {
-		t.Fatal("expected deploy to reject unsafe application ids")
+		t.Fatal("expected deploy to reject unsafe application names")
+	}
+	err2 := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID: "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "test/orcacd-docs",
+		ComposeFile:   "services: {}\n",
+	})
+	if err2 == nil {
+		t.Fatal("expected deploy to reject unsafe application names")
+	}
+	err3 := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID: "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "bad/../name",
+		ComposeFile:   "services: {}\n",
+	})
+	if err3 == nil {
+		t.Fatal("expected deploy to reject unsafe application names")
 	}
 }
