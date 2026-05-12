@@ -303,16 +303,6 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	if _, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", application.Id).
-		Updates(c.Request.Context(), models.Application{
-			SyncStatus: models.Syncing,
-		}); err != nil {
-		handle.Cancel()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
 	application.SyncStatus = models.Syncing
 	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
 

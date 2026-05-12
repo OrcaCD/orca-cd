@@ -26,15 +26,7 @@ func GetMatchingApplications(ctx context.Context, repository *models.Repository,
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	if _, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", job.Application.Id).
-		Updates(ctx, models.Application{
-			SyncStatus: models.Syncing,
-		}); err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).
-			Msg("failed to set application sync status to syncing")
-	}
-	sse.PublishUpdate("/api/v1/applications")
+	markDeploymentInProgress(context.Background(), job.Application.Id, log)
 
 	success := false
 	defer func() {

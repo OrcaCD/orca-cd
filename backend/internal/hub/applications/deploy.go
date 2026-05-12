@@ -84,6 +84,11 @@ func (d *Deployer) StartDeploy(app *models.Application, composeFile string) (Dep
 		return nil, fmt.Errorf("start deploy: %w", err)
 	}
 
+	// Mark deployment as in progress
+	if err := markDeploymentInProgress(context.Background(), app.Id, d.log); err != nil {
+		return nil, fmt.Errorf("mark deployment in progress: %w", err)
+	}
+
 	return handle, nil
 }
 
@@ -133,6 +138,21 @@ func (d *Deployer) trackManualDeploy(app models.Application, handle DeploymentHa
 	}
 
 	markDeploymentSuccess(context.Background(), app.Id, nil, d.log)
+}
+
+func markDeploymentInProgress(ctx context.Context, applicationID string, log *zerolog.Logger) error {
+	if _, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", applicationID).
+		Updates(ctx, models.Application{
+			SyncStatus: models.Syncing,
+		}); err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to mark application deployment in progress")
+		sse.PublishUpdate(applicationsSSEPath)
+		return err
+	}
+
+	sse.PublishUpdate(applicationsSSEPath)
+	return nil
 }
 
 func markDeploymentSuccess(ctx context.Context, applicationID string, updateFn func(*models.Application), log *zerolog.Logger) {
