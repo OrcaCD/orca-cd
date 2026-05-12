@@ -4,5 +4,7 @@ minimumReleaseAge: 2880 # 2 days
 trustPolicy: no-downgrade
 trustPolicyIgnoreAfter: 5760 # 4 days
 ignoreScripts: true
+publicHoistPattern:
+  - "@shikijs/*"
 allowBuilds:
   msw: false
