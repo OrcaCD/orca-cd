@@ -1,0 +1,7 @@
+ignorePnpmfile: true
+blockExoticSubdeps: true
+minimumReleaseAge: 2880 # 2 days
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 5760 # 4 days
+allowBuilds:
+  msw: false
