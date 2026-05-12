@@ -131,6 +131,7 @@
 	"agentsPageDescription": "Manage Docker hosts and servers",
 	"loadingAgents": "Loading agents...",
 	"adminUserManagement": "User Management",
+	"adminAuditLog": "Audit Log",
 	"adminUsersDescription": "Manage local user accounts and their roles.",
 	"loadingUsers": "Loading users...",
 	"adminOidcProviders": "SSO Providers",

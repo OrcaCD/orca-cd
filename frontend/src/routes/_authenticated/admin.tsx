@@ -14,7 +14,7 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, Shield, Users } from "lucide-react";
+import { IdCard, Info, Logs, Shield, Users } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -42,6 +42,11 @@ const adminPages = [
 		icon: Users,
 		path: "/admin/users",
 	},
+	{
+		title: () => m.adminAuditLog(),
+		icon: Logs,
+		path: "/admin/audit-log"
+	}
 ];
 
 function AdminLayout() {
