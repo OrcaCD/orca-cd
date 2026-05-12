@@ -76,11 +76,6 @@ func DefaultConfig() (Config, error) {
 		healthPort = "8090"
 	}
 
-	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
-	if deploymentsDir == "" {
-		deploymentsDir = "/app/deployments"
-	}
-
 	return Config{
 		LogLevel:       logLevel,
 		LogJSON:        logJSON,
@@ -89,7 +84,7 @@ func DefaultConfig() (Config, error) {
 		AgentID:        agentID,
 		HubPublicKey:   hubPublicKey,
 		HealthPort:     healthPort,
-		DeploymentsDir: deploymentsDir,
+		DeploymentsDir: "/deployments",
 	}, nil
 }
 

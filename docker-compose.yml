@@ -9,7 +9,7 @@ services:
     cap_drop:
       - ALL
     ports:
-      - '127.0.0.1:8080:8080'
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./data/hub:/app/data
 
@@ -24,6 +24,6 @@ services:
       - ALL
     use_api_socket: true # Allows container to access Docker API on host
     volumes:
-      - ./data/agent:/app/deployments
+      - ./data/agent/deployments:/deployments
     depends_on: # Remove this if you are only deploying the agent on a host without the hub
       - hub
