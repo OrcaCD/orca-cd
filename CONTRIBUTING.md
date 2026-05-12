@@ -34,16 +34,16 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 
 **Frontend:**
 
-| Tool                           | Version           | Purpose         |
-| ------------------------------ | ----------------- | --------------- |
-| [Node.js](https://nodejs.org/) | 24.x or 25.x      | Runtime         |
-| [npm](https://docs.npmjs.com/) | bundled with Node | Package manager |
+| Tool                           | Version       | Purpose         |
+| ------------------------------ | ------------- | --------------- |
+| [Node.js](https://nodejs.org/) | 24.x or 25.x  | Runtime         |
+| [pnpm](https://pnpm.io/)       | 11.x or newer | Package manager |
 
 ### Setting up the development environment
 
 1. Install all required tools listed above.
 2. Clone the repository and navigate to the project directory.
-3. For the frontend, navigate to the `frontend/` directory and run `npm ci` to install dependencies.
+3. For the frontend, navigate to the `frontend/` directory and run `pnpm i --frozen-lockfile` to install dependencies.
 4. Run the frontend development server with `node --run dev` from the `frontend/` directory.
 5. Copy the `.env.dev.example` file in the `backend/` directory to `.env` and adjust any necessary environment variables.
 6. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
