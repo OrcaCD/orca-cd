@@ -63,12 +63,20 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: "orca-" + strings.ToLower(req.ApplicationName),
+		ProjectName: strings.ToLower(req.ApplicationName),
 		ConfigPaths: []string{composePath},
 		WorkingDir:  applicationDir,
 	})
 	if err != nil {
 		return fmt.Errorf("load compose project: %w", err)
+	}
+
+	// Add OrcaCD managed label to all services
+	for _, service := range project.Services {
+		if service.Labels == nil {
+			service.Labels = make(map[string]string)
+		}
+		service.Labels["managed_by"] = "orca-cd"
 	}
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
