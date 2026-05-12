@@ -63,6 +63,8 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"user_oidc_identities",
 		"repositories",
 		"applications",
+		"notifications",
+		"application_notifications",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -244,6 +246,50 @@ func TestRunMigrations_ApplicationsTableSchema(t *testing.T) {
 	for _, col := range required {
 		if !cols[col] {
 			t.Errorf("applications table missing column %q", col)
+		}
+	}
+}
+
+func TestRunMigrations_NotificationsTableSchema(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	cols := columnNames(t, sqlDB, "notifications")
+
+	required := []string{
+		"id", "name", "enabled", "enable_by_default",
+		"status", "type", "config",
+		"created_at", "updated_at",
+	}
+	for _, col := range required {
+		if !cols[col] {
+			t.Errorf("notifications table missing column %q", col)
+		}
+	}
+}
+
+func TestRunMigrations_ApplicationNotificationsTableSchema(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	cols := columnNames(t, sqlDB, "application_notifications")
+
+	required := []string{"application_id", "notification_id"}
+	for _, col := range required {
+		if !cols[col] {
+			t.Errorf("application_notifications table missing column %q", col)
 		}
 	}
 }

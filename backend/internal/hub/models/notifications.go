@@ -1,0 +1,32 @@
+package models
+
+import "github.com/OrcaCD/orca-cd/internal/hub/crypto"
+
+type NotificationStatus string
+
+const (
+	NotificationHealthy       NotificationStatus = "healthy"
+	NotificationUnhealthy     NotificationStatus = "unhealthy"
+	NotificationUnknownHealth NotificationStatus = "unknown"
+)
+
+type NotificationType string
+
+const (
+	NotificationTypeDiscord NotificationType = "discord"
+)
+
+type Notification struct {
+	Base
+	Name            crypto.EncryptedString `gorm:"type:text;not null"`
+	Enabled         bool                   `gorm:"not null"`
+	EnableByDefault bool                   `gorm:"not null"`
+	Status          NotificationStatus     `gorm:"type:text;not null"`
+	Type            NotificationType       `gorm:"type:text;not null"`
+	Config          crypto.EncryptedString `gorm:"type:text;not null"`
+	Applications    []Application          `gorm:"many2many:application_notifications;"`
+}
+
+func (Notification) TableName() string {
+	return "notifications"
+}
