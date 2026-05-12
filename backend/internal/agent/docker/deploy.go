@@ -48,10 +48,16 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return errors.New("compose file is empty")
 	}
 
+	// Validate application name to prevent path traversal
+	if err := utils.DoesNotLookLikeFilePath(req.ApplicationName); err != nil {
+		return fmt.Errorf("invalid application name: %w", err)
+	}
+
 	applicationDir := filepath.Join(c.deploymentsDir, req.ApplicationName)
 	composePath := filepath.Join(applicationDir, composeFileName)
 
-	if err := utils.DoesNotLookLikeFilePath(composePath); err != nil {
+	// Verify the final path stays within the deployments directory
+	if err := utils.IsPathWithinBase(c.deploymentsDir, composePath); err != nil {
 		return fmt.Errorf("invalid compose file path: %w", err)
 	}
 
