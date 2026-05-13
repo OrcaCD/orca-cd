@@ -10,26 +10,32 @@ multi-ecosystem-groups:
     labels:
       - "dependencies"
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 2
 
 updates:
   - package-ecosystem: "gomod"
     directory: "/backend"
     multi-ecosystem-group: "dependencies"
     patterns: ["*"]
+    cooldown:
+      default-days: 3
 
   - package-ecosystem: "github-actions"
     directory: "/"
     multi-ecosystem-group: "dependencies"
     patterns: ["*"]
+    cooldown:
+      default-days: 3
 
   - package-ecosystem: "docker"
     directory: "/"
     multi-ecosystem-group: "dependencies"
     patterns: ["*"]
+    cooldown:
+      default-days: 3
 
   - package-ecosystem: "npm"
     directory: "/frontend"
     multi-ecosystem-group: "dependencies"
     patterns: ["*"]
+    cooldown:
+      default-days: 3
