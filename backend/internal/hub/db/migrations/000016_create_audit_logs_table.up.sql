@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     target_type   TEXT NOT NULL,
     target_id     TEXT,
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at    DATETIME NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
