@@ -74,7 +74,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install Buf CLI
-        uses: bufbuild/buf-action@219c9aef02e8f6a27e4b46274db239ef513f5d53 # v1.4.0
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
         with:
           setup_only: true
           version: 1.66.1
