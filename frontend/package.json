@@ -13,6 +13,7 @@
 		"translations:check": "inlang validate --project ./project.inlang"
 	},
 	"dependencies": {
+		"@base-ui/react": "^1.4.1",
 		"@fontsource-variable/geist-mono": "^5.2.7",
 		"@stepperize/react": "^6.1.0",
 		"@tailwindcss/vite": "^4.3.0",

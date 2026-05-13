@@ -104,7 +104,7 @@ func TestSendNotificationSuccessMarksStatusSuccess(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "send-success", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationConfig(t, notification.Id, "stdout://")
+	setNotificationConfig(t, notification.Id, "logger://")
 
 	SendNotification(app.Id, "deploy done", newNotificationLogger())
 
@@ -138,7 +138,7 @@ func TestSendTestNotificationCreateSenderError(t *testing.T) {
 }
 
 func TestSendTestNotificationSuccessWithDefaultMessage(t *testing.T) {
-	err := SendTestNotification(models.NotificationTypeDiscord, "stdout://", "   ")
+	err := SendTestNotification(models.NotificationTypeDiscord, "logger://", "   ")
 	if err != nil {
 		t.Fatalf("expected successful test notification, got %v", err)
 	}
