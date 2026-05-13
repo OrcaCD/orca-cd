@@ -1,7 +1,13 @@
 name: Label PRs
 
+# SECURITY: This workflow uses pull_request_target so it can label fork PRs.
+# pull_request_target runs with write access to the base repo's GITHUB_TOKEN.
+# To keep this safe, NEVER add a checkout step as executing untrusted fork code
+# with elevated permissions is a security risk.
+# Do not add any other steps in this workflow!
+
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, synchronize, reopened]
 
 jobs:
