@@ -6,7 +6,6 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -38,6 +37,15 @@ import {
 	updateNotification,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import {
+	Combobox,
+	ComboboxContent,
+	ComboboxEmpty,
+	ComboboxInput,
+	ComboboxItem,
+	ComboboxList,
+} from "@/components/ui/combobox";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
 const notificationSchema = z.object({
 	name: z
@@ -67,8 +75,7 @@ export default function UpsertNotificationDialog({
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const { data: applications, isLoading: isLoadingApplications } =
-		useFetch<ApplicationListItem[]>("/applications");
+	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
 
 	const form = useForm({
 		defaultValues: {
@@ -112,7 +119,7 @@ export default function UpsertNotificationDialog({
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
+		<Dialog open={open} onOpenChange={setOpen} modal={false}>
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
@@ -241,36 +248,31 @@ export default function UpsertNotificationDialog({
 							children={(field) => (
 								<Field>
 									<Label>{m.navApplications()}</Label>
-									<div className="max-h-44 space-y-2 overflow-y-auto rounded-md border p-3">
-										{isLoadingApplications ? (
-											<p className="text-sm text-muted-foreground">{m.loadingDots()}</p>
-										) : applications?.length ? (
-											applications.map((application) => {
-												const isChecked = field.state.value.includes(application.id);
-
-												return (
-													<label key={application.id} className="flex items-center gap-2 text-sm">
-														<Checkbox
-															checked={isChecked}
-															onCheckedChange={(checked) => {
-																if (checked === true) {
-																	field.handleChange([...field.state.value, application.id]);
-																	return;
-																}
-
-																field.handleChange(
-																	field.state.value.filter((id) => id !== application.id),
-																);
-															}}
-														/>
-														<span>{application.name}</span>
-													</label>
-												);
-											})
-										) : (
-											<p className="text-sm text-muted-foreground">{m.noApplicationsAvailable()}</p>
-										)}
-									</div>
+									<Combobox
+										items={applications}
+										multiple
+										value={field.state.value}
+										onValueChange={field.handleChange}
+									>
+										<ComboboxInput placeholder={m.selectApplications()} />
+										<ComboboxContent>
+											<ComboboxEmpty>{m.noApplicationsAvailable()}</ComboboxEmpty>
+											<ComboboxList>
+												{(item) => (
+													<ComboboxItem key={item.id} value={item.id}>
+														<Item className="p-0">
+															<ItemContent>
+																<ItemTitle className="whitespace-nowrap">{item.name}</ItemTitle>
+																<ItemDescription>
+																	{item.repositoryName} / {item.agentName}
+																</ItemDescription>
+															</ItemContent>
+														</Item>
+													</ComboboxItem>
+												)}
+											</ComboboxList>
+										</ComboboxContent>
+									</Combobox>
 								</Field>
 							)}
 						/>

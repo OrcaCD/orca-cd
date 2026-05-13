@@ -254,6 +254,7 @@
 	"enableByDefault": "Standardmäßig aktivieren",
 	"enableByDefaultDescription": "Wende diese Benachrichtigung automatisch auf neue Anwendungen an.",
 	"noApplicationsAvailable": "Keine Anwendungen verfügbar.",
+	"selectApplications": "Anwendungen auswählen...",
 	"notificationUpdated": "Benachrichtigung aktualisiert",
 	"notificationCreated": "Benachrichtigung erstellt",
 	"failedSaveNotification": "Benachrichtigung konnte nicht gespeichert werden",
