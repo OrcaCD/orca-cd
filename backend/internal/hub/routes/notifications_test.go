@@ -1054,7 +1054,7 @@ func TestLoadNotificationApplications(t *testing.T) {
 		t.Fatalf("expected empty result for empty input, got apps=%v missingId=%q", apps, missingId)
 	}
 
-	apps, missingId, err = loadNotificationApplications(t.Context(), []string{app.Id, "missing-app"})
+	_, missingId, err = loadNotificationApplications(t.Context(), []string{app.Id, "missing-app"})
 	if err != nil {
 		t.Fatalf("loadNotificationApplications() missing id error = %v", err)
 	}

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -18,9 +19,7 @@ func (p staticProvider) BuildShouterrrUrls(string) ([]string, error) {
 
 func cloneProviderRegistry(src map[models.NotificationType]Provider) map[models.NotificationType]Provider {
 	cloned := make(map[models.NotificationType]Provider, len(src))
-	for key, value := range src {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, src)
 
 	return cloned
 }
