@@ -31,15 +31,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	success := false
 	defer func() {
 		if !success {
-			if _, err := gorm.G[models.Application](db.DB).
-				Where("id = ?", job.Application.Id).
-				Updates(ctx, models.Application{
-					SyncStatus: models.OutOfSync,
-				}); err != nil {
-				log.Error().Err(err).Str("applicationId", job.Application.Id).
-					Msg("failed to mark application as out_of_sync after failed sync")
-			}
-			sse.PublishUpdate("/api/v1/applications")
+			markDeploymentExecutionFailure(ctx, job.Application.Id, log)
 		}
 	}()
 
@@ -90,7 +82,6 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 			Str("request_id", result.RequestId).
 			Str("error", result.ErrorMessage).
 			Msg("agent reported deployment failure")
-		markDeploymentExecutionFailure(ctx, job.Application.Id, log)
 		return
 	}
 
