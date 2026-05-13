@@ -5,9 +5,9 @@ import "github.com/OrcaCD/orca-cd/internal/hub/crypto"
 type NotificationStatus string
 
 const (
-	NotificationHealthy       NotificationStatus = "healthy"
-	NotificationUnhealthy     NotificationStatus = "unhealthy"
-	NotificationUnknownHealth NotificationStatus = "unknown"
+	NotificationStatusUnknown NotificationStatus = "unknown"
+	NotificationStatusSuccess NotificationStatus = "success"
+	NotificationStatusError   NotificationStatus = "error"
 )
 
 type NotificationType string

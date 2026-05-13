@@ -131,11 +131,11 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	app := seedNotificationTestApp(t, models.Healthy)
 	otherApp := seedNotificationTestApp(t, models.Unhealthy)
 
-	associated := seedNotificationRecord(t, "associated", true, false, models.NotificationHealthy, app.Id)
-	defaultUnknown := seedNotificationRecord(t, "default-unknown", true, true, models.NotificationUnknownHealth)
-	seedNotificationRecord(t, "disabled", false, true, models.NotificationHealthy)
-	seedNotificationRecord(t, "wrong-status", true, true, models.NotificationUnhealthy)
-	seedNotificationRecord(t, "other-app", true, false, models.NotificationHealthy, otherApp.Id)
+	associated := seedNotificationRecord(t, "associated", true, false, models.NotificationStatusUnknown, app.Id)
+	defaultUnknown := seedNotificationRecord(t, "default-unknown", true, true, models.NotificationStatusUnknown)
+	withErrorStatus := seedNotificationRecord(t, "with-error-status", true, true, models.NotificationStatusError)
+	seedNotificationRecord(t, "disabled", false, true, models.NotificationStatusSuccess)
+	seedNotificationRecord(t, "other-app", true, false, models.NotificationStatusSuccess, otherApp.Id)
 
 	configs, err := getNotificationConfig(context.Background(), app.Id)
 	if err != nil {
@@ -153,8 +153,11 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	if !slices.Contains(ids, defaultUnknown.Id) {
 		t.Fatalf("expected default unknown notification in result, ids=%v", ids)
 	}
-	if len(ids) != 2 {
-		t.Fatalf("expected exactly 2 matching notifications, got %d (%v)", len(ids), ids)
+	if !slices.Contains(ids, withErrorStatus.Id) {
+		t.Fatalf("expected default error-status notification in result, ids=%v", ids)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("expected exactly 3 matching notifications, got %d (%v)", len(ids), ids)
 	}
 }
 

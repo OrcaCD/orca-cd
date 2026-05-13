@@ -49,6 +49,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 				Str("applicationId", applicationId).
 				Str("notificationId", configs[i].Id).
 				Msg("failed to parse notification config")
+			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
 			continue
 		}
 
@@ -59,34 +60,41 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 				Str("applicationId", applicationId).
 				Str("notificationId", configs[i].Id).
 				Msg("failed to create notification sender")
+			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
 			continue
 		}
 
 		sendErrs := sender.Send(message, nil)
+		hasSendError := false
 		for _, sendErr := range sendErrs {
 			if sendErr == nil {
 				continue
 			}
+			hasSendError = true
 			log.Error().
 				Err(sendErr).
 				Str("applicationId", applicationId).
 				Str("notificationId", configs[i].Id).
 				Msg("failed to send notification")
 		}
+
+		if hasSendError {
+			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
+			continue
+		}
+
+		setNotificationStatus(configs[i].Id, models.NotificationStatusSuccess, log)
 	}
 }
 
 func getNotificationConfig(ctx context.Context, applicationId string) ([]models.Notification, error) {
-	app, err := gorm.G[models.Application](db.DB).
-		Select("id", "health_status").
+	_, err := gorm.G[models.Application](db.DB).
+		Select("id").
 		Where("id = ?", applicationId).
 		First(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	healthStatus := models.NotificationStatus(app.HealthStatus)
-	allowedStatuses := []models.NotificationStatus{models.NotificationUnknownHealth, healthStatus}
 
 	var notifications []models.Notification
 	err = db.DB.WithContext(ctx).
@@ -95,7 +103,6 @@ func getNotificationConfig(ctx context.Context, applicationId string) ([]models.
 		Joins("LEFT JOIN application_notifications ON application_notifications.notification_id = notifications.id").
 		Where("notifications.enabled = ?", true).
 		Where("(notifications.enable_by_default = ? OR application_notifications.application_id = ?)", true, applicationId).
-		Where("notifications.status IN ?", allowedStatuses).
 		Group("notifications.id").
 		Find(&notifications).Error
 	if err != nil {
@@ -134,4 +141,20 @@ func SendTestNotification(notificationType models.NotificationType, rawConfig, m
 	}
 
 	return nil
+}
+
+func setNotificationStatus(notificationId string, status models.NotificationStatus, log *zerolog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), notificationQueryTimeout)
+	defer cancel()
+
+	rowsAffected, err := gorm.G[models.Notification](db.DB).
+		Where("id = ?", notificationId).
+		Update(ctx, "status", status)
+	if err != nil {
+		log.Error().Err(err).Str("notificationId", notificationId).Str("status", string(status)).Msg("failed to update notification status")
+		return
+	}
+	if rowsAffected == 0 {
+		log.Warn().Str("notificationId", notificationId).Msg("notification not found while updating status")
+	}
 }

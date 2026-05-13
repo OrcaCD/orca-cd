@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -93,7 +94,7 @@ func createNotificationRecord(t *testing.T, applicationIds []string) models.Noti
 		Name:            crypto.EncryptedString("Initial Notification"),
 		Enabled:         true,
 		EnableByDefault: false,
-		Status:          models.NotificationUnknownHealth,
+		Status:          models.NotificationStatusUnknown,
 		Type:            models.NotificationTypeDiscord,
 		Config:          crypto.EncryptedString("discord://token@channel"),
 	}
@@ -162,6 +163,54 @@ func TestListNotificationsHandler_ReturnsNotifications(t *testing.T) {
 	if len(body) != 2 {
 		t.Fatalf("expected 2 notifications, got %d", len(body))
 	}
+
+	for i := range body {
+		if body[i].Config != nil {
+			t.Fatal("expected config to be omitted by default in list response")
+		}
+	}
+}
+
+func TestListNotificationsHandler_IncludeConfig(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+	createNotificationRecord(t, []string{app.Id})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/notifications?includeConfig=true", nil)
+
+	ListNotificationsHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body []notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(body))
+	}
+	if body[0].Config == nil || *body[0].Config == "" {
+		t.Fatal("expected config to be included when includeConfig=true")
+	}
+}
+
+func TestListNotificationsHandler_InvalidIncludeConfig(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/notifications?includeConfig=not-bool", nil)
+
+	ListNotificationsHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
 }
 
 func TestCreateNotificationHandler_Success(t *testing.T) {
@@ -176,7 +225,6 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 		"name":            "Deploy Alerts",
 		"enabled":         true,
 		"enableByDefault": false,
-		"status":          "healthy",
 		"type":            "discord",
 		"config":          "discord://token@channel",
 		"applicationIds":  []string{appA.Id, appB.Id},
@@ -200,11 +248,14 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if body.Name != "Deploy Alerts" {
 		t.Fatalf("expected name %q, got %q", "Deploy Alerts", body.Name)
 	}
-	if body.Status != "healthy" {
-		t.Fatalf("expected status %q, got %q", "healthy", body.Status)
+	if body.Status != string(models.NotificationStatusUnknown) {
+		t.Fatalf("expected status %q, got %q", models.NotificationStatusUnknown, body.Status)
 	}
 	if body.Type != "discord" {
 		t.Fatalf("expected type %q, got %q", "discord", body.Type)
+	}
+	if body.Config == nil || *body.Config != "discord://token@channel" {
+		t.Fatalf("expected config to be returned in create response, got %#v", body.Config)
 	}
 	if len(body.ApplicationIds) != 2 {
 		t.Fatalf("expected 2 applicationIds, got %d", len(body.ApplicationIds))
@@ -246,10 +297,49 @@ func TestCreateNotificationHandler_UnknownApplication(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":           "Deploy Alerts",
-		"status":         "healthy",
 		"type":           "discord",
 		"config":         "discord://token@channel",
 		"applicationIds": []string{"missing-app"},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   " \t ",
+		"type":   "discord",
+		"config": "discord://token@channel",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateNotificationHandler_RejectsInvalidDirectTarget(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Deploy Alerts",
+		"type":   "discord",
+		"config": "://",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -271,9 +361,8 @@ func TestCreateNotificationHandler_DiscordObjectConfigWithThreadID(t *testing.T)
 	appA := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Discord Alerts",
-		"status": "healthy",
-		"type":   "discord",
+		"name": "Discord Alerts",
+		"type": "discord",
 		"config": map[string]any{
 			"token":     "token-abc",
 			"webhookId": "123456789",
@@ -318,9 +407,8 @@ func TestCreateNotificationHandler_InvalidDiscordObjectConfig(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Discord Alerts",
-		"status": "healthy",
-		"type":   "discord",
+		"name": "Discord Alerts",
+		"type": "discord",
 		"config": map[string]any{
 			"webhookId": "123456789",
 		},
@@ -350,7 +438,6 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 		"name":            "Updated Alerts",
 		"enabled":         false,
 		"enableByDefault": true,
-		"status":          "unhealthy",
 		"type":            "discord",
 		"config":          "discord://new-token@channel",
 		"applicationIds":  []string{appB.Id},
@@ -381,8 +468,11 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	if !body.EnableByDefault {
 		t.Fatal("expected enableByDefault=true")
 	}
-	if body.Status != "unhealthy" {
-		t.Fatalf("expected status %q, got %q", "unhealthy", body.Status)
+	if body.Status != string(models.NotificationStatusUnknown) {
+		t.Fatalf("expected status %q, got %q", models.NotificationStatusUnknown, body.Status)
+	}
+	if body.Config == nil || *body.Config != "discord://new-token@channel" {
+		t.Fatalf("expected updated config in update response, got %#v", body.Config)
 	}
 	if len(body.ApplicationIds) != 1 || body.ApplicationIds[0] != appB.Id {
 		t.Fatalf("expected applicationIds [%s], got %v", appB.Id, body.ApplicationIds)
@@ -411,7 +501,6 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Updated Alerts",
-		"status": "healthy",
 		"type":   "discord",
 		"config": "discord://token@channel",
 	})
@@ -426,6 +515,54 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "   ",
+		"type":   "discord",
+		"config": "discord://token@channel",
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateNotificationHandler_RejectsInvalidDirectTarget(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Updated Alerts",
+		"type":   "discord",
+		"config": "://",
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -516,6 +653,50 @@ func TestTestNotificationHandler_Success(t *testing.T) {
 	if body["message"] != "test notification sent" {
 		t.Fatalf("expected success message, got %q", body["message"])
 	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification after test send: %v", err)
+	}
+	if stored.Status != models.NotificationStatusSuccess {
+		t.Fatalf("expected status %q after successful test send, got %q", models.NotificationStatusSuccess, stored.Status)
+	}
+}
+
+func TestTestNotificationHandler_BindsChunkedJSONBody(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	originalSend := sendTestNotification
+	t.Cleanup(func() {
+		sendTestNotification = originalSend
+	})
+
+	called := false
+	sendTestNotification = func(notificationType models.NotificationType, rawConfig, message string) error {
+		called = true
+		if message != "chunked-ping" {
+			t.Fatalf("expected message %q, got %q", "chunked-ping", message)
+		}
+		return nil
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
+
+	w := httptest.NewRecorder()
+	body := io.LimitReader(strings.NewReader(`{"message":"chunked-ping"}`), 1<<20)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notification.Id+"/test", body)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !called {
+		t.Fatal("expected test notification sender to be called")
+	}
 }
 
 func TestTestNotificationHandler_NotFound(t *testing.T) {
@@ -591,5 +772,13 @@ func TestTestNotificationHandler_DispatchFailure(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification after test send failure: %v", err)
+	}
+	if stored.Status != models.NotificationStatusError {
+		t.Fatalf("expected status %q after failed test send, got %q", models.NotificationStatusError, stored.Status)
 	}
 }
