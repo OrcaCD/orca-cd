@@ -19,8 +19,6 @@ type Client struct {
 	session *wscrypto.Session
 }
 
-
-
 // Close signals the WritePump to stop.
 func (c *Client) Close() {
 	close(c.Send)
