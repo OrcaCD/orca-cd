@@ -23,7 +23,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +30,8 @@ import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import {
 	createNotification,
+	isHttpUrl,
+	normalizeNotificationApplicationIds,
 	type Notification,
 	type NotificationType,
 	notificationTypes,
@@ -45,23 +46,85 @@ import {
 	ComboboxItem,
 	ComboboxList,
 } from "@/components/ui/combobox";
+import {
+	buildDiscordNotificationConfig,
+	DiscordAvatarUrlField,
+	DiscordBotNameField,
+	DiscordThreadIdField,
+	DiscordWebhookUrlField,
+	parseDiscordBuilderValues,
+	parseDiscordWebhookUrl,
+} from "./discord-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
-const notificationSchema = z.object({
-	name: z
-		.string()
-		.trim()
-		.min(1, m.validationNotificationNameRequired())
-		.max(128, m.validationNotificationNameMaxLength()),
-	type: z.enum(notificationTypes),
-	config: z.string().trim().min(1, m.validationNotificationConfigRequired()),
-	enabled: z.boolean(),
-	enableByDefault: z.boolean(),
-	applicationIds: z.array(z.string()),
-});
+const notificationSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(1, m.validationNotificationNameRequired())
+			.max(128, m.validationNotificationNameMaxLength()),
+		type: z.enum(notificationTypes),
+		discordWebhookUrl: z.string().trim(),
+		discordBotName: z.string().trim(),
+		discordAvatarUrl: z.string().trim(),
+		discordThreadId: z.string().trim(),
+		enabled: z.boolean(),
+		enableByDefault: z.boolean(),
+		applicationIds: z.array(z.string()),
+	})
+	.superRefine((value, ctx) => {
+		if (value.type === "discord") {
+			if (value.discordWebhookUrl === "") {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["discordWebhookUrl"],
+					message: m.validationNotificationWebhookUrlRequired(),
+				});
+			} else if (!parseDiscordWebhookUrl(value.discordWebhookUrl)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["discordWebhookUrl"],
+					message: m.validationNotificationWebhookUrlInvalid(),
+				});
+			}
 
-function normalizeIds(ids: string[]): string[] {
-	return Array.from(new Set(ids));
+			if (value.discordAvatarUrl !== "" && !isHttpUrl(value.discordAvatarUrl)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["discordAvatarUrl"],
+					message: m.validationNotificationAvatarUrlInvalid(),
+				});
+			}
+
+			if (value.discordThreadId !== "" && !/^\d+$/.test(value.discordThreadId)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ["discordThreadId"],
+					message: m.validationNotificationThreadIdInvalid(),
+				});
+			}
+		}
+	});
+
+type NotificationFormValues = z.infer<typeof notificationSchema>;
+
+function buildNotificationConfig(value: NotificationFormValues): string {
+	if (value.type === "discord") {
+		const config = buildDiscordNotificationConfig({
+			discordWebhookUrl: value.discordWebhookUrl,
+			discordBotName: value.discordBotName,
+			discordAvatarUrl: value.discordAvatarUrl,
+			discordThreadId: value.discordThreadId,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
+	return "";
 }
 
 export default function UpsertNotificationDialog({
@@ -74,6 +137,7 @@ export default function UpsertNotificationDialog({
 	const isEditing = notification !== null;
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const discordBuilderValues = parseDiscordBuilderValues(notification?.config);
 
 	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
 
@@ -81,7 +145,10 @@ export default function UpsertNotificationDialog({
 		defaultValues: {
 			name: notification?.name ?? "",
 			type: (notification?.type ?? "discord") as NotificationType,
-			config: notification?.config ?? "",
+			discordWebhookUrl: discordBuilderValues.discordWebhookUrl,
+			discordBotName: discordBuilderValues.discordBotName,
+			discordAvatarUrl: discordBuilderValues.discordAvatarUrl,
+			discordThreadId: discordBuilderValues.discordThreadId,
 			enabled: notification?.enabled ?? true,
 			enableByDefault: notification?.enableByDefault ?? false,
 			applicationIds: notification?.applicationIds ?? [],
@@ -95,10 +162,10 @@ export default function UpsertNotificationDialog({
 				const payload = {
 					name: value.name,
 					type: value.type,
-					config: value.config,
+					config: buildNotificationConfig(value),
 					enabled: value.enabled,
 					enableByDefault: value.enableByDefault,
-					applicationIds: normalizeIds(value.applicationIds),
+					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
 				};
 
 				if (notification) {
@@ -191,27 +258,33 @@ export default function UpsertNotificationDialog({
 							)}
 						/>
 
-						<form.Field
-							name="config"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>{m.notificationConfig()}</Label>
-										<Textarea
-											id={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(event) => field.handleChange(event.target.value)}
-											rows={5}
-											placeholder={m.notificationConfigPlaceholder()}
+						<form.Subscribe selector={(state) => state.values.type}>
+							{(type) =>
+								type === "discord" ? (
+									<>
+										<form.Field
+											name="discordWebhookUrl"
+											children={(field) => <DiscordWebhookUrlField field={field} />}
 										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
+
+										<form.Field
+											name="discordBotName"
+											children={(field) => <DiscordBotNameField field={field} />}
+										/>
+
+										<form.Field
+											name="discordAvatarUrl"
+											children={(field) => <DiscordAvatarUrlField field={field} />}
+										/>
+
+										<form.Field
+											name="discordThreadId"
+											children={(field) => <DiscordThreadIdField field={field} />}
+										/>
+									</>
+								) : null
+							}
+						</form.Subscribe>
 
 						<form.Field
 							name="enabled"

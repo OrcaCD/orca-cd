@@ -26,6 +26,19 @@ export interface UpsertNotificationRequest {
 	applicationIds?: string[];
 }
 
+export function isHttpUrl(rawUrl: string): boolean {
+	try {
+		const parsedUrl = new URL(rawUrl);
+		return parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+export function normalizeNotificationApplicationIds(ids: string[]): string[] {
+	return Array.from(new Set(ids));
+}
+
 export function createNotification(data: UpsertNotificationRequest): Promise<Notification> {
 	return fetcher<Notification>("/notifications", "POST", data);
 }
