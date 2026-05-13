@@ -13,7 +13,7 @@ The goal of OrcaCD is to be a simple, self-hosted GitOps solution for Docker Com
 
 ## Prerequisites
 
-Go 1.26+, golangci-lint v2.11+, `just`, Node.js 24.x or 25.x, npm.
+Go 1.26+, golangci-lint v2.11+, `just`, Node.js 24.x or 25.x, pnpm.
 
 ## Commands
 
@@ -43,12 +43,12 @@ go test -v -race ./internal/hub/crypto/...
 ### Frontend
 
 ```sh
-npm ci                 # install dependencies
-node --run dev         # Vite dev server on port 3000
-node --run build       # production bundle
-node --run typecheck   # TypeScript type check
-node --run lint        # oxlint
-node --run format      # oxfmt
+pnpm i --frozen-lockfile # install dependencies
+node --run dev           # Vite dev server on port 3000
+node --run build         # production bundle
+node --run typecheck     # TypeScript type check
+node --run lint          # oxlint
+node --run format        # oxfmt
 ```
 
 ### Local dev (Docker)

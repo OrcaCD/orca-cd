@@ -1,69 +1,41 @@
 version: 2
+
+multi-ecosystem-groups:
+  dependencies:
+    schedule:
+      interval: "weekly"
+      time: "06:00"
+    commit-message:
+      prefix: "chore"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+
 updates:
-  - package-ecosystem: 'gomod'
-    directory: '/backend'
-    schedule:
-      interval: 'weekly'
-      time: '06:00'
-    commit-message:
-      prefix: 'chore'
-    labels:
-      - 'dependencies'
-    open-pull-requests-limit: 5
+  - package-ecosystem: "gomod"
+    directory: "/backend"
+    multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
     cooldown:
-      default-days: 2
-    groups:
-      dependencies:
-        patterns:
-          - '*'
+      default-days: 3
 
-  - package-ecosystem: 'github-actions'
-    directory: '/'
-    schedule:
-      interval: 'weekly'
-      time: '06:00'
-    commit-message:
-      prefix: 'chore'
-    labels:
-      - 'dependencies'
-    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
     cooldown:
-      default-days: 2
-    groups:
-      dependencies:
-        patterns:
-          - '*'
+      default-days: 3
 
-  - package-ecosystem: 'docker'
-    directory: '/'
-    schedule:
-      interval: 'weekly'
-      time: '06:00'
-    commit-message:
-      prefix: 'chore'
-    labels:
-      - 'dependencies'
-    open-pull-requests-limit: 5
+  - package-ecosystem: "docker"
+    directory: "/"
+    multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
     cooldown:
-      default-days: 2
-    groups:
-      dependencies:
-        patterns:
-          - '*'
+      default-days: 3
 
-  - package-ecosystem: 'npm'
-    directory: '/frontend'
-    schedule:
-      interval: 'weekly'
-      time: '06:00'
-    commit-message:
-      prefix: 'chore'
-    labels:
-      - 'dependencies'
-    open-pull-requests-limit: 5
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
     cooldown:
-      default-days: 2
-    groups:
-      dependencies:
-        patterns:
-          - '*'
+      default-days: 3
