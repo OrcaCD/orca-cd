@@ -304,6 +304,11 @@ func DeployApplicationHandler(c *gin.Context) {
 	}
 
 	application.SyncStatus = models.Syncing
+	if err := db.DB.Save(&application).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update application"})
+		return
+	}
+
 	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})

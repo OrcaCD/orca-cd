@@ -29,8 +29,8 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 
 	var gotUpOptions api.UpOptions
 	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, options api.UpOptions) error {
-		if project.Name != "orca-billing" {
-			t.Fatalf("expected project name %q, got %q", "orca-billing", project.Name)
+		if project.Name != "billing" {
+			t.Fatalf("expected project name %q, got %q", "billing", project.Name)
 		}
 		gotUpOptions = options
 		return nil
@@ -56,8 +56,8 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 		t.Fatalf("expected compose file to be written to deployment volume")
 	}
 
-	if gotLoadOptions.ProjectName != "orca-billing" {
-		t.Fatalf("expected load project name %q, got %q", "orca-billing", gotLoadOptions.ProjectName)
+	if gotLoadOptions.ProjectName != "billing" {
+		t.Fatalf("expected load project name %q, got %q", "billing", gotLoadOptions.ProjectName)
 	}
 	if len(gotLoadOptions.ConfigPaths) != 1 || gotLoadOptions.ConfigPaths[0] != composePath {
 		t.Fatalf("unexpected config paths: %#v", gotLoadOptions.ConfigPaths)
