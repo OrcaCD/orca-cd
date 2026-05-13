@@ -1,7 +1,8 @@
 import { fetcher } from "./api";
 
 export type NotificationStatus = "unknown" | "success" | "error" | "healthy" | "unhealthy";
-export type NotificationType = "discord";
+export const notificationTypes = ["discord"] as const;
+export type NotificationType = (typeof notificationTypes)[number];
 
 export interface Notification {
 	id: string;

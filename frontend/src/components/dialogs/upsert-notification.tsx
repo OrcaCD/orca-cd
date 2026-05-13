@@ -34,6 +34,7 @@ import {
 	createNotification,
 	type Notification,
 	type NotificationType,
+	notificationTypes,
 	updateNotification,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
@@ -44,7 +45,7 @@ const notificationSchema = z.object({
 		.trim()
 		.min(1, m.validationNotificationNameRequired())
 		.max(128, m.validationNotificationNameMaxLength()),
-	type: z.enum(["discord"]),
+	type: z.enum(notificationTypes),
 	config: z.string().trim().min(1, m.validationNotificationConfigRequired()),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),

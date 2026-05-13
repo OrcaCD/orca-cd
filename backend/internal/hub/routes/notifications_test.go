@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -780,5 +781,293 @@ func TestTestNotificationHandler_DispatchFailure(t *testing.T) {
 	}
 	if stored.Status != models.NotificationStatusError {
 		t.Fatalf("expected status %q after failed test send, got %q", models.NotificationStatusError, stored.Status)
+	}
+}
+
+func TestCreateNotificationHandler_DefaultFlagsWhenOmitted(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Defaults",
+		"type":   "discord",
+		"config": "discord://token@channel",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.Enabled {
+		t.Fatal("expected enabled default to true")
+	}
+	if body.EnableByDefault {
+		t.Fatal("expected enableByDefault default to false")
+	}
+}
+
+func TestUpdateNotificationHandler_PreservesFlagsWhenOmitted(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+	if err := db.DB.Model(&models.Notification{}).
+		Where("id = ?", notification.Id).
+		Updates(map[string]any{"enabled": false, "enable_by_default": true}).Error; err != nil {
+		t.Fatalf("failed to set initial notification flags: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Updated Name",
+		"type":   "discord",
+		"config": "discord://new-token@channel",
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Enabled {
+		t.Fatal("expected enabled to preserve existing false value")
+	}
+	if !body.EnableByDefault {
+		t.Fatal("expected enableByDefault to preserve existing true value")
+	}
+}
+
+func TestTestNotificationHandler_InvalidConfigFailure(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	originalSend := sendTestNotification
+	t.Cleanup(func() {
+		sendTestNotification = originalSend
+	})
+	sendTestNotification = func(models.NotificationType, string, string) error {
+		return fmt.Errorf("%w: invalid discord payload", hubnotifications.ErrInvalidNotificationConfig)
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notification.Id+"/test", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification after invalid-config send failure: %v", err)
+	}
+	if stored.Status != models.NotificationStatusError {
+		t.Fatalf("expected status %q after invalid-config send failure, got %q", models.NotificationStatusError, stored.Status)
+	}
+}
+
+func TestTestNotificationHandler_UnexpectedFailure(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	originalSend := sendTestNotification
+	t.Cleanup(func() {
+		sendTestNotification = originalSend
+	})
+	sendTestNotification = func(models.NotificationType, string, string) error {
+		return errors.New("boom")
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notification.Id+"/test", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification after unexpected send failure: %v", err)
+	}
+	if stored.Status != models.NotificationStatusError {
+		t.Fatalf("expected status %q after unexpected send failure, got %q", models.NotificationStatusError, stored.Status)
+	}
+}
+
+func TestTestNotificationHandler_StatusUpdateNotFound(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+
+	originalSend := sendTestNotification
+	t.Cleanup(func() {
+		sendTestNotification = originalSend
+	})
+	sendTestNotification = func(models.NotificationType, string, string) error {
+		rowsAffected, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).Delete(t.Context())
+		if err != nil {
+			t.Fatalf("failed to delete notification in test sender: %v", err)
+		}
+		if rowsAffected != 1 {
+			t.Fatalf("expected one notification row to be deleted, got %d", rowsAffected)
+		}
+		return nil
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+notification.Id+"/test", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestNormalizeNotificationName_TooLong(t *testing.T) {
+	_, err := normalizeNotificationName(strings.Repeat("a", 129))
+	if err == nil {
+		t.Fatal("expected error for name length over 128")
+	}
+}
+
+func TestNormalizeNotificationConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     json.RawMessage
+		want    string
+		wantErr string
+	}{
+		{
+			name:    "empty",
+			raw:     json.RawMessage("   "),
+			wantErr: "must be a non-empty string or JSON object",
+		},
+		{
+			name:    "null",
+			raw:     json.RawMessage("null"),
+			wantErr: "must be a non-empty string or JSON object",
+		},
+		{
+			name:    "invalid json string",
+			raw:     json.RawMessage("\"unterminated"),
+			wantErr: "expected a valid JSON string",
+		},
+		{
+			name:    "empty json string",
+			raw:     json.RawMessage(`"   "`),
+			wantErr: "must not be empty",
+		},
+		{
+			name:    "invalid json",
+			raw:     json.RawMessage("{"),
+			wantErr: "expected valid JSON",
+		},
+		{
+			name: "json string",
+			raw:  json.RawMessage(`" discord://token@channel "`),
+			want: "discord://token@channel",
+		},
+		{
+			name: "json object",
+			raw:  json.RawMessage(`{"token":"token-abc","webhookId":"123456789"}`),
+			want: `{"token":"token-abc","webhookId":"123456789"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeNotificationConfig(tt.raw)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("normalizeNotificationConfig() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestNormalizeNotificationApplicationIds(t *testing.T) {
+	normalized := normalizeNotificationApplicationIds([]string{" app-a ", "", "app-a", "app-b", "  app-b "})
+	if !slices.Equal(normalized, []string{"app-a", "app-b"}) {
+		t.Fatalf("expected [app-a app-b], got %v", normalized)
+	}
+
+	emptyNormalized := normalizeNotificationApplicationIds(nil)
+	if emptyNormalized != nil {
+		t.Fatalf("expected nil for empty input, got %v", emptyNormalized)
+	}
+}
+
+func TestLoadNotificationApplications(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+
+	apps, missingId, err := loadNotificationApplications(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("loadNotificationApplications() empty input error = %v", err)
+	}
+	if len(apps) != 0 || missingId != "" {
+		t.Fatalf("expected empty result for empty input, got apps=%v missingId=%q", apps, missingId)
+	}
+
+	apps, missingId, err = loadNotificationApplications(t.Context(), []string{app.Id, "missing-app"})
+	if err != nil {
+		t.Fatalf("loadNotificationApplications() missing id error = %v", err)
+	}
+	if missingId != "missing-app" {
+		t.Fatalf("expected missing id %q, got %q", "missing-app", missingId)
+	}
+}
+
+func TestUpdateNotificationStatus_NotFound(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	err := updateNotificationStatus(t.Context(), "missing-id", models.NotificationStatusSuccess)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
 	}
 }
