@@ -1,12 +1,14 @@
 package websocket
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -547,4 +549,235 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("expected agent status to be Offline after disconnect")
+}
+
+// MockConn implements a subset of websocket.Conn for testing handshake errors.
+type MockConn struct {
+	readErr        error
+	writeErr       error
+	readDeadErr    error
+	writeDeadErr   error
+	messages       [][]byte
+	readIndex      int
+	readDeadlineMu sync.Mutex
+	writeDeadlineMu sync.Mutex
+}
+
+func (m *MockConn) ReadMessage() (messageType int, data []byte, err error) {
+	if m.readErr != nil {
+		return 0, nil, m.readErr
+	}
+	if m.readIndex >= len(m.messages) {
+		return 0, nil, websocket.ErrCloseSent
+	}
+	data = m.messages[m.readIndex]
+	m.readIndex++
+	return websocket.BinaryMessage, data, nil
+}
+
+func (m *MockConn) WriteMessage(messageType int, data []byte) error {
+	return m.writeErr
+}
+
+func (m *MockConn) SetReadDeadline(t time.Time) error {
+	return m.readDeadErr
+}
+
+func (m *MockConn) SetWriteDeadline(t time.Time) error {
+	return m.writeDeadErr
+}
+
+func (m *MockConn) Close() error {
+	return nil
+}
+
+func TestPerformHandshake_WriteDeadlineError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{writeDeadErr: errors.New("failed to set write deadline")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from SetWriteDeadline, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "write deadline") {
+		t.Errorf("expected deadline error message, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_WriteMessageError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{writeErr: errors.New("failed to write message")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from WriteMessage, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "write") {
+		t.Errorf("expected write error, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_ReadDeadlineError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{readDeadErr: errors.New("failed to set read deadline")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from SetReadDeadline, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "read deadline") {
+		t.Errorf("expected deadline error message, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_ReadMessageError(t *testing.T) {
+	log := testLogger()
+	conn := &MockConn{readErr: errors.New("connection closed")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from ReadMessage, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_UnmarshalError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	// Send invalid protobuf data
+	conn := &MockConn{
+		messages: [][]byte{{0xFF, 0xFF, 0xFF, 0xFF}},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from proto.Unmarshal, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_InvalidResponseType(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	// Send a valid ClientMessage with wrong payload type (Pong instead of KeyExchangeResponse)
+	wrongMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{
+			Pong: &messages.PongResponse{Timestamp: 123},
+		},
+	}
+	data, err := proto.Marshal(wrongMsg)
+	if err != nil {
+		t.Fatalf("failed to marshal test message: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{data},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error for invalid response type, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "KeyExchangeResponse") {
+		t.Errorf("expected error mentioning KeyExchangeResponse, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_DerivationError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	// Create valid handshake init, but respond with invalid derivation data
+	// Send KeyExchangeResponse with invalid ciphertext (too short, will fail MLKEM decapsulation)
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      []byte{0x00}, // invalid MLKEM ciphertext
+				AgentX25519PublicKey: make([]byte, 32),
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from key derivation, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_Success(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	agentID := "test-agent-id"
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("failed to generate hub keys: %v", err)
+	}
+
+	// Client performs handshake
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		hubKeys.MLKEMEncapKey,
+		hubKeys.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Fatalf("AgentHandshake failed: %v", err)
+	}
+
+	// Server reads this response
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, agentID, &log)
+	if err != nil {
+		t.Fatalf("performHandshake failed: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil session")
+	}
 }

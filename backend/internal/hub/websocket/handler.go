@@ -18,6 +18,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// WSConn is an interface for WebSocket connections, allowing for testing.
+type WSConn interface {
+	ReadMessage() (messageType int, data []byte, err error)
+	WriteMessage(messageType int, data []byte) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	Close() error
+}
+
 const pongWait = 90 * time.Second // must be greater than the worker ping interval (60s)
 const handshakeTimeout = 15 * time.Second
 
@@ -179,7 +188,7 @@ func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, lo
 	}
 }
 
-func performHandshake(conn *websocket.Conn, agentID string, log *zerolog.Logger) (*wscrypto.Session, error) {
+func performHandshake(conn WSConn, agentID string, log *zerolog.Logger) (*wscrypto.Session, error) {
 	hubKeys, err := wscrypto.GenerateHubKeys()
 	if err != nil {
 		return nil, err
