@@ -209,7 +209,7 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "agent.created", "agent", agent.Id)
+	utils.RecordAuditLog(c, db.DB, "created", "agent", agent.Id)
 
 	c.JSON(http.StatusCreated, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
@@ -255,7 +255,7 @@ func UpdateAgentHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "agent.updated", "agent", id)
+	utils.RecordAuditLog(c, db.DB, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
 	sse.PublishUpdate(AgentsPath)
@@ -274,7 +274,7 @@ func DeleteAgentHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "agent.deleted", "agent", id)
+	utils.RecordAuditLog(c, db.DB, "deleted", "agent", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
 	sse.PublishUpdate(AgentsPath)

@@ -259,7 +259,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "repository.created", "repository", repo.Id)
+	utils.RecordAuditLog(c, db.DB, "created", "repository", repo.Id)
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
 	sse.PublishUpdate(RepositoriesPath)
@@ -367,7 +367,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "repository.deleted", "repository", id)
+	utils.RecordAuditLog(c, db.DB, "deleted", "repository", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 	sse.PublishUpdate(RepositoriesPath)
@@ -489,7 +489,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "repository.updated", "repository", id)
+	utils.RecordAuditLog(c, db.DB, "updated", "repository", id)
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))

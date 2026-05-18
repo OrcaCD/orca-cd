@@ -143,7 +143,7 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "oidc-provider.created", "oidc-provider", provider.Id)
+	utils.RecordAuditLog(c, db.DB, "created", "oidc-provider", provider.Id)
 
 	c.JSON(http.StatusCreated, toOIDCProviderResponse(&provider))
 	sse.PublishUpdate(AdminOIDCProvidersPath)
@@ -196,7 +196,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "oidc-provider.updated", "oidc-provider", id)
+	utils.RecordAuditLog(c, db.DB, "updated", "oidc-provider", id)
 
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
 	sse.PublishUpdate(AdminOIDCProvidersPath)
@@ -215,7 +215,7 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "oidc-provider.deleted", "oidc-provider", id)
+	utils.RecordAuditLog(c, db.DB, "deleted", "oidc-provider", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
 	sse.PublishUpdate(AdminOIDCProvidersPath)
