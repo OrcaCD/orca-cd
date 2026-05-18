@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -553,14 +552,12 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 
 // MockConn implements a subset of websocket.Conn for testing handshake errors.
 type MockConn struct {
-	readErr        error
-	writeErr       error
-	readDeadErr    error
-	writeDeadErr   error
-	messages       [][]byte
-	readIndex      int
-	readDeadlineMu sync.Mutex
-	writeDeadlineMu sync.Mutex
+	readErr      error
+	writeErr     error
+	readDeadErr  error
+	writeDeadErr error
+	messages     [][]byte
+	readIndex    int
 }
 
 func (m *MockConn) ReadMessage() (messageType int, data []byte, err error) {
