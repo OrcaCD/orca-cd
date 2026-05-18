@@ -26,8 +26,8 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 	// Testdaten vorbereiten
 	mockLog := models.AuditLog{
 		Base: models.Base{
-			Id:         "log-123",
-			CreatedAt:  time.Now(),
+			Id:        "log-123",
+			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		},
 		EventType:  "user.login",

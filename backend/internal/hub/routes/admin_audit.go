@@ -18,7 +18,6 @@ type auditLogResponse struct {
 	TargetId   *string `json:"targetId"`
 }
 
-
 func AdminListAuditLogsHandler(c *gin.Context) {
 	var auditLogs []models.AuditLog
 	if err := db.DB.Order("created_at DESC").Limit(100).Find(&auditLogs).Error; err != nil {
