@@ -2,6 +2,8 @@ import type { ColumnDef } from "@tanstack/react-table";
 import type { AuditLog } from "@/lib/audit-log";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/lib/auth";
 
 export const columns: ColumnDef<AuditLog>[] = [
     {
@@ -11,7 +13,7 @@ export const columns: ColumnDef<AuditLog>[] = [
         ),
         cell: ({ row }) => {
             const dateStr = (row.original as any).time || row.original.createdAt;
-            
+
             if (!dateStr) return <span className="text-muted-foreground">-</span>;
 
             const date = new Date(dateStr);
@@ -29,14 +31,25 @@ export const columns: ColumnDef<AuditLog>[] = [
             <DataTableColumnHeader column={column} title={m.columnName()} />
         ),
         cell: ({ row }) => {
+            const { auth } = useAuth();
             const user = row.original.user;
-            
+            const isSelf = user.id === auth.profile?.id;
+
             return (
-                    <div className="flex flex-col">
-                        <span className="font-medium text-sm">{user.name}</span>
-                        <span className="text-xs text-muted-foreground">{user.email}</span>
+                <>
+                    <div>
+                        {user.name}
+                        {isSelf && (
+
+                            <Badge variant="outline" className="ml-2">
+                                {m.you()}
+                            </Badge>
+
+                        )}
                     </div>
-                );
+                    <span className="text-xs text-muted-foreground">{user.email}</span>
+                </>
+            );
         },
     },
     {
@@ -76,7 +89,7 @@ export const columns: ColumnDef<AuditLog>[] = [
         cell: ({ row }) => {
             const id = row.original.targetId;
             if (!id) return <span className="text-muted-foreground">-</span>;
-            
+
             return (
                 <span className="font-mono text-xs text-muted-foreground whitespace-nowrap select-all">
                     {id}
