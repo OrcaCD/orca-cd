@@ -45,8 +45,8 @@ const adminPages = [
 	{
 		title: () => m.adminAuditLog(),
 		icon: Logs,
-		path: "/admin/audit-log"
-	}
+		path: "/admin/audit-log",
+	},
 ];
 
 function AdminLayout() {
