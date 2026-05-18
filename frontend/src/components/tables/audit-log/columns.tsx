@@ -14,7 +14,9 @@ export const columns: ColumnDef<AuditLog>[] = [
         cell: ({ row }) => {
             const dateStr = (row.original as any).time || row.original.createdAt;
 
-            if (!dateStr) return <span className="text-muted-foreground">-</span>;
+            if (!dateStr) {
+                return <span className="text-muted-foreground">-</span>;
+            }
 
             const date = new Date(dateStr);
 
@@ -88,7 +90,9 @@ export const columns: ColumnDef<AuditLog>[] = [
         ),
         cell: ({ row }) => {
             const id = row.original.targetId;
-            if (!id) return <span className="text-muted-foreground">-</span>;
+            if (!id) {
+                return <span className="text-muted-foreground">-</span>;
+            }
 
             return (
                 <span className="font-mono text-xs text-muted-foreground whitespace-nowrap select-all">
