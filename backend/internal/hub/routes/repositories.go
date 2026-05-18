@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -258,6 +259,8 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, db.DB, "repository.created", "repository", repo.Id)
+
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
 	sse.PublishUpdate(RepositoriesPath)
 }
@@ -363,6 +366,8 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
 	}
+
+	utils.RecordAuditLog(c, db.DB, "repository.deleted", "repository", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 	sse.PublishUpdate(RepositoriesPath)
@@ -483,6 +488,8 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	utils.RecordAuditLog(c, db.DB, "repository.updated", "repository", id)
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))

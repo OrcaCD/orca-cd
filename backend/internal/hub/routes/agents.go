@@ -209,6 +209,8 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, db.DB, "agent.created", "agent", agent.Id)
+
 	c.JSON(http.StatusCreated, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
@@ -252,6 +254,8 @@ func UpdateAgentHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	utils.RecordAuditLog(c, db.DB, "agent.updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
 	sse.PublishUpdate(AgentsPath)

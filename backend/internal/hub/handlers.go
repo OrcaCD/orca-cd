@@ -83,6 +83,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		admin := api.Group("/admin", middleware.RequireAuth(), middleware.RequireAdmin())
 		{
 			admin.GET("/system-info", routes.AdminSystemInfoHandler)
+
 			admin.GET("/audit-logs", routes.AdminListAuditLogsHandler)
 
 			admin.GET("/users", routes.AdminListUsersHandler)
