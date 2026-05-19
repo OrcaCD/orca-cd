@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -392,9 +393,9 @@ func TestCreateNotificationHandler_DiscordObjectConfigWithThreadID(t *testing.T)
 		t.Fatalf("failed to load notification: %v", err)
 	}
 
-	urls, err := hubnotifications.BuildShoutrrrURLs(stored.Type, stored.Config.String())
+	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
 	if err != nil {
-		t.Fatalf("BuildShoutrrrURLs() error: %v", err)
+		t.Fatalf("BuildShouterrrUrls() error: %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))

@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -191,7 +192,7 @@ func TestBuildShouterrrUrls_DirectTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			urls, err := BuildShouterrrUrls(models.NotificationTypeDiscord, tt.raw)
+			urls, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, tt.raw)
 			if err != nil {
 				t.Fatalf("BuildShouterrrUrls() error: %v", err)
 			}
@@ -203,7 +204,7 @@ func TestBuildShouterrrUrls_DirectTargets(t *testing.T) {
 }
 
 func TestBuildShouterrrUrls_DiscordObjectConfig(t *testing.T) {
-	urls, err := BuildShouterrrUrls(models.NotificationTypeDiscord, `{"token":"token-abc","webhookId":"123456789","threadId":"987654321"}`)
+	urls, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, `{"token":"token-abc","webhookId":"123456789","threadId":"987654321"}`)
 	if err != nil {
 		t.Fatalf("BuildShouterrrUrls() error: %v", err)
 	}
@@ -220,14 +221,14 @@ func TestBuildShouterrrUrls_DiscordObjectConfig(t *testing.T) {
 }
 
 func TestBuildShouterrrUrls_DiscordObjectConfigMissingFields(t *testing.T) {
-	_, err := BuildShouterrrUrls(models.NotificationTypeDiscord, `{"webhookId":"123456789"}`)
+	_, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, `{"webhookId":"123456789"}`)
 	if err == nil {
 		t.Fatal("expected error for missing discord token")
 	}
 }
 
 func TestGetProvider_Registered(t *testing.T) {
-	provider, err := Get(models.NotificationTypeDiscord)
+	provider, err := provider.Get(models.NotificationTypeDiscord)
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -237,7 +238,7 @@ func TestGetProvider_Registered(t *testing.T) {
 }
 
 func TestGetProvider_Unregistered(t *testing.T) {
-	_, err := Get(models.NotificationType("custom"))
+	_, err := provider.Get(models.NotificationType("custom"))
 	if err == nil {
 		t.Fatal("expected error for unregistered provider")
 	}
