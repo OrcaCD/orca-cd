@@ -12,25 +12,43 @@ type directTargetsConfig struct {
 	URLs []string `json:"urls"`
 }
 
-func parseDirectTargets(rawConfig string) ([]string, error) {
+func normalizeRawConfig(rawConfig string) (string, error) {
 	trimmed := strings.TrimSpace(rawConfig)
 	if trimmed == "" {
-		return nil, errors.New("notification config is empty")
+		return "", errors.New("notification config is empty")
+	}
+
+	return trimmed, nil
+}
+
+func decodeConfigJSON[T any](trimmed string, invalidMessage string) (T, error) {
+	var value T
+	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+		return value, fmt.Errorf("%s: %w", invalidMessage, err)
+	}
+
+	return value, nil
+}
+
+func parseDirectTargets(rawConfig string) ([]string, error) {
+	trimmed, err := normalizeRawConfig(rawConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if strings.HasPrefix(trimmed, "{") {
-		var cfg directTargetsConfig
-		if err := json.Unmarshal([]byte(trimmed), &cfg); err != nil {
-			return nil, fmt.Errorf("invalid JSON notification config: %w", err)
+		cfg, err := decodeConfigJSON[directTargetsConfig](trimmed, "invalid JSON notification config")
+		if err != nil {
+			return nil, err
 		}
 
 		return normalizeTargets(append([]string{cfg.URL}, cfg.URLs...))
 	}
 
 	if strings.HasPrefix(trimmed, "[") {
-		var urls []string
-		if err := json.Unmarshal([]byte(trimmed), &urls); err != nil {
-			return nil, fmt.Errorf("invalid JSON notification URL list: %w", err)
+		urls, err := decodeConfigJSON[[]string](trimmed, "invalid JSON notification URL list")
+		if err != nil {
+			return nil, err
 		}
 
 		return normalizeTargets(urls)

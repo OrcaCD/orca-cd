@@ -1,9 +1,7 @@
 package provider
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
 	"strings"
 )
@@ -22,15 +20,15 @@ type discordConfig struct {
 }
 
 func (DiscordProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
-	trimmed := strings.TrimSpace(rawConfig)
-	if trimmed == "" {
-		return nil, errors.New("notification config is empty")
+	trimmed, err := normalizeRawConfig(rawConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if strings.HasPrefix(trimmed, "{") {
-		var cfg discordConfig
-		if err := json.Unmarshal([]byte(trimmed), &cfg); err != nil {
-			return nil, fmt.Errorf("invalid JSON discord config: %w", err)
+		cfg, err := decodeConfigJSON[discordConfig](trimmed, "invalid JSON discord config")
+		if err != nil {
+			return nil, err
 		}
 
 		if cfg.URL != "" || len(cfg.URLs) > 0 {

@@ -440,24 +440,30 @@ func validateNotificationConfig(notificationType models.NotificationType, rawCon
 
 func normalizeNotificationConfig(raw json.RawMessage) (string, error) {
 	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
+	if trimmed == "" {
 		return "", errors.New("invalid config: must be a non-empty string or JSON object")
 	}
 
-	if strings.HasPrefix(trimmed, "\"") {
-		var value string
-		if err := json.Unmarshal(raw, &value); err != nil {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		if strings.HasPrefix(trimmed, "\"") {
 			return "", errors.New("invalid config: expected a valid JSON string")
 		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return "", errors.New("invalid config: must not be empty")
-		}
-		return value, nil
+
+		return "", errors.New("invalid config: expected valid JSON")
 	}
 
-	if !json.Valid([]byte(trimmed)) {
-		return "", errors.New("invalid config: expected valid JSON")
+	if value == nil {
+		return "", errors.New("invalid config: must be a non-empty string or JSON object")
+	}
+
+	if stringValue, ok := value.(string); ok {
+		stringValue = strings.TrimSpace(stringValue)
+		if stringValue == "" {
+			return "", errors.New("invalid config: must not be empty")
+		}
+
+		return stringValue, nil
 	}
 
 	return trimmed, nil
