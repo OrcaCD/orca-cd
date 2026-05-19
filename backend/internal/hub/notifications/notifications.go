@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -42,7 +43,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 	}
 
 	for i := range configs {
-		targets, parseErr := BuildShouterrrUrls(configs[i].Type, configs[i].Config.String())
+		targets, parseErr := provider.BuildShouterrrUrls(configs[i].Type, configs[i].Config.String())
 		if parseErr != nil {
 			log.Error().
 				Err(parseErr).
@@ -113,7 +114,7 @@ func getNotificationConfig(ctx context.Context, applicationId string) ([]models.
 }
 
 func SendTestNotification(notificationType models.NotificationType, rawConfig, message string) error {
-	targets, err := BuildShouterrrUrls(notificationType, rawConfig)
+	targets, err := provider.BuildShouterrrUrls(notificationType, rawConfig)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}

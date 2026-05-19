@@ -27,3 +27,12 @@ func Get(notificationType models.NotificationType) (Provider, error) {
 	}
 	return provider, nil
 }
+
+func BuildShouterrrUrls(notificationType models.NotificationType, rawConfig string) ([]string, error) {
+	provider, err := Get(notificationType)
+	if err != nil {
+		return nil, err
+	}
+
+	return provider.BuildShouterrrUrls(rawConfig)
+}

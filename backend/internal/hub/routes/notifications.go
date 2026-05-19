@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -393,7 +394,7 @@ func toNotificationResponse(notification *models.Notification, includeConfig boo
 }
 
 func isValidNotificationType(notificationType models.NotificationType) bool {
-	_, err := hubnotifications.Get(notificationType)
+	_, err := provider.Get(notificationType)
 	return err == nil
 }
 
@@ -425,7 +426,7 @@ func normalizeNotificationName(rawName string) (string, error) {
 }
 
 func validateNotificationConfig(notificationType models.NotificationType, rawConfig string) error {
-	targets, err := hubnotifications.BuildShouterrrUrls(notificationType, rawConfig)
+	targets, err := provider.BuildShouterrrUrls(notificationType, rawConfig)
 	if err != nil {
 		return err
 	}
