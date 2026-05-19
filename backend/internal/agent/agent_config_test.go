@@ -44,6 +44,7 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	t.Setenv("AUTH_TOKEN", token)
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("LOG_JSON", "true")
+	t.Setenv("DEPLOYMENTS_DIR", "/test/deployments")
 
 	cfg, err := DefaultConfig()
 	if err != nil {
@@ -68,8 +69,8 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if len(cfg.HubPublicKey) != ed25519.PublicKeySize {
 		t.Errorf("HubPublicKey length = %d, want %d", len(cfg.HubPublicKey), ed25519.PublicKeySize)
 	}
-	if cfg.DeploymentsDir != "/deployments" {
-		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/deployments")
+	if cfg.DeploymentsDir != "/test/deployments" {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/test/deployments")
 	}
 }
 
@@ -79,6 +80,7 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("AUTH_TOKEN", token)
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("LOG_JSON", "")
+	t.Setenv("DEPLOYMENTS_DIR", "")
 
 	cfg, err := DefaultConfig()
 	if err != nil {
