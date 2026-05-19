@@ -33,7 +33,7 @@ jobs:
         working-directory: ./e2e
 
       - name: Install Playwright Browsers
-        run: pnpx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
         working-directory: ./e2e
 
       - name: Run E2E tests
