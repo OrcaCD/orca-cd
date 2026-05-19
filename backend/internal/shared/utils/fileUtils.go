@@ -16,7 +16,7 @@ func DoesNotLookLikeFilePath(name string) error {
 	}
 
 	// Prevent path traversal attacks
-	if strings.Contains(name, "..") {
+	if strings.Contains(name, "/..") || strings.Contains(name, "../") {
 		return errors.New("file path cannot contain '..'")
 	}
 
