@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { toast } from "sonner";
-
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -77,13 +76,13 @@ const notificationSchema = z
 		if (value.type === "discord") {
 			if (value.discordWebhookUrl === "") {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: "custom",
 					path: ["discordWebhookUrl"],
 					message: m.validationNotificationWebhookUrlRequired(),
 				});
 			} else if (!parseDiscordWebhookUrl(value.discordWebhookUrl)) {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: "custom",
 					path: ["discordWebhookUrl"],
 					message: m.validationNotificationWebhookUrlInvalid(),
 				});
@@ -91,7 +90,7 @@ const notificationSchema = z
 
 			if (value.discordAvatarUrl !== "" && !isHttpUrl(value.discordAvatarUrl)) {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: "custom",
 					path: ["discordAvatarUrl"],
 					message: m.validationNotificationAvatarUrlInvalid(),
 				});
@@ -99,7 +98,7 @@ const notificationSchema = z
 
 			if (value.discordThreadId !== "" && !/^\d+$/.test(value.discordThreadId)) {
 				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
+					code: "custom",
 					path: ["discordThreadId"],
 					message: m.validationNotificationThreadIdInvalid(),
 				});
