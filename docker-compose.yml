@@ -24,6 +24,6 @@ services:
       - ALL
     use_api_socket: true # Allows container to access Docker API on host
     volumes:
-      - ./data/agent/deployments:/deployments
+      - ./deployments:/deployments
     depends_on: # Remove this if you are only deploying the agent on a host without the hub
       - hub
