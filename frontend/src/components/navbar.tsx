@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
+	Bell,
 	FileText,
 	GitBranch,
 	LayoutGrid,
@@ -33,12 +34,13 @@ import {
 } from "@/components/ui/navigation-menu";
 import HotkeysDialog from "./dialogs/hotkeys-dialog";
 
-type NavKey = "applications" | "agents" | "repositories" | "admin";
+type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
 
 const navItems = [
 	{ key: "applications" as NavKey, href: "/applications", icon: LayoutGrid },
 	{ key: "agents" as NavKey, href: "/agents", icon: Server },
 	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
+	{ key: "notifications" as NavKey, href: "/notifications", icon: Bell },
 ];
 
 const adminNavItems = [{ key: "admin" as NavKey, href: "/admin", icon: Settings }];
@@ -51,6 +53,8 @@ function getNavLabel(key: NavKey): string {
 			return m.navAgents();
 		case "repositories":
 			return m.navRepositories();
+		case "notifications":
+			return m.navNotifications();
 		case "admin":
 			return m.navAdmin();
 		default:

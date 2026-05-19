@@ -341,6 +341,7 @@ func TestNewQueue_HasCorrectProperties(t *testing.T) {
 	q := NewQueue(&nop)
 	if q == nil {
 		t.Fatal("expected non-nil queue")
+		return
 	}
 	if q.workers != defaultWorkerCount {
 		t.Errorf("expected %d workers, got %d", defaultWorkerCount, q.workers)

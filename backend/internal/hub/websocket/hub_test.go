@@ -26,6 +26,7 @@ func TestNewHub(t *testing.T) {
 
 	if h == nil {
 		t.Fatal("expected non-nil hub")
+		return
 	}
 	if h.clients == nil {
 		t.Fatal("expected non-nil clients map")
@@ -49,6 +50,7 @@ func TestHub_Register(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("expected non-nil client")
+		return
 	}
 	if client.Id != "agent-1" {
 		t.Errorf("expected client id %q, got %q", "agent-1", client.Id)
@@ -145,6 +147,7 @@ func TestHub_Send_ExistingClient(t *testing.T) {
 		ping := received.GetPing()
 		if ping == nil {
 			t.Fatal("expected ping payload")
+			return
 		}
 		if ping.Timestamp != 1234 {
 			t.Errorf("expected timestamp 1234, got %d", ping.Timestamp)

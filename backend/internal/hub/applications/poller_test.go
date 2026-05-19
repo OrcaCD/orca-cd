@@ -87,6 +87,7 @@ func TestNewPoller_HasCorrectProperties(t *testing.T) {
 	p := NewPoller(&nop)
 	if p == nil {
 		t.Fatal("expected non-nil poller")
+		return
 	}
 	if p.done == nil {
 		t.Error("expected non-nil done channel")

@@ -16,6 +16,7 @@ func TestNewWorker(t *testing.T) {
 
 	if w == nil {
 		t.Fatal("expected non-nil worker")
+		return
 	}
 	if w.hub != h {
 		t.Error("expected worker hub to match")
@@ -47,6 +48,7 @@ func TestWorker_Start_BroadcastsPing(t *testing.T) {
 		ping := msg.GetPing()
 		if ping == nil {
 			t.Fatal("expected ping payload")
+			return
 		}
 		if ping.Timestamp == 0 {
 			t.Error("expected non-zero timestamp")

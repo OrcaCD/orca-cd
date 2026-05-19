@@ -39,6 +39,7 @@ type Application struct {
 	Path                string                 `gorm:"type:text;not null"`
 	ComposeFile         crypto.EncryptedString `gorm:"type:text;not null"`
 	PreviousComposeFile crypto.EncryptedString `gorm:"type:text;not null"`
+	Notifications       []Notification         `gorm:"many2many:application_notifications;"`
 }
 
 func (Application) TableName() string {
