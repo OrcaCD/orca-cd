@@ -84,6 +84,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		{
 			admin.GET("/system-info", routes.AdminSystemInfoHandler)
 
+			admin.GET("/audit-logs", routes.AdminListAuditLogsHandler)
+
 			admin.GET("/users", routes.AdminListUsersHandler)
 			admin.POST("/users", routes.AdminCreateUserHandler)
 			admin.GET("/users/:id", routes.AdminGetUserHandler)

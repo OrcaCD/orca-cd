@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -157,6 +158,8 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "created", "user", user.Id)
+
 	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
 	sse.PublishUpdate(AdminUsersPath)
 }
@@ -236,6 +239,8 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "updated", "user", id)
+
 	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
 	sse.PublishUpdate(AdminUsersPath)
 }
@@ -269,6 +274,8 @@ func AdminDeleteUserHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 	sse.PublishUpdate(AdminUsersPath)

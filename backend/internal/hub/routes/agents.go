@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -208,6 +209,8 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "created", "agent", agent.Id)
+
 	c.JSON(http.StatusCreated, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
@@ -252,6 +255,8 @@ func UpdateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "updated", "agent", id)
+
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
 	sse.PublishUpdate(AgentsPath)
 }
@@ -268,6 +273,8 @@ func DeleteAgentHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
 		return
 	}
+
+	utils.RecordAuditLog(c, "deleted", "agent", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
 	sse.PublishUpdate(AgentsPath)
