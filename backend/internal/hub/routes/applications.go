@@ -173,7 +173,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "created", "application", application.Id)
+	utils.RecordAuditLog(c, "created", "application", application.Id)
 
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(ApplicationsPath)
@@ -253,7 +253,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "updated", "application", id)
+	utils.RecordAuditLog(c, "updated", "application", id)
 
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 	sse.PublishUpdate(ApplicationsPath)
@@ -272,7 +272,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "deleted", "application", id)
+	utils.RecordAuditLog(c, "deleted", "application", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(ApplicationsPath)

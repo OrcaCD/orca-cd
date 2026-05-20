@@ -158,7 +158,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "created", "user", user.Id)
+	utils.RecordAuditLog(c, "created", "user", user.Id)
 
 	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
 	sse.PublishUpdate(AdminUsersPath)
@@ -239,7 +239,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "updated", "user", id)
+	utils.RecordAuditLog(c, "updated", "user", id)
 
 	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
 	sse.PublishUpdate(AdminUsersPath)
@@ -275,7 +275,7 @@ func AdminDeleteUserHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, db.DB, "deleted", "user", id)
+	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 	sse.PublishUpdate(AdminUsersPath)

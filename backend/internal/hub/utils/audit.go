@@ -2,15 +2,15 @@ package utils
 
 import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 var Log = logger.New("audit-log", false)
 
-func RecordAuditLog(c *gin.Context, db *gorm.DB, eventType string, targetType string, targetId string) {
+func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetId string) {
 	var userIdPtr *string
 
 	if claims, ok := auth.GetClaims(c); ok {
@@ -40,7 +40,7 @@ func RecordAuditLog(c *gin.Context, db *gorm.DB, eventType string, targetType st
 		TargetId:   targetIdPtr,
 	}
 
-	if err := db.Create(&audit).Error; err != nil {
+	if err := db.DB.Create(&audit).Error; err != nil {
 		Log.Error().Err(err).Msg("Failed to write audit log to database")
 	}
 }
