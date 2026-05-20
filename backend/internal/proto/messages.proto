@@ -9,6 +9,7 @@ message ClientMessage {
     PongResponse pong = 1;
     KeyExchangeResponse key_exchange_response = 2;
     EncryptedPayload encrypted_payload = 3;
+    DeployResult deploy_result = 4;
   }
 }
 
@@ -17,6 +18,7 @@ message ServerMessage {
     PingRequest ping = 1;
     KeyExchangeInit key_exchange_init = 2;
     EncryptedPayload encrypted_payload = 3;
+    DeployRequest deploy_request = 4;
   }
 }
 
@@ -42,4 +44,18 @@ message KeyExchangeResponse {
 message EncryptedPayload {
   bytes nonce = 1;
   bytes ciphertext = 2;
+}
+
+message DeployRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  string compose_file = 4;
+}
+
+message DeployResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
 }
