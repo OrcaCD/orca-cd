@@ -27,7 +27,7 @@ type stubSender struct {
 	sent chan *messages.ClientMessage
 }
 
-func (s *stubSender) Send(msg *messages.ClientMessage) error {
+func (s *stubSender) SendMessage(msg *messages.ClientMessage) error {
 	if s.sent != nil {
 		s.sent <- msg
 	}
@@ -150,7 +150,8 @@ func TestHandleServerMessage_Ping(t *testing.T) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		t.Fatalf("unmarshal ping: %v", err)
 	}
-	handleServerMessage(context.Background(), msg, nil, newMessageSender(clientConn, nil), nil)
+	sender := newMessageSender(clientConn, nil)
+	handleServerMessage(context.Background(), msg, nil, sender, nil)
 
 	select {
 	case <-done:
@@ -182,7 +183,8 @@ func TestHandleServerMessage_UnknownPayload(t *testing.T) {
 	clientConn := dialServer(t, srv)
 	defer clientConn.Close() //nolint:errcheck
 
-	handleServerMessage(context.Background(), &messages.ServerMessage{}, nil, newMessageSender(clientConn, nil), nil)
+	sender := newMessageSender(clientConn, nil)
+	handleServerMessage(context.Background(), &messages.ServerMessage{}, nil, sender, nil)
 
 	select {
 	case <-writeReceived:
@@ -490,8 +492,9 @@ func TestSendMessage_AllowedUnencrypted(t *testing.T) {
 	pong := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{Timestamp: 42}},
 	}
-	if err := sendMessage(conn, nil, pong); err != nil {
-		t.Fatalf("sendMessage: %v", err)
+	sender := newMessageSender(conn, nil)
+	if err := sender.SendMessage(pong); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 
 	select {
@@ -535,14 +538,15 @@ func TestSendMessage_Encrypted(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	// KeyExchangeResponse is not allowed unencrypted — sendMessage must encrypt it.
+	// KeyExchangeResponse is not allowed unencrypted — Send must encrypt it.
 	innerMsg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	if err := sendMessage(conn, session, innerMsg); err != nil {
-		t.Fatalf("sendMessage: %v", err)
+	sender := newMessageSender(conn, session)
+	if err := sender.SendMessage(innerMsg); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 
 	select {

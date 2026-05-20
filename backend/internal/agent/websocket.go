@@ -21,7 +21,7 @@ const handshakeTimeout = 15 * time.Second
 const deploymentTimeout = 5 * time.Minute
 
 type outboundSender interface {
-	Send(msg *messages.ClientMessage) error
+	SendMessage(msg *messages.ClientMessage) error
 }
 
 type deployExecutor interface {
@@ -39,14 +39,6 @@ func newMessageSender(conn *websocket.Conn, session *wscrypto.Session) *messageS
 		conn:    conn,
 		session: session,
 	}
-}
-
-// TODO: We should make this async by adding it to a goroutine
-func (s *messageSender) Send(msg *messages.ClientMessage) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return sendMessage(s.conn, s.session, msg)
 }
 
 func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.PublicKey) (*wscrypto.Session, error) {
@@ -107,10 +99,14 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 	return wscrypto.NewSession(sessionKey)
 }
 
-func sendMessage(conn *websocket.Conn, session *wscrypto.Session, msg *messages.ClientMessage) error {
+// TODO: We should make this async by adding it to a goroutine
+func (s *messageSender) SendMessage(msg *messages.ClientMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	outMsg := msg
 	if !wscrypto.AllowedUnencrypted(msg) {
-		env, err := session.Encrypt(msg)
+		env, err := s.session.Encrypt(msg)
 		if err != nil {
 			return fmt.Errorf("encrypt: %w", err)
 		}
@@ -124,7 +120,7 @@ func sendMessage(conn *websocket.Conn, session *wscrypto.Session, msg *messages.
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	return conn.WriteMessage(websocket.BinaryMessage, data)
+	return s.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
 func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor) {
@@ -161,7 +157,7 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 				},
 			},
 		}
-		if err := sender.Send(pong); err != nil {
+		if err := sender.SendMessage(pong); err != nil {
 			Log.Error().Err(err).Msg("failed to send Pong response")
 		}
 	case *messages.ServerMessage_DeployRequest:
@@ -201,7 +197,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 }
 
 func sendDeployResult(sender outboundSender, result *messages.DeployResult) {
-	if err := sender.Send(&messages.ClientMessage{
+	if err := sender.SendMessage(&messages.ClientMessage{
 		Payload: &messages.ClientMessage_DeployResult{
 			DeployResult: result,
 		},
