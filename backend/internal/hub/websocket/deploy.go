@@ -46,6 +46,11 @@ func (h *DeployHandle) Cancel() {
 	h.deployManager.CancelDeploy(h.requestID)
 }
 
+// TODO the deploys are currently stored in memory,
+// which means they will be lost if the hub restarts.
+// We should consider persisting them in the database
+// if we want to support hub restarts without losing deploy state.
+
 // DeployManager handles deployment state management.
 type DeployManager struct {
 	mu             sync.Mutex
