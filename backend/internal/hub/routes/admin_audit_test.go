@@ -2,28 +2,60 @@ package routes
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
+func ptr(s string) *string {
+	return new(s)
+}
+
+func setupRoutesTestDB(t *testing.T) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "test_routes.db")
+	testDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: gormlogger.New(
+			log.New(os.Stderr, "\n", log.LstdFlags),
+			gormlogger.Config{LogLevel: gormlogger.Warn},
+		),
+	})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+
+	if err := testDB.AutoMigrate(&models.AuditLog{}, &models.User{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	db.DB = testDB
+
+	t.Cleanup(func() {
+		sqlDB, _ := testDB.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+		db.DB = nil
+	})
+}
+
 func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
-	// Gin in den Testmodus versetzen
+	setupRoutesTestDB(t)
+
 	gin.SetMode(gin.TestMode)
 
-	// Falls du eine Test-DB aufräumen musst, kannst du das hier tun.
-	// Wir leeren die Tabelle vor dem Test und optional danach.
-	db.DB.Exec("DELETE FROM audit_logs")
-	t.Cleanup(func() {
-		db.DB.Exec("DELETE FROM audit_logs")
-	})
-
-	// Testdaten vorbereiten
 	mockLog := models.AuditLog{
 		Base: models.Base{
 			Id:        "log-123",
@@ -31,9 +63,9 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 			UpdatedAt: time.Now(),
 		},
 		EventType:  "user.login",
-		UserId:     new("user-456"),
+		UserId:     ptr("user-456"),
 		TargetType: "system",
-		TargetId:   new("target-789"),
+		TargetId:   ptr("target-789"),
 	}
 
 	if err := db.DB.Create(&mockLog).Error; err != nil {
@@ -60,29 +92,24 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 		t.Fatalf("expected 1 audit log, got %d", len(response))
 	}
 
-	log := response[0]
+	auditLogItem := response[0]
 
-	// Einzelne Felder prüfen
-	if log["id"] != "log-123" {
-		t.Fatalf("expected id=log-123, got %v", log["id"])
+	if auditLogItem["id"] != "log-123" {
+		t.Errorf("expected id=log-123, got %v", auditLogItem["id"])
 	}
-	if log["eventType"] != "user.login" {
-		t.Fatalf("expected eventType=user.login, got %v", log["eventType"])
+	if auditLogItem["eventType"] != "user.login" {
+		t.Errorf("expected eventType=user.login, got %v", auditLogItem["eventType"])
 	}
-	if log["userId"] != "user-456" {
-		t.Fatalf("expected userId=user-456, got %v", log["userId"])
+	if auditLogItem["targetType"] != "system" {
+		t.Errorf("expected targetType=system, got %v", auditLogItem["targetType"])
 	}
-	if log["targetType"] != "system" {
-		t.Fatalf("expected targetType=system, got %v", log["targetType"])
-	}
-	if log["targetId"] != "target-789" {
-		t.Fatalf("expected targetId=target-789, got %v", log["targetId"])
+	if auditLogItem["targetId"] != "target-789" {
+		t.Errorf("expected targetId=target-789, got %v", auditLogItem["targetId"])
 	}
 
-	// Zeitstempel auf valides RFC3339-Format prüfen
-	timeStr, ok := log["time"].(string)
+	timeStr, ok := auditLogItem["time"].(string)
 	if !ok {
-		t.Fatalf("expected time to be a string, got %T", log["time"])
+		t.Fatalf("expected time to be a string, got %T", auditLogItem["time"])
 	}
 
 	if _, err := time.Parse(time.RFC3339, timeStr); err != nil {
