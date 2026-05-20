@@ -8,7 +8,3 @@ type AuditLog struct {
 	TargetType string  `gorm:"type:text;not null"`
 	TargetId   *string `gorm:"type:text"`
 }
-
-func (AuditLog) TableName() string {
-	return "audit_logs"
-}
