@@ -1,4 +1,4 @@
-FROM ghcr.io/pnpm/pnpm:11.1.1 AS install-deps
+FROM ghcr.io/pnpm/pnpm:11.2.2 AS install-deps
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
@@ -18,7 +18,7 @@ RUN node --run build
 
 FROM bufbuild/buf:1.69 AS buf
 
-FROM golang:1.26-trixie AS builder
+FROM golang:1.26.3-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
