@@ -6,6 +6,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var Log = logger.New("audit-log", false)
@@ -26,6 +27,7 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		Str("user", userIdDisplay).
 		Str("event", eventType).
 		Str("target", targetType).
+		Str("targetId", targetId).
 		Msg("Recording audit log")
 
 	var targetIdPtr *string
@@ -40,7 +42,7 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		TargetId:   targetIdPtr,
 	}
 
-	if err := db.DB.Create(&audit).Error; err != nil {
+	if err := gorm.G[models.AuditLog](db.DB).Create(c.Request.Context(), &audit); err != nil {
 		Log.Error().Err(err).Msg("Failed to write audit log to database")
 	}
 }
