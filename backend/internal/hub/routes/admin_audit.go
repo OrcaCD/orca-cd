@@ -11,7 +11,7 @@ import (
 
 type auditLogResponse struct {
 	Id         string             `json:"id"`
-	Time       string             `json:"time"`
+	CreatedAt  string             `json:"createdAt"`
 	EventType  string             `json:"eventType"`
 	User       *adminUserResponse `json:"user"`
 	TargetType string             `json:"targetType"`
@@ -36,7 +36,7 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 
 		responses[i] = auditLogResponse{
 			Id:         log.Id,
-			Time:       log.CreatedAt.Format(time.RFC3339),
+			CreatedAt:  log.CreatedAt.Format(time.RFC3339),
 			EventType:  log.EventType,
 			User:       userResp,
 			TargetType: log.TargetType,

@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 
 export const columns: ColumnDef<AuditLog>[] = [
 	{
-		accessorKey: "time",
+		accessorKey: "createdAt",
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnTime()} />,
 		cell: ({ row }) => {
 			const dateStr = (row.original as any).time || row.original.createdAt;
