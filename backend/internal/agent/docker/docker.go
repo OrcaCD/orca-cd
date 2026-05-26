@@ -17,16 +17,17 @@ import (
 const daemonCheckInterval = 5 * time.Second
 
 type Client struct {
-	mu      sync.RWMutex // protects ready
-	log     zerolog.Logger
-	cli     command.Cli
-	compose api.Compose
-	ready   bool
-	ctx     context.Context
-	cancel  context.CancelFunc
+	mu             sync.RWMutex // protects ready
+	log            zerolog.Logger
+	cli            command.Cli
+	compose        api.Compose
+	deploymentsDir string
+	ready          bool
+	ctx            context.Context
+	cancel         context.CancelFunc
 }
 
-func New(log zerolog.Logger) (*Client, error) {
+func New(log zerolog.Logger, deploymentsDir string) (*Client, error) {
 	dockerCLI, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -43,11 +44,12 @@ func New(log zerolog.Logger) (*Client, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Client{
-		log:     log,
-		cli:     dockerCLI,
-		compose: composeSvc,
-		ctx:     ctx,
-		cancel:  cancel,
+		log:            log,
+		cli:            dockerCLI,
+		compose:        composeSvc,
+		deploymentsDir: deploymentsDir,
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 
 	if c.pingDaemon() {

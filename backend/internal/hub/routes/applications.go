@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -268,6 +269,49 @@ func DeleteApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
+	sse.PublishUpdate(ApplicationsPath)
+}
+
+func DeployApplicationHandler(c *gin.Context) {
+	if hubApplications.DefaultDeployer == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "application deployer not initialized"})
+		return
+	}
+
+	id := c.Param("id")
+	application, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Where("id = ?", id).
+		First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	handle, err := hubApplications.DefaultDeployer.StartDeploy(&application, application.ComposeFile.String())
+	if err != nil {
+		if errors.Is(err, hubApplications.ErrAgentUnavailable) {
+			c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start deployment"})
+		return
+	}
+
+	application.SyncStatus = models.Syncing
+	if err := db.DB.Save(&application).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update application"})
+		return
+	}
+
+	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	sse.PublishUpdate(ApplicationsPath)
 }
 

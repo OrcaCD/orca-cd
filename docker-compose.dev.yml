@@ -7,7 +7,7 @@ services:
       dockerfile: hub.Dockerfile
     container_name: orca-hub-dev
     ports:
-      - '127.0.0.1:8080:8080'
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./data/hub:/app/data
     environment:
@@ -20,6 +20,8 @@ services:
       dockerfile: agent.Dockerfile
     container_name: orca-agent-dev
     use_api_socket: true # Allows container to access Docker API on host
+    volumes:
+      - ./data/agent/deployments:/deployments
     depends_on:
       - hub
     environment:

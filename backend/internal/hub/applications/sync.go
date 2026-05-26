@@ -26,28 +26,12 @@ func GetMatchingApplications(ctx context.Context, repository *models.Repository,
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	if _, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", job.Application.Id).
-		Updates(ctx, models.Application{
-			SyncStatus: models.Syncing,
-		}); err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).
-			Msg("failed to set application sync status to syncing")
-	}
-	sse.PublishUpdate("/api/v1/applications")
+	_ = markDeploymentInProgress(context.Background(), job.Application.Id, log)
 
 	success := false
 	defer func() {
 		if !success {
-			if _, err := gorm.G[models.Application](db.DB).
-				Where("id = ?", job.Application.Id).
-				Updates(ctx, models.Application{
-					SyncStatus: models.OutOfSync,
-				}); err != nil {
-				log.Error().Err(err).Str("applicationId", job.Application.Id).
-					Msg("failed to mark application as out_of_sync after failed sync")
-			}
-			sse.PublishUpdate("/api/v1/applications")
+			markDeploymentExecutionFailure(ctx, job.Application.Id, log)
 		}
 	}()
 
@@ -78,23 +62,35 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 
-	// TODO: trigger actual deployment to agent
-	// ...
-	success = true
-
-	if _, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", job.Application.Id).
-		Updates(ctx, models.Application{
-			ComposeFile:         crypto.EncryptedString(content),
-			PreviousComposeFile: job.Application.ComposeFile,
-			Commit:              job.Commit,
-			CommitMessage:       job.CommitMessage,
-			SyncStatus:          models.Synced,
-			LastSyncedAt:        &now,
-		}); err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).
-			Msg("failed to update application after sync (compose changed)")
+	if DefaultDeployer == nil {
+		log.Error().Str("applicationId", job.Application.Id).Msg("application deployer not initialized")
+		return
 	}
 
-	sse.PublishUpdate("/api/v1/applications")
+	result, err := DefaultDeployer.DeployAndWait(ctx, &job.Application, content)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to deploy compose file to agent")
+		return
+	}
+	if result == nil {
+		log.Error().Str("applicationId", job.Application.Id).Msg("agent deployment finished without a result")
+		return
+	}
+	if !result.Success {
+		log.Error().
+			Str("applicationId", job.Application.Id).
+			Str("request_id", result.RequestId).
+			Str("error", result.ErrorMessage).
+			Msg("agent reported deployment failure")
+		return
+	}
+
+	success = true
+	markDeploymentSuccess(ctx, job.Application.Id, func(update *models.Application) {
+		update.ComposeFile = crypto.EncryptedString(content)
+		update.PreviousComposeFile = job.Application.ComposeFile
+		update.Commit = job.Commit
+		update.CommitMessage = job.CommitMessage
+		update.LastSyncedAt = &now
+	}, log)
 }
