@@ -84,28 +84,47 @@ func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	err := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "../bad",
-		ComposeFile:     "services: {}\n",
-	})
-	if err == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+	for _, name := range []string{"../bad", "bad/../name"} {
+		err := c.Deploy(t.Context(), DeployRequest{
+			ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+			ApplicationName: name,
+			ComposeFile:     "services: {}\n",
+		})
+		if err == nil {
+			t.Fatalf("expected deploy to reject application name %q", name)
+		}
 	}
-	err2 := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "test/orcacd-docs",
-		ComposeFile:     "services: {}\n",
-	})
-	if err2 == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+}
+
+func TestNormalizeProjectName(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"billing", "billing", false},
+		{"My App", "my-app", false},
+		{"orcacd docs", "orcacd-docs", false},
+		{"test/orcacd-docs", "test-orcacd-docs", false},
+		{"Hello World!", "hello-world", false},
+		{"  ---  ", "", true},
+		{"___", "", true},
+		{"123app", "123app", false},
 	}
-	err3 := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "bad/../name",
-		ComposeFile:     "services: {}\n",
-	})
-	if err3 == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+	for _, tt := range tests {
+		got, err := normalizeProjectName(tt.input)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("normalizeProjectName(%q): expected error, got %q", tt.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("normalizeProjectName(%q): unexpected error: %v", tt.input, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("normalizeProjectName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }

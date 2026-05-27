@@ -146,4 +146,3 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteO
 	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")
 	return true, nil
 }
-

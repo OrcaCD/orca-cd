@@ -33,6 +33,29 @@ var upProject = func(ctx context.Context, composeService api.Compose, project *c
 	return composeService.Up(ctx, project, options)
 }
 
+// converts an application name to a valid Docker Compose project name
+func normalizeProjectName(name string) (string, error) {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	result := b.String()
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	result = strings.Trim(result, "-")
+	// Docker project names must start with a letter or digit, not an underscore.
+	result = strings.TrimLeft(result, "_")
+	if result == "" {
+		return "", fmt.Errorf("application name %q cannot be normalized to a valid project name", name)
+	}
+	return result, nil
+}
+
 func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if c.compose == nil {
 		return errors.New("docker compose service is not initialized")
@@ -53,7 +76,12 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("invalid application name: %w", err)
 	}
 
-	applicationDir := filepath.Join(c.deploymentsDir, req.ApplicationName)
+	projectName, err := normalizeProjectName(req.ApplicationName)
+	if err != nil {
+		return err
+	}
+
+	applicationDir := filepath.Join(c.deploymentsDir, projectName)
 	composePath := filepath.Join(applicationDir, composeFileName)
 
 	// Verify the final path stays within the deployments directory
@@ -69,7 +97,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: strings.ToLower(req.ApplicationName),
+		ProjectName: projectName,
 		ConfigPaths: []string{composePath},
 		WorkingDir:  applicationDir,
 	})

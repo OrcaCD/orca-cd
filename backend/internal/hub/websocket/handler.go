@@ -111,6 +111,17 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		go h.WritePump(client, log)
 
+		// Send current poll settings so the agent can start polling immediately,
+		// without waiting for a future settings update or a manual trigger.
+		apps, err := gorm.G[models.Application](db.DB).
+			Where("agent_id = ?", claims.Subject).
+			Find(c.Request.Context())
+		if err != nil {
+			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
+		} else {
+			h.SendAgentSettings(claims.Subject, apps)
+		}
+
 		defer func() {
 			h.Unregister(claims.Subject)
 			client.Close()

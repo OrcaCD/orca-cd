@@ -19,6 +19,9 @@ export interface Application {
 	updatedAt: string;
 	composeFile: string;
 	previousComposeFile?: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
 }
 
 export interface ApplicationListItem {
@@ -60,6 +63,9 @@ interface CreateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
 }
 
 interface UpdateApplicationRequest {
@@ -68,6 +74,9 @@ interface UpdateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
 }
 
 interface DeployApplicationResponse {

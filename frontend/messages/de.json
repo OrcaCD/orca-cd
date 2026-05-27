@@ -426,5 +426,13 @@
 	"repositoryAuthUpdated": "Authentifizierung aktualisiert",
 	"repositorySyncUpdatedTitle": "Sync-Einstellungen aktualisiert",
 	"repositorySyncUpdatedDescription": "Die Sync-Einstellungen wurden erfolgreich aktualisiert.",
-	"failedUpdateRepository": "Repository konnte nicht aktualisiert werden"
+	"failedUpdateRepository": "Repository konnte nicht aktualisiert werden",
+	"imagePollSectionTitle": "Image-Polling",
+	"imagePollEnabled": "Image-Polling aktivieren",
+	"imagePollEnabledDescription": "Automatisch auf neue Image-Versionen prüfen und bei Updates neu deployen",
+	"imagePollIntervalSeconds": "Polling-Intervall (Sekunden)",
+	"imagePollIntervalHint": "Minimum 60 s. Wie oft die Registry auf neue Image-Versionen geprüft wird.",
+	"imagePollDeleteOldImages": "Alte Images löschen",
+	"imagePollDeleteOldImagesDescription": "Ersetzte Image-Versionen nach einem erfolgreichen Update entfernen",
+	"validationImagePollIntervalMin": "Das Polling-Intervall muss mindestens 60 Sekunden betragen"
 }

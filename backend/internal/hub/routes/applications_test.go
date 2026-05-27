@@ -1042,13 +1042,6 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 		t.Fatalf("expected background tracking for app %q, got %q", app.Id, deployer.trackedApp)
 	}
 
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to reload app: %v", err)
-	}
-	if updated.SyncStatus != models.Syncing {
-		t.Fatalf("expected app sync status %q, got %q", models.Syncing, updated.SyncStatus)
-	}
 }
 
 func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {

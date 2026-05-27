@@ -426,5 +426,13 @@
 	"repositoryAuthUpdated": "Authentication updated",
 	"repositorySyncUpdatedTitle": "Sync settings updated",
 	"repositorySyncUpdatedDescription": "The sync settings have been successfully updated.",
-	"failedUpdateRepository": "Failed to update repository"
+	"failedUpdateRepository": "Failed to update repository",
+	"imagePollSectionTitle": "Image Polling",
+	"imagePollEnabled": "Enable image polling",
+	"imagePollEnabledDescription": "Automatically check for new image versions and redeploy when updates are detected",
+	"imagePollIntervalSeconds": "Polling interval (seconds)",
+	"imagePollIntervalHint": "Minimum 60 s. How often to check the registry for new image versions.",
+	"imagePollDeleteOldImages": "Delete old images",
+	"imagePollDeleteOldImagesDescription": "Remove replaced image versions after a successful update",
+	"validationImagePollIntervalMin": "Polling interval must be at least 60 seconds"
 }

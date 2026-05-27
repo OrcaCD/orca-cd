@@ -150,6 +150,8 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		msg = inner
 	}
 
+	Log.Debug().Msgf("received message of type %T", msg.Payload)
+
 	switch p := msg.Payload.(type) {
 	case *messages.ServerMessage_Ping:
 		latency := time.Now().UnixMilli() - p.Ping.Timestamp
@@ -197,6 +199,8 @@ func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
 }
 
 func executeDeployment(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeployRequest) {
+	Log.Info().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("starting deployment")
+
 	result := &messages.DeployResult{
 		RequestId:     req.RequestId,
 		ApplicationId: req.ApplicationId,
@@ -216,6 +220,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 	}); err != nil {
+		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("deployment failed")
 		result.ErrorMessage = err.Error()
 		sendDeployResult(sender, result)
 		return
