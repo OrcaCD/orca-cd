@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,6 +94,53 @@ func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected deploy to reject application name %q", name)
 		}
+	}
+}
+
+func TestDeploy_LoadProjectError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	t.Cleanup(func() { loadProject = origLoad })
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return nil, errors.New("load error")
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err == nil {
+		t.Fatal("expected error when loadProject fails")
+	}
+}
+
+func TestDeploy_UpProjectError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: opts.ProjectName}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return errors.New("up failed")
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err == nil {
+		t.Fatal("expected error when upProject fails")
 	}
 }
 

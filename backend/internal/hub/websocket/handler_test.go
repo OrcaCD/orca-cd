@@ -588,6 +588,50 @@ func (m *MockConn) Close() error {
 	return nil
 }
 
+func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
+	setupHandlerTestEnv(t)
+
+	// Also migrate Application and Repository tables so the FindApplications query
+	// succeeds and the else-branch (h.SendAgentSettings) is exercised.
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}); err != nil {
+		t.Fatalf("migrate Application: %v", err)
+	}
+
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "key-sa-1")
+	token := issueTokenAndPersistKeyID(t, agent)
+
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	doHandshake(t, conn, agent.Id)
+
+	// The WsHandler sends an encrypted AgentSettings message immediately after
+	// registration. Read and discard it to verify the code path was reached.
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatalf("expected AgentSettings message: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty AgentSettings message")
+	}
+
+	conn.Close() //nolint:errcheck,gosec
+	waitForOffline(t, agent.Id)
+}
+
 func TestPerformHandshake_WriteDeadlineError(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()

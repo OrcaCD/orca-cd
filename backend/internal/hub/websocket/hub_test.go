@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
@@ -508,6 +509,87 @@ func TestHub_WritePump_EncryptsNonPingMessages(t *testing.T) {
 	}
 
 	client.Close()
+}
+
+func TestHub_SendAgentSettings_NoClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	apps := []models.Application{
+		{Base: models.Base{Id: "app-1"}, ImagePollEnabled: true, ImagePollIntervalSeconds: 120},
+	}
+	ok := h.SendAgentSettings("nonexistent-agent", apps)
+	if ok {
+		t.Error("expected false when agent is not connected")
+	}
+}
+
+func TestHub_SendAgentSettings(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	apps := []models.Application{
+		{
+			Base:                     models.Base{Id: "app-1"},
+			ImagePollEnabled:         true,
+			ImagePollIntervalSeconds: 120,
+			ImagePollDeleteOldImages: true,
+		},
+		{
+			Base:             models.Base{Id: "app-2"},
+			ImagePollEnabled: false,
+		},
+	}
+
+	ok := h.SendAgentSettings("agent-1", apps)
+	if !ok {
+		t.Fatal("expected true when agent is connected")
+	}
+
+	select {
+	case msg := <-client.Send:
+		settings := msg.GetAgentSettings()
+		if settings == nil {
+			t.Fatal("expected AgentSettings payload")
+		}
+		if len(settings.ImagePollSettings) != 2 {
+			t.Fatalf("expected 2 poll settings, got %d", len(settings.ImagePollSettings))
+		}
+		byID := make(map[string]*messages.ImagePollSettings)
+		for _, s := range settings.ImagePollSettings {
+			byID[s.ApplicationId] = s
+		}
+		s1, ok := byID["app-1"]
+		if !ok {
+			t.Fatal("expected app-1 in settings")
+		}
+		if !s1.Enabled {
+			t.Error("expected app-1 enabled=true")
+		}
+		if s1.IntervalSeconds != 120 {
+			t.Errorf("expected interval 120, got %d", s1.IntervalSeconds)
+		}
+		if !s1.DeleteOldImages {
+			t.Error("expected DeleteOldImages=true for app-1")
+		}
+		s2, ok := byID["app-2"]
+		if !ok {
+			t.Fatal("expected app-2 in settings")
+		}
+		if s2.Enabled {
+			t.Error("expected app-2 enabled=false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for AgentSettings message")
+	}
 }
 
 func TestClient_Close(t *testing.T) {

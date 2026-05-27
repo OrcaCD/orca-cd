@@ -295,6 +295,175 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 	}
 }
 
+func TestCheckAndPullImages_LoadProjectError(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: img:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return nil, errors.New("load error")
+	}
+
+	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	if err == nil {
+		t.Fatal("expected error when loadProject fails")
+	}
+}
+
+func TestCheckAndPullImages_PullError(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: img:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("img:latest"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+		return "sha256:new", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return nil, errors.New("no such image")
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return errors.New("pull failed")
+	}
+
+	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	if err == nil {
+		t.Fatal("expected error when pullProject fails")
+	}
+}
+
+func TestCheckAndPullImages_UpProjectError(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: img:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("img:latest"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+		return "sha256:new", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return nil, errors.New("no such image")
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return errors.New("up failed")
+	}
+
+	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	if err == nil {
+		t.Fatal("expected error when upProject fails")
+	}
+}
+
+func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: ghcr.io/org/app:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("ghcr.io/org/app:latest"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+		return "sha256:newdigest", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return []string{"ghcr.io/org/app@sha256:olddigest"}, nil
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return nil
+	}
+
+	// ImageRemove on the real daemon will fail with "not found" — logged as a warning, not an error.
+	updated, err := c.CheckAndPullImages(t.Context(), "myapp", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !updated {
+		t.Error("expected updated=true when images are stale")
+	}
+}
+
+func TestCheckAndPullImages_DeleteOldImages_SkipsEmptyDigest(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: ghcr.io/org/app:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("ghcr.io/org/app:latest"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+		return "sha256:new", nil
+	}
+	// Image not present locally — stale with empty oldDigest (first pull).
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return nil, errors.New("no such image")
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return nil
+	}
+
+	// deleteOldImages=true but oldDigest is "" so ImageRemove must be skipped.
+	updated, err := c.CheckAndPullImages(t.Context(), "myapp", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !updated {
+		t.Error("expected updated=true for first-pull of missing image")
+	}
+}
+
 func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 	saveRestoreVars(t)
 	c := newTestClient(t)

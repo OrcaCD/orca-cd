@@ -888,6 +888,51 @@ func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 	}
 }
 
+func TestApplyAgentSettings_NilPoller(t *testing.T) {
+	// Must not panic when poller is nil.
+	applyAgentSettings(nil, &messages.AgentSettings{
+		ImagePollSettings: []*messages.ImagePollSettings{
+			{ApplicationId: "app-1", ApplicationName: "myapp", Enabled: true},
+		},
+	})
+}
+
+func TestExecutePullImages_NilPoller(t *testing.T) {
+	// Must not panic when poller is nil.
+	executePullImages(nil, &messages.PullImagesRequest{
+		RequestId:       "req-1",
+		ApplicationId:   "app-1",
+		ApplicationName: "myapp",
+	})
+}
+
+func TestExecuteDeployment_NilDeployer(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+
+	executeDeployment(context.Background(), sender, nil, &messages.DeployRequest{
+		RequestId:       "req-1",
+		ApplicationId:   "app-1",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeployResult()
+		if result == nil {
+			t.Fatal("expected DeployResult payload")
+		}
+		if result.Success {
+			t.Error("expected success=false when deployer is nil")
+		}
+		if result.ErrorMessage == "" {
+			t.Error("expected non-empty error message")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for deploy result")
+	}
+}
+
 func TestConnTracker_CloseNilConn(t *testing.T) {
 	var tracker connTracker
 	tracker.close()

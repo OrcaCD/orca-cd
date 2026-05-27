@@ -227,6 +227,23 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	}
 }
 
+func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+		return true, nil // trigger a send
+	}
+
+	sender := &stubMessageSender{err: errors.New("send failed")}
+	p := newTestPoller(t, sender)
+	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	// Must not panic when sender returns an error; the error is logged.
+	p.runOnce("app-1", "myapp", "req-1")
+}
+
 type noopSender struct{}
 
 func (noopSender) SendMessage(_ *messages.ClientMessage) error { return nil }
