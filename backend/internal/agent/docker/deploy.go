@@ -78,11 +78,13 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	// Add OrcaCD managed label to all services
-	for _, service := range project.Services {
+	for name, service := range project.Services {
 		if service.Labels == nil {
-			service.Labels = make(map[string]string)
+			service.Labels = make(composetypes.Labels)
 		}
 		service.Labels["managed_by"] = "orca-cd"
+		service.Labels["orca-cd.application-id"] = req.ApplicationID
+		project.Services[name] = service
 	}
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
