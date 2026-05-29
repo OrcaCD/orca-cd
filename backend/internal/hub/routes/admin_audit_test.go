@@ -19,7 +19,7 @@ import (
 )
 
 func ptr(s string) *string {
-	return &s
+	return new(s)
 }
 
 func setupRoutesTestDB(t *testing.T) {
