@@ -15,7 +15,10 @@ export const Route = createFileRoute("/_authenticated/admin/audit-log")({
 	}),
 });
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+const fetcher = async (url: string) => {
+	const r = await fetch(url);
+	return r.json();
+};
 
 const getKey = (pageIndex: number, previousPageData: any) => {
 	if (pageIndex === 0) {
@@ -29,12 +32,12 @@ const getKey = (pageIndex: number, previousPageData: any) => {
 	const lastItem = previousPageData.items[previousPageData.items.length - 1];
 
 	return `/api/v1/admin/audit-logs?limit=20&cursor=${encodeURIComponent(lastItem.createdAt)}`;
-}
+};
 
 function AuditLogPage() {
 	const { data, size, setSize } = useSWRInfinite(getKey, fetcher);
 
-	const logs = data ? data.flatMap(page => page.items) : [];
+	const logs = data ? data.flatMap((page) => page.items) : [];
 	const lastPage = data?.[data.length - 1];
 	const hasMore = lastPage?.hasMore;
 
@@ -48,13 +51,9 @@ function AuditLogPage() {
 			<AuditLogsDataTable columns={columns} data={logs} />
 
 			{hasMore ? (
-				<button	onClick={() => setSize(size + 1)}>
-					{m.loadMore()}
-				</button>
+				<button onClick={() => setSize(size + 1)}>{m.loadMore()}</button>
 			) : (
-				<p className="text-sm text-muted-foreground text-center">
-					{m.noMoreLogs()}
-				</p>
+				<p className="text-sm text-muted-foreground text-center">{m.noMoreLogs()}</p>
 			)}
 		</div>
 	);

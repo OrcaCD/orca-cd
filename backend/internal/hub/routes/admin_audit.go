@@ -1,13 +1,14 @@
 package routes
 
 import (
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type auditLogResponse struct {
@@ -20,16 +21,23 @@ type auditLogResponse struct {
 }
 
 func AdminListAuditLogsHandler(c *gin.Context) {
-	var auditLogs []models.AuditLog
+	ctx := c.Request.Context()
 
 	limit := 20
 	if l := c.Query("limit"); l != "" {
-		fmt.Sscanf(l, "%d", &limit)
+		if v, err := strconv.Atoi(l); err == nil {
+			limit = v
+		}
 	}
 
 	cursor := c.Query("cursor")
 
-	query := db.DB.Order("created_at DESC").Limit(limit + 1).Preload("User")
+	query := gorm.G[models.AuditLog](db.DB).
+		Order("created_at DESC").
+		Limit(limit+1).
+		Preload("User", func(db gorm.PreloadBuilder) error {
+			return nil
+		})
 
 	if cursor != "" {
 		t, err := time.Parse(time.RFC3339, cursor)
@@ -38,7 +46,8 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		}
 	}
 
-	if err := query.Find(&auditLogs).Error; err != nil {
+	auditLogs, err := query.Find(ctx)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
 		return
 	}
