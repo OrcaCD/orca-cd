@@ -134,6 +134,8 @@
 	"adminUserManagement": "User Management",
 	"adminAuditLog": "Audit Log",
 	"adminAuditLogDescription": "Log of all changes within the platform",
+	"loadMore": "Load more",
+	"noMoreLogs": "No more logs.",
 	"adminUsersDescription": "Manage local user accounts and their roles.",
 	"loadingUsers": "Loading users...",
 	"adminOidcProviders": "SSO Providers",

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -20,9 +21,32 @@ type auditLogResponse struct {
 
 func AdminListAuditLogsHandler(c *gin.Context) {
 	var auditLogs []models.AuditLog
-	if err := db.DB.Order("created_at DESC").Limit(100).Preload("User").Find(&auditLogs).Error; err != nil {
+
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+
+	cursor := c.Query("cursor")
+
+	query := db.DB.Order("created_at DESC").Limit(limit + 1).Preload("User")
+
+	if cursor != "" {
+		t, err := time.Parse(time.RFC3339, cursor)
+		if err == nil {
+			query = query.Where("created_at < ?", t)
+		}
+	}
+
+	if err := query.Find(&auditLogs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
 		return
+	}
+
+	hasMore := false
+	if len(auditLogs) > limit {
+		hasMore = true
+		auditLogs = auditLogs[:limit]
 	}
 
 	responses := make([]auditLogResponse, len(auditLogs))
@@ -44,5 +68,8 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, responses)
+	c.JSON(http.StatusOK, gin.H{
+		"items":   responses,
+		"hasMore": hasMore,
+	})
 }
