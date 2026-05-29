@@ -126,7 +126,7 @@ func TestAdminListAuditLogsHandler_LimitAndHasMore(t *testing.T) {
 	setupRoutesTestDB(t)
 	gin.SetMode(gin.TestMode)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		mockLog := models.AuditLog{
 			Base: models.Base{
 				Id:        fmt.Sprintf("log-%d", i),
@@ -171,79 +171,79 @@ func TestAdminListAuditLogsHandler_LimitAndHasMore(t *testing.T) {
 }
 
 func TestAdminListAuditLogsHandler_Cursor(t *testing.T) {
-    setupRoutesTestDB(t)
-    gin.SetMode(gin.TestMode)
+	setupRoutesTestDB(t)
+	gin.SetMode(gin.TestMode)
 
-    oldDB := db.DB
-    db.DB = db.DB.Debug() 
-    defer func() { db.DB = oldDB }()
+	oldDB := db.DB
+	db.DB = db.DB.Debug()
+	defer func() { db.DB = oldDB }()
 
-    base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC).Truncate(time.Second)
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC).Truncate(time.Second)
 
-    _ = db.DB.Exec("DELETE FROM audit_logs")
+	_ = db.DB.Exec("DELETE FROM audit_logs")
 
-    old := models.AuditLog{
-        Base: models.Base{
-            Id:        "old",
-            CreatedAt: base.Add(-10 * time.Minute).Truncate(time.Second),
-        },
-        EventType:  "user.login",
-        TargetType: "system",
-    }
+	old := models.AuditLog{
+		Base: models.Base{
+			Id:        "old",
+			CreatedAt: base.Add(-10 * time.Minute).Truncate(time.Second),
+		},
+		EventType:  "user.login",
+		TargetType: "system",
+	}
 
-    newLog := models.AuditLog{
-        Base: models.Base{
-            Id:        "new",
-            CreatedAt: base.Add(10 * time.Minute).Truncate(time.Second),
-        },
-        EventType:  "user.login",
-        TargetType: "system",
-    }
+	newLog := models.AuditLog{
+		Base: models.Base{
+			Id:        "new",
+			CreatedAt: base.Add(10 * time.Minute).Truncate(time.Second),
+		},
+		EventType:  "user.login",
+		TargetType: "system",
+	}
 
-    if err := db.DB.Save(&old).Error; err != nil {
-        t.Fatalf("insert old failed: %v", err)
-    }
-    if err := db.DB.Save(&newLog).Error; err != nil {
-        t.Fatalf("insert new failed: %v", err)
-    }
+	if err := db.DB.Save(&old).Error; err != nil {
+		t.Fatalf("insert old failed: %v", err)
+	}
+	if err := db.DB.Save(&newLog).Error; err != nil {
+		t.Fatalf("insert new failed: %v", err)
+	}
 
-    var count int64
-    db.DB.Model(&models.AuditLog{}).Count(&count)
-    t.Logf("Datensätze in der DB vor dem Request: %d", count)
+	var count int64
+	db.DB.Model(&models.AuditLog{}).Count(&count)
+	t.Logf("Datensätze in der DB vor dem Request: %d", count)
 
-    router := gin.New()
-    router.GET("/api/v1/admin/audit-logs", AdminListAuditLogsHandler)
+	router := gin.New()
+	router.GET("/api/v1/admin/audit-logs", AdminListAuditLogsHandler)
 
-    cursor := base.Format(time.RFC3339)
+	cursor := base.Format(time.RFC3339)
 
-    req := httptest.NewRequest(
-        http.MethodGet,
-        "/api/v1/admin/audit-logs?cursor="+cursor,
-        nil,
-    )
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/admin/audit-logs?cursor="+cursor,
+		nil,
+	)
 
-    w := httptest.NewRecorder()
-    router.ServeHTTP(w, req)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
 
-    if w.Code != http.StatusOK {
-        t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
-    }
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
 
-    var response struct {
-        Items []map[string]any `json:"items"`
-    }
+	var response struct {
+		Items []map[string]any `json:"items"`
+	}
 
-    if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-        t.Fatalf("invalid json: %v", err)
-    }
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
 
-    if len(response.Items) == 0 {
-        t.Fatalf("expected at least 1 item, aber Response-Body war: %s", w.Body.String())
-    }
+	if len(response.Items) == 0 {
+		t.Fatalf("expected at least 1 item, aber Response-Body war: %s", w.Body.String())
+	}
 
-    if response.Items[0]["id"] != "old" {
-        t.Fatalf("expected old log, got %v", response.Items[0]["id"])
-    }
+	if response.Items[0]["id"] != "old" {
+		t.Fatalf("expected old log, got %v", response.Items[0]["id"])
+	}
 }
 
 func TestAdminListAuditLogsHandler_InvalidLimit(t *testing.T) {
