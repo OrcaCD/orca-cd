@@ -19,13 +19,14 @@ import (
 )
 
 func ptr(s string) *string {
-	return new(s)
+	return &s
 }
 
 func setupRoutesTestDB(t *testing.T) {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test_routes.db")
+
 	testDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: gormlogger.New(
 			log.New(os.Stderr, "\n", log.LstdFlags),
@@ -83,16 +84,19 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var response []map[string]any
+	var response struct {
+		Items   []map[string]any `json:"items"`
+		HasMore bool             `json:"hasMore"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("invalid JSON response: %v", err)
 	}
 
-	if len(response) != 1 {
-		t.Fatalf("expected 1 audit log, got %d", len(response))
+	if len(response.Items) != 1 {
+		t.Fatalf("expected 1 audit log, got %d", len(response.Items))
 	}
 
-	auditLogItem := response[0]
+	auditLogItem := response.Items[0]
 
 	if auditLogItem["id"] != "log-123" {
 		t.Errorf("expected id=log-123, got %v", auditLogItem["id"])
@@ -107,9 +111,9 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 		t.Errorf("expected targetId=target-789, got %v", auditLogItem["targetId"])
 	}
 
-	timeStr, ok := auditLogItem["time"].(string)
+	timeStr, ok := auditLogItem["createdAt"].(string)
 	if !ok {
-		t.Fatalf("expected time to be a string, got %T", auditLogItem["time"])
+		t.Fatalf("expected createdAt to be a string, got %T", auditLogItem["createdAt"])
 	}
 
 	if _, err := time.Parse(time.RFC3339, timeStr); err != nil {
