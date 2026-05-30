@@ -23,7 +23,7 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		userIdDisplay = *userIdPtr
 	}
 
-	Log.Info().
+	Log.Debug().
 		Str("user", userIdDisplay).
 		Str("event", eventType).
 		Str("target", targetType).
