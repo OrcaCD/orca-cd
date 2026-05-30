@@ -174,7 +174,7 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 	case *messages.ServerMessage_PullImagesRequest:
 		go executePullImages(poller, p.PullImagesRequest)
 	default:
-		Log.Warn().Msg("unknown message type received")
+		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
 }
 

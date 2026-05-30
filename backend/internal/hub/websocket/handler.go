@@ -194,6 +194,8 @@ func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, lo
 				Str("request_id", p.DeployResult.RequestId).
 				Msg("received deploy result for unknown request")
 		}
+	case *messages.ClientMessage_PullImagesResult:
+		handlePullImagesResult(client, p.PullImagesResult, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}

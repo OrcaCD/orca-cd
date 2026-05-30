@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/client"
@@ -54,17 +53,19 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 // pulls all images and redeploys. Returns true if at least one image
 // was updated.
 func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteOldImages bool) (bool, error) {
-	if err := utils.DoesNotLookLikeFilePath(appName); err != nil {
+
+	projectName, err := normalizeProjectName(appName)
+	if err != nil {
 		return false, fmt.Errorf("invalid application name: %w", err)
 	}
 
-	composePath := filepath.Join(c.deploymentsDir, appName, composeFileName)
+	composePath := filepath.Join(c.deploymentsDir, projectName, composeFileName)
 	if _, err := os.Stat(composePath); errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: strings.ToLower(appName),
+		ProjectName: projectName,
 		ConfigPaths: []string{composePath},
 		WorkingDir:  filepath.Dir(composePath),
 	})
@@ -87,7 +88,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteO
 
 		remoteDigest, err := getRemoteDigest(ctx, dockerCLI, service.Image)
 		if err != nil {
-			c.log.Debug().Err(err).Str("image", service.Image).Msg("skipping image: could not fetch remote digest")
+			c.log.Error().Err(err).Str("image", service.Image).Msg("failed to get remote digest for image")
 			continue
 		}
 

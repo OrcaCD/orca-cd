@@ -144,6 +144,8 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string) {
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+
+		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to check/pull images")
 	} else {
 		result.Success = true
 	}
