@@ -3,6 +3,7 @@ package hub
 import (
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -58,6 +59,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.GET("/applications", routes.ListApplicationsHandler)
 			protected.GET("/applications/:id", routes.GetApplicationHandler)
 			protected.POST("/applications", routes.CreateApplicationHandler)
+			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
 			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
 
@@ -102,6 +104,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		sse.DefaultBroker = sse.NewBroker(&Log)
 
 		h := websocket.NewHub(&Log)
+		applications.DefaultDeployer = applications.NewDeployer(h, &Log)
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
 

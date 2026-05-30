@@ -1,6 +1,6 @@
-FROM bufbuild/buf:1.69 AS buf
+FROM bufbuild/buf:1.70 AS buf
 
-FROM golang:1.26-trixie AS builder
+FROM golang:1.26.3-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none

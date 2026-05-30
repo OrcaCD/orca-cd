@@ -70,6 +70,10 @@ interface UpdateApplicationRequest {
 	path: string;
 }
 
+interface DeployApplicationResponse {
+	message: string;
+}
+
 export function createApplication(data: CreateApplicationRequest): Promise<Application> {
 	return fetcher<Application>("/applications", "POST", data);
 }
@@ -83,4 +87,8 @@ export function updateApplication(
 
 export function deleteApplication(id: string): Promise<void> {
 	return fetcher(`/applications/${id}`, "DELETE");
+}
+
+export function deployApplication(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
 }

@@ -37,7 +37,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -72,7 +72,7 @@ func TestRequireAuth_InvalidToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "invalid.token.here"})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "invalid.token.here"}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
@@ -98,7 +98,7 @@ func TestRequireAuth_PasswordChangeRequired_BlocksOtherPaths(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusForbidden {
@@ -124,7 +124,7 @@ func TestRequireAuth_PasswordChangeRequired_AllowsChangePasswordPath(t *testing.
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {

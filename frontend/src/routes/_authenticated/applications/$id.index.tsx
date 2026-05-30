@@ -1,4 +1,10 @@
-import { deleteApplication, HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import {
+	deleteApplication,
+	deployApplication,
+	HealthStatus,
+	SyncStatus,
+	type Application,
+} from "@/lib/applications";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	Breadcrumb,
@@ -150,13 +156,21 @@ function ApplicationDetailsPage() {
 
 	const { data } = useFetch<Application>("/applications/" + id);
 
-	const [syncing, setSyncing] = useState(false);
+	const [deploying, setDeploying] = useState(false);
 
-	const handleSync = async () => {
-		setSyncing(true);
-		await new Promise((resolve) => setTimeout(resolve, 2000));
-		setSyncing(false);
+	const handleDeploy = async () => {
+		setDeploying(true);
+		try {
+			await deployApplication(id);
+			toast.success(m.deploymentStarted());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedDeployApplication());
+		} finally {
+			setDeploying(false);
+		}
 	};
+
+	const deploymentInProgress = deploying || data?.syncStatus === SyncStatus.Syncing;
 
 	const manifestHtml = useMemo(() => {
 		return highlighter.codeToHtml(data?.composeFile ?? "", {
@@ -217,9 +231,9 @@ function ApplicationDetailsPage() {
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					<Button variant="outline" onClick={handleSync} disabled={syncing}>
-						<RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-						{syncing ? m.syncing() : m.sync()}
+					<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
+						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
+						{deploymentInProgress ? m.deploying() : m.deploy()}
 					</Button>
 
 					<DropdownMenu>
