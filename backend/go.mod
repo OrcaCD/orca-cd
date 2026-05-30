@@ -7,8 +7,8 @@ require (
 	github.com/aegis-aead/go-libaegis v0.2.14
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/coreos/go-oidc/v3 v3.18.0
-	github.com/docker/cli v29.5.1+incompatible
-	github.com/docker/compose/v5 v5.1.3
+	github.com/docker/cli v29.5.2+incompatible
+	github.com/docker/compose/v5 v5.1.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
@@ -53,7 +53,7 @@ require (
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/compose-spec/compose-go/v2 v2.10.2 // indirect
+	github.com/compose-spec/compose-go/v2 v2.11.0
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.10.0 // indirect
 	github.com/containerd/containerd/v2 v2.2.3 // indirect
@@ -108,7 +108,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
-	github.com/mattn/go-shellwords v1.0.12 // indirect
+	github.com/mattn/go-shellwords v1.0.13 // indirect
 	github.com/mattn/go-sqlite3 v1.14.37 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/buildkit v0.29.0 // indirect
@@ -173,12 +173,12 @@ require (
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.41.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
-	google.golang.org/grpc v1.80.0 // indirect
+	google.golang.org/grpc v1.81.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
