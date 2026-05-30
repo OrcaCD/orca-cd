@@ -5,8 +5,7 @@ const eventTypeStyles: Record<string, string> = {
 };
 
 export function EventTypeBadge({ type }: { type: string }) {
-	const className =
-		eventTypeStyles[type] ?? "text-gray-600 bg-gray-50";
+	const className = eventTypeStyles[type] ?? "text-gray-600 bg-gray-50";
 
 	return (
 		<span
