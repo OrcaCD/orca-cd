@@ -28,6 +28,11 @@ type deployExecutor interface {
 	Deploy(ctx context.Context, req docker.DeployRequest) error
 }
 
+type pollerHandler interface {
+	ApplySettings(apps []docker.AppPollConfig)
+	TriggerNow(appID, appName, requestID string)
+}
+
 type messageSender struct {
 	conn    *websocket.Conn
 	mu      sync.Mutex
@@ -123,7 +128,7 @@ func (s *messageSender) SendMessage(msg *messages.ClientMessage) error {
 	return s.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
-func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor) {
+func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor, poller pollerHandler) {
 	_, isEncrypted := msg.Payload.(*messages.ServerMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		Log.Warn().Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -145,6 +150,8 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		msg = inner
 	}
 
+	Log.Debug().Msgf("received message of type %T", msg.Payload)
+
 	switch p := msg.Payload.(type) {
 	case *messages.ServerMessage_Ping:
 		latency := time.Now().UnixMilli() - p.Ping.Timestamp
@@ -162,12 +169,44 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		}
 	case *messages.ServerMessage_DeployRequest:
 		go executeDeployment(ctx, sender, deployer, p.DeployRequest)
+	case *messages.ServerMessage_AgentSettings:
+		go applyAgentSettings(poller, p.AgentSettings)
+	case *messages.ServerMessage_PullImagesRequest:
+		go executePullImages(poller, p.PullImagesRequest)
 	default:
-		Log.Warn().Msg("unknown message type received")
+		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
 }
 
+func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) {
+	if poller == nil {
+		return
+	}
+	apps := make([]docker.AppPollConfig, 0, len(settings.ImagePollSettings))
+	for _, s := range settings.ImagePollSettings {
+		apps = append(apps, docker.AppPollConfig{
+			AppID:   s.ApplicationId,
+			AppName: s.ApplicationName,
+			Settings: docker.PollSettings{
+				Enabled:         s.Enabled,
+				IntervalSeconds: s.IntervalSeconds,
+				DeleteOldImages: s.DeleteOldImages,
+			},
+		})
+	}
+	poller.ApplySettings(apps)
+}
+
+func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
+	if poller == nil {
+		return
+	}
+	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId)
+}
+
 func executeDeployment(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeployRequest) {
+	Log.Info().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("starting deployment")
+
 	result := &messages.DeployResult{
 		RequestId:     req.RequestId,
 		ApplicationId: req.ApplicationId,
@@ -187,6 +226,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 	}); err != nil {
+		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("deployment failed")
 		result.ErrorMessage = err.Error()
 		sendDeployResult(sender, result)
 		return

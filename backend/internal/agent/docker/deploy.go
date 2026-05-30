@@ -15,9 +15,22 @@ import (
 )
 
 const (
-	composeFileName   = "compose.yaml"
-	deployWaitTimeout = 2 * time.Minute
+	composeFileName    = "compose.yaml"
+	deployWaitTimeout  = 2 * time.Minute
+	labelManagedBy     = "managed_by"
+	labelApplicationID = "orca-cd.application-id"
 )
+
+func applyOrcaLabels(project *composetypes.Project, appID string) {
+	for name, service := range project.Services {
+		if service.Labels == nil {
+			service.Labels = make(composetypes.Labels)
+		}
+		service.Labels[labelManagedBy] = "orca-cd"
+		service.Labels[labelApplicationID] = appID
+		project.Services[name] = service
+	}
+}
 
 type DeployRequest struct {
 	ApplicationID   string
@@ -31,6 +44,29 @@ var loadProject = func(ctx context.Context, composeService api.Compose, options 
 
 var upProject = func(ctx context.Context, composeService api.Compose, project *composetypes.Project, options api.UpOptions) error {
 	return composeService.Up(ctx, project, options)
+}
+
+// converts an application name to a valid Docker Compose project name
+func normalizeProjectName(name string) (string, error) {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	result := b.String()
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	result = strings.Trim(result, "-")
+	// Docker project names must start with a letter or digit, not an underscore.
+	result = strings.TrimLeft(result, "_")
+	if result == "" {
+		return "", fmt.Errorf("application name %q cannot be normalized to a valid project name", name)
+	}
+	return result, nil
 }
 
 func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
@@ -53,7 +89,12 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("invalid application name: %w", err)
 	}
 
-	applicationDir := filepath.Join(c.deploymentsDir, req.ApplicationName)
+	projectName, err := normalizeProjectName(req.ApplicationName)
+	if err != nil {
+		return err
+	}
+
+	applicationDir := filepath.Join(c.deploymentsDir, projectName)
 	composePath := filepath.Join(applicationDir, composeFileName)
 
 	// Verify the final path stays within the deployments directory
@@ -69,7 +110,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: strings.ToLower(req.ApplicationName),
+		ProjectName: projectName,
 		ConfigPaths: []string{composePath},
 		WorkingDir:  applicationDir,
 	})
@@ -77,13 +118,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("load compose project: %w", err)
 	}
 
-	// Add OrcaCD managed label to all services
-	for _, service := range project.Services {
-		if service.Labels == nil {
-			service.Labels = make(map[string]string)
-		}
-		service.Labels["managed_by"] = "orca-cd"
-	}
+	applyOrcaLabels(project, req.ApplicationID)
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{

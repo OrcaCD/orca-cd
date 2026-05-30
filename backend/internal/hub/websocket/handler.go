@@ -111,6 +111,17 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		go h.WritePump(client, log)
 
+		// Send current poll settings so the agent can start polling immediately,
+		// without waiting for a future settings update or a manual trigger.
+		apps, err := gorm.G[models.Application](db.DB).
+			Where("agent_id = ?", claims.Subject).
+			Find(c.Request.Context())
+		if err != nil {
+			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
+		} else {
+			h.SendAgentSettings(claims.Subject, apps)
+		}
+
 		defer func() {
 			h.Unregister(claims.Subject)
 			client.Close()
@@ -183,6 +194,8 @@ func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, lo
 				Str("request_id", p.DeployResult.RequestId).
 				Msg("received deploy result for unknown request")
 		}
+	case *messages.ClientMessage_PullImagesResult:
+		handlePullImagesResult(client, p.PullImagesResult, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -19,19 +20,25 @@ import (
 const ApplicationsPath = "/api/v1/applications"
 
 type createApplicationRequest struct {
-	Name         string `json:"name" binding:"required"`
-	RepositoryId string `json:"repositoryId" binding:"required"`
-	AgentId      string `json:"agentId" binding:"required"`
-	Branch       string `json:"branch" binding:"required"`
-	Path         string `json:"path" binding:"required"`
+	Name                     string `json:"name" binding:"required"`
+	RepositoryId             string `json:"repositoryId" binding:"required"`
+	AgentId                  string `json:"agentId" binding:"required"`
+	Branch                   string `json:"branch" binding:"required"`
+	Path                     string `json:"path" binding:"required"`
+	ImagePollEnabled         bool   `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
+	ImagePollDeleteOldImages bool   `json:"imagePollDeleteOldImages"`
 }
 
 type updateApplicationRequest struct {
-	Name         string `json:"name" binding:"required"`
-	RepositoryId string `json:"repositoryId" binding:"required"`
-	AgentId      string `json:"agentId" binding:"required"`
-	Branch       string `json:"branch" binding:"required"`
-	Path         string `json:"path" binding:"required"`
+	Name                     string `json:"name" binding:"required"`
+	RepositoryId             string `json:"repositoryId" binding:"required"`
+	AgentId                  string `json:"agentId" binding:"required"`
+	Branch                   string `json:"branch" binding:"required"`
+	Path                     string `json:"path" binding:"required"`
+	ImagePollEnabled         bool   `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
+	ImagePollDeleteOldImages bool   `json:"imagePollDeleteOldImages"`
 }
 
 type applicationListResponse struct {
@@ -48,24 +55,27 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id                  string  `json:"id"`
-	Name                string  `json:"name"`
-	RepositoryId        string  `json:"repositoryId"`
-	RepositoryName      string  `json:"repositoryName"`
-	RepositoryUrl       string  `json:"repositoryUrl"`
-	AgentId             string  `json:"agentId"`
-	AgentName           string  `json:"agentName"`
-	SyncStatus          string  `json:"syncStatus"`
-	HealthStatus        string  `json:"healthStatus"`
-	Branch              string  `json:"branch"`
-	Commit              string  `json:"commit"`
-	CommitMessage       string  `json:"commitMessage"`
-	LastSyncedAt        *string `json:"lastSyncedAt"`
-	Path                string  `json:"path"`
-	CreatedAt           string  `json:"createdAt"`
-	UpdatedAt           string  `json:"updatedAt"`
-	ComposeFile         string  `json:"composeFile"`
-	PreviousComposeFile string  `json:"previousComposeFile,omitempty"`
+	Id                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	RepositoryId             string  `json:"repositoryId"`
+	RepositoryName           string  `json:"repositoryName"`
+	RepositoryUrl            string  `json:"repositoryUrl"`
+	AgentId                  string  `json:"agentId"`
+	AgentName                string  `json:"agentName"`
+	SyncStatus               string  `json:"syncStatus"`
+	HealthStatus             string  `json:"healthStatus"`
+	Branch                   string  `json:"branch"`
+	Commit                   string  `json:"commit"`
+	CommitMessage            string  `json:"commitMessage"`
+	LastSyncedAt             *string `json:"lastSyncedAt"`
+	Path                     string  `json:"path"`
+	CreatedAt                string  `json:"createdAt"`
+	UpdatedAt                string  `json:"updatedAt"`
+	ComposeFile              string  `json:"composeFile"`
+	PreviousComposeFile      string  `json:"previousComposeFile,omitempty"`
+	ImagePollEnabled         bool    `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
+	ImagePollDeleteOldImages bool    `json:"imagePollDeleteOldImages"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
@@ -141,18 +151,21 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 
 	application := models.Application{
-		Name:                crypto.EncryptedString(req.Name),
-		RepositoryId:        req.RepositoryId,
-		AgentId:             req.AgentId,
-		SyncStatus:          models.UnknownSync,
-		HealthStatus:        models.UnknownHealth,
-		Branch:              req.Branch,
-		Commit:              latestCommit.Hash,
-		CommitMessage:       latestCommit.Message,
-		LastSyncedAt:        nil,
-		Path:                req.Path,
-		ComposeFile:         crypto.EncryptedString(composeFile),
-		PreviousComposeFile: crypto.EncryptedString(""),
+		Name:                     crypto.EncryptedString(req.Name),
+		RepositoryId:             req.RepositoryId,
+		AgentId:                  req.AgentId,
+		SyncStatus:               models.UnknownSync,
+		HealthStatus:             models.UnknownHealth,
+		Branch:                   req.Branch,
+		Commit:                   latestCommit.Hash,
+		CommitMessage:            latestCommit.Message,
+		LastSyncedAt:             nil,
+		Path:                     req.Path,
+		ComposeFile:              crypto.EncryptedString(composeFile),
+		PreviousComposeFile:      crypto.EncryptedString(""),
+		ImagePollEnabled:         req.ImagePollEnabled,
+		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
+		ImagePollDeleteOldImages: req.ImagePollDeleteOldImages,
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
@@ -178,6 +191,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(ApplicationsPath)
+	sendAgentSettings(c, req.AgentId)
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
@@ -225,6 +239,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	oldAgentId := application.AgentId
 	application.Name = crypto.EncryptedString(req.Name)
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
@@ -234,6 +249,9 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Path = req.Path
 	application.PreviousComposeFile = application.ComposeFile
 	application.ComposeFile = crypto.EncryptedString(composeFile)
+	application.ImagePollEnabled = req.ImagePollEnabled
+	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
+	application.ImagePollDeleteOldImages = req.ImagePollDeleteOldImages
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -258,10 +276,24 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 	sse.PublishUpdate(ApplicationsPath)
+	sendAgentSettings(c, req.AgentId)
+	if oldAgentId != req.AgentId {
+		sendAgentSettings(c, oldAgentId)
+	}
 }
 
 func DeleteApplicationHandler(c *gin.Context) {
 	id := c.Param("id")
+
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
 
 	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(c.Request.Context())
 	if err != nil {
@@ -277,6 +309,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(ApplicationsPath)
+	sendAgentSettings(c, application.AgentId)
 }
 
 func DeployApplicationHandler(c *gin.Context) {
@@ -310,12 +343,6 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	application.SyncStatus = models.Syncing
-	if err := db.DB.Save(&application).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update application"})
-		return
-	}
-
 	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
@@ -339,25 +366,41 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 
 func toApplicationResponse(app *models.Application) applicationResponse {
 	return applicationResponse{
-		Id:                  app.Id,
-		Name:                app.Name.String(),
-		RepositoryId:        app.RepositoryId,
-		RepositoryName:      app.Repository.Name,
-		RepositoryUrl:       app.Repository.Url,
-		AgentId:             app.AgentId,
-		AgentName:           app.Agent.Name.String(),
-		SyncStatus:          string(app.SyncStatus),
-		HealthStatus:        string(app.HealthStatus),
-		Branch:              app.Branch,
-		Commit:              app.Commit,
-		CommitMessage:       app.CommitMessage,
-		LastSyncedAt:        formatTimestamp(app.LastSyncedAt),
-		Path:                app.Path,
-		CreatedAt:           app.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:           app.UpdatedAt.Format(time.RFC3339),
-		ComposeFile:         app.ComposeFile.String(),
-		PreviousComposeFile: app.PreviousComposeFile.String(),
+		Id:                       app.Id,
+		Name:                     app.Name.String(),
+		RepositoryId:             app.RepositoryId,
+		RepositoryName:           app.Repository.Name,
+		RepositoryUrl:            app.Repository.Url,
+		AgentId:                  app.AgentId,
+		AgentName:                app.Agent.Name.String(),
+		SyncStatus:               string(app.SyncStatus),
+		HealthStatus:             string(app.HealthStatus),
+		Branch:                   app.Branch,
+		Commit:                   app.Commit,
+		CommitMessage:            app.CommitMessage,
+		LastSyncedAt:             formatTimestamp(app.LastSyncedAt),
+		Path:                     app.Path,
+		CreatedAt:                app.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                app.UpdatedAt.Format(time.RFC3339),
+		ComposeFile:              app.ComposeFile.String(),
+		PreviousComposeFile:      app.PreviousComposeFile.String(),
+		ImagePollEnabled:         app.ImagePollEnabled,
+		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
+		ImagePollDeleteOldImages: app.ImagePollDeleteOldImages,
 	}
+}
+
+// sendAgentSettings fetches all applications for agentID and pushes an
+// AgentSettings message to that agent if it is currently connected.
+func sendAgentSettings(c *gin.Context, agentID string) {
+	if websocket.DefaultHub == nil {
+		return
+	}
+	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(c.Request.Context())
+	if err != nil {
+		return
+	}
+	websocket.DefaultHub.SendAgentSettings(agentID, apps)
 }
 
 func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {

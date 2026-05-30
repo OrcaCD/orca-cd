@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -252,6 +253,52 @@ func TestConnTracker_SetAndCancelled_CancelledCtx(t *testing.T) {
 	var tracker connTracker
 	if cancelled := tracker.setAndCancelled(ctx, clientConn); !cancelled {
 		t.Error("expected setAndCancelled to return true for a pre-cancelled context")
+	}
+}
+
+func TestSenderRef_LoadNilWhenEmpty(t *testing.T) {
+	var ref senderRef
+	if got := ref.load(); got != nil {
+		t.Errorf("expected nil from empty senderRef, got %v", got)
+	}
+}
+
+func TestSenderRef_SendMessageNilSender(t *testing.T) {
+	var ref senderRef
+	if err := ref.SendMessage(nil); err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+}
+
+func TestSenderRef_StoreAndLoad(t *testing.T) {
+	var ref senderRef
+	sender := &stubSender{}
+	ref.store(sender)
+	if got := ref.load(); got == nil {
+		t.Error("expected non-nil sender after store")
+	}
+}
+
+func TestSenderRef_SendMessageDelegates(t *testing.T) {
+	var ref senderRef
+	sent := make(chan *messages.ClientMessage, 1)
+	sender := &stubSender{sent: sent}
+	ref.store(sender)
+
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{Timestamp: 99}},
+	}
+	if err := ref.SendMessage(msg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	select {
+	case got := <-sent:
+		if got != msg {
+			t.Error("expected delegated message to match input")
+		}
+	default:
+		t.Error("expected sender to receive the message")
 	}
 }
 

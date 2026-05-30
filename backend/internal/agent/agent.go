@@ -125,6 +125,30 @@ func parseTokenClaims(authToken string) (agentID string, hubPublicKey ed25519.Pu
 
 var Log = logger.New("agent", false)
 
+// senderRef holds an atomic pointer to the current outbound sender so the
+// image poller always uses the latest connection without needing a restart.
+type senderRef struct {
+	p atomic.Pointer[outboundSender]
+}
+
+func (r *senderRef) store(s outboundSender) {
+	r.p.Store(&s)
+}
+
+func (r *senderRef) load() outboundSender {
+	if p := r.p.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (r *senderRef) SendMessage(msg *messages.ClientMessage) error {
+	if s := r.load(); s != nil {
+		return s.SendMessage(msg)
+	}
+	return nil
+}
+
 // connTracker holds the active WebSocket connection under a mutex so the
 // shutdown goroutine can safely close it from a different goroutine.
 type connTracker struct {
@@ -164,6 +188,10 @@ func Run(cfg Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	sRef := &senderRef{}
+	poller := docker.NewImagePoller(dockerClient, sRef, Log)
+	defer poller.StopAll()
+
 	var wsConnected atomic.Bool
 
 	go startHealthServer(ctx, cfg.HealthPort, dockerClient.Ready, wsConnected.Load)
@@ -182,6 +210,7 @@ func Run(cfg Config) error {
 	}
 	wsConnected.Store(true)
 	sender := newMessageSender(conn, session)
+	sRef.store(sender)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -202,6 +231,7 @@ func Run(cfg Config) error {
 			}
 			wsConnected.Store(true)
 			sender = newMessageSender(conn, session)
+			sRef.store(sender)
 			continue
 		}
 		msg := &messages.ServerMessage{}
@@ -209,6 +239,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(ctx, msg, session, sender, dockerClient)
+		handleServerMessage(ctx, msg, session, sender, dockerClient, poller)
 	}
 }

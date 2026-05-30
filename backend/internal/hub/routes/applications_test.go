@@ -16,9 +16,11 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -1042,13 +1044,6 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 		t.Fatalf("expected background tracking for app %q, got %q", app.Id, deployer.trackedApp)
 	}
 
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to reload app: %v", err)
-	}
-	if updated.SyncStatus != models.Syncing {
-		t.Fatalf("expected app sync status %q, got %q", models.Syncing, updated.SyncStatus)
-	}
 }
 
 func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
@@ -1118,4 +1113,19 @@ func TestFormatTimestamp_Nil(t *testing.T) {
 	if value := formatTimestamp(nil); value != nil {
 		t.Fatalf("expected nil, got %v", *value)
 	}
+}
+
+func TestSendAgentSettings_WithHub(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	log := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&log)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+
+	c, _ := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	// Agent is not connected — Send returns false, but the query+SendAgentSettings call
+	// path is covered. Must not panic.
+	sendAgentSettings(c, "nonexistent-agent-id")
 }

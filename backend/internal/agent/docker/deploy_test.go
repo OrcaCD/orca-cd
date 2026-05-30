@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,28 +85,94 @@ func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
+	for _, name := range []string{"../bad", "bad/../name"} {
+		err := c.Deploy(t.Context(), DeployRequest{
+			ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+			ApplicationName: name,
+			ComposeFile:     "services: {}\n",
+		})
+		if err == nil {
+			t.Fatalf("expected deploy to reject application name %q", name)
+		}
+	}
+}
+
+func TestDeploy_LoadProjectError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	t.Cleanup(func() { loadProject = origLoad })
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return nil, errors.New("load error")
+	}
+
 	err := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "../bad",
-		ComposeFile:     "services: {}\n",
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
 	})
 	if err == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+		t.Fatal("expected error when loadProject fails")
 	}
-	err2 := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "test/orcacd-docs",
-		ComposeFile:     "services: {}\n",
+}
+
+func TestDeploy_UpProjectError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
 	})
-	if err2 == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: opts.ProjectName}, nil
 	}
-	err3 := c.Deploy(t.Context(), DeployRequest{
-		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
-		ApplicationName: "bad/../name",
-		ComposeFile:     "services: {}\n",
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return errors.New("up failed")
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
 	})
-	if err3 == nil {
-		t.Fatal("expected deploy to reject unsafe application names")
+	if err == nil {
+		t.Fatal("expected error when upProject fails")
+	}
+}
+
+func TestNormalizeProjectName(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"billing", "billing", false},
+		{"My App", "my-app", false},
+		{"orcacd docs", "orcacd-docs", false},
+		{"test/orcacd-docs", "test-orcacd-docs", false},
+		{"Hello World!", "hello-world", false},
+		{"  ---  ", "", true},
+		{"___", "", true},
+		{"123app", "123app", false},
+	}
+	for _, tt := range tests {
+		got, err := normalizeProjectName(tt.input)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("normalizeProjectName(%q): expected error, got %q", tt.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("normalizeProjectName(%q): unexpected error: %v", tt.input, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("normalizeProjectName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }

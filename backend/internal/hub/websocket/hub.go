@@ -5,12 +5,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
+
+// DefaultHub is the package-level Hub instance, set during server initialisation.
+var DefaultHub *Hub
 
 type Client struct {
 	Id      string
@@ -119,6 +123,29 @@ func (h *Hub) StartDeploy(agentID string, req *messages.DeployRequest) (*DeployH
 
 func (h *Hub) ResolveDeploy(result *messages.DeployResult) bool {
 	return h.deployManager.ResolveDeploy(result)
+}
+
+// SendAgentSettings builds an AgentSettings message from the given applications
+// and sends it to the specified agent. Returns false if the agent is not connected
+// or the send buffer is full.
+func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool {
+	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
+	for i := range apps {
+		pollSettings = append(pollSettings, &messages.ImagePollSettings{
+			ApplicationId:   apps[i].Id,
+			ApplicationName: apps[i].Name.String(),
+			Enabled:         apps[i].ImagePollEnabled,
+			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
+			DeleteOldImages: apps[i].ImagePollDeleteOldImages,
+		})
+	}
+	return h.Send(agentID, &messages.ServerMessage{
+		Payload: &messages.ServerMessage_AgentSettings{
+			AgentSettings: &messages.AgentSettings{
+				ImagePollSettings: pollSettings,
+			},
+		},
+	})
 }
 
 const writeWait = 10 * time.Second
