@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/client"
 )
@@ -88,12 +89,9 @@ func TestCheckAndPullImages_MissingComposeFile(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if updated {
-		t.Error("expected updated=false when compose file does not exist")
+	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	if err == nil {
+		t.Fatal("expected error when compose file does not exist")
 	}
 }
 
@@ -126,7 +124,7 @@ func TestCheckAndPullImages_NothingStale(t *testing.T) {
 	}
 
 	const digest = "sha256:abc123"
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return digest, nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
@@ -174,7 +172,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("ghcr.io/org/app:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:newdigest", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
@@ -228,7 +226,7 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 		return makeProject("localimage:dev"), nil
 	}
 	// Simulate a local-only image (registry returns error).
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "", errors.New("no such image in registry")
 	}
 
@@ -266,7 +264,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("ghcr.io/org/app:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:new", nil
 	}
 	// Image not present locally — treat as stale.
@@ -334,7 +332,7 @@ func TestCheckAndPullImages_PullError(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("img:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
@@ -366,7 +364,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("img:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
@@ -401,7 +399,7 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("ghcr.io/org/app:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:newdigest", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
@@ -440,7 +438,7 @@ func TestCheckAndPullImages_DeleteOldImages_SkipsEmptyDigest(t *testing.T) {
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
 		return makeProject("ghcr.io/org/app:latest"), nil
 	}
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:new", nil
 	}
 	// Image not present locally — stale with empty oldDigest (first pull).
@@ -486,7 +484,7 @@ func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 	}
 
 	var remoteCalled bool
-	getRemoteDigest = func(_ context.Context, _ client.APIClient, _ string) (string, error) {
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		remoteCalled = true
 		return "sha256:abc", nil
 	}

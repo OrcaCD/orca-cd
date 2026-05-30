@@ -9,14 +9,21 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/client"
 )
 
 // These functions are extracted to allow testing
-var getRemoteDigest = func(ctx context.Context, cli client.APIClient, imageRef string) (string, error) {
-	// Get registry manifest - no image pulling
-	dist, err := cli.DistributionInspect(ctx, imageRef, client.DistributionInspectOptions{})
+var getRemoteDigest = func(ctx context.Context, dockerCli command.Cli, imageRef string) (string, error) {
+	encodedAuth, err := command.RetrieveAuthTokenFromImage(dockerCli.ConfigFile(), imageRef)
+	if err != nil {
+		// No stored credentials — proceed anonymously (public images will still work).
+		encodedAuth = ""
+	}
+	dist, err := dockerCli.Client().DistributionInspect(ctx, imageRef, client.DistributionInspectOptions{
+		EncodedRegistryAuth: encodedAuth,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +93,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteO
 			continue
 		}
 
-		remoteDigest, err := getRemoteDigest(ctx, dockerCLI, service.Image)
+		remoteDigest, err := getRemoteDigest(ctx, c.cli, service.Image)
 		if err != nil {
 			c.log.Error().Err(err).Str("image", service.Image).Msg("failed to get remote digest for image")
 			continue
