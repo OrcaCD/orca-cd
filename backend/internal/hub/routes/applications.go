@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -173,6 +174,8 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "created", "application", application.Id)
+
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(ApplicationsPath)
 }
@@ -251,6 +254,8 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "updated", "application", id)
+
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 	sse.PublishUpdate(ApplicationsPath)
 }
@@ -267,6 +272,8 @@ func DeleteApplicationHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 		return
 	}
+
+	utils.RecordAuditLog(c, "deleted", "application", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(ApplicationsPath)
