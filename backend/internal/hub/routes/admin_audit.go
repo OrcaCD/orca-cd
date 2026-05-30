@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const defaultAuditLogLimit = 20
+
 type auditLogResponse struct {
 	Id         string             `json:"id"`
 	CreatedAt  string             `json:"createdAt"`
@@ -23,28 +25,27 @@ type auditLogResponse struct {
 func AdminListAuditLogsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	limit := 20
+	limit := defaultAuditLogLimit
 	if l := c.Query("limit"); l != "" {
 		if v, err := strconv.Atoi(l); err == nil {
 			limit = v
 		}
 	}
 
-	cursor := c.Query("cursor")
+	offset := 0
+	if o := c.Query("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil {
+			offset = v
+		}
+	}
 
 	query := gorm.G[models.AuditLog](db.DB).
 		Order("created_at DESC").
+		Offset(offset).
 		Limit(limit+1).
 		Preload("User", func(db gorm.PreloadBuilder) error {
 			return nil
 		})
-
-	if cursor != "" {
-		t, err := time.Parse(time.RFC3339, cursor)
-		if err == nil {
-			query = query.Where("created_at < ?", t)
-		}
-	}
 
 	auditLogs, err := query.Find(ctx)
 	if err != nil {

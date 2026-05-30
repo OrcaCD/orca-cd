@@ -3,6 +3,7 @@ import { m } from "@/lib/paraglide/messages";
 import { AuditLogsDataTable } from "@/components/tables/audit-log/data-table";
 import { columns } from "@/components/tables/audit-log/columns";
 import useSWRInfinite from "swr/infinite";
+import { fetcher } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/admin/audit-log")({
 	component: AuditLogPage,
@@ -15,23 +16,14 @@ export const Route = createFileRoute("/_authenticated/admin/audit-log")({
 	}),
 });
 
-const fetcher = async (url: string) => {
-	const r = await fetch(url);
-	return r.json();
-};
+const AUDIT_LOG_LIMIT = 20;
 
 const getKey = (pageIndex: number, previousPageData: any) => {
-	if (pageIndex === 0) {
-		return `/api/v1/admin/audit-logs?limit=20`;
-	}
-
-	if (!previousPageData?.hasMore) {
+	if (previousPageData && !previousPageData.hasMore) {
 		return null;
 	}
-
-	const lastItem = previousPageData.items[previousPageData.items.length - 1];
-
-	return `/api/v1/admin/audit-logs?limit=20&cursor=${encodeURIComponent(lastItem.createdAt)}`;
+	const offset = pageIndex * AUDIT_LOG_LIMIT;
+	return `/admin/audit-logs?limit=${AUDIT_LOG_LIMIT}&offset=${offset}`;
 };
 
 function AuditLogPage() {
