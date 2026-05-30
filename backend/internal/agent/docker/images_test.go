@@ -89,7 +89,7 @@ func TestCheckAndPullImages_MissingComposeFile(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err == nil {
 		t.Fatal("expected error when compose file does not exist")
 	}
@@ -99,7 +99,7 @@ func TestCheckAndPullImages_UnsafeAppName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "../bad", false)
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "../bad", false)
 	if err == nil {
 		t.Fatal("expected error for unsafe application name")
 	}
@@ -141,7 +141,7 @@ func TestCheckAndPullImages_NothingStale(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "billing", false)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,6 +206,56 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	}
 	if upRecreate != api.RecreateForce {
 		t.Errorf("expected recreate=%q, got %q", api.RecreateForce, upRecreate)
+	}
+}
+
+func TestCheckAndPullImages_OrcaLabelsAppliedBeforeUp(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: ghcr.io/org/app:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("ghcr.io/org/app:latest"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
+		return "sha256:new", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return []string{"ghcr.io/org/app@sha256:old"}, nil
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return nil
+	}
+
+	var gotProject *composetypes.Project
+	upProject = func(_ context.Context, _ api.Compose, p *composetypes.Project, _ api.UpOptions) error {
+		gotProject = p
+		return nil
+	}
+
+	const appID = "app-abc-123"
+	if _, err := c.CheckAndPullImages(t.Context(), appID, "myapp", false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if gotProject == nil {
+		t.Fatal("upProject was not called")
+	}
+	for name, svc := range gotProject.Services {
+		if got := svc.Labels[labelManagedBy]; got != "orca-cd" {
+			t.Errorf("service %q: expected label %q=%q, got %q", name, labelManagedBy, "orca-cd", got)
+		}
+		if got := svc.Labels[labelApplicationID]; got != appID {
+			t.Errorf("service %q: expected label %q=%q, got %q", name, labelApplicationID, appID, got)
+		}
 	}
 }
 
@@ -236,7 +286,7 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -281,7 +331,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -310,7 +360,7 @@ func TestCheckAndPullImages_LoadProjectError(t *testing.T) {
 		return nil, errors.New("load error")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err == nil {
 		t.Fatal("expected error when loadProject fails")
 	}
@@ -342,7 +392,7 @@ func TestCheckAndPullImages_PullError(t *testing.T) {
 		return errors.New("pull failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err == nil {
 		t.Fatal("expected error when pullProject fails")
 	}
@@ -377,7 +427,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 		return errors.New("up failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err == nil {
 		t.Fatal("expected error when upProject fails")
 	}
@@ -413,7 +463,7 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	}
 
 	// ImageRemove on the real daemon will fail with "not found" — logged as a warning, not an error.
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", true)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -453,7 +503,7 @@ func TestCheckAndPullImages_DeleteOldImages_SkipsEmptyDigest(t *testing.T) {
 	}
 
 	// deleteOldImages=true but oldDigest is "" so ImageRemove must be skipped.
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", true)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -489,7 +539,7 @@ func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 		return "sha256:abc", nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "myapp", false)
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

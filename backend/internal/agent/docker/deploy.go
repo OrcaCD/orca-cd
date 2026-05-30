@@ -15,9 +15,22 @@ import (
 )
 
 const (
-	composeFileName   = "compose.yaml"
-	deployWaitTimeout = 2 * time.Minute
+	composeFileName    = "compose.yaml"
+	deployWaitTimeout  = 2 * time.Minute
+	labelManagedBy     = "managed_by"
+	labelApplicationID = "orca-cd.application-id"
 )
+
+func applyOrcaLabels(project *composetypes.Project, appID string) {
+	for name, service := range project.Services {
+		if service.Labels == nil {
+			service.Labels = make(composetypes.Labels)
+		}
+		service.Labels[labelManagedBy] = "orca-cd"
+		service.Labels[labelApplicationID] = appID
+		project.Services[name] = service
+	}
+}
 
 type DeployRequest struct {
 	ApplicationID   string
@@ -105,15 +118,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("load compose project: %w", err)
 	}
 
-	// Add OrcaCD managed label to all services
-	for name, service := range project.Services {
-		if service.Labels == nil {
-			service.Labels = make(composetypes.Labels)
-		}
-		service.Labels["managed_by"] = "orca-cd"
-		service.Labels["orca-cd.application-id"] = req.ApplicationID
-		project.Services[name] = service
-	}
+	applyOrcaLabels(project, req.ApplicationID)
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{

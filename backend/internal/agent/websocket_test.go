@@ -721,27 +721,22 @@ func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
 	handleServerMessage(context.Background(), msg, nil, &stubSender{}, nil, nil) // must return without panic
 }
 
-type pollUpdate struct {
-	appID    string
-	appName  string
-	settings agentdocker.PollSettings
-}
-
 type stubPoller struct {
 	mu             sync.Mutex
-	updates        []pollUpdate
+	snapshots      [][]agentdocker.AppPollConfig
 	triggeredAppID string
 	triggeredReqID string
-	updateCh       chan struct{}
+	applyCh        chan struct{}
 	triggerCh      chan struct{}
 }
 
-func (p *stubPoller) UpdateSettings(appID, appName string, settings agentdocker.PollSettings) {
+func (p *stubPoller) ApplySettings(apps []agentdocker.AppPollConfig) {
 	p.mu.Lock()
-	p.updates = append(p.updates, pollUpdate{appID: appID, appName: appName, settings: settings})
+	cp := append([]agentdocker.AppPollConfig(nil), apps...)
+	p.snapshots = append(p.snapshots, cp)
 	p.mu.Unlock()
-	if p.updateCh != nil {
-		p.updateCh <- struct{}{}
+	if p.applyCh != nil {
+		p.applyCh <- struct{}{}
 	}
 }
 
@@ -753,10 +748,13 @@ func (p *stubPoller) TriggerNow(appID, appName, requestID string) {
 	}
 }
 
-func (p *stubPoller) allUpdates() []pollUpdate {
+func (p *stubPoller) lastSnapshot() []agentdocker.AppPollConfig {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]pollUpdate(nil), p.updates...)
+	if len(p.snapshots) == 0 {
+		return nil
+	}
+	return p.snapshots[len(p.snapshots)-1]
 }
 
 func TestHandleServerMessage_AgentSettings(t *testing.T) {
@@ -766,8 +764,7 @@ func TestHandleServerMessage_AgentSettings(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 
-	// Two entries — verifies that all settings in AgentSettings are applied.
-	poller := &stubPoller{updateCh: make(chan struct{}, 2)}
+	poller := &stubPoller{applyCh: make(chan struct{}, 1)}
 
 	settingsMsg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_AgentSettings{
@@ -798,51 +795,48 @@ func TestHandleServerMessage_AgentSettings(t *testing.T) {
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
 	}, session, &stubSender{}, nil, poller)
 
-	// Wait for both UpdateSettings calls.
-	for range 2 {
-		select {
-		case <-poller.updateCh:
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out waiting for UpdateSettings calls")
-		}
+	select {
+	case <-poller.applyCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for ApplySettings call")
 	}
 
-	updates := poller.allUpdates()
-	if len(updates) != 2 {
-		t.Fatalf("expected 2 UpdateSettings calls, got %d", len(updates))
+	snap := poller.lastSnapshot()
+	if len(snap) != 2 {
+		t.Fatalf("expected snapshot with 2 entries, got %d", len(snap))
 	}
 
 	// Find entries by appID rather than assuming order.
-	byID := make(map[string]pollUpdate, 2)
-	for _, u := range updates {
-		byID[u.appID] = u
+	byID := make(map[string]agentdocker.AppPollConfig, 2)
+	for _, entry := range snap {
+		byID[entry.AppID] = entry
 	}
 
 	u1, ok := byID["app-1"]
 	if !ok {
-		t.Fatal("missing update for app-1")
+		t.Fatal("missing entry for app-1")
 	}
-	if u1.appName != "myapp" {
-		t.Errorf("app-1: expected appName %q, got %q", "myapp", u1.appName)
+	if u1.AppName != "myapp" {
+		t.Errorf("app-1: expected AppName %q, got %q", "myapp", u1.AppName)
 	}
-	if !u1.settings.Enabled {
+	if !u1.Settings.Enabled {
 		t.Error("app-1: expected Enabled=true")
 	}
-	if u1.settings.IntervalSeconds != 120 {
-		t.Errorf("app-1: expected interval 120, got %d", u1.settings.IntervalSeconds)
+	if u1.Settings.IntervalSeconds != 120 {
+		t.Errorf("app-1: expected interval 120, got %d", u1.Settings.IntervalSeconds)
 	}
-	if !u1.settings.DeleteOldImages {
+	if !u1.Settings.DeleteOldImages {
 		t.Error("app-1: expected DeleteOldImages=true")
 	}
 
 	u2, ok := byID["app-2"]
 	if !ok {
-		t.Fatal("missing update for app-2")
+		t.Fatal("missing entry for app-2")
 	}
-	if u2.appName != "billing" {
-		t.Errorf("app-2: expected appName %q, got %q", "billing", u2.appName)
+	if u2.AppName != "billing" {
+		t.Errorf("app-2: expected AppName %q, got %q", "billing", u2.AppName)
 	}
-	if u2.settings.Enabled {
+	if u2.Settings.Enabled {
 		t.Error("app-2: expected Enabled=false")
 	}
 }
@@ -894,7 +888,7 @@ func TestApplyAgentSettings_NilPoller(t *testing.T) {
 		ImagePollSettings: []*messages.ImagePollSettings{
 			{ApplicationId: "app-1", ApplicationName: "myapp", Enabled: true},
 		},
-	})
+	}) // must not panic
 }
 
 func TestExecutePullImages_NilPoller(t *testing.T) {

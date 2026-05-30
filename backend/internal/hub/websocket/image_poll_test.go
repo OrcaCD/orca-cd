@@ -77,6 +77,35 @@ func TestHandlePullImagesResult_Success(t *testing.T) {
 	}
 }
 
+func TestHandlePullImagesResult_WrongAgent(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	owner := createTestAgent(t, "key-ipr-owner")
+	app := createTestApplication(t, owner.Id)
+
+	// A different agent sends a result claiming to own this application.
+	attacker := createTestAgent(t, "key-ipr-attacker")
+	attackerClient := &Client{Id: attacker.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handlePullImagesResult(attackerClient, &messages.PullImagesResult{
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: true,
+	}, &log)
+
+	var unchanged models.Application
+	if err := db.DB.First(&unchanged, "id = ?", app.Id).Error; err != nil {
+		t.Fatalf("failed to query application: %v", err)
+	}
+	if unchanged.SyncStatus != models.UnknownSync {
+		t.Errorf("expected SyncStatus to remain %q, got %q", models.UnknownSync, unchanged.SyncStatus)
+	}
+	if unchanged.LastSyncedAt != nil {
+		t.Errorf("expected LastSyncedAt to remain nil, got %v", unchanged.LastSyncedAt)
+	}
+}
+
 func TestHandlePullImagesResult_Failure(t *testing.T) {
 	setupImagePollTestEnv(t)
 	log := testLogger()

@@ -18,14 +18,21 @@ type PollSettings struct {
 	DeleteOldImages bool
 }
 
+// AppPollConfig is the per-application input for ApplySettings.
+type AppPollConfig struct {
+	AppID    string
+	AppName  string
+	Settings PollSettings
+}
+
 // MessageSender is the minimal interface the poller needs to report results.
 type MessageSender interface {
 	SendMessage(msg *messages.ClientMessage) error
 }
 
 // checkAndPullImages is a package-level var so tests can override it.
-var checkAndPullImages = func(ctx context.Context, c *Client, appName string, deleteOld bool) (bool, error) {
-	return c.CheckAndPullImages(ctx, appName, deleteOld)
+var checkAndPullImages = func(ctx context.Context, c *Client, appID, appName string, deleteOld bool) (bool, error) {
+	return c.CheckAndPullImages(ctx, appID, appName, deleteOld)
 }
 
 type appPollState struct {
@@ -54,28 +61,42 @@ func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger) *ImageP
 	}
 }
 
-// UpdateSettings starts, reconfigures, or stops the ticker for appID.
-func (p *ImagePoller) UpdateSettings(appID, appName string, settings PollSettings) {
+// ApplySettings replaces the poller state with the given snapshot.
+// Apps absent from the snapshot are stopped and removed.
+func (p *ImagePoller) ApplySettings(apps []AppPollConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if existing, ok := p.apps[appID]; ok {
-		close(existing.stop)
-		delete(p.apps, appID)
-	}
-	if !settings.Enabled {
-		return
-	}
-	if settings.IntervalSeconds < minPollIntervalSeconds {
-		settings.IntervalSeconds = minPollIntervalSeconds
-	}
-	state := &appPollState{
-		settings: settings,
-		appName:  appName,
-		stop:     make(chan struct{}),
-	}
-	p.apps[appID] = state
 
-	go p.runTicker(appID, appName, settings, state.stop)
+	incoming := make(map[string]struct{}, len(apps))
+	for _, app := range apps {
+		incoming[app.AppID] = struct{}{}
+	}
+	for appID, state := range p.apps {
+		if _, keep := incoming[appID]; !keep {
+			close(state.stop)
+			delete(p.apps, appID)
+		}
+	}
+	for _, app := range apps {
+		if existing, ok := p.apps[app.AppID]; ok {
+			close(existing.stop)
+			delete(p.apps, app.AppID)
+		}
+		settings := app.Settings
+		if !settings.Enabled {
+			continue
+		}
+		if settings.IntervalSeconds < minPollIntervalSeconds {
+			settings.IntervalSeconds = minPollIntervalSeconds
+		}
+		state := &appPollState{
+			settings: settings,
+			appName:  app.AppName,
+			stop:     make(chan struct{}),
+		}
+		p.apps[app.AppID] = state
+		go p.runTicker(app.AppID, app.AppName, settings, state.stop)
+	}
 }
 
 // SettingsFor returns a copy of the current settings for appID, or nil if not configured.
@@ -129,7 +150,7 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string) {
 	}
 	p.mu.Unlock()
 
-	updated, err := checkAndPullImages(ctx, p.client, appName, deleteOld)
+	updated, err := checkAndPullImages(ctx, p.client, appID, appName, deleteOld)
 
 	// Only notify the hub when something changed or an error occurred.
 	if !updated && err == nil {

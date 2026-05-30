@@ -59,7 +59,7 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 // project for appName is stale compared to its registry. If any are stale, it
 // pulls all images and redeploys. Returns true if at least one image
 // was updated.
-func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteOldImages bool) (bool, error) {
+func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, deleteOldImages bool) (bool, error) {
 
 	projectName, err := normalizeProjectName(appName)
 	if err != nil {
@@ -125,6 +125,8 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appName string, deleteO
 	if err := pullProject(ctx, c.compose, project, api.PullOptions{}); err != nil {
 		return false, fmt.Errorf("pull images: %w", err)
 	}
+
+	applyOrcaLabels(project, appID)
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{

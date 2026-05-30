@@ -31,7 +31,7 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 	}
 
 	if _, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", r.ApplicationId).
+		Where("id = ? AND agent_id = ?", r.ApplicationId, client.Id).
 		Updates(ctx, updates); err != nil {
 		log.Error().Err(err).
 			Str("client", client.Id).

@@ -36,6 +36,10 @@ func newTestPoller(t *testing.T, sender MessageSender) *ImagePoller {
 	return NewImagePoller(c, sender, zerolog.Nop())
 }
 
+func applyOne(p *ImagePoller, appID, appName string, settings PollSettings) {
+	p.ApplySettings([]AppPollConfig{{AppID: appID, AppName: appName, Settings: settings}})
+}
+
 func TestNewImagePoller_EmptyApps(t *testing.T) {
 	p := newTestPoller(t, nil)
 	if len(p.apps) != 0 {
@@ -50,9 +54,9 @@ func TestImagePoller_SettingsFor_Unknown(t *testing.T) {
 	}
 }
 
-func TestImagePoller_UpdateSettings_Disabled(t *testing.T) {
+func TestImagePoller_ApplySettings_Disabled(t *testing.T) {
 	p := newTestPoller(t, nil)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: false})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: false})
 
 	p.mu.Lock()
 	_, exists := p.apps["app-1"]
@@ -62,9 +66,9 @@ func TestImagePoller_UpdateSettings_Disabled(t *testing.T) {
 	}
 }
 
-func TestImagePoller_UpdateSettings_MinimumInterval(t *testing.T) {
+func TestImagePoller_ApplySettings_MinimumInterval(t *testing.T) {
 	p := newTestPoller(t, nil)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 5})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 5})
 
 	got := p.SettingsFor("app-1")
 	if got == nil {
@@ -78,7 +82,7 @@ func TestImagePoller_UpdateSettings_MinimumInterval(t *testing.T) {
 func TestImagePoller_SettingsFor_ReturnsCorrectValues(t *testing.T) {
 	p := newTestPoller(t, nil)
 	settings := PollSettings{Enabled: true, IntervalSeconds: 120, DeleteOldImages: true}
-	p.UpdateSettings("app-2", "billing", settings)
+	applyOne(p, "app-2", "billing", settings)
 
 	got := p.SettingsFor("app-2")
 	if got == nil {
@@ -94,15 +98,15 @@ func TestImagePoller_SettingsFor_ReturnsCorrectValues(t *testing.T) {
 
 func TestImagePoller_StopAll_IsIdempotent(t *testing.T) {
 	p := newTestPoller(t, nil)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	p.StopAll()
 	p.StopAll() // second call must not panic
 }
 
 func TestImagePoller_StopAll_ClearsMap(t *testing.T) {
 	p := newTestPoller(t, nil)
-	p.UpdateSettings("app-1", "a", PollSettings{Enabled: true, IntervalSeconds: 60})
-	p.UpdateSettings("app-2", "b", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "a", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-2", "b", PollSettings{Enabled: true, IntervalSeconds: 60})
 	p.StopAll()
 
 	p.mu.Lock()
@@ -113,16 +117,16 @@ func TestImagePoller_StopAll_ClearsMap(t *testing.T) {
 	}
 }
 
-func TestImagePoller_UpdateSettings_StopsOldTicker(t *testing.T) {
+func TestImagePoller_ApplySettings_StopsOldTicker(t *testing.T) {
 	p := newTestPoller(t, nil)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 
 	p.mu.Lock()
 	firstStop := p.apps["app-1"].stop
 	p.mu.Unlock()
 
 	// Re-configure — should close old stop channel and create a new one.
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 90})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 90})
 
 	p.mu.Lock()
 	secondStop := p.apps["app-1"].stop
@@ -142,17 +146,52 @@ func TestImagePoller_UpdateSettings_StopsOldTicker(t *testing.T) {
 	p.StopAll()
 }
 
+func TestImagePoller_ApplySettings_RemovesStaleApp(t *testing.T) {
+	p := newTestPoller(t, nil)
+
+	// Start with two apps.
+	p.ApplySettings([]AppPollConfig{
+		{AppID: "app-1", AppName: "a", Settings: PollSettings{Enabled: true, IntervalSeconds: 60}},
+		{AppID: "app-2", AppName: "b", Settings: PollSettings{Enabled: true, IntervalSeconds: 60}},
+	})
+
+	p.mu.Lock()
+	removedStop := p.apps["app-2"].stop
+	p.mu.Unlock()
+
+	// New snapshot omits app-2 — its ticker must be stopped.
+	p.ApplySettings([]AppPollConfig{
+		{AppID: "app-1", AppName: "a", Settings: PollSettings{Enabled: true, IntervalSeconds: 60}},
+	})
+
+	select {
+	case <-removedStop:
+		// stopped correctly
+	default:
+		t.Error("expected stop channel of removed app to be closed")
+	}
+
+	if got := p.SettingsFor("app-2"); got != nil {
+		t.Error("expected app-2 to be absent after removal from snapshot")
+	}
+	if got := p.SettingsFor("app-1"); got == nil {
+		t.Error("expected app-1 to still be present")
+	}
+
+	p.StopAll()
+}
+
 func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // images updated
 	}
 
 	sender := &stubMessageSender{}
 	p := newTestPoller(t, sender)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "req-1")
@@ -180,13 +219,13 @@ func TestImagePoller_RunOnce_SendsResultOnError(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return false, errors.New("registry unreachable")
 	}
 
 	sender := &stubMessageSender{}
 	p := newTestPoller(t, sender)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "")
@@ -211,13 +250,13 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return false, nil // nothing changed
 	}
 
 	sender := &stubMessageSender{}
 	p := newTestPoller(t, sender)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "")
@@ -231,13 +270,13 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // trigger a send
 	}
 
 	sender := &stubMessageSender{err: errors.New("send failed")}
 	p := newTestPoller(t, sender)
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	// Must not panic when sender returns an error; the error is logged.
@@ -252,13 +291,13 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil
 	}
 
 	c := newTestClient(t)
 	p := NewImagePoller(c, noopSender{}, zerolog.Nop())
-	p.UpdateSettings("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "") // must not panic
@@ -269,7 +308,7 @@ func TestImagePoller_TriggerNow(t *testing.T) {
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	called := make(chan struct{}, 1)
-	checkAndPullImages = func(_ context.Context, _ *Client, appName string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, appName string, _ bool) (bool, error) {
 		if appName == "billing" {
 			called <- struct{}{}
 		}

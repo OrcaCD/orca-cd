@@ -29,7 +29,7 @@ type deployExecutor interface {
 }
 
 type pollerHandler interface {
-	UpdateSettings(appID, appName string, settings docker.PollSettings)
+	ApplySettings(apps []docker.AppPollConfig)
 	TriggerNow(appID, appName, requestID string)
 }
 
@@ -182,13 +182,19 @@ func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) 
 	if poller == nil {
 		return
 	}
+	apps := make([]docker.AppPollConfig, 0, len(settings.ImagePollSettings))
 	for _, s := range settings.ImagePollSettings {
-		poller.UpdateSettings(s.ApplicationId, s.ApplicationName, docker.PollSettings{
-			Enabled:         s.Enabled,
-			IntervalSeconds: s.IntervalSeconds,
-			DeleteOldImages: s.DeleteOldImages,
+		apps = append(apps, docker.AppPollConfig{
+			AppID:   s.ApplicationId,
+			AppName: s.ApplicationName,
+			Settings: docker.PollSettings{
+				Enabled:         s.Enabled,
+				IntervalSeconds: s.IntervalSeconds,
+				DeleteOldImages: s.DeleteOldImages,
+			},
 		})
 	}
+	poller.ApplySettings(apps)
 }
 
 func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
