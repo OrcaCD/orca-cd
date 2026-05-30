@@ -4,6 +4,7 @@ import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth";
+import { EventTypeBadge } from "@/components/badges/audit-status-badge";
 
 export const columns: ColumnDef<AuditLog>[] = [
 	{
@@ -52,20 +53,7 @@ export const columns: ColumnDef<AuditLog>[] = [
 		accessorKey: "eventType",
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnEvent()} />,
 		cell: ({ row }) => {
-			const type = row.original.eventType;
-			const colors: Record<string, string> = {
-				created: "text-green-600 bg-green-50 dark:bg-green-950/30",
-				updated: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
-				deleted: "text-red-600 bg-red-50 dark:bg-red-950/30",
-			};
-
-			return (
-				<span
-					className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider ${colors[type] || "text-gray-600 bg-gray-50"}`}
-				>
-					{type}
-				</span>
-			);
+			return <EventTypeBadge type={row.original.eventType} />;
 		},
 	},
 	{
