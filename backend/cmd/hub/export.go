@@ -16,34 +16,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newBackupCmd() *cobra.Command {
+func newExportCmd() *cobra.Command {
 	var outputPath string
 
 	cmd := &cobra.Command{
-		Use:   "backup",
-		Short: "Create a backup of the hub database",
-		Long:  "Create a consistent backup of the hub database using VACUUM INTO. Safe to run while the hub is running.",
+		Use:   "export",
+		Short: "Create a export of the hub database",
+		Long:  "Create a consistent export of the hub database using VACUUM INTO. Safe to run while the hub is running.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runBackupCommand(cmd.OutOrStdout(), outputPath)
+			return runExportCommand(cmd.OutOrStdout(), outputPath)
 		},
 	}
 
 	// .Format() is strange in Go, resulting format is YYYYMMDD-HHMMSS
-	defaultOutput := "hub-backup-" + time.Now().Format("20060102-150405") + ".db"
-	cmd.Flags().StringVarP(&outputPath, "output", "o", defaultOutput, "Output path for the backup file")
+	defaultOutput := "hub-export-" + time.Now().Format("20060102-150405") + ".db"
+	cmd.Flags().StringVarP(&outputPath, "output", "o", defaultOutput, "Output path for the export file")
 
 	return cmd
 }
 
-func resolveBackupPath(outputPath string) string {
+func resolveExportPath(outputPath string) string {
 	if filepath.IsAbs(outputPath) {
 		return outputPath
 	}
 	return filepath.Join("data", outputPath)
 }
 
-func runBackupCommand(out io.Writer, outputPath string) error {
-	outputPath = resolveBackupPath(outputPath)
+func runExportCommand(out io.Writer, outputPath string) error {
+	outputPath = resolveExportPath(outputPath)
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0750); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -75,20 +75,20 @@ func runBackupCommand(out io.Writer, outputPath string) error {
 		_ = db.Close()
 	}()
 
-	if err := db.Backup(outputPath); err != nil {
-		return fmt.Errorf("backup failed: %w", err)
+	if err := db.Export(outputPath); err != nil {
+		return fmt.Errorf("export failed: %w", err)
 	}
 
 	info, err := os.Stat(outputPath)
 	if err != nil {
-		return fmt.Errorf("backup created but could not read file info: %w", err)
+		return fmt.Errorf("export created but could not read file info: %w", err)
 	}
 
-	renderBackupResult(out, outputPath, info.Size())
+	renderExportResult(out, outputPath, info.Size())
 	return nil
 }
 
-func renderBackupResult(out io.Writer, outputPath string, size int64) {
+func renderExportResult(out io.Writer, outputPath string, size int64) {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Green)
 	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White)
 	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.White)
@@ -102,7 +102,7 @@ func renderBackupResult(out io.Writer, outputPath string, size int64) {
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Blue).
 		Padding(1, 2).
-		Render(titleStyle.Render("Backup Successful") + "\n\n" + body)
+		Render(titleStyle.Render("Export Successful") + "\n\n" + body)
 
 	_, _ = lipgloss.Fprintln(out, card)
 }
