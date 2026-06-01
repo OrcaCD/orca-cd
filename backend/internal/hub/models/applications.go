@@ -25,21 +25,24 @@ const (
 
 type Application struct {
 	Base
-	Name                crypto.EncryptedString `gorm:"type:text;not null"`
-	RepositoryId        string                 `gorm:"type:text;not null"`
-	Repository          Repository             `gorm:"foreignKey:RepositoryId"`
-	AgentId             string                 `gorm:"type:text;not null"`
-	Agent               Agent                  `gorm:"foreignKey:AgentId"`
-	SyncStatus          SyncStatus             `gorm:"type:text;not null"`
-	HealthStatus        HealthStatus           `gorm:"type:text;not null"`
-	Branch              string                 `gorm:"type:text;not null"`
-	Commit              string                 `gorm:"type:text;not null"`
-	CommitMessage       string                 `gorm:"type:text;not null"`
-	LastSyncedAt        *time.Time             `gorm:"type:timestamp;"`
-	Path                string                 `gorm:"type:text;not null"`
-	ComposeFile         crypto.EncryptedString `gorm:"type:text;not null"`
-	PreviousComposeFile crypto.EncryptedString `gorm:"type:text;not null"`
-	Notifications       []Notification         `gorm:"many2many:application_notifications;"`
+	Name                     crypto.EncryptedString `gorm:"type:text;not null"`
+	RepositoryId             string                 `gorm:"type:text;not null"`
+	Repository               Repository             `gorm:"foreignKey:RepositoryId"`
+	AgentId                  string                 `gorm:"type:text;not null"`
+	Agent                    Agent                  `gorm:"foreignKey:AgentId"`
+	SyncStatus               SyncStatus             `gorm:"type:text;not null"`
+	HealthStatus             HealthStatus           `gorm:"type:text;not null"`
+	Branch                   string                 `gorm:"type:text;not null"`
+	Commit                   string                 `gorm:"type:text;not null"`
+	CommitMessage            string                 `gorm:"type:text;not null"`
+	LastSyncedAt             *time.Time             `gorm:"type:timestamp;"`
+	Path                     string                 `gorm:"type:text;not null"`
+	ComposeFile              crypto.EncryptedString `gorm:"type:text;not null"`
+	PreviousComposeFile      crypto.EncryptedString `gorm:"type:text;not null"`
+	ImagePollEnabled         bool                   `gorm:"not null;default:false"`
+	ImagePollIntervalSeconds int64                  `gorm:"not null;default:120"`
+	ImagePollDeleteOldImages bool                   `gorm:"not null;default:false"`
+	Notifications            []Notification         `gorm:"many2many:application_notifications;"`
 }
 
 func (Application) TableName() string {

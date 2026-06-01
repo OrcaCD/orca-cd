@@ -31,13 +31,14 @@ type FatalConfigError struct {
 func (e *FatalConfigError) Error() string { return e.Msg }
 
 type Config struct {
-	LogLevel     zerolog.Level
-	LogJSON      bool
-	HubUrl       string
-	AuthToken    string
-	AgentID      string
-	HubPublicKey ed25519.PublicKey
-	HealthPort   string
+	LogLevel       zerolog.Level
+	LogJSON        bool
+	HubUrl         string
+	AuthToken      string
+	AgentID        string
+	HubPublicKey   ed25519.PublicKey
+	HealthPort     string
+	DeploymentsDir string
 }
 
 func DefaultConfig() (Config, error) {
@@ -75,14 +76,20 @@ func DefaultConfig() (Config, error) {
 		healthPort = "8090"
 	}
 
+	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
+	if deploymentsDir == "" {
+		deploymentsDir = "/deployments"
+	}
+
 	return Config{
-		LogLevel:     logLevel,
-		LogJSON:      logJSON,
-		HubUrl:       hubUrl,
-		AuthToken:    authToken,
-		AgentID:      agentID,
-		HubPublicKey: hubPublicKey,
-		HealthPort:   healthPort,
+		LogLevel:       logLevel,
+		LogJSON:        logJSON,
+		HubUrl:         hubUrl,
+		AuthToken:      authToken,
+		AgentID:        agentID,
+		HubPublicKey:   hubPublicKey,
+		HealthPort:     healthPort,
+		DeploymentsDir: deploymentsDir,
 	}, nil
 }
 
@@ -118,6 +125,30 @@ func parseTokenClaims(authToken string) (agentID string, hubPublicKey ed25519.Pu
 
 var Log = logger.New("agent", false)
 
+// senderRef holds an atomic pointer to the current outbound sender so the
+// image poller always uses the latest connection without needing a restart.
+type senderRef struct {
+	p atomic.Pointer[outboundSender]
+}
+
+func (r *senderRef) store(s outboundSender) {
+	r.p.Store(&s)
+}
+
+func (r *senderRef) load() outboundSender {
+	if p := r.p.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (r *senderRef) SendMessage(msg *messages.ClientMessage) error {
+	if s := r.load(); s != nil {
+		return s.SendMessage(msg)
+	}
+	return nil
+}
+
 // connTracker holds the active WebSocket connection under a mutex so the
 // shutdown goroutine can safely close it from a different goroutine.
 type connTracker struct {
@@ -149,13 +180,17 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	sRef := &senderRef{}
+	poller := docker.NewImagePoller(dockerClient, sRef, Log)
+	defer poller.StopAll()
 
 	var wsConnected atomic.Bool
 
@@ -174,6 +209,8 @@ func Run(cfg Config) error {
 		return err
 	}
 	wsConnected.Store(true)
+	sender := newMessageSender(conn, session)
+	sRef.store(sender)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -193,6 +230,8 @@ func Run(cfg Config) error {
 				return err
 			}
 			wsConnected.Store(true)
+			sender = newMessageSender(conn, session)
+			sRef.store(sender)
 			continue
 		}
 		msg := &messages.ServerMessage{}
@@ -200,6 +239,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(msg, conn, session)
+		handleServerMessage(ctx, msg, session, sender, dockerClient, poller)
 	}
 }

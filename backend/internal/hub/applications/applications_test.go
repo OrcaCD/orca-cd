@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -27,6 +28,51 @@ type mockProvider struct {
 	fileContentErr    error
 	onGetFileContent  func()
 	onGetLatestCommit func()
+}
+
+type stubDeploymentHandle struct {
+	err    error
+	result *messages.DeployResult
+}
+
+func (h stubDeploymentHandle) Await(_ context.Context) (*messages.DeployResult, error) {
+	return h.result, h.err
+}
+
+func (h stubDeploymentHandle) Cancel() {}
+
+type stubDeploymentManager struct {
+	deployErr    error
+	deployResult *messages.DeployResult
+	lastAppID    string
+	lastCompose  string
+	trackedAppID string
+}
+
+func (m *stubDeploymentManager) StartDeploy(app *models.Application, composeFile string) (DeploymentHandle, error) {
+	m.lastAppID = app.Id
+	m.lastCompose = composeFile
+
+	return stubDeploymentHandle{
+		err:    m.deployErr,
+		result: m.deployResult,
+	}, nil
+}
+
+func (m *stubDeploymentManager) DeployAndWait(_ context.Context, app *models.Application, composeFile string) (*messages.DeployResult, error) {
+	m.lastAppID = app.Id
+	m.lastCompose = composeFile
+	return m.deployResult, m.deployErr
+}
+
+func (m *stubDeploymentManager) TrackManualDeploy(app models.Application, _ DeploymentHandle) {
+	m.trackedAppID = app.Id
+}
+
+func useTestDeployer(t *testing.T, deployer DeploymentManager) {
+	t.Helper()
+	DefaultDeployer = deployer
+	t.Cleanup(func() { DefaultDeployer = nil })
 }
 
 func (m *mockProvider) ParseURL(url string) (string, string, error)                  { return "", "", nil }
@@ -262,6 +308,9 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 
 func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *testing.T) {
 	setupTestDB(t)
+	useTestDeployer(t, &stubDeploymentManager{
+		deployResult: &messages.DeployResult{Success: true},
+	})
 	repo := seedRepo(t)
 	agent := seedAgent(t)
 	const oldCompose = "services:\n  app:\n    image: myimage:1.0\n"
@@ -482,6 +531,9 @@ func TestQueue_Enqueue_FullQueue_DropsJob(t *testing.T) {
 
 func TestQueue_Start_ProcessesJobs(t *testing.T) {
 	setupTestDB(t)
+	useTestDeployer(t, &stubDeploymentManager{
+		deployResult: &messages.DeployResult{Success: true},
+	})
 	repo := seedRepo(t)
 	agent := seedAgent(t)
 	const compose = "services:\n  app:\n    image: myimage:1.0\n"

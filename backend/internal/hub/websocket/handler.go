@@ -18,6 +18,15 @@ import (
 	"gorm.io/gorm"
 )
 
+// WSConn is an interface for WebSocket connections, allowing for testing.
+type WSConn interface {
+	ReadMessage() (messageType int, data []byte, err error)
+	WriteMessage(messageType int, data []byte) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	Close() error
+}
+
 const pongWait = 90 * time.Second // must be greater than the worker ping interval (60s)
 const handshakeTimeout = 15 * time.Second
 
@@ -102,6 +111,17 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		go h.WritePump(client, log)
 
+		// Send current poll settings so the agent can start polling immediately,
+		// without waiting for a future settings update or a manual trigger.
+		apps, err := gorm.G[models.Application](db.DB).
+			Where("agent_id = ?", claims.Subject).
+			Find(c.Request.Context())
+		if err != nil {
+			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
+		} else {
+			h.SendAgentSettings(claims.Subject, apps)
+		}
+
 		defer func() {
 			h.Unregister(claims.Subject)
 			client.Close()
@@ -130,12 +150,12 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(client, msg, log)
+			go handleClientMessage(h, client, msg, log)
 		}
 	}
 }
 
-func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -167,12 +187,21 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		if err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
+	case *messages.ClientMessage_DeployResult:
+		if !h.ResolveDeploy(p.DeployResult) {
+			log.Warn().
+				Str("client", client.Id).
+				Str("request_id", p.DeployResult.RequestId).
+				Msg("received deploy result for unknown request")
+		}
+	case *messages.ClientMessage_PullImagesResult:
+		handlePullImagesResult(client, p.PullImagesResult, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}
 }
 
-func performHandshake(conn *websocket.Conn, agentID string, log *zerolog.Logger) (*wscrypto.Session, error) {
+func performHandshake(conn WSConn, agentID string, log *zerolog.Logger) (*wscrypto.Session, error) {
 	hubKeys, err := wscrypto.GenerateHubKeys()
 	if err != nil {
 		return nil, err

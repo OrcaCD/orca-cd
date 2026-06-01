@@ -496,7 +496,7 @@ func TestProfileHandler_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
-	c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 
 	claims, err := auth.ValidateUserToken(token)
 	if err != nil {

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -11,11 +12,15 @@ import (
 	"testing"
 	"time"
 
+	hubapplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +33,35 @@ const (
 	mockLatestCommitMsg    = "chore: update compose file"
 	seedComposeFileContent = "version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"
 )
+
+type stubRouteDeployHandle struct{}
+
+func (stubRouteDeployHandle) Await(context.Context) (*messages.DeployResult, error) { return nil, nil }
+func (stubRouteDeployHandle) Cancel()                                               {}
+
+type stubRouteDeployer struct {
+	startErr    error
+	startedApp  string
+	startedWith string
+	trackedApp  string
+}
+
+func (d *stubRouteDeployer) StartDeploy(app *models.Application, composeFile string) (hubapplications.DeploymentHandle, error) {
+	d.startedApp = app.Id
+	d.startedWith = composeFile
+	if d.startErr != nil {
+		return nil, d.startErr
+	}
+	return stubRouteDeployHandle{}, nil
+}
+
+func (d *stubRouteDeployer) DeployAndWait(context.Context, *models.Application, string) (*messages.DeployResult, error) {
+	return nil, nil
+}
+
+func (d *stubRouteDeployer) TrackManualDeploy(app models.Application, _ hubapplications.DeploymentHandle) {
+	d.trackedApp = app.Id
+}
 
 func setupTestDBWithApplications(t *testing.T) {
 	t.Helper()
@@ -980,6 +1014,67 @@ func TestDeleteApplicationHandler_DBError(t *testing.T) {
 	}
 }
 
+func TestDeployApplicationHandler_Success(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-deploy")
+	agent := seedTestAgent(t, "agent-deploy")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
+
+	deployer := &stubRouteDeployer{}
+	hubapplications.DefaultDeployer = deployer
+	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeployApplicationHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	if deployer.startedApp != app.Id {
+		t.Fatalf("expected deployer to start app %q, got %q", app.Id, deployer.startedApp)
+	}
+	if deployer.startedWith != seedComposeFileContent {
+		t.Fatalf("expected deployer compose file to match stored compose")
+	}
+	if deployer.trackedApp != app.Id {
+		t.Fatalf("expected background tracking for app %q, got %q", app.Id, deployer.trackedApp)
+	}
+
+}
+
+func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-deploy-offline")
+	agent := seedTestAgent(t, "agent-deploy-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
+
+	hubapplications.DefaultDeployer = &stubRouteDeployer{startErr: hubapplications.ErrAgentUnavailable}
+	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeployApplicationHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to reload app: %v", err)
+	}
+	if updated.SyncStatus != models.UnknownSync {
+		t.Fatalf("expected sync status to remain %q, got %q", models.UnknownSync, updated.SyncStatus)
+	}
+}
+
 func TestParseRFC3339Timestamp(t *testing.T) {
 	t.Run("nil value", func(t *testing.T) {
 		parsed, ok := parseRFC3339Timestamp(nil)
@@ -1018,4 +1113,19 @@ func TestFormatTimestamp_Nil(t *testing.T) {
 	if value := formatTimestamp(nil); value != nil {
 		t.Fatalf("expected nil, got %v", *value)
 	}
+}
+
+func TestSendAgentSettings_WithHub(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	log := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&log)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+
+	c, _ := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	// Agent is not connected — Send returns false, but the query+SendAgentSettings call
+	// path is covered. Must not panic.
+	sendAgentSettings(c, "nonexistent-agent-id")
 }

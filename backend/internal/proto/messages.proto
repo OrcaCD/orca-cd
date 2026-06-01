@@ -9,6 +9,8 @@ message ClientMessage {
     PongResponse pong = 1;
     KeyExchangeResponse key_exchange_response = 2;
     EncryptedPayload encrypted_payload = 3;
+    DeployResult deploy_result = 4;
+    PullImagesResult pull_images_result = 5;
   }
 }
 
@@ -17,6 +19,9 @@ message ServerMessage {
     PingRequest ping = 1;
     KeyExchangeInit key_exchange_init = 2;
     EncryptedPayload encrypted_payload = 3;
+    DeployRequest deploy_request = 4;
+    AgentSettings agent_settings = 5;
+    PullImagesRequest pull_images_request = 6;
   }
 }
 
@@ -42,4 +47,44 @@ message KeyExchangeResponse {
 message EncryptedPayload {
   bytes nonce = 1;
   bytes ciphertext = 2;
+}
+
+message DeployRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  string compose_file = 4;
+}
+
+message DeployResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+message AgentSettings {
+  repeated ImagePollSettings image_poll_settings = 1;
+}
+
+message ImagePollSettings {
+  string application_id = 1;
+  bool enabled = 2;
+  int64 interval_seconds = 3;
+  bool delete_old_images = 4;
+  string application_name = 5;
+}
+
+message PullImagesRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message PullImagesResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  bool images_updated = 4;
+  string error_message = 5;
 }

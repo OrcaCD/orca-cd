@@ -5,12 +5,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
+
+// DefaultHub is the package-level Hub instance, set during server initialisation.
+var DefaultHub *Hub
 
 type Client struct {
 	Id      string
@@ -25,13 +29,18 @@ func (c *Client) Close() {
 }
 
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[string]*Client
-	log     *zerolog.Logger
+	mu            sync.RWMutex
+	clients       map[string]*Client
+	deployManager *DeployManager
+	log           *zerolog.Logger
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
-	return &Hub{clients: make(map[string]*Client), log: log}
+	return &Hub{
+		clients:       make(map[string]*Client),
+		deployManager: NewDeployManager(),
+		log:           log,
+	}
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
@@ -54,6 +63,7 @@ func (h *Hub) Unregister(id string) {
 	h.mu.Lock()
 	delete(h.clients, id)
 	h.mu.Unlock()
+	h.deployManager.FailPendingDeploys(id, ErrAgentDisconnected)
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
@@ -86,6 +96,56 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 			h.log.Warn().Str("client", c.Id).Msg("Client send buffer full, dropping message")
 		}
 	}
+}
+
+func (h *Hub) StartDeploy(agentID string, req *messages.DeployRequest) (*DeployHandle, error) {
+	pending := h.deployManager.StartDeploy(agentID, req)
+
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_DeployRequest{
+			DeployRequest: req,
+		},
+	}
+
+	if !h.Send(agentID, msg) {
+		h.deployManager.CancelDeploy(req.RequestId)
+		return nil, ErrDeployUnavailable
+	}
+
+	handle := &DeployHandle{
+		deployManager: h.deployManager,
+		requestID:     req.RequestId,
+		outcome:       pending.outcome,
+	}
+
+	return handle, nil
+}
+
+func (h *Hub) ResolveDeploy(result *messages.DeployResult) bool {
+	return h.deployManager.ResolveDeploy(result)
+}
+
+// SendAgentSettings builds an AgentSettings message from the given applications
+// and sends it to the specified agent. Returns false if the agent is not connected
+// or the send buffer is full.
+func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool {
+	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
+	for i := range apps {
+		pollSettings = append(pollSettings, &messages.ImagePollSettings{
+			ApplicationId:   apps[i].Id,
+			ApplicationName: apps[i].Name.String(),
+			Enabled:         apps[i].ImagePollEnabled,
+			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
+			DeleteOldImages: apps[i].ImagePollDeleteOldImages,
+		})
+	}
+	return h.Send(agentID, &messages.ServerMessage{
+		Payload: &messages.ServerMessage_AgentSettings{
+			AgentSettings: &messages.AgentSettings{
+				ImagePollSettings: pollSettings,
+			},
+		},
+	})
 }
 
 const writeWait = 10 * time.Second

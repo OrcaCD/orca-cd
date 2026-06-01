@@ -10,6 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -142,6 +143,8 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "created", "oidc-provider", provider.Id)
+
 	c.JSON(http.StatusCreated, toOIDCProviderResponse(&provider))
 	sse.PublishUpdate(AdminOIDCProvidersPath)
 }
@@ -193,6 +196,8 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "updated", "oidc-provider", id)
+
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
 	sse.PublishUpdate(AdminOIDCProvidersPath)
 }
@@ -209,6 +214,8 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		return
 	}
+
+	utils.RecordAuditLog(c, "deleted", "oidc-provider", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
 	sse.PublishUpdate(AdminOIDCProvidersPath)

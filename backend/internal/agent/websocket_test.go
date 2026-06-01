@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	agentdocker "github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
@@ -19,6 +21,40 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+type stubSender struct {
+	err  error
+	sent chan *messages.ClientMessage
+}
+
+func (s *stubSender) SendMessage(msg *messages.ClientMessage) error {
+	if s.sent != nil {
+		s.sent <- msg
+	}
+
+	return s.err
+}
+
+type stubDeployer struct {
+	block chan struct{}
+	err   error
+	reqCh chan agentdocker.DeployRequest
+}
+
+func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest) error {
+	if d.reqCh != nil {
+		d.reqCh <- req
+	}
+	if d.block != nil {
+		select {
+		case <-d.block:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return d.err
 }
 
 // newTestServer starts a test WebSocket server. The handler is called for each
@@ -115,7 +151,8 @@ func TestHandleServerMessage_Ping(t *testing.T) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		t.Fatalf("unmarshal ping: %v", err)
 	}
-	handleServerMessage(msg, clientConn, nil)
+	sender := newMessageSender(clientConn, nil)
+	handleServerMessage(context.Background(), msg, nil, sender, nil, nil)
 
 	select {
 	case <-done:
@@ -147,7 +184,8 @@ func TestHandleServerMessage_UnknownPayload(t *testing.T) {
 	clientConn := dialServer(t, srv)
 	defer clientConn.Close() //nolint:errcheck
 
-	handleServerMessage(&messages.ServerMessage{}, clientConn, nil)
+	sender := newMessageSender(clientConn, nil)
+	handleServerMessage(context.Background(), &messages.ServerMessage{}, nil, sender, nil, nil)
 
 	select {
 	case <-writeReceived:
@@ -455,8 +493,9 @@ func TestSendMessage_AllowedUnencrypted(t *testing.T) {
 	pong := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{Timestamp: 42}},
 	}
-	if err := sendMessage(conn, nil, pong); err != nil {
-		t.Fatalf("sendMessage: %v", err)
+	sender := newMessageSender(conn, nil)
+	if err := sender.SendMessage(pong); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 
 	select {
@@ -500,14 +539,15 @@ func TestSendMessage_Encrypted(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	// KeyExchangeResponse is not allowed unencrypted — sendMessage must encrypt it.
+	// KeyExchangeResponse is not allowed unencrypted — Send must encrypt it.
 	innerMsg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	if err := sendMessage(conn, session, innerMsg); err != nil {
-		t.Fatalf("sendMessage: %v", err)
+	sender := newMessageSender(conn, session)
+	if err := sender.SendMessage(innerMsg); err != nil {
+		t.Fatalf("Send: %v", err)
 	}
 
 	select {
@@ -560,7 +600,7 @@ func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
 	}
 
-	handleServerMessage(encryptedMsg, conn, session)
+	handleServerMessage(context.Background(), encryptedMsg, session, newMessageSender(conn, session), nil, nil)
 
 	select {
 	case <-done:
@@ -570,6 +610,66 @@ func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 
 	if receivedPong == nil || receivedPong.GetPong() == nil {
 		t.Fatal("expected a Pong response after handling encrypted Ping")
+	}
+}
+
+func TestHandleServerMessage_DeployRequest(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployer := &stubDeployer{reqCh: make(chan agentdocker.DeployRequest, 1)}
+
+	deployMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_DeployRequest{
+			DeployRequest: &messages.DeployRequest{
+				RequestId:       "req-1",
+				ApplicationId:   "app-1",
+				ApplicationName: "billing",
+				ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n",
+			},
+		},
+	}
+	env, err := session.Encrypt(deployMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	handleServerMessage(context.Background(), &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{
+			EncryptedPayload: env,
+		},
+	}, session, sender, deployer, nil)
+
+	select {
+	case req := <-deployer.reqCh:
+		if req.ApplicationID != "app-1" {
+			t.Fatalf("expected application id %q, got %q", "app-1", req.ApplicationID)
+		}
+		if req.ApplicationName != "billing" {
+			t.Fatalf("expected application name %q, got %q", "billing", req.ApplicationName)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for deploy request")
+	}
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeployResult()
+		if result == nil {
+			t.Fatal("expected deploy result payload")
+		}
+		if !result.Success {
+			t.Fatal("expected successful deploy result")
+		}
+		if result.RequestId != "req-1" {
+			t.Fatalf("expected request id %q, got %q", "req-1", result.RequestId)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for deploy result")
 	}
 }
 
@@ -588,7 +688,7 @@ func TestHandleServerMessage_EncryptedDecryptError(t *testing.T) {
 			},
 		},
 	}
-	handleServerMessage(msg, nil, session) // must return without panic
+	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil) // must return without panic
 }
 
 func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
@@ -610,7 +710,7 @@ func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleServerMessage(msg, nil, session) // must drop without panic
+	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil) // must drop without panic
 }
 
 func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
@@ -618,7 +718,213 @@ func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_KeyExchangeInit{KeyExchangeInit: &messages.KeyExchangeInit{}},
 	}
-	handleServerMessage(msg, nil, nil) // must return without panic
+	handleServerMessage(context.Background(), msg, nil, &stubSender{}, nil, nil) // must return without panic
+}
+
+type stubPoller struct {
+	mu             sync.Mutex
+	snapshots      [][]agentdocker.AppPollConfig
+	triggeredAppID string
+	triggeredReqID string
+	applyCh        chan struct{}
+	triggerCh      chan struct{}
+}
+
+func (p *stubPoller) ApplySettings(apps []agentdocker.AppPollConfig) {
+	p.mu.Lock()
+	cp := append([]agentdocker.AppPollConfig(nil), apps...)
+	p.snapshots = append(p.snapshots, cp)
+	p.mu.Unlock()
+	if p.applyCh != nil {
+		p.applyCh <- struct{}{}
+	}
+}
+
+func (p *stubPoller) TriggerNow(appID, appName, requestID string) {
+	p.triggeredAppID = appID
+	p.triggeredReqID = requestID
+	if p.triggerCh != nil {
+		p.triggerCh <- struct{}{}
+	}
+}
+
+func (p *stubPoller) lastSnapshot() []agentdocker.AppPollConfig {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.snapshots) == 0 {
+		return nil
+	}
+	return p.snapshots[len(p.snapshots)-1]
+}
+
+func TestHandleServerMessage_AgentSettings(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	poller := &stubPoller{applyCh: make(chan struct{}, 1)}
+
+	settingsMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_AgentSettings{
+			AgentSettings: &messages.AgentSettings{
+				ImagePollSettings: []*messages.ImagePollSettings{
+					{
+						ApplicationId:   "app-1",
+						ApplicationName: "myapp",
+						Enabled:         true,
+						IntervalSeconds: 120,
+						DeleteOldImages: true,
+					},
+					{
+						ApplicationId:   "app-2",
+						ApplicationName: "billing",
+						Enabled:         false,
+					},
+				},
+			},
+		},
+	}
+	env, err := session.Encrypt(settingsMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	handleServerMessage(context.Background(), &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
+	}, session, &stubSender{}, nil, poller)
+
+	select {
+	case <-poller.applyCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for ApplySettings call")
+	}
+
+	snap := poller.lastSnapshot()
+	if len(snap) != 2 {
+		t.Fatalf("expected snapshot with 2 entries, got %d", len(snap))
+	}
+
+	// Find entries by appID rather than assuming order.
+	byID := make(map[string]agentdocker.AppPollConfig, 2)
+	for _, entry := range snap {
+		byID[entry.AppID] = entry
+	}
+
+	u1, ok := byID["app-1"]
+	if !ok {
+		t.Fatal("missing entry for app-1")
+	}
+	if u1.AppName != "myapp" {
+		t.Errorf("app-1: expected AppName %q, got %q", "myapp", u1.AppName)
+	}
+	if !u1.Settings.Enabled {
+		t.Error("app-1: expected Enabled=true")
+	}
+	if u1.Settings.IntervalSeconds != 120 {
+		t.Errorf("app-1: expected interval 120, got %d", u1.Settings.IntervalSeconds)
+	}
+	if !u1.Settings.DeleteOldImages {
+		t.Error("app-1: expected DeleteOldImages=true")
+	}
+
+	u2, ok := byID["app-2"]
+	if !ok {
+		t.Fatal("missing entry for app-2")
+	}
+	if u2.AppName != "billing" {
+		t.Errorf("app-2: expected AppName %q, got %q", "billing", u2.AppName)
+	}
+	if u2.Settings.Enabled {
+		t.Error("app-2: expected Enabled=false")
+	}
+}
+
+func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	poller := &stubPoller{triggerCh: make(chan struct{}, 1)}
+
+	pullMsg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_PullImagesRequest{
+			PullImagesRequest: &messages.PullImagesRequest{
+				RequestId:       "req-42",
+				ApplicationId:   "app-2",
+				ApplicationName: "billing",
+			},
+		},
+	}
+	env, err := session.Encrypt(pullMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	handleServerMessage(context.Background(), &messages.ServerMessage{
+		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
+	}, session, &stubSender{}, nil, poller)
+
+	select {
+	case <-poller.triggerCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TriggerNow call")
+	}
+
+	if poller.triggeredAppID != "app-2" {
+		t.Errorf("expected appID %q, got %q", "app-2", poller.triggeredAppID)
+	}
+	if poller.triggeredReqID != "req-42" {
+		t.Errorf("expected requestID %q, got %q", "req-42", poller.triggeredReqID)
+	}
+}
+
+func TestApplyAgentSettings_NilPoller(t *testing.T) {
+	// Must not panic when poller is nil.
+	applyAgentSettings(nil, &messages.AgentSettings{
+		ImagePollSettings: []*messages.ImagePollSettings{
+			{ApplicationId: "app-1", ApplicationName: "myapp", Enabled: true},
+		},
+	}) // must not panic
+}
+
+func TestExecutePullImages_NilPoller(t *testing.T) {
+	// Must not panic when poller is nil.
+	executePullImages(nil, &messages.PullImagesRequest{
+		RequestId:       "req-1",
+		ApplicationId:   "app-1",
+		ApplicationName: "myapp",
+	})
+}
+
+func TestExecuteDeployment_NilDeployer(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+
+	executeDeployment(context.Background(), sender, nil, &messages.DeployRequest{
+		RequestId:       "req-1",
+		ApplicationId:   "app-1",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeployResult()
+		if result == nil {
+			t.Fatal("expected DeployResult payload")
+		}
+		if result.Success {
+			t.Error("expected success=false when deployer is nil")
+		}
+		if result.ErrorMessage == "" {
+			t.Error("expected non-empty error message")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for deploy result")
+	}
 }
 
 func TestConnTracker_CloseNilConn(t *testing.T) {

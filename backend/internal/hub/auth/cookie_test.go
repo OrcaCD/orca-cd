@@ -83,7 +83,7 @@ func TestClearAuthCookie(t *testing.T) {
 
 func TestGetAuthCookie(t *testing.T) {
 	c, _ := newTestContext()
-	c.Request.AddCookie(&http.Cookie{Name: defaultCookieConfig.Name, Value: "my-token"})
+	c.Request.AddCookie(&http.Cookie{Name: defaultCookieConfig.Name, Value: "my-token"}) //nolint:gosec
 
 	token, err := GetAuthCookie(c)
 	if err != nil {

@@ -25,6 +25,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { m } from "@/lib/paraglide/messages";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import { cn } from "@/lib/utils";
+import { Switch } from "../ui/switch";
+import { Checkbox } from "../ui/checkbox";
+import { Separator } from "../ui/separator";
 
 const applicationSchema = z.object({
 	name: z
@@ -47,6 +50,9 @@ const applicationSchema = z.object({
 		.refine((val) => val.endsWith(".yml") || val.endsWith(".yaml"), {
 			message: m.validationPathMustBeYAML(),
 		}),
+	imagePollEnabled: z.boolean(),
+	imagePollIntervalSeconds: z.number().int().min(60, m.validationImagePollIntervalMin()),
+	imagePollDeleteOldImages: z.boolean(),
 });
 
 type FileTreeNode = {
@@ -206,6 +212,9 @@ export default function UpsertApplicationDialog({
 			agentId: application?.agentId ?? "",
 			branch: application?.branch ?? "",
 			path: application?.path ?? "",
+			imagePollEnabled: application?.imagePollEnabled ?? false,
+			imagePollIntervalSeconds: application?.imagePollIntervalSeconds || 120,
+			imagePollDeleteOldImages: application?.imagePollDeleteOldImages ?? false,
 		},
 		validators: {
 			onSubmit: applicationSchema,
@@ -231,6 +240,7 @@ export default function UpsertApplicationDialog({
 
 	const repositoryId = useStore(form.store, (state) => state.values.repositoryId);
 	const branch = useStore(form.store, (state) => state.values.branch);
+	const imagePollEnabled = useStore(form.store, (state) => state.values.imagePollEnabled);
 
 	const { data: branches, isLoading: isBranchesLoading } = useFetch<string[]>(
 		repositoryId ? `/repositories/${repositoryId}/branches` : null,
@@ -271,7 +281,7 @@ export default function UpsertApplicationDialog({
 					</Button>
 				)}
 			</DialogTrigger>
-			<DialogContent className="sm:max-w-106.25">
+			<DialogContent className="flex max-h-[90vh] flex-col sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						{isEditing ? m.editApplication() : m.addApplication()}
@@ -282,6 +292,7 @@ export default function UpsertApplicationDialog({
 				</DialogHeader>
 
 				<form
+					className="overflow-y-auto"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();
@@ -483,6 +494,78 @@ export default function UpsertApplicationDialog({
 								);
 							}}
 						/>
+
+						<Separator />
+
+						<p className="text-sm font-medium">{m.imagePollSectionTitle()}</p>
+
+						<form.Field
+							name="imagePollEnabled"
+							children={(field) => (
+								<Field>
+									<div className="flex items-start gap-3">
+										<Switch
+											id={field.name}
+											checked={field.state.value}
+											onCheckedChange={(checked) => field.handleChange(checked)}
+										/>
+										<div className="space-y-1">
+											<Label htmlFor={field.name}>{m.imagePollEnabled()}</Label>
+											<p className="text-muted-foreground text-xs">
+												{m.imagePollEnabledDescription()}
+											</p>
+										</div>
+									</div>
+								</Field>
+							)}
+						/>
+
+						{imagePollEnabled && (
+							<>
+								<form.Field
+									name="imagePollIntervalSeconds"
+									children={(field) => {
+										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+										return (
+											<Field data-invalid={isInvalid}>
+												<Label htmlFor={field.name}>{m.imagePollIntervalSeconds()}</Label>
+												<Input
+													id={field.name}
+													type="number"
+													min={60}
+													value={field.state.value}
+													onBlur={field.handleBlur}
+													onChange={(e) => field.handleChange(Number(e.target.value))}
+												/>
+												<p className="text-muted-foreground text-xs">{m.imagePollIntervalHint()}</p>
+												{isInvalid && <FieldError errors={field.state.meta.errors} />}
+											</Field>
+										);
+									}}
+								/>
+
+								<form.Field
+									name="imagePollDeleteOldImages"
+									children={(field) => (
+										<Field>
+											<div className="flex items-start gap-2">
+												<Checkbox
+													id={field.name}
+													checked={field.state.value}
+													onCheckedChange={(checked) => field.handleChange(checked === true)}
+												/>
+												<div className="space-y-1">
+													<Label htmlFor={field.name}>{m.imagePollDeleteOldImages()}</Label>
+													<p className="text-muted-foreground text-xs">
+														{m.imagePollDeleteOldImagesDescription()}
+													</p>
+												</div>
+											</div>
+										</Field>
+									)}
+								/>
+							</>
+						)}
 
 						<div className="flex gap-2 pt-2">
 							<Button type="submit" disabled={isSubmitting}>

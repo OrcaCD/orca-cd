@@ -19,6 +19,9 @@ export interface Application {
 	updatedAt: string;
 	composeFile: string;
 	previousComposeFile?: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
 }
 
 export interface ApplicationListItem {
@@ -60,6 +63,9 @@ interface CreateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
 }
 
 interface UpdateApplicationRequest {
@@ -68,6 +74,13 @@ interface UpdateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	imagePollDeleteOldImages: boolean;
+}
+
+interface DeployApplicationResponse {
+	message: string;
 }
 
 export function createApplication(data: CreateApplicationRequest): Promise<Application> {
@@ -83,4 +96,8 @@ export function updateApplication(
 
 export function deleteApplication(id: string): Promise<void> {
 	return fetcher(`/applications/${id}`, "DELETE");
+}
+
+export function deployApplication(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
 }
