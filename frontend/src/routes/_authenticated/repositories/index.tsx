@@ -149,6 +149,7 @@ function RepositoriesPage() {
 													<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
 													<EditRepositoryAuthDialog repository={repository} asDropdownItem />
 													<EditRepositorySyncDialog repository={repository} asDropdownItem />
+													<DropdownMenuSeparator />
 													<ConfirmationDialog
 														onConfirm={() => handleDeleteRepo(repository)}
 														title={m.deleteRepositoryTitle()}
