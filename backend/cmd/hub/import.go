@@ -29,6 +29,10 @@ func newImportCmd() *cobra.Command {
 }
 
 func runImportCommand(out io.Writer, importPath string) error {
+	return runImportCommandWithInput(out, os.Stdin, importPath)
+}
+
+func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) error {
 	// Validate that the import file exists
 	if _, err := os.Stat(importPath); err != nil {
 		if os.IsNotExist(err) {
@@ -51,7 +55,7 @@ func runImportCommand(out io.Writer, importPath string) error {
 		"The hub server must be stopped before importing",
 		"All existing data will be permanently overridden",
 	}
-	confirmed, err := getUserConfirmation(out, "Import Database", warningPoints)
+	confirmed, err := getUserConfirmation(out, in, "Import Database", warningPoints)
 	if err != nil {
 		return fmt.Errorf("failed to read confirmation: %w", err)
 	}
@@ -99,7 +103,7 @@ func renderImportResult(out io.Writer, importPath string) {
 }
 
 // getUserConfirmation displays a warning message and prompts the user for confirmation
-func getUserConfirmation(out io.Writer, warningTitle string, warningPoints []string) (bool, error) {
+func getUserConfirmation(out io.Writer, in io.Reader, warningTitle string, warningPoints []string) (bool, error) {
 	// Display warning
 	warningStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -126,7 +130,7 @@ func getUserConfirmation(out io.Writer, warningTitle string, warningPoints []str
 	_, _ = fmt.Fprint(out, prompt)
 
 	// Read user input
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(in)
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return false, err
