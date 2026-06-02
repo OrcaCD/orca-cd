@@ -14,6 +14,7 @@ import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "sonner";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
+import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
 
 export const columns: ColumnDef<Agent>[] = [
 	{
@@ -93,9 +94,10 @@ export const columns: ColumnDef<Agent>[] = [
 								<span className="sr-only">{m.cardActions()}</span>
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" className="w-fit">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<UpsertAgentDialog agent={row.original} asDropdownItem />
+							<RotateAgentTokenDialog agent={row.original} />
 							<ConfirmationDialog
 								onConfirm={() => handleDeleteCard(row.original)}
 								title={m.deleteAgentCardTitle()}

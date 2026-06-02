@@ -13,7 +13,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -22,9 +24,13 @@ const testUpdatedName = "Updated Name"
 func setupTestDBWithAgents(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
-		t.Fatalf("failed to migrate Agent/Repository/Application: %v", err)
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}, &models.AuditLog{}); err != nil {
+		t.Fatalf("failed to migrate Agent/Repository/Application/AuditLog: %v", err)
 	}
+
+	log := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&log)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
 }
 
 func createTestAgentRecord(t *testing.T, name, keyId string, status models.AgentStatus, lastSeen *time.Time) models.Agent {
@@ -345,6 +351,79 @@ func TestUpdateAgentHandler_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/missing", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRotateAgentTokenHandler_Success(t *testing.T) {
+	setupTestDBWithAgents(t)
+
+	agent := createTestAgentRecord(t, "Rotate Me", "old-key", models.AgentStatusOffline, nil)
+	repository := createTestRepositoryRecord(t, "Repo", "https://github.com/orcacd/rotate-agent-token-test")
+	createTestApplicationRecord(t, "My App", repository.Id, agent.Id)
+
+	router := gin.New()
+	router.POST("/api/v1/agents/:id/rotate-token", RotateAgentTokenHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+agent.Id+"/rotate-token", nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body agentWithTokenResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Id != agent.Id {
+		t.Fatalf("expected id %q, got %q", agent.Id, body.Id)
+	}
+	if body.Name != "Rotate Me" {
+		t.Fatalf("expected name %q, got %q", "Rotate Me", body.Name)
+	}
+	if body.AppsCount != 1 {
+		t.Fatalf("expected appsCount %d, got %d", 1, body.AppsCount)
+	}
+	if body.AuthToken == "" {
+		t.Fatal("expected authToken to be set")
+	}
+
+	claims, err := auth.ValidateAgentToken(body.AuthToken)
+	if err != nil {
+		t.Fatalf("failed to validate returned auth token: %v", err)
+	}
+	if claims.Subject != agent.Id {
+		t.Fatalf("expected token subject %q, got %q", agent.Id, claims.Subject)
+	}
+	if claims.KeyId == "" {
+		t.Fatal("expected token KeyId to be set")
+	}
+	if claims.KeyId == "old-key" {
+		t.Fatal("expected token KeyId to be rotated")
+	}
+
+	updated, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated agent: %v", err)
+	}
+	if updated.KeyId.String() != claims.KeyId {
+		t.Fatalf("expected stored KeyId %q to match token KeyId %q", updated.KeyId.String(), claims.KeyId)
+	}
+}
+
+func TestRotateAgentTokenHandler_NotFound(t *testing.T) {
+	setupTestDBWithAgents(t)
+
+	router := gin.New()
+	router.POST("/api/v1/agents/:id/rotate-token", RotateAgentTokenHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/missing/rotate-token", nil)
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
