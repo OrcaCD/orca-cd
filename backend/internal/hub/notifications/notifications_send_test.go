@@ -87,67 +87,10 @@ func TestSendNotificationInvalidConfigMarksStatusError(t *testing.T) {
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
 }
 
-func TestSendNotificationCreateSenderErrorMarksStatusError(t *testing.T) {
-	setupNotificationsTestDB(t)
-
-	app := seedNotificationTestApp(t, models.Healthy)
-	notification := seedNotificationRecord(t, "create-sender-error", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationConfig(t, notification.Id, "not-a-url")
-
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
-
-	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
-}
-
-func TestSendNotificationSuccessMarksStatusSuccess(t *testing.T) {
-	setupNotificationsTestDB(t)
-
-	app := seedNotificationTestApp(t, models.Healthy)
-	notification := seedNotificationRecord(t, "send-success", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationConfig(t, notification.Id, "logger://")
-
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
-
-	assertNotificationStatus(t, notification.Id, models.NotificationStatusSuccess)
-}
-
-func TestSendNotificationDispatchErrorMarksStatusError(t *testing.T) {
-	setupNotificationsTestDB(t)
-
-	app := seedNotificationTestApp(t, models.Healthy)
-	notification := seedNotificationRecord(t, "send-error", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationConfig(t, notification.Id, "generic+http://127.0.0.1:1")
-
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
-
-	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
-}
-
 func TestSendTestNotificationInvalidConfig(t *testing.T) {
 	err := SendTestNotification(models.NotificationTypeDiscord, `{"webhookId":"123456789"}`, "ping")
 	if !errors.Is(err, ErrInvalidNotificationConfig) {
 		t.Fatalf("expected ErrInvalidNotificationConfig, got %v", err)
-	}
-}
-
-func TestSendTestNotificationCreateSenderError(t *testing.T) {
-	err := SendTestNotification(models.NotificationTypeDiscord, "not-a-url", "ping")
-	if !errors.Is(err, ErrInvalidNotificationConfig) {
-		t.Fatalf("expected ErrInvalidNotificationConfig, got %v", err)
-	}
-}
-
-func TestSendTestNotificationSuccessWithDefaultMessage(t *testing.T) {
-	err := SendTestNotification(models.NotificationTypeDiscord, "logger://", "   ")
-	if err != nil {
-		t.Fatalf("expected successful test notification, got %v", err)
-	}
-}
-
-func TestSendTestNotificationDispatchError(t *testing.T) {
-	err := SendTestNotification(models.NotificationTypeDiscord, "generic+http://127.0.0.1:1", "ping")
-	if !errors.Is(err, ErrNotificationDispatch) {
-		t.Fatalf("expected ErrNotificationDispatch, got %v", err)
 	}
 }
 

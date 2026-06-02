@@ -19,6 +19,8 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
+const validDiscordConfig = `{"token":"token-abc","webhookId":"123456789"}`
+
 func setupNotificationsTestDB(t *testing.T) {
 	t.Helper()
 
@@ -107,7 +109,7 @@ func seedNotificationRecord(t *testing.T, name string, enabled, enableByDefault 
 		EnableByDefault: enableByDefault,
 		Status:          status,
 		Type:            models.NotificationTypeDiscord,
-		Config:          crypto.EncryptedString("discord://token@channel"),
+		Config:          crypto.EncryptedString(validDiscordConfig),
 	}
 	if err := db.DB.WithContext(t.Context()).Select("*").Create(&notification).Error; err != nil {
 		t.Fatalf("failed to create notification: %v", err)
@@ -162,42 +164,34 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	}
 }
 
-func TestBuildShouterrrUrls_DirectTargets(t *testing.T) {
+func TestBuildShouterrrUrls_RejectsDirectTargets(t *testing.T) {
 	tests := []struct {
-		name    string
-		raw     string
-		expects []string
+		name string
+		raw  string
 	}{
 		{
-			name:    "single raw URL",
-			raw:     "discord://token@channel",
-			expects: []string{"discord://token@channel"},
+			name: "single raw URL",
+			raw:  "discord://token@channel",
 		},
 		{
-			name:    "comma separated URLs",
-			raw:     "discord://a@1, discord://b@2",
-			expects: []string{"discord://a@1", "discord://b@2"},
+			name: "comma separated URLs",
+			raw:  "discord://a@1, discord://b@2",
 		},
 		{
-			name:    "JSON object config",
-			raw:     `{"url":"discord://a@1","urls":["discord://b@2"]}`,
-			expects: []string{"discord://a@1", "discord://b@2"},
+			name: "JSON object with direct URLs",
+			raw:  `{"url":"discord://a@1","urls":["discord://b@2"]}`,
 		},
 		{
-			name:    "JSON array config",
-			raw:     `["discord://a@1","discord://b@2"]`,
-			expects: []string{"discord://a@1", "discord://b@2"},
+			name: "JSON array config",
+			raw:  `["discord://a@1","discord://b@2"]`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			urls, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, tt.raw)
-			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error: %v", err)
-			}
-			if !slices.Equal(urls, tt.expects) {
-				t.Fatalf("expected %v, got %v", tt.expects, urls)
+			_, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, tt.raw)
+			if err == nil {
+				t.Fatal("expected BuildShouterrrUrls() to reject direct targets")
 			}
 		})
 	}

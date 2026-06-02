@@ -21,6 +21,9 @@ import (
 	"gorm.io/gorm"
 )
 
+const validDiscordConfig = `{"token":"token-abc","webhookId":"123456789"}`
+const updatedDiscordConfig = `{"token":"new-token","webhookId":"123456789"}`
+
 func setupTestDBWithNotifications(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
@@ -98,7 +101,7 @@ func createNotificationRecord(t *testing.T, applicationIds []string) models.Noti
 		EnableByDefault: false,
 		Status:          models.NotificationStatusUnknown,
 		Type:            models.NotificationTypeDiscord,
-		Config:          crypto.EncryptedString("discord://token@channel"),
+		Config:          crypto.EncryptedString(validDiscordConfig),
 	}
 
 	if err := db.DB.WithContext(t.Context()).Select("*").Create(&notification).Error; err != nil {
@@ -228,7 +231,7 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 		"enabled":         true,
 		"enableByDefault": false,
 		"type":            "discord",
-		"config":          "discord://token@channel",
+		"config":          validDiscordConfig,
 		"applicationIds":  []string{appA.Id, appB.Id},
 	})
 
@@ -256,7 +259,7 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if body.Type != "discord" {
 		t.Fatalf("expected type %q, got %q", "discord", body.Type)
 	}
-	if body.Config == nil || *body.Config != "discord://token@channel" {
+	if body.Config == nil || *body.Config != validDiscordConfig {
 		t.Fatalf("expected config to be returned in create response, got %#v", body.Config)
 	}
 	if len(body.ApplicationIds) != 2 {
@@ -270,7 +273,7 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load stored notification: %v", err)
 	}
-	if stored.Config.String() != "discord://token@channel" {
+	if stored.Config.String() != validDiscordConfig {
 		t.Fatalf("expected config to roundtrip, got %q", stored.Config.String())
 	}
 	if len(stored.Applications) != 2 {
@@ -300,7 +303,7 @@ func TestCreateNotificationHandler_UnknownApplication(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":           "Deploy Alerts",
 		"type":           "discord",
-		"config":         "discord://token@channel",
+		"config":         validDiscordConfig,
 		"applicationIds": []string{"missing-app"},
 	})
 
@@ -321,7 +324,7 @@ func TestCreateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   " \t ",
 		"type":   "discord",
-		"config": "discord://token@channel",
+		"config": validDiscordConfig,
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -335,13 +338,13 @@ func TestCreateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
 	}
 }
 
-func TestCreateNotificationHandler_RejectsInvalidDirectTarget(t *testing.T) {
+func TestCreateNotificationHandler_RejectsDirectTargetString(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Deploy Alerts",
 		"type":   "discord",
-		"config": "://",
+		"config": "discord://token@channel",
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -441,7 +444,7 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 		"enabled":         false,
 		"enableByDefault": true,
 		"type":            "discord",
-		"config":          "discord://new-token@channel",
+		"config":          updatedDiscordConfig,
 		"applicationIds":  []string{appB.Id},
 	})
 
@@ -473,7 +476,7 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	if body.Status != string(models.NotificationStatusUnknown) {
 		t.Fatalf("expected status %q, got %q", models.NotificationStatusUnknown, body.Status)
 	}
-	if body.Config == nil || *body.Config != "discord://new-token@channel" {
+	if body.Config == nil || *body.Config != updatedDiscordConfig {
 		t.Fatalf("expected updated config in update response, got %#v", body.Config)
 	}
 	if len(body.ApplicationIds) != 1 || body.ApplicationIds[0] != appB.Id {
@@ -504,7 +507,7 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Updated Alerts",
 		"type":   "discord",
-		"config": "discord://token@channel",
+		"config": validDiscordConfig,
 	})
 
 	router := gin.New()
@@ -528,7 +531,7 @@ func TestUpdateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "   ",
 		"type":   "discord",
-		"config": "discord://token@channel",
+		"config": validDiscordConfig,
 	})
 
 	router := gin.New()
@@ -544,7 +547,7 @@ func TestUpdateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
 	}
 }
 
-func TestUpdateNotificationHandler_RejectsInvalidDirectTarget(t *testing.T) {
+func TestUpdateNotificationHandler_RejectsDirectTargetString(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
 	notification := createNotificationRecord(t, nil)
@@ -552,7 +555,7 @@ func TestUpdateNotificationHandler_RejectsInvalidDirectTarget(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Updated Alerts",
 		"type":   "discord",
-		"config": "://",
+		"config": "discord://token@channel",
 	})
 
 	router := gin.New()
@@ -791,7 +794,7 @@ func TestCreateNotificationHandler_DefaultFlagsWhenOmitted(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Defaults",
 		"type":   "discord",
-		"config": "discord://token@channel",
+		"config": validDiscordConfig,
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -829,7 +832,7 @@ func TestUpdateNotificationHandler_PreservesFlagsWhenOmitted(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":   "Updated Name",
 		"type":   "discord",
-		"config": "discord://new-token@channel",
+		"config": updatedDiscordConfig,
 	})
 
 	router := gin.New()
@@ -994,9 +997,9 @@ func TestNormalizeNotificationConfig(t *testing.T) {
 			wantErr: "expected valid JSON",
 		},
 		{
-			name: "json string",
-			raw:  json.RawMessage(`" discord://token@channel "`),
-			want: "discord://token@channel",
+			name: "json string containing object config",
+			raw:  json.RawMessage(`" {\"token\":\"token-abc\",\"webhookId\":\"123456789\"} "`),
+			want: validDiscordConfig,
 		},
 		{
 			name: "json object",

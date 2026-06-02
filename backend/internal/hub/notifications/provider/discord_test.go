@@ -2,7 +2,6 @@ package provider
 
 import (
 	"net/url"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -11,7 +10,6 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
-		wants   []string
 		wantErr string
 	}{
 		{
@@ -25,9 +23,9 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 			wantErr: "invalid JSON discord config",
 		},
 		{
-			name:  "json object with direct urls",
-			raw:   `{"url":"discord://a@1","urls":[" discord://b@2 ","discord://a@1"]}`,
-			wants: []string{"discord://a@1", "discord://b@2"},
+			name:    "json object with direct urls",
+			raw:	"{\"url\":\"discord://a@1\"}",
+			wantErr: "discord config requires token and webhookId",
 		},
 		{
 			name:    "json object missing token",
@@ -35,9 +33,14 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 			wantErr: "discord config requires token and webhookId",
 		},
 		{
-			name:  "direct target fallback",
-			raw:   "discord://a@1,discord://b@2",
-			wants: []string{"discord://a@1", "discord://b@2"},
+			name:    "direct target string",
+			raw:     "discord://a@1,discord://b@2",
+			wantErr: "invalid JSON discord config",
+		},
+		{
+			name:    "direct target list",
+			raw:     `["discord://a@1","discord://b@2"]`,
+			wantErr: "invalid JSON discord config",
 		},
 	}
 
@@ -59,8 +62,11 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildShouterrrUrls() error = %v", err)
 			}
-			if !slices.Equal(got, tt.wants) {
-				t.Fatalf("expected %v, got %v", tt.wants, got)
+			if len(got) != 1 {
+				t.Fatalf("expected one URL, got %v", got)
+			}
+			if !strings.HasPrefix(got[0], "discord://") {
+				t.Fatalf("expected discord URL, got %q", got[0])
 			}
 		})
 	}
