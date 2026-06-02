@@ -298,7 +298,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, "rotated token", "agent", agent.Id)
+	utils.RecordAuditLog(c, "rotated-token", "agent", agent.Id)
 
 	c.JSON(http.StatusOK, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
