@@ -1,4 +1,4 @@
-FROM ghcr.io/pnpm/pnpm:11.5.0 AS install-deps
+FROM ghcr.io/pnpm/pnpm:11.5.1 AS install-deps
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
