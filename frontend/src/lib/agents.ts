@@ -36,6 +36,10 @@ export function updateAgent(id: string, data: UpdateAgentRequest): Promise<Agent
 	return fetcher<Agent>(`/agents/${id}`, "PUT", data);
 }
 
+export function rotateAgentToken(id: string): Promise<AgentWithTokenResponse> {
+	return fetcher<AgentWithTokenResponse>(`/agents/${id}/rotate-token`, "POST");
+}
+
 export function deleteAgent(id: string): Promise<void> {
 	return fetcher(`/agents/${id}`, "DELETE");
 }

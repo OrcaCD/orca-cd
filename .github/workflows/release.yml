@@ -44,7 +44,7 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.new-release-created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
