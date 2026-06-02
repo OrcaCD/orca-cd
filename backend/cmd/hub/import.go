@@ -55,7 +55,7 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) e
 		"The hub server must be stopped before importing",
 		"All existing data will be permanently overridden",
 	}
-	confirmed, err := getUserConfirmation(out, in, "Import Database", warningPoints)
+	confirmed, err := getUserConfirmation(out, in, warningPoints)
 	if err != nil {
 		return fmt.Errorf("failed to read confirmation: %w", err)
 	}
@@ -103,26 +103,30 @@ func renderImportResult(out io.Writer, importPath string) {
 }
 
 // getUserConfirmation displays a warning message and prompts the user for confirmation
-func getUserConfirmation(out io.Writer, in io.Reader, warningTitle string, warningPoints []string) (bool, error) {
+func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string) (bool, error) {
 	// Display warning
 	warningStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Yellow).
 		Background(lipgloss.Color("52"))
-	
+
 	alertStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Yellow).
 		Padding(1, 2)
 
 	warningText := warningStyle.Render("⚠ WARNING")
-	warningContent := warningText + "\n\n"
-	
+	warningContent := strings.Builder{}
+	warningContent.WriteString(warningText)
+	warningContent.WriteString("\n\n")
+
 	for _, point := range warningPoints {
-		warningContent += "• " + point + "\n"
+		warningContent.WriteString("• ")
+		warningContent.WriteString(point)
+		warningContent.WriteString("\n")
 	}
 
-	card := alertStyle.Render(warningContent)
+	card := alertStyle.Render(warningContent.String())
 	_, _ = lipgloss.Fprintln(out, card)
 
 	// Prompt for confirmation
