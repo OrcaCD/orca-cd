@@ -424,7 +424,7 @@
 	"editRepositoryAuthShort": "Auth",
 	"editRepositoryAuthDescription": "Update the authentication token for this repository.",
 	"editRepositorySync": "Edit Synchronization",
-	"editRepositorySyncShort": "Sync",
+	"editRepositorySyncShort": "Edit Sync",
 	"editRepositorySyncDescription": "Change how OrcaCD syncs with this repository.",
 	"updateAuthentication": "Update Authentication",
 	"authTokenLeaveBlankHint": "Leave blank to remove authentication.",

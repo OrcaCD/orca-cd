@@ -24,6 +24,7 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -138,12 +139,14 @@ function RepositoriesPage() {
 														<span className="sr-only">{m.cardActions()}</span>
 													</Button>
 												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
+												<DropdownMenuContent align="end" className="w-fit">
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
 														<RefreshCw className="h-4 w-4" />
 														{m.sync()}
 													</DropdownMenuItem>
+													<DropdownMenuSeparator />
+													<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
 													<EditRepositoryAuthDialog repository={repository} asDropdownItem />
 													<EditRepositorySyncDialog repository={repository} asDropdownItem />
 													<ConfirmationDialog

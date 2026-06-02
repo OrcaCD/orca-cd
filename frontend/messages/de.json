@@ -424,7 +424,7 @@
 	"editRepositoryAuthShort": "Auth",
 	"editRepositoryAuthDescription": "Aktualisiere das Auth-Token für dieses Repository.",
 	"editRepositorySync": "Synchronisierung bearbeiten",
-	"editRepositorySyncShort": "Sync",
+	"editRepositorySyncShort": "Sync bearbeiten",
 	"editRepositorySyncDescription": "Ändere, wie OrcaCD dieses Repository synchronisiert.",
 	"updateAuthentication": "Authentifizierung aktualisieren",
 	"authTokenLeaveBlankHint": "Leer lassen, um die Authentifizierung zu entfernen.",
