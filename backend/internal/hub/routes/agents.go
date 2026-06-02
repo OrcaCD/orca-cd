@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -299,6 +300,11 @@ func RotateAgentTokenHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "rotated-token", "agent", agent.Id)
+
+	if client, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
+		websocket.DefaultHub.Unregister(agent.Id)
+		client.Close()
+	}
 
 	c.JSON(http.StatusOK, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
