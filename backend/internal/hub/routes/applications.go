@@ -78,6 +78,12 @@ type applicationResponse struct {
 	ImagePollDeleteOldImages bool    `json:"imagePollDeleteOldImages"`
 }
 
+// Represents the many-to-many relationship between applications and notifications
+type ApplicationNotification struct {
+	ApplicationId  string `gorm:"primaryKey"`
+	NotificationId string `gorm:"primaryKey"`
+}
+
 func ListApplicationsHandler(c *gin.Context) {
 	applications, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
@@ -191,6 +197,24 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(ApplicationsPath)
+
+	var notifications []models.Notification
+	if err := db.DB.Where("enable_by_default = ?", true).Find(&notifications).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	for _, notification := range notifications {
+		association := ApplicationNotification{
+			ApplicationId:  application.Id,
+			NotificationId: notification.Id,
+		}
+		if err := db.DB.Create(&association).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to associate notifications"})
+			return
+		}
+	}
+
 	sendAgentSettings(c, req.AgentId)
 }
 

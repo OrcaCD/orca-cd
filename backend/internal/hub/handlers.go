@@ -79,6 +79,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/agents/:id/rotate-token", routes.RotateAgentTokenHandler)
 			protected.DELETE("/agents/:id", routes.DeleteAgentHandler)
 
+			protected.POST("/notifications", routes.CreateNotificationHandler)
+			protected.GET("/notifications", routes.ListNotificationsHandler)
+			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
+			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
+
 			protected.GET("/events", routes.SSEHandler)
 		}
 

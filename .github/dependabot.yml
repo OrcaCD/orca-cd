@@ -39,3 +39,10 @@ updates:
     patterns: ["*"]
     cooldown:
       default-days: 3
+
+  - package-ecosystem: "npm"
+    directory: "/e2e"
+    multi-ecosystem-group: "dependencies"
+    patterns: ["*"]
+    cooldown:
+      default-days: 3

@@ -48,6 +48,7 @@ func TestSetAuthCookie(t *testing.T) {
 	cookie := findCookie(w.Result().Cookies(), defaultCookieConfig.Name)
 	if cookie == nil {
 		t.Fatalf("cookie %q not set in response", defaultCookieConfig.Name)
+		return
 	}
 	if cookie.Value != "test-token" {
 		t.Errorf("Value = %q, want %q", cookie.Value, "test-token")
@@ -70,6 +71,7 @@ func TestClearAuthCookie(t *testing.T) {
 	cookie := findCookie(w.Result().Cookies(), defaultCookieConfig.Name)
 	if cookie == nil {
 		t.Fatalf("cookie %q not set in response", defaultCookieConfig.Name)
+		return
 	}
 	if cookie.Value != "" {
 		t.Errorf("Value = %q, want empty", cookie.Value)

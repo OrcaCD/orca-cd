@@ -42,6 +42,7 @@ type Application struct {
 	ImagePollEnabled         bool                   `gorm:"not null;default:false"`
 	ImagePollIntervalSeconds int64                  `gorm:"not null;default:120"`
 	ImagePollDeleteOldImages bool                   `gorm:"not null;default:false"`
+	Notifications            []Notification         `gorm:"many2many:application_notifications;"`
 }
 
 func (Application) TableName() string {
