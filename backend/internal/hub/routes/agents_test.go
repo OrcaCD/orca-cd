@@ -13,7 +13,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -22,9 +24,13 @@ const testUpdatedName = "Updated Name"
 func setupTestDBWithAgents(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
-		t.Fatalf("failed to migrate Agent/Repository/Application: %v", err)
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}, &models.AuditLog{}); err != nil {
+		t.Fatalf("failed to migrate Agent/Repository/Application/AuditLog: %v", err)
 	}
+
+	log := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&log)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
 }
 
 func createTestAgentRecord(t *testing.T, name, keyId string, status models.AgentStatus, lastSeen *time.Time) models.Agent {

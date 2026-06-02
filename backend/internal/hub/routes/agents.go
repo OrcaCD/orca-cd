@@ -328,6 +328,11 @@ func DeleteAgentHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "deleted", "agent", id)
 
+	if client, ok := websocket.DefaultHub.GetClient(id); ok {
+		websocket.DefaultHub.Unregister(id)
+		client.Close()
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
 	sse.PublishUpdate(AgentsPath)
 }
