@@ -99,12 +99,12 @@ export default function EditRepositorySyncDialog({
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
 					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<RefreshCwIcon className="h-4 w-4" />
+						<RefreshCwIcon />
 						{m.editRepositorySyncShort()}
 					</DropdownMenuItem>
 				) : (
 					<Button variant="ghost" size="icon">
-						<RefreshCwIcon className="h-4 w-4" />
+						<RefreshCwIcon />
 					</Button>
 				)}
 			</DialogTrigger>
