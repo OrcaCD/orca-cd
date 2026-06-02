@@ -22,6 +22,7 @@ import { columns } from "@/components/tables/agents/columns";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
+import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -121,6 +122,7 @@ function RouteComponent() {
 												<DropdownMenuContent align="end">
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													<UpsertAgentDialog agent={agent} asDropdownItem />
+													<RotateAgentTokenDialog agent={agent} />
 													<ConfirmationDialog
 														onConfirm={() => handleDeleteCard(agent)}
 														title={m.deleteAgentCardTitle()}

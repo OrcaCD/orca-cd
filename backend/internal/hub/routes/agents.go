@@ -261,6 +261,52 @@ func UpdateAgentHandler(c *gin.Context) {
 	sse.PublishUpdate(AgentsPath)
 }
 
+func RotateAgentTokenHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	authToken, err := auth.GenerateAgentToken(&agent)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Update(ctx, "key_id", agent.KeyId); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	utils.RecordAuditLog(c, "rotated token", "agent", agent.Id)
+
+	c.JSON(http.StatusOK, agentWithTokenResponse{
+		agentResponse: toAgentResponse(&agent, appsCount),
+		AuthToken:     authToken,
+	})
+	sse.PublishUpdate(AgentsPath)
+}
+
 func DeleteAgentHandler(c *gin.Context) {
 	id := c.Param("id")
 
