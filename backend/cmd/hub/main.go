@@ -72,7 +72,7 @@ func main() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
 	rootCmd.AddCommand(newResetPasswordCmd())
-	rootCmd.AddCommand(newBackupCmd())
+	rootCmd.AddCommand(newExportCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
