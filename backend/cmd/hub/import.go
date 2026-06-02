@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -45,6 +46,20 @@ func runImportCommand(out io.Writer, importPath string) error {
 		return fmt.Errorf("import is not available in demo mode")
 	}
 
+	// Display warning and get user confirmation
+	warningPoints := []string{
+		"The hub server must be stopped before importing",
+		"All existing data will be permanently overridden",
+	}
+	confirmed, err := getUserConfirmation(out, "Import Database", warningPoints)
+	if err != nil {
+		return fmt.Errorf("failed to read confirmation: %w", err)
+	}
+	if !confirmed {
+		_, _ = fmt.Fprintln(out, lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("Import cancelled"))
+		return nil
+	}
+
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
@@ -81,4 +96,42 @@ func renderImportResult(out io.Writer, importPath string) {
 		Render(titleStyle.Render("Import Successful") + "\n\n" + body)
 
 	_, _ = lipgloss.Fprintln(out, card)
+}
+
+// getUserConfirmation displays a warning message and prompts the user for confirmation
+func getUserConfirmation(out io.Writer, warningTitle string, warningPoints []string) (bool, error) {
+	// Display warning
+	warningStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Yellow).
+		Background(lipgloss.Color("52"))
+	
+	alertStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Yellow).
+		Padding(1, 2)
+
+	warningText := warningStyle.Render("⚠ WARNING")
+	warningContent := warningText + "\n\n"
+	
+	for _, point := range warningPoints {
+		warningContent += "• " + point + "\n"
+	}
+
+	card := alertStyle.Render(warningContent)
+	_, _ = lipgloss.Fprintln(out, card)
+
+	// Prompt for confirmation
+	prompt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Render("\nProceed with this action? (yes/no): ")
+	_, _ = fmt.Fprint(out, prompt)
+
+	// Read user input
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return false, err
+	}
+
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "yes" || input == "y", nil
 }

@@ -24,7 +24,7 @@ func Restore(backupPath string) error {
 	// Backup current database
 	currentDBPath := sqliteFilePath
 	backupCurrentPath := currentDBPath + ".bak"
-
+	
 	// Only backup if the current database exists
 	if _, err := os.Stat(currentDBPath); err == nil {
 		if err := copyFile(currentDBPath, backupCurrentPath); err != nil {
