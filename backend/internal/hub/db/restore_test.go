@@ -39,7 +39,7 @@ func TestCopyFile_Succeeds(t *testing.T) {
 		t.Fatalf("copyFile() unexpected error: %v", err)
 	}
 
-	dstContent, err := os.ReadFile(dst)
+	dstContent, err := os.ReadFile(dst) // #nosec G304 - paths are controlled in test
 	if err != nil {
 		t.Fatalf("failed to read destination file: %v", err)
 	}
@@ -57,4 +57,3 @@ func TestCopyFile_FailsWhenSourceNotFound(t *testing.T) {
 		t.Fatal("copyFile() expected error when source doesn't exist, got nil")
 	}
 }
-

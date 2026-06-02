@@ -11,19 +11,20 @@ func Restore(backupPath string) error {
 		return fmt.Errorf("database not connected")
 	}
 
-	// Close the database connection
-	sqlDB, err := DB.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get database connection: %w", err)
-	}
-	if err := sqlDB.Close(); err != nil {
+	// Close the database connection to release all file handles
+	// This ensures the database file can be safely replaced
+	if err := Close(); err != nil {
 		return fmt.Errorf("failed to close database connection: %w", err)
 	}
+
+	// Clean up WAL files to ensure a clean state for the new database
+	_ = os.Remove(sqliteFilePath + "-shm")
+	_ = os.Remove(sqliteFilePath + "-wal")
 
 	// Backup current database
 	currentDBPath := sqliteFilePath
 	backupCurrentPath := currentDBPath + ".bak"
-	
+
 	// Only backup if the current database exists
 	if _, err := os.Stat(currentDBPath); err == nil {
 		if err := copyFile(currentDBPath, backupCurrentPath); err != nil {
@@ -47,7 +48,7 @@ func Restore(backupPath string) error {
 }
 
 func copyFile(src, dst string) error {
-	source, err := os.Open(src)
+	source, err := os.Open(src) // #nosec G304 - paths are controlled internally
 	if err != nil {
 		return err
 	}
@@ -55,7 +56,7 @@ func copyFile(src, dst string) error {
 		_ = source.Close()
 	}()
 
-	destination, err := os.Create(dst)
+	destination, err := os.Create(dst) // #nosec G304 - paths are controlled internally
 	if err != nil {
 		return err
 	}
