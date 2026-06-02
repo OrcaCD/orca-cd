@@ -45,7 +45,7 @@ export default function RotateAgentTokenDialog({ agent }: { agent: Agent }) {
 						setAuthToken(null);
 					}
 				}}
-				title={m.agentAuthTokenTitle()}
+				title={m.agentTokenRotated()}
 				description={m.copyTokenNow()}
 				label={m.authToken()}
 				value={authToken ?? ""}
