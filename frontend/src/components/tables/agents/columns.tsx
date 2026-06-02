@@ -94,7 +94,7 @@ export const columns: ColumnDef<Agent>[] = [
 								<span className="sr-only">{m.cardActions()}</span>
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" className="w-fit">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<UpsertAgentDialog agent={row.original} asDropdownItem />
 							<RotateAgentTokenDialog agent={row.original} />

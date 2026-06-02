@@ -119,7 +119,7 @@ function RouteComponent() {
 														<span className="sr-only">{m.cardActions()}</span>
 													</Button>
 												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
+												<DropdownMenuContent align="end" className="w-fit">
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													<UpsertAgentDialog agent={agent} asDropdownItem />
 													<RotateAgentTokenDialog agent={agent} />
