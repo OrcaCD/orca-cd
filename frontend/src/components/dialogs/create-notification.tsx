@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
@@ -15,7 +15,6 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
 	Select,
 	SelectContent,
@@ -33,10 +32,8 @@ import {
 	createNotification,
 	isHttpUrl,
 	normalizeNotificationApplicationIds,
-	type Notification,
 	type NotificationType,
 	notificationTypes,
-	updateNotification,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import {
@@ -54,7 +51,6 @@ import {
 	DiscordBotNameField,
 	DiscordThreadIdField,
 	DiscordWebhookUrlField,
-	parseDiscordBuilderValues,
 	parseDiscordWebhookUrl,
 } from "./discord-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
@@ -342,13 +338,11 @@ function StepperNavigation({
 	onNext,
 	handleClose,
 	isSubmitting,
-	isEditing,
 }: {
 	stepper: { state: { current: { index: number; data: { id: string } }; isLast: boolean } };
 	onNext: (advance: () => void) => void;
 	handleClose: () => void;
 	isSubmitting: boolean;
-	isEditing: boolean;
 }) {
 	const isAtFirstVisibleStep = stepper.state.current.index === 0;
 
@@ -369,11 +363,7 @@ function StepperNavigation({
 				)}
 				{stepper.state.isLast ? (
 					<Button type="submit" disabled={isSubmitting}>
-						{isSubmitting
-							? m.savingDots()
-							: isEditing
-								? m.updateNotification()
-								: m.addNotification()}
+						{isSubmitting ? m.savingDots() : m.addNotification()}
 					</Button>
 				) : (
 					<Stepper.Next
@@ -393,31 +383,23 @@ function StepperNavigation({
 	);
 }
 
-export default function UpsertNotificationDialog({
-	notification,
-	asDropdownItem = false,
-}: {
-	notification: Notification | null;
-	asDropdownItem?: boolean;
-}) {
-	const isEditing = notification !== null;
+export default function CreateNotificationDialog() {
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const discordBuilderValues = parseDiscordBuilderValues(notification?.config);
 
 	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
 
 	const form = useForm({
 		defaultValues: {
-			name: notification?.name ?? "",
-			type: (notification?.type ?? "discord") as NotificationType,
-			discordWebhookUrl: discordBuilderValues.discordWebhookUrl,
-			discordBotName: discordBuilderValues.discordBotName,
-			discordAvatarUrl: discordBuilderValues.discordAvatarUrl,
-			discordThreadId: discordBuilderValues.discordThreadId,
-			enabled: notification?.enabled ?? true,
-			enableByDefault: notification?.enableByDefault ?? false,
-			applicationIds: notification?.applicationIds ?? [],
+			name: "",
+			type: "discord" as NotificationType,
+			discordWebhookUrl: "",
+			discordBotName: "",
+			discordAvatarUrl: "",
+			discordThreadId: "",
+			enabled: true,
+			enableByDefault: false,
+			applicationIds: [] as string[],
 		},
 		validators: {
 			onSubmit: notificationSchema,
@@ -434,13 +416,8 @@ export default function UpsertNotificationDialog({
 					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
 				};
 
-				if (notification) {
-					await updateNotification(notification.id, payload);
-					toast.success(m.notificationUpdated());
-				} else {
-					await createNotification(payload);
-					toast.success(m.notificationCreated());
-				}
+				await createNotification(payload);
+				toast.success(m.notificationCreated());
 
 				setOpen(false);
 			} catch (err) {
@@ -476,25 +453,16 @@ export default function UpsertNotificationDialog({
 			modal={false}
 		>
 			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<Pencil className="h-4 w-4" />
-						{m.edit()}
-					</DropdownMenuItem>
-				) : (
-					<Button>
-						<Plus className="h-4 w-4" />
-						{m.addNotification()}
-					</Button>
-				)}
+				<Button>
+					<Plus className="h-4 w-4" />
+					{m.addNotification()}
+				</Button>
 			</DialogTrigger>
 
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
-					<DialogTitle>{isEditing ? m.editNotification() : m.addNotification()}</DialogTitle>
-					<DialogDescription>
-						{isEditing ? m.editNotificationDescription() : m.addNotificationDescription()}
-					</DialogDescription>
+					<DialogTitle>{m.addNotification()}</DialogTitle>
+					<DialogDescription>{m.addNotificationDescription()}</DialogDescription>
 				</DialogHeader>
 
 				<form
@@ -565,7 +533,6 @@ export default function UpsertNotificationDialog({
 										onNext={handleNext}
 										handleClose={handleClose}
 										isSubmitting={isSubmitting}
-										isEditing={isEditing}
 									/>
 								</>
 							);

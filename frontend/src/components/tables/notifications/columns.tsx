@@ -3,7 +3,6 @@ import { MoreHorizontal, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import UpsertNotificationDialog from "@/components/dialogs/upsert-notification";
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import { Button } from "@/components/ui/button";
 import { DataTableColumnHeader } from "@/components/tables/data-table-column-header";
@@ -106,7 +105,6 @@ export const columns: ColumnDef<Notification>[] = [
 								{m.sendTest()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<UpsertNotificationDialog notification={row.original} asDropdownItem />
 							<ConfirmationDialog
 								onConfirm={() => {
 									void handleDelete(row.original);

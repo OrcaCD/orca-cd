@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import UpsertNotificationDialog from "@/components/dialogs/upsert-notification";
+import CreateNotificationDialog from "@/components/dialogs/create-notification";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { columns } from "@/components/tables/notifications/columns";
 import { NotificationsDataTable } from "@/components/tables/notifications/data-table";
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authenticated/notifications/")({
 });
 
 function NotificationsPage() {
-	const { data, isLoading } = useFetch<Notification[]>("/notifications?includeConfig=true");
+	const { data, isLoading } = useFetch<Notification[]>("/notifications");
 	const [searchQuery, setSearchQuery] = useState("");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
@@ -76,7 +76,7 @@ function NotificationsPage() {
 					<h1 className="text-2xl font-bold">{m.pageNotifications()}</h1>
 					<p className="mt-1 text-sm text-muted-foreground">{m.notificationsPageDescription()}</p>
 				</div>
-				<UpsertNotificationDialog notification={null} />
+				<CreateNotificationDialog />
 			</div>
 
 			{isLoading && <p className="text-sm text-muted-foreground">{m.loadingNotifications()}</p>}
@@ -134,7 +134,6 @@ function NotificationsPage() {
 														<Send className="h-4 w-4" />
 														{m.sendTest()}
 													</DropdownMenuItem>
-													<UpsertNotificationDialog notification={notification} asDropdownItem />
 													<ConfirmationDialog
 														onConfirm={() => {
 															void handleDelete(notification);

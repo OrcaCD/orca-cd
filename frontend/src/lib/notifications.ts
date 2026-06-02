@@ -11,7 +11,6 @@ export interface Notification {
 	enableByDefault: boolean;
 	status: NotificationStatus;
 	type: NotificationType;
-	config?: string;
 	applicationIds: string[];
 	createdAt: string;
 	updatedAt: string;
@@ -41,13 +40,6 @@ export function normalizeNotificationApplicationIds(ids: string[]): string[] {
 
 export function createNotification(data: UpsertNotificationRequest): Promise<Notification> {
 	return fetcher<Notification>("/notifications", "POST", data);
-}
-
-export function updateNotification(
-	id: string,
-	data: UpsertNotificationRequest,
-): Promise<Notification> {
-	return fetcher<Notification>(`/notifications/${id}`, "PUT", data);
 }
 
 export function deleteNotification(id: string): Promise<void> {

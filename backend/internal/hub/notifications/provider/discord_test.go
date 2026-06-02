@@ -24,7 +24,7 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 		},
 		{
 			name:    "json object with direct urls",
-			raw:	"{\"url\":\"discord://a@1\"}",
+			raw:     "{\"url\":\"discord://a@1\"}",
 			wantErr: "discord config requires token and webhookId",
 		},
 		{

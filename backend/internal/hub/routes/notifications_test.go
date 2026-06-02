@@ -22,7 +22,6 @@ import (
 )
 
 const validDiscordConfig = `{"token":"token-abc","webhookId":"123456789"}`
-const updatedDiscordConfig = `{"token":"new-token","webhookId":"123456789"}`
 
 func setupTestDBWithNotifications(t *testing.T) {
 	t.Helper()
@@ -169,52 +168,8 @@ func TestListNotificationsHandler_ReturnsNotifications(t *testing.T) {
 		t.Fatalf("expected 2 notifications, got %d", len(body))
 	}
 
-	for i := range body {
-		if body[i].Config != nil {
-			t.Fatal("expected config to be omitted by default in list response")
-		}
-	}
-}
-
-func TestListNotificationsHandler_IncludeConfig(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	repo := seedNotificationRepository(t)
-	agent := seedNotificationAgent(t)
-	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
-	createNotificationRecord(t, []string{app.Id})
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/notifications?includeConfig=true", nil)
-
-	ListNotificationsHandler(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var body []notificationResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if len(body) != 1 {
-		t.Fatalf("expected 1 notification, got %d", len(body))
-	}
-	if body[0].Config == nil || *body[0].Config == "" {
-		t.Fatal("expected config to be included when includeConfig=true")
-	}
-}
-
-func TestListNotificationsHandler_InvalidIncludeConfig(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/notifications?includeConfig=not-bool", nil)
-
-	ListNotificationsHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if strings.Contains(w.Body.String(), "config") {
+		t.Fatalf("expected config to be omitted in list response: %s", w.Body.String())
 	}
 }
 
@@ -259,8 +214,8 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if body.Type != "discord" {
 		t.Fatalf("expected type %q, got %q", "discord", body.Type)
 	}
-	if body.Config == nil || *body.Config != validDiscordConfig {
-		t.Fatalf("expected config to be returned in create response, got %#v", body.Config)
+	if strings.Contains(w.Body.String(), "config") {
+		t.Fatalf("expected config to be omitted in create response: %s", w.Body.String())
 	}
 	if len(body.ApplicationIds) != 2 {
 		t.Fatalf("expected 2 applicationIds, got %d", len(body.ApplicationIds))
@@ -424,147 +379,6 @@ func TestCreateNotificationHandler_InvalidDiscordObjectConfig(t *testing.T) {
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	CreateNotificationHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestUpdateNotificationHandler_Success(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	repo := seedNotificationRepository(t)
-	agent := seedNotificationAgent(t)
-	appA := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
-	appB := seedNotificationApplication(t, repo.Id, agent.Id, "App B")
-	notification := createNotificationRecord(t, []string{appA.Id})
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"name":            "Updated Alerts",
-		"enabled":         false,
-		"enableByDefault": true,
-		"type":            "discord",
-		"config":          updatedDiscordConfig,
-		"applicationIds":  []string{appB.Id},
-	})
-
-	router := gin.New()
-	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var body notificationResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if body.Name != "Updated Alerts" {
-		t.Fatalf("expected name %q, got %q", "Updated Alerts", body.Name)
-	}
-	if body.Enabled {
-		t.Fatal("expected enabled=false")
-	}
-	if !body.EnableByDefault {
-		t.Fatal("expected enableByDefault=true")
-	}
-	if body.Status != string(models.NotificationStatusUnknown) {
-		t.Fatalf("expected status %q, got %q", models.NotificationStatusUnknown, body.Status)
-	}
-	if body.Config == nil || *body.Config != updatedDiscordConfig {
-		t.Fatalf("expected updated config in update response, got %#v", body.Config)
-	}
-	if len(body.ApplicationIds) != 1 || body.ApplicationIds[0] != appB.Id {
-		t.Fatalf("expected applicationIds [%s], got %v", appB.Id, body.ApplicationIds)
-	}
-
-	stored, err := gorm.G[models.Notification](db.DB).Preload("Applications", nil).Where("id = ?", notification.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load updated notification: %v", err)
-	}
-	if stored.Name.String() != "Updated Alerts" {
-		t.Fatalf("expected updated name, got %q", stored.Name.String())
-	}
-	if stored.Enabled {
-		t.Fatal("expected stored enabled=false")
-	}
-	if !stored.EnableByDefault {
-		t.Fatal("expected stored enableByDefault=true")
-	}
-	if len(stored.Applications) != 1 || stored.Applications[0].Id != appB.Id {
-		t.Fatalf("expected stored application association to %s, got %+v", appB.Id, stored.Applications)
-	}
-}
-
-func TestUpdateNotificationHandler_NotFound(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Updated Alerts",
-		"type":   "discord",
-		"config": validDiscordConfig,
-	})
-
-	router := gin.New()
-	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/missing", bytes.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestUpdateNotificationHandler_RejectsWhitespaceOnlyName(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	notification := createNotificationRecord(t, nil)
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "   ",
-		"type":   "discord",
-		"config": validDiscordConfig,
-	})
-
-	router := gin.New()
-	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestUpdateNotificationHandler_RejectsDirectTargetString(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	notification := createNotificationRecord(t, nil)
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Updated Alerts",
-		"type":   "discord",
-		"config": "discord://token@channel",
-	})
-
-	router := gin.New()
-	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
@@ -816,46 +630,6 @@ func TestCreateNotificationHandler_DefaultFlagsWhenOmitted(t *testing.T) {
 	}
 	if body.EnableByDefault {
 		t.Fatal("expected enableByDefault default to false")
-	}
-}
-
-func TestUpdateNotificationHandler_PreservesFlagsWhenOmitted(t *testing.T) {
-	setupTestDBWithNotifications(t)
-
-	notification := createNotificationRecord(t, nil)
-	if err := db.DB.Model(&models.Notification{}).
-		Where("id = ?", notification.Id).
-		Updates(map[string]any{"enabled": false, "enable_by_default": true}).Error; err != nil {
-		t.Fatalf("failed to set initial notification flags: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Updated Name",
-		"type":   "discord",
-		"config": updatedDiscordConfig,
-	})
-
-	router := gin.New()
-	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var body notificationResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
-	if body.Enabled {
-		t.Fatal("expected enabled to preserve existing false value")
-	}
-	if !body.EnableByDefault {
-		t.Fatal("expected enableByDefault to preserve existing true value")
 	}
 }
 

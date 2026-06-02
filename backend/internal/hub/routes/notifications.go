@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -34,15 +33,6 @@ type createNotificationRequest struct {
 	ApplicationIds  []string                `json:"applicationIds"`
 }
 
-type updateNotificationRequest struct {
-	Name            string                  `json:"name" binding:"required,min=1,max=128"`
-	Enabled         *bool                   `json:"enabled"`
-	EnableByDefault *bool                   `json:"enableByDefault"`
-	Type            models.NotificationType `json:"type" binding:"required"`
-	Config          json.RawMessage         `json:"config" binding:"required"`
-	ApplicationIds  []string                `json:"applicationIds"`
-}
-
 type testNotificationRequest struct {
 	Message string `json:"message"`
 }
@@ -56,19 +46,12 @@ type notificationResponse struct {
 	EnableByDefault bool     `json:"enableByDefault"`
 	Status          string   `json:"status"`
 	Type            string   `json:"type"`
-	Config          *string  `json:"config,omitempty"`
 	ApplicationIds  []string `json:"applicationIds"`
 	CreatedAt       string   `json:"createdAt"`
 	UpdatedAt       string   `json:"updatedAt"`
 }
 
 func ListNotificationsHandler(c *gin.Context) {
-	includeConfig, err := parseIncludeConfigQuery(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
 	items, err := gorm.G[models.Notification](db.DB).
 		Preload("Applications", nil).
 		Order("created_at ASC").
@@ -80,7 +63,7 @@ func ListNotificationsHandler(c *gin.Context) {
 
 	response := make([]notificationResponse, 0, len(items))
 	for i := range items {
-		response = append(response, toNotificationResponse(&items[i], includeConfig))
+		response = append(response, toNotificationResponse(&items[i]))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -165,114 +148,7 @@ func CreateNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toNotificationResponse(&createdNotification, true))
-	sse.PublishUpdate(NotificationsPath)
-}
-
-func UpdateNotificationHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	var req updateNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, type and config are required"})
-		return
-	}
-
-	normalizedName, err := normalizeNotificationName(req.Name)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	if !isValidNotificationType(req.Type) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid type"})
-		return
-	}
-
-	normalizedConfig, err := normalizeNotificationConfig(req.Config)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := validateNotificationConfig(req.Type, normalizedConfig); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config: " + err.Error()})
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	existingNotification, err := getNotificationById(ctx, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	applications, missingApplicationId, err := loadNotificationApplications(ctx, req.ApplicationIds)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if missingApplicationId != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
-		return
-	}
-
-	enabled := existingNotification.Enabled
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	}
-	enableByDefault := existingNotification.EnableByDefault
-	if req.EnableByDefault != nil {
-		enableByDefault = *req.EnableByDefault
-	}
-
-	updates := models.Notification{
-		Name:            crypto.EncryptedString(normalizedName),
-		Enabled:         enabled,
-		EnableByDefault: enableByDefault,
-		Status:          models.NotificationStatusUnknown,
-		Type:            req.Type,
-		Config:          crypto.EncryptedString(normalizedConfig),
-	}
-
-	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rowsAffected, err := gorm.G[models.Notification](tx).
-			Where("id = ?", id).
-			Select("name", "enabled", "enable_by_default", "status", "type", "config").
-			Updates(ctx, updates)
-		if err != nil {
-			return err
-		}
-		if rowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-
-		if err := tx.Model(&existingNotification).Association("Applications").Replace(applications); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	updatedNotification, err := getNotificationById(ctx, id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	c.JSON(http.StatusOK, toNotificationResponse(&updatedNotification, true))
+	c.JSON(http.StatusCreated, toNotificationResponse(&createdNotification))
 	sse.PublishUpdate(NotificationsPath)
 }
 
@@ -366,7 +242,7 @@ func getNotificationById(ctx context.Context, id string) (models.Notification, e
 		First(ctx)
 }
 
-func toNotificationResponse(notification *models.Notification, includeConfig bool) notificationResponse {
+func toNotificationResponse(notification *models.Notification) notificationResponse {
 	applicationIds := make([]string, 0, len(notification.Applications))
 	for i := range notification.Applications {
 		applicationIds = append(applicationIds, notification.Applications[i].Id)
@@ -385,31 +261,12 @@ func toNotificationResponse(notification *models.Notification, includeConfig boo
 		UpdatedAt:       notification.UpdatedAt.Format(time.RFC3339),
 	}
 
-	if includeConfig {
-		config := notification.Config.String()
-		response.Config = &config
-	}
-
 	return response
 }
 
 func isValidNotificationType(notificationType models.NotificationType) bool {
 	_, err := provider.Get(notificationType)
 	return err == nil
-}
-
-func parseIncludeConfigQuery(c *gin.Context) (bool, error) {
-	raw := strings.TrimSpace(c.Query("includeConfig"))
-	if raw == "" {
-		return false, nil
-	}
-
-	includeConfig, err := strconv.ParseBool(raw)
-	if err != nil {
-		return false, errors.New("invalid includeConfig: must be a boolean")
-	}
-
-	return includeConfig, nil
 }
 
 func normalizeNotificationName(rawName string) (string, error) {
