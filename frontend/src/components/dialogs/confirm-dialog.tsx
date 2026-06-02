@@ -23,6 +23,7 @@ interface ConfirmationDialogProps {
 	onConfirm: () => void;
 	triggerProps?: VariantProps<typeof buttonVariants>;
 	asDropdownItem?: boolean;
+	dropdownItemVariant?: "default" | "destructive";
 }
 
 export default function ConfirmationDialog({
@@ -34,6 +35,7 @@ export default function ConfirmationDialog({
 	onConfirm,
 	triggerProps = { variant: "outline" },
 	asDropdownItem = false,
+	dropdownItemVariant = "destructive",
 }: ConfirmationDialogProps) {
 	const [open, setOpen] = useState(false);
 
@@ -46,7 +48,7 @@ export default function ConfirmationDialog({
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogTrigger asChild>
 				{asDropdownItem ? (
-					<DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
+					<DropdownMenuItem variant={dropdownItemVariant} onSelect={(e) => e.preventDefault()}>
 						{triggerText}
 					</DropdownMenuItem>
 				) : (

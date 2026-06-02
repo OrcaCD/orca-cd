@@ -67,6 +67,13 @@ func (h *Hub) Unregister(id string) {
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
+func (h *Hub) GetClient(id string) (*Client, bool) {
+	h.mu.RLock()
+	c, ok := h.clients[id]
+	h.mu.RUnlock()
+	return c, ok
+}
+
 // Send sends a message to a specific client by Id.
 // Returns false if the client doesn't exist or the buffer is full.
 func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {

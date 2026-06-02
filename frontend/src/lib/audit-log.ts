@@ -23,4 +23,5 @@ export enum EventType {
 	Created = "created",
 	Updated = "updated",
 	Deleted = "deleted",
+	RotatedToken = "rotated-token",
 }
