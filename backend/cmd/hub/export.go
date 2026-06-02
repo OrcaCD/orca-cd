@@ -21,8 +21,8 @@ func newExportCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Create a export of the hub database",
-		Long:  "Create a consistent export of the hub database using VACUUM INTO. Safe to run while the hub is running.",
+		Short: "Create a backup of the hub database",
+		Long:  "Create a consistent backup of the hub database using VACUUM INTO. Safe to run while the hub is running.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runExportCommand(cmd.OutOrStdout(), outputPath)
 		},
