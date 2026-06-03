@@ -7,6 +7,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/rs/zerolog"
@@ -32,6 +33,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	defer func() {
 		if !success {
 			markDeploymentExecutionFailure(ctx, job.Application.Id, log)
+			notifications.SendNotification(job.Application.Id, "Error: sync failed for "+job.Application.Name.String(), log)
 		}
 	}()
 
@@ -93,4 +95,6 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		update.CommitMessage = job.CommitMessage
 		update.LastSyncedAt = &now
 	}, log)
+
+	notifications.SendNotification(job.Application.Id, "Success: sync succeeded for "+job.Application.Name.String(), log)
 }

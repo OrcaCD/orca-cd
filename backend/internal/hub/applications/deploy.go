@@ -8,6 +8,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -118,12 +119,14 @@ func (d *Deployer) trackManualDeploy(app models.Application, handle DeploymentHa
 	if err != nil {
 		d.log.Error().Err(err).Str("applicationId", app.Id).Msg("manual deployment failed")
 		markDeploymentTransportError(context.Background(), app.Id, d.log)
+		notifications.SendNotification(app.Id, "Error: manual deployment failed for "+app.Name.String(), d.log)
 		return
 	}
 
 	if result == nil {
 		d.log.Error().Str("applicationId", app.Id).Msg("manual deployment finished without a result")
 		markDeploymentTransportError(context.Background(), app.Id, d.log)
+		notifications.SendNotification(app.Id, "Error: manual deployment finished without a result for "+app.Name.String(), d.log)
 		return
 	}
 
@@ -134,10 +137,14 @@ func (d *Deployer) trackManualDeploy(app models.Application, handle DeploymentHa
 			Str("error", result.ErrorMessage).
 			Msg("manual deployment failed on agent")
 		markDeploymentExecutionFailure(context.Background(), app.Id, d.log)
+
+		notifications.SendNotification(app.Id, "Error: manual deployment failed for "+app.Name.String(), d.log)
 		return
 	}
 
 	markDeploymentSuccess(context.Background(), app.Id, nil, d.log)
+
+	notifications.SendNotification(app.Id, "Success: manual deployment succeeded for "+app.Name.String(), d.log)
 }
 
 func markDeploymentInProgress(ctx context.Context, applicationID string, log *zerolog.Logger) error {
