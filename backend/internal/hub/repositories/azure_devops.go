@@ -154,7 +154,7 @@ func parseAzureDevOpsPathParts(escapedPath string) ([]string, error) {
 
 func validateAzureDevOpsRepositoryParts(organization, project, repository string) error {
 	if !azureDevOpsOrganizationRe.MatchString(organization) {
-		return errors.New("invalid Azure DevOps organization name")
+		return errors.New("invalid azure devops organization name")
 	}
 	if err := validateAzureDevOpsPathSegment(project, "project"); err != nil {
 		return err
@@ -168,13 +168,13 @@ func validateAzureDevOpsRepositoryParts(organization, project, repository string
 
 func validateAzureDevOpsPathSegment(segment, name string) error {
 	if strings.TrimSpace(segment) == "" {
-		return fmt.Errorf("azure DevOps %s name is required", name)
+		return fmt.Errorf("azure devops %s name is required", name)
 	}
 	if segment == "." || segment == ".." {
-		return fmt.Errorf("invalid Azure DevOps %s name", name)
+		return fmt.Errorf("invalid azure devops %s name", name)
 	}
 	if strings.ContainsAny(segment, `/\\:*?\"<>;#$*{},+=[]|`) || strings.ContainsAny(segment, "\x00\r\n\t") {
-		return fmt.Errorf("invalid Azure DevOps %s name", name)
+		return fmt.Errorf("invalid azure devops %s name", name)
 	}
 
 	return nil
@@ -207,18 +207,18 @@ func (azureDevOpsProvider) TestConnection(ctx context.Context, repo *models.Repo
 	), nil)
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to build Azure DevOps request: %w", err)
+		return fmt.Errorf("failed to build azure devops request: %w", err)
 	}
 	addAzureDevOpsHeaders(req, repo)
 
 	resp, err := httpclient.Default.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Azure DevOps: %w", err)
+		return fmt.Errorf("failed to connect to azure devops: %w", err)
 	}
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", err)
+			fmt.Printf("warning: failed to close azure devops response body: %v\n", err)
 		}
 	}()
 
@@ -230,7 +230,7 @@ func (azureDevOpsProvider) TestConnection(ctx context.Context, repo *models.Repo
 	case http.StatusNotFound:
 		return errors.New("repository not found or access denied")
 	default:
-		return fmt.Errorf("azure DevOps API returned unexpected status: %d", resp.StatusCode)
+		return fmt.Errorf("azure devops API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 
@@ -261,13 +261,13 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 		), query)
 		req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build Azure DevOps request: %w", err)
+			return nil, fmt.Errorf("failed to build azure devops request: %w", err)
 		}
 		addAzureDevOpsHeaders(req, repo)
 
 		resp, err := httpclient.Default.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Azure DevOps branches: %w", err)
+			return nil, fmt.Errorf("failed to fetch azure devops branches: %w", err)
 		}
 
 		switch resp.StatusCode {
@@ -276,9 +276,9 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
-					fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", closeErr)
+					fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
 				}
-				return nil, fmt.Errorf("failed to decode Azure DevOps branches response: %w", err)
+				return nil, fmt.Errorf("failed to decode azure devops branches response: %w", err)
 			}
 
 			for _, branch := range parsed.Value {
@@ -290,28 +290,28 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 		case http.StatusUnauthorized, http.StatusForbidden:
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
-				fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", closeErr)
+				fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
 			}
 			return nil, errors.New("authentication failed or access denied")
 		case http.StatusNotFound:
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
-				fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", closeErr)
+				fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
 			}
 			return nil, errors.New("repository not found or access denied")
 		default:
 			statusCode := resp.StatusCode
 			closeErr := resp.Body.Close()
 			if closeErr != nil {
-				fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", closeErr)
+				fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
 			}
-			return nil, fmt.Errorf("azure DevOps API returned unexpected status: %d", statusCode)
+			return nil, fmt.Errorf("azure devops API returned unexpected status: %d", statusCode)
 		}
 
 		nextToken := strings.TrimSpace(resp.Header.Get("x-ms-continuationtoken"))
 		closeErr := resp.Body.Close()
 		if closeErr != nil {
-			fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", closeErr)
+			fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
 		}
 
 		if nextToken == "" {
@@ -350,18 +350,18 @@ func (azureDevOpsProvider) ListTree(ctx context.Context, repo *models.Repository
 
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build Azure DevOps request: %w", err)
+		return nil, fmt.Errorf("failed to build azure devops request: %w", err)
 	}
 	addAzureDevOpsHeaders(req, repo)
 
 	resp, err := httpclient.Default.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch Azure DevOps repository tree: %w", err)
+		return nil, fmt.Errorf("failed to fetch azure devops repository tree: %w", err)
 	}
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", err)
+			fmt.Printf("warning: failed to close azure devops response body: %v\n", err)
 		}
 	}()
 
@@ -369,7 +369,7 @@ func (azureDevOpsProvider) ListTree(ctx context.Context, repo *models.Repository
 	case http.StatusOK:
 		var parsed azureDevOpsItemsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return nil, fmt.Errorf("failed to decode Azure DevOps tree response: %w", err)
+			return nil, fmt.Errorf("failed to decode azure devops tree response: %w", err)
 		}
 
 		entries := make([]TreeEntry, 0, len(parsed.Value))
@@ -397,7 +397,7 @@ func (azureDevOpsProvider) ListTree(ctx context.Context, repo *models.Repository
 	case http.StatusNotFound:
 		return nil, errors.New("repository not found or access denied")
 	default:
-		return nil, fmt.Errorf("azure DevOps API returned unexpected status: %d", resp.StatusCode)
+		return nil, fmt.Errorf("azure devops API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 
@@ -433,18 +433,18 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to build Azure DevOps request: %w", err)
+		return "", fmt.Errorf("failed to build azure devops request: %w", err)
 	}
 	addAzureDevOpsHeaders(req, repo)
 
 	resp, err := httpclient.Default.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch Azure DevOps file content: %w", err)
+		return "", fmt.Errorf("failed to fetch azure devops file content: %w", err)
 	}
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", err)
+			fmt.Printf("warning: failed to close azure devops response body: %v\n", err)
 		}
 	}()
 
@@ -452,7 +452,7 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 	case http.StatusOK:
 		var parsed azureDevOpsFileResponse
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return "", fmt.Errorf("failed to decode Azure DevOps file response: %w", err)
+			return "", fmt.Errorf("failed to decode azure devops file response: %w", err)
 		}
 
 		return parsed.Content, nil
@@ -461,7 +461,7 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 	case http.StatusNotFound:
 		return "", errors.New("file not found in repository branch or access denied")
 	default:
-		return "", fmt.Errorf("azure DevOps API returned unexpected status: %d", resp.StatusCode)
+		return "", fmt.Errorf("azure devops API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 
@@ -491,18 +491,18 @@ func (azureDevOpsProvider) GetLatestCommit(ctx context.Context, repo *models.Rep
 
 	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return CommitInfo{}, fmt.Errorf("failed to build Azure DevOps request: %w", err)
+		return CommitInfo{}, fmt.Errorf("failed to build azure devops request: %w", err)
 	}
 	addAzureDevOpsHeaders(req, repo)
 
 	resp, err := httpclient.Default.Do(req)
 	if err != nil {
-		return CommitInfo{}, fmt.Errorf("failed to fetch Azure DevOps commit: %w", err)
+		return CommitInfo{}, fmt.Errorf("failed to fetch azure devops commit: %w", err)
 	}
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
-			fmt.Printf("warning: failed to close Azure DevOps response body: %v\n", err)
+			fmt.Printf("warning: failed to close azure devops response body: %v\n", err)
 		}
 	}()
 
@@ -510,7 +510,7 @@ func (azureDevOpsProvider) GetLatestCommit(ctx context.Context, repo *models.Rep
 	case http.StatusOK:
 		var parsed azureDevOpsCommitsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-			return CommitInfo{}, fmt.Errorf("failed to decode Azure DevOps commit response: %w", err)
+			return CommitInfo{}, fmt.Errorf("failed to decode azure devops commit response: %w", err)
 		}
 
 		if len(parsed.Value) == 0 {
@@ -519,7 +519,7 @@ func (azureDevOpsProvider) GetLatestCommit(ctx context.Context, repo *models.Rep
 
 		commit := parsed.Value[0]
 		if commit.CommitID == "" {
-			return CommitInfo{}, errors.New("missing commit hash in Azure DevOps response")
+			return CommitInfo{}, errors.New("missing commit hash in azure devops response")
 		}
 
 		return CommitInfo{Hash: commit.CommitID, Message: commit.Comment}, nil
@@ -528,7 +528,7 @@ func (azureDevOpsProvider) GetLatestCommit(ctx context.Context, repo *models.Rep
 	case http.StatusNotFound:
 		return CommitInfo{}, errors.New("repository or branch not found or access denied")
 	default:
-		return CommitInfo{}, fmt.Errorf("azure DevOps API returned unexpected status: %d", resp.StatusCode)
+		return CommitInfo{}, fmt.Errorf("azure devops API returned unexpected status: %d", resp.StatusCode)
 	}
 }
 

@@ -266,7 +266,7 @@ func TestAzureDevOpsListBranchesErrors(t *testing.T) {
 
 		repo := &models.Repository{Url: testAzureDevOpsRepoURL}
 		branches, err := p.ListBranches(context.Background(), repo)
-		if err == nil || !strings.Contains(err.Error(), "failed to fetch Azure DevOps branches") {
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch azure devops branches") {
 			t.Fatalf("expected fetch error, got: %v", err)
 		}
 		if branches != nil {
@@ -281,7 +281,7 @@ func TestAzureDevOpsListBranchesErrors(t *testing.T) {
 
 		repo := &models.Repository{Url: testAzureDevOpsRepoURL}
 		branches, err := p.ListBranches(context.Background(), repo)
-		if err == nil || !strings.Contains(err.Error(), "failed to decode Azure DevOps branches response") {
+		if err == nil || !strings.Contains(err.Error(), "failed to decode azure devops branches response") {
 			t.Fatalf("expected decode error, got: %v", err)
 		}
 		if branches != nil {
@@ -396,7 +396,7 @@ func TestAzureDevOpsListTreeErrors(t *testing.T) {
 
 		repo := &models.Repository{Url: testAzureDevOpsRepoURL}
 		tree, err := p.ListTree(context.Background(), repo, "main")
-		if err == nil || !strings.Contains(err.Error(), "failed to decode Azure DevOps tree response") {
+		if err == nil || !strings.Contains(err.Error(), "failed to decode azure devops tree response") {
 			t.Fatalf("expected decode error, got: %v", err)
 		}
 		if tree != nil {
