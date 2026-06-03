@@ -53,6 +53,11 @@ import {
 	DiscordWebhookUrlField,
 	parseDiscordWebhookUrl,
 } from "./discord-notification-builder";
+import {
+	buildSlackNotificationConfig,
+	isValidSlackWebhookUrl,
+	SlackWebhookUrlField,
+} from "./slack-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
 const { Stepper } = defineStepper({ id: "config" }, { id: "provider" });
@@ -68,6 +73,7 @@ const notificationBaseSchema = z.object({
 	discordBotName: z.string().trim(),
 	discordAvatarUrl: z.string().trim(),
 	discordThreadId: z.string().trim(),
+	slackWebhookUrl: z.string().trim(),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
 	applicationIds: z.array(z.string()),
@@ -105,6 +111,22 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 			});
 		}
 	}
+
+	if (value.type === "slack") {
+		if (value.slackWebhookUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["slackWebhookUrl"],
+				message: m.validationNotificationSlackWebhookUrlRequired(),
+			});
+		} else if (!isValidSlackWebhookUrl(value.slackWebhookUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["slackWebhookUrl"],
+				message: m.validationNotificationSlackWebhookUrlInvalid(),
+			});
+		}
+	}
 });
 
 type NotificationFormValues = z.infer<typeof notificationSchema>;
@@ -124,6 +146,17 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		return config;
 	}
 
+	if (value.type === "slack") {
+		const config = buildSlackNotificationConfig({
+			slackWebhookUrl: value.slackWebhookUrl,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationSlackWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
 	return "";
 }
 
@@ -137,6 +170,7 @@ function useNotificationForm() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			slackWebhookUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -235,6 +269,7 @@ function NotificationConfigStepContent({
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="discord">Discord</SelectItem>
+								<SelectItem value="slack">Slack</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
@@ -304,31 +339,49 @@ function NotificationConfigStepContent({
 function NotificationProviderStepContent({ form }: { form: NotificationFormApi }) {
 	return (
 		<form.Subscribe selector={(state) => state.values.type}>
-			{(type) =>
-				type === "discord" ? (
-					<FieldGroup>
-						<form.Field
-							name="discordWebhookUrl"
-							children={(field) => <DiscordWebhookUrlField field={field} />}
-						/>
+			{(type) => {
+				if (type === "discord") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="discordWebhookUrl"
+								children={(field) => <DiscordWebhookUrlField field={field} />}
+							/>
 
-						<form.Field
-							name="discordBotName"
-							children={(field) => <DiscordBotNameField field={field} />}
-						/>
+							<form.Field
+								name="discordBotName"
+								children={(field) => <DiscordBotNameField field={field} />}
+							/>
 
-						<form.Field
-							name="discordAvatarUrl"
-							children={(field) => <DiscordAvatarUrlField field={field} />}
-						/>
+							<form.Field
+								name="discordAvatarUrl"
+								children={(field) => <DiscordAvatarUrlField field={field} />}
+							/>
 
-						<form.Field
-							name="discordThreadId"
-							children={(field) => <DiscordThreadIdField field={field} />}
-						/>
-					</FieldGroup>
-				) : null
-			}
+							<form.Field
+								name="discordThreadId"
+								children={(field) => <DiscordThreadIdField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "slack") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="slackWebhookUrl"
+								children={(field) => <SlackWebhookUrlField field={field} />}
+							/>
+							<p className="text-sm text-muted-foreground">
+								{m.notificationSlackAppSettingsNote()}
+							</p>
+						</FieldGroup>
+					);
+				}
+
+				return null;
+			}}
 		</form.Subscribe>
 	);
 }
@@ -397,6 +450,7 @@ export default function CreateNotificationDialog() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			slackWebhookUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -420,6 +474,7 @@ export default function CreateNotificationDialog() {
 				toast.success(m.notificationCreated());
 
 				setOpen(false);
+				form.reset();
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : m.failedSaveNotification());
 			} finally {
