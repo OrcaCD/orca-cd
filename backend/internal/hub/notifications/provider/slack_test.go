@@ -52,14 +52,14 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 			raw:     `{"webhookUrl":"https://hooks.slack.com/services/T123456789/B123456789"}`,
 			wantErr: "invalid slack webhook URL: expected",
 		},
-		{
+		{ //nolint:gosec
 			name:    "direct target string instead of json",
-			raw:     "slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook", //nolint:gosec
+			raw:     "slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook",
 			wantErr: "invalid JSON slack config",
 		},
-		{
+		{ //nolint:gosec
 			name:    "json array instead of object",
-			raw:     `["slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook"]`, //nolint:gosec
+			raw:     `["slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook"]`,
 			wantErr: "invalid JSON slack config",
 		},
 	}
