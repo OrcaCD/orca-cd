@@ -33,7 +33,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	defer func() {
 		if !success {
 			markDeploymentExecutionFailure(ctx, job.Application.Id, log)
-			go notifications.SendNotification(job.Application.Id, "Error: sync failed for "+job.Application.Name.String(), log)
+			notifications.SendNotification(job.Application.Id, "Error: sync failed for "+job.Application.Name.String(), log)
 		}
 	}()
 
@@ -96,5 +96,5 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		update.LastSyncedAt = &now
 	}, log)
 
-	go notifications.SendNotification(job.Application.Id, "Success: sync succeeded for "+job.Application.Name.String(), log)
+	notifications.SendNotification(job.Application.Id, "Success: sync succeeded for "+job.Application.Name.String(), log)
 }
