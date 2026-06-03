@@ -51,7 +51,7 @@ func (SlackProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
 
 func parseSlackWebhookToken(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
-	if err != nil || !strings.HasSuffix(strings.ToLower(parsed.Host), "slack.com") {
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() != "hooks.slack.com" {
 		return "", errors.New("invalid slack webhook URL")
 	}
 
@@ -62,7 +62,7 @@ func parseSlackWebhookToken(rawURL string) (string, error) {
 
 	parts := strings.Split(strings.TrimRight(pathWithoutPrefix, "/"), "/")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return "", errors.New("invalid slack webhook URL: expected https://hooks.slack.com/services/.../.../...")
+		return "", errors.New("invalid slack webhook URL: expected format https://hooks.slack.com/services/T/B/token")
 	}
 
 	return parts[0] + "-" + parts[1] + "-" + parts[2], nil

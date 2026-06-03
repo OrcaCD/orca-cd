@@ -33,6 +33,16 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 			wantErr: "invalid slack webhook URL",
 		},
 		{
+			name:    "look-alike domain ending in slack.com must be rejected",
+			raw:     `{"webhookUrl":"https://evilslack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx"}`,
+			wantErr: "invalid slack webhook URL",
+		},
+		{
+			name:    "non-https scheme must be rejected",
+			raw:     `{"webhookUrl":"http://hooks.slack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx"}`,
+			wantErr: "invalid slack webhook URL",
+		},
+		{
 			name:    "webhook URL missing services prefix",
 			raw:     `{"webhookUrl":"https://hooks.slack.com/T123456789/B123456789/abcdefghijklmnopqrstuvwx"}`,
 			wantErr: "invalid slack webhook URL: path must start with /services/",
@@ -44,12 +54,12 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 		},
 		{
 			name:    "direct target string instead of json",
-			raw:     "slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook",
+			raw:     "slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook", //nolint:gosec
 			wantErr: "invalid JSON slack config",
 		},
 		{
 			name:    "json array instead of object",
-			raw:     `["slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook"]`,
+			raw:     `["slack://hook:T123456789-B123456789-abcdefghijklmnopqrstuvwx@webhook"]`, //nolint:gosec
 			wantErr: "invalid JSON slack config",
 		},
 	}

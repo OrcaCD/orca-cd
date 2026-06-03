@@ -50,11 +50,32 @@ const emptySlackNotificationBuilderValues: SlackNotificationBuilderValues = {
 	slackWebhookUrl: "",
 };
 
-const slackWebhookPattern =
-	/^https:\/\/hooks\.slack\.com\/services\/[A-Z0-9]+\/[A-Z0-9]+\/[A-Za-z0-9]+$/;
-
 export function isValidSlackWebhookUrl(rawUrl: string): boolean {
-	return slackWebhookPattern.test(rawUrl.trim());
+	let parsed: URL;
+	try {
+		parsed = new URL(rawUrl.trim());
+	} catch {
+		return false;
+	}
+
+	if (parsed.protocol !== "https:") {
+		return false;
+	}
+
+	if (parsed.hostname.toLowerCase() !== "hooks.slack.com") {
+		return false;
+	}
+
+	if (!parsed.pathname.startsWith("/services/")) {
+		return false;
+	}
+
+	const parts = parsed.pathname
+		.slice("/services/".length)
+		.replace(/\/$/, "")
+		.split("/")
+		.filter(Boolean);
+	return parts.length === 3;
 }
 
 function normalizeString(value: unknown): string {
