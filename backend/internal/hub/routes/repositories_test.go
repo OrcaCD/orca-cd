@@ -415,6 +415,42 @@ func TestCreateRepositoryHandler_Success_Manual(t *testing.T) {
 	}
 }
 
+func TestCreateRepositoryHandler_Success_AzureDevOps(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://dev.azure.com/OrcaCD/Platform/_git/orca-cd",
+		"provider":   "azure_devops",
+		"authMethod": "token",
+		"authToken":  "azdo_secret",
+		"syncType":   "manual",
+	})
+
+	c, w := makeAuthContext(t, "user-azure")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Name != "OrcaCD/Platform/orca-cd" {
+		t.Errorf("expected name %q, got %q", "OrcaCD/Platform/orca-cd", body.Name)
+	}
+	if body.Provider != "azure_devops" {
+		t.Errorf("expected provider %q, got %q", "azure_devops", body.Provider)
+	}
+	if body.AuthMethod != "token" {
+		t.Errorf("expected authMethod %q, got %q", "token", body.AuthMethod)
+	}
+}
+
 func TestCreateRepositoryHandler_Success_Polling(t *testing.T) {
 	setupTestDBWithRepos(t)
 
