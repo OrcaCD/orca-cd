@@ -114,7 +114,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
