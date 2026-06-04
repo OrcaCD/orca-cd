@@ -38,11 +38,6 @@ func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
 			wantErr: "webhook URL must include a host",
 		},
 		{
-			name:    "unsupported method",
-			raw:     `{"webhookUrl":"https://example.com/hook","method":"TRACE"}`,
-			wantErr: "webhook method must be one of",
-		},
-		{
 			name:    "invalid header name",
 			raw:     `{"webhookUrl":"https://example.com/hook","headers":{"Bad Header":"value"}}`,
 			wantErr: "invalid webhook header name",
@@ -90,7 +85,7 @@ func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
 func TestWebhookProviderBuildsStructuredURL(t *testing.T) {
 	provider := WebhookProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://api.example.com/hooks/deploy?existing=value","method":"put","headers":{"Authorization":"Bearer token","X-Orca-Event":"deployment"}}`)
+	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://api.example.com/hooks/deploy?existing=value","headers":{"Authorization":"Bearer token","X-Orca-Event":"deployment"}}`)
 	if err != nil {
 		t.Fatalf("BuildShouterrrUrls() error = %v", err)
 	}
@@ -117,7 +112,7 @@ func TestWebhookProviderBuildsStructuredURL(t *testing.T) {
 	if query.Get("existing") != "value" {
 		t.Fatalf("expected existing query parameter, got %q", query.Get("existing"))
 	}
-	if query.Get("method") != "PUT" {
+	if query.Get("method") != "POST" {
 		t.Fatalf("expected method query parameter, got %q", query.Get("method"))
 	}
 	if query.Get("template") != "json" {

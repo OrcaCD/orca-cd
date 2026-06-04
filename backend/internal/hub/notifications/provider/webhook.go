@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 )
 
@@ -12,16 +11,7 @@ type WebhookProvider struct{}
 
 type webhookConfig struct {
 	WebhookURL string            `json:"webhookUrl"`
-	Method     string            `json:"method"`
 	Headers    map[string]string `json:"headers"`
-}
-
-var supportedWebhookMethods = []string{
-	"DELETE",
-	"GET",
-	"PATCH",
-	"POST",
-	"PUT",
 }
 
 func (WebhookProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
@@ -45,14 +35,9 @@ func (WebhookProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
 		return nil, err
 	}
 
-	method, err := normalizeWebhookMethod(cfg.Method)
-	if err != nil {
-		return nil, err
-	}
-
 	serviceURL := *parsedWebhookURL
 	query := serviceURL.Query()
-	query.Set("method", method)
+	query.Set("method", "POST")
 	query.Set("template", "json")
 	if parsedWebhookURL.Scheme == "http" {
 		query.Set("disabletls", "yes")
@@ -93,19 +78,6 @@ func parseWebhookURL(rawURL string) (*url.URL, error) {
 	}
 
 	return parsedURL, nil
-}
-
-func normalizeWebhookMethod(rawMethod string) (string, error) {
-	method := strings.ToUpper(strings.TrimSpace(rawMethod))
-	if method == "" {
-		method = "POST"
-	}
-
-	if !slices.Contains(supportedWebhookMethods, method) {
-		return "", fmt.Errorf("webhook method must be one of %s", strings.Join(supportedWebhookMethods, ", "))
-	}
-
-	return method, nil
 }
 
 func isValidHeaderName(headerName string) bool {

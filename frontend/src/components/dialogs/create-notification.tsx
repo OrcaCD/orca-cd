@@ -60,12 +60,9 @@ import {
 } from "./slack-notification-builder";
 import {
 	buildWebhookNotificationConfig,
-	isWebhookMethod,
 	parseWebhookHeaders,
 	WebhookHeadersField,
-	WebhookMethodField,
 	WebhookUrlField,
-	type WebhookMethod,
 } from "./webhook-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
@@ -84,7 +81,6 @@ const notificationBaseSchema = z.object({
 	discordThreadId: z.string().trim(),
 	slackWebhookUrl: z.string().trim(),
 	webhookUrl: z.string().trim(),
-	webhookMethod: z.string().trim(),
 	webhookHeaders: z.string(),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
@@ -155,14 +151,6 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 			});
 		}
 
-		if (!isWebhookMethod(value.webhookMethod)) {
-			ctx.addIssue({
-				code: "custom",
-				path: ["webhookMethod"],
-				message: m.validationNotificationWebhookMethodInvalid(),
-			});
-		}
-
 		if (!parseWebhookHeaders(value.webhookHeaders)) {
 			ctx.addIssue({
 				code: "custom",
@@ -204,7 +192,6 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 	if (value.type === "webhook") {
 		const config = buildWebhookNotificationConfig({
 			webhookUrl: value.webhookUrl,
-			webhookMethod: value.webhookMethod as WebhookMethod,
 			webhookHeaders: value.webhookHeaders,
 		});
 		if (!config) {
@@ -229,7 +216,6 @@ function useNotificationForm() {
 			discordThreadId: "",
 			slackWebhookUrl: "",
 			webhookUrl: "",
-			webhookMethod: "POST",
 			webhookHeaders: "",
 			enabled: true,
 			enableByDefault: false,
@@ -450,11 +436,6 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 							/>
 
 							<form.Field
-								name="webhookMethod"
-								children={(field) => <WebhookMethodField field={field} />}
-							/>
-
-							<form.Field
 								name="webhookHeaders"
 								children={(field) => <WebhookHeadersField field={field} />}
 							/>
@@ -534,7 +515,6 @@ export default function CreateNotificationDialog() {
 			discordThreadId: "",
 			slackWebhookUrl: "",
 			webhookUrl: "",
-			webhookMethod: "POST",
 			webhookHeaders: "",
 			enabled: true,
 			enableByDefault: false,
