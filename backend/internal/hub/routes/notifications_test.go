@@ -375,7 +375,6 @@ func TestCreateNotificationHandler_WebhookObjectConfig(t *testing.T) {
 		"type": "webhook",
 		"config": map[string]any{
 			"webhookUrl": "https://api.example.com/hooks/deploy",
-			"method":     "PATCH",
 			"headers": map[string]string{
 				"Authorization": "Bearer token",
 			},
@@ -416,7 +415,7 @@ func TestCreateNotificationHandler_WebhookObjectConfig(t *testing.T) {
 	if !strings.HasPrefix(urls[0], "generic://api.example.com/hooks/deploy") {
 		t.Fatalf("expected generic webhook URL, got %s", urls[0])
 	}
-	if !strings.Contains(urls[0], "method=PATCH") {
+	if !strings.Contains(urls[0], "method=POST") {
 		t.Fatalf("expected built URL to include method, got %s", urls[0])
 	}
 	if !strings.Contains(urls[0], "%40Authorization=Bearer+token") {
