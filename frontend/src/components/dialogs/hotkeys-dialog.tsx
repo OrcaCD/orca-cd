@@ -31,6 +31,7 @@ const HOTKEY_SEQUENCES = {
 	navigateAgents: ["G", "N"] as HotkeySequence,
 	navigateRepositories: ["G", "R"] as HotkeySequence,
 	navigateSettings: ["G", "S"] as HotkeySequence,
+	navigateNotifications: ["G", "T"] as HotkeySequence,
 	navigateAdmin: ["G", "M"] as HotkeySequence,
 	toggleTheme: "Mod+Shift+M" as RegisterableHotkey,
 };
@@ -81,6 +82,11 @@ export default function HotkeysDialog() {
 			label: m.hotkeysGoTo({ target: m.settings() }),
 			sequence: HOTKEY_SEQUENCES.navigateSettings,
 		},
+		{
+			id: "notifications",
+			label: m.hotkeysGoTo({ target: m.navNotifications() }),
+			sequence: HOTKEY_SEQUENCES.navigateNotifications,
+		},
 		...(auth.isAdmin
 			? [
 					{
@@ -104,6 +110,11 @@ export default function HotkeysDialog() {
 	});
 
 	useHotkeySequence(HOTKEY_SEQUENCES.navigateRepositories, () => navigateTo("/repositories"), {
+		...HOTKEY_OPTIONS,
+		enabled,
+	});
+
+	useHotkeySequence(HOTKEY_SEQUENCES.navigateNotifications, () => navigateTo("/notifications"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});

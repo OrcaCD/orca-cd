@@ -16,6 +16,7 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -134,6 +135,7 @@ function NotificationsPage() {
 														<Send className="h-4 w-4" />
 														{m.sendTest()}
 													</DropdownMenuItem>
+													<DropdownMenuSeparator />
 													<ConfirmationDialog
 														onConfirm={() => {
 															void handleDelete(notification);
@@ -174,7 +176,9 @@ function NotificationsPage() {
 										<div className="grid grid-cols-1 gap-2 text-xs">
 											<div className="rounded-lg border bg-muted/50 p-2">
 												<p className="text-muted-foreground">{m.columnType()}</p>
-												<p className="mt-1 font-medium">{notification.type}</p>
+												<p className="mt-1 font-medium">
+													{notification.type.charAt(0).toUpperCase() + notification.type.slice(1)}
+												</p>
 											</div>
 											<div className="rounded-lg border bg-muted/50 p-2">
 												<p className="text-muted-foreground">{m.appsCount()}</p>
