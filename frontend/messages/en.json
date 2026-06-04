@@ -75,6 +75,7 @@
 	"totalAgentsCount": "There are {count} agents in total",
 	"totalRepositoriesCount": "There are {count} repositories in total",
 	"totalNotificationsCount": "There are {count} notifications in total",
+	"notificationProviderAlt": "Notification provider",
 	"appsCount": "Apps count",
 	"notAvailableShort": "n/a",
 	"cardActions": "Card actions",

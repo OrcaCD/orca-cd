@@ -75,6 +75,7 @@
 	"totalAgentsCount": "Es gibt insgesamt {count} Agenten",
 	"totalRepositoriesCount": "Es gibt insgesamt {count} Repositories",
 	"totalNotificationsCount": "Es gibt insgesamt {count} Benachrichtigungen",
+	"notificationProviderAlt": "Benachrichtigungsanbieter",
 	"appsCount": "Anzahl Apps",
 	"notAvailableShort": "k. A.",
 	"cardActions": "Kartenaktionen",
