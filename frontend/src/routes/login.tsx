@@ -117,7 +117,7 @@ function LoginComponent() {
 					>
 						<Button variant="ghost" size="icon-lg">
 							<img
-								src="/assets/icons/github.svg"
+								src="/assets/icons/repositories/github.svg"
 								alt={m.githubLogoAlt()}
 								className="size-6 dark:invert"
 							/>
