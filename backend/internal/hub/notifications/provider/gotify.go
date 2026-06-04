@@ -85,6 +85,9 @@ func parseGotifyServerURL(rawURL string) (*url.URL, error) {
 	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
 		return nil, errors.New("gotify server URL must not include a query string or fragment")
 	}
+	if parsedURL.User != nil {
+		return nil, errors.New("gotify server URL must not include user info")
+	}
 
 	return parsedURL, nil
 }

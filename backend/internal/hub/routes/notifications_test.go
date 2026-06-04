@@ -433,6 +433,7 @@ func TestCreateNotificationHandler_GotifyObjectConfig(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name": "Gotify Alerts",
 		"type": "gotify",
+		//nolint:gosec
 		"config": map[string]any{
 			"serverUrl":  "https://gotify.example.com",
 			"appToken":   "Aaa.bbb.ccc.ddd",
