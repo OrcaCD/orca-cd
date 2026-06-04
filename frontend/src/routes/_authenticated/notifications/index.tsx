@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
+import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
