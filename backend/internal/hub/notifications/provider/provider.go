@@ -14,6 +14,7 @@ var registry = map[models.NotificationType]Provider{}
 
 func init() {
 	Register(models.NotificationTypeDiscord, DiscordProvider{})
+	Register(models.NotificationTypeGotify, GotifyProvider{})
 	Register(models.NotificationTypeSlack, SlackProvider{})
 	Register(models.NotificationTypeWebhook, WebhookProvider{})
 }
