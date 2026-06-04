@@ -58,6 +58,12 @@ import {
 	isValidSlackWebhookUrl,
 	SlackWebhookUrlField,
 } from "./slack-notification-builder";
+import {
+	buildWebhookNotificationConfig,
+	parseWebhookHeaders,
+	WebhookHeadersField,
+	WebhookUrlField,
+} from "./webhook-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
 const { Stepper } = defineStepper({ id: "config" }, { id: "provider" });
@@ -74,6 +80,8 @@ const notificationBaseSchema = z.object({
 	discordAvatarUrl: z.string().trim(),
 	discordThreadId: z.string().trim(),
 	slackWebhookUrl: z.string().trim(),
+	webhookUrl: z.string().trim(),
+	webhookHeaders: z.string(),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
 	applicationIds: z.array(z.string()),
@@ -127,6 +135,30 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 			});
 		}
 	}
+
+	if (value.type === "webhook") {
+		if (value.webhookUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookUrl"],
+				message: m.validationNotificationWebhookUrlRequired(),
+			});
+		} else if (!isHttpUrl(value.webhookUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookUrl"],
+				message: m.validationNotificationGenericWebhookUrlInvalid(),
+			});
+		}
+
+		if (!parseWebhookHeaders(value.webhookHeaders)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookHeaders"],
+				message: m.validationNotificationWebhookHeadersInvalid(),
+			});
+		}
+	}
 });
 
 type NotificationFormValues = z.infer<typeof notificationSchema>;
@@ -157,6 +189,18 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		return config;
 	}
 
+	if (value.type === "webhook") {
+		const config = buildWebhookNotificationConfig({
+			webhookUrl: value.webhookUrl,
+			webhookHeaders: value.webhookHeaders,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationGenericWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
 	return "";
 }
 
@@ -171,6 +215,8 @@ function useNotificationForm() {
 			discordAvatarUrl: "",
 			discordThreadId: "",
 			slackWebhookUrl: "",
+			webhookUrl: "",
+			webhookHeaders: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -270,6 +316,7 @@ function NotificationConfigStepContent({
 							<SelectContent>
 								<SelectItem value="discord">Discord</SelectItem>
 								<SelectItem value="slack">Slack</SelectItem>
+								<SelectItem value="webhook">Webhook</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
@@ -380,6 +427,22 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 					);
 				}
 
+				if (type === "webhook") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="webhookUrl"
+								children={(field) => <WebhookUrlField field={field} />}
+							/>
+
+							<form.Field
+								name="webhookHeaders"
+								children={(field) => <WebhookHeadersField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
 				return null;
 			}}
 		</form.Subscribe>
@@ -451,6 +514,8 @@ export default function CreateNotificationDialog() {
 			discordAvatarUrl: "",
 			discordThreadId: "",
 			slackWebhookUrl: "",
+			webhookUrl: "",
+			webhookHeaders: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],

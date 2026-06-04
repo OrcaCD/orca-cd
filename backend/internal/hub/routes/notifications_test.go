@@ -363,6 +363,66 @@ func TestCreateNotificationHandler_DiscordObjectConfigWithThreadID(t *testing.T)
 	}
 }
 
+func TestCreateNotificationHandler_WebhookObjectConfig(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name": "Webhook Alerts",
+		"type": "webhook",
+		"config": map[string]any{
+			"webhookUrl": "https://api.example.com/hooks/deploy",
+			"headers": map[string]string{
+				"Authorization": "Bearer token",
+			},
+		},
+		"applicationIds": []string{app.Id},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Type != "webhook" {
+		t.Fatalf("expected type %q, got %q", "webhook", body.Type)
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", body.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification: %v", err)
+	}
+
+	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
+	if err != nil {
+		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+	}
+	if len(urls) != 1 {
+		t.Fatalf("expected 1 URL, got %d", len(urls))
+	}
+	if !strings.HasPrefix(urls[0], "generic://api.example.com/hooks/deploy") {
+		t.Fatalf("expected generic webhook URL, got %s", urls[0])
+	}
+	if !strings.Contains(urls[0], "method=POST") {
+		t.Fatalf("expected built URL to include method, got %s", urls[0])
+	}
+	if !strings.Contains(urls[0], "%40Authorization=Bearer+token") {
+		t.Fatalf("expected built URL to include authorization header, got %s", urls[0])
+	}
+}
+
 func TestCreateNotificationHandler_InvalidDiscordObjectConfig(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
