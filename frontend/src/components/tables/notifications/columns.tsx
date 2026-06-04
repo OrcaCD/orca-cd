@@ -41,7 +41,7 @@ export const columns: ColumnDef<Notification>[] = [
 		id: "type",
 		accessorFn: (row) => row.type,
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnType()} />,
-		cell: ({ row }) => row.original.type,
+		cell: ({ row }) => row.original.type.charAt(0).toUpperCase() + row.original.type.slice(1),
 	},
 	{
 		id: "enabled",

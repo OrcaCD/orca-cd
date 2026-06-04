@@ -314,9 +314,11 @@ function NotificationConfigStepContent({
 								<SelectValue placeholder={m.selectType()} />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="discord">Discord</SelectItem>
-								<SelectItem value="slack">Slack</SelectItem>
-								<SelectItem value="webhook">Webhook</SelectItem>
+								{notificationTypes.map((type) => (
+									<SelectItem key={type} value={type}>
+										{type.charAt(0).toUpperCase() + type.slice(1)}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</Field>

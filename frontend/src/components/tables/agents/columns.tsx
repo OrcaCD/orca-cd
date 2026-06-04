@@ -5,6 +5,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
@@ -98,6 +99,7 @@ export const columns: ColumnDef<Agent>[] = [
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<UpsertAgentDialog agent={row.original} asDropdownItem />
 							<RotateAgentTokenDialog agent={row.original} />
+							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={() => handleDeleteCard(row.original)}
 								title={m.deleteAgentCardTitle()}
