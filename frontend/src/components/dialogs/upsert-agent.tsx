@@ -20,6 +20,7 @@ import { Input } from "../ui/input";
 import { createAgent, updateAgent, type Agent } from "@/lib/agents";
 import CopyValueDialog from "./copy-value-dialog";
 import { m } from "@/lib/paraglide/messages";
+import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
 
 const agentSchema = z.object({
 	name: z
@@ -27,7 +28,10 @@ const agentSchema = z.object({
 		.trim()
 		.min(1, m.validationAgentNameRequired())
 		.max(128, m.validationAgentNameMaxLength()),
+	icon: z.string(),
 });
+
+const defaultAgentIcon: LucideIconName = "server";
 
 export default function UpsertAgentDialog({
 	agent,
@@ -45,6 +49,7 @@ export default function UpsertAgentDialog({
 	const form = useForm({
 		defaultValues: {
 			name: agent?.name ?? "",
+			icon: defaultAgentIcon as string,
 		},
 		validators: {
 			onSubmit: agentSchema,
@@ -68,6 +73,7 @@ export default function UpsertAgentDialog({
 					toast.success(m.agentConnected());
 				}
 				setOpen(false);
+				form.reset();
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : m.failedSaveAgent());
 			} finally {
@@ -132,6 +138,21 @@ export default function UpsertAgentDialog({
 										</Field>
 									);
 								}}
+							/>
+
+							<form.Field
+								name="icon"
+								children={(field) => (
+									<Field>
+										<Label>{m.icon()}</Label>
+										<LucideIconPicker
+											value={field.state.value as LucideIconName}
+											onValueChange={field.handleChange}
+											placeholder={m.selectIcon()}
+											emptyMessage={m.noIconsFound()}
+										/>
+									</Field>
+								)}
 							/>
 
 							<div className="flex gap-2 pt-2">
