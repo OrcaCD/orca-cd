@@ -1,7 +1,7 @@
 import { fetcher } from "./api";
 
 export type NotificationStatus = "unknown" | "success" | "error" | "healthy" | "unhealthy";
-export const notificationTypes = ["discord", "slack", "webhook"] as const;
+export const notificationTypes = ["discord", "gotify", "slack", "webhook"] as const;
 export type NotificationType = (typeof notificationTypes)[number];
 
 export interface Notification {

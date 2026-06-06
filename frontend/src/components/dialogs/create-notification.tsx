@@ -59,6 +59,15 @@ import {
 	SlackWebhookUrlField,
 } from "./slack-notification-builder";
 import {
+	buildGotifyNotificationConfig,
+	GotifyAppTokenField,
+	GotifyCustomPathField,
+	GotifyPriorityField,
+	GotifyServerUrlField,
+	isValidGotifyAppToken,
+	parseGotifyPriority,
+} from "./gotify-notification-builder";
+import {
 	buildWebhookNotificationConfig,
 	parseWebhookHeaders,
 	WebhookHeadersField,
@@ -79,6 +88,10 @@ const notificationBaseSchema = z.object({
 	discordBotName: z.string().trim(),
 	discordAvatarUrl: z.string().trim(),
 	discordThreadId: z.string().trim(),
+	gotifyServerUrl: z.string().trim(),
+	gotifyAppToken: z.string().trim(),
+	gotifyPriority: z.string().trim(),
+	gotifyCustomPath: z.string().trim(),
 	slackWebhookUrl: z.string().trim(),
 	webhookUrl: z.string().trim(),
 	webhookHeaders: z.string(),
@@ -116,6 +129,44 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 				code: "custom",
 				path: ["discordThreadId"],
 				message: m.validationNotificationThreadIdInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "gotify") {
+		if (value.gotifyServerUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyServerUrl"],
+				message: m.validationNotificationGotifyServerUrlRequired(),
+			});
+		} else if (!isHttpUrl(value.gotifyServerUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyServerUrl"],
+				message: m.validationNotificationGotifyServerUrlInvalid(),
+			});
+		}
+
+		if (value.gotifyAppToken === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyAppToken"],
+				message: m.validationNotificationGotifyAppTokenRequired(),
+			});
+		} else if (!isValidGotifyAppToken(value.gotifyAppToken)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyAppToken"],
+				message: m.validationNotificationGotifyAppTokenInvalid(),
+			});
+		}
+
+		if (parseGotifyPriority(value.gotifyPriority) === null) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyPriority"],
+				message: m.validationNotificationGotifyPriorityInvalid(),
 			});
 		}
 	}
@@ -189,6 +240,20 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		return config;
 	}
 
+	if (value.type === "gotify") {
+		const config = buildGotifyNotificationConfig({
+			gotifyServerUrl: value.gotifyServerUrl,
+			gotifyAppToken: value.gotifyAppToken,
+			gotifyPriority: value.gotifyPriority,
+			gotifyCustomPath: value.gotifyCustomPath,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationGotifyConfigInvalid());
+		}
+
+		return config;
+	}
+
 	if (value.type === "webhook") {
 		const config = buildWebhookNotificationConfig({
 			webhookUrl: value.webhookUrl,
@@ -214,6 +279,10 @@ function useNotificationForm() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			gotifyServerUrl: "",
+			gotifyAppToken: "",
+			gotifyPriority: "5",
+			gotifyCustomPath: "",
 			slackWebhookUrl: "",
 			webhookUrl: "",
 			webhookHeaders: "",
@@ -415,6 +484,32 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 					);
 				}
 
+				if (type === "gotify") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="gotifyServerUrl"
+								children={(field) => <GotifyServerUrlField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyAppToken"
+								children={(field) => <GotifyAppTokenField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyPriority"
+								children={(field) => <GotifyPriorityField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyCustomPath"
+								children={(field) => <GotifyCustomPathField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
 				if (type === "slack") {
 					return (
 						<FieldGroup>
@@ -515,6 +610,10 @@ export default function CreateNotificationDialog() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			gotifyServerUrl: "",
+			gotifyAppToken: "",
+			gotifyPriority: "5",
+			gotifyCustomPath: "",
 			slackWebhookUrl: "",
 			webhookUrl: "",
 			webhookHeaders: "",
