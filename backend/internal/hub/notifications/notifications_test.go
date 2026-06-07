@@ -232,7 +232,7 @@ func TestGetProvider_Registered(t *testing.T) {
 }
 
 func TestGetProvider_Unregistered(t *testing.T) {
-	_, err := provider.Get(models.NotificationType("custom"))
+	_, err := provider.Get(models.NotificationType("non-existent"))
 	if err == nil {
 		t.Fatal("expected error for unregistered provider")
 	}
