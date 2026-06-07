@@ -283,7 +283,7 @@ func normalizeNotificationName(rawName string) (string, error) {
 }
 
 func validateNotificationConfig(notificationType models.NotificationType, rawConfig string) error {
-	targets, err := provider.BuildShouterrrUrls(notificationType, rawConfig)
+	targets, err := provider.BuildShoutrrrUrls(notificationType, rawConfig)
 	if err != nil {
 		return err
 	}

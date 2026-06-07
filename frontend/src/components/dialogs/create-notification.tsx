@@ -75,8 +75,8 @@ import {
 } from "./webhook-notification-builder";
 import {
 	buildCustomNotificationConfig,
-	CustomShouterrrUrlField,
-	isValidShouterrrUrl,
+	CustomShoutrrrUrlField,
+	isValidShoutrrrUrl,
 } from "./custom-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
@@ -100,7 +100,7 @@ const notificationBaseSchema = z.object({
 	slackWebhookUrl: z.string().trim(),
 	webhookUrl: z.string().trim(),
 	webhookHeaders: z.string(),
-	customShouterrrUrl: z.string().trim(),
+	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
 	applicationIds: z.array(z.string()),
@@ -218,17 +218,17 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 	}
 
 	if (value.type === "custom") {
-		if (value.customShouterrrUrl === "") {
+		if (value.customShoutrrrUrl === "") {
 			ctx.addIssue({
 				code: "custom",
-				path: ["customShouterrrUrl"],
-				message: m.validationNotificationShouterrrUrlRequired(),
+				path: ["customShoutrrrUrl"],
+				message: m.validationNotificationShoutrrrUrlRequired(),
 			});
-		} else if (!isValidShouterrrUrl(value.customShouterrrUrl)) {
+		} else if (!isValidShoutrrrUrl(value.customShoutrrrUrl)) {
 			ctx.addIssue({
 				code: "custom",
-				path: ["customShouterrrUrl"],
-				message: m.validationNotificationShouterrrUrlInvalid(),
+				path: ["customShoutrrrUrl"],
+				message: m.validationNotificationShoutrrrUrlInvalid(),
 			});
 		}
 	}
@@ -290,10 +290,10 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 
 	if (value.type === "custom") {
 		const config = buildCustomNotificationConfig({
-			customShouterrrUrl: value.customShouterrrUrl,
+			customShoutrrrUrl: value.customShoutrrrUrl,
 		});
 		if (!config) {
-			throw new Error(m.validationNotificationShouterrrUrlInvalid());
+			throw new Error(m.validationNotificationShoutrrrUrlInvalid());
 		}
 
 		return config;
@@ -319,7 +319,7 @@ function useNotificationForm() {
 			slackWebhookUrl: "",
 			webhookUrl: "",
 			webhookHeaders: "",
-			customShouterrrUrl: "",
+			customShoutrrrUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -578,8 +578,8 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 					return (
 						<FieldGroup>
 							<form.Field
-								name="customShouterrrUrl"
-								children={(field) => <CustomShouterrrUrlField field={field} />}
+								name="customShoutrrrUrl"
+								children={(field) => <CustomShoutrrrUrlField field={field} />}
 							/>
 						</FieldGroup>
 					);
@@ -662,7 +662,7 @@ export default function CreateNotificationDialog() {
 			slackWebhookUrl: "",
 			webhookUrl: "",
 			webhookHeaders: "",
-			customShouterrrUrl: "",
+			customShoutrrrUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],

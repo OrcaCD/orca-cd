@@ -13,7 +13,7 @@ type customConfig struct {
 	URL string `json:"url"`
 }
 
-func (CustomProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (CustomProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	trimmed, err := normalizeRawConfig(rawConfig)
 	if err != nil {
 		return nil, err
@@ -35,10 +35,10 @@ func (CustomProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
 
 	parsedURL, err := url.Parse(customURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid custom Shouterrr URL: %w", err)
+		return nil, fmt.Errorf("invalid custom Shoutrrr URL: %w", err)
 	}
 	if parsedURL.Scheme == "" {
-		return nil, errors.New("custom Shouterrr URL must include a scheme")
+		return nil, errors.New("custom Shoutrrr URL must include a scheme")
 	}
 
 	return []string{customURL}, nil

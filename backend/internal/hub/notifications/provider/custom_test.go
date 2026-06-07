@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestCustomProviderBuildShouterrrUrls(t *testing.T) {
+func TestCustomProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -21,10 +21,10 @@ func TestCustomProviderBuildShouterrrUrls(t *testing.T) {
 		{
 			name:    "missing scheme",
 			raw:     "example.com/hook",
-			wantErr: "custom Shouterrr URL must include a scheme",
+			wantErr: "custom Shoutrrr URL must include a scheme",
 		},
 		{
-			name: "direct shouterrr url",
+			name: "direct shoutrrr url",
 			raw:  "discord://token@123456789?title=Deploy+done",
 			want: []string{"discord://token@123456789?title=Deploy+done"},
 		},
@@ -49,7 +49,7 @@ func TestCustomProviderBuildShouterrrUrls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.BuildShouterrrUrls(tt.raw)
+			got, err := provider.BuildShoutrrrUrls(tt.raw)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
@@ -61,7 +61,7 @@ func TestCustomProviderBuildShouterrrUrls(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error = %v", err)
+				t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 			}
 			if !slices.Equal(got, tt.want) {
 				t.Fatalf("expected %v, got %v", tt.want, got)

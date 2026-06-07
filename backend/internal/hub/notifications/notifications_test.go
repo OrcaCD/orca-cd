@@ -164,7 +164,7 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	}
 }
 
-func TestBuildShouterrrUrls_RejectsDirectTargets(t *testing.T) {
+func TestBuildShoutrrrUrls_RejectsDirectTargets(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -189,18 +189,18 @@ func TestBuildShouterrrUrls_RejectsDirectTargets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, tt.raw)
+			_, err := provider.BuildShoutrrrUrls(models.NotificationTypeDiscord, tt.raw)
 			if err == nil {
-				t.Fatal("expected BuildShouterrrUrls() to reject direct targets")
+				t.Fatal("expected BuildShoutrrrUrls() to reject direct targets")
 			}
 		})
 	}
 }
 
-func TestBuildShouterrrUrls_DiscordObjectConfig(t *testing.T) {
-	urls, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, `{"token":"token-abc","webhookId":"123456789","threadId":"987654321"}`)
+func TestBuildShoutrrrUrls_DiscordObjectConfig(t *testing.T) {
+	urls, err := provider.BuildShoutrrrUrls(models.NotificationTypeDiscord, `{"token":"token-abc","webhookId":"123456789","threadId":"987654321"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
 	}
 
 	if len(urls) != 1 {
@@ -214,8 +214,8 @@ func TestBuildShouterrrUrls_DiscordObjectConfig(t *testing.T) {
 	}
 }
 
-func TestBuildShouterrrUrls_DiscordObjectConfigMissingFields(t *testing.T) {
-	_, err := provider.BuildShouterrrUrls(models.NotificationTypeDiscord, `{"webhookId":"123456789"}`)
+func TestBuildShoutrrrUrls_DiscordObjectConfigMissingFields(t *testing.T) {
+	_, err := provider.BuildShoutrrrUrls(models.NotificationTypeDiscord, `{"webhookId":"123456789"}`)
 	if err == nil {
 		t.Fatal("expected error for missing discord token")
 	}

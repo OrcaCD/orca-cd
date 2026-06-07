@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { m } from "@/lib/paraglide/messages";
 
-const shouterrrDocsUrl = "https://shoutrrr.nickfedor.com/services/overview/";
+const shoutrrrDocsUrl = "https://shoutrrr.nickfedor.com/services/overview/";
 
 type CustomBuilderFieldBinding = {
 	name: string;
@@ -22,20 +22,20 @@ type CustomBuilderFieldBinding = {
 
 type FieldErrorList = Array<{ message?: string } | undefined>;
 
-export function CustomShouterrrUrlField({ field }: { field: CustomBuilderFieldBinding }) {
+export function CustomShoutrrrUrlField({ field }: { field: CustomBuilderFieldBinding }) {
 	const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 
 	return (
 		<Field data-invalid={isInvalid}>
 			<div className="flex items-center justify-between gap-3">
-				<Label htmlFor={field.name}>{m.shouterrrUrl()}</Label>
+				<Label htmlFor={field.name}>{m.shoutrrrUrl()}</Label>
 				<a
-					href={shouterrrDocsUrl}
+					href={shoutrrrDocsUrl}
 					target="_blank"
-					rel="noreferrer"
+					rel="noopener noreferrer"
 					className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
 				>
-					{m.shouterrrDocs()}
+					{m.shoutrrrDocs()}
 					<ExternalLink className="h-3 w-3" />
 				</a>
 			</div>
@@ -44,7 +44,7 @@ export function CustomShouterrrUrlField({ field }: { field: CustomBuilderFieldBi
 				value={field.state.value}
 				onBlur={field.handleBlur}
 				onChange={(event) => field.handleChange(event.target.value)}
-				placeholder={m.notificationCustomShouterrrUrlPlaceholder()}
+				placeholder={m.notificationCustomShoutrrrUrlPlaceholder()}
 			/>
 			{isInvalid && <FieldError errors={field.state.meta.errors as FieldErrorList} />}
 		</Field>
@@ -52,25 +52,32 @@ export function CustomShouterrrUrlField({ field }: { field: CustomBuilderFieldBi
 }
 
 export type CustomNotificationBuilderValues = {
-	customShouterrrUrl: string;
+	customShoutrrrUrl: string;
 };
 
-export function isValidShouterrrUrl(rawUrl: string): boolean {
+export function isValidShoutrrrUrl(rawUrl: string): boolean {
+	const trimmed = rawUrl.trim();
+	if (!trimmed.includes("://")) {
+		return false;
+	}
+	let parsedUrl: URL;
 	try {
-		const parsedUrl = new URL(rawUrl);
-		return parsedUrl.protocol.length > 1;
+		parsedUrl = new URL(trimmed);
 	} catch {
 		return false;
 	}
+
+	// Shoutrrr uses service schemes (e.g. discord://, slack://, gotify://), not http(s).
+	return parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:";
 }
 
 export function buildCustomNotificationConfig(
 	values: CustomNotificationBuilderValues,
 ): string | null {
-	const shouterrrUrl = values.customShouterrrUrl.trim();
-	if (!isValidShouterrrUrl(shouterrrUrl)) {
+	const shoutrrrUrl = values.customShoutrrrUrl.trim();
+	if (!isValidShoutrrrUrl(shoutrrrUrl)) {
 		return null;
 	}
 
-	return shouterrrUrl;
+	return shoutrrrUrl;
 }
