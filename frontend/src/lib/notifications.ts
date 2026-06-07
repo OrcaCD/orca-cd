@@ -56,3 +56,7 @@ export function testNotification(id: string, message?: string): Promise<{ messag
 
 	return fetcher<{ message: string }>(`/notifications/${id}/test`, "POST");
 }
+
+export function getNotificationTypeIconPath(type: NotificationType): string {
+	return `/assets/icons/notifications/${type}.svg`;
+}

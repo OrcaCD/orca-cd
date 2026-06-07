@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, Send, Trash2 } from "lucide-react";
+import { MoreHorizontal, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -15,7 +15,12 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { m } from "@/lib/paraglide/messages";
-import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
+import {
+	deleteNotification,
+	getNotificationTypeIconPath,
+	type Notification,
+	testNotification,
+} from "@/lib/notifications";
 
 function formatDate(value: string): string {
 	const parsed = new Date(value);
@@ -30,6 +35,28 @@ export const columns: ColumnDef<Notification>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnName()} />,
+		cell: ({ row }) => {
+			const name = row.original.name;
+			const type = row.original.type;
+
+			return (
+				<div className="flex flex-row gap-3 items-center">
+					{type === "webhook" ? (
+						<WebhookIcon className="h-7 w-7" />
+					) : (
+						<img
+							src={getNotificationTypeIconPath(type)}
+							alt={m.notificationProviderAlt()}
+							className={`h-7 w-7`}
+						/>
+					)}
+
+					<div>
+						<p className="font-medium">{name}</p>
+					</div>
+				</div>
+			);
+		},
 	},
 	{
 		id: "status",

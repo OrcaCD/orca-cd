@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, EllipsisVertical, Search, Send, Trash2 } from "lucide-react";
+import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
@@ -22,7 +22,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { useFetch } from "@/lib/api";
 import { usePreferredLayout } from "@/lib/layout-preference";
-import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
+import {
+	deleteNotification,
+	getNotificationTypeIconPath,
+	type Notification,
+	testNotification,
+} from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import { toSearchableText } from "@/lib/utils";
 
@@ -158,7 +163,15 @@ function NotificationsPage() {
 
 										<div className="flex min-w-0 items-center gap-3">
 											<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-												<Bell className="h-5 w-5 text-muted-foreground" />
+												{notification.type === "webhook" ? (
+													<WebhookIcon className="h-7 w-7" />
+												) : (
+													<img
+														src={getNotificationTypeIconPath(notification.type)}
+														alt={m.notificationProviderAlt()}
+														className={`h-7 w-7`}
+													/>
+												)}
 											</div>
 											<div className="min-w-0 space-y-1">
 												<CardTitle className="truncate" title={notification.name}>
