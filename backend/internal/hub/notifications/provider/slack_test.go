@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
+func TestSlackProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -68,7 +68,7 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.BuildShouterrrUrls(tt.raw)
+			got, err := provider.BuildShoutrrrUrls(tt.raw)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
@@ -80,7 +80,7 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error = %v", err)
+				t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 			}
 			if len(got) != 1 {
 				t.Fatalf("expected one URL, got %v", got)
@@ -95,9 +95,9 @@ func TestSlackProviderBuildShouterrrUrls(t *testing.T) {
 func TestSlackProviderBuildsStructuredURL(t *testing.T) {
 	provider := SlackProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://hooks.slack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx","title":"Deploy done"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"webhookUrl":"https://hooks.slack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx","title":"Deploy done"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
@@ -134,9 +134,9 @@ func TestSlackProviderBuildsStructuredURL(t *testing.T) {
 func TestSlackProviderMinimalConfig(t *testing.T) {
 	provider := SlackProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://hooks.slack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"webhookUrl":"https://hooks.slack.com/services/T123456789/B123456789/abcdefghijklmnopqrstuvwx"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))

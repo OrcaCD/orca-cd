@@ -7,7 +7,7 @@ import (
 )
 
 type Provider interface {
-	BuildShouterrrUrls(rawConfig string) ([]string, error)
+	BuildShoutrrrUrls(rawConfig string) ([]string, error)
 }
 
 var registry = map[models.NotificationType]Provider{}
@@ -17,6 +17,7 @@ func init() {
 	Register(models.NotificationTypeGotify, GotifyProvider{})
 	Register(models.NotificationTypeSlack, SlackProvider{})
 	Register(models.NotificationTypeWebhook, WebhookProvider{})
+	Register(models.NotificationTypeCustom, CustomProvider{})
 }
 
 func Register(notificationType models.NotificationType, provider Provider) {
@@ -31,11 +32,11 @@ func Get(notificationType models.NotificationType) (Provider, error) {
 	return provider, nil
 }
 
-func BuildShouterrrUrls(notificationType models.NotificationType, rawConfig string) ([]string, error) {
+func BuildShoutrrrUrls(notificationType models.NotificationType, rawConfig string) ([]string, error) {
 	provider, err := Get(notificationType)
 	if err != nil {
 		return nil, err
 	}
 
-	return provider.BuildShouterrrUrls(rawConfig)
+	return provider.BuildShoutrrrUrls(rawConfig)
 }
