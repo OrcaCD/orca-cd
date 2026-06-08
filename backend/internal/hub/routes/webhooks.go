@@ -34,6 +34,13 @@ type pushPayload struct {
 	After string `json:"after"`
 }
 
+type githubPackagePayload struct {
+	Action  string `json:"action"`
+	Package struct {
+		PackageType string `json:"package_type"`
+	} `json:"package"`
+}
+
 func WebhookHandler(c *gin.Context) {
 	id := c.Param("id")
 
@@ -71,6 +78,10 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	if !isPushEvent(c, repo.Provider) {
+		if isContainerPushEvent(c, repo.Provider, body) {
+			handleContainerRegistryPush(c, &repo)
+			return
+		}
 		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
@@ -205,4 +216,37 @@ func extractBranchFromRef(ref string) string {
 		return strings.TrimSpace(branch)
 	}
 	return ref
+}
+
+func isContainerPushEvent(c *gin.Context, provider models.RepositoryProvider, body []byte) bool {
+	switch provider {
+	case models.GitHub:
+		if c.GetHeader("X-GitHub-Event") != "package" {
+			return false
+		}
+		var payload githubPackagePayload
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return false
+		}
+		if !strings.EqualFold(payload.Package.PackageType, "CONTAINER") {
+			return false
+		}
+		return strings.EqualFold(payload.Action, "published") || strings.EqualFold(payload.Action, "updated")
+	default:
+		return false
+	}
+}
+
+func handleContainerRegistryPush(c *gin.Context, repo *models.Repository) {
+	apps, err := gorm.G[models.Application](db.DB).
+		Where("repository_id = ?", repo.Id).
+		Find(c.Request.Context())
+	if err != nil || len(apps) == 0 {
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	for i := range apps {
+		applications.TriggerImagePull(&apps[i])
+	}
+	c.AbortWithStatus(http.StatusNoContent)
 }
