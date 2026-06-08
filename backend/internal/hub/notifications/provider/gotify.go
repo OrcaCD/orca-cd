@@ -20,7 +20,7 @@ type gotifyConfig struct {
 	CustomPath string `json:"customPath"`
 }
 
-func (GotifyProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (GotifyProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	trimmed, err := normalizeRawConfig(rawConfig)
 	if err != nil {
 		return nil, err

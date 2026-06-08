@@ -351,9 +351,9 @@ func TestCreateNotificationHandler_DiscordObjectConfigWithThreadID(t *testing.T)
 		t.Fatalf("failed to load notification: %v", err)
 	}
 
-	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
@@ -405,9 +405,9 @@ func TestCreateNotificationHandler_WebhookObjectConfig(t *testing.T) {
 		t.Fatalf("failed to load notification: %v", err)
 	}
 
-	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
@@ -466,9 +466,9 @@ func TestCreateNotificationHandler_GotifyObjectConfig(t *testing.T) {
 		t.Fatalf("failed to load notification: %v", err)
 	}
 
-	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
+func TestWebhookProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -58,7 +58,7 @@ func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.BuildShouterrrUrls(tt.raw)
+			got, err := provider.BuildShoutrrrUrls(tt.raw)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
@@ -70,7 +70,7 @@ func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error = %v", err)
+				t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 			}
 			if len(got) != 1 {
 				t.Fatalf("expected one URL, got %v", got)
@@ -85,9 +85,9 @@ func TestWebhookProviderBuildShouterrrUrls(t *testing.T) {
 func TestWebhookProviderBuildsStructuredURL(t *testing.T) {
 	provider := WebhookProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://api.example.com/hooks/deploy?existing=value","headers":{"Authorization":"Bearer token","X-Orca-Event":"deployment"}}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"webhookUrl":"https://api.example.com/hooks/deploy?existing=value","headers":{"Authorization":"Bearer token","X-Orca-Event":"deployment"}}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
@@ -129,9 +129,9 @@ func TestWebhookProviderBuildsStructuredURL(t *testing.T) {
 func TestWebhookProviderHTTPURLDisablesTLS(t *testing.T) {
 	provider := WebhookProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"http://localhost:8123/api/webhook","method":"POST"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"webhookUrl":"http://localhost:8123/api/webhook","method":"POST"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 
 	parsed, err := url.Parse(urls[0])
@@ -147,9 +147,9 @@ func TestWebhookProviderHTTPURLDisablesTLS(t *testing.T) {
 func TestWebhookProviderDefaultsToPost(t *testing.T) {
 	provider := WebhookProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"webhookUrl":"https://example.com/hook"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"webhookUrl":"https://example.com/hook"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 
 	parsed, err := url.Parse(urls[0])

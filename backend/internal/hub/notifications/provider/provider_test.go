@@ -13,7 +13,7 @@ type staticProvider struct {
 	urls []string
 }
 
-func (p staticProvider) BuildShouterrrUrls(string) ([]string, error) {
+func (p staticProvider) BuildShoutrrrUrls(string) ([]string, error) {
 	return p.urls, nil
 }
 
@@ -52,9 +52,9 @@ func TestRegisterAndGet(t *testing.T) {
 		t.Fatalf("Get() error = %v", err)
 	}
 
-	gotURLs, err := gotProvider.BuildShouterrrUrls("ignored")
+	gotURLs, err := gotProvider.BuildShoutrrrUrls("ignored")
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if !slices.Equal(gotURLs, expected) {
 		t.Fatalf("expected %v, got %v", expected, gotURLs)

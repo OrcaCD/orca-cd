@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestGotifyProviderBuildShouterrrUrls(t *testing.T) {
+func TestGotifyProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -68,7 +68,7 @@ func TestGotifyProviderBuildShouterrrUrls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.BuildShouterrrUrls(tt.raw)
+			got, err := provider.BuildShoutrrrUrls(tt.raw)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
@@ -80,7 +80,7 @@ func TestGotifyProviderBuildShouterrrUrls(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error = %v", err)
+				t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 			}
 			if len(got) != 1 {
 				t.Fatalf("expected one URL, got %v", got)
@@ -95,9 +95,9 @@ func TestGotifyProviderBuildShouterrrUrls(t *testing.T) {
 func TestGotifyProviderBuildsStructuredURL(t *testing.T) {
 	provider := GotifyProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"serverUrl":"https://gotify.example.com/base","appToken":"Aaa.bbb.ccc.ddd","priority":8,"customPath":"/gotify"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"serverUrl":"https://gotify.example.com/base","appToken":"Aaa.bbb.ccc.ddd","priority":8,"customPath":"/gotify"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
@@ -125,9 +125,9 @@ func TestGotifyProviderBuildsStructuredURL(t *testing.T) {
 func TestGotifyProviderDefaultsPriorityToFive(t *testing.T) {
 	provider := GotifyProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"serverUrl":"https://gotify.example.com","appToken":"Aaa.bbb.ccc.ddd"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"serverUrl":"https://gotify.example.com","appToken":"Aaa.bbb.ccc.ddd"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 
 	parsed, err := url.Parse(urls[0])
@@ -143,9 +143,9 @@ func TestGotifyProviderDefaultsPriorityToFive(t *testing.T) {
 func TestGotifyProviderHTTPURLDisablesTLS(t *testing.T) {
 	provider := GotifyProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"serverUrl":"http://localhost:8123","appToken":"Aaa.bbb.ccc.ddd"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"serverUrl":"http://localhost:8123","appToken":"Aaa.bbb.ccc.ddd"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 
 	parsed, err := url.Parse(urls[0])

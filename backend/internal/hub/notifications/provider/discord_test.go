@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
+func TestDiscordProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
 		name    string
 		raw     string
@@ -48,7 +48,7 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := provider.BuildShouterrrUrls(tt.raw)
+			got, err := provider.BuildShoutrrrUrls(tt.raw)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error containing %q", tt.wantErr)
@@ -60,7 +60,7 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("BuildShouterrrUrls() error = %v", err)
+				t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 			}
 			if len(got) != 1 {
 				t.Fatalf("expected one URL, got %v", got)
@@ -75,9 +75,9 @@ func TestDiscordProviderBuildShouterrrUrls(t *testing.T) {
 func TestDiscordProviderBuildsStructuredURL(t *testing.T) {
 	provider := DiscordProvider{}
 
-	urls, err := provider.BuildShouterrrUrls(`{"token":"token-abc","webhookId":"123456789","threadId":"987654321","username":"Orca Bot","avatarUrl":"https://example.com/avatar.png","title":"Deploy done"}`)
+	urls, err := provider.BuildShoutrrrUrls(`{"token":"token-abc","webhookId":"123456789","threadId":"987654321","username":"Orca Bot","avatarUrl":"https://example.com/avatar.png","title":"Deploy done"}`)
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error = %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))

@@ -17,6 +17,7 @@ const (
 	NotificationTypeGotify  NotificationType = "gotify"
 	NotificationTypeSlack   NotificationType = "slack"
 	NotificationTypeWebhook NotificationType = "webhook"
+	NotificationTypeCustom  NotificationType = "custom"
 )
 
 type Notification struct {

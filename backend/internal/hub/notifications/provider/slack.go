@@ -13,7 +13,7 @@ type slackConfig struct {
 	Title      string `json:"title"`
 }
 
-func (SlackProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (SlackProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	trimmed, err := normalizeRawConfig(rawConfig)
 	if err != nil {
 		return nil, err
