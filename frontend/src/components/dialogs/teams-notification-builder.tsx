@@ -24,7 +24,7 @@ export function TeamsHostField({ field }: { field: TeamsBuilderFieldBinding }) {
 
 	return (
 		<Field data-invalid={isInvalid}>
-			<Label htmlFor={field.name}>{m.host()}</Label>
+			<Label htmlFor={field.name}>{m.webhookUrl()}</Label>
 			<Input
 				id={field.name}
 				type="url"
@@ -84,7 +84,8 @@ export function isValidTeamsHost(rawUrl: string): boolean {
 		return false;
 	}
 
-	const pattern = /^\/webhookb2\/[0-9a-f-]{36}@[0-9a-f-]{36}\/IncomingWebhook\/[0-9a-f]{32}\/[0-9a-f-]{36}\/[A-Za-z0-9_-]+\/?$/i;
+	const pattern =
+		/^\/webhookb2\/[0-9a-f-]{36}@[0-9a-f-]{36}\/IncomingWebhook\/[0-9a-f]{32}\/[0-9a-f-]{36}\/[A-Za-z0-9_-]+\/?$/i;
 	return pattern.test(parsed.pathname);
 }
 

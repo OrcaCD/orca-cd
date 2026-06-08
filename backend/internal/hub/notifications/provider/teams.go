@@ -44,7 +44,10 @@ func (TeamsProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid teams host: %w", err)
 	}
-	serviceConfig.Title = strings.TrimSpace(cfg.Title)
+
+	if title := strings.TrimSpace(cfg.Title); title != "" {
+		serviceConfig.Title = title
+	}
 
 	serviceURL := serviceConfig.GetURL()
 	if serviceURL == nil {
