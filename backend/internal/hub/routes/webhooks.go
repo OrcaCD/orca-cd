@@ -228,7 +228,10 @@ func isContainerPushEvent(c *gin.Context, provider models.RepositoryProvider, bo
 		if err := json.Unmarshal(body, &payload); err != nil {
 			return false
 		}
-		return strings.EqualFold(payload.Package.PackageType, "CONTAINER")
+		if !strings.EqualFold(payload.Package.PackageType, "CONTAINER") {
+			return false
+		}
+		return strings.EqualFold(payload.Action, "published") || strings.EqualFold(payload.Action, "updated")
 	default:
 		return false
 	}

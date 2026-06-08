@@ -648,6 +648,20 @@ func TestIsContainerPushEvent(t *testing.T) {
 			want:     true,
 		},
 		{
+			name:     "github/CONTAINER/deleted",
+			provider: models.GitHub,
+			header:   "package",
+			body:     `{"action":"deleted","package":{"package_type":"CONTAINER"}}`,
+			want:     false,
+		},
+		{
+			name:     "github/CONTAINER/restored",
+			provider: models.GitHub,
+			header:   "package",
+			body:     `{"action":"restored","package":{"package_type":"CONTAINER"}}`,
+			want:     false,
+		},
+		{
 			name:     "github/NPM_ignored",
 			provider: models.GitHub,
 			header:   "package",

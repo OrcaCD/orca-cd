@@ -8,7 +8,7 @@ import (
 )
 
 // TriggerImagePull sends a PullImagesRequest to the agent for the given application.
-// Returns false if the hub is not initialised, the agent is not connected, or the send buffer is full.
+// Returns false if the hub is not initialized, the agent is not connected, or the send buffer is full.
 func TriggerImagePull(app *models.Application) bool {
 	if hubws.DefaultHub == nil {
 		return false
