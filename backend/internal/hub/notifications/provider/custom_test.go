@@ -29,19 +29,9 @@ func TestCustomProviderBuildShoutrrrUrls(t *testing.T) {
 			want: []string{"discord://token@123456789?title=Deploy+done"},
 		},
 		{
-			name: "json config",
-			raw:  `{"url":"slack://token-a/token-b/token-c"}`,
-			want: []string{"slack://token-a/token-b/token-c"},
-		},
-		{
-			name:    "json config missing url",
+			name:    "json object is not a supported config shape",
 			raw:     `{}`,
-			wantErr: "custom notification config requires url",
-		},
-		{
-			name:    "invalid json config",
-			raw:     `{`,
-			wantErr: "invalid JSON custom notification config",
+			wantErr: "custom Shoutrrr URL must include a scheme",
 		},
 	}
 
