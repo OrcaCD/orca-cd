@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-
-	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/teams"
 )
 
 type TeamsProvider struct{}
@@ -37,22 +35,28 @@ func (TeamsProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 		return nil, fmt.Errorf("invalid teams host: %w", err)
 	}
 	if webhookURL.Scheme != "https" {
-		return nil, errors.New("teams host must be a valid HTTPS Teams webhook URL")
+		return nil, errors.New("teams host must be a valid HTTPS URL")
+	}
+	if webhookURL.Host == "" {
+		return nil, errors.New("teams host must include a host")
+	}
+	if webhookURL.Fragment != "" {
+		return nil, errors.New("teams host must not include a fragment")
 	}
 
-	serviceConfig, err := teams.ConfigFromWebhookURL(webhookURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid teams host: %w", err)
-	}
+	customURL := "teams:?host=" + url.QueryEscape(webhookURL.String())
 
 	if title := strings.TrimSpace(cfg.Title); title != "" {
-		serviceConfig.Title = title
+		parsedCustomURL, err := url.Parse(customURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid teams host: %w", err)
+		}
+
+		query := parsedCustomURL.Query()
+		query.Set("title", title)
+		parsedCustomURL.RawQuery = query.Encode()
+		customURL = parsedCustomURL.String()
 	}
 
-	serviceURL := serviceConfig.GetURL()
-	if serviceURL == nil {
-		return nil, errors.New("invalid teams host")
-	}
-
-	return []string{serviceURL.String()}, nil
+	return []string{customURL}, nil
 }

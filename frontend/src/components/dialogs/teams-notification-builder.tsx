@@ -80,13 +80,15 @@ export function isValidTeamsHost(rawUrl: string): boolean {
 		return false;
 	}
 
-	if (!/^[a-z0-9.-]+\.webhook\.office\.com$/i.test(parsed.hostname)) {
+	if (parsed.hostname.trim() === "") {
 		return false;
 	}
 
-	const pattern =
-		/^\/webhookb2\/[0-9a-f-]{36}@[0-9a-f-]{36}\/IncomingWebhook\/[0-9a-f]{32}\/[0-9a-f-]{36}\/[A-Za-z0-9_-]+\/?$/i;
-	return pattern.test(parsed.pathname);
+	if (parsed.hash !== "") {
+		return false;
+	}
+
+	return true;
 }
 
 export function buildTeamsNotificationConfig(
