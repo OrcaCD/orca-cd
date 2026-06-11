@@ -16,6 +16,7 @@ func init() {
 	Register(models.NotificationTypeDiscord, DiscordProvider{})
 	Register(models.NotificationTypeGotify, GotifyProvider{})
 	Register(models.NotificationTypeSlack, SlackProvider{})
+	Register(models.NotificationTypeEmail, EmailProvider{})
 	Register(models.NotificationTypeWebhook, WebhookProvider{})
 	Register(models.NotificationTypeCustom, CustomProvider{})
 }

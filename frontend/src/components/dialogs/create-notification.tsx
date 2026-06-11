@@ -74,6 +74,21 @@ import {
 	WebhookUrlField,
 } from "./webhook-notification-builder";
 import {
+	buildEmailNotificationConfig,
+	EmailFromAddressField,
+	EmailFromNameField,
+	EmailPasswordField,
+	EmailSMTPHostField,
+	EmailSMTPPortField,
+	EmailToAddressesField,
+	EmailUsernameField,
+	EmailUseTLSField,
+	isValidEmailAddress,
+	isValidSMTPHost,
+	parseEmailToAddresses,
+	parseSMTPPort,
+} from "./email-notification-builder";
+import {
 	buildCustomNotificationConfig,
 	CustomShoutrrrUrlField,
 	isValidShoutrrrUrl,
@@ -98,6 +113,14 @@ const notificationBaseSchema = z.object({
 	gotifyPriority: z.string().trim(),
 	gotifyCustomPath: z.string().trim(),
 	slackWebhookUrl: z.string().trim(),
+	emailSMTPHost: z.string().trim(),
+	emailSMTPPort: z.string().trim(),
+	emailUsername: z.string().trim(),
+	emailPassword: z.string(),
+	emailFromAddress: z.string().trim(),
+	emailFromName: z.string().trim(),
+	emailToAddresses: z.string(),
+	emailUseTLS: z.boolean(),
 	webhookUrl: z.string().trim(),
 	webhookHeaders: z.string(),
 	customShoutrrrUrl: z.string().trim(),
@@ -193,6 +216,66 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 		}
 	}
 
+	if (value.type === "email") {
+		if (value.emailSMTPHost === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPHost"],
+				message: m.validationNotificationEmailSMTPHostRequired(),
+			});
+		} else if (!isValidSMTPHost(value.emailSMTPHost)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPHost"],
+				message: m.validationNotificationEmailSMTPHostInvalid(),
+			});
+		}
+
+		if (parseSMTPPort(value.emailSMTPPort) === null) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPPort"],
+				message: m.validationNotificationEmailSMTPPortInvalid(),
+			});
+		}
+
+		if (value.emailPassword !== "" && value.emailUsername === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailUsername"],
+				message: m.validationNotificationEmailUsernameRequiredWithPassword(),
+			});
+		}
+
+		if (value.emailFromAddress === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailFromAddress"],
+				message: m.validationNotificationEmailFromAddressRequired(),
+			});
+		} else if (!isValidEmailAddress(value.emailFromAddress)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailFromAddress"],
+				message: m.validationNotificationEmailAddressInvalid(),
+			});
+		}
+
+		if (value.emailToAddresses.trim() === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailToAddresses"],
+				message: m.validationNotificationEmailToAddressesRequired(),
+			});
+		} else if (!parseEmailToAddresses(value.emailToAddresses)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailToAddresses"],
+				message: m.validationNotificationEmailToAddressesInvalid(),
+			});
+		}
+	}
+
 	if (value.type === "webhook") {
 		if (value.webhookUrl === "") {
 			ctx.addIssue({
@@ -276,6 +359,24 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		return config;
 	}
 
+	if (value.type === "email") {
+		const config = buildEmailNotificationConfig({
+			emailSMTPHost: value.emailSMTPHost,
+			emailSMTPPort: value.emailSMTPPort,
+			emailUsername: value.emailUsername,
+			emailPassword: value.emailPassword,
+			emailFromAddress: value.emailFromAddress,
+			emailFromName: value.emailFromName,
+			emailToAddresses: value.emailToAddresses,
+			emailUseTLS: value.emailUseTLS,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationEmailConfigInvalid());
+		}
+
+		return config;
+	}
+
 	if (value.type === "webhook") {
 		const config = buildWebhookNotificationConfig({
 			webhookUrl: value.webhookUrl,
@@ -317,6 +418,14 @@ function useNotificationForm() {
 			gotifyPriority: "5",
 			gotifyCustomPath: "",
 			slackWebhookUrl: "",
+			emailSMTPHost: "",
+			emailSMTPPort: "587",
+			emailUsername: "",
+			emailPassword: "",
+			emailFromAddress: "",
+			emailFromName: "",
+			emailToAddresses: "",
+			emailUseTLS: true,
 			webhookUrl: "",
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
@@ -558,6 +667,52 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 					);
 				}
 
+				if (type === "email") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="emailSMTPHost"
+								children={(field) => <EmailSMTPHostField field={field} />}
+							/>
+
+							<form.Field
+								name="emailSMTPPort"
+								children={(field) => <EmailSMTPPortField field={field} />}
+							/>
+
+							<form.Field
+								name="emailUsername"
+								children={(field) => <EmailUsernameField field={field} />}
+							/>
+
+							<form.Field
+								name="emailPassword"
+								children={(field) => <EmailPasswordField field={field} />}
+							/>
+
+							<form.Field
+								name="emailFromAddress"
+								children={(field) => <EmailFromAddressField field={field} />}
+							/>
+
+							<form.Field
+								name="emailFromName"
+								children={(field) => <EmailFromNameField field={field} />}
+							/>
+
+							<form.Field
+								name="emailToAddresses"
+								children={(field) => <EmailToAddressesField field={field} />}
+							/>
+
+							<form.Field
+								name="emailUseTLS"
+								children={(field) => <EmailUseTLSField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
 				if (type === "webhook") {
 					return (
 						<FieldGroup>
@@ -660,6 +815,14 @@ export default function CreateNotificationDialog() {
 			gotifyPriority: "5",
 			gotifyCustomPath: "",
 			slackWebhookUrl: "",
+			emailSMTPHost: "",
+			emailSMTPPort: "587",
+			emailUsername: "",
+			emailPassword: "",
+			emailFromAddress: "",
+			emailFromName: "",
+			emailToAddresses: "",
+			emailUseTLS: true,
 			webhookUrl: "",
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
