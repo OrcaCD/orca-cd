@@ -16,6 +16,7 @@ const (
 	NotificationTypeDiscord NotificationType = "discord"
 	NotificationTypeGotify  NotificationType = "gotify"
 	NotificationTypeSlack   NotificationType = "slack"
+	NotificationTypeTeams   NotificationType = "teams"
 	NotificationTypeWebhook NotificationType = "webhook"
 	NotificationTypeCustom  NotificationType = "custom"
 )
