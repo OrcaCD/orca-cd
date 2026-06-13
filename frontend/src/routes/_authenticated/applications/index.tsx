@@ -85,7 +85,8 @@ function ApplicationsPage() {
 						navigate({
 							to: "/applications/settings/general",
 						})
-					}>
+					}
+				>
 					<Plus />
 					{m.newApplication()}
 				</Button>

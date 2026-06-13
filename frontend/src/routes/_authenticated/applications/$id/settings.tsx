@@ -8,5 +8,5 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings"
 function SettingsLayoutWithId() {
 	const { id } = Route.useParams();
 
-	return <SharedSettingsLayout id={id} />
+	return <SharedSettingsLayout id={id} />;
 }
