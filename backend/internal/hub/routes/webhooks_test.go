@@ -74,7 +74,7 @@ func seedWebhookRepo(t *testing.T, provider models.RepositoryProvider, secret st
 func makeWebhookRequest(repoID, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/"+repoID, strings.NewReader(body))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/repositories/"+repoID, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: repoID}}
 	return c, w

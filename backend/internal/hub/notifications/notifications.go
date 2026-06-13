@@ -43,7 +43,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 	}
 
 	for i := range configs {
-		targets, parseErr := provider.BuildShouterrrUrls(configs[i].Type, configs[i].Config.String())
+		targets, parseErr := provider.BuildShoutrrrUrls(configs[i].Type, configs[i].Config.String())
 		if parseErr != nil {
 			log.Error().
 				Err(parseErr).
@@ -114,7 +114,7 @@ func getNotificationConfig(ctx context.Context, applicationId string) ([]models.
 }
 
 func SendTestNotification(notificationType models.NotificationType, rawConfig, message string) error {
-	targets, err := provider.BuildShouterrrUrls(notificationType, rawConfig)
+	targets, err := provider.BuildShoutrrrUrls(notificationType, rawConfig)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}

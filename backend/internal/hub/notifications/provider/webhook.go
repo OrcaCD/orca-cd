@@ -14,7 +14,7 @@ type webhookConfig struct {
 	Headers    map[string]string `json:"headers"`
 }
 
-func (WebhookProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (WebhookProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	trimmed, err := normalizeRawConfig(rawConfig)
 	if err != nil {
 		return nil, err

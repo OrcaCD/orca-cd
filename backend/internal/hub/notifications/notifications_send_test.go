@@ -23,7 +23,7 @@ const testHTTPNotificationType models.NotificationType = "test-http"
 
 type passthroughNotificationProvider struct{}
 
-func (passthroughNotificationProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (passthroughNotificationProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	return []string{rawConfig}, nil
 }
 

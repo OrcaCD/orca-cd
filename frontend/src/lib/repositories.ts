@@ -82,7 +82,7 @@ export function syncRepository(id: string): Promise<void> {
 export function getGitProviderIconPath(provider: RepositoryProvider): string {
 	const iconName = provider === "generic" ? "git" : provider;
 
-	return `/assets/icons/${iconName}.svg`;
+	return `/assets/icons/repositories/${iconName}.svg`;
 }
 
 export function getGitProviderIconClass(provider: RepositoryProvider): string {
