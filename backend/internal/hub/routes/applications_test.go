@@ -1115,6 +1115,40 @@ func TestFormatTimestamp_Nil(t *testing.T) {
 	}
 }
 
+func TestGetApplicationHandler_WebhookEnabled_IncludesUrl(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-webhook-url")
+	agent := seedTestAgent(t, "agent-webhook-url")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Webhook App")
+
+	enc := crypto.EncryptedString("webhooksecret")
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("image_webhook_secret", &enc).Error; err != nil {
+		t.Fatalf("failed to set webhook secret: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.ImageWebhookEnabled {
+		t.Error("expected imageWebhookEnabled to be true")
+	}
+	if body.ImageWebhookUrl == nil || *body.ImageWebhookUrl == "" {
+		t.Error("expected imageWebhookUrl to be set")
+	}
+}
+
 func TestSendAgentSettings_WithHub(t *testing.T) {
 	setupTestDBWithApplications(t)
 

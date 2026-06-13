@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -76,6 +77,8 @@ type applicationResponse struct {
 	ImagePollEnabled         bool    `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
 	ImagePollDeleteOldImages bool    `json:"imagePollDeleteOldImages"`
+	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
 }
 
 // Represents the many-to-many relationship between applications and notifications
@@ -389,7 +392,7 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 }
 
 func toApplicationResponse(app *models.Application) applicationResponse {
-	return applicationResponse{
+	resp := applicationResponse{
 		Id:                       app.Id,
 		Name:                     app.Name.String(),
 		RepositoryId:             app.RepositoryId,
@@ -411,7 +414,13 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollEnabled:         app.ImagePollEnabled,
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		ImagePollDeleteOldImages: app.ImagePollDeleteOldImages,
+		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
+	if app.ImageWebhookSecret != nil {
+		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)
+		resp.ImageWebhookUrl = &webhookUrl
+	}
+	return resp
 }
 
 // sendAgentSettings fetches all applications for agentID and pushes an

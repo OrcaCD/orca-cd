@@ -24,4 +24,6 @@ export enum EventType {
 	Updated = "updated",
 	Deleted = "deleted",
 	RotatedToken = "rotated-token",
+	EnabledImageWebhook = "enabled-image-webhook",
+	DisabledImageWebhook = "disabled-image-webhook",
 }
