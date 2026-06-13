@@ -8,6 +8,7 @@ export enum AgentStatus {
 
 export interface Agent {
 	id: string;
+	icon: string;
 	name: string;
 	status: AgentStatus;
 	appsCount?: number;
@@ -22,10 +23,12 @@ export interface AgentWithTokenResponse extends Agent {
 
 export interface CreateAgentRequest {
 	name: string;
+	icon: string;
 }
 
 export interface UpdateAgentRequest {
 	name: string;
+	icon: string;
 }
 
 export function createAgent(data: CreateAgentRequest): Promise<AgentWithTokenResponse> {

@@ -18,9 +18,18 @@ import (
 )
 
 const AgentsPath = "/api/v1/agents"
+const defaultAgentIcon = "server"
+
+func defaultString(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
 
 type agentResponse struct {
 	Id        string  `json:"id"`
+	Icon      string  `json:"icon"`
 	Name      string  `json:"name"`
 	Status    string  `json:"status"`
 	AppsCount int64   `json:"appsCount"`
@@ -36,10 +45,12 @@ type agentWithTokenResponse struct {
 
 type createAgentRequest struct {
 	Name string `json:"name" binding:"required,min=1,max=128"`
+	Icon string `json:"icon" binding:"omitempty,min=1,max=128"`
 }
 
 type updateAgentRequest struct {
 	Name string `json:"name" binding:"required,min=1,max=128"`
+	Icon string `json:"icon" binding:"omitempty,min=1,max=128"`
 }
 
 const agentStatusOffline = "offline"
@@ -58,6 +69,7 @@ func toAgentStatus(status models.AgentStatus) string {
 func toAgentResponse(agent *models.Agent, appsCount int64) agentResponse {
 	response := agentResponse{
 		Id:        agent.Id,
+		Icon:      agent.Icon,
 		Name:      agent.Name.String(),
 		Status:    toAgentStatus(agent.Status),
 		AppsCount: appsCount,
@@ -173,6 +185,7 @@ func CreateAgentHandler(c *gin.Context) {
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		agent = models.Agent{
 			Name:   crypto.EncryptedString(req.Name),
+			Icon:   defaultString(req.Icon, defaultAgentIcon),
 			Status: models.AgentStatusOffline,
 		}
 
@@ -230,7 +243,11 @@ func UpdateAgentHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Update(ctx, "name", crypto.EncryptedString(req.Name))
+	updates := models.Agent{Name: crypto.EncryptedString(req.Name)}
+	if req.Icon != "" {
+		updates.Icon = req.Icon
+	}
+	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Updates(ctx, updates)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return

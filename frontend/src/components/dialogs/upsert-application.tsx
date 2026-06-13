@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { Switch } from "../ui/switch";
 import { Checkbox } from "../ui/checkbox";
 import { Separator } from "../ui/separator";
+import LucideIconPicker, { type LucideIconName } from "../lucide-icon-picker";
 
 const applicationSchema = z.object({
 	name: z
@@ -35,6 +36,7 @@ const applicationSchema = z.object({
 		.trim()
 		.min(1, m.validationApplicationNameRequired())
 		.max(128, m.validationApplicationNameMaxLength()),
+	icon: z.string(),
 	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
 	agentId: z.string().min(1, m.validationAgentRequired()),
 	branch: z
@@ -54,6 +56,8 @@ const applicationSchema = z.object({
 	imagePollIntervalSeconds: z.number().int().min(60, m.validationImagePollIntervalMin()),
 	imagePollDeleteOldImages: z.boolean(),
 });
+
+const defaultApplicationIcon: LucideIconName = "box";
 
 type FileTreeNode = {
 	name: string;
@@ -208,6 +212,7 @@ export default function UpsertApplicationDialog({
 	const form = useForm({
 		defaultValues: {
 			name: application?.name ?? "",
+			icon: application?.icon ?? defaultApplicationIcon,
 			repositoryId: application?.repositoryId ?? "",
 			agentId: application?.agentId ?? "",
 			branch: application?.branch ?? "",
@@ -230,6 +235,7 @@ export default function UpsertApplicationDialog({
 					toast.success(m.applicationCreated());
 				}
 				setOpen(false);
+				form.reset();
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
 			} finally {
@@ -318,6 +324,21 @@ export default function UpsertApplicationDialog({
 									</Field>
 								);
 							}}
+						/>
+
+						<form.Field
+							name="icon"
+							children={(field) => (
+								<Field>
+									<Label>{m.icon()}</Label>
+									<LucideIconPicker
+										value={field.state.value as LucideIconName}
+										onValueChange={field.handleChange}
+										placeholder={m.selectIcon()}
+										emptyMessage={m.noIconsFound()}
+									/>
+								</Field>
+							)}
 						/>
 
 						<form.Field

@@ -49,7 +49,7 @@ export default function UpsertAgentDialog({
 	const form = useForm({
 		defaultValues: {
 			name: agent?.name ?? "",
-			icon: defaultAgentIcon as string,
+			icon: agent?.icon ?? defaultAgentIcon,
 		},
 		validators: {
 			onSubmit: agentSchema,
@@ -60,11 +60,13 @@ export default function UpsertAgentDialog({
 				if (isEditing && agent) {
 					await updateAgent(agent.id, {
 						name: value.name,
+						icon: value.icon,
 					});
 					toast.success(m.agentUpdated());
 				} else {
 					const response = await createAgent({
 						name: value.name,
+						icon: value.icon,
 					});
 					if (response.authToken) {
 						setAuthToken(response.authToken);

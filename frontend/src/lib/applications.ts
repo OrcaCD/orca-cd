@@ -2,6 +2,7 @@ import { fetcher } from "./api";
 
 export interface Application {
 	id: string;
+	icon: string;
 	name: string;
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
@@ -29,6 +30,7 @@ export interface Application {
 export interface ApplicationListItem {
 	id: string;
 	name: string;
+	icon: string;
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
 	repositoryName: string;
@@ -61,6 +63,7 @@ export enum Type {
 
 interface CreateApplicationRequest {
 	name: string;
+	icon: string;
 	repositoryId: string;
 	agentId: string;
 	branch: string;
@@ -72,6 +75,7 @@ interface CreateApplicationRequest {
 
 interface UpdateApplicationRequest {
 	name: string;
+	icon: string;
 	repositoryId: string;
 	agentId: string;
 	branch: string;
