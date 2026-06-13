@@ -109,6 +109,8 @@
 	"hotkeysOtherShortcuts": "Andere Kürzel",
 	"hotkeysThen": "dann",
 	"settings": "Einstellungen",
+	"general": "Allgemein",
+	"generalDescription": "Allgemeine Einstellungen der Anwendung",
 	"account": "Konto",
 	"management": "Verwaltung",
 	"admin": "Admin",
