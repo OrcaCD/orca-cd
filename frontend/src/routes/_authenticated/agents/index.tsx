@@ -142,10 +142,7 @@ function RouteComponent() {
 
 										<div className="flex min-w-0 items-center gap-3">
 											<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-												<StaticLucideIcon
-													name={agent.icon}
-													className="h-5 w-5 text-primary"
-												/>
+												<StaticLucideIcon name={agent.icon} className="h-5 w-5 text-primary" />
 											</div>
 											<div className="min-w-0 space-y-1">
 												<CardTitle className="truncate" title={agent.name}>

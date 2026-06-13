@@ -131,10 +131,7 @@ function ApplicationsPage() {
 											<CardTitle>
 												<div className="flex items-center gap-3">
 													<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-														<StaticLucideIcon
-															name={app.icon}
-															className="h-5 w-5 text-primary"
-														/>
+														<StaticLucideIcon name={app.icon} className="h-5 w-5 text-primary" />
 													</div>
 													<div>
 														<h3 className="font-medium group-hover:text-primary transition-colors">
