@@ -201,15 +201,43 @@ export type EmailNotificationBuilderValues = {
 	emailUseTLS: boolean;
 };
 
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const smtpHostPattern = /^[^\s/?#]+$/;
+const emailPattern = /^[^\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
 
 export function isValidEmailAddress(value: string): boolean {
-	return emailPattern.test(value.trim());
+	const emailAddress = value.trim();
+	const [localPart, domain] = emailAddress.split("@");
+
+	return (
+		emailAddress.length <= 254 &&
+		localPart !== undefined &&
+		localPart.length > 0 &&
+		localPart.length <= 64 &&
+		domain !== undefined &&
+		domain.length <= 253 &&
+		emailPattern.test(emailAddress)
+	);
 }
 
 export function isValidSMTPHost(value: string): boolean {
-	return smtpHostPattern.test(value.trim());
+	const smtpHost = value.trim();
+	if (smtpHost === "") {
+		return false;
+	}
+
+	try {
+		const parsedUrl = new URL(`smtp://${smtpHost}`);
+		return (
+			parsedUrl.hostname !== "" &&
+			parsedUrl.username === "" &&
+			parsedUrl.password === "" &&
+			parsedUrl.port === "" &&
+			parsedUrl.pathname === "" &&
+			parsedUrl.search === "" &&
+			parsedUrl.hash === ""
+		);
+	} catch {
+		return false;
+	}
 }
 
 export function parseSMTPPort(value: string): number | null {

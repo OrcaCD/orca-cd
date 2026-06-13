@@ -32,7 +32,17 @@ func TestEmailProviderBuildShoutrrrUrls(t *testing.T) {
 		{
 			name:    "invalid host",
 			raw:     `{"smtpHost":"smtp.example.com/path","smtpPort":587,"fromAddress":"orca@example.com","toAddresses":["ops@example.com"],"useTls":true}`,
-			wantErr: "email smtpHost must be a hostname or IP address",
+			wantErr: "email smtpHost must be a hostname or IP address without scheme or port",
+		},
+		{
+			name:    "host with scheme",
+			raw:     `{"smtpHost":"smtp://smtp.example.com","smtpPort":587,"fromAddress":"orca@example.com","toAddresses":["ops@example.com"],"useTls":true}`,
+			wantErr: "email smtpHost must be a hostname or IP address without scheme or port",
+		},
+		{
+			name:    "host with port",
+			raw:     `{"smtpHost":"smtp.example.com:587","smtpPort":587,"fromAddress":"orca@example.com","toAddresses":["ops@example.com"],"useTls":true}`,
+			wantErr: "email smtpHost must be a hostname or IP address without scheme or port",
 		},
 		{
 			name:    "invalid port",
@@ -47,6 +57,16 @@ func TestEmailProviderBuildShoutrrrUrls(t *testing.T) {
 		{
 			name:    "invalid to address",
 			raw:     `{"smtpHost":"smtp.example.com","smtpPort":587,"fromAddress":"orca@example.com","toAddresses":["not an email"],"useTls":true}`,
+			wantErr: "email toAddresses[0] must be a valid email address",
+		},
+		{
+			name:    "from address with display name",
+			raw:     `{"smtpHost":"smtp.example.com","smtpPort":587,"fromAddress":"Orca <orca@example.com>","toAddresses":["ops@example.com"],"useTls":true}`,
+			wantErr: "email fromAddress must be a valid email address",
+		},
+		{
+			name:    "to address with display name",
+			raw:     `{"smtpHost":"smtp.example.com","smtpPort":587,"fromAddress":"orca@example.com","toAddresses":["Ops <ops@example.com>"],"useTls":true}`,
 			wantErr: "email toAddresses[0] must be a valid email address",
 		},
 		{
@@ -153,10 +173,28 @@ func TestEmailProviderCanDisableTLS(t *testing.T) {
 	}
 
 	query := parsed.Query()
-	if query.Get("encryption") != "None" {
-		t.Fatalf("expected encryption=None, got %q", query.Get("encryption"))
+	if query.Get("encryption") != "" {
+		t.Fatalf("expected encryption default to be omitted, got %q", query.Get("encryption"))
 	}
 	if query.Get("usestarttls") != "No" {
 		t.Fatalf("expected usestarttls=No, got %q", query.Get("usestarttls"))
+	}
+}
+
+func TestEmailProviderSupportsBracketedIPv6Host(t *testing.T) {
+	provider := EmailProvider{}
+
+	urls, err := provider.BuildShoutrrrUrls(`{"smtpHost":"[::1]","smtpPort":25,"fromAddress":"orca@example.com","toAddresses":["ops@example.com"],"useTls":true}`)
+	if err != nil {
+		t.Fatalf("BuildShoutrrrUrls() error = %v", err)
+	}
+
+	parsed, err := url.Parse(urls[0])
+	if err != nil {
+		t.Fatalf("failed to parse URL %q: %v", urls[0], err)
+	}
+
+	if parsed.Host != "[::1]:25" {
+		t.Fatalf("expected IPv6 host with port, got %q", parsed.Host)
 	}
 }

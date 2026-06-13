@@ -34,12 +34,9 @@ func (EmailProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 		return nil, err
 	}
 
-	smtpHost := strings.TrimSpace(cfg.SMTPHost)
-	if smtpHost == "" {
-		return nil, errors.New("email config requires smtpHost")
-	}
-	if strings.ContainsAny(smtpHost, "/?#") {
-		return nil, errors.New("email smtpHost must be a hostname or IP address")
+	smtpHost, err := normalizeSMTPHost(cfg.SMTPHost)
+	if err != nil {
+		return nil, err
 	}
 
 	if cfg.SMTPPort < 1 || cfg.SMTPPort > 65535 {
@@ -81,11 +78,27 @@ func (EmailProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	}
 	if !cfg.UseTLS {
 		query.Set("usestarttls", "No")
-		query.Set("encryption", "None")
 	}
 	smtpURL.RawQuery = query.Encode()
 
 	return []string{smtpURL.String()}, nil
+}
+
+func normalizeSMTPHost(rawHost string) (string, error) {
+	smtpHost := strings.TrimSpace(rawHost)
+	if smtpHost == "" {
+		return "", errors.New("email config requires smtpHost")
+	}
+
+	parsedURL, err := url.Parse("//" + smtpHost)
+	if err != nil || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.Path != "" ||
+		parsedURL.RawQuery != "" || parsedURL.Fragment != "" || parsedURL.Port() != "" ||
+		strings.HasSuffix(parsedURL.Host, ":") ||
+		(strings.Contains(parsedURL.Host, ":") && !strings.HasPrefix(parsedURL.Host, "[")) {
+		return "", errors.New("email smtpHost must be a hostname or IP address without scheme or port")
+	}
+
+	return parsedURL.Hostname(), nil
 }
 
 func normalizeEmailAddresses(rawAddresses []string) ([]string, error) {
@@ -112,7 +125,7 @@ func normalizeEmailAddress(rawAddress, fieldName string) (string, error) {
 	}
 
 	parsedAddress, err := mail.ParseAddress(address)
-	if err != nil || parsedAddress.Address != address {
+	if err != nil || parsedAddress.Name != "" || parsedAddress.Address != address {
 		return "", fmt.Errorf("email %s must be a valid email address", fieldName)
 	}
 
