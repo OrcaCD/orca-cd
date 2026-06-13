@@ -120,4 +120,3 @@ jobs:
         with:
           use_oidc: true
           fail_ci_if_error: true
-          exclude: "*.pb.go"
