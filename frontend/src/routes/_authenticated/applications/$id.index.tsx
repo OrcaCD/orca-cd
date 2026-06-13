@@ -389,24 +389,24 @@ function ApplicationDetailsPage() {
 							</div>
 						</CardContent>
 					</Card>
+
+					<CopyValueDialog
+						open={webhookSecretOpen}
+						onOpenChange={(nextOpen) => {
+							setWebhookSecretOpen(nextOpen);
+							if (!nextOpen) {
+								setWebhookSecret(null);
+							}
+						}}
+						title={m.imagePullWebhookSecretModalTitle()}
+						description={m.imagePullWebhookSecretModalDescription()}
+						label={m.imagePullWebhookSecret()}
+						value={webhookSecret ?? ""}
+						inputId={`app-pull-webhook-secret-${id}`}
+						copyTitle={m.imagePullWebhookSecret()}
+					/>
 				</TabsContent>
 			</Tabs>
-
-			<CopyValueDialog
-				open={webhookSecretOpen}
-				onOpenChange={(nextOpen) => {
-					setWebhookSecretOpen(nextOpen);
-					if (!nextOpen) {
-						setWebhookSecret(null);
-					}
-				}}
-				title={m.imagePullWebhookSecretModalTitle()}
-				description={m.imagePullWebhookSecretModalDescription()}
-				label={m.imagePullWebhookSecret()}
-				value={webhookSecret ?? ""}
-				inputId={`app-pull-webhook-secret-${id}`}
-				copyTitle={m.imagePullWebhookSecret()}
-			/>
 		</div>
 	);
 }
