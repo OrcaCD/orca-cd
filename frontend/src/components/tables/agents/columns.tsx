@@ -16,8 +16,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "sonner";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
-import { DynamicIcon } from "lucide-react/dynamic";
-import type { LucideIconName } from "@/components/lucide-icon-picker";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const columns: ColumnDef<Agent>[] = [
 	{
@@ -32,7 +31,7 @@ export const columns: ColumnDef<Agent>[] = [
 			return (
 				<div className="flex flex-row gap-3 items-center">
 					<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-						<DynamicIcon name={icon as LucideIconName} className="h-5 w-5 text-primary" />
+						<StaticLucideIcon name={icon} className="h-5 w-5 text-primary" />
 					</div>
 
 					<div>

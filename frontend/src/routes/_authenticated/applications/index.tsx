@@ -29,8 +29,7 @@ import { Separator } from "@/components/ui/separator";
 import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
-import { DynamicIcon } from "lucide-react/dynamic";
-import type { LucideIconName } from "@/components/lucide-icon-picker";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -132,8 +131,8 @@ function ApplicationsPage() {
 											<CardTitle>
 												<div className="flex items-center gap-3">
 													<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-														<DynamicIcon
-															name={app.icon as LucideIconName}
+														<StaticLucideIcon
+															name={app.icon}
 															className="h-5 w-5 text-primary"
 														/>
 													</div>

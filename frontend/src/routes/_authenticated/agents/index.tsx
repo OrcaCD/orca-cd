@@ -23,8 +23,7 @@ import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
-import { DynamicIcon } from "lucide-react/dynamic";
-import type { LucideIconName } from "@/components/lucide-icon-picker";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -143,8 +142,8 @@ function RouteComponent() {
 
 										<div className="flex min-w-0 items-center gap-3">
 											<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-												<DynamicIcon
-													name={agent.icon as LucideIconName}
+												<StaticLucideIcon
+													name={agent.icon}
 													className="h-5 w-5 text-primary"
 												/>
 											</div>
