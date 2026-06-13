@@ -416,7 +416,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollDeleteOldImages: app.ImagePollDeleteOldImages,
 		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
-	if app.ImageWebhookSecret != nil && appUrl != "" {
+	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)
 		resp.ImageWebhookUrl = &webhookUrl
 	}

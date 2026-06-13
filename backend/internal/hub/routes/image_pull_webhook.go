@@ -69,7 +69,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		return
 	}
 
-	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return

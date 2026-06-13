@@ -430,7 +430,7 @@ func TestImagePullWebhookHandler_GitHubPackage_InvalidSignature_Returns401(t *te
 	const body = `{"action":"published","package":{"package_type":"CONTAINER"}}`
 	app := seedAppWithWebhookSecret(t, "mysecret")
 
-	c, w := makeGitHubPackageRequest(app.Id, body, "sha256=badhex")
+	c, w := makeGitHubPackageRequest(app.Id, body, imagePullHMAC("wrongsecret", body))
 	ImagePullWebhookHandler(c)
 
 	if w.Code != http.StatusUnauthorized {
