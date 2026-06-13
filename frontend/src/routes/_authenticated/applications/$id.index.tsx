@@ -1,6 +1,8 @@
 import {
 	deleteApplication,
 	deployApplication,
+	generateImageWebhook,
+	revokeImageWebhook,
 	HealthStatus,
 	SyncStatus,
 	type Application,
@@ -25,6 +27,7 @@ import {
 	RotateCcw,
 	Server,
 	Trash2,
+	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +47,8 @@ import { useFetch } from "@/lib/api";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
+import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
@@ -154,9 +159,11 @@ function ApplicationDetailsPage() {
 	const navigate = useNavigate();
 	const { theme } = useTheme();
 
-	const { data } = useFetch<Application>("/applications/" + id);
+	const { data, mutate } = useFetch<Application>("/applications/" + id);
 
 	const [deploying, setDeploying] = useState(false);
+	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+	const [webhookSecretOpen, setWebhookSecretOpen] = useState(false);
 
 	const handleDeploy = async () => {
 		setDeploying(true);
@@ -188,6 +195,27 @@ function ApplicationDetailsPage() {
 			transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
 		});
 	}, [data?.previousComposeFile, data?.composeFile, theme]);
+
+	async function handleGenerateWebhook() {
+		try {
+			const result = await generateImageWebhook(id);
+			setWebhookSecret(result.secret);
+			setWebhookSecretOpen(true);
+			await mutate();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedGenerateWebhook());
+		}
+	}
+
+	async function handleRevokeWebhook() {
+		try {
+			await revokeImageWebhook(id);
+			toast.success(m.webhookRevoked());
+			await mutate();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedRevokeWebhook());
+		}
+	}
 
 	async function deleteApp() {
 		try {
@@ -323,6 +351,60 @@ function ApplicationDetailsPage() {
 					{m.comingSoon()}
 				</TabsContent>
 			</Tabs>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>
+						<div className="flex items-center gap-2">
+							<Webhook className="h-5 w-5" />
+							{m.imagePullWebhookSectionTitle()}
+						</div>
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
+
+					{data?.imageWebhookEnabled && data.imageWebhookUrl ? (
+						<div className="space-y-1">
+							<p className="text-xs font-medium">{m.imagePullWebhookUrl()}</p>
+							<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
+								<code className="flex-1 truncate font-mono text-sm">{data.imageWebhookUrl}</code>
+								<CopyButton text={data.imageWebhookUrl} title={m.imagePullWebhookUrl()} />
+							</div>
+						</div>
+					) : null}
+
+					<div className="flex items-center gap-2">
+						<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+							{data?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+						</Button>
+						{data?.imageWebhookEnabled && (
+							<ConfirmationDialog
+								onConfirm={handleRevokeWebhook}
+								description={m.revokeWebhookConfirmDescription()}
+								triggerText={m.revokeWebhook()}
+								triggerProps={{ variant: "destructive", size: "sm" }}
+							/>
+						)}
+					</div>
+				</CardContent>
+			</Card>
+
+			<CopyValueDialog
+				open={webhookSecretOpen}
+				onOpenChange={(nextOpen) => {
+					setWebhookSecretOpen(nextOpen);
+					if (!nextOpen) {
+						setWebhookSecret(null);
+					}
+				}}
+				title={m.imagePullWebhookSecretModalTitle()}
+				description={m.imagePullWebhookSecretModalDescription()}
+				label={m.imagePullWebhookSecret()}
+				value={webhookSecret ?? ""}
+				inputId={`app-pull-webhook-secret-${id}`}
+				copyTitle={m.imagePullWebhookSecret()}
+			/>
 		</div>
 	);
 }

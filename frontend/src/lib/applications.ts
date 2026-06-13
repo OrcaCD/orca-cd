@@ -22,6 +22,8 @@ export interface Application {
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
 	imagePollDeleteOldImages: boolean;
+	imageWebhookEnabled: boolean;
+	imageWebhookUrl?: string;
 }
 
 export interface ApplicationListItem {
@@ -100,4 +102,17 @@ export function deleteApplication(id: string): Promise<void> {
 
 export function deployApplication(id: string): Promise<DeployApplicationResponse> {
 	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
+}
+
+export interface GenerateImageWebhookResponse {
+	secret: string;
+	webhookUrl: string;
+}
+
+export function generateImageWebhook(id: string): Promise<GenerateImageWebhookResponse> {
+	return fetcher<GenerateImageWebhookResponse>(`/applications/${id}/image-webhook`, "POST");
+}
+
+export function revokeImageWebhook(id: string): Promise<void> {
+	return fetcher(`/applications/${id}/image-webhook`, "DELETE");
 }

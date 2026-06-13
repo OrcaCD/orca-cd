@@ -526,5 +526,21 @@
 	"imagePollIntervalHint": "Minimum 60 s. Wie oft die Registry auf neue Image-Versionen geprüft wird.",
 	"imagePollDeleteOldImages": "Alte Images löschen",
 	"imagePollDeleteOldImagesDescription": "Ersetzte Image-Versionen nach einem erfolgreichen Update entfernen",
-	"validationImagePollIntervalMin": "Das Polling-Intervall muss mindestens 60 Sekunden betragen"
+	"validationImagePollIntervalMin": "Das Polling-Intervall muss mindestens 60 Sekunden betragen",
+	"imagePullWebhookSectionTitle": "Image-Pull-Webhook",
+	"imagePullWebhookDescription": "Löst einen Image-Pull aus, wenn ein Container-Image in Ihre Registry gepusht wird (z. B. Harbor). Konfigurieren Sie diese URL als Webhook in Ihrer Registry und fügen Sie das Secret als Authorization-Bearer-Header hinzu.",
+	"imagePullWebhookEnabled": "Webhook aktiv",
+	"imagePullWebhookNotEnabled": "Kein Webhook konfiguriert",
+	"generateWebhook": "Webhook generieren",
+	"regenerateWebhook": "Neu generieren",
+	"revokeWebhook": "Widerrufen",
+	"imagePullWebhookSecretModalTitle": "Webhook-Secret",
+	"imagePullWebhookSecretModalDescription": "Kopieren Sie das Secret jetzt – es wird nicht erneut angezeigt. Konfigurieren Sie Ihre Registry, um diesen Wert zu senden als: Authorization: Bearer <secret>",
+	"imagePullWebhookUrl": "Webhook-URL",
+	"imagePullWebhookSecret": "Secret",
+	"revokeWebhookConfirmDescription": "Damit wird das aktuelle Webhook-Secret sofort ungültig. Bestehende Integrationen mit dem alten Secret werden nicht mehr funktionieren.",
+	"webhookRevoked": "Webhook widerrufen",
+	"webhookGenerated": "Webhook generiert",
+	"failedGenerateWebhook": "Webhook konnte nicht generiert werden",
+	"failedRevokeWebhook": "Webhook konnte nicht widerrufen werden"
 }
