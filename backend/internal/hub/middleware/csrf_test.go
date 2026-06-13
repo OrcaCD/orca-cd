@@ -103,7 +103,7 @@ func TestValidateOrigin_WebhookRoute_NoOriginAllowed(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/some-repo-id", nil)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/repositories/some-repo-id", nil)
 
 	mw(c)
 

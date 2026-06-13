@@ -39,9 +39,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
 		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
 
-		// Webhook endpoint for Repo providers: 1 req/s per IP, burst of 10
+		// Webhook endpoints: 1 req/s per IP, burst of 10
 		webhookRateLimit := middleware.RateLimit(time.Second, 10)
-		api.POST("/webhooks/:id", webhookRateLimit, routes.WebhookHandler)
+		api.POST("/webhooks/repositories/:id", webhookRateLimit, routes.WebhookHandler)
+		api.POST("/webhooks/images/:id", webhookRateLimit, routes.ImagePullWebhookHandler)
 
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
@@ -62,6 +63,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
 			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
+			protected.POST("/applications/:id/image-webhook", routes.GenerateImagePullWebhookHandler)
+			protected.DELETE("/applications/:id/image-webhook", routes.RevokeImagePullWebhookHandler)
 
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
 			protected.POST("/repositories", routes.CreateRepositoryHandler)

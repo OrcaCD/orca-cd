@@ -59,6 +59,12 @@ import {
 	SlackWebhookUrlField,
 } from "./slack-notification-builder";
 import {
+	buildTeamsNotificationConfig,
+	isValidTeamsHost,
+	TeamsHostField,
+	TeamsTitleField,
+} from "./teams-notification-builder";
+import {
 	buildGotifyNotificationConfig,
 	GotifyAppTokenField,
 	GotifyCustomPathField,
@@ -121,6 +127,8 @@ const notificationBaseSchema = z.object({
 	emailFromName: z.string().trim(),
 	emailToAddresses: z.string(),
 	emailUseTLS: z.boolean(),
+	teamsHost: z.string().trim(),
+	teamsTitle: z.string().trim(),
 	webhookUrl: z.string().trim(),
 	webhookHeaders: z.string(),
 	customShoutrrrUrl: z.string().trim(),
@@ -276,6 +284,22 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 		}
 	}
 
+	if (value.type === "teams") {
+		if (value.teamsHost === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["teamsHost"],
+				message: m.validationNotificationTeamsHostRequired(),
+			});
+		} else if (!isValidTeamsHost(value.teamsHost)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["teamsHost"],
+				message: m.validationNotificationTeamsHostInvalid(),
+			});
+		}
+	}
+
 	if (value.type === "webhook") {
 		if (value.webhookUrl === "") {
 			ctx.addIssue({
@@ -340,6 +364,18 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		});
 		if (!config) {
 			throw new Error(m.validationNotificationSlackWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "teams") {
+		const config = buildTeamsNotificationConfig({
+			teamsHost: value.teamsHost,
+			teamsTitle: value.teamsTitle,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationTeamsHostInvalid());
 		}
 
 		return config;
@@ -426,6 +462,8 @@ function useNotificationForm() {
 			emailFromName: "",
 			emailToAddresses: "",
 			emailUseTLS: true,
+			teamsHost: "",
+			teamsTitle: "",
 			webhookUrl: "",
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
@@ -713,6 +751,19 @@ function NotificationProviderStepContent({ form }: { form: NotificationFormApi }
 					);
 				}
 
+				if (type === "teams") {
+					return (
+						<FieldGroup>
+							<form.Field name="teamsHost" children={(field) => <TeamsHostField field={field} />} />
+
+							<form.Field
+								name="teamsTitle"
+								children={(field) => <TeamsTitleField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
 				if (type === "webhook") {
 					return (
 						<FieldGroup>
@@ -823,6 +874,8 @@ export default function CreateNotificationDialog() {
 			emailFromName: "",
 			emailToAddresses: "",
 			emailUseTLS: true,
+			teamsHost: "",
+			teamsTitle: "",
 			webhookUrl: "",
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
