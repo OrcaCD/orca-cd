@@ -18,7 +18,7 @@ function getSyncTypeIcon(syncType: RepositorySyncType) {
 function getSyncTypeLabel(syncType: RepositorySyncType): string {
 	switch (syncType) {
 		case "webhook":
-			return m.repoSyncTypeWebhook();
+			return m.webhook();
 		case "polling":
 			return m.repoSyncTypePolling();
 		case "manual":

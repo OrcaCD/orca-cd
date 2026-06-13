@@ -159,7 +159,7 @@ function ApplicationDetailsPage() {
 	const navigate = useNavigate();
 	const { theme } = useTheme();
 
-	const { data, mutate } = useFetch<Application>("/applications/" + id);
+	const { data } = useFetch<Application>("/applications/" + id);
 
 	const [deploying, setDeploying] = useState(false);
 	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
@@ -201,7 +201,6 @@ function ApplicationDetailsPage() {
 			const result = await generateImageWebhook(id);
 			setWebhookSecret(result.secret);
 			setWebhookSecretOpen(true);
-			await mutate();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.failedGenerateWebhook());
 		}
@@ -211,7 +210,6 @@ function ApplicationDetailsPage() {
 		try {
 			await revokeImageWebhook(id);
 			toast.success(m.webhookRevoked());
-			await mutate();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.failedRevokeWebhook());
 		}
@@ -329,6 +327,7 @@ function ApplicationDetailsPage() {
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
 					<TabsTrigger value="diff">Diff</TabsTrigger>
 					<TabsTrigger value="events">{m.events()}</TabsTrigger>
+					<TabsTrigger value="webhook">{m.webhook()}</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
@@ -350,45 +349,48 @@ function ApplicationDetailsPage() {
 				<TabsContent value="events" className="space-y-4">
 					{m.comingSoon()}
 				</TabsContent>
-			</Tabs>
+				<TabsContent value="webhook" className="space-y-4">
+					<Card className="max-w-4xl">
+						<CardHeader>
+							<CardTitle>
+								<div className="flex items-center gap-2">
+									<Webhook className="h-5 w-5" />
+									{m.imagePullWebhookSectionTitle()}
+								</div>
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>
-						<div className="flex items-center gap-2">
-							<Webhook className="h-5 w-5" />
-							{m.imagePullWebhookSectionTitle()}
-						</div>
-					</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
+							{data?.imageWebhookEnabled && data.imageWebhookUrl ? (
+								<div className="space-y-1">
+									<p className="text-xs font-medium">{m.imagePullWebhookUrl()}</p>
+									<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
+										<code className="flex-1 truncate font-mono text-sm">
+											{data.imageWebhookUrl}
+										</code>
+										<CopyButton text={data.imageWebhookUrl} title={m.imagePullWebhookUrl()} />
+									</div>
+								</div>
+							) : null}
 
-					{data?.imageWebhookEnabled && data.imageWebhookUrl ? (
-						<div className="space-y-1">
-							<p className="text-xs font-medium">{m.imagePullWebhookUrl()}</p>
-							<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
-								<code className="flex-1 truncate font-mono text-sm">{data.imageWebhookUrl}</code>
-								<CopyButton text={data.imageWebhookUrl} title={m.imagePullWebhookUrl()} />
+							<div className="flex items-center gap-2">
+								<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+									{data?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+								</Button>
+								{data?.imageWebhookEnabled && (
+									<ConfirmationDialog
+										onConfirm={handleRevokeWebhook}
+										description={m.revokeWebhookConfirmDescription()}
+										triggerText={m.revokeWebhook()}
+										triggerProps={{ variant: "destructive", size: "sm" }}
+									/>
+								)}
 							</div>
-						</div>
-					) : null}
-
-					<div className="flex items-center gap-2">
-						<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
-							{data?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
-						</Button>
-						{data?.imageWebhookEnabled && (
-							<ConfirmationDialog
-								onConfirm={handleRevokeWebhook}
-								description={m.revokeWebhookConfirmDescription()}
-								triggerText={m.revokeWebhook()}
-								triggerProps={{ variant: "destructive", size: "sm" }}
-							/>
-						)}
-					</div>
-				</CardContent>
-			</Card>
+						</CardContent>
+					</Card>
+				</TabsContent>
+			</Tabs>
 
 			<CopyValueDialog
 				open={webhookSecretOpen}

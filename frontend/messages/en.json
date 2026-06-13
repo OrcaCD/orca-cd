@@ -452,7 +452,7 @@
 	"repoSyncStatusSyncing": "Syncing",
 	"repoSyncStatusFailed": "Failed",
 	"repoSyncStatusSuccess": "Success",
-	"repoSyncTypeWebhook": "Webhook",
+	"webhook": "Webhook",
 	"repoSyncTypePolling": "Polling",
 	"repoSyncTypeManual": "Manual",
 	"themeLight": "Light",

@@ -590,6 +590,63 @@ func TestImagePullWebhookHandler_NoEventType_TriggersPull(t *testing.T) {
 	}
 }
 
+func TestImagePullWebhookHandler_DBError(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	closeDBForErrorPath(t)
+
+	c, w := makeImagePullWebhookRequest("any-id", "token")
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_GitHubPackage_InvalidJSON_Returns400(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+
+	const secret = "mysecret"
+	const body = "not-valid-json"
+	app := seedAppWithWebhookSecret(t, secret)
+
+	c, w := makeGitHubPackageRequest(app.Id, body, imagePullHMAC(secret, body))
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGenerateImagePullWebhookHandler_DBError(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	closeDBForErrorPath(t)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/any-id/image-webhook", nil)
+	c.Params = gin.Params{{Key: "id", Value: "any-id"}}
+	GenerateImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRevokeImagePullWebhookHandler_DBError(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	closeDBForErrorPath(t)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/any-id/image-webhook", nil)
+	c.Params = gin.Params{{Key: "id", Value: "any-id"}}
+	RevokeImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestIsHarborPushEvent(t *testing.T) {
 	tests := []struct {
 		name string
