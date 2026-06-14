@@ -5,7 +5,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	ArrowRight,
-	Box,
 	GitBranch,
 	GitCommit,
 	MoreVertical,
@@ -30,6 +29,7 @@ import { Separator } from "@/components/ui/separator";
 import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -131,7 +131,7 @@ function ApplicationsPage() {
 											<CardTitle>
 												<div className="flex items-center gap-3">
 													<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-														<Box className="h-5 w-5 text-primary" />
+														<StaticLucideIcon name={app.icon} className="h-5 w-5 text-primary" />
 													</div>
 													<div>
 														<h3 className="font-medium group-hover:text-primary transition-colors">

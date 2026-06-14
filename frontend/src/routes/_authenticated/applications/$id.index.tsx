@@ -17,7 +17,6 @@ import {
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
-	Box,
 	Clock,
 	ExternalLink,
 	GitBranch,
@@ -52,6 +51,7 @@ import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -243,7 +243,7 @@ function ApplicationDetailsPage() {
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
 					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-						<Box className="h-7 w-7 text-primary" />
+						<StaticLucideIcon name={data?.icon} className="h-7 w-7 text-primary" />
 					</div>
 					<div>
 						<div className="flex items-center gap-3">
@@ -350,7 +350,7 @@ function ApplicationDetailsPage() {
 					{m.comingSoon()}
 				</TabsContent>
 				<TabsContent value="webhook" className="space-y-4">
-					<Card className="max-w-4xl">
+					<Card>
 						<CardHeader>
 							<CardTitle>
 								<div className="flex items-center gap-2">

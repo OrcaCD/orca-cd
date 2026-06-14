@@ -3,7 +3,7 @@ import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, Search, Server, Trash2 } from "lucide-react";
+import { AppWindow, EllipsisVertical, Search, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -140,8 +141,8 @@ function RouteComponent() {
 										</CardAction>
 
 										<div className="flex min-w-0 items-center gap-3">
-											<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-												<Server className="h-5 w-5 text-muted-foreground" />
+											<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+												<StaticLucideIcon name={agent.icon} className="h-5 w-5 text-primary" />
 											</div>
 											<div className="min-w-0 space-y-1">
 												<CardTitle className="truncate" title={agent.name}>

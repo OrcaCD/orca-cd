@@ -26,6 +26,7 @@ const (
 type Application struct {
 	Base
 	Name                     crypto.EncryptedString  `gorm:"type:text;not null"`
+	Icon                     string                  `gorm:"type:text;not null;default:box"`
 	RepositoryId             string                  `gorm:"type:text;not null"`
 	Repository               Repository              `gorm:"foreignKey:RepositoryId"`
 	AgentId                  string                  `gorm:"type:text;not null"`
