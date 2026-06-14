@@ -13,6 +13,7 @@ import type { ApplicationListItem } from "@/lib/applications";
 import { Link } from "@tanstack/react-router";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { m } from "@/lib/paraglide/messages";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const columns: ColumnDef<ApplicationListItem>[] = [
 	{
@@ -22,14 +23,21 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		},
 		cell: ({ row }) => {
 			const app = row.original;
+
 			return (
-				<Link
-					to="/applications/$id"
-					params={{ id: app.id }}
-					className="font-medium hover:text-primary underline underline-offset-2"
-				>
-					{app.name}
-				</Link>
+				<div className="flex flex-row gap-3 items-center">
+					<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+						<StaticLucideIcon name={app.icon} className="h-5 w-5 text-primary" />
+					</div>
+
+					<Link
+						to="/applications/$id"
+						params={{ id: app.id }}
+						className="font-medium hover:text-primary underline underline-offset-2"
+					>
+						{app.name}
+					</Link>
+				</div>
 			);
 		},
 	},

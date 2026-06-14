@@ -112,6 +112,7 @@ func seedTestAgent(t *testing.T, name string) models.Agent {
 
 	agent := models.Agent{
 		Name:   crypto.EncryptedString(name),
+		Icon:   "server",
 		KeyId:  crypto.EncryptedString("test-key-" + name),
 		Status: models.AgentStatusOnline,
 	}
@@ -147,6 +148,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 	now := time.Now().UTC().Truncate(time.Second)
 	app := models.Application{
 		Name:                crypto.EncryptedString(name),
+		Icon:                "box",
 		RepositoryId:        repoId,
 		AgentId:             agentId,
 		SyncStatus:          models.UnknownSync,
@@ -170,6 +172,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 func validApplicationRequestBody(repoID, agentID string) map[string]any {
 	return map[string]any{
 		"name":         "Billing Service",
+		"icon":         "box",
 		"repositoryId": repoID,
 		"agentId":      agentID,
 		"branch":       "main",
@@ -238,6 +241,9 @@ func TestListApplicationsHandler_ReturnsSummaryFields(t *testing.T) {
 	item := body[0]
 	if item["id"] != app.Id {
 		t.Errorf("expected id %q, got %v", app.Id, item["id"])
+	}
+	if item["icon"] != "box" {
+		t.Errorf("expected icon %q, got %v", "box", item["icon"])
 	}
 	if item["syncStatus"] != string(models.UnknownSync) {
 		t.Errorf("expected syncStatus %q, got %v", models.UnknownSync, item["syncStatus"])
@@ -370,6 +376,7 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":         "Billing Service",
+		"icon":         "badge-dollar-sign",
 		"repositoryId": repo.Id,
 		"agentId":      agent.Id,
 		"branch":       "main",
@@ -396,6 +403,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if body.Name != "Billing Service" {
 		t.Errorf("expected name %q, got %q", "Billing Service", body.Name)
+	}
+	if body.Icon != "badge-dollar-sign" {
+		t.Errorf("expected icon %q, got %q", "badge-dollar-sign", body.Icon)
 	}
 	if body.RepositoryName != repo.Name {
 		t.Errorf("expected repositoryName %q, got %q", repo.Name, body.RepositoryName)
@@ -428,6 +438,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if stored.Name.String() != "Billing Service" {
 		t.Errorf("expected encrypted/decrypted name %q, got %q", "Billing Service", stored.Name.String())
+	}
+	if stored.Icon != "badge-dollar-sign" {
+		t.Errorf("expected stored icon %q, got %q", "badge-dollar-sign", stored.Icon)
 	}
 	if stored.SyncStatus != models.UnknownSync {
 		t.Errorf("expected syncStatus %q, got %q", models.UnknownSync, stored.SyncStatus)
@@ -648,6 +661,7 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":         "New Name",
+		"icon":         "rocket",
 		"repositoryId": newRepo.Id,
 		"agentId":      newAgent.Id,
 		"branch":       "release",
@@ -675,6 +689,9 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	if body.AgentName != "agent-update-2" {
 		t.Errorf("expected agentName %q, got %q", "agent-update-2", body.AgentName)
 	}
+	if body.Icon != "rocket" {
+		t.Errorf("expected icon %q, got %q", "rocket", body.Icon)
+	}
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
@@ -683,6 +700,9 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	if updated.Name.String() != "New Name" {
 		t.Errorf("expected name %q, got %q", "New Name", updated.Name.String())
+	}
+	if updated.Icon != "rocket" {
+		t.Errorf("expected icon %q, got %q", "rocket", updated.Icon)
 	}
 	if updated.RepositoryId != newRepo.Id {
 		t.Errorf("expected repositoryId %q, got %q", newRepo.Id, updated.RepositoryId)
@@ -1112,6 +1132,40 @@ func TestParseRFC3339Timestamp(t *testing.T) {
 func TestFormatTimestamp_Nil(t *testing.T) {
 	if value := formatTimestamp(nil); value != nil {
 		t.Fatalf("expected nil, got %v", *value)
+	}
+}
+
+func TestGetApplicationHandler_WebhookEnabled_IncludesUrl(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-webhook-url")
+	agent := seedTestAgent(t, "agent-webhook-url")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Webhook App")
+
+	enc := crypto.EncryptedString("webhooksecret")
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("image_webhook_secret", &enc).Error; err != nil {
+		t.Fatalf("failed to set webhook secret: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.ImageWebhookEnabled {
+		t.Error("expected imageWebhookEnabled to be true")
+	}
+	if body.ImageWebhookUrl == nil || *body.ImageWebhookUrl == "" {
+		t.Error("expected imageWebhookUrl to be set")
 	}
 }
 

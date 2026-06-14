@@ -1,6 +1,8 @@
 import {
 	deleteApplication,
 	deployApplication,
+	generateImageWebhook,
+	revokeImageWebhook,
 	HealthStatus,
 	SyncStatus,
 	type Application,
@@ -15,7 +17,6 @@ import {
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
-	Box,
 	Clock,
 	ExternalLink,
 	GitBranch,
@@ -26,6 +27,7 @@ import {
 	RotateCcw,
 	Server,
 	Trash2,
+	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
@@ -44,9 +46,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
+import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -157,6 +162,8 @@ function ApplicationDetailsPage() {
 	const { data } = useFetch<Application>("/applications/" + id);
 
 	const [deploying, setDeploying] = useState(false);
+	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+	const [webhookSecretOpen, setWebhookSecretOpen] = useState(false);
 
 	const handleDeploy = async () => {
 		setDeploying(true);
@@ -189,6 +196,25 @@ function ApplicationDetailsPage() {
 		});
 	}, [data?.previousComposeFile, data?.composeFile, theme]);
 
+	async function handleGenerateWebhook() {
+		try {
+			const result = await generateImageWebhook(id);
+			setWebhookSecret(result.secret);
+			setWebhookSecretOpen(true);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedGenerateWebhook());
+		}
+	}
+
+	async function handleRevokeWebhook() {
+		try {
+			await revokeImageWebhook(id);
+			toast.success(m.webhookRevoked());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedRevokeWebhook());
+		}
+	}
+
 	async function deleteApp() {
 		try {
 			await deleteApplication(id);
@@ -217,7 +243,7 @@ function ApplicationDetailsPage() {
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
 					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-						<Box className="h-7 w-7 text-primary" />
+						<StaticLucideIcon name={data?.icon} className="h-7 w-7 text-primary" />
 					</div>
 					<div>
 						<div className="flex items-center gap-3">
@@ -311,6 +337,7 @@ function ApplicationDetailsPage() {
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
 					<TabsTrigger value="diff">Diff</TabsTrigger>
 					<TabsTrigger value="events">{m.events()}</TabsTrigger>
+					<TabsTrigger value="webhook">{m.webhook()}</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
@@ -331,6 +358,63 @@ function ApplicationDetailsPage() {
 
 				<TabsContent value="events" className="space-y-4">
 					{m.comingSoon()}
+				</TabsContent>
+				<TabsContent value="webhook" className="space-y-4">
+					<Card>
+						<CardHeader>
+							<CardTitle>
+								<div className="flex items-center gap-2">
+									<Webhook className="h-5 w-5" />
+									{m.imagePullWebhookSectionTitle()}
+								</div>
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
+
+							{data?.imageWebhookEnabled && data.imageWebhookUrl ? (
+								<div className="space-y-1">
+									<p className="text-xs font-medium">{m.imagePullWebhookUrl()}</p>
+									<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
+										<code className="flex-1 truncate font-mono text-sm">
+											{data.imageWebhookUrl}
+										</code>
+										<CopyButton text={data.imageWebhookUrl} title={m.imagePullWebhookUrl()} />
+									</div>
+								</div>
+							) : null}
+
+							<div className="flex items-center gap-2">
+								<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+									{data?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+								</Button>
+								{data?.imageWebhookEnabled && (
+									<ConfirmationDialog
+										onConfirm={handleRevokeWebhook}
+										description={m.revokeWebhookConfirmDescription()}
+										triggerText={m.revokeWebhook()}
+										triggerProps={{ variant: "destructive", size: "sm" }}
+									/>
+								)}
+							</div>
+						</CardContent>
+					</Card>
+
+					<CopyValueDialog
+						open={webhookSecretOpen}
+						onOpenChange={(nextOpen) => {
+							setWebhookSecretOpen(nextOpen);
+							if (!nextOpen) {
+								setWebhookSecret(null);
+							}
+						}}
+						title={m.imagePullWebhookSecretModalTitle()}
+						description={m.imagePullWebhookSecretModalDescription()}
+						label={m.imagePullWebhookSecret()}
+						value={webhookSecret ?? ""}
+						inputId={`app-pull-webhook-secret-${id}`}
+						copyTitle={m.imagePullWebhookSecret()}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

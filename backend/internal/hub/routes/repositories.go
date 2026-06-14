@@ -92,8 +92,7 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 		s := r.WebhookSecret.String()
 		resp.WebhookSecret = &s
 
-		// Webhook URL would typically be something like: https://orca-cd.example.com/webhooks/repositories/{id}
-		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/%s", appUrl, r.Id)
+		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/repositories/%s", appUrl, r.Id)
 		resp.WebhookUrl = &webhookUrl
 	}
 

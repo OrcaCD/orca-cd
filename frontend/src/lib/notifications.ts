@@ -6,6 +6,7 @@ export const notificationTypes = [
 	"gotify",
 	"slack",
 	"teams",
+	"email",
 	"webhook",
 	"custom",
 ] as const;

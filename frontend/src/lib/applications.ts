@@ -2,6 +2,7 @@ import { fetcher } from "./api";
 
 export interface Application {
 	id: string;
+	icon: string;
 	name: string;
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
@@ -22,11 +23,14 @@ export interface Application {
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
 	imagePollDeleteOldImages: boolean;
+	imageWebhookEnabled: boolean;
+	imageWebhookUrl?: string;
 }
 
 export interface ApplicationListItem {
 	id: string;
 	name: string;
+	icon: string;
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
 	repositoryName: string;
@@ -59,6 +63,7 @@ export enum Type {
 
 interface CreateApplicationRequest {
 	name: string;
+	icon: string;
 	repositoryId: string;
 	agentId: string;
 	branch: string;
@@ -70,6 +75,7 @@ interface CreateApplicationRequest {
 
 interface UpdateApplicationRequest {
 	name: string;
+	icon: string;
 	repositoryId: string;
 	agentId: string;
 	branch: string;
@@ -100,4 +106,17 @@ export function deleteApplication(id: string): Promise<void> {
 
 export function deployApplication(id: string): Promise<DeployApplicationResponse> {
 	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
+}
+
+export interface GenerateImageWebhookResponse {
+	secret: string;
+	webhookUrl: string;
+}
+
+export function generateImageWebhook(id: string): Promise<GenerateImageWebhookResponse> {
+	return fetcher<GenerateImageWebhookResponse>(`/applications/${id}/image-webhook`, "POST");
+}
+
+export function revokeImageWebhook(id: string): Promise<void> {
+	return fetcher(`/applications/${id}/image-webhook`, "DELETE");
 }
