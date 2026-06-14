@@ -2,7 +2,7 @@ import { type Application } from "@/lib/applications";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ApplicationForm } from "@/components/application-from";
+import { ApplicationForm } from "@/components/application-form";
 import {
 	Breadcrumb,
 	BreadcrumbItem,
@@ -51,7 +51,7 @@ function EditApplicationPage() {
 				</BreadcrumbList>
 			</Breadcrumb>
 
-			<ApplicationForm application={application} />
+			{application ? <ApplicationForm application={application} /> : <div>{m.loadingDots()}</div>}
 		</div>
 	);
 }

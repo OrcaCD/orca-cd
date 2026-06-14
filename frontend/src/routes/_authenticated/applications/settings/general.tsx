@@ -1,4 +1,4 @@
-import { ApplicationForm } from "@/components/application-from";
+import { ApplicationForm } from "@/components/application-form";
 import { m } from "@/lib/paraglide/messages";
 import { createFileRoute } from "@tanstack/react-router";
 

@@ -32,6 +32,7 @@ const applicationSchema = z.object({
 		.trim()
 		.min(1, m.validationApplicationNameRequired())
 		.max(128, m.validationApplicationNameMaxLength()),
+	icon: z.string(),
 	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
 	agentId: z.string().min(1, m.validationAgentRequired()),
 	branch: z
@@ -199,6 +200,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 	const form = useForm({
 		defaultValues: {
 			name: application?.name ?? "",
+			icon: application?.icon ?? "",
 			repositoryId: application?.repositoryId ?? "",
 			agentId: application?.agentId ?? "",
 			branch: application?.branch ?? "",
