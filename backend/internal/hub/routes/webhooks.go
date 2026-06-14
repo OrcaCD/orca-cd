@@ -21,6 +21,12 @@ import (
 	"gorm.io/gorm"
 )
 
+type genericWebhookPayload struct {
+	Ref    string `json:"ref"`
+	Branch string `json:"branch"`
+	Commit string `json:"commit"`
+}
+
 // maxWebhookBodySize caps the request body to guard against memory exhaustion from oversized payloads.
 const maxWebhookBodySize = 10 * 1024 * 1024 // 10 MB
 
@@ -54,6 +60,11 @@ func WebhookHandler(c *gin.Context) {
 
 	if repo.WebhookSecret == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if !hasProviderEventHeader(c) {
+		handleGenericWebhook(c, id, repo)
 		return
 	}
 
@@ -102,6 +113,95 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusNoContent)
+}
+
+func handleGenericWebhook(c *gin.Context, id string, repo models.Repository) {
+	secret := repo.WebhookSecret.String()
+	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	branch, commit := parseGenericWebhookBody(body)
+
+	now := time.Now()
+	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).Updates(c.Request.Context(), models.Repository{
+		SyncStatus:    models.SyncStatusSuccess,
+		LastSyncError: nil,
+		LastSyncedAt:  &now,
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	var apps []models.Application
+	if branch != "" {
+		apps, err = applications.GetMatchingApplications(c.Request.Context(), &repo, branch)
+	} else {
+		apps, err = applications.GetAllApplicationsForRepo(c.Request.Context(), &repo)
+	}
+	if err == nil && len(apps) > 0 {
+		if provider, err := repositories.Get(repo.Provider); err == nil {
+			enqueueGenericApps(c, &repo, provider, apps, commit)
+		}
+	}
+
+	c.AbortWithStatus(http.StatusNoContent)
+}
+
+// enqueueGenericApps enqueues apps triggered by the generic webhook.
+// When no commit is provided, it resolves the latest commit per branch from the provider.
+func enqueueGenericApps(c *gin.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, commit string) {
+	ctx := c.Request.Context()
+
+	if commit != "" {
+		applications.DefaultQueue.Enqueue(repo, provider, apps, commit, "")
+		return
+	}
+
+	// Group apps by branch so we can resolve one latest commit per branch.
+	byBranch := map[string][]models.Application{}
+	for _, app := range apps {
+		byBranch[app.Branch] = append(byBranch[app.Branch], app)
+	}
+	for branchName, branchApps := range byBranch {
+		resolvedCommit := ""
+		if info, err := provider.GetLatestCommit(ctx, repo, branchName); err == nil {
+			resolvedCommit = info.Hash
+		}
+		applications.DefaultQueue.Enqueue(repo, provider, branchApps, resolvedCommit, "")
+	}
+}
+
+// parseGenericWebhookBody extracts an optional branch and commit from the request body.
+// ref takes priority over branch; both are optional. Returns empty strings on empty or invalid JSON.
+func parseGenericWebhookBody(body []byte) (branch, commit string) {
+	if len(body) == 0 {
+		return "", ""
+	}
+	var payload genericWebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", ""
+	}
+	if payload.Ref != "" {
+		branch = extractBranchFromRef(payload.Ref)
+	} else {
+		branch = strings.TrimSpace(payload.Branch)
+	}
+	return branch, strings.TrimSpace(payload.Commit)
+}
+
+func hasProviderEventHeader(c *gin.Context) bool {
+	return c.GetHeader("X-GitHub-Event") != "" ||
+		c.GetHeader("X-Gitea-Event") != "" ||
+		c.GetHeader("X-Gitlab-Event") != ""
 }
 
 func validateSignature(c *gin.Context, provider models.RepositoryProvider, secret string, body []byte) bool {
