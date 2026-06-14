@@ -32,7 +32,7 @@ const applicationSchema = z.object({
 		.trim()
 		.min(1, m.validationApplicationNameRequired())
 		.max(128, m.validationApplicationNameMaxLength()),
-	icon: z.string(),
+	icon: z.string().max(128, m.validationApplicationIconMaxLegth()),
 	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
 	agentId: z.string().min(1, m.validationAgentRequired()),
 	branch: z
@@ -270,7 +270,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 							await form.handleSubmit();
 						}}
 					>
-						<FieldGroup>
+						<FieldGroup className="max-w-xl">
 							<form.Field name="name">
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
@@ -291,11 +291,31 @@ export function ApplicationForm({ application }: { application?: Application | n
 								}}
 							</form.Field>
 
+							<form.Field name="icon">
+								{(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<Label htmlFor={field.name}>{m.icon()}</Label>
+											<Input
+												id={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												placeholder={m.applicationIconPlaceholder()}
+												autoFocus
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
+							</form.Field>
+
 							<form.Field name="repositoryId">
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field orientation="responsive" data-invalid={isInvalid}>
+										<Field data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="repository-select">{m.repository()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -337,7 +357,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field orientation="responsive" data-invalid={isInvalid}>
+										<Field data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="agent-select">{m.columnAgent()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -375,7 +395,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field orientation="responsive" data-invalid={isInvalid}>
+										<Field data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="branch-select">{m.branch()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
