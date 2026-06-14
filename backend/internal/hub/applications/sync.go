@@ -26,6 +26,10 @@ func GetMatchingApplications(ctx context.Context, repository *models.Repository,
 	return gorm.G[models.Application](db.DB).Where("repository_id = ? AND branch = ?", repository.Id, branch).Find(ctx)
 }
 
+func GetAllApplicationsForRepo(ctx context.Context, repository *models.Repository) ([]models.Application, error) {
+	return gorm.G[models.Application](db.DB).Where("repository_id = ?", repository.Id).Find(ctx)
+}
+
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	_ = markDeploymentInProgress(context.Background(), job.Application.Id, log)
 
