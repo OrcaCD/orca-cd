@@ -1,6 +1,5 @@
-import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,6 +7,7 @@ import {
 	GitBranch,
 	GitCommit,
 	MoreVertical,
+	Plus,
 	RefreshCw,
 	Search,
 	Server,
@@ -45,6 +45,7 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
+	const navigate = useNavigate();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
 
@@ -79,7 +80,16 @@ function ApplicationsPage() {
 					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
 					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
 				</div>
-				<UpsertApplicationDialog application={null} />
+				<Button
+					onClick={() =>
+						navigate({
+							to: "/applications/settings/general",
+						})
+					}
+				>
+					<Plus />
+					{m.newApplication()}
+				</Button>
 			</div>
 			<div>
 				<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -22,11 +22,17 @@ import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
+import { Route as AuthenticatedApplicationsSettingsRouteImport } from './routes/_authenticated/applications/settings'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
-import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id.index'
+import { Route as AuthenticatedApplicationsSettingsIndexRouteImport } from './routes/_authenticated/applications/settings/index'
+import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
+import { Route as AuthenticatedApplicationsSettingsGeneralRouteImport } from './routes/_authenticated/applications/settings/general'
+import { Route as AuthenticatedApplicationsIdSettingsRouteImport } from './routes/_authenticated/applications/$id/settings'
+import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
+import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -99,6 +105,12 @@ const AuthenticatedSettingsProfileRoute =
     path: '/profile',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedApplicationsSettingsRoute =
+  AuthenticatedApplicationsSettingsRouteImport.update({
+    id: '/applications/settings',
+    path: '/applications/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -122,11 +134,41 @@ const AuthenticatedAdminAuditLogRoute =
     path: '/audit-log',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedApplicationsSettingsIndexRoute =
+  AuthenticatedApplicationsSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedApplicationsSettingsRoute,
+  } as any)
 const AuthenticatedApplicationsIdIndexRoute =
   AuthenticatedApplicationsIdIndexRouteImport.update({
     id: '/applications/$id/',
     path: '/applications/$id/',
     getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsSettingsGeneralRoute =
+  AuthenticatedApplicationsSettingsGeneralRouteImport.update({
+    id: '/general',
+    path: '/general',
+    getParentRoute: () => AuthenticatedApplicationsSettingsRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsRoute =
+  AuthenticatedApplicationsIdSettingsRouteImport.update({
+    id: '/applications/$id/settings',
+    path: '/applications/$id/settings',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsIndexRoute =
+  AuthenticatedApplicationsIdSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedApplicationsIdSettingsRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsGeneralRoute =
+  AuthenticatedApplicationsIdSettingsGeneralRouteImport.update({
+    id: '/general',
+    path: '/general',
+    getParentRoute: () => AuthenticatedApplicationsIdSettingsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -138,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/applications/settings': typeof AuthenticatedApplicationsSettingsRouteWithChildren
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -146,7 +189,12 @@ export interface FileRoutesByFullPath {
   '/notifications/': typeof AuthenticatedNotificationsIndexRoute
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
+  '/applications/settings/general': typeof AuthenticatedApplicationsSettingsGeneralRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
+  '/applications/settings/': typeof AuthenticatedApplicationsSettingsIndexRoute
+  '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -163,7 +211,11 @@ export interface FileRoutesByTo {
   '/notifications': typeof AuthenticatedNotificationsIndexRoute
   '/repositories': typeof AuthenticatedRepositoriesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
+  '/applications/settings/general': typeof AuthenticatedApplicationsSettingsGeneralRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
+  '/applications/settings': typeof AuthenticatedApplicationsSettingsIndexRoute
+  '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -176,6 +228,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
   '/_authenticated/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/applications/settings': typeof AuthenticatedApplicationsSettingsRouteWithChildren
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -184,7 +237,12 @@ export interface FileRoutesById {
   '/_authenticated/notifications/': typeof AuthenticatedNotificationsIndexRoute
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
+  '/_authenticated/applications/settings/general': typeof AuthenticatedApplicationsSettingsGeneralRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
+  '/_authenticated/applications/settings/': typeof AuthenticatedApplicationsSettingsIndexRoute
+  '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/_authenticated/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -197,6 +255,7 @@ export interface FileRouteTypes {
     | '/admin/oidc-providers'
     | '/admin/system-info'
     | '/admin/users'
+    | '/applications/settings'
     | '/settings/profile'
     | '/settings/security'
     | '/admin/'
@@ -205,7 +264,12 @@ export interface FileRouteTypes {
     | '/notifications/'
     | '/repositories/'
     | '/settings/'
+    | '/applications/$id/settings'
+    | '/applications/settings/general'
     | '/applications/$id/'
+    | '/applications/settings/'
+    | '/applications/$id/settings/general'
+    | '/applications/$id/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -222,7 +286,11 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/repositories'
     | '/settings'
+    | '/applications/settings/general'
     | '/applications/$id'
+    | '/applications/settings'
+    | '/applications/$id/settings/general'
+    | '/applications/$id/settings'
   id:
     | '__root__'
     | '/_authenticated'
@@ -234,6 +302,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/oidc-providers'
     | '/_authenticated/admin/system-info'
     | '/_authenticated/admin/users'
+    | '/_authenticated/applications/settings'
     | '/_authenticated/settings/profile'
     | '/_authenticated/settings/security'
     | '/_authenticated/admin/'
@@ -242,7 +311,12 @@ export interface FileRouteTypes {
     | '/_authenticated/notifications/'
     | '/_authenticated/repositories/'
     | '/_authenticated/settings/'
+    | '/_authenticated/applications/$id/settings'
+    | '/_authenticated/applications/settings/general'
     | '/_authenticated/applications/$id/'
+    | '/_authenticated/applications/settings/'
+    | '/_authenticated/applications/$id/settings/general'
+    | '/_authenticated/applications/$id/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -343,6 +417,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsProfileRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/applications/settings': {
+      id: '/_authenticated/applications/settings'
+      path: '/applications/settings'
+      fullPath: '/applications/settings'
+      preLoaderRoute: typeof AuthenticatedApplicationsSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/users'
@@ -371,12 +452,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAuditLogRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/applications/settings/': {
+      id: '/_authenticated/applications/settings/'
+      path: '/'
+      fullPath: '/applications/settings/'
+      preLoaderRoute: typeof AuthenticatedApplicationsSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedApplicationsSettingsRoute
+    }
     '/_authenticated/applications/$id/': {
       id: '/_authenticated/applications/$id/'
       path: '/applications/$id'
       fullPath: '/applications/$id/'
       preLoaderRoute: typeof AuthenticatedApplicationsIdIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/settings/general': {
+      id: '/_authenticated/applications/settings/general'
+      path: '/general'
+      fullPath: '/applications/settings/general'
+      preLoaderRoute: typeof AuthenticatedApplicationsSettingsGeneralRouteImport
+      parentRoute: typeof AuthenticatedApplicationsSettingsRoute
+    }
+    '/_authenticated/applications/$id/settings': {
+      id: '/_authenticated/applications/$id/settings'
+      path: '/applications/$id/settings'
+      fullPath: '/applications/$id/settings'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/$id/settings/': {
+      id: '/_authenticated/applications/$id/settings/'
+      path: '/'
+      fullPath: '/applications/$id/settings/'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdSettingsRoute
+    }
+    '/_authenticated/applications/$id/settings/general': {
+      id: '/_authenticated/applications/$id/settings/general'
+      path: '/general'
+      fullPath: '/applications/$id/settings/general'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdSettingsRoute
     }
   }
 }
@@ -417,14 +533,52 @@ const AuthenticatedSettingsRouteWithChildren =
     AuthenticatedSettingsRouteChildren,
   )
 
+interface AuthenticatedApplicationsSettingsRouteChildren {
+  AuthenticatedApplicationsSettingsGeneralRoute: typeof AuthenticatedApplicationsSettingsGeneralRoute
+  AuthenticatedApplicationsSettingsIndexRoute: typeof AuthenticatedApplicationsSettingsIndexRoute
+}
+
+const AuthenticatedApplicationsSettingsRouteChildren: AuthenticatedApplicationsSettingsRouteChildren =
+  {
+    AuthenticatedApplicationsSettingsGeneralRoute:
+      AuthenticatedApplicationsSettingsGeneralRoute,
+    AuthenticatedApplicationsSettingsIndexRoute:
+      AuthenticatedApplicationsSettingsIndexRoute,
+  }
+
+const AuthenticatedApplicationsSettingsRouteWithChildren =
+  AuthenticatedApplicationsSettingsRoute._addFileChildren(
+    AuthenticatedApplicationsSettingsRouteChildren,
+  )
+
+interface AuthenticatedApplicationsIdSettingsRouteChildren {
+  AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  AuthenticatedApplicationsIdSettingsIndexRoute: typeof AuthenticatedApplicationsIdSettingsIndexRoute
+}
+
+const AuthenticatedApplicationsIdSettingsRouteChildren: AuthenticatedApplicationsIdSettingsRouteChildren =
+  {
+    AuthenticatedApplicationsIdSettingsGeneralRoute:
+      AuthenticatedApplicationsIdSettingsGeneralRoute,
+    AuthenticatedApplicationsIdSettingsIndexRoute:
+      AuthenticatedApplicationsIdSettingsIndexRoute,
+  }
+
+const AuthenticatedApplicationsIdSettingsRouteWithChildren =
+  AuthenticatedApplicationsIdSettingsRoute._addFileChildren(
+    AuthenticatedApplicationsIdSettingsRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
+  AuthenticatedApplicationsSettingsRoute: typeof AuthenticatedApplicationsSettingsRouteWithChildren
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedApplicationsIndexRoute: typeof AuthenticatedApplicationsIndexRoute
   AuthenticatedNotificationsIndexRoute: typeof AuthenticatedNotificationsIndexRoute
   AuthenticatedRepositoriesIndexRoute: typeof AuthenticatedRepositoriesIndexRoute
+  AuthenticatedApplicationsIdSettingsRoute: typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
 }
 
@@ -432,10 +586,14 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRouteWithChildren,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
+  AuthenticatedApplicationsSettingsRoute:
+    AuthenticatedApplicationsSettingsRouteWithChildren,
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedApplicationsIndexRoute: AuthenticatedApplicationsIndexRoute,
   AuthenticatedNotificationsIndexRoute: AuthenticatedNotificationsIndexRoute,
   AuthenticatedRepositoriesIndexRoute: AuthenticatedRepositoriesIndexRoute,
+  AuthenticatedApplicationsIdSettingsRoute:
+    AuthenticatedApplicationsIdSettingsRouteWithChildren,
   AuthenticatedApplicationsIdIndexRoute: AuthenticatedApplicationsIdIndexRoute,
 }
 

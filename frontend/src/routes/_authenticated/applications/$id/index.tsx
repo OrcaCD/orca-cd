@@ -22,6 +22,7 @@ import {
 	GitBranch,
 	GitCommit,
 	MoreVertical,
+	Pencil,
 	RefreshCw,
 	RotateCcw,
 	Server,
@@ -43,7 +44,6 @@ import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
-import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
@@ -274,7 +274,17 @@ function ApplicationDetailsPage() {
 								{m.rollback()}
 							</DropdownMenuItem>
 							<DropdownMenuSeparator />
-							<UpsertApplicationDialog application={data ?? null} asDropdownItem />
+							<DropdownMenuItem
+								onClick={() =>
+									navigate({
+										to: "/applications/$id/settings/general",
+										params: { id: data!.id },
+									})
+								}
+							>
+								<Pencil />
+								{m.edit()}
+							</DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={async () => await deleteApp()}
