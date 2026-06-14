@@ -90,8 +90,8 @@ function SettingsSidebarMenuItem({
 }) {
 	const { isMobile, setOpenMobile } = useSidebar();
 
- 	const targetPath = id ? item.pathWithId.replace("$id", id) : item.pathWithoutId;
- 	const isActive = pathname === targetPath;
+	const targetPath = id ? item.pathWithId.replace("$id", id) : item.pathWithoutId;
+	const isActive = pathname === targetPath;
 
 	return (
 		<SidebarMenuItem className="mb-2">
