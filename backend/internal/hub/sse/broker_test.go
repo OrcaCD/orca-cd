@@ -122,6 +122,29 @@ func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
 	}
 }
 
+func TestBrokerShutdown_ClosesAllChannels(t *testing.T) {
+	b := NewBroker(newTestLogger())
+
+	ids := make([]string, 3)
+	chs := make([]<-chan Event, 3)
+	for i := range 3 {
+		ids[i], chs[i] = b.Subscribe()
+	}
+
+	b.Shutdown()
+
+	for i, ch := range chs {
+		select {
+		case _, open := <-ch:
+			if open {
+				t.Errorf("subscriber %d: expected channel to be closed after shutdown", i)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("subscriber %d: timed out waiting for channel to close", i)
+		}
+	}
+}
+
 func TestBrokerPublish_DropsWhenBufferFull(t *testing.T) {
 	b := NewBroker(newTestLogger())
 	connID, ch := b.Subscribe()
