@@ -1,5 +1,3 @@
-FROM bufbuild/buf:1.70 AS buf
-
 FROM golang:1.26.3-trixie AS builder
 
 ARG VERSION=dev
@@ -11,11 +9,6 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 COPY backend/ .
-
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-
-COPY --from=buf /usr/local/bin/buf /usr/local/bin/buf
-RUN buf generate
 
 RUN CGO_ENABLED=1 go build \
     -ldflags "-s -w \
