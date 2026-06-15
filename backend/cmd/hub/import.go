@@ -33,7 +33,6 @@ func runImportCommand(out io.Writer, importPath string) error {
 }
 
 func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) error {
-	// Validate that the import file exists
 	if _, err := os.Stat(importPath); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("backup file not found: %s", importPath)
@@ -50,7 +49,6 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) e
 		return fmt.Errorf("import is not available in demo mode")
 	}
 
-	// Display warning and get user confirmation
 	warningPoints := []string{
 		"The hub server must be stopped before importing",
 		"All existing data will be permanently overridden",
@@ -102,9 +100,7 @@ func renderImportResult(out io.Writer, importPath string) {
 	_, _ = lipgloss.Fprintln(out, card)
 }
 
-// getUserConfirmation displays a warning message and prompts the user for confirmation
 func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string) (bool, error) {
-	// Display warning
 	warningStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Yellow).
@@ -129,11 +125,9 @@ func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string) (b
 	card := alertStyle.Render(warningContent.String())
 	_, _ = lipgloss.Fprintln(out, card)
 
-	// Prompt for confirmation
 	prompt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Render("\nProceed with this action? (yes/no): ")
 	_, _ = fmt.Fprint(out, prompt)
 
-	// Read user input
 	reader := bufio.NewReader(in)
 	input, err := reader.ReadString('\n')
 	if err != nil {

@@ -11,37 +11,29 @@ func Restore(backupPath string) error {
 		return fmt.Errorf("database not connected")
 	}
 
-	// Close the database connection to release all file handles
-	// This ensures the database file can be safely replaced
 	if err := Close(); err != nil {
 		return fmt.Errorf("failed to close database connection: %w", err)
 	}
 
-	// Clean up WAL files to ensure a clean state for the new database
 	_ = os.Remove(sqliteFilePath + "-shm")
 	_ = os.Remove(sqliteFilePath + "-wal")
 
-	// Backup current database
 	currentDBPath := sqliteFilePath
 	backupCurrentPath := currentDBPath + ".bak"
 
-	// Only backup if the current database exists
 	if _, err := os.Stat(currentDBPath); err == nil {
 		if err := copyFile(currentDBPath, backupCurrentPath); err != nil {
 			return fmt.Errorf("failed to backup current database: %w", err)
 		}
 	}
 
-	// Restore from backup
 	if err := copyFile(backupPath, currentDBPath); err != nil {
-		// Restore the previous backup if restore fails
 		if _, err := os.Stat(backupCurrentPath); err == nil {
 			_ = copyFile(backupCurrentPath, currentDBPath)
 		}
 		return fmt.Errorf("failed to restore database: %w", err)
 	}
 
-	// Clean up backup file
 	_ = os.Remove(backupCurrentPath)
 
 	return nil
