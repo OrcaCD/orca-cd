@@ -55,7 +55,7 @@ func TestRunImportCommand_Succeeds(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	if err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath); err != nil {
+	if err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true); err != nil {
 		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
 	}
 
@@ -83,7 +83,7 @@ func TestRunImportCommand_OutputContainsSourcePath(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	if err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath); err != nil {
+	if err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true); err != nil {
 		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestRunImportCommand_FailsIfFileNotFound(t *testing.T) {
 	setupImportTestEnv(t)
 
 	var out bytes.Buffer
-	err := runImportCommand(&out, "nonexistent-backup.db")
+	err := runImportCommand(&out, "nonexistent-backup.db", true)
 	if err == nil {
 		t.Fatal("runImportCommand() expected error for nonexistent file, got nil")
 	}
@@ -115,7 +115,7 @@ func TestRunImportCommand_FailsInDemoMode(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runImportCommandWithInput(&out, strings.NewReader("yes\n"), backupPath)
+	err := runImportCommandWithInput(&out, strings.NewReader("yes\n"), backupPath, true)
 	if err == nil {
 		t.Fatal("runImportCommandWithInput() expected error in demo mode, got nil")
 	}
@@ -137,7 +137,7 @@ func TestRunImportCommand_AbsoluteBackupPath(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
 	if err != nil {
 		if !strings.Contains(err.Error(), "import failed") {
 			t.Errorf("expected import error, got: %v", err)
@@ -158,7 +158,7 @@ func TestRunImportCommand_FailsIfBackupIsInvalid(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
 	if err != nil {
 		if !strings.Contains(err.Error(), "import failed") && !strings.Contains(err.Error(), "restore") {
 			t.Errorf("expected error related to import or restore, got: %v", err)
@@ -177,7 +177,7 @@ func TestRunImportCommand_MissingAppSecret(t *testing.T) {
 	t.Setenv("APP_SECRET", "")
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
 	if err == nil {
 		t.Fatal("runImportCommandWithInput() expected error with missing APP_SECRET, got nil")
 	}
@@ -197,7 +197,7 @@ func TestRunImportCommand_MissingAppURL(t *testing.T) {
 	t.Setenv("APP_URL", "")
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
 	if err == nil {
 		t.Fatal("runImportCommandWithInput() expected error with missing APP_URL, got nil")
 	}
@@ -215,7 +215,7 @@ func TestRunImportCommand_UserCancellation(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("no\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("no\n"), backupPath, false)
 	if err != nil {
 		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestRunImportCommand_InvalidUserInput(t *testing.T) {
 	}
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("maybe\n"), backupPath)
+	err := runImportCommandWithInput(&importOut, strings.NewReader("maybe\n"), backupPath, false)
 	if err != nil {
 		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
 	}

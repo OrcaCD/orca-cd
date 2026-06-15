@@ -21,18 +21,20 @@ func newImportCmd() *cobra.Command {
 		Long:  "Import a database backup created with the export command. During import, the current database is copied to hub.db.bak to allow rollback if the import fails.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runImportCommand(cmd.OutOrStdout(), args[0])
+			var skipConfirmation bool
+			cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation warnings")
+			return runImportCommand(cmd.OutOrStdout(), args[0], skipConfirmation)
 		},
 	}
 
 	return cmd
 }
 
-func runImportCommand(out io.Writer, importPath string) error {
-	return runImportCommandWithInput(out, os.Stdin, importPath)
+func runImportCommand(out io.Writer, importPath string, skipConfirmation bool) error {
+	return runImportCommandWithInput(out, os.Stdin, importPath, skipConfirmation)
 }
 
-func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) error {
+func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, skipConfirmation bool) error {
 	if _, err := os.Stat(importPath); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("backup file not found: %s", importPath)
@@ -53,7 +55,7 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string) e
 		"The hub server must be stopped before importing",
 		"All existing data will be permanently overridden",
 	}
-	confirmed, err := getUserConfirmation(out, in, warningPoints)
+	confirmed, err := getUserConfirmation(out, in, warningPoints, skipConfirmation)
 	if err != nil {
 		return fmt.Errorf("failed to read confirmation: %w", err)
 	}
@@ -100,7 +102,7 @@ func renderImportResult(out io.Writer, importPath string) {
 	_, _ = lipgloss.Fprintln(out, card)
 }
 
-func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string) (bool, error) {
+func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string, skipConfirmation bool) (bool, error) {
 	warningStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Yellow).
@@ -127,6 +129,10 @@ func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string) (b
 
 	prompt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Render("\nProceed with this action? (yes/no): ")
 	_, _ = fmt.Fprint(out, prompt)
+
+	if skipConfirmation {
+		return true, nil
+	}
 
 	reader := bufio.NewReader(in)
 	input, err := reader.ReadString('\n')
