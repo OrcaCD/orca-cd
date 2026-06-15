@@ -351,15 +351,133 @@ func TestCreateNotificationHandler_DiscordObjectConfigWithThreadID(t *testing.T)
 		t.Fatalf("failed to load notification: %v", err)
 	}
 
-	urls, err := provider.BuildShouterrrUrls(stored.Type, stored.Config.String())
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
 	if err != nil {
-		t.Fatalf("BuildShouterrrUrls() error: %v", err)
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
 	}
 	if len(urls) != 1 {
 		t.Fatalf("expected 1 URL, got %d", len(urls))
 	}
 	if !strings.Contains(urls[0], "thread_id=987654321") {
 		t.Fatalf("expected built URL to include thread_id, got %s", urls[0])
+	}
+}
+
+func TestCreateNotificationHandler_WebhookObjectConfig(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name": "Webhook Alerts",
+		"type": "webhook",
+		"config": map[string]any{
+			"webhookUrl": "https://api.example.com/hooks/deploy",
+			"headers": map[string]string{
+				"Authorization": "Bearer token",
+			},
+		},
+		"applicationIds": []string{app.Id},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Type != "webhook" {
+		t.Fatalf("expected type %q, got %q", "webhook", body.Type)
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", body.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification: %v", err)
+	}
+
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
+	if err != nil {
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
+	}
+	if len(urls) != 1 {
+		t.Fatalf("expected 1 URL, got %d", len(urls))
+	}
+	if !strings.HasPrefix(urls[0], "generic://api.example.com/hooks/deploy") {
+		t.Fatalf("expected generic webhook URL, got %s", urls[0])
+	}
+	if !strings.Contains(urls[0], "method=POST") {
+		t.Fatalf("expected built URL to include method, got %s", urls[0])
+	}
+	if !strings.Contains(urls[0], "%40Authorization=Bearer+token") {
+		t.Fatalf("expected built URL to include authorization header, got %s", urls[0])
+	}
+}
+
+func TestCreateNotificationHandler_GotifyObjectConfig(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name": "Gotify Alerts",
+		"type": "gotify",
+		//nolint:gosec
+		"config": map[string]any{
+			"serverUrl":  "https://gotify.example.com",
+			"appToken":   "Aaa.bbb.ccc.ddd",
+			"priority":   5,
+			"customPath": "/gotify",
+		},
+		"applicationIds": []string{app.Id},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Type != "gotify" {
+		t.Fatalf("expected type %q, got %q", "gotify", body.Type)
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", body.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load notification: %v", err)
+	}
+
+	urls, err := provider.BuildShoutrrrUrls(stored.Type, stored.Config.String())
+	if err != nil {
+		t.Fatalf("BuildShoutrrrUrls() error: %v", err)
+	}
+	if len(urls) != 1 {
+		t.Fatalf("expected 1 URL, got %d", len(urls))
+	}
+	if !strings.HasPrefix(urls[0], "gotify://gotify.example.com/gotify/Aaa.bbb.ccc.ddd") {
+		t.Fatalf("expected gotify URL, got %s", urls[0])
+	}
+	if !strings.Contains(urls[0], "priority=5") {
+		t.Fatalf("expected built URL to include priority, got %s", urls[0])
 	}
 }
 

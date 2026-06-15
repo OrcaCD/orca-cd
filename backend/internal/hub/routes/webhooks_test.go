@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,10 +16,35 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
+
+// mockRepoProvider is a minimal Provider for testing enqueueGenericApps.
+type mockRepoProvider struct {
+	getLatestCommitCalls []string
+	latestCommitResult   repositories.CommitInfo
+	latestCommitErr      error
+}
+
+func (m *mockRepoProvider) ParseURL(_ string) (string, string, error)                    { return "", "", nil }
+func (m *mockRepoProvider) SupportedAuthMethods() []models.RepositoryAuthMethod          { return nil }
+func (m *mockRepoProvider) TestConnection(_ context.Context, _ *models.Repository) error { return nil }
+func (m *mockRepoProvider) ListBranches(_ context.Context, _ *models.Repository) ([]string, error) {
+	return nil, nil
+}
+func (m *mockRepoProvider) ListTree(_ context.Context, _ *models.Repository, _ string) ([]repositories.TreeEntry, error) {
+	return nil, nil
+}
+func (m *mockRepoProvider) GetFileContent(_ context.Context, _ *models.Repository, _ string, _ string) (string, error) {
+	return "", nil
+}
+func (m *mockRepoProvider) GetLatestCommit(_ context.Context, _ *models.Repository, branch string) (repositories.CommitInfo, error) {
+	m.getLatestCommitCalls = append(m.getLatestCommitCalls, branch)
+	return m.latestCommitResult, m.latestCommitErr
+}
 
 func setupTestDBWithWebhookRepos(t *testing.T) {
 	t.Helper()
@@ -74,7 +100,7 @@ func seedWebhookRepo(t *testing.T, provider models.RepositoryProvider, secret st
 func makeWebhookRequest(repoID, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/"+repoID, strings.NewReader(body))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/repositories/"+repoID, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: repoID}}
 	return c, w
@@ -612,5 +638,208 @@ func TestParseWebhookPushDetails_MissingAfter_ReturnsError(t *testing.T) {
 	_, err := parseWebhookPushDetails(c, []byte(body))
 	if err == nil {
 		t.Fatal("expected error for missing commit hash, got nil")
+	}
+}
+
+func TestWebhookHandler_Generic_NoAuth_Returns401(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	repo := seedWebhookRepo(t, models.GitHub, "mysecret")
+
+	c, w := makeWebhookRequest(repo.Id, "")
+	// No provider event header, no Authorization header
+	WebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookHandler_Generic_WrongToken_Returns401(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	repo := seedWebhookRepo(t, models.GitHub, "mysecret")
+
+	c, w := makeWebhookRequest(repo.Id, "")
+	c.Request.Header.Set("Authorization", "Bearer wrongtoken")
+	WebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestWebhookHandler_Generic_EmptyBody_UpdatesDB(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	const secret = "mysecret"
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	c, w := makeWebhookRequest(repo.Id, "")
+	c.Request.Header.Set("Authorization", "Bearer "+secret)
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusSuccess {
+		t.Errorf("expected sync_status %s, got %s", models.SyncStatusSuccess, got.SyncStatus)
+	}
+	if got.LastSyncedAt == nil {
+		t.Error("expected last_synced_at to be set")
+	}
+}
+
+func TestWebhookHandler_Generic_WithBranch_UpdatesDB(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	const secret = "mysecret"
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	c, w := makeWebhookRequest(repo.Id, `{"branch":"main"}`)
+	c.Request.Header.Set("Authorization", "Bearer "+secret)
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusSuccess {
+		t.Errorf("expected sync_status %s, got %s", models.SyncStatusSuccess, got.SyncStatus)
+	}
+}
+
+func TestWebhookHandler_Generic_WithRef_UpdatesDB(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	const secret = "mysecret"
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	c, w := makeWebhookRequest(repo.Id, `{"ref":"refs/heads/main","commit":"abc123"}`)
+	c.Request.Header.Set("Authorization", "Bearer "+secret)
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusSuccess {
+		t.Errorf("expected sync_status %s, got %s", models.SyncStatusSuccess, got.SyncStatus)
+	}
+}
+
+func TestParseGenericWebhookBody_EmptyBody(t *testing.T) {
+	branch, commit := parseGenericWebhookBody([]byte{})
+	if branch != "" || commit != "" {
+		t.Errorf("expected empty strings, got branch=%q commit=%q", branch, commit)
+	}
+}
+
+func TestParseGenericWebhookBody_InvalidJSON(t *testing.T) {
+	branch, commit := parseGenericWebhookBody([]byte("not-json"))
+	if branch != "" || commit != "" {
+		t.Errorf("expected empty strings on invalid JSON, got branch=%q commit=%q", branch, commit)
+	}
+}
+
+func TestParseGenericWebhookBody_WithRef(t *testing.T) {
+	branch, commit := parseGenericWebhookBody([]byte(`{"ref":"refs/heads/feature","commit":"sha1"}`))
+	if branch != "feature" {
+		t.Errorf("expected branch=feature, got %q", branch)
+	}
+	if commit != "sha1" {
+		t.Errorf("expected commit=sha1, got %q", commit)
+	}
+}
+
+func TestParseGenericWebhookBody_WithBranch(t *testing.T) {
+	branch, commit := parseGenericWebhookBody([]byte(`{"branch":"develop"}`))
+	if branch != "develop" {
+		t.Errorf("expected branch=develop, got %q", branch)
+	}
+	if commit != "" {
+		t.Errorf("expected empty commit, got %q", commit)
+	}
+}
+
+func TestParseGenericWebhookBody_RefTakesPriority(t *testing.T) {
+	branch, _ := parseGenericWebhookBody([]byte(`{"ref":"refs/heads/main","branch":"other"}`))
+	if branch != "main" {
+		t.Errorf("expected ref to take priority, got branch=%q", branch)
+	}
+}
+
+// setupEnqueueTest initialises the DB (so db.DB is non-nil) and creates a queue
+// without starting workers. Jobs are buffered but never consumed, which prevents
+// goroutine races and panics from unrelated DB state in unit tests.
+func setupEnqueueTest(t *testing.T) {
+	t.Helper()
+	setupTestDB(t)
+	nop := zerolog.Nop()
+	applications.DefaultQueue = applications.NewQueue(&nop)
+	t.Cleanup(func() { applications.DefaultQueue = nil })
+}
+
+func makeGenericContext() *gin.Context {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+	return c
+}
+
+func TestEnqueueGenericApps_CommitProvided_SkipsGetLatestCommit(t *testing.T) {
+	setupEnqueueTest(t)
+	repo := models.Repository{Provider: models.GitHub}
+	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "latest"}}
+	apps := []models.Application{{Branch: "main"}}
+
+	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "provided-sha")
+
+	if len(provider.getLatestCommitCalls) != 0 {
+		t.Errorf("expected GetLatestCommit not to be called, got %d calls", len(provider.getLatestCommitCalls))
+	}
+}
+
+func TestEnqueueGenericApps_NoCommit_FetchesLatestCommitPerBranch(t *testing.T) {
+	setupEnqueueTest(t)
+	repo := models.Repository{Provider: models.GitHub}
+	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "resolved"}}
+	apps := []models.Application{
+		{Branch: "main"},
+		{Branch: "develop"},
+	}
+
+	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "")
+
+	if len(provider.getLatestCommitCalls) != 2 {
+		t.Errorf("expected 2 GetLatestCommit calls, got %d: %v", len(provider.getLatestCommitCalls), provider.getLatestCommitCalls)
+	}
+}
+
+func TestEnqueueGenericApps_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
+	setupEnqueueTest(t)
+	repo := models.Repository{Provider: models.GitHub}
+	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "resolved"}}
+	apps := []models.Application{
+		{Branch: "main"},
+		{Branch: "main"},
+		{Branch: "main"},
+	}
+
+	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "")
+
+	if len(provider.getLatestCommitCalls) != 1 {
+		t.Errorf("expected 1 GetLatestCommit call for same branch, got %d", len(provider.getLatestCommitCalls))
+	}
+	if provider.getLatestCommitCalls[0] != "main" {
+		t.Errorf("expected GetLatestCommit called with branch=main, got %q", provider.getLatestCommitCalls[0])
 	}
 }

@@ -59,16 +59,16 @@ const PROVIDERS = [
 		placeholderUrl: "https://gitea.example.com/org/repo",
 	},
 	{
+		id: "azure_devops",
+		label: "Azure DevOps",
+		disabled: false,
+		placeholderUrl: "https://dev.azure.com/org/project/_git/repository",
+	},
+	{
 		id: "bitbucket",
 		label: "Bitbucket",
 		disabled: true,
 		placeholderUrl: "https://bitbucket.org/workspace/repository",
-	},
-	{
-		id: "azure_devops",
-		label: "Azure DevOps",
-		disabled: true,
-		placeholderUrl: "https://dev.azure.com/org/project/_git/repository",
 	},
 	{
 		id: "generic",
@@ -87,7 +87,7 @@ const { Stepper } = defineStepper(
 
 const repositorySchema = z.object({
 	url: z.url({ error: m.validationRepositoryUrlInvalid(), protocol: /^https?$/ }).trim(),
-	provider: z.enum(["github", "gitlab", "gitea", "generic"]),
+	provider: z.enum(["github", "gitlab", "gitea", "azure_devops", "generic"]),
 	authToken: z.string().trim().max(1024, m.validationAuthTokenMaxLength()),
 	syncType: z.enum(["webhook", "polling", "manual"]),
 });

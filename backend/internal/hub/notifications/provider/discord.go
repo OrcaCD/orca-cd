@@ -17,7 +17,7 @@ type discordConfig struct {
 	Title     string `json:"title"`
 }
 
-func (DiscordProvider) BuildShouterrrUrls(rawConfig string) ([]string, error) {
+func (DiscordProvider) BuildShoutrrrUrls(rawConfig string) ([]string, error) {
 	trimmed, err := normalizeRawConfig(rawConfig)
 	if err != nil {
 		return nil, err

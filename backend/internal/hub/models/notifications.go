@@ -14,6 +14,12 @@ type NotificationType string
 
 const (
 	NotificationTypeDiscord NotificationType = "discord"
+	NotificationTypeGotify  NotificationType = "gotify"
+	NotificationTypeSlack   NotificationType = "slack"
+	NotificationTypeEmail   NotificationType = "email"
+	NotificationTypeTeams   NotificationType = "teams"
+	NotificationTypeWebhook NotificationType = "webhook"
+	NotificationTypeCustom  NotificationType = "custom"
 )
 
 type Notification struct {

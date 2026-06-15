@@ -1,0 +1,5 @@
+ALTER TABLE agents
+    ADD COLUMN icon TEXT NOT NULL DEFAULT 'server';
+
+ALTER TABLE applications
+    ADD COLUMN icon TEXT NOT NULL DEFAULT 'box';

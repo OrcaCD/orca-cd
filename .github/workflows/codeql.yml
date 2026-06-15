@@ -50,20 +50,6 @@ jobs:
         build-mode: ${{ matrix.build-mode }}
         queries: security-and-quality
 
-    - name: Install Buf CLI
-      uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
-      if: matrix.build-mode == 'manual' && matrix.language == 'go'
-      with:
-        setup_only: true
-        version: 1.66.1
-
-    - name: Compile Protobufs
-      working-directory: ./backend
-      if: matrix.build-mode == 'manual' && matrix.language == 'go'
-      run: |
-        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-        buf generate
-
     - name: Build Go code
       working-directory: ./backend
       if: matrix.build-mode == 'manual' && matrix.language == 'go'

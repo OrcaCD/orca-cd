@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Bell, EllipsisVertical, Search, Send, Trash2 } from "lucide-react";
+import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
@@ -16,12 +16,18 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useFetch } from "@/lib/api";
 import { usePreferredLayout } from "@/lib/layout-preference";
-import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
+import {
+	deleteNotification,
+	getNotificationTypeIconPath,
+	type Notification,
+	testNotification,
+} from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import { toSearchableText } from "@/lib/utils";
 
@@ -134,6 +140,7 @@ function NotificationsPage() {
 														<Send className="h-4 w-4" />
 														{m.sendTest()}
 													</DropdownMenuItem>
+													<DropdownMenuSeparator />
 													<ConfirmationDialog
 														onConfirm={() => {
 															void handleDelete(notification);
@@ -156,7 +163,15 @@ function NotificationsPage() {
 
 										<div className="flex min-w-0 items-center gap-3">
 											<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-												<Bell className="h-5 w-5 text-muted-foreground" />
+												{notification.type === "webhook" ? (
+													<WebhookIcon className="h-7 w-7" />
+												) : (
+													<img
+														src={getNotificationTypeIconPath(notification.type)}
+														alt={m.notificationProviderAlt()}
+														className={`h-7 w-7`}
+													/>
+												)}
 											</div>
 											<div className="min-w-0 space-y-1">
 												<CardTitle className="truncate" title={notification.name}>
@@ -174,7 +189,9 @@ function NotificationsPage() {
 										<div className="grid grid-cols-1 gap-2 text-xs">
 											<div className="rounded-lg border bg-muted/50 p-2">
 												<p className="text-muted-foreground">{m.columnType()}</p>
-												<p className="mt-1 font-medium">{notification.type}</p>
+												<p className="mt-1 font-medium">
+													{notification.type.charAt(0).toUpperCase() + notification.type.slice(1)}
+												</p>
 											</div>
 											<div className="rounded-lg border bg-muted/50 p-2">
 												<p className="text-muted-foreground">{m.appsCount()}</p>

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -18,9 +19,11 @@ import (
 )
 
 const ApplicationsPath = "/api/v1/applications"
+const defaultApplicationIcon = "box"
 
 type createApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
+	Icon                     string `json:"icon" binding:"omitempty,min=1,max=128"`
 	RepositoryId             string `json:"repositoryId" binding:"required"`
 	AgentId                  string `json:"agentId" binding:"required"`
 	Branch                   string `json:"branch" binding:"required"`
@@ -32,6 +35,7 @@ type createApplicationRequest struct {
 
 type updateApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
+	Icon                     string `json:"icon" binding:"omitempty,min=1,max=128"`
 	RepositoryId             string `json:"repositoryId" binding:"required"`
 	AgentId                  string `json:"agentId" binding:"required"`
 	Branch                   string `json:"branch" binding:"required"`
@@ -43,6 +47,7 @@ type updateApplicationRequest struct {
 
 type applicationListResponse struct {
 	Id             string  `json:"id"`
+	Icon           string  `json:"icon"`
 	Name           string  `json:"name"`
 	HealthStatus   string  `json:"healthStatus"`
 	SyncStatus     string  `json:"syncStatus"`
@@ -56,6 +61,7 @@ type applicationListResponse struct {
 
 type applicationResponse struct {
 	Id                       string  `json:"id"`
+	Icon                     string  `json:"icon"`
 	Name                     string  `json:"name"`
 	RepositoryId             string  `json:"repositoryId"`
 	RepositoryName           string  `json:"repositoryName"`
@@ -76,6 +82,8 @@ type applicationResponse struct {
 	ImagePollEnabled         bool    `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
 	ImagePollDeleteOldImages bool    `json:"imagePollDeleteOldImages"`
+	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
 }
 
 // Represents the many-to-many relationship between applications and notifications
@@ -158,6 +166,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	application := models.Application{
 		Name:                     crypto.EncryptedString(req.Name),
+		Icon:                     defaultString(req.Icon, defaultApplicationIcon),
 		RepositoryId:             req.RepositoryId,
 		AgentId:                  req.AgentId,
 		SyncStatus:               models.UnknownSync,
@@ -265,6 +274,9 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	oldAgentId := application.AgentId
 	application.Name = crypto.EncryptedString(req.Name)
+	if req.Icon != "" {
+		application.Icon = req.Icon
+	}
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
 	application.Branch = req.Branch
@@ -376,6 +388,7 @@ func DeployApplicationHandler(c *gin.Context) {
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
 		Id:             app.Id,
+		Icon:           app.Icon,
 		Name:           app.Name.String(),
 		HealthStatus:   string(app.HealthStatus),
 		SyncStatus:     string(app.SyncStatus),
@@ -389,8 +402,9 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 }
 
 func toApplicationResponse(app *models.Application) applicationResponse {
-	return applicationResponse{
+	resp := applicationResponse{
 		Id:                       app.Id,
+		Icon:                     app.Icon,
 		Name:                     app.Name.String(),
 		RepositoryId:             app.RepositoryId,
 		RepositoryName:           app.Repository.Name,
@@ -411,7 +425,13 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollEnabled:         app.ImagePollEnabled,
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		ImagePollDeleteOldImages: app.ImagePollDeleteOldImages,
+		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
+	if app.ImageWebhookSecret != nil {
+		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)
+		resp.ImageWebhookUrl = &webhookUrl
+	}
+	return resp
 }
 
 // sendAgentSettings fetches all applications for agentID and pushes an

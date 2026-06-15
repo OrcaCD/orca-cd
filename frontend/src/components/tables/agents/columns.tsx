@@ -5,6 +5,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
@@ -15,12 +16,29 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "sonner";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
+import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const columns: ColumnDef<Agent>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title={m.columnName()} />;
+		},
+		cell: ({ row }) => {
+			const name = row.original.name;
+			const icon = row.original.icon;
+
+			return (
+				<div className="flex flex-row gap-3 items-center">
+					<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+						<StaticLucideIcon name={icon} className="h-5 w-5 text-primary" />
+					</div>
+
+					<div>
+						<p className="font-medium">{name}</p>
+					</div>
+				</div>
+			);
 		},
 	},
 	{
@@ -98,6 +116,7 @@ export const columns: ColumnDef<Agent>[] = [
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<UpsertAgentDialog agent={row.original} asDropdownItem />
 							<RotateAgentTokenDialog agent={row.original} />
+							<DropdownMenuSeparator />
 							<ConfirmationDialog
 								onConfirm={() => handleDeleteCard(row.original)}
 								title={m.deleteAgentCardTitle()}

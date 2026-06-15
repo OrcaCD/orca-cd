@@ -53,6 +53,52 @@ import {
 	DiscordWebhookUrlField,
 	parseDiscordWebhookUrl,
 } from "./discord-notification-builder";
+import {
+	buildSlackNotificationConfig,
+	isValidSlackWebhookUrl,
+	SlackWebhookUrlField,
+} from "./slack-notification-builder";
+import {
+	buildTeamsNotificationConfig,
+	isValidTeamsHost,
+	TeamsHostField,
+	TeamsTitleField,
+} from "./teams-notification-builder";
+import {
+	buildGotifyNotificationConfig,
+	GotifyAppTokenField,
+	GotifyCustomPathField,
+	GotifyPriorityField,
+	GotifyServerUrlField,
+	isValidGotifyAppToken,
+	parseGotifyPriority,
+} from "./gotify-notification-builder";
+import {
+	buildWebhookNotificationConfig,
+	parseWebhookHeaders,
+	WebhookHeadersField,
+	WebhookUrlField,
+} from "./webhook-notification-builder";
+import {
+	buildEmailNotificationConfig,
+	EmailFromAddressField,
+	EmailFromNameField,
+	EmailPasswordField,
+	EmailSMTPHostField,
+	EmailSMTPPortField,
+	EmailToAddressesField,
+	EmailUsernameField,
+	EmailUseTLSField,
+	isValidEmailAddress,
+	isValidSMTPHost,
+	parseEmailToAddresses,
+	parseSMTPPort,
+} from "./email-notification-builder";
+import {
+	buildCustomNotificationConfig,
+	CustomShoutrrrUrlField,
+	isValidShoutrrrUrl,
+} from "./custom-notification-builder";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
 
 const { Stepper } = defineStepper({ id: "config" }, { id: "provider" });
@@ -68,6 +114,24 @@ const notificationBaseSchema = z.object({
 	discordBotName: z.string().trim(),
 	discordAvatarUrl: z.string().trim(),
 	discordThreadId: z.string().trim(),
+	gotifyServerUrl: z.string().trim(),
+	gotifyAppToken: z.string().trim(),
+	gotifyPriority: z.string().trim(),
+	gotifyCustomPath: z.string().trim(),
+	slackWebhookUrl: z.string().trim(),
+	emailSMTPHost: z.string().trim(),
+	emailSMTPPort: z.string().trim(),
+	emailUsername: z.string().trim(),
+	emailPassword: z.string(),
+	emailFromAddress: z.string().trim(),
+	emailFromName: z.string().trim(),
+	emailToAddresses: z.string(),
+	emailUseTLS: z.boolean(),
+	teamsHost: z.string().trim(),
+	teamsTitle: z.string().trim(),
+	webhookUrl: z.string().trim(),
+	webhookHeaders: z.string(),
+	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
 	applicationIds: z.array(z.string()),
@@ -105,6 +169,176 @@ const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 			});
 		}
 	}
+
+	if (value.type === "gotify") {
+		if (value.gotifyServerUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyServerUrl"],
+				message: m.validationNotificationGotifyServerUrlRequired(),
+			});
+		} else if (!isHttpUrl(value.gotifyServerUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyServerUrl"],
+				message: m.validationNotificationGotifyServerUrlInvalid(),
+			});
+		}
+
+		if (value.gotifyAppToken === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyAppToken"],
+				message: m.validationNotificationGotifyAppTokenRequired(),
+			});
+		} else if (!isValidGotifyAppToken(value.gotifyAppToken)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyAppToken"],
+				message: m.validationNotificationGotifyAppTokenInvalid(),
+			});
+		}
+
+		if (parseGotifyPriority(value.gotifyPriority) === null) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["gotifyPriority"],
+				message: m.validationNotificationGotifyPriorityInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "slack") {
+		if (value.slackWebhookUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["slackWebhookUrl"],
+				message: m.validationNotificationSlackWebhookUrlRequired(),
+			});
+		} else if (!isValidSlackWebhookUrl(value.slackWebhookUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["slackWebhookUrl"],
+				message: m.validationNotificationSlackWebhookUrlInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "email") {
+		if (value.emailSMTPHost === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPHost"],
+				message: m.validationNotificationEmailSMTPHostRequired(),
+			});
+		} else if (!isValidSMTPHost(value.emailSMTPHost)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPHost"],
+				message: m.validationNotificationEmailSMTPHostInvalid(),
+			});
+		}
+
+		if (parseSMTPPort(value.emailSMTPPort) === null) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailSMTPPort"],
+				message: m.validationNotificationEmailSMTPPortInvalid(),
+			});
+		}
+
+		if (value.emailPassword !== "" && value.emailUsername === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailUsername"],
+				message: m.validationNotificationEmailUsernameRequiredWithPassword(),
+			});
+		}
+
+		if (value.emailFromAddress === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailFromAddress"],
+				message: m.validationNotificationEmailFromAddressRequired(),
+			});
+		} else if (!isValidEmailAddress(value.emailFromAddress)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailFromAddress"],
+				message: m.validationNotificationEmailAddressInvalid(),
+			});
+		}
+
+		if (value.emailToAddresses.trim() === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailToAddresses"],
+				message: m.validationNotificationEmailToAddressesRequired(),
+			});
+		} else if (!parseEmailToAddresses(value.emailToAddresses)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["emailToAddresses"],
+				message: m.validationNotificationEmailToAddressesInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "teams") {
+		if (value.teamsHost === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["teamsHost"],
+				message: m.validationNotificationTeamsHostRequired(),
+			});
+		} else if (!isValidTeamsHost(value.teamsHost)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["teamsHost"],
+				message: m.validationNotificationTeamsHostInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "webhook") {
+		if (value.webhookUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookUrl"],
+				message: m.validationNotificationWebhookUrlRequired(),
+			});
+		} else if (!isHttpUrl(value.webhookUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookUrl"],
+				message: m.validationNotificationGenericWebhookUrlInvalid(),
+			});
+		}
+
+		if (!parseWebhookHeaders(value.webhookHeaders)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["webhookHeaders"],
+				message: m.validationNotificationWebhookHeadersInvalid(),
+			});
+		}
+	}
+
+	if (value.type === "custom") {
+		if (value.customShoutrrrUrl === "") {
+			ctx.addIssue({
+				code: "custom",
+				path: ["customShoutrrrUrl"],
+				message: m.validationNotificationShoutrrrUrlRequired(),
+			});
+		} else if (!isValidShoutrrrUrl(value.customShoutrrrUrl)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["customShoutrrrUrl"],
+				message: m.validationNotificationShoutrrrUrlInvalid(),
+			});
+		}
+	}
 });
 
 type NotificationFormValues = z.infer<typeof notificationSchema>;
@@ -124,6 +358,84 @@ function buildNotificationConfig(value: NotificationFormValues): string {
 		return config;
 	}
 
+	if (value.type === "slack") {
+		const config = buildSlackNotificationConfig({
+			slackWebhookUrl: value.slackWebhookUrl,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationSlackWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "teams") {
+		const config = buildTeamsNotificationConfig({
+			teamsHost: value.teamsHost,
+			teamsTitle: value.teamsTitle,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationTeamsHostInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "gotify") {
+		const config = buildGotifyNotificationConfig({
+			gotifyServerUrl: value.gotifyServerUrl,
+			gotifyAppToken: value.gotifyAppToken,
+			gotifyPriority: value.gotifyPriority,
+			gotifyCustomPath: value.gotifyCustomPath,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationGotifyConfigInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "email") {
+		const config = buildEmailNotificationConfig({
+			emailSMTPHost: value.emailSMTPHost,
+			emailSMTPPort: value.emailSMTPPort,
+			emailUsername: value.emailUsername,
+			emailPassword: value.emailPassword,
+			emailFromAddress: value.emailFromAddress,
+			emailFromName: value.emailFromName,
+			emailToAddresses: value.emailToAddresses,
+			emailUseTLS: value.emailUseTLS,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationEmailConfigInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "webhook") {
+		const config = buildWebhookNotificationConfig({
+			webhookUrl: value.webhookUrl,
+			webhookHeaders: value.webhookHeaders,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationGenericWebhookUrlInvalid());
+		}
+
+		return config;
+	}
+
+	if (value.type === "custom") {
+		const config = buildCustomNotificationConfig({
+			customShoutrrrUrl: value.customShoutrrrUrl,
+		});
+		if (!config) {
+			throw new Error(m.validationNotificationShoutrrrUrlInvalid());
+		}
+
+		return config;
+	}
+
 	return "";
 }
 
@@ -137,6 +449,24 @@ function useNotificationForm() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			gotifyServerUrl: "",
+			gotifyAppToken: "",
+			gotifyPriority: "5",
+			gotifyCustomPath: "",
+			slackWebhookUrl: "",
+			emailSMTPHost: "",
+			emailSMTPPort: "587",
+			emailUsername: "",
+			emailPassword: "",
+			emailFromAddress: "",
+			emailFromName: "",
+			emailToAddresses: "",
+			emailUseTLS: true,
+			teamsHost: "",
+			teamsTitle: "",
+			webhookUrl: "",
+			webhookHeaders: "",
+			customShoutrrrUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -234,7 +564,11 @@ function NotificationConfigStepContent({
 								<SelectValue placeholder={m.selectType()} />
 							</SelectTrigger>
 							<SelectContent>
-								<SelectItem value="discord">Discord</SelectItem>
+								{notificationTypes.map((type) => (
+									<SelectItem key={type} value={type}>
+										{type.charAt(0).toUpperCase() + type.slice(1)}
+									</SelectItem>
+								))}
 							</SelectContent>
 						</Select>
 					</Field>
@@ -304,31 +638,161 @@ function NotificationConfigStepContent({
 function NotificationProviderStepContent({ form }: { form: NotificationFormApi }) {
 	return (
 		<form.Subscribe selector={(state) => state.values.type}>
-			{(type) =>
-				type === "discord" ? (
-					<FieldGroup>
-						<form.Field
-							name="discordWebhookUrl"
-							children={(field) => <DiscordWebhookUrlField field={field} />}
-						/>
+			{(type) => {
+				if (type === "discord") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="discordWebhookUrl"
+								children={(field) => <DiscordWebhookUrlField field={field} />}
+							/>
 
-						<form.Field
-							name="discordBotName"
-							children={(field) => <DiscordBotNameField field={field} />}
-						/>
+							<form.Field
+								name="discordBotName"
+								children={(field) => <DiscordBotNameField field={field} />}
+							/>
 
-						<form.Field
-							name="discordAvatarUrl"
-							children={(field) => <DiscordAvatarUrlField field={field} />}
-						/>
+							<form.Field
+								name="discordAvatarUrl"
+								children={(field) => <DiscordAvatarUrlField field={field} />}
+							/>
 
-						<form.Field
-							name="discordThreadId"
-							children={(field) => <DiscordThreadIdField field={field} />}
-						/>
-					</FieldGroup>
-				) : null
-			}
+							<form.Field
+								name="discordThreadId"
+								children={(field) => <DiscordThreadIdField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "gotify") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="gotifyServerUrl"
+								children={(field) => <GotifyServerUrlField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyAppToken"
+								children={(field) => <GotifyAppTokenField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyPriority"
+								children={(field) => <GotifyPriorityField field={field} />}
+							/>
+
+							<form.Field
+								name="gotifyCustomPath"
+								children={(field) => <GotifyCustomPathField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "slack") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="slackWebhookUrl"
+								children={(field) => <SlackWebhookUrlField field={field} />}
+							/>
+							<p className="text-sm text-muted-foreground">
+								{m.notificationSlackAppSettingsNote()}
+							</p>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "email") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="emailSMTPHost"
+								children={(field) => <EmailSMTPHostField field={field} />}
+							/>
+
+							<form.Field
+								name="emailSMTPPort"
+								children={(field) => <EmailSMTPPortField field={field} />}
+							/>
+
+							<form.Field
+								name="emailUsername"
+								children={(field) => <EmailUsernameField field={field} />}
+							/>
+
+							<form.Field
+								name="emailPassword"
+								children={(field) => <EmailPasswordField field={field} />}
+							/>
+
+							<form.Field
+								name="emailFromAddress"
+								children={(field) => <EmailFromAddressField field={field} />}
+							/>
+
+							<form.Field
+								name="emailFromName"
+								children={(field) => <EmailFromNameField field={field} />}
+							/>
+
+							<form.Field
+								name="emailToAddresses"
+								children={(field) => <EmailToAddressesField field={field} />}
+							/>
+
+							<form.Field
+								name="emailUseTLS"
+								children={(field) => <EmailUseTLSField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "teams") {
+					return (
+						<FieldGroup>
+							<form.Field name="teamsHost" children={(field) => <TeamsHostField field={field} />} />
+
+							<form.Field
+								name="teamsTitle"
+								children={(field) => <TeamsTitleField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "webhook") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="webhookUrl"
+								children={(field) => <WebhookUrlField field={field} />}
+							/>
+
+							<form.Field
+								name="webhookHeaders"
+								children={(field) => <WebhookHeadersField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				if (type === "custom") {
+					return (
+						<FieldGroup>
+							<form.Field
+								name="customShoutrrrUrl"
+								children={(field) => <CustomShoutrrrUrlField field={field} />}
+							/>
+						</FieldGroup>
+					);
+				}
+
+				return null;
+			}}
 		</form.Subscribe>
 	);
 }
@@ -397,6 +861,24 @@ export default function CreateNotificationDialog() {
 			discordBotName: "",
 			discordAvatarUrl: "",
 			discordThreadId: "",
+			gotifyServerUrl: "",
+			gotifyAppToken: "",
+			gotifyPriority: "5",
+			gotifyCustomPath: "",
+			slackWebhookUrl: "",
+			emailSMTPHost: "",
+			emailSMTPPort: "587",
+			emailUsername: "",
+			emailPassword: "",
+			emailFromAddress: "",
+			emailFromName: "",
+			emailToAddresses: "",
+			emailUseTLS: true,
+			teamsHost: "",
+			teamsTitle: "",
+			webhookUrl: "",
+			webhookHeaders: "",
+			customShoutrrrUrl: "",
 			enabled: true,
 			enableByDefault: false,
 			applicationIds: [] as string[],
@@ -420,6 +902,7 @@ export default function CreateNotificationDialog() {
 				toast.success(m.notificationCreated());
 
 				setOpen(false);
+				form.reset();
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : m.failedSaveNotification());
 			} finally {

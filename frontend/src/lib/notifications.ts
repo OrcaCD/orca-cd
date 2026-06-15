@@ -1,7 +1,15 @@
 import { fetcher } from "./api";
 
 export type NotificationStatus = "unknown" | "success" | "error" | "healthy" | "unhealthy";
-export const notificationTypes = ["discord"] as const;
+export const notificationTypes = [
+	"discord",
+	"gotify",
+	"slack",
+	"teams",
+	"email",
+	"webhook",
+	"custom",
+] as const;
 export type NotificationType = (typeof notificationTypes)[number];
 
 export interface Notification {
@@ -55,4 +63,12 @@ export function testNotification(id: string, message?: string): Promise<{ messag
 	}
 
 	return fetcher<{ message: string }>(`/notifications/${id}/test`, "POST");
+}
+
+export function getNotificationTypeIconPath(type: NotificationType): string {
+	if (type === "custom") {
+		return "/assets/icons/notifications/shoutrrr.svg";
+	}
+
+	return `/assets/icons/notifications/${type}.svg`;
 }

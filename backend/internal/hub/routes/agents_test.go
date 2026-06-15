@@ -38,6 +38,7 @@ func createTestAgentRecord(t *testing.T, name, keyId string, status models.Agent
 
 	agent := models.Agent{
 		Name:     crypto.EncryptedString(name),
+		Icon:     "server",
 		KeyId:    crypto.EncryptedString(keyId),
 		Status:   status,
 		LastSeen: lastSeen,
@@ -75,6 +76,7 @@ func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId strin
 
 	application := models.Application{
 		Name:          crypto.EncryptedString(name),
+		Icon:          "box",
 		RepositoryId:  repositoryId,
 		AgentId:       agentId,
 		SyncStatus:    models.UnknownSync,
@@ -156,6 +158,9 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	if offline.Status != agentStatusOffline {
 		t.Fatalf("expected offline status %q, got %q", agentStatusOffline, offline.Status)
 	}
+	if offline.Icon != "server" {
+		t.Fatalf("expected icon %q, got %q", "server", offline.Icon)
+	}
 	if offline.LastSeen != nil {
 		t.Fatal("expected lastSeen=nil for Offline Agent")
 	}
@@ -208,6 +213,9 @@ func TestGetAgentHandler_Success(t *testing.T) {
 	if body.Name != "My Agent" {
 		t.Fatalf("expected name %q, got %q", "My Agent", body.Name)
 	}
+	if body.Icon != "server" {
+		t.Fatalf("expected icon %q, got %q", "server", body.Icon)
+	}
 	if body.Status != "online" {
 		t.Fatalf("expected status %q, got %q", "online", body.Status)
 	}
@@ -237,7 +245,7 @@ func TestGetAgentHandler_NotFound(t *testing.T) {
 func TestCreateAgentHandler_Success(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	reqBody, _ := json.Marshal(map[string]any{"name": "New Agent"})
+	reqBody, _ := json.Marshal(map[string]any{"name": "New Agent", "icon": "satellite-dish"})
 
 	router := gin.New()
 	router.POST("/api/v1/agents", CreateAgentHandler)
@@ -260,6 +268,9 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 	}
 	if body.Name != "New Agent" {
 		t.Fatalf("expected name %q, got %q", "New Agent", body.Name)
+	}
+	if body.Icon != "satellite-dish" {
+		t.Fatalf("expected icon %q, got %q", "satellite-dish", body.Icon)
 	}
 	if body.Status != agentStatusOffline {
 		t.Fatalf("expected status %q, got %q", agentStatusOffline, body.Status)
@@ -289,6 +300,9 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 	if agent.KeyId.String() != claims.KeyId {
 		t.Fatalf("expected stored KeyId %q to match token KeyId %q", agent.KeyId.String(), claims.KeyId)
 	}
+	if agent.Icon != "satellite-dish" {
+		t.Fatalf("expected stored icon %q, got %q", "satellite-dish", agent.Icon)
+	}
 }
 
 func TestCreateAgentHandler_InvalidRequest(t *testing.T) {
@@ -314,7 +328,7 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 
 	agent := createTestAgentRecord(t, "Old Name", "existing-key", models.AgentStatusOffline, nil)
 
-	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName})
+	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName, "icon": "radio"})
 
 	router := gin.New()
 	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)
@@ -334,6 +348,9 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 	}
 	if updated.Name.String() != testUpdatedName {
 		t.Fatalf("expected updated name %q, got %q", testUpdatedName, updated.Name.String())
+	}
+	if updated.Icon != "radio" {
+		t.Fatalf("expected updated icon %q, got %q", "radio", updated.Icon)
 	}
 	if updated.KeyId.String() != "existing-key" {
 		t.Fatalf("expected KeyId %q to stay unchanged, got %q", "existing-key", updated.KeyId.String())
