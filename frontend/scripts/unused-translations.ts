@@ -1,35 +1,10 @@
 // oxlint-disable no-console
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { glob } from "node:fs/promises";
 import { join } from "node:path";
 
 const messagesFile = "messages/en.json";
 const sourceDir = "src";
-
-function walk(dir: string): string[] {
-	return readdirSync(dir).flatMap((entry) => {
-		const path = join(dir, entry);
-		const stat = statSync(path);
-
-		if (stat.isDirectory()) {
-			if (
-				entry === "node_modules" ||
-				entry === "dist" ||
-				entry === ".svelte-kit" ||
-				entry === "paraglide"
-			) {
-				return [];
-			}
-
-			return walk(path);
-		}
-
-		if (!/\.(js|jsx|ts|tsx|svelte|vue)$/.test(entry)) {
-			return [];
-		}
-
-		return [path];
-	});
-}
 
 function flattenKeys(obj: Record<string, any>, prefix: string = ""): string[] {
 	return Object.entries(obj).flatMap(([key, value]) => {
@@ -46,10 +21,13 @@ function flattenKeys(obj: Record<string, any>, prefix: string = ""): string[] {
 const messages = JSON.parse(readFileSync(messagesFile, "utf8"));
 const allKeys = new Set(flattenKeys(messages));
 
-const usedKeys = new Set();
+const usedKeys = new Set<string>();
 
-for (const file of walk(sourceDir)) {
-	const content = readFileSync(file, "utf8");
+for await (const file of glob("**/*.{js,jsx,ts,tsx,svelte,vue}", {
+	cwd: sourceDir,
+	exclude: ["**/node_modules/**", "**/dist/**", "**/.svelte-kit/**", "**/paraglide/**"],
+})) {
+	const content = readFileSync(join(sourceDir, file), "utf8");
 
 	for (const match of content.matchAll(/\bm\.([a-zA-Z_$][\w$]*)\s*\(/g)) {
 		usedKeys.add(match[1]);
