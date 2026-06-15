@@ -79,6 +79,10 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 		return fmt.Errorf("import failed: %w", err)
 	}
 
+	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
+		return fmt.Errorf("import restored file but could not open database: %w", err)
+	}
+
 	renderImportResult(out, importPath)
 	return nil
 }
@@ -136,7 +140,7 @@ func getUserConfirmation(out io.Writer, in io.Reader, warningPoints []string, sk
 
 	reader := bufio.NewReader(in)
 	input, err := reader.ReadString('\n')
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return false, err
 	}
 

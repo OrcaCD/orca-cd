@@ -127,21 +127,24 @@ func TestRunImportCommand_FailsInDemoMode(t *testing.T) {
 func TestRunImportCommand_AbsoluteBackupPath(t *testing.T) {
 	setupImportTestEnv(t)
 
-	backupPath := filepath.Join("data", "test-backup.db")
-	if err := os.WriteFile(backupPath, []byte("valid sqlite data"), 0600); err != nil {
-		t.Fatalf("failed to create test backup file: %v", err)
+	var backupOut bytes.Buffer
+	if err := runBackupCommand(&backupOut, "test-backup.db"); err != nil {
+		t.Fatalf("runBackupCommand() unexpected error: %v", err)
 	}
 
-	if err := os.Remove(filepath.Join("data", "hub.db")); err != nil && !os.IsNotExist(err) {
+	relBackupPath := filepath.Join("data", "test-backup.db")
+	absBackupPath, err := filepath.Abs(relBackupPath)
+	if err != nil {
+		t.Fatalf("failed to resolve absolute path: %v", err)
+	}
+	// Delete the current database and import from the absolute backup path.
+	if err := os.Remove(filepath.Join("data", "hub.db")); err != nil {
 		t.Fatalf("failed to delete current database: %v", err)
 	}
 
 	var importOut bytes.Buffer
-	err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
-	if err != nil {
-		if !strings.Contains(err.Error(), "import failed") {
-			t.Errorf("expected import error, got: %v", err)
-		}
+	if err := runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), absBackupPath, true); err != nil {
+		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
 	}
 }
 
