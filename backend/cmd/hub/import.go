@@ -18,7 +18,7 @@ func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import <file>",
 		Short: "Import a database backup",
-		Long:  "Import a database backup created with the backup command. The current database will be safely backed up before importing.",
+		Long:  "Import a database backup created with the export command. During import, the current database is copied to hub.db.bak to allow rollback if the import fails.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runImportCommand(cmd.OutOrStdout(), args[0])
