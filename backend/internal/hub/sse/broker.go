@@ -74,6 +74,19 @@ func PublishUpdate(url string) {
 	DefaultBroker.Publish(Event{Type: EventTypeUpdate, URL: url})
 }
 
+// Shutdown closes all client channels, causing their SSE handlers to return.
+// Call this before shutting down the HTTP server so active SSE connections
+// don't block graceful shutdown.
+func (b *Broker) Shutdown() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for connID, ch := range b.clients {
+		close(ch)
+		delete(b.clients, connID)
+	}
+	b.log.Debug().Msg("SSE broker shut down")
+}
+
 // Publish sends an event to all connected SSE clients.
 func (b *Broker) Publish(event Event) {
 	b.mu.RLock()

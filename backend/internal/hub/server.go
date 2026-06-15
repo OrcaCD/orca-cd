@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
@@ -194,6 +195,8 @@ func Run(cfg Config) error {
 	case sig := <-quit:
 		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
 	}
+
+	sse.DefaultBroker.Shutdown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

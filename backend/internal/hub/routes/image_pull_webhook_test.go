@@ -647,6 +647,110 @@ func TestRevokeImagePullWebhookHandler_DBError(t *testing.T) {
 	}
 }
 
+// --- Docker Hub webhook tests ---
+
+func makeDockerHubWebhookRequest(appID, token, body string) (*gin.Context, *httptest.ResponseRecorder) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	url := "/api/v1/webhooks/images/" + appID
+	if token != "" {
+		url += "?token=" + token
+	}
+	c.Request = httptest.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: appID}}
+	return c, w
+}
+
+const dockerHubPushBody = `{"push_data":{"pushed_at":1417566161,"pusher":"trustedbuilder","tag":"latest"},"repository":{"name":"testhook","namespace":"svendowideit","repo_name":"svendowideit/testhook"}}`
+
+func TestImagePullWebhookHandler_DockerHub_QueryToken_TriggersPull(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	hub := setupHubForTest(t)
+
+	const secret = "dockerhubsecret"
+	const agentID = "agent-dockerhub-push"
+
+	app := seedAppWithWebhookSecret(t, secret)
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("agent_id", agentID).Error; err != nil {
+		t.Fatalf("failed to update agent_id: %v", err)
+	}
+
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	c, w := makeDockerHubWebhookRequest(app.Id, secret, dockerHubPushBody)
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case msg := <-client.Send:
+		req := msg.GetPullImagesRequest()
+		if req == nil {
+			t.Fatalf("expected PullImagesRequest, got %T", msg.Payload)
+		}
+		if req.ApplicationId != app.Id {
+			t.Errorf("application_id: got %q, want %q", req.ApplicationId, app.Id)
+		}
+	default:
+		t.Error("expected a PullImagesRequest to be queued on the agent's Send channel")
+	}
+}
+
+func TestImagePullWebhookHandler_DockerHub_InvalidQueryToken_Returns401(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+
+	app := seedAppWithWebhookSecret(t, "correctsecret")
+
+	c, w := makeDockerHubWebhookRequest(app.Id, "wrongsecret", dockerHubPushBody)
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_DockerHub_MissingAuth_Returns401(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+
+	app := seedAppWithWebhookSecret(t, "correctsecret")
+
+	c, w := makeDockerHubWebhookRequest(app.Id, "", dockerHubPushBody)
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestIsDockerHubPayload(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"docker hub push", dockerHubPushBody, true},
+		{"push_data null", `{"push_data":null}`, false},
+		{"no push_data", `{"event_type":"pushImage"}`, false},
+		{"empty body", ``, false},
+		{"invalid json", `not json`, false},
+		{"empty object", `{}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDockerHubPayload([]byte(tt.body))
+			if got != tt.want {
+				t.Errorf("isDockerHubPayload(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsHarborPushEvent(t *testing.T) {
 	tests := []struct {
 		name string
