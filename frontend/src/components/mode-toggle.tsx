@@ -199,7 +199,7 @@ export const ModeToggle = ({
 				{m.switchToTheme({
 					theme: theme === "light" ? m.themeDark() : m.themeLight(),
 				})}
-				<Kbd>{REGISTERABLE_HOTKEYS.toggleTheme.toString()}</Kbd>
+				<Kbd>{REGISTERABLE_HOTKEYS.toggleTheme as string}</Kbd>
 			</TooltipContent>
 		</Tooltip>
 	);
