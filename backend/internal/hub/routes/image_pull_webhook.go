@@ -22,6 +22,10 @@ type githubPackagePayload struct {
 	} `json:"package"`
 }
 
+type dockerHubPayload struct {
+	PushData *json.RawMessage `json:"push_data"`
+}
+
 func ImagePullWebhookHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
@@ -70,6 +74,9 @@ func ImagePullWebhookHandler(c *gin.Context) {
 	}
 
 	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	if token == "" {
+		token = c.Query("token")
+	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -81,6 +88,13 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		return
 	}
 
+	// Docker Hub payloads carry a push_data field; all Docker Hub webhooks are push events.
+	if isDockerHubPayload(body) {
+		applications.TriggerImagePull(&app)
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+
 	// If the payload contains event_type (Harbor-style), only trigger on pushImage.
 	if !isHarborPushEvent(body) {
 		c.AbortWithStatus(http.StatusNoContent)
@@ -89,6 +103,20 @@ func ImagePullWebhookHandler(c *gin.Context) {
 
 	applications.TriggerImagePull(&app)
 	c.AbortWithStatus(http.StatusNoContent)
+}
+
+// isDockerHubPayload returns true when body contains a Docker Hub push_data field.
+// Docker Hub does not support custom auth headers, so authentication is handled via
+// the ?token query parameter before this function is called.
+func isDockerHubPayload(body []byte) bool {
+	if len(body) == 0 {
+		return false
+	}
+	var payload dockerHubPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	return payload.PushData != nil
 }
 
 // isHarborPushEvent returns true when the request should trigger an image pull.
