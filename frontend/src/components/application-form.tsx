@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import LucideIconPicker, { type LucideIconName } from "./lucide-icon-picker";
 
 const applicationSchema = z.object({
 	name: z
@@ -291,25 +292,21 @@ export function ApplicationForm({ application }: { application?: Application | n
 								}}
 							</form.Field>
 
-							<form.Field name="icon">
-								{(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.icon()}</Label>
-											<Input
-												id={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder={m.applicationIconPlaceholder()}
-												autoFocus
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							</form.Field>
+							<form.Field
+								name="icon"
+								validators={{ onSubmit: applicationSchema.shape.icon }}
+								children={(field) => (
+									<Field>
+										<Label>{m.icon()}</Label>
+										<LucideIconPicker
+											value={field.state.value as LucideIconName}
+											onValueChange={field.handleChange}
+											placeholder={m.selectIcon()}
+											emptyMessage={m.noIconsFound()}
+										/>
+									</Field>
+								)}
+							/>
 
 							<form.Field name="repositoryId">
 								{(field) => {
