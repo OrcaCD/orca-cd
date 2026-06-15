@@ -1,5 +1,5 @@
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,7 +7,6 @@ import {
 	GitBranch,
 	GitCommit,
 	MoreVertical,
-	Plus,
 	RefreshCw,
 	Search,
 	Server,
@@ -30,6 +29,7 @@ import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
@@ -45,7 +45,6 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
-	const navigate = useNavigate();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
 
@@ -80,16 +79,7 @@ function ApplicationsPage() {
 					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
 					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
 				</div>
-				<Button
-					onClick={() =>
-						navigate({
-							to: "/applications/settings/general",
-						})
-					}
-				>
-					<Plus />
-					{m.newApplication()}
-				</Button>
+				<UpsertApplicationDialog application={null} />
 			</div>
 			<div>
 				<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
