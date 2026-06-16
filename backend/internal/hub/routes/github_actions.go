@@ -206,7 +206,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	// (even if compose file did not change)
 	if req.PullImages {
 		for i := range apps {
-			if !hubApplications.TriggerImagePull(&apps[i], req.PullImagesFilter) {
+			if !hubApplications.TriggerImagePull(&apps[i]) {
 				c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
 				return
 			}
