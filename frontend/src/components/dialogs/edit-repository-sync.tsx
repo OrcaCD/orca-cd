@@ -25,7 +25,6 @@ import {
 	SyncTypeRadioGroup,
 	WebhookSetupDetails,
 } from "./repository-shared";
-import CopyButton from "@/components/copy-btn";
 import SuccessAlert from "@/components/alerts/success-alert";
 import { m } from "@/lib/paraglide/messages";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -205,9 +204,7 @@ export default function EditRepositorySyncDialog({
 														<TooltipTrigger asChild>
 															<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
 														</TooltipTrigger>
-														<TooltipContent>
-															{m.githubActionsOIDCEnabledTooltip()}
-														</TooltipContent>
+														<TooltipContent>{m.githubActionsOIDCEnabledTooltip()}</TooltipContent>
 													</Tooltip>
 												</div>
 												<Switch
