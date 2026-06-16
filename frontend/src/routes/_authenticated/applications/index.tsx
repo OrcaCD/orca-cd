@@ -1,25 +1,9 @@
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-	ArrowRight,
-	GitBranch,
-	GitCommit,
-	MoreVertical,
-	RefreshCw,
-	Search,
-	Server,
-} from "lucide-react";
+import { ArrowRight, GitBranch, GitCommit, Search, Server } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
-import {
-	DropdownMenu,
-	DropdownMenuTrigger,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -141,26 +125,9 @@ function ApplicationsPage() {
 												</div>
 											</CardTitle>
 											<CardAction>
-												<DropdownMenu>
-													<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-														<Button variant="ghost" size="icon" className="h-8 w-8">
-															<MoreVertical className="h-4 w-4" />
-														</Button>
-													</DropdownMenuTrigger>
-													<DropdownMenuContent align="end" className="w-full">
-														<DropdownMenuItem asChild>
-															<Link to="/applications/$id" params={{ id: app.id }}>
-																<ArrowRight className="mr-2 h-4 w-4" />
-																{m.details()}
-															</Link>
-														</DropdownMenuItem>
-														<DropdownMenuSeparator />
-														<DropdownMenuItem>
-															<RefreshCw className="mr-2 h-4 w-4" />
-															{m.sync()}
-														</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu>
+												<Link to="/applications/$id" params={{ id: app.id }}>
+													<ArrowRight className="h-5 w-5" />
+												</Link>
 											</CardAction>
 										</CardHeader>
 										<CardContent>
