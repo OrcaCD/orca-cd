@@ -29,22 +29,12 @@ func Restore(backupPath string) error {
 	_ = os.Remove(sqliteFilePath + "-shm")
 	_ = os.Remove(sqliteFilePath + "-wal")
 
-	if _, err := os.Stat(sqliteFilePath); err == nil {
-		if err := copyFile(sqliteFilePath, backupCurrentPath); err != nil {
-			return fmt.Errorf("failed to backup current database: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to stat current database: %w", err)
-	}
-
 	if err := copyFile(backupPath, sqliteFilePath); err != nil {
-		if _, err := os.Stat(backupCurrentPath); err == nil {
-			_ = copyFile(backupCurrentPath, sqliteFilePath)
-		}
-		return fmt.Errorf("failed to restore database: %w", err)
-	}
-
-	_ = os.Remove(backupCurrentPath)
+        if rerr := copyFile(backupCurrentPath, sqliteFilePath); rerr != nil {
+            return fmt.Errorf("restore failed: %w; rollback also failed: %v", err, rerr)
+        }
+        return fmt.Errorf("failed to restore database (rolled back): %w", err)
+    }
 
 	return nil
 }
