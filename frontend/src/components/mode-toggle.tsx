@@ -3,6 +3,9 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { Kbd } from "./ui/kbd";
+import { REGISTERABLE_HOTKEYS } from "@/lib/hotkeys";
 
 type AnimationVariant = "circle" | "circle-blur" | "gif" | "polygon";
 
@@ -171,22 +174,34 @@ export const ModeToggle = ({
 	}, [onClick, variant, start, url, theme]);
 
 	return (
-		<Button
-			variant="outline"
-			size={showLabel ? "default" : "icon"}
-			onClick={handleClick}
-			className={cn("relative overflow-hidden transition-all", showLabel && "gap-2", className)}
-			aria-label={m.switchToTheme({ theme: theme === "light" ? m.themeDark() : m.themeLight() })}
-		>
-			{theme === "light" ? (
-				<Sun className="h-[1.2rem] w-[1.2rem]" />
-			) : (
-				<Moon className="h-[1.2rem] w-[1.2rem]" />
-			)}
-			{showLabel && (
-				<span className="text-sm">{theme === "light" ? m.themeLight() : m.themeDark()}</span>
-			)}
-		</Button>
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					variant="outline"
+					size={showLabel ? "default" : "icon"}
+					onClick={handleClick}
+					className={cn("relative overflow-hidden transition-all", showLabel && "gap-2", className)}
+					aria-label={m.switchToTheme({
+						theme: theme === "light" ? m.themeDark() : m.themeLight(),
+					})}
+				>
+					{theme === "light" ? (
+						<Sun className="h-[1.2rem] w-[1.2rem]" />
+					) : (
+						<Moon className="h-[1.2rem] w-[1.2rem]" />
+					)}
+					{showLabel && (
+						<span className="text-sm">{theme === "light" ? m.themeLight() : m.themeDark()}</span>
+					)}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>
+				{m.switchToTheme({
+					theme: theme === "light" ? m.themeDark() : m.themeLight(),
+				})}
+				<Kbd>{REGISTERABLE_HOTKEYS.toggleTheme as string}</Kbd>
+			</TooltipContent>
+		</Tooltip>
 	);
 };
 

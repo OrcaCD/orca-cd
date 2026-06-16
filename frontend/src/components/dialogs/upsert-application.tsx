@@ -408,8 +408,9 @@ export default function UpsertApplicationDialog({
 						{m.edit()}
 					</DropdownMenuItem>
 				) : isEditing ? (
-					<Button variant="ghost" size="icon">
+					<Button variant="outline">
 						<Pencil />
+						{m.editApplication()}
 					</Button>
 				) : (
 					<Button>

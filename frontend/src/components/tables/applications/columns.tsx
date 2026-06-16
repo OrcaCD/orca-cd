@@ -1,13 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRight, MoreHorizontal, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ArrowRight } from "lucide-react";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import type { ApplicationListItem } from "@/lib/applications";
 import { Link } from "@tanstack/react-router";
@@ -30,13 +22,7 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 						<StaticLucideIcon name={app.icon} className="h-5 w-5 text-primary" />
 					</div>
 
-					<Link
-						to="/applications/$id"
-						params={{ id: app.id }}
-						className="font-medium hover:text-primary underline underline-offset-2"
-					>
-						{app.name}
-					</Link>
+					<div>{app.name}</div>
 				</div>
 			);
 		},
@@ -113,28 +99,14 @@ export const columns: ColumnDef<ApplicationListItem>[] = [
 		cell: ({ row }) => {
 			const app = row.original;
 			return (
-				<div className="flex justify-end">
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-							<Button variant="ghost" size="icon" className="h-8 w-8">
-								<MoreHorizontal className="h-4 w-4" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-full">
-							<DropdownMenuItem asChild>
-								<Link to="/applications/$id" params={{ id: app.id }}>
-									<ArrowRight className="mr-2 h-4 w-4" />
-									{m.details()}
-								</Link>
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<DropdownMenuItem>
-								<RefreshCw className="mr-2 h-4 w-4" />
-								{m.sync()}
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
+				<Link
+					to="/applications/$id"
+					params={{ id: app.id }}
+					className="flex items-center font-medium hover:text-primary underline underline-offset-2"
+				>
+					<ArrowRight className="mr-2 h-4 w-4" />
+					{m.details()}
+				</Link>
 			);
 		},
 	},
