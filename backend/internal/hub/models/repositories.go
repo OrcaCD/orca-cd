@@ -58,8 +58,9 @@ type Repository struct {
 	PollingInterval *time.Duration          `gorm:"type:integer;"`
 	WebhookSecret   *crypto.EncryptedString `gorm:"type:text;"`
 	LastSyncedAt    *time.Time              `gorm:"type:timestamp;"`
-	CreatedBy       string                  `gorm:"type:text;not null;"`
-	Applications    []Application           `gorm:"foreignKey:RepositoryId;"`
+	CreatedBy                string                  `gorm:"type:text;not null;"`
+	GitHubActionsOIDCEnabled bool                    `gorm:"column:github_actions_oidc_enabled;not null;default:false"`
+	Applications             []Application           `gorm:"foreignKey:RepositoryId;"`
 }
 
 func (Repository) TableName() string {
