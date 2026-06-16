@@ -32,7 +32,9 @@ import {
 	NavigationMenu,
 	NavigationMenuList,
 } from "@/components/ui/navigation-menu";
-import HotkeysDialog from "./dialogs/hotkeys-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { Kbd, KbdGroup } from "./ui/kbd";
+import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
 
 type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
 
@@ -63,6 +65,7 @@ function getNavLabel(key: NavKey): string {
 }
 
 export default function Navbar() {
+	useApplicationHotkeys();
 	const { auth, logout } = useAuth();
 	const navigate = useNavigate();
 	const { theme, setTheme } = useTheme();
@@ -93,28 +96,43 @@ export default function Navbar() {
 					<NavigationMenu className="hidden md:flex">
 						<NavigationMenuList className="gap-2">
 							{allNavItems.map((item) => (
-								<NavigationMenuItem key={item.key}>
-									<NavigationMenuLink asChild>
-										<Link
-											key={item.key}
-											to={item.href}
-											className={cn(
-												location.pathname.startsWith(item.href) &&
-													"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
-											)}
-										>
-											<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
-										</Link>
-									</NavigationMenuLink>
-								</NavigationMenuItem>
+								<Tooltip key={item.key}>
+									<TooltipTrigger asChild>
+										<NavigationMenuItem>
+											<NavigationMenuLink asChild>
+												<Link
+													key={item.key}
+													to={item.href}
+													className={cn(
+														location.pathname.startsWith(item.href) &&
+															"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+													)}
+												>
+													<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
+												</Link>
+											</NavigationMenuLink>
+										</NavigationMenuItem>
+									</TooltipTrigger>
+									<TooltipContent>
+										{getNavLabel(item.key)}
+
+										<KbdGroup>
+											{HOTKEY_SEQUENCES[
+												("navigate" +
+													item.key.charAt(0).toUpperCase() +
+													item.key.slice(1)) as keyof typeof HOTKEY_SEQUENCES
+											].map((kbd, key) => (
+												<Kbd key={key}>{kbd}</Kbd>
+											))}
+										</KbdGroup>
+									</TooltipContent>
+								</Tooltip>
 							))}
 						</NavigationMenuList>
 					</NavigationMenu>
 				</div>
 
 				<div className="flex items-center gap-3">
-					<HotkeysDialog />
-
 					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
 						<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
 							<FileText className="h-5 w-5 text-muted-foreground" />
