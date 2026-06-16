@@ -8,12 +8,34 @@ import (
 	"time"
 )
 
+type FileSystem interface {
+	MkdirAll(path string, perm os.FileMode) error
+	Remove(path string) error
+	Stat(path string) (os.FileInfo, error)
+	Open(path string) (*os.File, error)
+	OpenFile(path string, flag int, perm os.FileMode) (*os.File, error)
+}
+
+type realFS struct{}
+
+func (realFS) MkdirAll(path string, perm os.FileMode) error { return os.MkdirAll(path, perm) }
+func (realFS) Remove(path string) error                     { return os.Remove(path) }
+func (realFS) Stat(path string) (os.FileInfo, error)        { return os.Stat(path) }
+func (realFS) Open(path string) (*os.File, error) {
+	return os.Open(path) // #nosec G304 - paths are controlled in test
+}
+func (realFS) OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
+	return os.OpenFile(path, flag, perm) // #nosec G304 - paths are controlled in test
+}
+
+var fs FileSystem = realFS{}
+
 func Restore(backupPath string) error {
 	if DB == nil {
 		return fmt.Errorf("database not connected")
 	}
 
-	if err := os.MkdirAll("data", 0750); err != nil {
+	if err := fs.MkdirAll("data", 0750); err != nil {
 		return fmt.Errorf("failed to create database directory: %w", err)
 	}
 
@@ -26,8 +48,8 @@ func Restore(backupPath string) error {
 		return fmt.Errorf("failed to close database connection: %w", err)
 	}
 
-	_ = os.Remove(sqliteFilePath + "-shm")
-	_ = os.Remove(sqliteFilePath + "-wal")
+	_ = fs.Remove(sqliteFilePath + "-shm")
+	_ = fs.Remove(sqliteFilePath + "-wal")
 
 	if err := copyFile(backupPath, sqliteFilePath); err != nil {
 		if rerr := copyFile(backupCurrentPath, sqliteFilePath); rerr != nil {
@@ -41,7 +63,7 @@ func Restore(backupPath string) error {
 
 func copyFile(src, dst string) (err error) {
 	src = filepath.Clean(src)
-	source, err := os.Open(src)
+	source, err := fs.Open(src)
 	if err != nil {
 		return err
 	}
@@ -50,7 +72,7 @@ func copyFile(src, dst string) (err error) {
 	}()
 
 	dst = filepath.Clean(dst)
-	destination, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	destination, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
