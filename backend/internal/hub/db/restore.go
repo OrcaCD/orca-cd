@@ -30,11 +30,11 @@ func Restore(backupPath string) error {
 	_ = os.Remove(sqliteFilePath + "-wal")
 
 	if err := copyFile(backupPath, sqliteFilePath); err != nil {
-        if rerr := copyFile(backupCurrentPath, sqliteFilePath); rerr != nil {
-            return fmt.Errorf("restore failed: %w; rollback also failed: %v", err, rerr)
-        }
-        return fmt.Errorf("failed to restore database (rolled back): %w", err)
-    }
+		if rerr := copyFile(backupCurrentPath, sqliteFilePath); rerr != nil {
+			return fmt.Errorf("restore failed: %w; rollback also failed: %v", err, rerr)
+		}
+		return fmt.Errorf("failed to restore database (rolled back): %w", err)
+	}
 
 	return nil
 }
