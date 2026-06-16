@@ -45,7 +45,6 @@ import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/t
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { Separator } from "@/components/ui/separator";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -258,7 +257,8 @@ function ApplicationDetailsPage() {
 
 					<Separator orientation="vertical" />
 
-					<DropdownMenuItem
+					<Button
+						variant="outline"
 						onClick={() =>
 							navigate({
 								to: "/applications/$id/settings/general",
@@ -268,7 +268,7 @@ function ApplicationDetailsPage() {
 					>
 						<Pencil />
 						{m.edit()}
-					</DropdownMenuItem>
+					</Button>
 
 					<ConfirmationDialog
 						onConfirm={async () => await deleteApp()}
