@@ -21,22 +21,14 @@ import {
 	ExternalLink,
 	GitBranch,
 	GitCommit,
-	MoreVertical,
 	RefreshCw,
-	RotateCcw,
 	Server,
 	Trash2,
 	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMemo, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
@@ -52,6 +44,7 @@ import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -262,34 +255,21 @@ function ApplicationDetailsPage() {
 						{deploymentInProgress ? m.deploying() : m.deploy()}
 					</Button>
 
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="outline" size="icon">
-								<MoreVertical className="h-4 w-4" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-full">
-							<DropdownMenuItem>
-								<RotateCcw />
-								{m.rollback()}
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<UpsertApplicationDialog application={data ?? null} asDropdownItem />
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								onConfirm={async () => await deleteApp()}
-								triggerProps={{ variant: "destructive" }}
-								asDropdownItem
-								triggerText={
-									<>
-										<Trash2 />
-										{m.delete()}
-									</>
-								}
-								description={m.deleteApplicationDescription()}
-							></ConfirmationDialog>
-						</DropdownMenuContent>
-					</DropdownMenu>
+					<Separator orientation="vertical" />
+
+					<UpsertApplicationDialog application={data ?? null} />
+
+					<ConfirmationDialog
+						onConfirm={async () => await deleteApp()}
+						triggerProps={{ variant: "destructive" }}
+						triggerText={
+							<>
+								<Trash2 />
+								{m.delete()}
+							</>
+						}
+						description={m.deleteApplicationDescription()}
+					></ConfirmationDialog>
 				</div>
 			</div>
 
@@ -326,7 +306,6 @@ function ApplicationDetailsPage() {
 				<TabsList className="bg-muted">
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
 					<TabsTrigger value="diff">Diff</TabsTrigger>
-					<TabsTrigger value="events">{m.events()}</TabsTrigger>
 					<TabsTrigger value="webhook">{m.webhook()}</TabsTrigger>
 				</TabsList>
 
@@ -346,9 +325,6 @@ function ApplicationDetailsPage() {
 					</div>
 				</TabsContent>
 
-				<TabsContent value="events" className="space-y-4">
-					{m.comingSoon()}
-				</TabsContent>
 				<TabsContent value="webhook" className="space-y-4">
 					<Card>
 						<CardHeader>

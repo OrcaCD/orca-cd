@@ -12,6 +12,7 @@ import Navbar from "../components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 import type { AuthState } from "@/lib/auth";
 import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export interface RouterContext {
 	auth: AuthState;
@@ -25,23 +26,25 @@ function RootComponent() {
 		<>
 			<HeadContent />
 			<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
-				<div className="min-h-screen bg-background">
-					{showNavbar && <Navbar />}
-					<ForcePasswordChangeDialog />
-					<Outlet />
-					<Toaster />
-					<TanStackDevtools
-						config={{
-							position: "bottom-right",
-						}}
-						plugins={[
-							{
-								name: "Tanstack Router",
-								render: <TanStackRouterDevtoolsPanel />,
-							},
-						]}
-					/>
-				</div>
+				<TooltipProvider>
+					<div className="min-h-screen bg-background">
+						{showNavbar && <Navbar />}
+						<ForcePasswordChangeDialog />
+						<Outlet />
+						<Toaster />
+						<TanStackDevtools
+							config={{
+								position: "bottom-right",
+							}}
+							plugins={[
+								{
+									name: "Tanstack Router",
+									render: <TanStackRouterDevtoolsPanel />,
+								},
+							]}
+						/>
+					</div>
+				</TooltipProvider>
 			</ThemeProvider>
 		</>
 	);
