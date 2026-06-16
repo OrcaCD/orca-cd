@@ -83,7 +83,7 @@ func TestRestore_CopyFails_RollbackSucceeds(t *testing.T) {
 	fake.OpenErr = errors.New("I/O error")
 	fs = fake
 
-	backupPath := filepath.Join(t.TempDir(), "test-backup" + fmt.Sprintf("%d", time.Now().Unix()) + ".db")
+	backupPath := filepath.Join(t.TempDir(), "test-backup"+fmt.Sprintf("%d", time.Now().Unix())+".db")
 	err := Restore(backupPath)
 	if err == nil || !strings.Contains(err.Error(), "I/O error") {
 		t.Fatalf("expected I/O error, got %v", err)
