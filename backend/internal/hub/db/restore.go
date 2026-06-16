@@ -11,7 +11,6 @@ import (
 type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	Remove(path string) error
-	Stat(path string) (os.FileInfo, error)
 	Open(path string) (*os.File, error)
 	OpenFile(path string, flag int, perm os.FileMode) (*os.File, error)
 }
@@ -20,7 +19,6 @@ type realFS struct{}
 
 func (realFS) MkdirAll(path string, perm os.FileMode) error { return os.MkdirAll(path, perm) }
 func (realFS) Remove(path string) error                     { return os.Remove(path) }
-func (realFS) Stat(path string) (os.FileInfo, error)        { return os.Stat(path) }
 func (realFS) Open(path string) (*os.File, error) {
 	return os.Open(path) // #nosec G304 - paths are controlled in test
 }
