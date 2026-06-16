@@ -88,9 +88,23 @@ func TestRestore_CopyFails_RollbackSucceeds(t *testing.T) {
 	}
 }
 
-func TestRestore_CopyFails_(t *testing.T) {
+func TestRestore_CopyFails_FailsOpenFile(t *testing.T) {
 	fake := newFakeFS()
 	fake.OpenFileErr = errors.New("I/O error")
+	fs = fake
+
+	src := filepath.Join(t.TempDir(), "nonexistent.db")
+	dst := filepath.Join(t.TempDir(), "dest.db")
+
+	err := copyFile(src, dst)
+	if err == nil || !strings.Contains(err.Error(), "I/O error") {
+		t.Fatalf("expected I/O error, got %v", err)
+	}
+}
+
+func TestRestore_CopyFails_FailsCopy(t *testing.T) {
+	fake := newFakeFS()
+	fake.CopyErr = errors.New("I/O error")
 	fs = fake
 
 	src := filepath.Join(t.TempDir(), "nonexistent.db")

@@ -1,6 +1,9 @@
 package db
 
-import "os"
+import (
+	"io"
+	"os"
+)
 
 type fakeFS struct {
 	files       map[string][]byte
@@ -9,6 +12,7 @@ type fakeFS struct {
 	StatErr     error
 	OpenErr     error
 	OpenFileErr error
+	CopyErr     error
 }
 
 func newFakeFS() *fakeFS {
@@ -26,6 +30,8 @@ func (f *fakeFS) Open(path string) (*os.File, error) {
 	return nil, f.OpenErr
 }
 func (f *fakeFS) OpenFile(path string, _ int, _ os.FileMode) (*os.File, error) {
-
 	return nil, f.OpenFileErr
+}
+func (f *fakeFS) Copy(_ io.Writer, _ io.Reader) (written int64, err error) {
+	return 0, f.CopyErr
 }

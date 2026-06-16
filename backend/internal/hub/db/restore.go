@@ -13,6 +13,7 @@ type FileSystem interface {
 	Remove(path string) error
 	Open(path string) (*os.File, error)
 	OpenFile(path string, flag int, perm os.FileMode) (*os.File, error)
+	Copy(dst io.Writer, src io.Reader) (written int64, err error)
 }
 
 type realFS struct{}
@@ -20,10 +21,15 @@ type realFS struct{}
 func (realFS) MkdirAll(path string, perm os.FileMode) error { return os.MkdirAll(path, perm) }
 func (realFS) Remove(path string) error                     { return os.Remove(path) }
 func (realFS) Open(path string) (*os.File, error) {
-	return os.Open(path) // #nosec G304 - paths are controlled in test
+	path = filepath.Clean(path)
+	return os.Open(path)
 }
 func (realFS) OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
-	return os.OpenFile(path, flag, perm) // #nosec G304 - paths are controlled in test
+	path = filepath.Clean(path)
+	return os.OpenFile(path, flag, perm)
+}
+func (realFS) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
+	return io.Copy(dst, src)
 }
 
 var fs FileSystem = realFS{}
@@ -60,7 +66,6 @@ func Restore(backupPath string) error {
 }
 
 func copyFile(src, dst string) (err error) {
-	src = filepath.Clean(src)
 	source, err := fs.Open(src)
 	if err != nil {
 		return err
@@ -69,7 +74,6 @@ func copyFile(src, dst string) (err error) {
 		_ = source.Close()
 	}()
 
-	dst = filepath.Clean(dst)
 	destination, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
@@ -80,7 +84,7 @@ func copyFile(src, dst string) (err error) {
 		}
 	}()
 
-	if _, err := io.Copy(destination, source); err != nil {
+	if _, err := fs.Copy(destination, source); err != nil {
 		return err
 	}
 	if err := destination.Sync(); err != nil {
