@@ -159,7 +159,7 @@ func seedGHActionsRepo(t *testing.T) models.Repository {
 	return repo
 }
 
-func seedGHActionsApp(t *testing.T, repoID string) models.Application {
+func seedGHActionsApp(t *testing.T, repoID string) {
 	t.Helper()
 	agent := models.Agent{Name: crypto.EncryptedString("test-agent-gh")}
 	if err := db.DB.Select("*").Create(&agent).Error; err != nil {
@@ -178,7 +178,6 @@ func seedGHActionsApp(t *testing.T, repoID string) models.Application {
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
 		t.Fatalf("seed application: %v", err)
 	}
-	return app
 }
 
 // ghActionsTagProvider is a repositories.Provider that also implements
