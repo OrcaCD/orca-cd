@@ -31,6 +31,7 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 | [just](https://just.systems/man/en/packages.html)                | latest  | Task runner                 |
 | [buf](https://buf.build/docs/cli/installation/)                  | latest  | Protobuf tooling            |
 | [protoc-gen-go](https://protobuf.dev/reference/go/go-generated/) | latest  | Go protobuf code generation |
+| [gotestsum](https://github.com/gotestyourself/gotestsum#install) | latest  | Cleaner go test summary     |
 
 **Frontend:**
 
