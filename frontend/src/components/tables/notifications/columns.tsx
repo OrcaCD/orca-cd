@@ -3,6 +3,7 @@ import { MoreHorizontal, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import UpdateNotificationDialog from "@/components/dialogs/update-notification";
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import { Button } from "@/components/ui/button";
 import { DataTableColumnHeader } from "@/components/tables/data-table-column-header";
@@ -127,6 +128,7 @@ export const columns: ColumnDef<Notification>[] = [
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-fit">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+							<UpdateNotificationDialog notification={row.original} asDropdownItem />
 							<DropdownMenuItem onClick={() => handleTest(row.original)}>
 								<Send className="h-4 w-4" />
 								{m.sendTest()}
