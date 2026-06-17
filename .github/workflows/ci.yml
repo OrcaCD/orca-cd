@@ -103,6 +103,10 @@ jobs:
           version: v2.11
           working-directory: ./backend
 
+      - name: Install gotestsum
+        working-directory: ./backend
+        run: go install gotest.tools/gotestsum@v1.13.0
+
       - name: Verify dependencies
         working-directory: ./backend
         run: go mod verify
@@ -113,7 +117,7 @@ jobs:
 
       - name: Run Tests
         working-directory: ./backend
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: gotestsum -- -failfast -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
