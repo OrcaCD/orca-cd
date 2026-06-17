@@ -94,6 +94,12 @@ func sortBranches(branches []string) {
 	})
 }
 
+// CommitBranchResolver is an optional capability providers may implement to
+// resolve which branches contain a given commit as their HEAD.
+type CommitBranchResolver interface {
+	GetBranchesForCommit(ctx context.Context, repo *models.Repository, sha string) ([]string, error)
+}
+
 func Register(t models.RepositoryProvider, p Provider) {
 	registry[t] = p
 }

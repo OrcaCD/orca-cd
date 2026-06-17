@@ -27,6 +27,12 @@ func ValidateOrigin(appURL string) gin.HandlerFunc {
 			return
 		}
 
+		// GitHub Actions sends requests without a browser Origin header.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/github-actions") {
+			c.Next()
+			return
+		}
+
 		origin := strings.TrimSuffix(c.GetHeader("Origin"), "/")
 		if origin == "" {
 			c.String(http.StatusForbidden, "403 forbidden: missing origin header")
