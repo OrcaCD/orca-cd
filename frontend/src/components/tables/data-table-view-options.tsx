@@ -8,6 +8,7 @@ import {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -26,23 +27,25 @@ export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) 
 				}
 			></DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				<DropdownMenuLabel>{m.toggleColumns()}</DropdownMenuLabel>
-				<DropdownMenuSeparator />
-				{table
-					.getAllColumns()
-					.filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
-					.map((column) => {
-						return (
-							<DropdownMenuCheckboxItem
-								key={column.id}
-								className="capitalize"
-								checked={column.getIsVisible()}
-								onCheckedChange={(value) => column.toggleVisibility(!!value)}
-							>
-								{column.id}
-							</DropdownMenuCheckboxItem>
-						);
-					})}
+				<DropdownMenuGroup>
+					<DropdownMenuLabel>{m.toggleColumns()}</DropdownMenuLabel>
+					<DropdownMenuSeparator />
+					{table
+						.getAllColumns()
+						.filter((column) => typeof column.accessorFn !== "undefined" && column.getCanHide())
+						.map((column) => {
+							return (
+								<DropdownMenuCheckboxItem
+									key={column.id}
+									className="capitalize"
+									checked={column.getIsVisible()}
+									onCheckedChange={(value) => column.toggleVisibility(!!value)}
+								>
+									{column.id}
+								</DropdownMenuCheckboxItem>
+							);
+						})}
+				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

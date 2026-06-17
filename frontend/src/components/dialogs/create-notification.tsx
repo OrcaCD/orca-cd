@@ -559,6 +559,10 @@ function NotificationConfigStepContent({
 						<Select
 							value={field.state.value}
 							onValueChange={(value) => field.handleChange(value as NotificationType)}
+							items={notificationTypes.map((type) => ({
+								label: type.charAt(0).toUpperCase() + type.slice(1),
+								value: type,
+							}))}
 						>
 							<SelectTrigger id={field.name} className="w-full">
 								<SelectValue placeholder={m.selectType()} />

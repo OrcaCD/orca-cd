@@ -141,6 +141,7 @@ export default function Navbar() {
 						variant="ghost"
 						size="icon"
 						className="hidden sm:flex"
+						nativeButton={false}
 						render={
 							<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
 								<FileText className="h-5 w-5 text-muted-foreground" />

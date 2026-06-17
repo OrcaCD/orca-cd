@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -115,22 +116,24 @@ export const columns: ColumnDef<Agent>[] = [
 							}
 						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-fit">
-							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-							<UpsertAgentDialog agent={row.original} asDropdownItem />
-							<RotateAgentTokenDialog agent={row.original} />
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								onConfirm={() => handleDeleteCard(row.original)}
-								title={m.deleteAgentCardTitle()}
-								description={m.deleteAgentCardDescription({ name: row.original.name })}
-								triggerText={
-									<>
-										<Trash2 className="h-4 w-4" />
-										{m.delete()}
-									</>
-								}
-								asDropdownItem
-							/>
+							<DropdownMenuGroup>
+								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+								<UpsertAgentDialog agent={row.original} asDropdownItem />
+								<RotateAgentTokenDialog agent={row.original} />
+								<DropdownMenuSeparator />
+								<ConfirmationDialog
+									onConfirm={() => handleDeleteCard(row.original)}
+									title={m.deleteAgentCardTitle()}
+									description={m.deleteAgentCardDescription({ name: row.original.name })}
+									triggerText={
+										<>
+											<Trash2 className="h-4 w-4" />
+											{m.delete()}
+										</>
+									}
+									asDropdownItem
+								/>
+							</DropdownMenuGroup>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>

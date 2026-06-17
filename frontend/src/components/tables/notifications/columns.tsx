@@ -9,6 +9,7 @@ import { DataTableColumnHeader } from "@/components/tables/data-table-column-hea
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -128,26 +129,28 @@ export const columns: ColumnDef<Notification>[] = [
 							}
 						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-fit">
-							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-							<DropdownMenuItem onClick={() => handleTest(row.original)}>
-								<Send className="h-4 w-4" />
-								{m.sendTest()}
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								onConfirm={() => {
-									void handleDelete(row.original);
-								}}
-								title={m.deleteNotificationTitle()}
-								description={m.deleteNotificationDescription({ name: row.original.name })}
-								triggerText={
-									<>
-										<Trash2 className="h-4 w-4" />
-										{m.delete()}
-									</>
-								}
-								asDropdownItem
-							/>
+							<DropdownMenuGroup>
+								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+								<DropdownMenuItem onClick={() => handleTest(row.original)}>
+									<Send className="h-4 w-4" />
+									{m.sendTest()}
+								</DropdownMenuItem>
+								<DropdownMenuSeparator />
+								<ConfirmationDialog
+									onConfirm={() => {
+										void handleDelete(row.original);
+									}}
+									title={m.deleteNotificationTitle()}
+									description={m.deleteNotificationDescription({ name: row.original.name })}
+									triggerText={
+										<>
+											<Trash2 className="h-4 w-4" />
+											{m.delete()}
+										</>
+									}
+									asDropdownItem
+								/>
+							</DropdownMenuGroup>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>

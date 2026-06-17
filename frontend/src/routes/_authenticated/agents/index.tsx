@@ -10,6 +10,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -123,21 +124,23 @@ function RouteComponent() {
 													}
 												></DropdownMenuTrigger>
 												<DropdownMenuContent align="end" className="w-fit">
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<UpsertAgentDialog agent={agent} asDropdownItem />
-													<RotateAgentTokenDialog agent={agent} />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteCard(agent)}
-														title={m.deleteAgentCardTitle()}
-														description={m.deleteAgentCardDescription({ name: agent.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
-														}
-														asDropdownItem
-													/>
+													<DropdownMenuGroup>
+														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+														<UpsertAgentDialog agent={agent} asDropdownItem />
+														<RotateAgentTokenDialog agent={agent} />
+														<ConfirmationDialog
+															onConfirm={() => handleDeleteCard(agent)}
+															title={m.deleteAgentCardTitle()}
+															description={m.deleteAgentCardDescription({ name: agent.name })}
+															triggerText={
+																<>
+																	<Trash2 className="h-4 w-4" />
+																	{m.delete()}
+																</>
+															}
+															asDropdownItem
+														/>
+													</DropdownMenuGroup>
 												</DropdownMenuContent>
 											</DropdownMenu>
 										</CardAction>

@@ -190,6 +190,10 @@ function ProfileSettingsPage() {
 							value={getLocale()}
 							onValueChange={handleLanguageChange}
 							disabled={isChangingLanguage}
+							items={locales.map((locale) => ({
+								label: getLocaleLabel(locale),
+								value: locale,
+							}))}
 						>
 							<SelectTrigger id="language-select">
 								<SelectValue placeholder={m.selectLanguage()} />

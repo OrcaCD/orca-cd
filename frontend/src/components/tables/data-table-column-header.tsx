@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -44,19 +45,21 @@ export function DataTableColumnHeader<TData, TValue>({
 					}
 				></DropdownMenuTrigger>
 				<DropdownMenuContent align="start">
-					<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
-						<ArrowUp />
-						{m.sortAscending()}
-					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
-						<ArrowDown />
-						{m.sortDescending()}
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
-						<EyeOff />
-						{m.hideColumn()}
-					</DropdownMenuItem>
+					<DropdownMenuGroup>
+						<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
+							<ArrowUp />
+							{m.sortAscending()}
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
+							<ArrowDown />
+							{m.sortDescending()}
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
+							<EyeOff />
+							{m.hideColumn()}
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>

@@ -203,9 +203,11 @@ export default function EditRepositorySyncDialog({
 														{m.githubActionsOIDCEnabled()}
 													</Label>
 													<Tooltip>
-														<TooltipTrigger asChild>
-															<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-														</TooltipTrigger>
+														<TooltipTrigger
+															render={
+																<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
+															}
+														></TooltipTrigger>
 														<TooltipContent>{m.githubActionsOIDCEnabledTooltip()}</TooltipContent>
 													</Tooltip>
 												</div>

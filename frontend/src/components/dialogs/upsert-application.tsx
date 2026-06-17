@@ -533,6 +533,12 @@ export default function UpsertApplicationDialog({
 																			name={field.name}
 																			value={field.state.value}
 																			onValueChange={(value) => field.handleChange(value ?? "")}
+																			items={
+																				agents?.map((agent) => ({
+																					label: agent.name,
+																					value: agent.id,
+																				})) ?? []
+																			}
 																		>
 																			<SelectTrigger
 																				id="agent-select"
@@ -588,6 +594,12 @@ export default function UpsertApplicationDialog({
 																				form.setFieldValue("branch", "");
 																				form.setFieldValue("path", "");
 																			}}
+																			items={
+																				repos?.map((repo) => ({
+																					label: repo.name,
+																					value: repo.id,
+																				})) ?? []
+																			}
 																		>
 																			<SelectTrigger
 																				id="repository-select"
@@ -633,6 +645,12 @@ export default function UpsertApplicationDialog({
 																				form.setFieldValue("path", "");
 																			}}
 																			disabled={!repositoryId || isBranchesLoading}
+																			items={
+																				branches?.map((branch) => ({
+																					label: branch,
+																					value: branch,
+																				})) ?? []
+																			}
 																		>
 																			<SelectTrigger
 																				id="branch-select"

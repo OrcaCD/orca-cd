@@ -14,6 +14,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -133,32 +134,34 @@ function NotificationsPage() {
 													}
 												></DropdownMenuTrigger>
 												<DropdownMenuContent align="end">
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<DropdownMenuItem
-														onClick={() => {
-															void handleTest(notification);
-														}}
-													>
-														<Send className="h-4 w-4" />
-														{m.sendTest()}
-													</DropdownMenuItem>
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => {
-															void handleDelete(notification);
-														}}
-														title={m.deleteNotificationTitle()}
-														description={m.deleteNotificationDescription({
-															name: notification.name,
-														})}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
-														}
-														asDropdownItem
-													/>
+													<DropdownMenuGroup>
+														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+														<DropdownMenuItem
+															onClick={() => {
+																void handleTest(notification);
+															}}
+														>
+															<Send className="h-4 w-4" />
+															{m.sendTest()}
+														</DropdownMenuItem>
+														<DropdownMenuSeparator />
+														<ConfirmationDialog
+															onConfirm={() => {
+																void handleDelete(notification);
+															}}
+															title={m.deleteNotificationTitle()}
+															description={m.deleteNotificationDescription({
+																name: notification.name,
+															})}
+															triggerText={
+																<>
+																	<Trash2 className="h-4 w-4" />
+																	{m.delete()}
+																</>
+															}
+															asDropdownItem
+														/>
+													</DropdownMenuGroup>
 												</DropdownMenuContent>
 											</DropdownMenu>
 										</CardAction>
