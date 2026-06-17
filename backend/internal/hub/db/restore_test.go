@@ -16,7 +16,8 @@ func TestRestore_FailsWhenDBNil(t *testing.T) {
 	t.Cleanup(func() { DB = originalDB })
 
 	backupPath := filepath.Join(t.TempDir(), "test-backup.db")
-	if err := Restore(backupPath); err == nil {
+	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
+	if err := Restore(backupPath, sqliteFilePath); err == nil {
 		t.Fatal("Restore() expected error when DB is nil, got nil")
 	}
 }
@@ -25,7 +26,8 @@ func TestRestore_FailsWhenBackupNotFound(t *testing.T) {
 	setupGlobalDB(t)
 
 	backupPath := filepath.Join(t.TempDir(), "nonexistent-backup.db")
-	if err := Restore(backupPath); err == nil {
+	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
+	if err := Restore(backupPath, sqliteFilePath); err == nil {
 		t.Fatal("Restore() expected error when backup file doesn't exist, got nil")
 	}
 }
@@ -70,7 +72,8 @@ func TestRestore_MkdirAllFails(t *testing.T) {
 	fs = fake // inject
 
 	backupPath := filepath.Join(t.TempDir(), "test-backup.db")
-	err := Restore(backupPath)
+	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
+	err := Restore(backupPath, sqliteFilePath)
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Fatalf("expected disk full error, got %v", err)
 	}
@@ -84,7 +87,8 @@ func TestRestore_CopyFails_RollbackSucceeds(t *testing.T) {
 	fs = fake
 
 	backupPath := filepath.Join(t.TempDir(), "test-backup"+fmt.Sprintf("%d", time.Now().Unix())+".db")
-	err := Restore(backupPath)
+	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
+	err := Restore(backupPath, sqliteFilePath)
 	if err == nil || !strings.Contains(err.Error(), "I/O error") {
 		t.Fatalf("expected I/O error, got %v", err)
 	}

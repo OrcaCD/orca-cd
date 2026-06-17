@@ -77,7 +77,9 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 		_ = db.Close()
 	}()
 
-	if err := db.Restore(importPath); err != nil {
+	sqlFilePath := db.GetSQLiteFilePath()
+
+	if err := db.Restore(importPath, sqlFilePath); err != nil {
 		return fmt.Errorf("import failed: %w", err)
 	}
 

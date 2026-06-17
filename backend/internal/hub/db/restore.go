@@ -34,7 +34,7 @@ func (realFS) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
 
 var fs FileSystem = realFS{}
 
-func Restore(backupPath string) error {
+func Restore(backupPath, sqliteFilePath string) error {
 	if DB == nil {
 		return fmt.Errorf("database not connected")
 	}

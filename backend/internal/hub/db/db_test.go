@@ -640,3 +640,10 @@ func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	}
 	assertDemoSeedCounts(t, DB)
 }
+
+func TestSqliteFilePath_ReturnsExpectedPath(t *testing.T) {
+	expectedSuffix := "data/hub.db"
+	if got := GetSQLiteFilePath(); got != expectedSuffix {
+		t.Errorf("GetSQLiteFilePath() = %q, want %q", got, expectedSuffix)
+	}
+}
