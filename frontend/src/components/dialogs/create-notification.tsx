@@ -567,7 +567,7 @@ function NotificationConfigStepContent({
 							<SelectTrigger id={field.name} className="w-full">
 								<SelectValue placeholder={m.selectType()} />
 							</SelectTrigger>
-							<SelectContent>
+							<SelectContent alignItemWithTrigger={false}>
 								{notificationTypes.map((type) => (
 									<SelectItem key={type} value={type}>
 										{type.charAt(0).toUpperCase() + type.slice(1)}

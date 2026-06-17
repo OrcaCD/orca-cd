@@ -547,7 +547,7 @@ export default function UpsertApplicationDialog({
 																			>
 																				<SelectValue placeholder={m.selectAgent()} />
 																			</SelectTrigger>
-																			<SelectContent>
+																			<SelectContent alignItemWithTrigger={false}>
 																				{isAgentsLoading ? (
 																					<div className="p-2">{m.loadingDots()}</div>
 																				) : (
@@ -608,7 +608,7 @@ export default function UpsertApplicationDialog({
 																			>
 																				<SelectValue placeholder={m.selectRepository()} />
 																			</SelectTrigger>
-																			<SelectContent>
+																			<SelectContent alignItemWithTrigger={false}>
 																				{isReposLoading ? (
 																					<div className="p-2">{m.loadingDots()}</div>
 																				) : (
@@ -665,7 +665,7 @@ export default function UpsertApplicationDialog({
 																					}
 																				/>
 																			</SelectTrigger>
-																			<SelectContent>
+																			<SelectContent alignItemWithTrigger={false}>
 																				{isBranchesLoading ? (
 																					<div className="p-2">{m.loadingBranchesDots()}</div>
 																				) : (
