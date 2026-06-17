@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { RefreshCwIcon } from "lucide-react";
+import { InfoIcon, RefreshCwIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -10,6 +10,8 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
@@ -25,10 +27,12 @@ import {
 } from "./repository-shared";
 import SuccessAlert from "@/components/alerts/success-alert";
 import { m } from "@/lib/paraglide/messages";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const syncSchema = z.object({
 	syncType: z.enum(["webhook", "polling", "manual"]),
 	pollingIntervalSeconds: z.number().int(),
+	githubActionsOIDCEnabled: z.boolean(),
 });
 
 export default function EditRepositorySyncDialog({
@@ -49,6 +53,7 @@ export default function EditRepositorySyncDialog({
 		defaultValues: {
 			syncType: repository.syncType,
 			pollingIntervalSeconds: repository.pollingIntervalSeconds ?? 300,
+			githubActionsOIDCEnabled: repository.githubActionsOIDCEnabled,
 		},
 		validators: {
 			onSubmit: syncSchema.superRefine((val, ctx) => {
@@ -77,6 +82,7 @@ export default function EditRepositorySyncDialog({
 				const repo = await updateRepository(repository.id, {
 					syncType: value.syncType,
 					pollingIntervalSeconds,
+					githubActionsOIDCEnabled: value.githubActionsOIDCEnabled,
 				});
 
 				setSuccessData({ webhookUrl: repo.webhookUrl, webhookSecret: repo.webhookSecret });
@@ -184,12 +190,42 @@ export default function EditRepositorySyncDialog({
 								}
 							</form.Subscribe>
 
+							{repository.provider === "github" && (
+								<>
+									<Separator />
+									<form.Field name="githubActionsOIDCEnabled">
+										{(field) => (
+											<div className="flex items-center justify-between gap-4">
+												<div className="flex items-center gap-1.5">
+													<Label htmlFor={field.name} className="cursor-pointer">
+														{m.githubActionsOIDCEnabled()}
+													</Label>
+													<Tooltip>
+														<TooltipTrigger asChild>
+															<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
+														</TooltipTrigger>
+														<TooltipContent>{m.githubActionsOIDCEnabledTooltip()}</TooltipContent>
+													</Tooltip>
+												</div>
+												<Switch
+													id={field.name}
+													checked={field.state.value}
+													onCheckedChange={field.handleChange}
+												/>
+											</div>
+										)}
+									</form.Field>
+								</>
+							)}
+
 							<form.Subscribe selector={(state) => state.values}>
 								{(values) => {
 									const unchanged =
 										values.syncType === repository.syncType &&
 										(values.syncType !== "polling" ||
-											values.pollingIntervalSeconds === (repository.pollingIntervalSeconds ?? 300));
+											values.pollingIntervalSeconds ===
+												(repository.pollingIntervalSeconds ?? 300)) &&
+										values.githubActionsOIDCEnabled === repository.githubActionsOIDCEnabled;
 									return (
 										<div className="flex gap-2 pt-2">
 											<Button type="submit" disabled={isLoading || unchanged}>
