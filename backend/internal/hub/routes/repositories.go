@@ -34,48 +34,51 @@ func SetRepositoriesConfig(url string) {
 }
 
 type createRepositoryRequest struct {
-	Url             string                      `json:"url" binding:"required"`
-	Provider        models.RepositoryProvider   `json:"provider" binding:"required"`
-	AuthMethod      models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
-	AuthUser        *string                     `json:"authUser"`
-	AuthToken       *string                     `json:"authToken"`
-	SyncType        models.RepositorySyncType   `json:"syncType" binding:"required"`
-	PollingInterval *int64                      `json:"pollingIntervalSeconds"`
+	Url                      string                      `json:"url" binding:"required"`
+	Provider                 models.RepositoryProvider   `json:"provider" binding:"required"`
+	AuthMethod               models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
+	AuthUser                 *string                     `json:"authUser"`
+	AuthToken                *string                     `json:"authToken"`
+	SyncType                 models.RepositorySyncType   `json:"syncType" binding:"required"`
+	PollingInterval          *int64                      `json:"pollingIntervalSeconds"`
+	GitHubActionsOIDCEnabled bool                        `json:"githubActionsOIDCEnabled"`
 }
 
 type repositoryResponse struct {
-	Id                     string  `json:"id"`
-	Name                   string  `json:"name"`
-	Url                    string  `json:"url"`
-	Provider               string  `json:"provider"`
-	AuthMethod             string  `json:"authMethod"`
-	SyncType               string  `json:"syncType"`
-	SyncStatus             string  `json:"syncStatus"`
-	LastSyncError          *string `json:"lastSyncError"`
-	PollingIntervalSeconds *int64  `json:"pollingIntervalSeconds"`
-	LastSyncedAt           *string `json:"lastSyncedAt"`
-	CreatedBy              string  `json:"createdBy"`
-	CreatedAt              string  `json:"createdAt"`
-	UpdatedAt              string  `json:"updatedAt"`
-	WebhookSecret          *string `json:"webhookSecret,omitempty"`
-	WebhookUrl             *string `json:"webhookUrl,omitempty"`
-	AppCount               int     `json:"appCount"`
+	Id                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Url                      string  `json:"url"`
+	Provider                 string  `json:"provider"`
+	AuthMethod               string  `json:"authMethod"`
+	SyncType                 string  `json:"syncType"`
+	SyncStatus               string  `json:"syncStatus"`
+	LastSyncError            *string `json:"lastSyncError"`
+	PollingIntervalSeconds   *int64  `json:"pollingIntervalSeconds"`
+	LastSyncedAt             *string `json:"lastSyncedAt"`
+	CreatedBy                string  `json:"createdBy"`
+	CreatedAt                string  `json:"createdAt"`
+	UpdatedAt                string  `json:"updatedAt"`
+	WebhookSecret            *string `json:"webhookSecret,omitempty"`
+	WebhookUrl               *string `json:"webhookUrl,omitempty"`
+	AppCount                 int     `json:"appCount"`
+	GitHubActionsOIDCEnabled bool    `json:"githubActionsOIDCEnabled"`
 }
 
 func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
 	resp := repositoryResponse{
-		Id:            r.Id,
-		Name:          r.Name,
-		Url:           r.Url,
-		Provider:      string(r.Provider),
-		AuthMethod:    string(r.AuthMethod),
-		SyncType:      string(r.SyncType),
-		SyncStatus:    string(r.SyncStatus),
-		LastSyncError: r.LastSyncError,
-		CreatedBy:     r.CreatedBy,
-		CreatedAt:     r.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:     r.UpdatedAt.Format(time.RFC3339),
-		AppCount:      appCount,
+		Id:                       r.Id,
+		Name:                     r.Name,
+		Url:                      r.Url,
+		Provider:                 string(r.Provider),
+		AuthMethod:               string(r.AuthMethod),
+		SyncType:                 string(r.SyncType),
+		SyncStatus:               string(r.SyncStatus),
+		LastSyncError:            r.LastSyncError,
+		CreatedBy:                r.CreatedBy,
+		CreatedAt:                r.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                r.UpdatedAt.Format(time.RFC3339),
+		AppCount:                 appCount,
+		GitHubActionsOIDCEnabled: r.GitHubActionsOIDCEnabled,
 	}
 
 	if r.PollingInterval != nil {
@@ -209,13 +212,14 @@ func CreateRepositoryHandler(c *gin.Context) {
 	}
 
 	repo := models.Repository{
-		Name:       fmt.Sprintf("%s/%s", repoOwner, repoName),
-		Url:        req.Url,
-		Provider:   req.Provider,
-		AuthMethod: req.AuthMethod,
-		SyncType:   req.SyncType,
-		SyncStatus: models.SyncStatusUnknown,
-		CreatedBy:  claims.Subject,
+		Name:                     fmt.Sprintf("%s/%s", repoOwner, repoName),
+		Url:                      req.Url,
+		Provider:                 req.Provider,
+		AuthMethod:               req.AuthMethod,
+		SyncType:                 req.SyncType,
+		SyncStatus:               models.SyncStatusUnknown,
+		CreatedBy:                claims.Subject,
+		GitHubActionsOIDCEnabled: req.GitHubActionsOIDCEnabled,
 	}
 
 	if req.AuthUser != nil && *req.AuthUser != "" {
@@ -373,11 +377,12 @@ func DeleteRepositoryHandler(c *gin.Context) {
 }
 
 type updateRepositoryRequest struct {
-	AuthMethod      *models.RepositoryAuthMethod `json:"authMethod"`
-	AuthUser        *string                      `json:"authUser"`
-	AuthToken       *string                      `json:"authToken"`
-	SyncType        *models.RepositorySyncType   `json:"syncType"`
-	PollingInterval *int64                       `json:"pollingIntervalSeconds"`
+	AuthMethod               *models.RepositoryAuthMethod `json:"authMethod"`
+	AuthUser                 *string                      `json:"authUser"`
+	AuthToken                *string                      `json:"authToken"`
+	SyncType                 *models.RepositorySyncType   `json:"syncType"`
+	PollingInterval          *int64                       `json:"pollingIntervalSeconds"`
+	GitHubActionsOIDCEnabled *bool                        `json:"githubActionsOIDCEnabled"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -389,7 +394,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil {
+	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil && req.GitHubActionsOIDCEnabled == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field must be provided"})
 		return
 	}
@@ -471,6 +476,10 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		} else {
 			repo.PollingInterval = nil
 		}
+	}
+
+	if req.GitHubActionsOIDCEnabled != nil {
+		repo.GitHubActionsOIDCEnabled = *req.GitHubActionsOIDCEnabled
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {

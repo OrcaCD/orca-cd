@@ -536,5 +536,7 @@
 	"revokeWebhookConfirmDescription": "This will immediately invalidate the current webhook secret. Any existing integrations using the old secret will stop working.",
 	"webhookRevoked": "Webhook revoked",
 	"failedGenerateWebhook": "Failed to generate webhook",
-	"failedRevokeWebhook": "Failed to revoke webhook"
+	"failedRevokeWebhook": "Failed to revoke webhook",
+	"githubActionsOIDCEnabled": "GitHub Actions Access",
+	"githubActionsOIDCEnabledTooltip": "Allows GitHub Actions to trigger deployments using OIDC authentication without storing credentials"
 }

@@ -891,3 +891,224 @@ func TestGitHubGetLatestCommitErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestGitHubGetBranchesForCommit(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	const sha = "abc123def456"
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := testRepoAPIURL + "/commits/" + sha + "/branches-where-head"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("unexpected URL: %s", req.URL.String())
+		}
+		if req.Header.Get("Accept") != "application/vnd.github+json" {
+			t.Fatalf("unexpected Accept header: %q", req.Header.Get("Accept"))
+		}
+		// Empty branch names should be filtered out.
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"main"},{"name":""},{"name":"release/v2"}]`), nil
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	branches, err := p.GetBranchesForCommit(context.Background(), repo, sha)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 branches (empty name filtered), got %d: %v", len(branches), branches)
+	}
+	if branches[0] != "main" {
+		t.Fatalf("expected branches[0] = %q, got %q", "main", branches[0])
+	}
+	if branches[1] != "release/v2" {
+		t.Fatalf("expected branches[1] = %q, got %q", "release/v2", branches[1])
+	}
+}
+
+func TestGitHubGetBranchesForCommitWithToken(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Authorization") != "Bearer secret-token" {
+			t.Fatalf("unexpected Authorization header: %q", req.Header.Get("Authorization"))
+		}
+		return jsonResponseWithBody(http.StatusOK, `[{"name":"main"}]`), nil
+	})
+
+	token := crypto.EncryptedString("secret-token")
+	repo := &models.Repository{
+		Url:        testRepoURL,
+		AuthMethod: models.AuthMethodToken,
+		AuthToken:  &token,
+	}
+	branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(branches) != 1 || branches[0] != "main" {
+		t.Fatalf("expected [main], got %v", branches)
+	}
+}
+
+func TestGitHubGetBranchesForCommitSHAURLEncoded(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	// SHA values are hex strings in practice, but the method uses url.PathEscape,
+	// so any character that needs escaping must appear correctly in the URL.
+	const sha = "abc/123"
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		expectedURL := testRepoAPIURL + "/commits/abc%2F123/branches-where-head"
+		if req.URL.String() != expectedURL {
+			t.Fatalf("expected SHA to be path-escaped: got URL %s", req.URL.String())
+		}
+		return jsonResponseWithBody(http.StatusOK, `[]`), nil
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	if _, err := p.GetBranchesForCommit(context.Background(), repo, sha); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGitHubGetBranchesForCommitErrors(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	t.Run("nil repository", func(t *testing.T) {
+		branches, err := p.GetBranchesForCommit(context.Background(), nil, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "repository is required") {
+			t.Fatalf("expected repository is required error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("sha is required", func(t *testing.T) {
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "   ")
+		if err == nil || !strings.Contains(err.Error(), "sha is required") {
+			t.Fatalf("expected sha is required error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("invalid repository URL", func(t *testing.T) {
+		repo := &models.Repository{Url: "https://github.com/invalid-only-owner"}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "invalid repository URL") {
+			t.Fatalf("expected invalid repository URL error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("request transport error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return nil, errors.New("network down")
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "failed to fetch branches for commit") {
+			t.Fatalf("expected fetch error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("decode error", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponseWithBody(http.StatusOK, `{invalid-json`), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "failed to decode GitHub branches-where-head response") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("unauthorized response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusUnauthorized), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("forbidden response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusForbidden), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "authentication failed or access denied") {
+			t.Fatalf("expected auth error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("not found response", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusNotFound), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "repository or commit not found or access denied") {
+			t.Fatalf("expected not found error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+
+	t.Run("unexpected status", func(t *testing.T) {
+		httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusBadGateway), nil
+		})
+
+		repo := &models.Repository{Url: testRepoURL}
+		branches, err := p.GetBranchesForCommit(context.Background(), repo, "abc123")
+		if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+			t.Fatalf("expected unexpected status error, got: %v", err)
+		}
+		if branches != nil {
+			t.Fatalf("expected nil branches, got %v", branches)
+		}
+	})
+}

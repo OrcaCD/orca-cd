@@ -131,7 +131,7 @@ function SystemInfoPage() {
 
 							<InfoRow label={m.passwordAuthentication()}>
 								<Badge variant={data.disableLocalAuth ? "destructive" : "outline"}>
-									{data.disableLocalAuth ? m.enabled() : m.disabled()}
+									{data.disableLocalAuth ? m.disabled() : m.enabled()}
 								</Badge>
 							</InfoRow>
 
