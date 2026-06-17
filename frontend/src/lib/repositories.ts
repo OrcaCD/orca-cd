@@ -29,6 +29,7 @@ export interface Repository {
 	appCount: number;
 	webhookSecret?: string | undefined;
 	webhookUrl?: string | undefined;
+	githubActionsOIDCEnabled: boolean;
 }
 
 export interface CreateRepositoryRequest {
@@ -49,6 +50,7 @@ export interface UpdateRepositoryRequest {
 	syncType?: RepositorySyncType;
 	pollingIntervalSeconds?: number;
 	webhookSecret?: string;
+	githubActionsOIDCEnabled?: boolean;
 }
 
 export interface TestConnectionRequest {

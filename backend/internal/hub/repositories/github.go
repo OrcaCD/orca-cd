@@ -417,6 +417,68 @@ func (githubProvider) GetLatestCommit(ctx context.Context, repo *models.Reposito
 	}
 }
 
+func (githubProvider) GetBranchesForCommit(ctx context.Context, repo *models.Repository, sha string) ([]string, error) {
+	if repo == nil {
+		return nil, errors.New("repository is required")
+	}
+
+	sha = strings.TrimSpace(sha)
+	if sha == "" {
+		return nil, errors.New("sha is required")
+	}
+
+	owner, repoName, err := parseGitHubURL(repo.Url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/repos/%s/%s/commits/%s/branches-where-head",
+		githubAPIBase,
+		owner,
+		repoName,
+		url.PathEscape(sha),
+	)
+
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build GitHub request: %w", err)
+	}
+	addGitHubHeaders(req, repo)
+
+	resp, err := httpclient.Default.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch branches for commit: %w", err)
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			fmt.Printf("warning: failed to close GitHub response body: %v\n", err)
+		}
+	}()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var parsed []githubBranch
+		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			return nil, fmt.Errorf("failed to decode GitHub branches-where-head response: %w", err)
+		}
+		branches := make([]string, 0, len(parsed))
+		for _, b := range parsed {
+			if b.Name != "" {
+				branches = append(branches, b.Name)
+			}
+		}
+		return branches, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, errors.New("authentication failed or access denied")
+	case http.StatusNotFound:
+		return nil, errors.New("repository or commit not found or access denied")
+	default:
+		return nil, fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
+	}
+}
+
 func addGitHubHeaders(req *http.Request, repo *models.Repository) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 
