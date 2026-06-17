@@ -8,7 +8,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import Navbar from "../components/navbar";
+import Navbar from "@/components/navbar";
 import { Toaster } from "@/components/ui/sonner";
 import type { AuthState } from "@/lib/auth";
 import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
