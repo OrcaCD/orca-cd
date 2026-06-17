@@ -292,10 +292,8 @@ export function ApplicationForm({ application }: { application?: Application | n
 								}}
 							</form.Field>
 
-							<form.Field
-								name="icon"
-								validators={{ onSubmit: applicationSchema.shape.icon }}
-								children={(field) => (
+							<form.Field name="icon" validators={{ onSubmit: applicationSchema.shape.icon }}>
+								{(field) => (
 									<Field>
 										<Label>{m.icon()}</Label>
 										<LucideIconPicker
@@ -306,7 +304,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 										/>
 									</Field>
 								)}
-							/>
+							</form.Field>
 
 							<form.Field name="repositoryId">
 								{(field) => {
