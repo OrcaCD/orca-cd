@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var skipConfirmation bool
+
 func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import <file>",
@@ -21,11 +23,11 @@ func newImportCmd() *cobra.Command {
 		Long:  "Import a database backup created with the export command. During import, the current database is copied to allow rollback if the import fails.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var skipConfirmation bool
-			cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation warnings")
 			return runImportCommand(cmd.OutOrStdout(), args[0], skipConfirmation)
 		},
 	}
+
+	cmd.Flags().BoolVarP(&skipConfirmation, "yes", "y", false, "Skip confirmation warnings")
 
 	return cmd
 }
