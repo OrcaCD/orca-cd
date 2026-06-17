@@ -80,12 +80,7 @@ export default function ForcePasswordChangeDialog() {
 
 	return (
 		<Dialog open>
-			<DialogContent
-				showCloseButton={false}
-				onEscapeKeyDown={(event) => event.preventDefault()}
-				onPointerDownOutside={(event) => event.preventDefault()}
-				className="sm:max-w-md"
-			>
+			<DialogContent showCloseButton={false} className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>{m.forcePasswordChangeRequired()}</DialogTitle>
 					<DialogDescription>{m.forcePasswordChangeDescription()}</DialogDescription>

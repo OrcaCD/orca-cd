@@ -96,18 +96,20 @@ export default function EditRepositorySyncDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<RefreshCwIcon />
-						{m.editRepositorySyncShort()}
-					</DropdownMenuItem>
-				) : (
-					<Button variant="ghost" size="icon">
-						<RefreshCwIcon />
-					</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+							<RefreshCwIcon />
+							{m.editRepositorySyncShort()}
+						</DropdownMenuItem>
+					) : (
+						<Button variant="ghost" size="icon">
+							<RefreshCwIcon />
+						</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-md overflow-hidden" aria-describedby={undefined}>
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<DialogHeader>

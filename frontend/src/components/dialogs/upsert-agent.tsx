@@ -87,23 +87,25 @@ export default function UpsertAgentDialog({
 	return (
 		<>
 			<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
-				<DialogTrigger asChild>
-					{asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-							<Pencil className="h-4 w-4" />
-							{m.edit()}
-						</DropdownMenuItem>
-					) : isEditing ? (
-						<Button variant="ghost" size="icon">
-							<Pencil className="h-4 w-4" />
-						</Button>
-					) : (
-						<Button>
-							<Plus className="h-4 w-4" />
-							{m.addAgent()}
-						</Button>
-					)}
-				</DialogTrigger>
+				<DialogTrigger
+					render={
+						asDropdownItem ? (
+							<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+								<Pencil className="h-4 w-4" />
+								{m.edit()}
+							</DropdownMenuItem>
+						) : isEditing ? (
+							<Button variant="ghost" size="icon">
+								<Pencil className="h-4 w-4" />
+							</Button>
+						) : (
+							<Button>
+								<Plus className="h-4 w-4" />
+								{m.addAgent()}
+							</Button>
+						)
+					}
+				></DialogTrigger>
 				<DialogContent className="sm:max-w-106.25">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">

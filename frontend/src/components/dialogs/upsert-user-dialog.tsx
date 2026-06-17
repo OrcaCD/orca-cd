@@ -96,23 +96,25 @@ export default function UpsertUserDialog({
 	return (
 		<>
 			<Dialog open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
-				<DialogTrigger asChild>
-					{asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
-							<Pencil className="h-4 w-4" />
-							{m.edit()}
-						</DropdownMenuItem>
-					) : isEditing ? (
-						<Button variant="ghost" size="icon" disabled={disabled}>
-							<Pencil className="h-4 w-4" />
-						</Button>
-					) : (
-						<Button disabled={disabled}>
-							<Plus className="mr-2 h-4 w-4" />
-							{m.addUser()}
-						</Button>
-					)}
-				</DialogTrigger>
+				<DialogTrigger
+					render={
+						asDropdownItem ? (
+							<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
+								<Pencil className="h-4 w-4" />
+								{m.edit()}
+							</DropdownMenuItem>
+						) : isEditing ? (
+							<Button variant="ghost" size="icon" disabled={disabled}>
+								<Pencil className="h-4 w-4" />
+							</Button>
+						) : (
+							<Button disabled={disabled}>
+								<Plus className="mr-2 h-4 w-4" />
+								{m.addUser()}
+							</Button>
+						)
+					}
+				></DialogTrigger>
 				<DialogContent className="sm:max-w-106.25">
 					<DialogHeader>
 						<DialogTitle>{isEditing ? m.editUser() : m.addUser()}</DialogTitle>

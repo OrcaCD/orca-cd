@@ -97,22 +97,26 @@ export default function Navbar() {
 						<NavigationMenuList className="gap-2">
 							{allNavItems.map((item) => (
 								<Tooltip key={item.key}>
-									<TooltipTrigger asChild>
-										<NavigationMenuItem>
-											<NavigationMenuLink asChild>
-												<Link
-													key={item.key}
-													to={item.href}
-													className={cn(
-														location.pathname.startsWith(item.href) &&
-															"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
-													)}
-												>
-													<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
-												</Link>
-											</NavigationMenuLink>
-										</NavigationMenuItem>
-									</TooltipTrigger>
+									<TooltipTrigger
+										render={
+											<NavigationMenuItem>
+												<NavigationMenuLink
+													render={
+														<Link
+															key={item.key}
+															to={item.href}
+															className={cn(
+																location.pathname.startsWith(item.href) &&
+																	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+															)}
+														>
+															<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
+														</Link>
+													}
+												></NavigationMenuLink>
+											</NavigationMenuItem>
+										}
+									></TooltipTrigger>
 									<TooltipContent>
 										{getNavLabel(item.key)}
 
@@ -133,11 +137,16 @@ export default function Navbar() {
 				</div>
 
 				<div className="flex items-center gap-3">
-					<Button variant="ghost" size="icon" className="hidden sm:flex" asChild>
-						<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
-							<FileText className="h-5 w-5 text-muted-foreground" />
-						</a>
-					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
+						className="hidden sm:flex"
+						render={
+							<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
+								<FileText className="h-5 w-5 text-muted-foreground" />
+							</a>
+						}
+					></Button>
 
 					<ModeToggle
 						theme={theme === "dark" ? "dark" : "light"}
@@ -147,21 +156,28 @@ export default function Navbar() {
 					/>
 
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="relative h-10 w-10 rounded-full">
-								<Avatar className="h-10 w-10">
-									<AvatarImage src={auth.profile?.picture || undefined} alt={auth.profile?.name} />
-									<AvatarFallback>{getInitials(auth.profile?.name || "")}</AvatarFallback>
-								</Avatar>
-							</Button>
-						</DropdownMenuTrigger>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" className="relative h-10 w-10 rounded-full">
+									<Avatar className="h-10 w-10">
+										<AvatarImage
+											src={auth.profile?.picture || undefined}
+											alt={auth.profile?.name}
+										/>
+										<AvatarFallback>{getInitials(auth.profile?.name || "")}</AvatarFallback>
+									</Avatar>
+								</Button>
+							}
+						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-full">
-							<DropdownMenuItem asChild>
-								<Link to="/settings" className="flex items-center">
-									<User className="mr-2 h-4 w-4" />
-									{m.userSettings()}
-								</Link>
-							</DropdownMenuItem>
+							<DropdownMenuItem
+								render={
+									<Link to="/settings" className="flex items-center">
+										<User className="mr-2 h-4 w-4" />
+										{m.userSettings()}
+									</Link>
+								}
+							></DropdownMenuItem>
 							<DropdownMenuSeparator />
 							<DropdownMenuItem
 								className="flex items-center text-destructive cursor-pointer"
@@ -199,20 +215,22 @@ export default function Navbar() {
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
 							{allNavItems.map((item) => (
 								<NavigationMenuItem key={item.key} className="w-full">
-									<NavigationMenuLink asChild>
-										<Link
-											key={item.key}
-											to={item.href}
-											className={cn(
-												"w-full",
-												location.pathname.startsWith(item.href) &&
-													"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
-											)}
-											onClick={() => setMobileMenuOpen(false)}
-										>
-											<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
-										</Link>
-									</NavigationMenuLink>
+									<NavigationMenuLink
+										render={
+											<Link
+												key={item.key}
+												to={item.href}
+												className={cn(
+													"w-full",
+													location.pathname.startsWith(item.href) &&
+														"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+												)}
+												onClick={() => setMobileMenuOpen(false)}
+											>
+												<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
+											</Link>
+										}
+									></NavigationMenuLink>
 								</NavigationMenuItem>
 							))}
 						</NavigationMenuList>

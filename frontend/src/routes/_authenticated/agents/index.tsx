@@ -114,12 +114,14 @@ function RouteComponent() {
 									<CardHeader>
 										<CardAction>
 											<DropdownMenu>
-												<DropdownMenuTrigger asChild>
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<EllipsisVertical className="h-4 w-4" />
-														<span className="sr-only">{m.cardActions()}</span>
-													</Button>
-												</DropdownMenuTrigger>
+												<DropdownMenuTrigger
+													render={
+														<Button variant="ghost" size="icon" className="h-8 w-8">
+															<EllipsisVertical className="h-4 w-4" />
+															<span className="sr-only">{m.cardActions()}</span>
+														</Button>
+													}
+												></DropdownMenuTrigger>
 												<DropdownMenuContent align="end" className="w-fit">
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													<UpsertAgentDialog agent={agent} asDropdownItem />

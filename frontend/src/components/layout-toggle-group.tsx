@@ -11,11 +11,10 @@ export function LayoutToggleGroup({
 }) {
 	return (
 		<ToggleGroup
-			type="single"
 			variant="outline"
-			value={viewMode}
+			value={[viewMode]}
 			onValueChange={(value) => {
-				const nextLayout = toPreferredLayout(value);
+				const nextLayout = toPreferredLayout(value[0]);
 				if (nextLayout) {
 					setViewMode(nextLayout);
 				}

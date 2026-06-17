@@ -171,12 +171,14 @@ export const columns: ColumnDef<Repository>[] = [
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="h-8 w-8 p-0">
-								<span className="sr-only">{m.openMenu()}</span>
-								<MoreHorizontal className="h-4 w-4" />
-							</Button>
-						</DropdownMenuTrigger>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" className="h-8 w-8 p-0">
+									<span className="sr-only">{m.openMenu()}</span>
+									<MoreHorizontal className="h-4 w-4" />
+								</Button>
+							}
+						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-fit">
 							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 							<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>

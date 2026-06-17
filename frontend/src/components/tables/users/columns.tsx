@@ -95,12 +95,14 @@ export const columns: ColumnDef<UserDetail>[] = [
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" size="icon" className="h-8 w-8">
-								<EllipsisVertical className="h-4 w-4" />
-								<span className="sr-only">{m.actions()}</span>
-							</Button>
-						</DropdownMenuTrigger>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" size="icon" className="h-8 w-8">
+									<EllipsisVertical className="h-4 w-4" />
+									<span className="sr-only">{m.actions()}</span>
+								</Button>
+							}
+						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end">
 							<UpsertUserDialog
 								user={row.original}

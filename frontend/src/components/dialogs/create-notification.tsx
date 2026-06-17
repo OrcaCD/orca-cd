@@ -935,12 +935,14 @@ export default function CreateNotificationDialog() {
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			modal={false}
 		>
-			<DialogTrigger asChild>
-				<Button>
-					<Plus className="h-4 w-4" />
-					{m.addNotification()}
-				</Button>
-			</DialogTrigger>
+			<DialogTrigger
+				render={
+					<Button>
+						<Plus className="h-4 w-4" />
+						{m.addNotification()}
+					</Button>
+				}
+			></DialogTrigger>
 
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>

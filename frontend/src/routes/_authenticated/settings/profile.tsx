@@ -79,7 +79,7 @@ function ProfileSettingsPage() {
 		}
 	}
 
-	async function handleLanguageChange(value: string) {
+	async function handleLanguageChange(value: string | null) {
 		const nextLocale = toLocale(value);
 		if (!nextLocale || nextLocale === getLocale()) {
 			return;

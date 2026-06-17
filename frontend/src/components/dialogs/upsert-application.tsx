@@ -161,18 +161,20 @@ function TreeNodeList({
 				if (node.type === "dir") {
 					return (
 						<Collapsible key={node.path}>
-							<CollapsibleTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
-								>
-									<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
-									<FolderIcon />
-									{node.name}
-								</Button>
-							</CollapsibleTrigger>
+							<CollapsibleTrigger
+								render={
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+									>
+										<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
+										<FolderIcon />
+										{node.name}
+									</Button>
+								}
+							></CollapsibleTrigger>
 							<CollapsibleContent className="mt-1 ml-5 style-lyra:ml-4">
 								<div className="flex flex-col gap-1">
 									<TreeNodeList
@@ -401,24 +403,26 @@ export default function UpsertApplicationDialog({
 				handleClose();
 			}}
 		>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<Pencil />
-						{m.edit()}
-					</DropdownMenuItem>
-				) : isEditing ? (
-					<Button variant="outline">
-						<Pencil />
-						{m.editApplication()}
-					</Button>
-				) : (
-					<Button>
-						<Plus />
-						{m.newApplication()}
-					</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+							<Pencil />
+							{m.edit()}
+						</DropdownMenuItem>
+					) : isEditing ? (
+						<Button variant="outline">
+							<Pencil />
+							{m.editApplication()}
+						</Button>
+					) : (
+						<Button>
+							<Plus />
+							{m.newApplication()}
+						</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="flex max-h-[90vh] flex-col sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
@@ -528,7 +532,7 @@ export default function UpsertApplicationDialog({
 																		<Select
 																			name={field.name}
 																			value={field.state.value}
-																			onValueChange={field.handleChange}
+																			onValueChange={(value) => field.handleChange(value ?? "")}
 																		>
 																			<SelectTrigger
 																				id="agent-select"
@@ -537,7 +541,7 @@ export default function UpsertApplicationDialog({
 																			>
 																				<SelectValue placeholder={m.selectAgent()} />
 																			</SelectTrigger>
-																			<SelectContent position="item-aligned">
+																			<SelectContent>
 																				{isAgentsLoading ? (
 																					<div className="p-2">{m.loadingDots()}</div>
 																				) : (
@@ -580,7 +584,7 @@ export default function UpsertApplicationDialog({
 																			name={field.name}
 																			value={field.state.value}
 																			onValueChange={(value) => {
-																				field.handleChange(value);
+																				field.handleChange(value ?? "");
 																				form.setFieldValue("branch", "");
 																				form.setFieldValue("path", "");
 																			}}
@@ -592,7 +596,7 @@ export default function UpsertApplicationDialog({
 																			>
 																				<SelectValue placeholder={m.selectRepository()} />
 																			</SelectTrigger>
-																			<SelectContent position="item-aligned">
+																			<SelectContent>
 																				{isReposLoading ? (
 																					<div className="p-2">{m.loadingDots()}</div>
 																				) : (
@@ -625,7 +629,7 @@ export default function UpsertApplicationDialog({
 																			name={field.name}
 																			value={field.state.value}
 																			onValueChange={(value) => {
-																				field.handleChange(value);
+																				field.handleChange(value ?? "");
 																				form.setFieldValue("path", "");
 																			}}
 																			disabled={!repositoryId || isBranchesLoading}
@@ -643,7 +647,7 @@ export default function UpsertApplicationDialog({
 																					}
 																				/>
 																			</SelectTrigger>
-																			<SelectContent position="item-aligned">
+																			<SelectContent>
 																				{isBranchesLoading ? (
 																					<div className="p-2">{m.loadingBranchesDots()}</div>
 																				) : (
