@@ -54,9 +54,8 @@ func getGitHubActionsProvider(ctx context.Context) (*gooidc.Provider, error) {
 }
 
 type githubActionsRequest struct {
-	SyncRepo         bool     `json:"syncRepo"`
-	PullImages       bool     `json:"pullImages"`
-	PullImagesFilter []string `json:"pullImagesFilter"`
+	SyncRepo   bool `json:"syncRepo"`
+	PullImages bool `json:"pullImages"`
 }
 
 // https://docs.github.com/en/actions/concepts/security/openid-connect#understanding-the-oidc-token
