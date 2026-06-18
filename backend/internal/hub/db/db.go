@@ -50,6 +50,10 @@ func sqliteDSN(readOnly bool) string {
 	return sqliteFilePath + "?" + q.Encode()
 }
 
+func GetSQLiteFilePath() string {
+	return sqliteFilePath
+}
+
 func configureSQLitePool(db *gorm.DB) error {
 	sqlDB, err := db.DB()
 	if err != nil {
