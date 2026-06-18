@@ -128,7 +128,7 @@ export const columns: ColumnDef<Notification>[] = [
 								</Button>
 							}
 						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit">
+						<DropdownMenuContent align="end" className="w-fit" keepMounted>
 							<DropdownMenuGroup>
 								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 								<DropdownMenuItem onClick={() => handleTest(row.original)}>

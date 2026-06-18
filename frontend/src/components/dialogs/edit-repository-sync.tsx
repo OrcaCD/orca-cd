@@ -103,9 +103,10 @@ export default function EditRepositorySyncDialog({
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem>
 							<RefreshCwIcon />
 							{m.editRepositorySyncShort()}
 						</DropdownMenuItem>

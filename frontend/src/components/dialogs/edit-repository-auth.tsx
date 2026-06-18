@@ -82,9 +82,10 @@ export default function EditRepositoryAuthDialog({
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem>
 							<KeyRoundIcon className="h-4 w-4" />
 							{m.editRepositoryAuthShort()}
 						</DropdownMenuItem>

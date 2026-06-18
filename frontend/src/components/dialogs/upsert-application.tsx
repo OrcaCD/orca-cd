@@ -404,9 +404,10 @@ export default function UpsertApplicationDialog({
 			}}
 		>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem>
 							<Pencil />
 							{m.edit()}
 						</DropdownMenuItem>

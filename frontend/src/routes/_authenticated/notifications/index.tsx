@@ -133,7 +133,7 @@ function NotificationsPage() {
 														</Button>
 													}
 												></DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
+												<DropdownMenuContent align="end" keepMounted>
 													<DropdownMenuGroup>
 														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 														<DropdownMenuItem

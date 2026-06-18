@@ -440,9 +440,10 @@ export default function CreateRepositoryDialog({
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem>
 							<PencilIcon className="h-4 w-4" />
 							{m.edit()}
 						</DropdownMenuItem>

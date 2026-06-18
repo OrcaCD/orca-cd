@@ -104,7 +104,7 @@ export const columns: ColumnDef<UserDetail>[] = [
 								</Button>
 							}
 						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" keepMounted>
 							<DropdownMenuGroup>
 								<UpsertUserDialog
 									user={row.original}

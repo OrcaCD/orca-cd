@@ -47,9 +47,10 @@ export default function ConfirmationDialog({
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem variant={dropdownItemVariant} onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem variant={dropdownItemVariant}>
 							{triggerText}
 						</DropdownMenuItem>
 					) : (

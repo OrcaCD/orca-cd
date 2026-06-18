@@ -90,7 +90,7 @@ function OIDCProvidersPage() {
 											</Button>
 										}
 									></DropdownMenuTrigger>
-									<DropdownMenuContent align="end">
+									<DropdownMenuContent align="end" keepMounted>
 										<DropdownMenuGroup>
 											<UpsertOIDCProviderDialog provider={provider} asDropdownItem />
 											<DropdownMenuSeparator />

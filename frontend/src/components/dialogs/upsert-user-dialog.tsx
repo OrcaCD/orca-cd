@@ -97,9 +97,10 @@ export default function UpsertUserDialog({
 		<>
 			<Dialog open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
 				<DialogTrigger
+					nativeButton={!asDropdownItem}
 					render={
 						asDropdownItem ? (
-							<DropdownMenuItem onSelect={(e) => e.preventDefault()} disabled={disabled}>
+							<DropdownMenuItem disabled={disabled}>
 								<Pencil className="h-4 w-4" />
 								{m.edit()}
 							</DropdownMenuItem>

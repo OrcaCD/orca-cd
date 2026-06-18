@@ -105,9 +105,10 @@ export default function UpsertOIDCProviderDialog({
 	return (
 		<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
 			<DialogTrigger
+				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+						<DropdownMenuItem>
 							<Pencil className="h-4 w-4" />
 							{m.edit()}
 						</DropdownMenuItem>
