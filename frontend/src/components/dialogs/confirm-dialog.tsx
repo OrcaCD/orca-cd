@@ -50,9 +50,7 @@ export default function ConfirmationDialog({
 				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
-						<DropdownMenuItem variant={dropdownItemVariant}>
-							{triggerText}
-						</DropdownMenuItem>
+						<DropdownMenuItem variant={dropdownItemVariant}>{triggerText}</DropdownMenuItem>
 					) : (
 						<Button {...triggerProps}>{triggerText}</Button>
 					)
