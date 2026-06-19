@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -27,8 +30,13 @@ type keyRotateFixture struct {
 
 func setupKeyRotateTestDB(t *testing.T) {
 	t.Helper()
+	setupKeyRotateTestDBWithLogger(t, gormlogger.Discard)
+}
 
-	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{Logger: gormlogger.Discard})
+func setupKeyRotateTestDBWithLogger(t *testing.T, logger gormlogger.Interface) {
+	t.Helper()
+
+	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{Logger: logger})
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
@@ -53,6 +61,31 @@ func setupKeyRotateTestDB(t *testing.T) {
 		_ = sqlDB.Close()
 		db.DB = nil
 	})
+}
+
+type countingGormLogger struct {
+	updates int
+}
+
+func (l *countingGormLogger) LogMode(gormlogger.LogLevel) gormlogger.Interface {
+	return l
+}
+
+func (l *countingGormLogger) Info(context.Context, string, ...any) {}
+
+func (l *countingGormLogger) Warn(context.Context, string, ...any) {}
+
+func (l *countingGormLogger) Error(context.Context, string, ...any) {}
+
+func (l *countingGormLogger) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	sql, _ := fc()
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(sql)), "UPDATE ") {
+		l.updates++
+	}
+}
+
+func (l *countingGormLogger) Reset() {
+	l.updates = 0
 }
 
 func seedKeyRotateFixture(t *testing.T) keyRotateFixture {
@@ -219,6 +252,21 @@ func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	}
 	if _, err := crypto.Decrypt(rawAgentKeyID); err == nil {
 		t.Fatal("expected raw agent key id to reject the old encryption key")
+	}
+}
+
+func TestRotateDatabaseEncryptionKeyUsesOneUpdatePerTouchedRow(t *testing.T) {
+	logger := &countingGormLogger{}
+	setupKeyRotateTestDBWithLogger(t, logger)
+	seedKeyRotateFixture(t)
+	logger.Reset()
+
+	if _, err := rotateDatabaseEncryptionKey(t.Context(), testOldAppSecret, testNewAppSecret); err != nil {
+		t.Fatalf("rotateDatabaseEncryptionKey() unexpected error: %v", err)
+	}
+
+	if logger.updates != 5 {
+		t.Fatalf("expected one update for each touched encrypted row, got %d updates", logger.updates)
 	}
 }
 

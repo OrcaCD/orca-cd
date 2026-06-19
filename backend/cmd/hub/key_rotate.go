@@ -19,6 +19,7 @@ import (
 )
 
 const minKeyRotateSecretLength = 32
+const keyRotationBatchSize = 100
 
 var (
 	errMissingOldSecret = errors.New("old secret is required")
@@ -160,48 +161,29 @@ func rotateDatabaseEncryptionKey(ctx context.Context, oldSecret, newSecret strin
 
 	var result keyRotationResult
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := crypto.Init(oldSecret); err != nil {
-			return fmt.Errorf("initialize old encryption key: %w", err)
-		}
-
-		agents, err := gorm.G[models.Agent](tx).Find(ctx)
-		if err != nil {
-			return fmt.Errorf("load agents: %w", err)
-		}
-		applications, err := gorm.G[models.Application](tx).Find(ctx)
-		if err != nil {
-			return fmt.Errorf("load applications: %w", err)
-		}
-		repositories, err := gorm.G[models.Repository](tx).Find(ctx)
-		if err != nil {
-			return fmt.Errorf("load repositories: %w", err)
-		}
-		notifications, err := gorm.G[models.Notification](tx).Find(ctx)
-		if err != nil {
-			return fmt.Errorf("load notifications: %w", err)
-		}
-		oidcProviders, err := gorm.G[models.OIDCProvider](tx).Find(ctx)
-		if err != nil {
-			return fmt.Errorf("load oidc providers: %w", err)
-		}
-
-		if err := crypto.Init(newSecret); err != nil {
-			return fmt.Errorf("initialize new encryption key: %w", err)
-		}
-
-		if err := rotateAgents(ctx, tx, agents, &result); err != nil {
+		if err := rotateEncryptedBatches[models.Agent](ctx, tx, oldSecret, newSecret, "agents", func(agents []models.Agent) error {
+			return rotateAgents(ctx, tx, agents, &result)
+		}); err != nil {
 			return err
 		}
-		if err := rotateApplications(ctx, tx, applications, &result); err != nil {
+		if err := rotateEncryptedBatches[models.Application](ctx, tx, oldSecret, newSecret, "applications", func(applications []models.Application) error {
+			return rotateApplications(ctx, tx, applications, &result)
+		}); err != nil {
 			return err
 		}
-		if err := rotateRepositories(ctx, tx, repositories, &result); err != nil {
+		if err := rotateEncryptedBatches[models.Repository](ctx, tx, oldSecret, newSecret, "repositories", func(repositories []models.Repository) error {
+			return rotateRepositories(ctx, tx, repositories, &result)
+		}); err != nil {
 			return err
 		}
-		if err := rotateNotifications(ctx, tx, notifications, &result); err != nil {
+		if err := rotateEncryptedBatches[models.Notification](ctx, tx, oldSecret, newSecret, "notifications", func(notifications []models.Notification) error {
+			return rotateNotifications(ctx, tx, notifications, &result)
+		}); err != nil {
 			return err
 		}
-		if err := rotateOIDCProviders(ctx, tx, oidcProviders, &result); err != nil {
+		if err := rotateEncryptedBatches[models.OIDCProvider](ctx, tx, oldSecret, newSecret, "oidc providers", func(oidcProviders []models.OIDCProvider) error {
+			return rotateOIDCProviders(ctx, tx, oidcProviders, &result)
+		}); err != nil {
 			return err
 		}
 
@@ -212,6 +194,32 @@ func rotateDatabaseEncryptionKey(ctx context.Context, oldSecret, newSecret strin
 	}
 
 	return result, nil
+}
+
+func rotateEncryptedBatches[T any](
+	ctx context.Context,
+	tx *gorm.DB,
+	oldSecret string,
+	newSecret string,
+	label string,
+	rotate func([]T) error,
+) error {
+	if err := crypto.Init(oldSecret); err != nil {
+		return fmt.Errorf("initialize old encryption key: %w", err)
+	}
+
+	return gorm.G[T](tx).FindInBatches(ctx, keyRotationBatchSize, func(batch []T, _ int) error {
+		if err := crypto.Init(newSecret); err != nil {
+			return fmt.Errorf("initialize new encryption key: %w", err)
+		}
+		if err := rotate(batch); err != nil {
+			return err
+		}
+		if err := crypto.Init(oldSecret); err != nil {
+			return fmt.Errorf("restore old encryption key after %s batch: %w", label, err)
+		}
+		return nil
+	})
 }
 
 func rotateAgents(ctx context.Context, tx *gorm.DB, agents []models.Agent, result *keyRotationResult) error {
@@ -238,17 +246,13 @@ func rotateApplications(ctx context.Context, tx *gorm.DB, applications []models.
 				Name:                application.Name,
 				ComposeFile:         application.ComposeFile,
 				PreviousComposeFile: application.PreviousComposeFile,
+				ImageWebhookSecret:  application.ImageWebhookSecret,
 			})
 		if err != nil {
 			return fmt.Errorf("rotate application %s: %w", application.Id, err)
 		}
 		if rows == 0 {
 			return fmt.Errorf("rotate application %s: %w", application.Id, gorm.ErrRecordNotFound)
-		}
-		if application.ImageWebhookSecret != nil {
-			if err := updateEncryptedField[models.Application](ctx, tx, application.Id, "image_webhook_secret", application.ImageWebhookSecret); err != nil {
-				return fmt.Errorf("rotate application image webhook secret %s: %w", application.Id, err)
-			}
 		}
 		result.Applications += rows
 	}
@@ -257,28 +261,23 @@ func rotateApplications(ctx context.Context, tx *gorm.DB, applications []models.
 
 func rotateRepositories(ctx context.Context, tx *gorm.DB, repositories []models.Repository, result *keyRotationResult) error {
 	for _, repository := range repositories {
-		rotated := false
-		if repository.AuthUser != nil {
-			if err := updateEncryptedField[models.Repository](ctx, tx, repository.Id, "auth_user", repository.AuthUser); err != nil {
-				return fmt.Errorf("rotate repository auth user %s: %w", repository.Id, err)
-			}
-			rotated = true
+		if repository.AuthUser == nil && repository.AuthToken == nil && repository.WebhookSecret == nil {
+			continue
 		}
-		if repository.AuthToken != nil {
-			if err := updateEncryptedField[models.Repository](ctx, tx, repository.Id, "auth_token", repository.AuthToken); err != nil {
-				return fmt.Errorf("rotate repository auth token %s: %w", repository.Id, err)
-			}
-			rotated = true
+		rows, err := gorm.G[models.Repository](tx).
+			Where("id = ?", repository.Id).
+			Updates(ctx, models.Repository{
+				AuthUser:      repository.AuthUser,
+				AuthToken:     repository.AuthToken,
+				WebhookSecret: repository.WebhookSecret,
+			})
+		if err != nil {
+			return fmt.Errorf("rotate repository %s: %w", repository.Id, err)
 		}
-		if repository.WebhookSecret != nil {
-			if err := updateEncryptedField[models.Repository](ctx, tx, repository.Id, "webhook_secret", repository.WebhookSecret); err != nil {
-				return fmt.Errorf("rotate repository webhook secret %s: %w", repository.Id, err)
-			}
-			rotated = true
+		if rows == 0 {
+			return fmt.Errorf("rotate repository %s: %w", repository.Id, gorm.ErrRecordNotFound)
 		}
-		if rotated {
-			result.Repositories++
-		}
+		result.Repositories += rows
 	}
 	return nil
 }
@@ -311,17 +310,6 @@ func rotateOIDCProviders(ctx context.Context, tx *gorm.DB, providers []models.OI
 			return fmt.Errorf("rotate oidc provider %s: %w", provider.Id, gorm.ErrRecordNotFound)
 		}
 		result.OIDCProviders += rows
-	}
-	return nil
-}
-
-func updateEncryptedField[T any](ctx context.Context, tx *gorm.DB, id string, column string, value any) error {
-	rows, err := gorm.G[T](tx).Where("id = ?", id).Update(ctx, column, value)
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
