@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -26,6 +31,36 @@ type keyRotateFixture struct {
 	RepositoryID   string
 	NotificationID string
 	OIDCProviderID string
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func setupKeyRotateCommandEnv(t *testing.T) string {
+	t.Helper()
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	workDir := t.TempDir()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, "data"), 0750); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+		_ = os.Chdir(originalWD)
+	})
+
+	t.Setenv("APP_URL", "http://localhost")
+	t.Setenv("APP_SECRET", testNewAppSecret)
+	return workDir
 }
 
 func setupKeyRotateTestDB(t *testing.T) {
@@ -179,6 +214,23 @@ func seedKeyRotateFixture(t *testing.T) keyRotateFixture {
 	}
 }
 
+func seedKeyRotateCommandDatabase(t *testing.T) keyRotateFixture {
+	t.Helper()
+
+	if err := crypto.Init(testOldAppSecret); err != nil {
+		t.Fatalf("failed to init old crypto: %v", err)
+	}
+
+	if err := db.Connect(zerolog.New(io.Discard), zerolog.Disabled, false); err != nil {
+		t.Fatalf("failed to connect command database: %v", err)
+	}
+	fixture := seedKeyRotateFixture(t)
+	if err := db.Close(); err != nil {
+		t.Fatalf("failed to close command database: %v", err)
+	}
+	return fixture
+}
+
 func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	setupKeyRotateTestDB(t)
 	fixture := seedKeyRotateFixture(t)
@@ -270,6 +322,276 @@ func TestRotateDatabaseEncryptionKeyUsesOneUpdatePerTouchedRow(t *testing.T) {
 	}
 }
 
+func TestRunKeyRotateCommandSucceeds(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	fixture := seedKeyRotateCommandDatabase(t)
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        "  " + testOldAppSecret + "  ",
+		SkipConfirmation: true,
+	})
+	if err != nil {
+		t.Fatalf("runKeyRotateCommandWithInput() unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Key Rotation Successful") {
+		t.Fatalf("expected success output, got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Rows re-encrypted:") {
+		t.Fatalf("expected output to include row count, got %q", out.String())
+	}
+
+	if err := crypto.Init(testNewAppSecret); err != nil {
+		t.Fatalf("failed to init new crypto: %v", err)
+	}
+	if err := db.Connect(zerolog.New(io.Discard), zerolog.Disabled, false); err != nil {
+		t.Fatalf("failed to reconnect command database: %v", err)
+	}
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", fixture.AgentID).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load rotated agent: %v", err)
+	}
+	if agent.KeyId.String() != "agent-key-id" {
+		t.Fatalf("expected rotated agent key id, got %q", agent.KeyId.String())
+	}
+}
+
+func TestRunKeyRotateCommandRejectsInvalidConfiguration(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	t.Setenv("APP_SECRET", "")
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        testOldAppSecret,
+		SkipConfirmation: true,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected configuration error, got nil")
+	}
+	if !strings.Contains(err.Error(), "configuration") {
+		t.Fatalf("expected configuration error, got %v", err)
+	}
+}
+
+func TestRunKeyRotateCommandRejectsInvalidOldSecret(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        "short",
+		SkipConfirmation: true,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid old secret") {
+		t.Fatalf("expected invalid old secret error, got %v", err)
+	}
+}
+
+func TestRunKeyRotateCommandReturnsConfirmationReadError(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, errReader{}, keyRotateOptions{
+		OldSecret: testOldAppSecret,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected confirmation read error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read confirmation") {
+		t.Fatalf("expected confirmation read error, got %v", err)
+	}
+}
+
+func TestRunKeyRotateCommandCancelsWhenUserDeclines(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("no\n"), keyRotateOptions{
+		OldSecret: testOldAppSecret,
+	})
+	if err != nil {
+		t.Fatalf("runKeyRotateCommandWithInput() unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), "Key rotation cancelled") {
+		t.Fatalf("expected cancellation output, got %q", out.String())
+	}
+}
+
+func TestRunKeyRotateCommandReturnsDatabaseConnectError(t *testing.T) {
+	workDir := setupKeyRotateCommandEnv(t)
+	if err := os.RemoveAll(filepath.Join(workDir, "data")); err != nil {
+		t.Fatalf("failed to remove data dir: %v", err)
+	}
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        testOldAppSecret,
+		SkipConfirmation: true,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected database connect error, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to connect to database") {
+		t.Fatalf("expected database connect error, got %v", err)
+	}
+}
+
+func TestRunKeyRotateCommandReturnsRotationError(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	seedKeyRotateCommandDatabase(t)
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        "wrong-old-secret-that-is-long-enough",
+		SkipConfirmation: true,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected rotation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "key rotation failed") {
+		t.Fatalf("expected key rotation error, got %v", err)
+	}
+}
+
+func TestRunKeyRotateCommandRejectsDemoMode(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	t.Setenv("DEMO", "true")
+
+	var out bytes.Buffer
+	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        testOldAppSecret,
+		SkipConfirmation: true,
+	})
+	if err == nil {
+		t.Fatal("runKeyRotateCommandWithInput() expected error in demo mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "demo mode") {
+		t.Fatalf("expected demo mode error, got %v", err)
+	}
+}
+
+func TestRotateDatabaseEncryptionKeyRejectsMissingDatabase(t *testing.T) {
+	originalDB := db.DB
+	db.DB = nil
+	t.Cleanup(func() {
+		db.DB = originalDB
+	})
+
+	_, err := rotateDatabaseEncryptionKey(t.Context(), testOldAppSecret, testNewAppSecret)
+	if err == nil {
+		t.Fatal("rotateDatabaseEncryptionKey() expected error without database, got nil")
+	}
+	if !strings.Contains(err.Error(), "database is not connected") {
+		t.Fatalf("expected missing database error, got %v", err)
+	}
+}
+
+func TestRotateEncryptedBatchesPropagatesRotateError(t *testing.T) {
+	setupKeyRotateTestDB(t)
+	seedKeyRotateFixture(t)
+
+	wantErr := errors.New("rotate batch failed")
+	err := db.DB.Transaction(func(tx *gorm.DB) error {
+		return rotateEncryptedBatches[models.Agent](t.Context(), tx, testOldAppSecret, testNewAppSecret, "agents", func([]models.Agent) error {
+			return wantErr
+		})
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected rotate error %v, got %v", wantErr, err)
+	}
+}
+
+func TestRotateRepositoriesSkipsRowsWithoutEncryptedFields(t *testing.T) {
+	setupKeyRotateTestDB(t)
+	repositories := []models.Repository{{
+		Base: models.Base{Id: "repo-without-secrets"},
+	}}
+	var result keyRotationResult
+
+	if err := rotateRepositories(t.Context(), db.DB, repositories, &result); err != nil {
+		t.Fatalf("rotateRepositories() unexpected error: %v", err)
+	}
+	if result.Repositories != 0 {
+		t.Fatalf("expected no repository updates, got %d", result.Repositories)
+	}
+}
+
+func TestRotateHelpersReturnNotFound(t *testing.T) {
+	setupKeyRotateTestDB(t)
+	if err := crypto.Init(testNewAppSecret); err != nil {
+		t.Fatalf("failed to init crypto: %v", err)
+	}
+
+	authToken := crypto.EncryptedString("token")
+	tests := []struct {
+		name string
+		run  func(*keyRotationResult) error
+	}{
+		{
+			name: "agent",
+			run: func(result *keyRotationResult) error {
+				return rotateAgents(t.Context(), db.DB, []models.Agent{{
+					Base:  models.Base{Id: "missing-agent"},
+					Name:  crypto.EncryptedString("agent"),
+					KeyId: crypto.EncryptedString("key"),
+				}}, result)
+			},
+		},
+		{
+			name: "application",
+			run: func(result *keyRotationResult) error {
+				return rotateApplications(t.Context(), db.DB, []models.Application{{
+					Base:                models.Base{Id: "missing-application"},
+					Name:                crypto.EncryptedString("app"),
+					ComposeFile:         crypto.EncryptedString("services: {}"),
+					PreviousComposeFile: crypto.EncryptedString(""),
+				}}, result)
+			},
+		},
+		{
+			name: "repository",
+			run: func(result *keyRotationResult) error {
+				return rotateRepositories(t.Context(), db.DB, []models.Repository{{
+					Base:      models.Base{Id: "missing-repository"},
+					AuthToken: &authToken,
+				}}, result)
+			},
+		},
+		{
+			name: "notification",
+			run: func(result *keyRotationResult) error {
+				return rotateNotifications(t.Context(), db.DB, []models.Notification{{
+					Base:   models.Base{Id: "missing-notification"},
+					Name:   crypto.EncryptedString("notification"),
+					Config: crypto.EncryptedString("{}"),
+				}}, result)
+			},
+		},
+		{
+			name: "oidc provider",
+			run: func(result *keyRotationResult) error {
+				return rotateOIDCProviders(t.Context(), db.DB, []models.OIDCProvider{{
+					Base:         models.Base{Id: "missing-oidc-provider"},
+					ClientSecret: crypto.EncryptedString("secret"),
+				}}, result)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result keyRotationResult
+			err := tt.run(&result)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("expected record not found, got %v", err)
+			}
+		})
+	}
+}
+
 func TestRotateDatabaseEncryptionKeyRejectsInvalidSecrets(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -292,6 +614,43 @@ func TestRotateDatabaseEncryptionKeyRejectsInvalidSecrets(t *testing.T) {
 	}
 }
 
+func TestKeyRotationResultTotal(t *testing.T) {
+	result := keyRotationResult{
+		Agents:        1,
+		Applications:  2,
+		Repositories:  3,
+		Notifications: 4,
+		OIDCProviders: 5,
+	}
+
+	if result.Total() != 15 {
+		t.Fatalf("Total() = %d, want 15", result.Total())
+	}
+}
+
+func TestRenderKeyRotateResult(t *testing.T) {
+	var out bytes.Buffer
+	renderKeyRotateResult(&out, keyRotationResult{
+		Agents:        1,
+		Applications:  2,
+		Repositories:  3,
+		Notifications: 4,
+		OIDCProviders: 5,
+	})
+
+	got := out.String()
+	for _, want := range []string{
+		"Key Rotation Successful",
+		"Rows re-encrypted:",
+		"15",
+		"Restart the hub with the new APP_SECRET.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func TestNewKeyCmdIncludesRotate(t *testing.T) {
 	keyCmd := newKeyCmd()
 
@@ -301,5 +660,17 @@ func TestNewKeyCmdIncludesRotate(t *testing.T) {
 	}
 	if found == nil || found.Name() != "rotate" {
 		t.Fatalf("expected rotate command, got %v", found)
+	}
+}
+
+func TestNewRootCmdIncludesKeyRotate(t *testing.T) {
+	rootCmd := newRootCmd()
+
+	found, _, err := rootCmd.Find([]string{"key", "rotate"})
+	if err != nil {
+		t.Fatalf("failed to find key rotate command: %v", err)
+	}
+	if found == nil || found.Name() != "rotate" {
+		t.Fatalf("expected key rotate command, got %v", found)
 	}
 }
