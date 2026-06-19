@@ -72,6 +72,7 @@ func main() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
 	rootCmd.AddCommand(newResetPasswordCmd())
+	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportCmd())
 
