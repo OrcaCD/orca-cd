@@ -263,7 +263,7 @@
 	"enableByDefault": "Enable By Default",
 	"enableByDefaultDescription": "Apply this notification automatically to new applications.",
 	"noApplicationsAvailable": "No applications available.",
-	"selectApplications": "Select applications...",
+	"selectApplications": "Select applications",
 	"notificationCreated": "Notification created",
 	"notificationUpdated": "Notification updated",
 	"failedSaveNotification": "Failed to save notification",

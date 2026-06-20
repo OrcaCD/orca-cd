@@ -7,11 +7,15 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
 	Combobox,
+	ComboboxChip,
+	ComboboxChips,
+	ComboboxChipsInput,
 	ComboboxContent,
 	ComboboxEmpty,
-	ComboboxInput,
 	ComboboxItem,
 	ComboboxList,
+	ComboboxValue,
+	useComboboxAnchor,
 } from "@/components/ui/combobox";
 import {
 	Dialog,
@@ -50,6 +54,7 @@ export default function UpdateNotificationDialog({
 }) {
 	const [open, setOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const anchor = useComboboxAnchor();
 
 	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
 
@@ -157,12 +162,30 @@ export default function UpdateNotificationDialog({
 									<Combobox
 										items={applications}
 										multiple
+										autoHighlight
 										value={field.state.value}
 										onValueChange={field.handleChange}
 										modal={false}
 									>
-										<ComboboxInput placeholder={m.selectApplications()} />
-										<ComboboxContent>
+										<ComboboxChips ref={anchor}>
+											<ComboboxValue>
+												{(values) => (
+													<>
+														{values.map((value: string) => (
+															<ComboboxChip key={value}>
+																{applications?.find((app) => app.id === value)?.name ?? value}
+															</ComboboxChip>
+														))}
+														<ComboboxChipsInput
+															placeholder={
+																field.state.value.length === 0 ? m.selectApplications() : ""
+															}
+														/>
+													</>
+												)}
+											</ComboboxValue>
+										</ComboboxChips>
+										<ComboboxContent anchor={anchor}>
 											<ComboboxEmpty>{m.noApplicationsAvailable()}</ComboboxEmpty>
 											<ComboboxList>
 												{(item) => (
