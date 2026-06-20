@@ -38,7 +38,7 @@ import { m } from "@/lib/paraglide/messages";
 const notificationSettingsSchema = z.object({
 	enabled: z.boolean(),
 	enableByDefault: z.boolean(),
-	applicationIds: z.array(z.string()),
+	applicationIds: z.array(z.uuid()),
 });
 
 export default function UpdateNotificationDialog({
