@@ -8,12 +8,12 @@
 		"install:browsers": "playwright install"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.60.0",
-		"@types/node": "^25.9.1",
+		"@playwright/test": "^1.61.0",
+		"@types/node": "^25.9.3",
 		"typescript": "^6.0.3"
 	},
 	"engines": {
 		"node": ">=24.0.0"
 	},
-	"packageManager": "pnpm@11.1.1"
+	"packageManager": "pnpm@11.8.0"
 }

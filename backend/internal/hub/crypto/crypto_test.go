@@ -25,6 +25,56 @@ func TestInit_ValidKey(t *testing.T) {
 	}
 }
 
+func TestCipherInstancesDoNotChangeDefault(t *testing.T) {
+	mustInit(t)
+
+	defaultCiphertext, err := Encrypt("default secret")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	instance, err := New("different-secret-that-is-long-enough")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	instanceCiphertext, err := instance.Encrypt("instance secret")
+	if err != nil {
+		t.Fatalf("Cipher.Encrypt: %v", err)
+	}
+
+	got, err := Decrypt(defaultCiphertext)
+	if err != nil {
+		t.Fatalf("Decrypt with default cipher: %v", err)
+	}
+	if got != "default secret" {
+		t.Fatalf("default cipher decrypt = %q, want %q", got, "default secret")
+	}
+
+	if _, err := Decrypt(instanceCiphertext); err == nil {
+		t.Fatal("expected default cipher to reject instance ciphertext")
+	}
+}
+
+func TestSetDefaultUsesProvidedCipher(t *testing.T) {
+	instance, err := New("different-secret-that-is-long-enough")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	SetDefault(instance)
+	ciphertext, err := Encrypt("instance default")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	got, err := instance.Decrypt(ciphertext)
+	if err != nil {
+		t.Fatalf("Cipher.Decrypt: %v", err)
+	}
+	if got != "instance default" {
+		t.Fatalf("Cipher.Decrypt = %q, want %q", got, "instance default")
+	}
+}
+
 func TestEncryptDecrypt_Simple(t *testing.T) {
 	mustInit(t)
 
