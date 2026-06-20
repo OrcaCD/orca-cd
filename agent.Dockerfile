@@ -1,4 +1,4 @@
-FROM golang:1.26.3-trixie AS builder
+FROM golang:1.26.4-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
