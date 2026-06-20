@@ -438,7 +438,6 @@ export default function UpsertApplicationDialog({
 				</DialogHeader>
 
 				<form
-					className="overflow-y-auto"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();
