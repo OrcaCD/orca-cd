@@ -448,11 +448,16 @@ function LoginForm({
 			{hasProviders && (
 				<div className="flex flex-col gap-2">
 					{providers.map((provider) => (
-						<Button key={provider.id} variant="outline" className="w-full" asChild>
-							<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
-								{m.continueWith({ providerName: provider.name })}
-							</a>
-						</Button>
+						<Button
+							key={provider.id}
+							variant="outline"
+							className="w-full"
+							render={
+								<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
+									{m.continueWith({ providerName: provider.name })}
+								</a>
+							}
+						></Button>
 					))}
 				</div>
 			)}

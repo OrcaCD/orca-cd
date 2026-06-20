@@ -13,6 +13,14 @@ import (
 )
 
 func main() {
+	rootCmd := newRootCmd()
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:                "hub [flags]",
 		Short:              "Orca Hub",
@@ -72,9 +80,9 @@ func main() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
 	rootCmd.AddCommand(newResetPasswordCmd())
+	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newExportCmd())
+	rootCmd.AddCommand(newImportCmd())
 
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+	return rootCmd
 }

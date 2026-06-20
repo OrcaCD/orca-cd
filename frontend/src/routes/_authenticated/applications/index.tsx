@@ -125,9 +125,7 @@ function ApplicationsPage() {
 												</div>
 											</CardTitle>
 											<CardAction>
-												<Link to="/applications/$id" params={{ id: app.id }}>
-													<ArrowRight className="h-5 w-5" />
-												</Link>
+												<ArrowRight className="h-5 w-5" />
 											</CardAction>
 										</CardHeader>
 										<CardContent>

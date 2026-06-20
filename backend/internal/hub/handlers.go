@@ -28,6 +28,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		BuildDate:        version.BuildDate,
 	})
 	routes.SetRepositoriesConfig(cfg.AppURL)
+	routes.SetGitHubActionsConfig(cfg.AppURL)
 
 	api := router.Group("/api/v1")
 	{
@@ -43,6 +44,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		webhookRateLimit := middleware.RateLimit(time.Second, 10)
 		api.POST("/webhooks/repositories/:id", webhookRateLimit, routes.WebhookHandler)
 		api.POST("/webhooks/images/:id", webhookRateLimit, routes.ImagePullWebhookHandler)
+		api.POST("/github-actions", webhookRateLimit, routes.GitHubActionsDeployHandler)
 
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
@@ -84,6 +86,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 			protected.POST("/notifications", routes.CreateNotificationHandler)
 			protected.GET("/notifications", routes.ListNotificationsHandler)
+			protected.PUT("/notifications/:id", routes.UpdateNotificationHandler)
 			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
 

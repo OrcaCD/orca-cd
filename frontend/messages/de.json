@@ -245,6 +245,8 @@
 	"updateApplication": "Anwendung aktualisieren",
 	"addNotification": "Benachrichtigung hinzufügen",
 	"addNotificationDescription": "Erstelle einen neuen Benachrichtigungsendpunkt.",
+	"editNotification": "Benachrichtigung bearbeiten",
+	"editNotificationDescription": "Aktualisiere Zustellungseinstellungen und zugewiesene Anwendungen.",
 	"notificationNamePlaceholder": "z. B. \"deploy-alerts\"",
 	"notificationWebhookUrlPlaceholder": "https://discord.com/api/webhooks/123456789012345678/dein-webhook-token",
 	"notificationBotName": "Bot-Name",
@@ -264,8 +266,9 @@
 	"enableByDefault": "Standardmäßig aktivieren",
 	"enableByDefaultDescription": "Wende diese Benachrichtigung automatisch auf neue Anwendungen an.",
 	"noApplicationsAvailable": "Keine Anwendungen verfügbar.",
-	"selectApplications": "Anwendungen auswählen...",
+	"selectApplications": "Anwendungen auswählen",
 	"notificationCreated": "Benachrichtigung erstellt",
+	"notificationUpdated": "Benachrichtigung aktualisiert",
 	"failedSaveNotification": "Benachrichtigung konnte nicht gespeichert werden",
 	"validationApplicationNameRequired": "Name ist erforderlich",
 	"validationApplicationNameMaxLength": "Name darf maximal 128 Zeichen lang sein",
@@ -540,5 +543,7 @@
 	"revokeWebhookConfirmDescription": "Damit wird das aktuelle Webhook-Secret sofort ungültig. Bestehende Integrationen mit dem alten Secret werden nicht mehr funktionieren.",
 	"webhookRevoked": "Webhook widerrufen",
 	"failedGenerateWebhook": "Webhook konnte nicht generiert werden",
-	"failedRevokeWebhook": "Webhook konnte nicht widerrufen werden"
+	"failedRevokeWebhook": "Webhook konnte nicht widerrufen werden",
+	"githubActionsOIDCEnabled": "GitHub Actions Zugriff",
+	"githubActionsOIDCEnabledTooltip": "Ermöglicht GitHub Actions, Deployments per OIDC-Authentifizierung auszulösen, ohne Zugangsdaten speichern zu müssen"
 }
