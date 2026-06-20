@@ -86,6 +86,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 			protected.POST("/notifications", routes.CreateNotificationHandler)
 			protected.GET("/notifications", routes.ListNotificationsHandler)
+			protected.PUT("/notifications/:id", routes.UpdateNotificationHandler)
 			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
 

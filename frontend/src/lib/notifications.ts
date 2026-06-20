@@ -33,6 +33,12 @@ export interface UpsertNotificationRequest {
 	applicationIds?: string[];
 }
 
+export interface UpdateNotificationRequest {
+	enabled: boolean;
+	enableByDefault: boolean;
+	applicationIds: string[];
+}
+
 export function isHttpUrl(rawUrl: string): boolean {
 	try {
 		const parsedUrl = new URL(rawUrl);
@@ -48,6 +54,13 @@ export function normalizeNotificationApplicationIds(ids: string[]): string[] {
 
 export function createNotification(data: UpsertNotificationRequest): Promise<Notification> {
 	return fetcher<Notification>("/notifications", "POST", data);
+}
+
+export function updateNotification(
+	id: string,
+	data: UpdateNotificationRequest,
+): Promise<Notification> {
+	return fetcher<Notification>(`/notifications/${id}`, "PUT", data);
 }
 
 export function deleteNotification(id: string): Promise<void> {
