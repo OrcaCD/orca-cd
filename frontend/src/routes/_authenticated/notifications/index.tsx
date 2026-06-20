@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CreateNotificationDialog from "@/components/dialogs/create-notification";
+import UpdateNotificationDialog from "@/components/dialogs/update-notification";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { columns } from "@/components/tables/notifications/columns";
 import { NotificationsDataTable } from "@/components/tables/notifications/data-table";
@@ -136,6 +137,7 @@ function NotificationsPage() {
 												<DropdownMenuContent align="end" keepMounted>
 													<DropdownMenuGroup>
 														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+														<UpdateNotificationDialog notification={notification} asDropdownItem />
 														<DropdownMenuItem
 															onClick={() => {
 																void handleTest(notification);

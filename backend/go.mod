@@ -3,11 +3,11 @@ module github.com/OrcaCD/orca-cd
 go 1.26.1
 
 require (
-	charm.land/lipgloss/v2 v2.0.3
+	charm.land/lipgloss/v2 v2.0.4
 	github.com/aegis-aead/go-libaegis v0.2.14
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/coreos/go-oidc/v3 v3.18.0
-	github.com/docker/cli v29.5.2+incompatible
+	github.com/docker/cli v29.5.3+incompatible
 	github.com/docker/compose/v5 v5.1.4
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-jose/go-jose/v4 v4.1.4

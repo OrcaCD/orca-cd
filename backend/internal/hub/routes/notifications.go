@@ -33,6 +33,12 @@ type createNotificationRequest struct {
 	ApplicationIds  []string                `json:"applicationIds"`
 }
 
+type updateNotificationRequest struct {
+	Enabled         *bool    `json:"enabled"`
+	EnableByDefault *bool    `json:"enableByDefault"`
+	ApplicationIds  []string `json:"applicationIds"`
+}
+
 type testNotificationRequest struct {
 	Message string `json:"message"`
 }
@@ -149,6 +155,81 @@ func CreateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toNotificationResponse(&createdNotification))
+	sse.PublishUpdate(NotificationsPath)
+}
+
+func UpdateNotificationHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var req updateNotificationRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil || req.EnableByDefault == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled and enableByDefault are required"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	notification, err := getNotificationById(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	applications, missingApplicationId, err := loadNotificationApplications(ctx, req.ApplicationIds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if missingApplicationId != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
+		return
+	}
+
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := models.Notification{
+			Enabled:         *req.Enabled,
+			EnableByDefault: *req.EnableByDefault,
+		}
+		rowsAffected, err := gorm.G[models.Notification](tx).
+			Where("id = ?", id).
+			Select("enabled", "enable_by_default").
+			Updates(ctx, updates)
+		if err != nil {
+			return err
+		}
+		if rowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		if err := tx.Model(&notification).Association("Applications").Replace(applications); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	updatedNotification, err := getNotificationById(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toNotificationResponse(&updatedNotification))
 	sse.PublishUpdate(NotificationsPath)
 }
 
