@@ -79,7 +79,7 @@ function ProfileSettingsPage() {
 		}
 	}
 
-	async function handleLanguageChange(value: string) {
+	async function handleLanguageChange(value: string | null) {
 		const nextLocale = toLocale(value);
 		if (!nextLocale || nextLocale === getLocale()) {
 			return;
@@ -190,6 +190,10 @@ function ProfileSettingsPage() {
 							value={getLocale()}
 							onValueChange={handleLanguageChange}
 							disabled={isChangingLanguage}
+							items={locales.map((locale) => ({
+								label: getLocaleLabel(locale),
+								value: locale,
+							}))}
 						>
 							<SelectTrigger id="language-select">
 								<SelectValue placeholder={m.selectLanguage()} />

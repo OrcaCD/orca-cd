@@ -222,9 +222,9 @@ function ApplicationDetailsPage() {
 			<Breadcrumb>
 				<BreadcrumbList>
 					<BreadcrumbItem>
-						<BreadcrumbLink asChild>
-							<Link to="/applications">{m.pageApplications()}</Link>
-						</BreadcrumbLink>
+						<BreadcrumbLink
+							render={<Link to="/applications">{m.pageApplications()}</Link>}
+						></BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>

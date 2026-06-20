@@ -88,19 +88,22 @@ function SettingsSidebarMenuItem({
 
 	return (
 		<SidebarMenuItem className="mb-2">
-			<SidebarMenuButton asChild isActive={isActive}>
-				<Link
-					to={item.path}
-					onClick={() => {
-						if (isMobile) {
-							setOpenMobile(false);
-						}
-					}}
-				>
-					<item.icon />
-					<span>{item.title()}</span>
-				</Link>
-			</SidebarMenuButton>
+			<SidebarMenuButton
+				isActive={isActive}
+				render={
+					<Link
+						to={item.path}
+						onClick={() => {
+							if (isMobile) {
+								setOpenMobile(false);
+							}
+						}}
+					>
+						<item.icon />
+						<span>{item.title()}</span>
+					</Link>
+				}
+			></SidebarMenuButton>
 		</SidebarMenuItem>
 	);
 }

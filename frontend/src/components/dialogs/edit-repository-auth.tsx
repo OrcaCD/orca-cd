@@ -81,18 +81,21 @@ export default function EditRepositoryAuthDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<KeyRoundIcon className="h-4 w-4" />
-						{m.editRepositoryAuthShort()}
-					</DropdownMenuItem>
-				) : (
-					<Button variant="ghost" size="icon">
-						<KeyRoundIcon className="h-4 w-4" />
-					</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem>
+							<KeyRoundIcon className="h-4 w-4" />
+							{m.editRepositoryAuthShort()}
+						</DropdownMenuItem>
+					) : (
+						<Button variant="ghost" size="icon">
+							<KeyRoundIcon className="h-4 w-4" />
+						</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-md overflow-hidden" aria-describedby={undefined}>
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<DialogHeader>

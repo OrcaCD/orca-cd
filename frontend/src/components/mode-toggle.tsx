@@ -175,26 +175,32 @@ export const ModeToggle = ({
 
 	return (
 		<Tooltip>
-			<TooltipTrigger asChild>
-				<Button
-					variant="outline"
-					size={showLabel ? "default" : "icon"}
-					onClick={handleClick}
-					className={cn("relative overflow-hidden transition-all", showLabel && "gap-2", className)}
-					aria-label={m.switchToTheme({
-						theme: theme === "light" ? m.themeDark() : m.themeLight(),
-					})}
-				>
-					{theme === "light" ? (
-						<Sun className="h-[1.2rem] w-[1.2rem]" />
-					) : (
-						<Moon className="h-[1.2rem] w-[1.2rem]" />
-					)}
-					{showLabel && (
-						<span className="text-sm">{theme === "light" ? m.themeLight() : m.themeDark()}</span>
-					)}
-				</Button>
-			</TooltipTrigger>
+			<TooltipTrigger
+				render={
+					<Button
+						variant="outline"
+						size={showLabel ? "default" : "icon"}
+						onClick={handleClick}
+						className={cn(
+							"relative overflow-hidden transition-all",
+							showLabel && "gap-2",
+							className,
+						)}
+						aria-label={m.switchToTheme({
+							theme: theme === "light" ? m.themeDark() : m.themeLight(),
+						})}
+					>
+						{theme === "light" ? (
+							<Sun className="h-[1.2rem] w-[1.2rem]" />
+						) : (
+							<Moon className="h-[1.2rem] w-[1.2rem]" />
+						)}
+						{showLabel && (
+							<span className="text-sm">{theme === "light" ? m.themeLight() : m.themeDark()}</span>
+						)}
+					</Button>
+				}
+			></TooltipTrigger>
 			<TooltipContent>
 				{m.switchToTheme({
 					theme: theme === "light" ? m.themeDark() : m.themeLight(),
