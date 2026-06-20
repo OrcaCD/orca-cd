@@ -281,7 +281,7 @@ func encryptedModelSchemaFor[T any](tx *gorm.DB) (encryptedModelSchema, error) {
 		return encryptedModelSchema{}, fmt.Errorf("model %s has no primary key", stmt.Schema.Name)
 	}
 
-	encryptedStringType := reflect.TypeOf(crypto.EncryptedString(""))
+	encryptedStringType := reflect.TypeFor[crypto.EncryptedString]()
 	encryptedFields := make([]*schema.Field, 0)
 	for _, field := range stmt.Schema.Fields {
 		if field.DBName == "" || !field.Updatable {
