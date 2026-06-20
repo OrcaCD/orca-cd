@@ -91,19 +91,22 @@ export default function UpdateNotificationDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? handleOpen() : handleClose())}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(event) => event.preventDefault()}>
-						<Pencil className="h-4 w-4" />
-						{m.edit()}
-					</DropdownMenuItem>
-				) : (
-					<Button variant="ghost" size="icon">
-						<Pencil className="h-4 w-4" />
-						<span className="sr-only">{m.editNotification()}</span>
-					</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem onSelect={(event) => event.preventDefault()}>
+							<Pencil className="h-4 w-4" />
+							{m.edit()}
+						</DropdownMenuItem>
+					) : (
+						<Button variant="ghost" size="icon">
+							<Pencil className="h-4 w-4" />
+							<span className="sr-only">{m.editNotification()}</span>
+						</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-lg">
 				<DialogHeader>
 					<DialogTitle>{m.editNotification()}</DialogTitle>
