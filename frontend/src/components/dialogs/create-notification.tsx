@@ -561,11 +561,15 @@ function NotificationConfigStepContent({
 						<Select
 							value={field.state.value}
 							onValueChange={(value) => field.handleChange(value as NotificationType)}
+							items={notificationTypes.map((type) => ({
+								label: type.charAt(0).toUpperCase() + type.slice(1),
+								value: type,
+							}))}
 						>
 							<SelectTrigger id={field.name} className="w-full">
 								<SelectValue placeholder={m.selectType()} />
 							</SelectTrigger>
-							<SelectContent>
+							<SelectContent alignItemWithTrigger={false}>
 								{notificationTypes.map((type) => (
 									<SelectItem key={type} value={type}>
 										{type.charAt(0).toUpperCase() + type.slice(1)}
@@ -938,12 +942,14 @@ export default function CreateNotificationDialog() {
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			modal={false}
 		>
-			<DialogTrigger asChild>
-				<Button>
-					<Plus className="h-4 w-4" />
-					{m.addNotification()}
-				</Button>
-			</DialogTrigger>
+			<DialogTrigger
+				render={
+					<Button>
+						<Plus className="h-4 w-4" />
+						{m.addNotification()}
+					</Button>
+				}
+			></DialogTrigger>
 
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>

@@ -10,6 +10,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -114,28 +115,32 @@ function RouteComponent() {
 									<CardHeader>
 										<CardAction>
 											<DropdownMenu>
-												<DropdownMenuTrigger asChild>
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<EllipsisVertical className="h-4 w-4" />
-														<span className="sr-only">{m.cardActions()}</span>
-													</Button>
-												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end" className="w-fit">
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<UpsertAgentDialog agent={agent} asDropdownItem />
-													<RotateAgentTokenDialog agent={agent} />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteCard(agent)}
-														title={m.deleteAgentCardTitle()}
-														description={m.deleteAgentCardDescription({ name: agent.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
-														}
-														asDropdownItem
-													/>
+												<DropdownMenuTrigger
+													render={
+														<Button variant="ghost" size="icon" className="h-8 w-8">
+															<EllipsisVertical className="h-4 w-4" />
+															<span className="sr-only">{m.cardActions()}</span>
+														</Button>
+													}
+												></DropdownMenuTrigger>
+												<DropdownMenuContent align="end" className="w-fit" keepMounted>
+													<DropdownMenuGroup>
+														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+														<UpsertAgentDialog agent={agent} asDropdownItem />
+														<RotateAgentTokenDialog agent={agent} />
+														<ConfirmationDialog
+															onConfirm={() => handleDeleteCard(agent)}
+															title={m.deleteAgentCardTitle()}
+															description={m.deleteAgentCardDescription({ name: agent.name })}
+															triggerText={
+																<>
+																	<Trash2 className="h-4 w-4" />
+																	{m.delete()}
+																</>
+															}
+															asDropdownItem
+														/>
+													</DropdownMenuGroup>
 												</DropdownMenuContent>
 											</DropdownMenu>
 										</CardAction>
