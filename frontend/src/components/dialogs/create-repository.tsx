@@ -438,25 +438,28 @@ export default function CreateRepositoryDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<PencilIcon className="h-4 w-4" />
-						{m.edit()}
-					</DropdownMenuItem>
-				) : (
-					<Button>
-						<PlusIcon className="h-4 w-4" />
-						{m.addRepository()}
-					</Button>
-				)}
-			</DialogTrigger>
-			<DialogContent
-				onPointerDownOutside={(e) => e.preventDefault()}
-				className="sm:max-w-md overflow-hidden"
-				aria-describedby={undefined}
-			>
+		<Dialog
+			open={open}
+			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
+			disablePointerDismissal={true}
+		>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem>
+							<PencilIcon className="h-4 w-4" />
+							{m.edit()}
+						</DropdownMenuItem>
+					) : (
+						<Button>
+							<PlusIcon className="h-4 w-4" />
+							{m.addRepository()}
+						</Button>
+					)
+				}
+			></DialogTrigger>
+			<DialogContent className="sm:max-w-md overflow-hidden" aria-describedby={undefined}>
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<DialogHeader>
 					<DialogTitle>{m.addRepository()}</DialogTitle>
