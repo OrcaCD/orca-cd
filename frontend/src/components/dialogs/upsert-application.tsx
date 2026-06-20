@@ -7,7 +7,7 @@ import { Fragment, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useForm, useStore } from "@tanstack/react-form";
 import { defineStepper } from "@stepperize/react";
-import { useStepItemContext, type StepStatus } from "@stepperize/react/primitives";
+import { type StepStatus } from "@stepperize/react/primitives";
 import {
 	Dialog,
 	DialogContent,
@@ -60,7 +60,7 @@ const applicationSchema = z.object({
 });
 
 const defaultApplicationIcon: LucideIconName = "box";
-const { Stepper } = defineStepper({ id: "details" }, { id: "source" }, { id: "imagePolling" });
+const { Stepper } = defineStepper([{ id: "details" }, { id: "source" }, { id: "imagePolling" }]);
 
 type ApplicationFormValues = z.infer<typeof applicationSchema>;
 type ApplicationStepId = "details" | "source" | "imagePolling";
@@ -207,11 +207,13 @@ function TreeNodeList({
 	);
 }
 
-const StepperTriggerWrapper = ({ displayNumber }: { displayNumber?: number }) => {
-	const item = useStepItemContext();
-	const isInactive = item.status === "inactive";
-	const number = displayNumber ?? item.index + 1;
-
+const StepperTriggerWrapper = ({
+	displayNumber,
+	isInactive,
+}: {
+	displayNumber: number;
+	isInactive: boolean;
+}) => {
 	return (
 		<Stepper.Trigger
 			render={(domProps) => (
@@ -224,7 +226,7 @@ const StepperTriggerWrapper = ({ displayNumber }: { displayNumber?: number }) =>
 						e.preventDefault();
 					}}
 				>
-					<Stepper.Indicator>{number}</Stepper.Indicator>
+					<Stepper.Indicator>{displayNumber}</Stepper.Indicator>
 				</Button>
 			)}
 		/>
@@ -246,7 +248,7 @@ const StepperSeparatorWithStatus = ({
 		<Stepper.Separator
 			orientation="horizontal"
 			data-status={status}
-			className="self-center bg-muted data-[status=success]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
+			className="self-center bg-muted data-[status=previous]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
 		/>
 	);
 };
@@ -258,13 +260,13 @@ function StepperNavigation({
 	isSubmitting,
 	submitLabel,
 }: {
-	stepper: { state: { current: { index: number; data: { id: string } }; isLast: boolean } };
+	stepper: { index: number; id: string; isLast: boolean };
 	onNext: (stepId: string, advance: () => void) => void;
 	handleClose: () => void;
 	isSubmitting: boolean;
 	submitLabel: string;
 }) {
-	const isAtFirstVisibleStep = stepper.state.current.index === 0;
+	const isAtFirstVisibleStep = stepper.index === 0;
 
 	return (
 		<div className="flex items-center justify-between gap-4 pt-2">
@@ -281,7 +283,7 @@ function StepperNavigation({
 						)}
 					/>
 				)}
-				{stepper.state.isLast ? (
+				{stepper.isLast ? (
 					<Button type="submit" disabled={isSubmitting}>
 						{submitLabel}
 					</Button>
@@ -289,9 +291,10 @@ function StepperNavigation({
 					<Stepper.Next
 						render={(domProps) => (
 							<Button
+								{...domProps}
 								type="button"
-								disabled={isSubmitting}
-								onClick={(e) => onNext(stepper.state.current.data.id, () => domProps.onClick?.(e))}
+								disabled={isSubmitting || domProps.disabled}
+								onClick={(e) => onNext(stepper.id, () => domProps.onClick?.(e))}
 							>
 								{m.next()}
 							</Button>
@@ -438,8 +441,8 @@ export default function UpsertApplicationDialog({
 				>
 					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
 						{({ stepper }) => {
-							const allSteps = stepper.state.all;
-							const currentIndex = stepper.state.current.index;
+							const allSteps = stepper.steps;
+							const currentIndex = stepper.index;
 
 							return (
 								<>
@@ -447,10 +450,10 @@ export default function UpsertApplicationDialog({
 										{allSteps.map((stepData, displayIndex) => {
 											const status: StepStatus =
 												displayIndex < currentIndex
-													? "success"
+													? "previous"
 													: displayIndex === currentIndex
 														? "active"
-														: "inactive";
+														: "upcoming";
 											const isLast = displayIndex === allSteps.length - 1;
 											return (
 												<Fragment key={stepData.id}>
@@ -458,7 +461,10 @@ export default function UpsertApplicationDialog({
 														step={stepData.id}
 														className="group peer relative flex shrink-0 items-center gap-2"
 													>
-														<StepperTriggerWrapper displayNumber={displayIndex + 1} />
+														<StepperTriggerWrapper
+															displayNumber={displayIndex + 1}
+															isInactive={status === "upcoming"}
+														/>
 													</Stepper.Item>
 													<StepperSeparatorWithStatus status={status} isLast={isLast} />
 												</Fragment>
@@ -466,7 +472,7 @@ export default function UpsertApplicationDialog({
 										})}
 									</Stepper.List>
 
-									{stepper.flow.switch({
+									{stepper.match({
 										details: () => (
 											<Stepper.Content
 												step="details"
