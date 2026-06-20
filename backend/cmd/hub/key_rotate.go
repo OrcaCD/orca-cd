@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
+	"sort"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -16,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 const minKeyRotateSecretLength = 32
@@ -32,12 +35,25 @@ type keyRotateOptions struct {
 	SkipConfirmation bool
 }
 
+type keyRotationSecrets struct {
+	oldCipher *crypto.Cipher
+	newCipher *crypto.Cipher
+}
+
 type keyRotationResult struct {
 	Agents        int
 	Applications  int
 	Repositories  int
 	Notifications int
 	OIDCProviders int
+}
+
+type encryptedModelSchema struct {
+	table            string
+	primaryColumn    string
+	primaryField     *schema.Field
+	encryptedColumns []string
+	encryptedFields  []*schema.Field
 }
 
 func (r keyRotationResult) Total() int {
@@ -78,8 +94,6 @@ func newKeyRotateCmd() *cobra.Command {
 }
 
 func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Reader, options keyRotateOptions) error {
-	options.OldSecret = strings.TrimSpace(options.OldSecret)
-
 	cfg, err := hub.DefaultConfig()
 	if err != nil {
 		return fmt.Errorf("failed to load hub configuration: %w", err)
@@ -89,7 +103,8 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		return fmt.Errorf("key rotation is not available in demo mode")
 	}
 
-	if err := validateKeyRotateSecrets(options.OldSecret, cfg.AppSecret); err != nil {
+	secrets, err := prepareKeyRotationSecrets(options.OldSecret, cfg.AppSecret)
+	if err != nil {
 		return err
 	}
 
@@ -97,7 +112,7 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		"The hub server must be stopped before rotating the key",
 		"Create a database export before rotating the key",
 		"The database will be re-encrypted with the current APP_SECRET",
-		"Sessions and agent tokens signed with the old APP_SECRET may need to be re-issued",
+		"Sessions and agent tokens signed with the old APP_SECRET need to be re-issued",
 	}
 	confirmed, err := getUserConfirmation(out, in, warningPoints, options.SkipConfirmation)
 	if err != nil {
@@ -119,9 +134,12 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		_ = db.Close()
 	}()
 
-	result, err := rotateDatabaseEncryptionKey(ctx, options.OldSecret, cfg.AppSecret)
+	result, err := rotateDatabaseEncryptionKeyWithSecrets(ctx, secrets)
 	if err != nil {
-		return fmt.Errorf("key rotation failed: %w", err)
+		return fmt.Errorf(
+			"key rotation failed: %w. Restore the database export created before rotation, keep the old APP_SECRET configured, and retry after resolving the error",
+			err,
+		)
 	}
 
 	renderKeyRotateResult(out, result)
@@ -151,38 +169,66 @@ func validateKeyRotateSecrets(oldSecret, newSecret string) error {
 	return nil
 }
 
-func rotateDatabaseEncryptionKey(ctx context.Context, oldSecret, newSecret string) (keyRotationResult, error) {
+func prepareKeyRotationSecrets(oldSecret, newSecret string) (keyRotationSecrets, error) {
+	oldSecret = strings.TrimSpace(oldSecret)
+	newSecret = strings.TrimSpace(newSecret)
+
 	if err := validateKeyRotateSecrets(oldSecret, newSecret); err != nil {
+		return keyRotationSecrets{}, err
+	}
+
+	oldCipher, err := crypto.New(oldSecret)
+	if err != nil {
+		return keyRotationSecrets{}, fmt.Errorf("initialize old encryption key: %w", err)
+	}
+	newCipher, err := crypto.New(newSecret)
+	if err != nil {
+		return keyRotationSecrets{}, fmt.Errorf("initialize new encryption key: %w", err)
+	}
+
+	return keyRotationSecrets{
+		oldCipher: oldCipher,
+		newCipher: newCipher,
+	}, nil
+}
+
+func rotateDatabaseEncryptionKey(ctx context.Context, oldSecret, newSecret string) (keyRotationResult, error) {
+	secrets, err := prepareKeyRotationSecrets(oldSecret, newSecret)
+	if err != nil {
 		return keyRotationResult{}, err
 	}
+	return rotateDatabaseEncryptionKeyWithSecrets(ctx, secrets)
+}
+
+func rotateDatabaseEncryptionKeyWithSecrets(ctx context.Context, secrets keyRotationSecrets) (keyRotationResult, error) {
 	if db.DB == nil {
 		return keyRotationResult{}, errors.New("database is not connected")
 	}
 
 	var result keyRotationResult
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := rotateEncryptedBatches[models.Agent](ctx, tx, oldSecret, newSecret, "agents", func(agents []models.Agent) error {
-			return rotateAgents(ctx, tx, agents, &result)
+		if err := rotateEncryptedModel[models.Agent](ctx, tx, secrets, "agents", func(rows int) {
+			result.Agents += rows
 		}); err != nil {
 			return err
 		}
-		if err := rotateEncryptedBatches[models.Application](ctx, tx, oldSecret, newSecret, "applications", func(applications []models.Application) error {
-			return rotateApplications(ctx, tx, applications, &result)
+		if err := rotateEncryptedModel[models.Application](ctx, tx, secrets, "applications", func(rows int) {
+			result.Applications += rows
 		}); err != nil {
 			return err
 		}
-		if err := rotateEncryptedBatches[models.Repository](ctx, tx, oldSecret, newSecret, "repositories", func(repositories []models.Repository) error {
-			return rotateRepositories(ctx, tx, repositories, &result)
+		if err := rotateEncryptedModel[models.Repository](ctx, tx, secrets, "repositories", func(rows int) {
+			result.Repositories += rows
 		}); err != nil {
 			return err
 		}
-		if err := rotateEncryptedBatches[models.Notification](ctx, tx, oldSecret, newSecret, "notifications", func(notifications []models.Notification) error {
-			return rotateNotifications(ctx, tx, notifications, &result)
+		if err := rotateEncryptedModel[models.Notification](ctx, tx, secrets, "notifications", func(rows int) {
+			result.Notifications += rows
 		}); err != nil {
 			return err
 		}
-		if err := rotateEncryptedBatches[models.OIDCProvider](ctx, tx, oldSecret, newSecret, "oidc providers", func(oidcProviders []models.OIDCProvider) error {
-			return rotateOIDCProviders(ctx, tx, oidcProviders, &result)
+		if err := rotateEncryptedModel[models.OIDCProvider](ctx, tx, secrets, "oidc providers", func(rows int) {
+			result.OIDCProviders += rows
 		}); err != nil {
 			return err
 		}
@@ -190,128 +236,176 @@ func rotateDatabaseEncryptionKey(ctx context.Context, oldSecret, newSecret strin
 		return nil
 	})
 	if err != nil {
+		crypto.SetDefault(secrets.oldCipher)
 		return keyRotationResult{}, err
 	}
 
+	crypto.SetDefault(secrets.newCipher)
 	return result, nil
+}
+
+func rotateEncryptedModel[T any](
+	ctx context.Context,
+	tx *gorm.DB,
+	secrets keyRotationSecrets,
+	label string,
+	addRows func(int),
+) error {
+	modelSchema, err := encryptedModelSchemaFor[T](tx)
+	if err != nil {
+		return fmt.Errorf("inspect encrypted fields for %s: %w", label, err)
+	}
+	if len(modelSchema.encryptedFields) == 0 {
+		return nil
+	}
+
+	return rotateEncryptedBatches[T](ctx, tx, secrets.oldCipher, secrets.newCipher, func(batch []T) error {
+		rows, err := rotateEncryptedBatch(ctx, tx, batch, modelSchema, label)
+		if err != nil {
+			return err
+		}
+		addRows(rows)
+		return nil
+	})
+}
+
+func encryptedModelSchemaFor[T any](tx *gorm.DB) (encryptedModelSchema, error) {
+	var model T
+	stmt := &gorm.Statement{DB: tx}
+	if err := stmt.Parse(&model); err != nil {
+		return encryptedModelSchema{}, err
+	}
+
+	primaryField := stmt.Schema.PrioritizedPrimaryField
+	if primaryField == nil || primaryField.DBName == "" {
+		return encryptedModelSchema{}, fmt.Errorf("model %s has no primary key", stmt.Schema.Name)
+	}
+
+	encryptedStringType := reflect.TypeOf(crypto.EncryptedString(""))
+	encryptedFields := make([]*schema.Field, 0)
+	for _, field := range stmt.Schema.Fields {
+		if field.DBName == "" || !field.Updatable {
+			continue
+		}
+		if field.IndirectFieldType == encryptedStringType {
+			encryptedFields = append(encryptedFields, field)
+		}
+	}
+
+	sort.Slice(encryptedFields, func(i, j int) bool {
+		return encryptedFields[i].DBName < encryptedFields[j].DBName
+	})
+
+	encryptedColumns := make([]string, 0, len(encryptedFields))
+	for _, field := range encryptedFields {
+		encryptedColumns = append(encryptedColumns, field.DBName)
+	}
+
+	return encryptedModelSchema{
+		table:            stmt.Schema.Table,
+		primaryColumn:    primaryField.DBName,
+		primaryField:     primaryField,
+		encryptedColumns: encryptedColumns,
+		encryptedFields:  encryptedFields,
+	}, nil
 }
 
 func rotateEncryptedBatches[T any](
 	ctx context.Context,
 	tx *gorm.DB,
-	oldSecret string,
-	newSecret string,
-	label string,
+	oldCipher *crypto.Cipher,
+	newCipher *crypto.Cipher,
 	rotate func([]T) error,
 ) error {
-	if err := crypto.Init(oldSecret); err != nil {
-		return fmt.Errorf("initialize old encryption key: %w", err)
-	}
+	crypto.SetDefault(oldCipher)
 
 	return gorm.G[T](tx).FindInBatches(ctx, keyRotationBatchSize, func(batch []T, _ int) error {
-		if err := crypto.Init(newSecret); err != nil {
-			return fmt.Errorf("initialize new encryption key: %w", err)
-		}
+		crypto.SetDefault(newCipher)
 		if err := rotate(batch); err != nil {
+			crypto.SetDefault(oldCipher)
 			return err
 		}
-		if err := crypto.Init(oldSecret); err != nil {
-			return fmt.Errorf("restore old encryption key after %s batch: %w", label, err)
-		}
+		crypto.SetDefault(oldCipher)
 		return nil
 	})
 }
 
-func rotateAgents(ctx context.Context, tx *gorm.DB, agents []models.Agent, result *keyRotationResult) error {
-	for _, agent := range agents {
-		rows, err := gorm.G[models.Agent](tx).
-			Where("id = ?", agent.Id).
-			Updates(ctx, models.Agent{Name: agent.Name, KeyId: agent.KeyId})
-		if err != nil {
-			return fmt.Errorf("rotate agent %s: %w", agent.Id, err)
-		}
-		if rows == 0 {
-			return fmt.Errorf("rotate agent %s: %w", agent.Id, gorm.ErrRecordNotFound)
-		}
-		result.Agents += rows
+func rotateEncryptedBatch[T any](
+	ctx context.Context,
+	tx *gorm.DB,
+	batch []T,
+	modelSchema encryptedModelSchema,
+	label string,
+) (int, error) {
+	rowsRotated := 0
+	selectColumn := modelSchema.encryptedColumns[0]
+	selectArgs := make([]any, 0, len(modelSchema.encryptedColumns)-1)
+	for _, column := range modelSchema.encryptedColumns[1:] {
+		selectArgs = append(selectArgs, column)
 	}
-	return nil
-}
 
-func rotateApplications(ctx context.Context, tx *gorm.DB, applications []models.Application, result *keyRotationResult) error {
-	for _, application := range applications {
-		rows, err := gorm.G[models.Application](tx).
-			Where("id = ?", application.Id).
-			Updates(ctx, models.Application{
-				Name:                application.Name,
-				ComposeFile:         application.ComposeFile,
-				PreviousComposeFile: application.PreviousComposeFile,
-				ImageWebhookSecret:  application.ImageWebhookSecret,
-			})
+	for _, record := range batch {
+		updates, primaryValue, hasEncryptedValue, err := encryptedFieldUpdate(ctx, record, modelSchema)
 		if err != nil {
-			return fmt.Errorf("rotate application %s: %w", application.Id, err)
+			return 0, fmt.Errorf("prepare %s update: %w", label, err)
 		}
-		if rows == 0 {
-			return fmt.Errorf("rotate application %s: %w", application.Id, gorm.ErrRecordNotFound)
-		}
-		result.Applications += rows
-	}
-	return nil
-}
-
-func rotateRepositories(ctx context.Context, tx *gorm.DB, repositories []models.Repository, result *keyRotationResult) error {
-	for _, repository := range repositories {
-		if repository.AuthUser == nil && repository.AuthToken == nil && repository.WebhookSecret == nil {
+		if !hasEncryptedValue {
 			continue
 		}
-		rows, err := gorm.G[models.Repository](tx).
-			Where("id = ?", repository.Id).
-			Updates(ctx, models.Repository{
-				AuthUser:      repository.AuthUser,
-				AuthToken:     repository.AuthToken,
-				WebhookSecret: repository.WebhookSecret,
-			})
+
+		rows, err := gorm.G[T](tx).
+			Select(selectColumn, selectArgs...).
+			Where(modelSchema.primaryColumn+" = ?", primaryValue).
+			Updates(ctx, updates)
 		if err != nil {
-			return fmt.Errorf("rotate repository %s: %w", repository.Id, err)
+			return rowsRotated, fmt.Errorf("rotate %s %v: %w", label, primaryValue, err)
 		}
 		if rows == 0 {
-			return fmt.Errorf("rotate repository %s: %w", repository.Id, gorm.ErrRecordNotFound)
+			return rowsRotated, fmt.Errorf("rotate %s %v: %w", label, primaryValue, gorm.ErrRecordNotFound)
 		}
-		result.Repositories += rows
+		rowsRotated += rows
 	}
-	return nil
+
+	return rowsRotated, nil
 }
 
-func rotateNotifications(ctx context.Context, tx *gorm.DB, notifications []models.Notification, result *keyRotationResult) error {
-	for _, notification := range notifications {
-		rows, err := gorm.G[models.Notification](tx).
-			Where("id = ?", notification.Id).
-			Updates(ctx, models.Notification{Name: notification.Name, Config: notification.Config})
-		if err != nil {
-			return fmt.Errorf("rotate notification %s: %w", notification.Id, err)
-		}
-		if rows == 0 {
-			return fmt.Errorf("rotate notification %s: %w", notification.Id, gorm.ErrRecordNotFound)
-		}
-		result.Notifications += rows
+func encryptedFieldUpdate[T any](
+	ctx context.Context,
+	record T,
+	modelSchema encryptedModelSchema,
+) (T, any, bool, error) {
+	var updates T
+	source := reflect.ValueOf(record)
+	target := reflect.ValueOf(&updates).Elem()
+
+	primaryValue, primaryZero := modelSchema.primaryField.ValueOf(ctx, source)
+	if primaryZero {
+		return updates, nil, false, fmt.Errorf("%s primary key is empty", modelSchema.table)
 	}
-	return nil
+
+	hasEncryptedValue := false
+	for _, field := range modelSchema.encryptedFields {
+		value, _ := field.ValueOf(ctx, source)
+		if hasRotatableEncryptedValue(value) {
+			hasEncryptedValue = true
+		}
+		if err := field.Set(ctx, target, value); err != nil {
+			return updates, nil, false, err
+		}
+	}
+
+	return updates, primaryValue, hasEncryptedValue, nil
 }
 
-func rotateOIDCProviders(ctx context.Context, tx *gorm.DB, providers []models.OIDCProvider, result *keyRotationResult) error {
-	for _, provider := range providers {
-		rows, err := gorm.G[models.OIDCProvider](tx).
-			Where("id = ?", provider.Id).
-			Updates(ctx, models.OIDCProvider{ClientSecret: provider.ClientSecret})
-		if err != nil {
-			return fmt.Errorf("rotate oidc provider %s: %w", provider.Id, err)
-		}
-		if rows == 0 {
-			return fmt.Errorf("rotate oidc provider %s: %w", provider.Id, gorm.ErrRecordNotFound)
-		}
-		result.OIDCProviders += rows
+func hasRotatableEncryptedValue(value any) bool {
+	switch v := value.(type) {
+	case crypto.EncryptedString:
+		return v != ""
+	case *crypto.EncryptedString:
+		return v != nil && *v != ""
+	default:
+		return value != nil
 	}
-	return nil
 }
 
 func renderKeyRotateResult(out io.Writer, result keyRotationResult) {

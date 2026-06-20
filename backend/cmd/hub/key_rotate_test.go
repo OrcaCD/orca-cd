@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -322,6 +323,69 @@ func TestRotateDatabaseEncryptionKeyUsesOneUpdatePerTouchedRow(t *testing.T) {
 	}
 }
 
+func TestEncryptedModelSchemaDiscoversEncryptedColumns(t *testing.T) {
+	setupKeyRotateTestDB(t)
+
+	tests := []struct {
+		name string
+		load func() ([]string, error)
+		want []string
+	}{
+		{
+			name: "agents",
+			load: func() ([]string, error) {
+				schema, err := encryptedModelSchemaFor[models.Agent](db.DB)
+				return schema.encryptedColumns, err
+			},
+			want: []string{"key_id", "name"},
+		},
+		{
+			name: "applications",
+			load: func() ([]string, error) {
+				schema, err := encryptedModelSchemaFor[models.Application](db.DB)
+				return schema.encryptedColumns, err
+			},
+			want: []string{"compose_file", "image_webhook_secret", "name", "previous_compose_file"},
+		},
+		{
+			name: "repositories",
+			load: func() ([]string, error) {
+				schema, err := encryptedModelSchemaFor[models.Repository](db.DB)
+				return schema.encryptedColumns, err
+			},
+			want: []string{"auth_token", "auth_user", "webhook_secret"},
+		},
+		{
+			name: "notifications",
+			load: func() ([]string, error) {
+				schema, err := encryptedModelSchemaFor[models.Notification](db.DB)
+				return schema.encryptedColumns, err
+			},
+			want: []string{"config", "name"},
+		},
+		{
+			name: "oidc providers",
+			load: func() ([]string, error) {
+				schema, err := encryptedModelSchemaFor[models.OIDCProvider](db.DB)
+				return schema.encryptedColumns, err
+			},
+			want: []string{"client_secret"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.load()
+			if err != nil {
+				t.Fatalf("encryptedModelSchemaFor() unexpected error: %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("encrypted columns = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunKeyRotateCommandSucceeds(t *testing.T) {
 	setupKeyRotateCommandEnv(t)
 	fixture := seedKeyRotateCommandDatabase(t)
@@ -454,6 +518,14 @@ func TestRunKeyRotateCommandReturnsRotationError(t *testing.T) {
 	if !strings.Contains(err.Error(), "key rotation failed") {
 		t.Fatalf("expected key rotation error, got %v", err)
 	}
+	for _, want := range []string{
+		"Restore the database export",
+		"keep the old APP_SECRET configured",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected rotation error to contain %q, got %v", want, err)
+		}
+	}
 }
 
 func TestRunKeyRotateCommandRejectsDemoMode(t *testing.T) {
@@ -492,10 +564,14 @@ func TestRotateDatabaseEncryptionKeyRejectsMissingDatabase(t *testing.T) {
 func TestRotateEncryptedBatchesPropagatesRotateError(t *testing.T) {
 	setupKeyRotateTestDB(t)
 	seedKeyRotateFixture(t)
+	secrets, err := prepareKeyRotationSecrets(testOldAppSecret, testNewAppSecret)
+	if err != nil {
+		t.Fatalf("prepareKeyRotationSecrets() unexpected error: %v", err)
+	}
 
 	wantErr := errors.New("rotate batch failed")
-	err := db.DB.Transaction(func(tx *gorm.DB) error {
-		return rotateEncryptedBatches[models.Agent](t.Context(), tx, testOldAppSecret, testNewAppSecret, "agents", func([]models.Agent) error {
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		return rotateEncryptedBatches[models.Agent](t.Context(), tx, secrets.oldCipher, secrets.newCipher, func([]models.Agent) error {
 			return wantErr
 		})
 	})
@@ -504,91 +580,59 @@ func TestRotateEncryptedBatchesPropagatesRotateError(t *testing.T) {
 	}
 }
 
-func TestRotateRepositoriesSkipsRowsWithoutEncryptedFields(t *testing.T) {
+func TestRotateEncryptedModelSkipsRowsWithoutEncryptedValues(t *testing.T) {
 	setupKeyRotateTestDB(t)
-	repositories := []models.Repository{{
-		Base: models.Base{Id: "repo-without-secrets"},
-	}}
-	var result keyRotationResult
+	repository := models.Repository{
+		Base:       models.Base{Id: "repo-without-secrets"},
+		Name:       "repository-name",
+		Url:        "https://example.com/org/repo-without-secrets.git",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypePolling,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-id",
+	}
+	if err := gorm.G[models.Repository](db.DB).Create(t.Context(), &repository); err != nil {
+		t.Fatalf("failed to create repository: %v", err)
+	}
+	secrets, err := prepareKeyRotationSecrets(testOldAppSecret, testNewAppSecret)
+	if err != nil {
+		t.Fatalf("prepareKeyRotationSecrets() unexpected error: %v", err)
+	}
 
-	if err := rotateRepositories(t.Context(), db.DB, repositories, &result); err != nil {
-		t.Fatalf("rotateRepositories() unexpected error: %v", err)
+	var result keyRotationResult
+	err = db.DB.Transaction(func(tx *gorm.DB) error {
+		return rotateEncryptedModel[models.Repository](t.Context(), tx, secrets, "repositories", func(rows int) {
+			result.Repositories += rows
+		})
+	})
+	if err != nil {
+		t.Fatalf("rotateEncryptedModel() unexpected error: %v", err)
 	}
 	if result.Repositories != 0 {
 		t.Fatalf("expected no repository updates, got %d", result.Repositories)
 	}
 }
 
-func TestRotateHelpersReturnNotFound(t *testing.T) {
+func TestRotateEncryptedBatchReturnsNotFound(t *testing.T) {
 	setupKeyRotateTestDB(t)
-	if err := crypto.Init(testNewAppSecret); err != nil {
-		t.Fatalf("failed to init crypto: %v", err)
+	secrets, err := prepareKeyRotationSecrets(testOldAppSecret, testNewAppSecret)
+	if err != nil {
+		t.Fatalf("prepareKeyRotationSecrets() unexpected error: %v", err)
+	}
+	crypto.SetDefault(secrets.newCipher)
+	modelSchema, err := encryptedModelSchemaFor[models.Agent](db.DB)
+	if err != nil {
+		t.Fatalf("encryptedModelSchemaFor() unexpected error: %v", err)
 	}
 
-	authToken := crypto.EncryptedString("token")
-	tests := []struct {
-		name string
-		run  func(*keyRotationResult) error
-	}{
-		{
-			name: "agent",
-			run: func(result *keyRotationResult) error {
-				return rotateAgents(t.Context(), db.DB, []models.Agent{{
-					Base:  models.Base{Id: "missing-agent"},
-					Name:  crypto.EncryptedString("agent"),
-					KeyId: crypto.EncryptedString("key"),
-				}}, result)
-			},
-		},
-		{
-			name: "application",
-			run: func(result *keyRotationResult) error {
-				return rotateApplications(t.Context(), db.DB, []models.Application{{
-					Base:                models.Base{Id: "missing-application"},
-					Name:                crypto.EncryptedString("app"),
-					ComposeFile:         crypto.EncryptedString("services: {}"),
-					PreviousComposeFile: crypto.EncryptedString(""),
-				}}, result)
-			},
-		},
-		{
-			name: "repository",
-			run: func(result *keyRotationResult) error {
-				return rotateRepositories(t.Context(), db.DB, []models.Repository{{
-					Base:      models.Base{Id: "missing-repository"},
-					AuthToken: &authToken,
-				}}, result)
-			},
-		},
-		{
-			name: "notification",
-			run: func(result *keyRotationResult) error {
-				return rotateNotifications(t.Context(), db.DB, []models.Notification{{
-					Base:   models.Base{Id: "missing-notification"},
-					Name:   crypto.EncryptedString("notification"),
-					Config: crypto.EncryptedString("{}"),
-				}}, result)
-			},
-		},
-		{
-			name: "oidc provider",
-			run: func(result *keyRotationResult) error {
-				return rotateOIDCProviders(t.Context(), db.DB, []models.OIDCProvider{{
-					Base:         models.Base{Id: "missing-oidc-provider"},
-					ClientSecret: crypto.EncryptedString("secret"),
-				}}, result)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var result keyRotationResult
-			err := tt.run(&result)
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				t.Fatalf("expected record not found, got %v", err)
-			}
-		})
+	_, err = rotateEncryptedBatch(t.Context(), db.DB, []models.Agent{{
+		Base:  models.Base{Id: "missing-agent"},
+		Name:  crypto.EncryptedString("agent"),
+		KeyId: crypto.EncryptedString("key"),
+	}}, modelSchema, "agents")
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected record not found, got %v", err)
 	}
 }
 
