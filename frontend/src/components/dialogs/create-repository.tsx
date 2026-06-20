@@ -438,7 +438,11 @@ export default function CreateRepositoryDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
+		<Dialog
+			open={open}
+			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
+			disablePointerDismissal={true}
+		>
 			<DialogTrigger
 				nativeButton={!asDropdownItem}
 				render={
