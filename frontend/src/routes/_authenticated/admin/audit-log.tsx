@@ -4,6 +4,7 @@ import { AuditLogsDataTable } from "@/components/tables/audit-log/data-table";
 import { columns } from "@/components/tables/audit-log/columns";
 import useSWRInfinite from "swr/infinite";
 import { fetcher } from "@/lib/api";
+import { Button } from "@base-ui/react";
 
 export const Route = createFileRoute("/_authenticated/admin/audit-log")({
 	component: AuditLogPage,
@@ -43,7 +44,7 @@ function AuditLogPage() {
 			<AuditLogsDataTable columns={columns} data={logs} />
 
 			{hasMore ? (
-				<button onClick={() => setSize(size + 1)}>{m.loadMore()}</button>
+				<Button onClick={() => setSize(size + 1)}>{m.loadMore()}</Button>
 			) : (
 				<p className="text-sm text-muted-foreground text-center">{m.noMoreLogs()}</p>
 			)}

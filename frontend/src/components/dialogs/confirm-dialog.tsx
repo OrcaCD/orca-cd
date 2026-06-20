@@ -46,15 +46,16 @@ export default function ConfirmationDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem variant={dropdownItemVariant} onSelect={(e) => e.preventDefault()}>
-						{triggerText}
-					</DropdownMenuItem>
-				) : (
-					<Button {...triggerProps}>{triggerText}</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem variant={dropdownItemVariant}>{triggerText}</DropdownMenuItem>
+					) : (
+						<Button {...triggerProps}>{triggerText}</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">

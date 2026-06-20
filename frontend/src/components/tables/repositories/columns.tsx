@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -171,33 +172,37 @@ export const columns: ColumnDef<Repository>[] = [
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="h-8 w-8 p-0">
-								<span className="sr-only">{m.openMenu()}</span>
-								<MoreHorizontal className="h-4 w-4" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit">
-							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-							<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>
-								<RefreshCw className="h-4 w-4" />
-								{m.sync()}
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
-							<EditRepositoryAuthDialog repository={row.original} asDropdownItem />
-							<EditRepositorySyncDialog repository={row.original} asDropdownItem />
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								triggerText={
-									<>
-										<Trash2 className="h-4 w-4" />
-										{m.delete()}
-									</>
-								}
-								onConfirm={async () => await handleDelete()}
-								asDropdownItem
-							/>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" className="h-8 w-8 p-0">
+									<span className="sr-only">{m.openMenu()}</span>
+									<MoreHorizontal className="h-4 w-4" />
+								</Button>
+							}
+						></DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="w-fit" keepMounted>
+							<DropdownMenuGroup>
+								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+								<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>
+									<RefreshCw className="h-4 w-4" />
+									{m.sync()}
+								</DropdownMenuItem>
+								<DropdownMenuSeparator />
+								<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
+								<EditRepositoryAuthDialog repository={row.original} asDropdownItem />
+								<EditRepositorySyncDialog repository={row.original} asDropdownItem />
+								<DropdownMenuSeparator />
+								<ConfirmationDialog
+									triggerText={
+										<>
+											<Trash2 className="h-4 w-4" />
+											{m.delete()}
+										</>
+									}
+									onConfirm={async () => await handleDelete()}
+									asDropdownItem
+								/>
+							</DropdownMenuGroup>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>

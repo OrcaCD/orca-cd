@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
@@ -29,32 +30,36 @@ export function DataTableColumnHeader<TData, TValue>({
 	return (
 		<div className={cn("flex items-center gap-2", className)}>
 			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button variant="ghost" size="sm" className="-ml-1 h-8 data-[state=open]:bg-accent">
-						<span className="font-semibold">{title}</span>
-						{column.getIsSorted() === "desc" ? (
-							<ArrowDown />
-						) : column.getIsSorted() === "asc" ? (
-							<ArrowUp />
-						) : (
-							<ChevronsUpDown />
-						)}
-					</Button>
-				</DropdownMenuTrigger>
+				<DropdownMenuTrigger
+					render={
+						<Button variant="ghost" size="sm" className="-ml-1 h-8 data-[state=open]:bg-accent">
+							<span className="font-semibold">{title}</span>
+							{column.getIsSorted() === "desc" ? (
+								<ArrowDown />
+							) : column.getIsSorted() === "asc" ? (
+								<ArrowUp />
+							) : (
+								<ChevronsUpDown />
+							)}
+						</Button>
+					}
+				></DropdownMenuTrigger>
 				<DropdownMenuContent align="start">
-					<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
-						<ArrowUp />
-						{m.sortAscending()}
-					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
-						<ArrowDown />
-						{m.sortDescending()}
-					</DropdownMenuItem>
-					<DropdownMenuSeparator />
-					<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
-						<EyeOff />
-						{m.hideColumn()}
-					</DropdownMenuItem>
+					<DropdownMenuGroup>
+						<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
+							<ArrowUp />
+							{m.sortAscending()}
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
+							<ArrowDown />
+							{m.sortDescending()}
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
+							<EyeOff />
+							{m.hideColumn()}
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>

@@ -10,6 +10,7 @@ import { DataTableColumnHeader } from "@/components/tables/data-table-column-hea
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -120,34 +121,38 @@ export const columns: ColumnDef<Notification>[] = [
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" className="h-8 w-8 p-0">
-								<span className="sr-only">{m.openMenu()}</span>
-								<MoreHorizontal className="h-4 w-4" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit">
-							<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-							<UpdateNotificationDialog notification={row.original} asDropdownItem />
-							<DropdownMenuItem onClick={() => handleTest(row.original)}>
-								<Send className="h-4 w-4" />
-								{m.sendTest()}
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								onConfirm={() => {
-									void handleDelete(row.original);
-								}}
-								title={m.deleteNotificationTitle()}
-								description={m.deleteNotificationDescription({ name: row.original.name })}
-								triggerText={
-									<>
-										<Trash2 className="h-4 w-4" />
-										{m.delete()}
-									</>
-								}
-								asDropdownItem
-							/>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" className="h-8 w-8 p-0">
+									<span className="sr-only">{m.openMenu()}</span>
+									<MoreHorizontal className="h-4 w-4" />
+								</Button>
+							}
+						></DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="w-fit" keepMounted>
+							<DropdownMenuGroup>
+								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+								<UpdateNotificationDialog notification={row.original} asDropdownItem />
+								<DropdownMenuItem onClick={() => handleTest(row.original)}>
+									<Send className="h-4 w-4" />
+									{m.sendTest()}
+								</DropdownMenuItem>
+								<DropdownMenuSeparator />
+								<ConfirmationDialog
+									onConfirm={() => {
+										void handleDelete(row.original);
+									}}
+									title={m.deleteNotificationTitle()}
+									description={m.deleteNotificationDescription({ name: row.original.name })}
+									triggerText={
+										<>
+											<Trash2 className="h-4 w-4" />
+											{m.delete()}
+										</>
+									}
+									asDropdownItem
+								/>
+							</DropdownMenuGroup>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>

@@ -73,6 +73,7 @@ func main() {
 	rootCmd.AddCommand(healthCheckCmd)
 	rootCmd.AddCommand(newResetPasswordCmd())
 	rootCmd.AddCommand(newExportCmd())
+	rootCmd.AddCommand(newImportCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

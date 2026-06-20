@@ -102,18 +102,21 @@ export default function EditRepositorySyncDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-						<RefreshCwIcon />
-						{m.editRepositorySyncShort()}
-					</DropdownMenuItem>
-				) : (
-					<Button variant="ghost" size="icon">
-						<RefreshCwIcon />
-					</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem>
+							<RefreshCwIcon />
+							{m.editRepositorySyncShort()}
+						</DropdownMenuItem>
+					) : (
+						<Button variant="ghost" size="icon">
+							<RefreshCwIcon />
+						</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-md overflow-hidden" aria-describedby={undefined}>
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<DialogHeader>
@@ -201,9 +204,11 @@ export default function EditRepositorySyncDialog({
 														{m.githubActionsOIDCEnabled()}
 													</Label>
 													<Tooltip>
-														<TooltipTrigger asChild>
-															<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-														</TooltipTrigger>
+														<TooltipTrigger
+															render={
+																<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
+															}
+														></TooltipTrigger>
 														<TooltipContent>{m.githubActionsOIDCEnabledTooltip()}</TooltipContent>
 													</Tooltip>
 												</div>

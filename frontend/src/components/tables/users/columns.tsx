@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -95,34 +96,38 @@ export const columns: ColumnDef<UserDetail>[] = [
 			return (
 				<div className="flex justify-end">
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" size="icon" className="h-8 w-8">
-								<EllipsisVertical className="h-4 w-4" />
-								<span className="sr-only">{m.actions()}</span>
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							<UpsertUserDialog
-								user={row.original}
-								asDropdownItem
-								disabled={!hasPasswordProvider}
-							/>
-							<DropdownMenuSeparator />
-							<ConfirmationDialog
-								onConfirm={() => handleDelete()}
-								title={m.deleteUserTitle()}
-								description={m.deleteUserDescription({
-									name: row.original.name,
-									email: row.original.email,
-								})}
-								triggerText={
-									<>
-										<Trash2 className="h-4 w-4" />
-										{m.delete()}
-									</>
-								}
-								asDropdownItem
-							/>
+						<DropdownMenuTrigger
+							render={
+								<Button variant="ghost" size="icon" className="h-8 w-8">
+									<EllipsisVertical className="h-4 w-4" />
+									<span className="sr-only">{m.actions()}</span>
+								</Button>
+							}
+						></DropdownMenuTrigger>
+						<DropdownMenuContent align="end" keepMounted>
+							<DropdownMenuGroup>
+								<UpsertUserDialog
+									user={row.original}
+									asDropdownItem
+									disabled={!hasPasswordProvider}
+								/>
+								<DropdownMenuSeparator />
+								<ConfirmationDialog
+									onConfirm={() => handleDelete()}
+									title={m.deleteUserTitle()}
+									description={m.deleteUserDescription({
+										name: row.original.name,
+										email: row.original.email,
+									})}
+									triggerText={
+										<>
+											<Trash2 className="h-4 w-4" />
+											{m.delete()}
+										</>
+									}
+									asDropdownItem
+								/>
+							</DropdownMenuGroup>
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>
