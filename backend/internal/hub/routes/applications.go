@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -349,7 +349,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 }
 
 func DeployApplicationHandler(c *gin.Context) {
-	if hubApplications.DefaultDeployer == nil {
+	if application_deployer.DefaultApplicationDeployer == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "application deployer not initialized"})
 		return
 	}
@@ -369,19 +369,15 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	handle, err := hubApplications.DefaultDeployer.StartDeploy(&application, application.ComposeFile.String())
+	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String())
+
 	if err != nil {
-		if errors.Is(err, hubApplications.ErrAgentUnavailable) {
-			c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start deployment"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to trigger application deploy: %v", err)})
 		return
+	} else {
+		c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	}
 
-	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
-
-	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	sse.PublishUpdate(ApplicationsPath)
 }
 

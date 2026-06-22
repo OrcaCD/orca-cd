@@ -15,6 +15,38 @@ import (
 
 const repositoriesSSEPath = "/api/v1/repositories"
 
+// CommitResolver returns the commit hash and message to deploy for a branch.
+// It lets each sync trigger supply commits its own way while sharing the rest of
+// the sync logic: webhooks and GitHub Actions already carry the pushed commit (see
+// StaticCommit), while polling looks up the latest commit per branch (LatestCommit).
+type CommitResolver func(ctx context.Context, branch string) (hash, message string, err error)
+
+// StaticCommit returns a resolver that always yields the given commit, for callers
+// that already know it from their trigger payload.
+func StaticCommit(hash, message string) CommitResolver {
+	return func(context.Context, string) (string, string, error) {
+		return hash, message, nil
+	}
+}
+
+// LatestCommit returns a resolver that asks the provider for a branch's latest
+// commit. Used by polling and by generic webhooks that omit the commit.
+func LatestCommit(provider repositories.Provider, repo *models.Repository) CommitResolver {
+	return func(ctx context.Context, branch string) (string, string, error) {
+		info, err := provider.GetLatestCommit(ctx, repo, branch)
+		if err != nil {
+			return "", "", err
+		}
+		return info.Hash, info.Message, nil
+	}
+}
+
+// SyncRepository performs the repository-level half of a poll-triggered sync: it
+// looks up the provider, loads the repository's applications, and hands them to
+// SyncApplications. It does not deploy anything itself — each enqueued job is
+// reconciled independently by processSyncJob (the application-level half). Keeping
+// the two levels separate is why "sync" appears at both the repository and
+// application layer.
 func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.Logger) {
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
@@ -23,8 +55,6 @@ func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.L
 		return
 	}
 
-	markRepositorySyncing(ctx, repo.Id, log)
-
 	apps, err := gorm.G[models.Application](db.DB).Where("repository_id = ?", repo.Id).Find(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to load applications for sync")
@@ -32,34 +62,46 @@ func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.L
 		return
 	}
 
-	if len(apps) == 0 {
-		now := time.Now()
+	SyncApplications(ctx, repo, provider, apps, LatestCommit(provider, repo), log)
+}
+
+// SyncApplications enqueues a deploy job for each application (grouped by branch;
+// applications without a branch are skipped) and records the repository's sync
+// status: Syncing while commits are resolved, then Success — or Failed if any
+// branch's commit could not be resolved.
+//
+// A repository's SyncStatus reflects whether the sync was *dispatched* (commits
+// resolved and jobs handed to the queue), NOT whether every application finished
+// deploying — per-application progress lives on each Application's own SyncStatus.
+// Every sync trigger (polling, webhooks, GitHub Actions) funnels through here, so
+// the repository bookkeeping is identical regardless of what started the sync.
+func SyncApplications(ctx context.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, resolve CommitResolver, log *zerolog.Logger) {
+	markRepositorySyncing(ctx, repo.Id, log)
+
+	byBranch := make(map[string][]models.Application)
+	for i := range apps {
+		if branch := apps[i].Branch; branch != "" {
+			byBranch[branch] = append(byBranch[branch], apps[i])
+		}
+	}
+
+	now := time.Now()
+	if len(byBranch) == 0 {
 		markRepositorySuccess(ctx, repo.Id, &now, log)
 		return
 	}
 
-	// Group apps by branch and resolve the latest commit for each branch up front.
-	// This ensures the repository status reflects real connectivity, and passes an
-	// explicit commit hash to the queue (avoiding a redundant GetLatestCommit call).
-	byBranch := make(map[string][]models.Application)
-	for i := range apps {
-		branch := apps[i].Branch
-		if branch == "" {
-			continue
-		}
-		byBranch[branch] = append(byBranch[branch], apps[i])
-	}
-
-	now := time.Now()
 	var lastErrMsg string
 	for branch, branchApps := range byBranch {
-		commitInfo, err := provider.GetLatestCommit(ctx, repo, branch)
+		hash, message, err := resolve(ctx, branch)
 		if err != nil {
-			lastErrMsg = fmt.Sprintf("failed to get latest commit for branch %q: %v", branch, err)
-			log.Error().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("failed to get latest commit during sync")
+			lastErrMsg = fmt.Sprintf("failed to resolve commit for branch %q: %v", branch, err)
+			log.Error().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("failed to resolve commit during sync")
 			continue
 		}
-		DefaultQueue.Enqueue(repo, provider, branchApps, commitInfo.Hash, commitInfo.Message)
+		if DefaultQueue != nil {
+			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message)
+		}
 	}
 
 	if lastErrMsg != "" {

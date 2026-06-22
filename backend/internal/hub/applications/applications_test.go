@@ -2,7 +2,6 @@ package applications
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
-	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -28,51 +26,6 @@ type mockProvider struct {
 	fileContentErr    error
 	onGetFileContent  func()
 	onGetLatestCommit func()
-}
-
-type stubDeploymentHandle struct {
-	err    error
-	result *messages.DeployResult
-}
-
-func (h stubDeploymentHandle) Await(_ context.Context) (*messages.DeployResult, error) {
-	return h.result, h.err
-}
-
-func (h stubDeploymentHandle) Cancel() {}
-
-type stubDeploymentManager struct {
-	deployErr    error
-	deployResult *messages.DeployResult
-	lastAppID    string
-	lastCompose  string
-	trackedAppID string
-}
-
-func (m *stubDeploymentManager) StartDeploy(app *models.Application, composeFile string) (DeploymentHandle, error) {
-	m.lastAppID = app.Id
-	m.lastCompose = composeFile
-
-	return stubDeploymentHandle{
-		err:    m.deployErr,
-		result: m.deployResult,
-	}, nil
-}
-
-func (m *stubDeploymentManager) DeployAndWait(_ context.Context, app *models.Application, composeFile string) (*messages.DeployResult, error) {
-	m.lastAppID = app.Id
-	m.lastCompose = composeFile
-	return m.deployResult, m.deployErr
-}
-
-func (m *stubDeploymentManager) TrackManualDeploy(app models.Application, _ DeploymentHandle) {
-	m.trackedAppID = app.Id
-}
-
-func useTestDeployer(t *testing.T, deployer DeploymentManager) {
-	t.Helper()
-	DefaultDeployer = deployer
-	t.Cleanup(func() { DefaultDeployer = nil })
 }
 
 func (m *mockProvider) ParseURL(url string) (string, string, error)                  { return "", "", nil }
@@ -267,7 +220,10 @@ func TestGetMatchingApplications_ReturnsMultiple(t *testing.T) {
 
 // --- processSyncJob ---
 
-func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
+// Compose unchanged: processSyncJob records the new commit without redeploying.
+// Deploy-result status transitions (Synced/OutOfSync) now live in the
+// application_deployer package and are tested there.
+func TestProcessSyncJob_NoComposeChange_UpdatesCommit(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
@@ -289,97 +245,14 @@ func TestProcessSyncJob_NoComposeChange_SetsStatusSynced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load application: %v", err)
 	}
-	if updated.SyncStatus != models.Synced {
-		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
-	}
 	if updated.Commit != "newsha" {
 		t.Errorf("expected Commit %q, got %q", "newsha", updated.Commit)
 	}
 	if updated.CommitMessage != "new commit" {
 		t.Errorf("expected CommitMessage %q, got %q", "new commit", updated.CommitMessage)
 	}
-	if updated.LastSyncedAt == nil {
-		t.Error("expected LastSyncedAt to be set")
-	}
 	if updated.ComposeFile.String() != compose {
 		t.Errorf("expected ComposeFile unchanged, got %q", updated.ComposeFile.String())
-	}
-}
-
-func TestProcessSyncJob_ComposeChanged_UpdatesComposeAndSetsStatusSynced(t *testing.T) {
-	setupTestDB(t)
-	useTestDeployer(t, &stubDeploymentManager{
-		deployResult: &messages.DeployResult{Success: true},
-	})
-	repo := seedRepo(t)
-	agent := seedAgent(t)
-	const oldCompose = "services:\n  app:\n    image: myimage:1.0\n"
-	const newCompose = "services:\n  app:\n    image: myimage:2.0\n"
-	app := seedApp(t, repo.Id, agent.Id, oldCompose)
-
-	provider := &mockProvider{fileContent: newCompose}
-	nop := zerolog.Nop()
-
-	processSyncJob(t.Context(), syncJob{
-		Application:        app,
-		Repository:         repo,
-		RepositoryProvider: provider,
-		Commit:             "newsha",
-		CommitMessage:      "bump version",
-	}, &nop)
-
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load application: %v", err)
-	}
-	if updated.SyncStatus != models.Synced {
-		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
-	}
-	if updated.Commit != "newsha" {
-		t.Errorf("expected Commit %q, got %q", "newsha", updated.Commit)
-	}
-	if updated.CommitMessage != "bump version" {
-		t.Errorf("expected CommitMessage %q, got %q", "bump version", updated.CommitMessage)
-	}
-	if updated.LastSyncedAt == nil {
-		t.Error("expected LastSyncedAt to be set")
-	}
-	if updated.ComposeFile.String() != newCompose {
-		t.Errorf("expected ComposeFile %q, got %q", newCompose, updated.ComposeFile.String())
-	}
-	if updated.PreviousComposeFile.String() != oldCompose {
-		t.Errorf("expected PreviousComposeFile %q, got %q", oldCompose, updated.PreviousComposeFile.String())
-	}
-}
-
-func TestProcessSyncJob_GetFileContentError_SetsStatusOutOfSync(t *testing.T) {
-	setupTestDB(t)
-	repo := seedRepo(t)
-	agent := seedAgent(t)
-	app := seedApp(t, repo.Id, agent.Id, "compose: v1")
-
-	provider := &mockProvider{
-		latestCommit:   repositories.CommitInfo{Hash: "sha", Message: "msg"},
-		fileContentErr: errors.New("file not found"),
-	}
-	nop := zerolog.Nop()
-
-	processSyncJob(t.Context(), syncJob{
-		Application:        app,
-		Repository:         repo,
-		RepositoryProvider: provider,
-		Commit:             "sha",
-	}, &nop)
-
-	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load application: %v", err)
-	}
-	if got.SyncStatus != models.OutOfSync {
-		t.Errorf("expected SyncStatus %q after file fetch error, got %q", models.OutOfSync, got.SyncStatus)
-	}
-	if got.LastSyncedAt != nil {
-		t.Error("expected LastSyncedAt to remain nil")
 	}
 }
 
@@ -398,49 +271,6 @@ func TestNewQueue_HasCorrectProperties(t *testing.T) {
 	if q.jobs == nil {
 		t.Error("expected non-nil jobs channel")
 	}
-}
-
-func TestProcessSyncJob_SetsSyncStatusToSyncing(t *testing.T) {
-	// processSyncJob is responsible for the Syncing transition; Enqueue no longer touches the DB.
-	setupTestDB(t)
-	repo := seedRepo(t)
-	agent := seedAgent(t)
-	app := seedApp(t, repo.Id, agent.Id, "compose: v1")
-
-	started := make(chan struct{})
-	release := make(chan struct{})
-	done := make(chan struct{})
-	provider := &mockProvider{
-		onGetFileContent: func() {
-			close(started)
-			<-release
-		},
-		fileContentErr: errors.New("stop here"),
-	}
-	nop := zerolog.Nop()
-
-	go func() {
-		processSyncJob(t.Context(), syncJob{
-			Application:        app,
-			Repository:         repo,
-			RepositoryProvider: provider,
-			Commit:             "sha",
-		}, &nop)
-		close(done)
-	}()
-
-	<-started // GetFileContent was called, meaning Syncing was already written
-
-	got, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load application: %v", err)
-	}
-	if got.SyncStatus != models.Syncing {
-		t.Errorf("expected SyncStatus %q at start of processing, got %q", models.Syncing, got.SyncStatus)
-	}
-
-	close(release)
-	<-done
 }
 
 func TestQueue_Enqueue_JobAddedToChannel(t *testing.T) {
@@ -531,9 +361,6 @@ func TestQueue_Enqueue_FullQueue_DropsJob(t *testing.T) {
 
 func TestQueue_Start_ProcessesJobs(t *testing.T) {
 	setupTestDB(t)
-	useTestDeployer(t, &stubDeploymentManager{
-		deployResult: &messages.DeployResult{Success: true},
-	})
 	repo := seedRepo(t)
 	agent := seedAgent(t)
 	const compose = "services:\n  app:\n    image: myimage:1.0\n"
@@ -549,10 +376,11 @@ func TestQueue_Start_ProcessesJobs(t *testing.T) {
 	}
 	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "")
 
+	// Compose is unchanged, so the worker records the new commit without redeploying.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-		if err == nil && updated.SyncStatus == models.Synced {
+		if err == nil && updated.Commit == "sha" {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

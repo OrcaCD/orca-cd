@@ -150,12 +150,12 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(h, client, msg, log)
+			go handleClientMessage(client, msg, log)
 		}
 	}
 }
 
-func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -188,12 +188,7 @@ func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, lo
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
 	case *messages.ClientMessage_DeployResult:
-		if !h.ResolveDeploy(p.DeployResult) {
-			log.Warn().
-				Str("client", client.Id).
-				Str("request_id", p.DeployResult.RequestId).
-				Msg("received deploy result for unknown request")
-		}
+		handleDeployResult(p.DeployResult, log)
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(client, p.PullImagesResult, log)
 	default:

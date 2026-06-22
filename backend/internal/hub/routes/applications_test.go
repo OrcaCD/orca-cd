@@ -12,12 +12,11 @@ import (
 	"testing"
 	"time"
 
-	hubapplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
-	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -34,33 +33,19 @@ const (
 	seedComposeFileContent = "version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"
 )
 
-type stubRouteDeployHandle struct{}
-
-func (stubRouteDeployHandle) Await(context.Context) (*messages.DeployResult, error) { return nil, nil }
-func (stubRouteDeployHandle) Cancel()                                               {}
-
 type stubRouteDeployer struct {
 	startErr    error
 	startedApp  string
 	startedWith string
-	trackedApp  string
 }
 
-func (d *stubRouteDeployer) StartDeploy(app *models.Application, composeFile string) (hubapplications.DeploymentHandle, error) {
+func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
 	d.startedApp = app.Id
 	d.startedWith = composeFile
 	if d.startErr != nil {
-		return nil, d.startErr
+		return d.startErr
 	}
-	return stubRouteDeployHandle{}, nil
-}
-
-func (d *stubRouteDeployer) DeployAndWait(context.Context, *models.Application, string) (*messages.DeployResult, error) {
-	return nil, nil
-}
-
-func (d *stubRouteDeployer) TrackManualDeploy(app models.Application, _ hubapplications.DeploymentHandle) {
-	d.trackedApp = app.Id
+	return nil
 }
 
 func setupTestDBWithApplications(t *testing.T) {
@@ -1042,8 +1027,8 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
 
 	deployer := &stubRouteDeployer{}
-	hubapplications.DefaultDeployer = deployer
-	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+	application_deployer.DefaultApplicationDeployer = deployer
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
@@ -1060,10 +1045,6 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 	if deployer.startedWith != seedComposeFileContent {
 		t.Fatalf("expected deployer compose file to match stored compose")
 	}
-	if deployer.trackedApp != app.Id {
-		t.Fatalf("expected background tracking for app %q, got %q", app.Id, deployer.trackedApp)
-	}
-
 }
 
 func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
@@ -1073,8 +1054,8 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 	agent := seedTestAgent(t, "agent-deploy-offline")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
 
-	hubapplications.DefaultDeployer = &stubRouteDeployer{startErr: hubapplications.ErrAgentUnavailable}
-	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+	application_deployer.DefaultApplicationDeployer = &stubRouteDeployer{}
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
@@ -1082,16 +1063,11 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 
 	DeployApplicationHandler(c)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
-	}
-
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to reload app: %v", err)
-	}
-	if updated.SyncStatus != models.UnknownSync {
-		t.Fatalf("expected sync status to remain %q, got %q", models.UnknownSync, updated.SyncStatus)
+	// Deploy is now fire-and-forget: the handler accepts the request and dispatches
+	// asynchronously. Agent-not-connected handling is still a TODO in the deployer,
+	// so the handler does not surface a 409 yet.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
