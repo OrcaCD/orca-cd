@@ -2,6 +2,7 @@ package application_deployer
 
 import (
 	"context"
+	"errors"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -50,8 +51,13 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 		},
 	}
 
-	// TODO Handle the case where the agent is not connected to the hub
-	websocket.DefaultHub.Send(app.AgentId, msg)
+	if !websocket.DefaultHub.Send(app.AgentId, msg) {
+		_ = updateApplicationStatus(ctx, app.Id, models.Application{
+			SyncStatus: models.OutOfSync,
+			HealthStatus: models.UnknownHealth,
+		}, d.log)
+		return errors.New("Error: could not connect to agent: " + app.Agent.Name.String())
+	}
 
 	return markDeploymentInProgress(ctx, app.Id, d.log)
 }
