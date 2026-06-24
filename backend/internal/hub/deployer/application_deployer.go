@@ -53,7 +53,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 
 	if !websocket.DefaultHub.Send(app.AgentId, msg) {
 		_ = updateApplicationStatus(ctx, app.Id, models.Application{
-			SyncStatus: models.OutOfSync,
+			SyncStatus:   models.OutOfSync,
 			HealthStatus: models.UnknownHealth,
 		}, d.log)
 		return errors.New("Error: could not connect to agent: " + app.Agent.Name.String())
