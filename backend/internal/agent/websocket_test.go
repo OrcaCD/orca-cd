@@ -37,9 +37,17 @@ func (s *stubSender) SendMessage(msg *messages.ClientMessage) error {
 }
 
 type stubDeployer struct {
-	block chan struct{}
-	err   error
-	reqCh chan agentdocker.DeployRequest
+	block    chan struct{}
+	err      error
+	reqCh    chan agentdocker.DeployRequest
+	deleteCh chan agentdocker.DeleteRequest
+}
+
+func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) error {
+	if d.deleteCh != nil {
+		d.deleteCh <- req
+	}
+	return d.err
 }
 
 func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest) error {

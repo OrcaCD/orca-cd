@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 
 const ApplicationsPath = "/api/v1/applications"
 const defaultApplicationIcon = "box"
+const agentDeleteTimeout = 30 * time.Second
 
 type createApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
@@ -332,6 +334,31 @@ func DeleteApplicationHandler(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if websocket.DefaultHub == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "hub not initialized"})
+		return
+	}
+
+	// Tear down on the agent first, and only delete our record once the agent
+	// confirms. This keeps the hub from losing track of still-running containers
+	// when the agent is offline or the removal fails.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), agentDeleteTimeout)
+	defer cancel()
+
+	result, err := websocket.DefaultHub.RemoveApplication(ctx, application.AgentId, application.Id, application.Name.String())
+	if err != nil {
+		if errors.Is(err, websocket.ErrAgentOffline) {
+			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot delete application while its containers may still be running"})
+			return
+		}
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "agent did not respond to the delete request"})
+		return
+	}
+	if !result.Success {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent failed to remove application: " + result.ErrorMessage})
 		return
 	}
 

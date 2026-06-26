@@ -197,6 +197,10 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		}
 	case *messages.ClientMessage_DeployResult:
 		handleDeployResult(p.DeployResult, log)
+	case *messages.ClientMessage_DeleteResult:
+		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
+		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(client, p.PullImagesResult, log)
 	default:

@@ -17,6 +17,7 @@ import (
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -934,6 +935,46 @@ func TestUpdateApplicationHandler_DBError(t *testing.T) {
 	}
 }
 
+// withDeletingAgent installs a hub with a fake connected agent that auto-replies to
+// the DeleteRequest with the given outcome, so DeleteApplicationHandler can run its
+// confirm-before-delete flow without a real agent.
+func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string) {
+	t.Helper()
+	nop := zerolog.Nop()
+	hub := websocket.NewHub(&nop)
+	websocket.DefaultHub = hub
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register fake agent: %v", err)
+	}
+	go func() {
+		msg, ok := <-client.Send
+		if !ok {
+			return
+		}
+		req := msg.GetDeleteRequest()
+		if req == nil {
+			return
+		}
+		hub.ResolveDeleteResult(&messages.DeleteResult{
+			RequestId:     req.RequestId,
+			ApplicationId: req.ApplicationId,
+			Success:       success,
+			ErrorMessage:  errMsg,
+		})
+	}()
+}
+
+// withOfflineHub installs a hub with no connected agents.
+func withOfflineHub(t *testing.T) {
+	t.Helper()
+	nop := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&nop)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+}
+
 func TestDeleteApplicationHandler_NotFound(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -954,6 +995,7 @@ func TestDeleteApplicationHandler_Success(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-delete")
 	agent := seedTestAgent(t, "agent-delete")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Delete Me")
+	withDeletingAgent(t, agent.Id, true, "")
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
@@ -969,6 +1011,54 @@ func TestDeleteApplicationHandler_Success(t *testing.T) {
 	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
 	if count != 0 {
 		t.Error("expected application to be deleted from DB")
+	}
+}
+
+func TestDeleteApplicationHandler_AgentOffline_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-del-offline")
+	agent := seedTestAgent(t, "agent-del-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Offline Delete")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeleteApplicationHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	var count int64
+	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
+	if count != 1 {
+		t.Error("expected application to remain when agent is offline")
+	}
+}
+
+func TestDeleteApplicationHandler_AgentFailure_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-del-fail")
+	agent := seedTestAgent(t, "agent-del-fail")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Fail Delete")
+	withDeletingAgent(t, agent.Id, false, "compose down: boom")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeleteApplicationHandler(c)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	var count int64
+	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
+	if count != 1 {
+		t.Error("expected application to remain when agent removal fails")
 	}
 }
 

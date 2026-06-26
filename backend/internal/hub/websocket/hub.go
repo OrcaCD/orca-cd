@@ -32,12 +32,16 @@ type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
 	log     *zerolog.Logger
+
+	deleteMu       sync.Mutex
+	pendingDeletes map[string]chan *messages.DeleteResult
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
 	return &Hub{
-		clients: make(map[string]*Client),
-		log:     log,
+		clients:        make(map[string]*Client),
+		log:            log,
+		pendingDeletes: make(map[string]chan *messages.DeleteResult),
 	}
 }
 

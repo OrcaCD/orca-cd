@@ -11,6 +11,7 @@ message ClientMessage {
     EncryptedPayload encrypted_payload = 3;
     DeployResult deploy_result = 4;
     PullImagesResult pull_images_result = 5;
+    DeleteResult delete_result = 6;
   }
 }
 
@@ -22,6 +23,7 @@ message ServerMessage {
     DeployRequest deploy_request = 4;
     AgentSettings agent_settings = 5;
     PullImagesRequest pull_images_request = 6;
+    DeleteRequest delete_request = 7;
   }
 }
 
@@ -54,6 +56,19 @@ message DeployRequest {
   string application_id = 2;
   string application_name = 3;
   string compose_file = 4;
+}
+
+message DeleteRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message DeleteResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
 }
 
 message DeployResult {
