@@ -6,6 +6,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/rs/zerolog"
@@ -33,7 +34,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).
 			Msg("failed to fetch compose file during sync")
-		// failSyncJob(job.Application, log)
+		failSyncJob(job.Application, log)
 		return
 	}
 
@@ -49,13 +50,13 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	deployer := application_deployer.DefaultApplicationDeployer
 	if deployer == nil {
 		log.Error().Str("applicationId", job.Application.Id).Msg("application deployer not initialized")
-		// failSyncJob(job.Application, log)
+		failSyncJob(job.Application, log)
 		return
 	}
 
 	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content); err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to trigger application deploy")
-		// failSyncJob(job.Application, log)
+		failSyncJob(job.Application, log)
 	}
 }
 
@@ -68,4 +69,12 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	}
 	sse.PublishUpdate("/api/v1/applications")
 	return err
+}
+
+func failSyncJob(application models.Application, log *zerolog.Logger) {
+	_ = updateApplicationStatus(context.Background(), application.Id, models.Application{
+		SyncStatus: models.OutOfSync,
+		HealthStatus: models.Unhealthy,
+	}, log)
+	notifications.SendNotification(application.Id, "Error: sync failed for "+application.Name.String(), log)
 }
