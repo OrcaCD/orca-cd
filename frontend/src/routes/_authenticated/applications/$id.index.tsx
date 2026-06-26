@@ -236,10 +236,7 @@ function ApplicationDetailsPage() {
 			</Breadcrumb>
 
 			{data?.lastSyncError && (
-				<Alert
-					variant="destructive"
-					className="border-destructive/50 bg-destructive/10"
-				>
+				<Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
 					<TriangleAlert className="h-4 w-4" />
 					<AlertTitle>{m.syncFailed()}</AlertTitle>
 					<AlertDescription className="break-words whitespace-pre-wrap">
