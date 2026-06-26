@@ -197,9 +197,6 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return
 		}
 
-		// The workflow run already carries the deployed commit, so resolve it
-		// statically. Routing through SyncApplications keeps the repository's
-		// sync-status bookkeeping identical to the polling and webhook paths.
 		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.QueueLogger())
 	}
 

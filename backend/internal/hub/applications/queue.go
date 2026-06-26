@@ -17,10 +17,6 @@ const jobTimeout = 3 * time.Minute
 // TODO
 // Prevent multiple concurrent syncs for the same application
 
-// Queue decouples repository-level fan-out from application-level deploys. The
-// repository side (SyncRepository, webhooks, GitHub Actions) enqueues one job per
-// application; a fixed pool of workers then runs processSyncJob for each job
-// concurrently, so a slow deploy on one application does not block the others.
 type Queue struct {
 	jobs    chan syncJob
 	log     *zerolog.Logger
@@ -37,9 +33,6 @@ func NewQueue(log *zerolog.Logger) *Queue {
 	}
 }
 
-// QueueLogger returns the sync queue's logger, or a no-op logger if the queue has
-// not been initialised. Route handlers have no logger of their own, so they use
-// this to pass one to SyncApplications.
 func QueueLogger() *zerolog.Logger {
 	if DefaultQueue != nil {
 		return DefaultQueue.log

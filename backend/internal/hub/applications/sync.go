@@ -28,10 +28,6 @@ func GetAllApplicationsForRepo(ctx context.Context, repository *models.Repositor
 	return gorm.G[models.Application](db.DB).Where("repository_id = ?", repository.Id).Find(ctx)
 }
 
-// processSyncJob performs the application-level half of a sync for a single app:
-// fetch the compose file at the resolved commit, and if it changed, deploy it to
-// the agent and wait for the result. It is the unit of work the queue workers run,
-// and it owns the application's sync-status transitions (Syncing → Synced/OutOfSync).
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	content, err := job.RepositoryProvider.GetFileContent(ctx, &job.Repository, job.Commit, job.Application.Path)
 	if err != nil {
