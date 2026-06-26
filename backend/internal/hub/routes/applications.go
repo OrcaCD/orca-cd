@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -133,6 +134,27 @@ func GetApplicationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, toApplicationResponse(&application))
 }
 
+// applicationNameTaken reports whether another application already uses name
+// (case-insensitive). Names are stored encrypted with a random nonce, so a DB
+// unique index can't enforce this — we decrypt and compare in code. excludeID
+// skips a record (the one being updated).
+func applicationNameTaken(ctx context.Context, name, excludeID string) (bool, error) {
+	apps, err := gorm.G[models.Application](db.DB).Find(ctx)
+	if err != nil {
+		return false, err
+	}
+	target := strings.TrimSpace(name)
+	for i := range apps {
+		if apps[i].Id == excludeID {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(apps[i].Name.String()), target) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func CreateApplicationHandler(c *gin.Context) {
 	var req createApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -157,6 +179,16 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 	if !agentExists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
+		return
+	}
+
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if nameTaken {
+		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
 		return
 	}
 
@@ -269,6 +301,16 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 	if !agentExists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
+		return
+	}
+
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if nameTaken {
+		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
 		return
 	}
 

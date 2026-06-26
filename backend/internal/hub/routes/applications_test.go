@@ -451,6 +451,39 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 }
 
+func TestCreateApplicationHandler_DuplicateName(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-dup")
+	agent := seedTestAgent(t, "agent-dup")
+	seedTestApplication(t, repo.Id, agent.Id, "Billing Service")
+
+	// Different case must still collide (case-insensitive check).
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "billing service",
+		"repositoryId": repo.Id,
+		"agentId":      agent.Id,
+		"branch":       "main",
+		"path":         "services/billing.yml",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.DB.Model(&models.Application{}).Count(&count)
+	if count != 1 {
+		t.Errorf("expected no second application created, got %d", count)
+	}
+}
+
 func TestCreateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 
