@@ -37,6 +37,7 @@ type Application struct {
 	Commit                   string                  `gorm:"type:text;not null"`
 	CommitMessage            string                  `gorm:"type:text;not null"`
 	LastSyncedAt             *time.Time              `gorm:"type:timestamp;"`
+	LastSyncError            *string                 `gorm:"type:text;"`
 	Path                     string                  `gorm:"type:text;not null"`
 	ComposeFile              crypto.EncryptedString  `gorm:"type:text;not null"`
 	PreviousComposeFile      crypto.EncryptedString  `gorm:"type:text;not null"`

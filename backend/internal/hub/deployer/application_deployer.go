@@ -59,11 +59,13 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 	}
 
 	if !d.hub.Send(app.AgentId, msg) {
+		errMsg := "could not connect to agent: " + app.Agent.Name.String()
 		_ = updateApplicationStatus(ctx, app.Id, models.Application{
-			SyncStatus:   models.OutOfSync,
-			HealthStatus: models.UnknownHealth,
+			SyncStatus:    models.OutOfSync,
+			HealthStatus:  models.UnknownHealth,
+			LastSyncError: &errMsg,
 		}, d.log)
-		return errors.New("Error: could not connect to agent: " + app.Agent.Name.String())
+		return errors.New("Error: " + errMsg)
 	}
 
 	return markDeploymentInProgress(ctx, app.Id, d.log)
@@ -81,8 +83,11 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 }
 
 func markDeploymentInProgress(ctx context.Context, applicationID string, log *zerolog.Logger) error {
+	// Clear any previous error when a new deploy starts (non-nil ptr to "" forces the write).
+	cleared := ""
 	return updateApplicationStatus(ctx, applicationID, models.Application{
-		SyncStatus:   models.Syncing,
-		HealthStatus: models.UnknownHealth,
+		SyncStatus:    models.Syncing,
+		HealthStatus:  models.UnknownHealth,
+		LastSyncError: &cleared,
 	}, log)
 }

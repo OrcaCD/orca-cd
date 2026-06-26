@@ -77,6 +77,7 @@ type applicationResponse struct {
 	Commit                   string  `json:"commit"`
 	CommitMessage            string  `json:"commitMessage"`
 	LastSyncedAt             *string `json:"lastSyncedAt"`
+	LastSyncError            *string `json:"lastSyncError,omitempty"`
 	Path                     string  `json:"path"`
 	CreatedAt                string  `json:"createdAt"`
 	UpdatedAt                string  `json:"updatedAt"`
@@ -470,6 +471,15 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 	}
 }
 
+// normalizeSyncError returns nil for a missing or empty error so the JSON field is
+// omitted (cleared errors are stored as "").
+func normalizeSyncError(e *string) *string {
+	if e == nil || *e == "" {
+		return nil
+	}
+	return e
+}
+
 func toApplicationResponse(app *models.Application) applicationResponse {
 	resp := applicationResponse{
 		Id:                       app.Id,
@@ -486,6 +496,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		Commit:                   app.Commit,
 		CommitMessage:            app.CommitMessage,
 		LastSyncedAt:             formatTimestamp(app.LastSyncedAt),
+		LastSyncError:            normalizeSyncError(app.LastSyncError),
 		Path:                     app.Path,
 		CreatedAt:                app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:                app.UpdatedAt.Format(time.RFC3339),

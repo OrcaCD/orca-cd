@@ -19,10 +19,13 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 	now := time.Now()
 
 	if result.Success {
+		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
+		cleared := ""
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
-			SyncStatus:   models.Synced,
-			HealthStatus: models.Healthy,
-			LastSyncedAt: &now,
+			SyncStatus:    models.Synced,
+			HealthStatus:  models.Healthy,
+			LastSyncedAt:  &now,
+			LastSyncError: &cleared,
 		}, log)
 		if err != nil {
 			return
@@ -31,10 +34,16 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		return
 	}
 
+	errMsg := result.ErrorMessage
+	if errMsg == "" {
+		errMsg = "deployment failed"
+	}
+
 	notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+result.ApplicationId, log)
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
-		SyncStatus:   models.OutOfSync,
-		HealthStatus: models.Unhealthy,
+		SyncStatus:    models.OutOfSync,
+		HealthStatus:  models.Unhealthy,
+		LastSyncError: &errMsg,
 	}, log)
 }
 

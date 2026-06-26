@@ -111,6 +111,7 @@
 	"applicationsStatOutOfSync": "Out of Sync",
 	"applicationsStatHealthy": "Healthy",
 	"manifest": "Manifest",
+	"syncFailed": "Sync failed",
 	"deleteApplicationDescription": "Are you sure you want to delete this application? This action cannot be undone.",
 	"toastApplicationDeleted": "Application {name} deleted successfully",
 	"toastDeleteApplicationFailed": "Failed to delete application",

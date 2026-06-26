@@ -24,9 +24,11 @@ import {
 	RefreshCw,
 	Server,
 	Trash2,
+	TriangleAlert,
 	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -232,6 +234,19 @@ function ApplicationDetailsPage() {
 					</BreadcrumbItem>
 				</BreadcrumbList>
 			</Breadcrumb>
+
+			{data?.lastSyncError && (
+				<Alert
+					variant="destructive"
+					className="border-destructive/50 bg-destructive/10"
+				>
+					<TriangleAlert className="h-4 w-4" />
+					<AlertTitle>{m.syncFailed()}</AlertTitle>
+					<AlertDescription className="break-words whitespace-pre-wrap">
+						{data.lastSyncError}
+					</AlertDescription>
+				</Alert>
+			)}
 
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
