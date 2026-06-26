@@ -7,12 +7,17 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
-	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
+
+// messageSender sends a message to an agent. *websocket.Hub satisfies it; tests
+// pass a mock so the deployer can be exercised without a real hub or agent.
+type messageSender interface {
+	Send(agentID string, msg *messages.ServerMessage) bool
+}
 
 const (
 	applicationsSSEPath = "/api/v1/applications"
@@ -25,11 +30,13 @@ type ApplicationDeploymentManager interface {
 }
 
 type ApplicationDeployer struct {
+	hub messageSender
 	log *zerolog.Logger
 }
 
-func NewApplicationDeployer(log *zerolog.Logger) *ApplicationDeployer {
+func NewApplicationDeployer(hub messageSender, log *zerolog.Logger) *ApplicationDeployer {
 	return &ApplicationDeployer{
+		hub: hub,
 		log: log,
 	}
 }
@@ -51,7 +58,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 		},
 	}
 
-	if !websocket.DefaultHub.Send(app.AgentId, msg) {
+	if !d.hub.Send(app.AgentId, msg) {
 		_ = updateApplicationStatus(ctx, app.Id, models.Application{
 			SyncStatus:   models.OutOfSync,
 			HealthStatus: models.UnknownHealth,

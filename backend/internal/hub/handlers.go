@@ -117,7 +117,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 		h := websocket.NewHub(&Log)
 		websocket.DefaultHub = h
-		d := application_deployer.NewApplicationDeployer(&Log)
+		d := application_deployer.NewApplicationDeployer(h, &Log)
 		application_deployer.DefaultApplicationDeployer = d
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
