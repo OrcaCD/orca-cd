@@ -225,6 +225,10 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 
 	sendAgentSettings(c, req.AgentId)
+
+	if application_deployer.DefaultApplicationDeployer != nil {
+		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile)
+	}
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
