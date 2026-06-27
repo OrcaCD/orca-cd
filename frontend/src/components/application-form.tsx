@@ -144,17 +144,12 @@ function TreeNodeList({
 				if (node.type === "dir") {
 					return (
 						<Collapsible key={node.path}>
-							<CollapsibleTrigger asChild>
-								<Button
-									type="button"
-									variant="ghost"
-									size="sm"
-									className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
-								>
-									<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
-									<FolderIcon />
-									{node.name}
-								</Button>
+							<CollapsibleTrigger
+								className="group flex w-full items-center justify-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent hover:text-accent-foreground"
+							>
+								<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
+								<FolderIcon />
+								{node.name}
 							</CollapsibleTrigger>
 							<CollapsibleContent className="mt-1 ml-5 style-lyra:ml-4">
 								<div className="flex flex-col gap-1">
@@ -319,7 +314,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 												name={field.name}
 												value={field.state.value}
 												onValueChange={(value) => {
-													field.handleChange(value);
+													field.handleChange(value ?? "");
 													form.setFieldValue("branch", "");
 													form.setFieldValue("path", "");
 												}}
@@ -331,7 +326,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 												>
 													<SelectValue placeholder={m.selectRepository()} />
 												</SelectTrigger>
-												<SelectContent position="item-aligned">
+												<SelectContent>
 													{isReposLoading ? (
 														<div className="p-2">{m.loadingDots()}</div>
 													) : (
@@ -360,7 +355,9 @@ export function ApplicationForm({ application }: { application?: Application | n
 											<Select
 												name={field.name}
 												value={field.state.value}
-												onValueChange={field.handleChange}
+												onValueChange={(value) => {
+													field.handleChange(value ?? "");
+												}}
 											>
 												<SelectTrigger
 													id="agent-select"
@@ -369,7 +366,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 												>
 													<SelectValue placeholder={m.selectAgent()} />
 												</SelectTrigger>
-												<SelectContent position="item-aligned">
+												<SelectContent>
 													{isAgentsLoading ? (
 														<div className="p-2">{m.loadingDots()}</div>
 													) : (
@@ -399,7 +396,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 												name={field.name}
 												value={field.state.value}
 												onValueChange={(value) => {
-													field.handleChange(value);
+													field.handleChange(value ?? "");
 													form.setFieldValue("path", "");
 												}}
 												disabled={!repositoryId || isBranchesLoading}
@@ -415,7 +412,7 @@ export function ApplicationForm({ application }: { application?: Application | n
 														}
 													/>
 												</SelectTrigger>
-												<SelectContent position="item-aligned">
+												<SelectContent>
 													{isBranchesLoading ? (
 														<div className="p-2">{m.loadingBranchesDots()}</div>
 													) : (

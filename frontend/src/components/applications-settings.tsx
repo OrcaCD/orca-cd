@@ -95,22 +95,25 @@ function SettingsSidebarMenuItem({
 
 	return (
 		<SidebarMenuItem className="mb-2">
-			<SidebarMenuButton asChild isActive={isActive}>
-				{id ? (
-					<Link
-						to={item.pathWithId}
-						params={{ id }}
-						onClick={() => isMobile && setOpenMobile(false)}
-					>
-						<item.icon />
-						<span>{item.title()}</span>
-					</Link>
-				) : (
-					<Link to={item.pathWithoutId} onClick={() => isMobile && setOpenMobile(false)}>
-						<item.icon />
-						<span>{item.title()}</span>
-					</Link>
-				)}
+			<SidebarMenuButton
+				isActive={isActive}
+				render={
+					id ? (
+						<Link
+							to={item.pathWithId}
+							params={{ id }}
+							onClick={() => isMobile && setOpenMobile(false)}
+						/>
+					) : (
+						<Link
+							to={item.pathWithoutId}
+							onClick={() => isMobile && setOpenMobile(false)}
+						/>
+					)
+				}
+			>
+				<item.icon />
+				<span>{item.title()}</span>
 			</SidebarMenuButton>
 		</SidebarMenuItem>
 	);

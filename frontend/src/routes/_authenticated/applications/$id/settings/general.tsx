@@ -32,17 +32,21 @@ function EditApplicationPage() {
 			<Breadcrumb>
 				<BreadcrumbList>
 					<BreadcrumbItem>
-						<BreadcrumbLink asChild>
-							<Link to="/applications">{m.pageApplications()}</Link>
-						</BreadcrumbLink>
+						<BreadcrumbLink
+							render={
+								<Link to="/applications">{m.pageApplications()}</Link>
+							}
+						></BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
-						<BreadcrumbLink asChild>
-							<Link to="/applications/$id" params={{ id }}>
-								{application?.name}
-							</Link>
-						</BreadcrumbLink>
+						<BreadcrumbLink
+							render={
+								<Link to="/applications/$id" params={{ id }}>
+									{application?.name}
+								</Link>
+							}
+						></BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
