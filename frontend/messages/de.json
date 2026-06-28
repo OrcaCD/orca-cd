@@ -524,6 +524,7 @@
 	"repositorySyncUpdatedDescription": "Die Sync-Einstellungen wurden erfolgreich aktualisiert.",
 	"failedUpdateRepository": "Repository konnte nicht aktualisiert werden",
 	"imagePollSectionTitle": "Image-Polling",
+	"imagePollDescription": "Image-Polling Einstellungen",
 	"imagePollEnabled": "Image-Polling aktivieren",
 	"imagePollEnabledDescription": "Automatisch auf neue Image-Versionen prüfen und bei Updates neu deployen",
 	"imagePollIntervalSeconds": "Polling-Intervall (Sekunden)",

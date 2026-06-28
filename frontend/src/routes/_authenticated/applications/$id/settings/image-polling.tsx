@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import z from "zod";
-import { createApplication, updateApplication, type Application } from "@/lib/applications";
+import { updateApplication, type Application } from "@/lib/applications";
 import { useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { toast } from "sonner";
@@ -12,9 +12,10 @@ import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/image-polling")({
-	component: RouteComponent,
+	component: ImagePollingPage,
 });
 
 const applicationSchema = z.object({
@@ -44,8 +45,9 @@ const applicationSchema = z.object({
 	imagePollDeleteOldImages: z.boolean(),
 });
 
-function RouteComponent({ application }: { application?: Application | null }) {
-	const isEditing = !!application;
+function ImagePollingPage() {
+	const { id } = Route.useParams();
+	const { data: application } = useFetch<Application>(`/applications/${id}`);
 	const [, setIsSubmitting] = useState(false);
 	const [, setOpen] = useState(false);
 
@@ -67,13 +69,8 @@ function RouteComponent({ application }: { application?: Application | null }) {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				if (isEditing && application) {
-					await updateApplication(application.id, value);
-					toast.success(m.applicationUpdated());
-				} else {
-					await createApplication(value);
-					toast.success(m.applicationCreated());
-				}
+				await updateApplication(application!.id, value);
+				toast.success(m.applicationUpdated());
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
@@ -87,10 +84,13 @@ function RouteComponent({ application }: { application?: Application | null }) {
 
 	return (
 		<div className="flex flex-col gap-6">
+			<div>
+				<h1 className="text-2xl font-bold">{m.imagePollSectionTitle()}</h1>
+				<p className="text-muted-foreground text-sm">{m.imagePollDescription()}</p>
+			</div>
 			<Card>
 				<CardHeader>
-					<CardTitle></CardTitle>
-					<CardDescription></CardDescription>
+					<CardTitle>{m.imagePollSectionTitle()}</CardTitle>
 				</CardHeader>
 				<Separator />
 				<CardContent>
@@ -102,8 +102,6 @@ function RouteComponent({ application }: { application?: Application | null }) {
 						}}
 					>
 						<FieldGroup className="max-w-xl">
-							<p className="text-sm font-medium">{m.imagePollSectionTitle()}</p>
-
 							<form.Field name="imagePollEnabled">
 								{(field) => (
 									<Field>

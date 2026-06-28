@@ -33,20 +33,20 @@ export const Route = createFileRoute("/_authenticated/applications/$id/")({
 
 type SidebarItem =
 	| {
-		type: "link";
-		title: () => string;
-		icon: any;
-		to: string;
-	}
-	| {
-		type: "group";
-		title: () => string;
-		children: {
+			type: "link";
 			title: () => string;
-			icon?: any;
+			icon: any;
 			to: string;
-		}[];
-	};
+	  }
+	| {
+			type: "group";
+			title: () => string;
+			children: {
+				title: () => string;
+				icon?: any;
+				to: string;
+			}[];
+	  };
 
 const sidebarItems: SidebarItem[] = [
 	{
@@ -88,7 +88,10 @@ export function ApplicationsLayout({ id }: { id?: string }) {
 							<ArrowLeft className="h-5 w-5 text-muted-foreground transition-transform group-hover:-translate-x-0.5" />
 
 							<div className="flex items-center gap-2 min-w-0">
-								<StaticLucideIcon name={application?.icon} className="h-7 w-7 text-primary shrink-0" />
+								<StaticLucideIcon
+									name={application?.icon}
+									className="h-7 w-7 text-primary shrink-0"
+								/>
 								<span className="truncate">{application?.name}</span>
 							</div>
 						</Link>
