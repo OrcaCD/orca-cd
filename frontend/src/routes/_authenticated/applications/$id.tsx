@@ -1,4 +1,11 @@
-import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import {
+	Breadcrumb,
+	BreadcrumbList,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbSeparator,
+	BreadcrumbPage,
+} from "@/components/ui/breadcrumb";
 import {
 	Sidebar,
 	SidebarProvider,
@@ -25,20 +32,20 @@ export const Route = createFileRoute("/_authenticated/applications/$id")({
 
 type SidebarItem =
 	| {
-		type: "link";
-		title: () => string;
-		icon: any;
-		to: string;
-	}
-	| {
-		type: "group";
-		title: () => string;
-		children: {
+			type: "link";
 			title: () => string;
-			icon?: any;
+			icon: any;
 			to: string;
-		}[];
-	};
+	  }
+	| {
+			type: "group";
+			title: () => string;
+			children: {
+				title: () => string;
+				icon?: any;
+				to: string;
+			}[];
+	  };
 
 const sidebarItems: SidebarItem[] = [
 	{

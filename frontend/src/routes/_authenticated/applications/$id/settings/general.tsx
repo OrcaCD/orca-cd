@@ -21,7 +21,12 @@ import { m } from "@/lib/paraglide/messages";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
-import { applicationSchema, buildFileTree, TreeNodeList, type RepositoryTreeEntry } from "@/components/dialogs/upsert-application";
+import {
+	applicationSchema,
+	buildFileTree,
+	TreeNodeList,
+	type RepositoryTreeEntry,
+} from "@/components/dialogs/upsert-application";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/general")({
 	component: GeneralSettingsPage,
