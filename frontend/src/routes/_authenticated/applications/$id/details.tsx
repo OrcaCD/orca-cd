@@ -13,7 +13,6 @@ import {
 	ExternalLink,
 	GitBranch,
 	GitCommit,
-	Pencil,
 	RefreshCw,
 	Server,
 	Trash2,
@@ -234,19 +233,6 @@ function ApplicationDetailsPage() {
 					</Button>
 
 					<Separator orientation="vertical" />
-
-					<Button
-						variant="outline"
-						onClick={() =>
-							navigate({
-								to: "/applications/$id/settings/general",
-								params: { id: data!.id },
-							})
-						}
-					>
-						<Pencil />
-						{m.edit()}
-					</Button>
 
 					<ConfirmationDialog
 						onConfirm={async () => await deleteApp()}
