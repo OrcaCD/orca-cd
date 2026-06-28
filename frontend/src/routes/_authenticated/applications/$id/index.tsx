@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
 	Sidebar,
 	SidebarContent,
@@ -33,25 +33,25 @@ export const Route = createFileRoute("/_authenticated/applications/$id/")({
 
 type SidebarItem =
 	| {
-			type: "link";
-			title: () => string;
-			icon: any;
-			to: string;
-	  }
+		type: "link";
+		title: () => string;
+		icon: any;
+		to: string;
+	}
 	| {
-			type: "group";
+		type: "group";
+		title: () => string;
+		children: {
 			title: () => string;
-			children: {
-				title: () => string;
-				icon: any;
-				to: string;
-			}[];
-	  };
+			icon?: any;
+			to: string;
+		}[];
+	};
 
 const sidebarItems: SidebarItem[] = [
 	{
 		type: "link",
-		title: () => "Details",
+		title: () => m.details(),
 		icon: Settings,
 		to: "/applications/$id/details",
 	},
@@ -64,12 +64,17 @@ const sidebarItems: SidebarItem[] = [
 				icon: Settings,
 				to: "/applications/$id/settings/general",
 			},
+			{
+				title: () => m.imagePollSectionTitle(),
+				to: "/applications/$id/settings/image-polling",
+			},
 		],
 	},
 ];
 
 export function ApplicationsLayout({ id }: { id?: string }) {
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
+	const { location } = useRouterState();
 
 	return (
 		<div className="flex flex-col min-h-[calc(100svh-3.5rem)] w-full">
@@ -141,7 +146,7 @@ function SidebarItem({
 }: {
 	item: {
 		title: () => string;
-		icon: any;
+		icon?: any;
 		to: string;
 	};
 	pathname: string;
@@ -151,6 +156,8 @@ function SidebarItem({
 
 	const targetPath = item.to.replace("$id", id ?? "");
 	const isActive = pathname === targetPath || pathname.startsWith(`${targetPath}/`);
+
+	const Icon = item.icon
 
 	return (
 		<SidebarMenuItem className="mb-2">
@@ -162,7 +169,7 @@ function SidebarItem({
 						params={{ id: id ?? "" }}
 						onClick={() => isMobile && setOpenMobile(false)}
 					>
-						<item.icon className="h-4 w-4" />
+						{Icon && <Icon className="h-4 w-4" />}
 						<span>{item.title()}</span>
 					</Link>
 				}
