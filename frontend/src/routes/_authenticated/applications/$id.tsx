@@ -109,7 +109,7 @@ function ApplicationsLayout() {
 										}
 
 										return (
-											<SidebarGroup key={item.title()}>
+											<SidebarGroup key={item.title()} className="p-0">
 												<SidebarGroupLabel>{item.title()}</SidebarGroupLabel>
 
 												<SidebarGroupContent>
