@@ -14,7 +14,7 @@ import {
 	SidebarTrigger,
 	useSidebar,
 } from "@/components/ui/sidebar";
-import { Settings } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import type { Application } from "@/lib/applications";
 import { useFetch } from "@/lib/api";
@@ -33,20 +33,20 @@ export const Route = createFileRoute("/_authenticated/applications/$id/")({
 
 type SidebarItem =
 	| {
-			type: "link";
-			title: () => string;
-			icon: any;
-			to: string;
-	  }
+		type: "link";
+		title: () => string;
+		icon: any;
+		to: string;
+	}
 	| {
-			type: "group";
+		type: "group";
+		title: () => string;
+		children: {
 			title: () => string;
-			children: {
-				title: () => string;
-				icon?: any;
-				to: string;
-			}[];
-	  };
+			icon?: any;
+			to: string;
+		}[];
+	};
 
 const sidebarItems: SidebarItem[] = [
 	{
@@ -81,10 +81,17 @@ export function ApplicationsLayout({ id }: { id?: string }) {
 			<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">
 				<Sidebar className="border-r md:top-14">
 					<SidebarHeader className="px-4 py-5">
-						<div className="flex items-center gap-2 font-semibold">
-							<StaticLucideIcon name={application?.icon} className="h-7 w-7 text-primary" />
-							{application?.name}
-						</div>
+						<Link
+							to="/applications"
+							className="flex items-center gap-3 font-semibold w-full p-1.5 -ml-1.5 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground text-left group"
+						>
+							<ArrowLeft className="h-5 w-5 text-muted-foreground transition-transform group-hover:-translate-x-0.5" />
+
+							<div className="flex items-center gap-2 min-w-0">
+								<StaticLucideIcon name={application?.icon} className="h-7 w-7 text-primary shrink-0" />
+								<span className="truncate">{application?.name}</span>
+							</div>
+						</Link>
 					</SidebarHeader>
 					<SidebarContent>
 						<SidebarGroup>
