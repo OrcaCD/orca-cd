@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChevronRightIcon, FileText, FolderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import z from "zod";
 import { updateApplication, type Application } from "@/lib/applications";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -20,11 +18,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { m } from "@/lib/paraglide/messages";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
+import { applicationSchema, buildFileTree, TreeNodeList, type RepositoryTreeEntry } from "@/components/dialogs/upsert-application";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/general")({
 	component: GeneralSettingsPage,
@@ -36,171 +33,6 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 		],
 	}),
 });
-
-const applicationSchema = z.object({
-	name: z
-		.string()
-		.trim()
-		.min(1, m.validationApplicationNameRequired())
-		.max(128, m.validationApplicationNameMaxLength()),
-	icon: z.string().max(128, m.validationApplicationIconMaxLegth()),
-	repositoryId: z.string().min(1, m.validationRepositoryRequired()),
-	agentId: z.string().min(1, m.validationAgentRequired()),
-	branch: z
-		.string()
-		.trim()
-		.min(1, m.validationBranchRequired())
-		.max(256, m.validationBranchMaxLength()),
-	path: z
-		.string()
-		.trim()
-		.min(1, m.validationPathRequired())
-		.max(512, m.validationPathMaxLength())
-		.refine((val) => val.endsWith(".yml") || val.endsWith(".yaml"), {
-			message: m.validationPathMustBeYAML(),
-		}),
-	imagePollEnabled: z.boolean(),
-	imagePollIntervalSeconds: z.number().int().min(60, m.validationImagePollIntervalMin()),
-	imagePollDeleteOldImages: z.boolean(),
-});
-
-type FileTreeNode = {
-	name: string;
-	path: string;
-	type: "file" | "dir";
-	children: FileTreeNode[];
-};
-
-interface RepositoryTreeEntry {
-	path: string;
-	type: "file" | "dir";
-}
-
-function sortTreeNodes(nodes: FileTreeNode[]): void {
-	nodes.sort((a, b) => {
-		if (a.type !== b.type) {
-			return a.type === "dir" ? -1 : 1;
-		}
-		return a.name.localeCompare(b.name);
-	});
-
-	for (const node of nodes) {
-		sortTreeNodes(node.children);
-	}
-}
-
-function buildFileTree(entries: RepositoryTreeEntry[]): FileTreeNode[] {
-	const root: FileTreeNode = {
-		name: "",
-		path: "",
-		type: "dir",
-		children: [],
-	};
-
-	const nodeMap = new Map<string, FileTreeNode>([["", root]]);
-
-	for (const entry of entries) {
-		const cleanPath = entry.path.trim().replace(/^\/+/, "");
-		if (!cleanPath) {
-			continue;
-		}
-
-		const segments = cleanPath.split("/");
-		for (let index = 0; index < segments.length; index += 1) {
-			const segment = segments[index];
-			const currentPath = segments.slice(0, index + 1).join("/");
-			const parentPath = segments.slice(0, index).join("/");
-			const isLeaf = index === segments.length - 1;
-
-			const parent = nodeMap.get(parentPath);
-			if (!parent) {
-				continue;
-			}
-
-			let node = nodeMap.get(currentPath);
-			if (!node) {
-				node = {
-					name: segment,
-					path: currentPath,
-					type: isLeaf ? entry.type : "dir",
-					children: [],
-				};
-				nodeMap.set(currentPath, node);
-				parent.children.push(node);
-			} else if (!isLeaf || entry.type === "dir") {
-				node.type = "dir";
-			}
-		}
-	}
-
-	sortTreeNodes(root.children);
-	return root.children;
-}
-
-function TreeNodeList({
-	nodes,
-	depth,
-	selectedPath,
-	onSelectPath,
-}: {
-	nodes: FileTreeNode[];
-	depth: number;
-	selectedPath: string;
-	onSelectPath: (path: string) => void;
-}) {
-	return (
-		<>
-			{nodes.map((node) => {
-				if (node.type === "dir") {
-					return (
-						<Collapsible key={node.path}>
-							<CollapsibleTrigger
-								render={
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
-									>
-										<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
-										<FolderIcon />
-										{node.name}
-									</Button>
-								}
-							></CollapsibleTrigger>
-							<CollapsibleContent className="mt-1 ml-5 style-lyra:ml-4">
-								<div className="flex flex-col gap-1">
-									<TreeNodeList
-										nodes={node.children}
-										depth={depth + 1}
-										selectedPath={selectedPath}
-										onSelectPath={onSelectPath}
-									/>
-								</div>
-							</CollapsibleContent>
-						</Collapsible>
-					);
-				}
-
-				const isSelected = node.path === selectedPath;
-				return (
-					<Button
-						key={node.path}
-						type="button"
-						variant="link"
-						size="sm"
-						onClick={() => onSelectPath(node.path)}
-						className={cn("text-foreground mr-auto", isSelected ? "font-medium" : "")}
-						disabled={!node.name.endsWith(".yml") && !node.name.endsWith(".yaml")}
-					>
-						<FileText className="h-4 w-4" />
-						<span className="truncate">{node.name}</span>
-					</Button>
-				);
-			})}
-		</>
-	);
-}
 
 function GeneralSettingsPage() {
 	const { id } = Route.useParams();
