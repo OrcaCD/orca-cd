@@ -1,5 +1,4 @@
 import {
-	deleteApplication,
 	deployApplication,
 	generateImageWebhook,
 	revokeImageWebhook,
@@ -7,7 +6,7 @@ import {
 	SyncStatus,
 	type Application,
 } from "@/lib/applications";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
 	Clock,
 	ExternalLink,
@@ -15,7 +14,6 @@ import {
 	GitCommit,
 	RefreshCw,
 	Server,
-	Trash2,
 	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
@@ -35,7 +33,6 @@ import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
-import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -140,7 +137,6 @@ function buildComposeDiff(previousComposeFile: string, composeFile: string): str
 
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
-	const navigate = useNavigate();
 	const { theme } = useTheme();
 
 	const { data } = useFetch<Application>("/applications/" + id);
@@ -199,15 +195,6 @@ function ApplicationDetailsPage() {
 		}
 	}
 
-	async function deleteApp() {
-		try {
-			await deleteApplication(id);
-			toast.success(m.toastApplicationDeleted({ name: data?.name ?? "" }));
-			await navigate({ to: "/applications" });
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.toastDeleteApplicationFailed());
-		}
-	}
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
@@ -231,20 +218,6 @@ function ApplicationDetailsPage() {
 						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
 						{deploymentInProgress ? m.deploying() : m.deploy()}
 					</Button>
-
-					<Separator orientation="vertical" />
-
-					<ConfirmationDialog
-						onConfirm={async () => await deleteApp()}
-						triggerProps={{ variant: "destructive" }}
-						triggerText={
-							<>
-								<Trash2 />
-								{m.delete()}
-							</>
-						}
-						description={m.deleteApplicationDescription()}
-					></ConfirmationDialog>
 				</div>
 			</div>
 

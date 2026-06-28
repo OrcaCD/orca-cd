@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { updateApplication, type Application } from "@/lib/applications";
+import { deleteApplication, updateApplication, type Application } from "@/lib/applications";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -27,6 +27,8 @@ import {
 	TreeNodeList,
 	type RepositoryTreeEntry,
 } from "@/components/dialogs/upsert-application";
+import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import { Trash2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/general")({
 	component: GeneralSettingsPage,
@@ -42,6 +44,8 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 function GeneralSettingsPage() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
+
+	const navigate = useNavigate();
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [, setOpen] = useState(false);
@@ -93,11 +97,36 @@ function GeneralSettingsPage() {
 		return buildFileTree(fileTreeEntries ?? []);
 	}, [fileTreeEntries]);
 
+	async function deleteApp() {
+		try {
+			await deleteApplication(id);
+			toast.success(m.toastApplicationDeleted({ name: application?.name ?? "" }));
+			await navigate({ to: "/applications" });
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.toastDeleteApplicationFailed());
+		}
+	}
+
 	return (
-		<div className="flex flex-col gap-6">
-			<div>
-				<h1 className="text-2xl font-bold">{m.general()}</h1>
-				<p className="text-muted-foreground text-sm">{m.generalDescription()}</p>
+		<div className="p-6 space-y-6">
+			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+				<div>
+					<h1 className="text-2xl font-bold">{m.general()}</h1>
+					<p className="text-muted-foreground text-sm">{m.generalDescription()}</p>
+				</div>
+				<div className="flex items-center gap-2">
+					<ConfirmationDialog
+						onConfirm={async () => await deleteApp()}
+						triggerProps={{ variant: "destructive" }}
+						triggerText={
+							<>
+								<Trash2 />
+								{m.delete()}
+							</>
+						}
+						description={m.deleteApplicationDescription()}
+					></ConfirmationDialog>
+				</div>
 			</div>
 
 			<Card>
