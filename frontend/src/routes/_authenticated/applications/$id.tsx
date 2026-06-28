@@ -1,8 +1,7 @@
-import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
 import {
 	Sidebar,
 	SidebarProvider,
-	SidebarHeader,
 	SidebarContent,
 	SidebarGroup,
 	SidebarGroupLabel,
@@ -18,7 +17,7 @@ import { useFetch } from "@/lib/api";
 import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Info, Settings, RefreshCw, ArrowLeft } from "lucide-react";
+import { Info, Settings, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -26,20 +25,20 @@ export const Route = createFileRoute("/_authenticated/applications/$id")({
 
 type SidebarItem =
 	| {
-			type: "link";
-			title: () => string;
-			icon: any;
-			to: string;
-	  }
+		type: "link";
+		title: () => string;
+		icon: any;
+		to: string;
+	}
 	| {
-			type: "group";
+		type: "group";
+		title: () => string;
+		children: {
 			title: () => string;
-			children: {
-				title: () => string;
-				icon?: any;
-				to: string;
-			}[];
-	  };
+			icon?: any;
+			to: string;
+		}[];
+	};
 
 const sidebarItems: SidebarItem[] = [
 	{
@@ -75,22 +74,6 @@ function ApplicationsLayout() {
 		<div className="flex flex-col min-h-[calc(100svh-3.5rem)] w-full">
 			<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">
 				<Sidebar className="border-r md:top-14">
-					<SidebarHeader className="px-4 py-5">
-						<Link
-							to="/applications"
-							className="flex items-center gap-3 font-semibold w-full p-1.5 -ml-1.5 rounded-md transition-colors hover:bg-accent hover:text-accent-foreground text-left group"
-						>
-							<ArrowLeft className="h-5 w-5 text-muted-foreground transition-transform group-hover:-translate-x-0.5" />
-
-							<div className="flex items-center gap-2 min-w-0">
-								<StaticLucideIcon
-									name={application?.icon}
-									className="h-7 w-7 text-primary shrink-0"
-								/>
-								<span className="truncate">{application?.name}</span>
-							</div>
-						</Link>
-					</SidebarHeader>
 					<SidebarContent>
 						<SidebarGroup>
 							<SidebarGroupLabel>{m.management()}</SidebarGroupLabel>
@@ -136,6 +119,19 @@ function ApplicationsLayout() {
 							<SidebarTrigger className="-ml-1" />
 							<span className="font-semibold">{m.settings()}</span>
 						</div>
+						<Breadcrumb>
+							<BreadcrumbList>
+								<BreadcrumbItem>
+									<BreadcrumbLink
+										render={<Link to="/applications">{m.pageApplications()}</Link>}
+									></BreadcrumbLink>
+								</BreadcrumbItem>
+								<BreadcrumbSeparator />
+								<BreadcrumbItem>
+									<BreadcrumbPage>{application?.name}</BreadcrumbPage>
+								</BreadcrumbItem>
+							</BreadcrumbList>
+						</Breadcrumb>
 						<Outlet />
 					</div>
 				</SidebarInset>
