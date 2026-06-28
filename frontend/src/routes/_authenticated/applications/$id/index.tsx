@@ -33,20 +33,20 @@ export const Route = createFileRoute("/_authenticated/applications/$id/")({
 
 type SidebarItem =
 	| {
-		type: "link";
-		title: () => string;
-		icon: any;
-		to: string;
-	}
-	| {
-		type: "group";
-		title: () => string;
-		children: {
+			type: "link";
 			title: () => string;
-			icon?: any;
+			icon: any;
 			to: string;
-		}[];
-	};
+	  }
+	| {
+			type: "group";
+			title: () => string;
+			children: {
+				title: () => string;
+				icon?: any;
+				to: string;
+			}[];
+	  };
 
 const sidebarItems: SidebarItem[] = [
 	{
@@ -157,7 +157,7 @@ function SidebarItem({
 	const targetPath = item.to.replace("$id", id ?? "");
 	const isActive = pathname === targetPath || pathname.startsWith(`${targetPath}/`);
 
-	const Icon = item.icon
+	const Icon = item.icon;
 
 	return (
 		<SidebarMenuItem className="mb-2">

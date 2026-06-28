@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, FileText, FolderIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import z from "zod";
-import {  updateApplication, type Application } from "@/lib/applications";
+import { updateApplication, type Application } from "@/lib/applications";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -257,9 +257,7 @@ export function GeneralSettingsPage() {
 			<Card>
 				<CardHeader>
 					<CardTitle>{m.editApplication()}</CardTitle>
-					<CardDescription>
-						{m.editApplicationDescription()}
-					</CardDescription>
+					<CardDescription>{m.editApplicationDescription()}</CardDescription>
 				</CardHeader>
 				<Separator />
 				<CardContent>
@@ -482,9 +480,7 @@ export function GeneralSettingsPage() {
 
 							<div className="flex gap-2 pt-2">
 								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting
-										? m.savingDots()
-										: m.updateApplication()}
+									{isSubmitting ? m.savingDots() : m.updateApplication()}
 								</Button>
 								<Button
 									type="button"
