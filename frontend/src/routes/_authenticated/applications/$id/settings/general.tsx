@@ -154,11 +154,20 @@ function TreeNodeList({
 				if (node.type === "dir") {
 					return (
 						<Collapsible key={node.path}>
-							<CollapsibleTrigger className="group flex w-full items-center justify-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent hover:text-accent-foreground">
-								<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
-								<FolderIcon />
-								{node.name}
-							</CollapsibleTrigger>
+							<CollapsibleTrigger
+								render={
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+									>
+										<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
+										<FolderIcon />
+										{node.name}
+									</Button>
+								}
+							></CollapsibleTrigger>
 							<CollapsibleContent className="mt-1 ml-5 style-lyra:ml-4">
 								<div className="flex flex-col gap-1">
 									<TreeNodeList
