@@ -16,6 +16,13 @@ import { useFetch } from "@/lib/api";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/image-polling")({
 	component: ImagePollingPage,
+	head: () => ({
+			meta: [
+				{
+					title: `${m.navApplications()} - ${m.settings()}`,
+				},
+			],
+		}),
 });
 
 const applicationSchema = z.object({
