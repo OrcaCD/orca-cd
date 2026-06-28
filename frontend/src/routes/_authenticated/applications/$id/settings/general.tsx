@@ -193,7 +193,7 @@ function TreeNodeList({
 	);
 }
 
-export function GeneralSettingsPage() {
+function GeneralSettingsPage() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
 
