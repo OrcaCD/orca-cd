@@ -28,7 +28,10 @@ import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_a
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsRouteImport } from './routes/_authenticated/applications/$id/settings'
+import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
+import { Route as AuthenticatedApplicationsIdDetailsIndexRouteImport } from './routes/_authenticated/applications/$id/details/index'
+import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
 import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
 
 const LoginRoute = LoginRouteImport.update({
@@ -137,10 +140,28 @@ const AuthenticatedApplicationsIdSettingsRoute =
     path: '/applications/$id/settings',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedApplicationsIdDetailsRoute =
+  AuthenticatedApplicationsIdDetailsRouteImport.update({
+    id: '/applications/$id/details',
+    path: '/applications/$id/details',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedApplicationsIdSettingsIndexRoute =
   AuthenticatedApplicationsIdSettingsIndexRouteImport.update({
     id: '/',
     path: '/',
+    getParentRoute: () => AuthenticatedApplicationsIdSettingsRoute,
+  } as any)
+const AuthenticatedApplicationsIdDetailsIndexRoute =
+  AuthenticatedApplicationsIdDetailsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedApplicationsIdDetailsRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsImagePollingRoute =
+  AuthenticatedApplicationsIdSettingsImagePollingRouteImport.update({
+    id: '/image-polling',
+    path: '/image-polling',
     getParentRoute: () => AuthenticatedApplicationsIdSettingsRoute,
   } as any)
 const AuthenticatedApplicationsIdSettingsGeneralRoute =
@@ -167,9 +188,12 @@ export interface FileRoutesByFullPath {
   '/notifications/': typeof AuthenticatedNotificationsIndexRoute
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRouteWithChildren
   '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/applications/$id/details/': typeof AuthenticatedApplicationsIdDetailsIndexRoute
   '/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -189,6 +213,8 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsIndexRoute
   '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -210,9 +236,12 @@ export interface FileRoutesById {
   '/_authenticated/notifications/': typeof AuthenticatedNotificationsIndexRoute
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
+  '/_authenticated/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRouteWithChildren
   '/_authenticated/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  '/_authenticated/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/_authenticated/applications/$id/details/': typeof AuthenticatedApplicationsIdDetailsIndexRoute
   '/_authenticated/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -234,9 +263,12 @@ export interface FileRouteTypes {
     | '/notifications/'
     | '/repositories/'
     | '/settings/'
+    | '/applications/$id/details'
     | '/applications/$id/settings'
     | '/applications/$id/'
     | '/applications/$id/settings/general'
+    | '/applications/$id/settings/image-polling'
+    | '/applications/$id/details/'
     | '/applications/$id/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -256,6 +288,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/applications/$id'
     | '/applications/$id/settings/general'
+    | '/applications/$id/settings/image-polling'
+    | '/applications/$id/details'
     | '/applications/$id/settings'
   id:
     | '__root__'
@@ -276,9 +310,12 @@ export interface FileRouteTypes {
     | '/_authenticated/notifications/'
     | '/_authenticated/repositories/'
     | '/_authenticated/settings/'
+    | '/_authenticated/applications/$id/details'
     | '/_authenticated/applications/$id/settings'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/applications/$id/settings/general'
+    | '/_authenticated/applications/$id/settings/image-polling'
+    | '/_authenticated/applications/$id/details/'
     | '/_authenticated/applications/$id/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -422,11 +459,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/applications/$id/details': {
+      id: '/_authenticated/applications/$id/details'
+      path: '/applications/$id/details'
+      fullPath: '/applications/$id/details'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdDetailsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/applications/$id/settings/': {
       id: '/_authenticated/applications/$id/settings/'
       path: '/'
       fullPath: '/applications/$id/settings/'
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdSettingsRoute
+    }
+    '/_authenticated/applications/$id/details/': {
+      id: '/_authenticated/applications/$id/details/'
+      path: '/'
+      fullPath: '/applications/$id/details/'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdDetailsIndexRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdDetailsRoute
+    }
+    '/_authenticated/applications/$id/settings/image-polling': {
+      id: '/_authenticated/applications/$id/settings/image-polling'
+      path: '/image-polling'
+      fullPath: '/applications/$id/settings/image-polling'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdSettingsRoute
     }
     '/_authenticated/applications/$id/settings/general': {
@@ -475,8 +533,24 @@ const AuthenticatedSettingsRouteWithChildren =
     AuthenticatedSettingsRouteChildren,
   )
 
+interface AuthenticatedApplicationsIdDetailsRouteChildren {
+  AuthenticatedApplicationsIdDetailsIndexRoute: typeof AuthenticatedApplicationsIdDetailsIndexRoute
+}
+
+const AuthenticatedApplicationsIdDetailsRouteChildren: AuthenticatedApplicationsIdDetailsRouteChildren =
+  {
+    AuthenticatedApplicationsIdDetailsIndexRoute:
+      AuthenticatedApplicationsIdDetailsIndexRoute,
+  }
+
+const AuthenticatedApplicationsIdDetailsRouteWithChildren =
+  AuthenticatedApplicationsIdDetailsRoute._addFileChildren(
+    AuthenticatedApplicationsIdDetailsRouteChildren,
+  )
+
 interface AuthenticatedApplicationsIdSettingsRouteChildren {
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
+  AuthenticatedApplicationsIdSettingsImagePollingRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   AuthenticatedApplicationsIdSettingsIndexRoute: typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 
@@ -484,6 +558,8 @@ const AuthenticatedApplicationsIdSettingsRouteChildren: AuthenticatedApplication
   {
     AuthenticatedApplicationsIdSettingsGeneralRoute:
       AuthenticatedApplicationsIdSettingsGeneralRoute,
+    AuthenticatedApplicationsIdSettingsImagePollingRoute:
+      AuthenticatedApplicationsIdSettingsImagePollingRoute,
     AuthenticatedApplicationsIdSettingsIndexRoute:
       AuthenticatedApplicationsIdSettingsIndexRoute,
   }
@@ -501,6 +577,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedApplicationsIndexRoute: typeof AuthenticatedApplicationsIndexRoute
   AuthenticatedNotificationsIndexRoute: typeof AuthenticatedNotificationsIndexRoute
   AuthenticatedRepositoriesIndexRoute: typeof AuthenticatedRepositoriesIndexRoute
+  AuthenticatedApplicationsIdDetailsRoute: typeof AuthenticatedApplicationsIdDetailsRouteWithChildren
   AuthenticatedApplicationsIdSettingsRoute: typeof AuthenticatedApplicationsIdSettingsRouteWithChildren
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
 }
@@ -513,6 +590,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedApplicationsIndexRoute: AuthenticatedApplicationsIndexRoute,
   AuthenticatedNotificationsIndexRoute: AuthenticatedNotificationsIndexRoute,
   AuthenticatedRepositoriesIndexRoute: AuthenticatedRepositoriesIndexRoute,
+  AuthenticatedApplicationsIdDetailsRoute:
+    AuthenticatedApplicationsIdDetailsRouteWithChildren,
   AuthenticatedApplicationsIdSettingsRoute:
     AuthenticatedApplicationsIdSettingsRouteWithChildren,
   AuthenticatedApplicationsIdIndexRoute: AuthenticatedApplicationsIdIndexRoute,

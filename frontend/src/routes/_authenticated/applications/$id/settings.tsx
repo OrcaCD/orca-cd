@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SharedSettingsLayout } from "@/components/applications-settings";
+import { ApplicationsLayout } from "./index";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings")({
-	component: SettingsLayoutWithId,
+	component: SettingsLayout,
 });
 
-function SettingsLayoutWithId() {
+function SettingsLayout() {
 	const { id } = Route.useParams();
 
-	return <SharedSettingsLayout id={id} />;
+	return <ApplicationsLayout id={id} />;
 }
