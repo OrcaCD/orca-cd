@@ -307,7 +307,7 @@ export function GeneralSettingsPage() {
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field data-invalid={isInvalid}>
+										<Field orientation="responsive" data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="repository-select">{m.repository()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -355,7 +355,7 @@ export function GeneralSettingsPage() {
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field data-invalid={isInvalid}>
+										<Field orientation="responsive" data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="agent-select">{m.columnAgent()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -401,7 +401,7 @@ export function GeneralSettingsPage() {
 								{(field) => {
 									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
 									return (
-										<Field data-invalid={isInvalid}>
+										<Field orientation="responsive" data-invalid={isInvalid}>
 											<FieldContent>
 												<FieldLabel htmlFor="branch-select">{m.branch()}</FieldLabel>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
