@@ -14,7 +14,7 @@ import {
 	SidebarTrigger,
 	useSidebar,
 } from "@/components/ui/sidebar";
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Info, RefreshCw, Settings } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import type { Application } from "@/lib/applications";
 import { useFetch } from "@/lib/api";
@@ -52,7 +52,7 @@ const sidebarItems: SidebarItem[] = [
 	{
 		type: "link",
 		title: () => m.details(),
-		icon: Settings,
+		icon: Info,
 		to: "/applications/$id/details",
 	},
 	{
@@ -66,6 +66,7 @@ const sidebarItems: SidebarItem[] = [
 			},
 			{
 				title: () => m.imagePollSectionTitle(),
+				icon: RefreshCw,
 				to: "/applications/$id/settings/image-polling",
 			},
 		],
