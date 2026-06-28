@@ -320,6 +320,12 @@ export function GeneralSettingsPage() {
 													form.setFieldValue("branch", "");
 													form.setFieldValue("path", "");
 												}}
+												items={
+													repos?.map((repo) => ({
+														label: repo.name,
+														value: repo.id,
+													})) ?? []
+												}
 											>
 												<SelectTrigger
 													id="repository-select"
@@ -360,6 +366,12 @@ export function GeneralSettingsPage() {
 												onValueChange={(value) => {
 													field.handleChange(value ?? "");
 												}}
+												items={
+													agents?.map((agent) => ({
+														label: agent.name,
+														value: agent.id,
+													})) ?? []
+												}
 											>
 												<SelectTrigger
 													id="agent-select"
@@ -402,6 +414,12 @@ export function GeneralSettingsPage() {
 													form.setFieldValue("path", "");
 												}}
 												disabled={!repositoryId || isBranchesLoading}
+												items={
+													branches?.map((branch) => ({
+														label: branch,
+														value: branch,
+													})) ?? []
+												}
 											>
 												<SelectTrigger
 													id="branch-select"
