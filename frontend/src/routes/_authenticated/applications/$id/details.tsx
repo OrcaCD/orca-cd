@@ -2,11 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ApplicationsLayout } from "./index";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
-  component: DetailsLayout,
+	component: DetailsLayout,
 });
 
 function DetailsLayout() {
-  const { id } = Route.useParams();
+	const { id } = Route.useParams();
 
-  return <ApplicationsLayout id={id} />;
+	return <ApplicationsLayout id={id} />;
 }

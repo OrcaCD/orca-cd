@@ -144,9 +144,7 @@ function TreeNodeList({
 				if (node.type === "dir") {
 					return (
 						<Collapsible key={node.path}>
-							<CollapsibleTrigger
-								className="group flex w-full items-center justify-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent hover:text-accent-foreground"
-							>
+							<CollapsibleTrigger className="group flex w-full items-center justify-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent hover:text-accent-foreground">
 								<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
 								<FolderIcon />
 								{node.name}

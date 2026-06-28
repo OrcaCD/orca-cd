@@ -1,16 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-
-export const Route = createFileRoute("/_authenticated/applications/$id/")({
-	beforeLoad({ params }) {
-		throw redirect({
-			to: "/applications/$id/details",
-			params: {
-				id: params.id,
-			},
-		});
-	},
-});
-
+import { createFileRoute, redirect, Link, Outlet } from "@tanstack/react-router";
 import {
 	Sidebar,
 	SidebarContent,
@@ -26,36 +14,46 @@ import {
 	SidebarTrigger,
 	useSidebar,
 } from "@/components/ui/sidebar";
-import { Link, Outlet } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import type { Application } from "@/lib/applications";
 import { useFetch } from "@/lib/api";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
+export const Route = createFileRoute("/_authenticated/applications/$id/")({
+	beforeLoad({ params }) {
+		throw redirect({
+			to: "/applications/$id/details",
+			params: {
+				id: params.id,
+			},
+		});
+	},
+});
+
 type SidebarItem =
 	| {
-		type: "link";
-		title: () => string;
-		icon: any;
-		to: string;
-	}
-	| {
-		type: "group";
-		title: () => string;
-		children: {
+			type: "link";
 			title: () => string;
 			icon: any;
 			to: string;
-		}[];
-	};
+	  }
+	| {
+			type: "group";
+			title: () => string;
+			children: {
+				title: () => string;
+				icon: any;
+				to: string;
+			}[];
+	  };
 
 const sidebarItems: SidebarItem[] = [
 	{
 		type: "link",
 		title: () => "Details",
 		icon: Settings,
-		to: "/applications/$id/details"
+		to: "/applications/$id/details",
 	},
 	{
 		type: "group",
@@ -70,11 +68,7 @@ const sidebarItems: SidebarItem[] = [
 	},
 ];
 
-export function ApplicationsLayout({
-	id
-}: {
-	id?: string;
-}) {
+export function ApplicationsLayout({ id }: { id?: string }) {
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
 
 	return (
@@ -160,7 +154,8 @@ function SidebarItem({
 
 	return (
 		<SidebarMenuItem className="mb-2">
-			<SidebarMenuButton isActive={isActive}
+			<SidebarMenuButton
+				isActive={isActive}
 				render={
 					<Link
 						to={item.to}

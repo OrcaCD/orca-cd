@@ -105,10 +105,7 @@ function SettingsSidebarMenuItem({
 							onClick={() => isMobile && setOpenMobile(false)}
 						/>
 					) : (
-						<Link
-							to={item.pathWithoutId}
-							onClick={() => isMobile && setOpenMobile(false)}
-						/>
+						<Link to={item.pathWithoutId} onClick={() => isMobile && setOpenMobile(false)} />
 					)
 				}
 			>
