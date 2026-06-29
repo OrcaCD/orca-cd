@@ -935,6 +935,72 @@ func TestExecuteDeployment_NilDeployer(t *testing.T) {
 	}
 }
 
+type stubReporter struct {
+	health map[string]agentdocker.HealthState
+}
+
+func (r *stubReporter) ApplicationHealth(_ context.Context, appID string) agentdocker.HealthState {
+	return r.health[appID]
+}
+
+func TestReportApplicationStatus_SendsOneReportForAllApps(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 4)}
+	reporter := &stubReporter{health: map[string]agentdocker.HealthState{
+		"app-1": agentdocker.HealthHealthy,
+		"app-2": agentdocker.HealthUnhealthy,
+	}}
+	settings := &messages.AgentSettings{ImagePollSettings: []*messages.ImagePollSettings{
+		{ApplicationId: "app-1"},
+		{ApplicationId: "app-2"},
+	}}
+
+	reportApplicationStatus(context.Background(), sender, reporter, settings)
+
+	var msg *messages.ClientMessage
+	select {
+	case msg = <-sender.sent:
+	case <-time.After(time.Second):
+		t.Fatal("expected an application status report")
+	}
+
+	report := msg.GetApplicationStatusReport()
+	if report == nil {
+		t.Fatalf("expected ApplicationStatusReport, got %T", msg.Payload)
+	}
+	if len(report.Statuses) != 2 {
+		t.Fatalf("expected 2 statuses, got %d", len(report.Statuses))
+	}
+
+	// Exactly one message must have been sent.
+	select {
+	case <-sender.sent:
+		t.Fatal("expected exactly one report message")
+	default:
+	}
+
+	byID := make(map[string]messages.HealthStatus, 2)
+	for _, s := range report.Statuses {
+		byID[s.ApplicationId] = s.Health
+	}
+	if byID["app-1"] != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("app-1: expected healthy, got %v", byID["app-1"])
+	}
+	if byID["app-2"] != messages.HealthStatus_HEALTH_STATUS_UNHEALTHY {
+		t.Errorf("app-2: expected unhealthy, got %v", byID["app-2"])
+	}
+}
+
+func TestReportApplicationStatus_NoAppsSendsNothing(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	reportApplicationStatus(context.Background(), sender, &stubReporter{}, &messages.AgentSettings{})
+
+	select {
+	case <-sender.sent:
+		t.Fatal("expected no message when there are no applications")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestConnTracker_CloseNilConn(t *testing.T) {
 	var tracker connTracker
 	tracker.close()

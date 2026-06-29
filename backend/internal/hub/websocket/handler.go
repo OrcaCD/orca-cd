@@ -9,6 +9,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gin-gonic/gin"
@@ -108,10 +109,8 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
-		_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(c.Request.Context(), "health_status", models.Healthy)
-		if applicationErr != nil {
-			log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to healthy")
-		}
+		// Application health is reported by the agent (see handleApplicationStatusReport)
+		// once it has inspected its containers — the hub no longer assumes Healthy on connect.
 
 		go h.WritePump(client, log)
 
@@ -203,8 +202,46 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(client, p.PullImagesResult, log)
+	case *messages.ClientMessage_ApplicationStatusReport:
+		handleApplicationStatusReport(client, p.ApplicationStatusReport, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
+	}
+}
+
+// handleApplicationStatusReport applies the health an agent reports for its
+// applications. Updates are scoped to the reporting agent so an agent can only
+// affect its own applications.
+func handleApplicationStatusReport(client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
+	if report == nil || len(report.Statuses) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for _, status := range report.Statuses {
+		if _, err := gorm.G[models.Application](db.DB).
+			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
+			Update(ctx, "health_status", protoHealthToModel(status.Health)); err != nil {
+			log.Error().Err(err).
+				Str("agent_id", client.Id).
+				Str("applicationId", status.ApplicationId).
+				Msg("failed to update application health from status report")
+		}
+	}
+
+	sse.PublishUpdate("/api/v1/applications")
+}
+
+func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
+	switch h {
+	case messages.HealthStatus_HEALTH_STATUS_HEALTHY:
+		return models.Healthy
+	case messages.HealthStatus_HEALTH_STATUS_UNHEALTHY:
+		return models.Unhealthy
+	default:
+		return models.UnknownHealth
 	}
 }
 

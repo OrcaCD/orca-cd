@@ -12,6 +12,7 @@ message ClientMessage {
     DeployResult deploy_result = 4;
     PullImagesResult pull_images_result = 5;
     DeleteResult delete_result = 6;
+    ApplicationStatusReport application_status_report = 7;
   }
 }
 
@@ -102,4 +103,21 @@ message PullImagesResult {
   bool success = 3;
   bool images_updated = 4;
   string error_message = 5;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_UNHEALTHY = 2;
+}
+
+message ApplicationStatus {
+  string application_id = 1;
+  HealthStatus health = 2;
+}
+
+// ApplicationStatusReport carries the health of every application managed by an
+// agent in a single message, sent right after the agent connects.
+message ApplicationStatusReport {
+  repeated ApplicationStatus statuses = 1;
 }

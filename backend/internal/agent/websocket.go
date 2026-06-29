@@ -34,6 +34,10 @@ type pollerHandler interface {
 	TriggerNow(appID, appName, requestID string)
 }
 
+type statusReporter interface {
+	ApplicationHealth(ctx context.Context, appID string) docker.HealthState
+}
+
 type messageSender struct {
 	conn    *websocket.Conn
 	mu      sync.Mutex
@@ -174,6 +178,12 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		go executeDelete(ctx, sender, deployer, p.DeleteRequest)
 	case *messages.ServerMessage_AgentSettings:
 		go applyAgentSettings(poller, p.AgentSettings)
+		// The hub sends AgentSettings right after connect, carrying the agent's
+		// full app list. Use it to report the real health of every application in
+		// a single message so the hub doesn't have to guess on reconnect.
+		if reporter, ok := deployer.(statusReporter); ok {
+			go reportApplicationStatus(ctx, sender, reporter, p.AgentSettings)
+		}
 	case *messages.ServerMessage_PullImagesRequest:
 		go executePullImages(poller, p.PullImagesRequest)
 	default:
@@ -198,6 +208,44 @@ func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) 
 		})
 	}
 	poller.ApplySettings(apps)
+}
+
+func toProtoHealth(s docker.HealthState) messages.HealthStatus {
+	switch s {
+	case docker.HealthHealthy:
+		return messages.HealthStatus_HEALTH_STATUS_HEALTHY
+	case docker.HealthUnhealthy:
+		return messages.HealthStatus_HEALTH_STATUS_UNHEALTHY
+	default:
+		return messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED
+	}
+}
+
+// reportApplicationStatus inspects every application the hub assigned to this
+// agent and sends their health back in a single ApplicationStatusReport.
+func reportApplicationStatus(ctx context.Context, sender outboundSender, reporter statusReporter, settings *messages.AgentSettings) {
+	if reporter == nil || settings == nil {
+		return
+	}
+
+	statuses := make([]*messages.ApplicationStatus, 0, len(settings.ImagePollSettings))
+	for _, s := range settings.ImagePollSettings {
+		statuses = append(statuses, &messages.ApplicationStatus{
+			ApplicationId: s.ApplicationId,
+			Health:        toProtoHealth(reporter.ApplicationHealth(ctx, s.ApplicationId)),
+		})
+	}
+	if len(statuses) == 0 {
+		return
+	}
+
+	if err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{Statuses: statuses},
+		},
+	}); err != nil {
+		Log.Error().Err(err).Msg("failed to send application status report")
+	}
 }
 
 func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
