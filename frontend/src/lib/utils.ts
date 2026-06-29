@@ -62,3 +62,5 @@ export function toSearchableText(value: unknown): string {
 			return "";
 	}
 }
+
+export const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);

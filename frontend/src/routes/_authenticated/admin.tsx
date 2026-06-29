@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { isApple } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/admin")({
 	beforeLoad: ({ context }) => {
@@ -60,7 +61,6 @@ const adminPages = [
 
 function AdminLayout() {
 	const { location } = useRouterState();
-	const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 	return (
 		<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">

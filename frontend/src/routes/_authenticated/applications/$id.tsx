@@ -26,6 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useFetch } from "@/lib/api";
 import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Info, Settings, RefreshCw } from "lucide-react";
 
@@ -74,7 +75,6 @@ function ApplicationsLayout() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
 	const { location } = useRouterState();
-	const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 	return (
 		<div className="flex flex-col min-h-[calc(100svh-3.5rem)] w-full">
