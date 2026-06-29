@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -15,7 +16,8 @@ import (
 var defaultCipher *Cipher
 
 type Cipher struct {
-	aead cipher.AEAD
+	aead    cipher.AEAD
+	hashKey []byte
 }
 
 func New(appSecret string) (*Cipher, error) {
@@ -27,7 +29,11 @@ func New(appSecret string) (*Cipher, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Cipher{aead: aead}, nil
+	hashKey, err := deriveKey(appSecret, "DB_BLIND_INDEX_KEY")
+	if err != nil {
+		return nil, err
+	}
+	return &Cipher{aead: aead, hashKey: hashKey}, nil
 }
 
 func Init(appSecret string) error {
@@ -90,6 +96,21 @@ func (c *Cipher) Decrypt(encoded string) (string, error) {
 	}
 
 	return string(decrypted), nil
+}
+
+// BlindIndex returns a deterministic, keyed hash of plaintext suitable for
+// equality lookups on encrypted columns (a "blind index"). It is keyed with a
+// secret derived from APP_SECRET so the stored value does not leak the plaintext
+// to anyone without the key. Callers must normalize the input themselves if the
+// comparison should be case- or whitespace-insensitive.
+func BlindIndex(plaintext string) string {
+	return defaultCipher.BlindIndex(plaintext)
+}
+
+func (c *Cipher) BlindIndex(plaintext string) string {
+	mac := hmac.New(sha256.New, c.hashKey)
+	mac.Write([]byte(plaintext))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func deriveKey(secret, info string) ([]byte, error) {

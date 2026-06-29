@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -135,25 +134,20 @@ func GetApplicationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, toApplicationResponse(&application))
 }
 
-// applicationNameTaken reports whether another application already uses name
-// (case-insensitive). Names are stored encrypted with a random nonce, so a DB
-// unique index can't enforce this — we decrypt and compare in code. excludeID
-// skips a record (the one being updated).
-func applicationNameTaken(ctx context.Context, name, excludeID string) (bool, error) {
-	apps, err := gorm.G[models.Application](db.DB).Find(ctx)
+// applicationNameTaken reports whether another application on the same agent
+// already uses name (case-insensitive). Names are stored encrypted with a random
+// nonce, so we match on the name_hash blind index instead of decrypting every
+// row. excludeID skips a record (the one being updated). Uniqueness is scoped per
+// agent — the same name may exist on different agents.
+func applicationNameTaken(ctx context.Context, name, agentID, excludeID string) (bool, error) {
+	hash := crypto.BlindIndex(models.NormalizeName(name))
+	count, err := gorm.G[models.Application](db.DB).
+		Where("agent_id = ? AND name_hash = ? AND id != ?", agentID, hash, excludeID).
+		Count(ctx, "*")
 	if err != nil {
 		return false, err
 	}
-	target := strings.TrimSpace(name)
-	for i := range apps {
-		if apps[i].Id == excludeID {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(apps[i].Name.String()), target) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return count > 0, nil
 }
 
 func CreateApplicationHandler(c *gin.Context) {
@@ -183,7 +177,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, "")
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -201,6 +195,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	application := models.Application{
 		Name:                     crypto.EncryptedString(req.Name),
+		NameHash:                 crypto.BlindIndex(models.NormalizeName(req.Name)),
 		Icon:                     defaultString(req.Icon, defaultApplicationIcon),
 		RepositoryId:             req.RepositoryId,
 		AgentId:                  req.AgentId,
@@ -305,7 +300,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, id)
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -323,6 +318,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	oldAgentId := application.AgentId
 	application.Name = crypto.EncryptedString(req.Name)
+	application.NameHash = crypto.BlindIndex(models.NormalizeName(req.Name))
 	if req.Icon != "" {
 		application.Icon = req.Icon
 	}

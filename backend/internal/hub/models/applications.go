@@ -1,10 +1,18 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 )
+
+// NormalizeName canonicalizes an application name for case- and
+// whitespace-insensitive uniqueness checks. It is the single source of truth
+// used by both the route handlers and the name-hash backfill.
+func NormalizeName(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
 
 type SyncStatus string
 
@@ -26,6 +34,7 @@ const (
 type Application struct {
 	Base
 	Name                     crypto.EncryptedString  `gorm:"type:text;not null"`
+	NameHash                 string                  `gorm:"type:text;not null;default:''"`
 	Icon                     string                  `gorm:"type:text;not null;default:box"`
 	RepositoryId             string                  `gorm:"type:text;not null"`
 	Repository               Repository              `gorm:"foreignKey:RepositoryId"`

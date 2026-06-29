@@ -134,6 +134,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 	now := time.Now().UTC().Truncate(time.Second)
 	app := models.Application{
 		Name:                crypto.EncryptedString(name),
+		NameHash:            crypto.BlindIndex(models.NormalizeName(name)),
 		Icon:                "box",
 		RepositoryId:        repoId,
 		AgentId:             agentId,
@@ -481,6 +482,40 @@ func TestCreateApplicationHandler_DuplicateName(t *testing.T) {
 	db.DB.Model(&models.Application{}).Count(&count)
 	if count != 1 {
 		t.Errorf("expected no second application created, got %d", count)
+	}
+}
+
+func TestCreateApplicationHandler_SameNameDifferentAgentAllowed(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-multiagent")
+	agentA := seedTestAgent(t, "agent-a")
+	agentB := seedTestAgent(t, "agent-b")
+	seedTestApplication(t, repo.Id, agentA.Id, "Billing Service")
+
+	// Same name, different agent — uniqueness is scoped per agent, so this is allowed.
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Billing Service",
+		"repositoryId": repo.Id,
+		"agentId":      agentB.Id,
+		"branch":       "main",
+		"path":         "services/billing.yml",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.DB.Model(&models.Application{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected two applications, got %d", count)
 	}
 }
 
