@@ -77,6 +77,10 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 		}
 		if DefaultQueue != nil {
 			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message)
+		} else {
+			log.Error().Str("repositoryId", repo.Id).Str("branch", branch).Msg("sync queue not initialized")
+			markRepositoryFailed(ctx, repo.Id, "sync queue not initialized", log)
+			return
 		}
 	}
 
