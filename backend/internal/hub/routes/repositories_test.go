@@ -187,6 +187,105 @@ func TestListRepositoriesHandler_ReturnsAll(t *testing.T) {
 	}
 }
 
+func TestGetRepositoryHandler_NotFound(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/nonexistent", nil)
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent"}}
+
+	GetRepositoryHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetRepositoryHandler_ReturnsRepository(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "Repo A",
+		Url:        "https://github.com/owner/repo-a",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	agent := models.Agent{
+		Name:   crypto.EncryptedString("Test Agent"),
+		KeyId:  crypto.EncryptedString("test-agent-key"),
+		Status: models.AgentStatusOffline,
+	}
+	if err := db.DB.WithContext(t.Context()).Create(&agent).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+
+	apps := []models.Application{
+		{
+			Name:          crypto.EncryptedString("App A"),
+			RepositoryId:  repo.Id,
+			AgentId:       agent.Id,
+			SyncStatus:    models.UnknownSync,
+			HealthStatus:  models.UnknownHealth,
+			Branch:        "main",
+			Commit:        "abc123",
+			CommitMessage: "seed",
+			Path:          "/",
+			ComposeFile:   crypto.EncryptedString("services: {}"),
+		},
+		{
+			Name:          crypto.EncryptedString("App B"),
+			RepositoryId:  repo.Id,
+			AgentId:       agent.Id,
+			SyncStatus:    models.UnknownSync,
+			HealthStatus:  models.UnknownHealth,
+			Branch:        "main",
+			Commit:        "def456",
+			CommitMessage: "seed",
+			Path:          "/",
+			ComposeFile:   crypto.EncryptedString("services: {}"),
+		},
+	}
+	for i := range apps {
+		if err := db.DB.WithContext(t.Context()).Select("*").Create(&apps[i]).Error; err != nil {
+			t.Fatalf("failed to seed application: %v", err)
+		}
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	GetRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Id != repo.Id {
+		t.Errorf("expected id %q, got %q", repo.Id, body.Id)
+	}
+	if body.Name != "Repo A" {
+		t.Errorf("expected name %q, got %q", "Repo A", body.Name)
+	}
+	if body.AppCount != 2 {
+		t.Errorf("expected appCount 2, got %d", body.AppCount)
+	}
+	if body.WebhookSecret != nil {
+		t.Errorf("expected no webhookSecret in response, got %q", *body.WebhookSecret)
+	}
+}
+
 func TestCreateRepositoryHandler_InvalidRequest(t *testing.T) {
 	setupTestDBWithRepos(t)
 
