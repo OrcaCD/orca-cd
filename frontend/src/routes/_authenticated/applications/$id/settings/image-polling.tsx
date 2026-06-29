@@ -91,10 +91,6 @@ function ImagePollingPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div>
-				<h1 className="text-2xl font-bold">{m.imagePollSectionTitle()}</h1>
-				<p className="text-muted-foreground text-sm">{m.imagePollDescription()}</p>
-			</div>
 			<Card>
 				<CardHeader>
 					<CardTitle>{m.imagePollSectionTitle()}</CardTitle>

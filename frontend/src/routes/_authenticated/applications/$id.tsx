@@ -6,6 +6,8 @@ import {
 	BreadcrumbSeparator,
 	BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Separator } from "@/components/ui/separator";
 import {
 	Sidebar,
 	SidebarProvider,
@@ -20,9 +22,11 @@ import {
 	SidebarMenuItem,
 	SidebarMenuButton,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFetch } from "@/lib/api";
 import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Info, Settings, RefreshCw } from "lucide-react";
 
@@ -30,32 +34,27 @@ export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
 });
 
-type SidebarItem =
-	| {
-			type: "link";
-			title: () => string;
-			icon: any;
-			to: string;
-	  }
-	| {
-			type: "group";
-			title: () => string;
-			children: {
-				title: () => string;
-				icon?: any;
-				to: string;
-			}[];
-	  };
+type SidebarGroup = {
+	title: () => string;
+	children: {
+		title: () => string;
+		icon?: any;
+		to: string;
+	}[];
+};
 
-const sidebarItems: SidebarItem[] = [
+const sidebarGroups: SidebarGroup[] = [
 	{
-		type: "link",
-		title: () => m.details(),
-		icon: Info,
-		to: "/applications/$id/details",
+		title: () => m.management(),
+		children: [
+			{
+				title: () => m.details(),
+				icon: Info,
+				to: "/applications/$id/details",
+			},
+		],
 	},
 	{
-		type: "group",
 		title: () => m.settings(),
 		children: [
 			{
@@ -80,83 +79,77 @@ function ApplicationsLayout() {
 	return (
 		<div className="flex flex-col min-h-[calc(100svh-3.5rem)] w-full">
 			<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">
-				<Sidebar className="border-r md:top-14">
+				<Sidebar collapsible="icon" className="border-r md:top-14">
 					<SidebarContent>
-						<SidebarGroup>
-							<SidebarGroupLabel>{m.management()}</SidebarGroupLabel>
-							<SidebarGroupContent>
-								<SidebarMenu>
-									{sidebarItems.map((item) => {
-										if (item.type === "link") {
-											return (
-												<SidebarItem
-													key={item.to}
-													item={item}
-													pathname={location.pathname}
-													id={id}
-												/>
-											);
-										}
-
-										return (
-											<SidebarGroup key={item.title()} className="p-0">
-												<SidebarGroupLabel>{item.title()}</SidebarGroupLabel>
-
-												<SidebarGroupContent>
-													{item.children.map((child) => (
-														<SidebarItem
-															key={child.to}
-															item={child}
-															pathname={location.pathname}
-															id={id}
-														/>
-													))}
-												</SidebarGroupContent>
-											</SidebarGroup>
-										);
-									})}
-								</SidebarMenu>
-							</SidebarGroupContent>
-						</SidebarGroup>
+						{sidebarGroups.map((group) => (
+							<SidebarGroup key={group.title()}>
+								<SidebarGroupLabel>{group.title()}</SidebarGroupLabel>
+								<SidebarGroupContent>
+									<SidebarMenu>
+										{group.children.map((child) => (
+											<SidebarItem
+												key={child.to}
+												item={child}
+												pathname={location.pathname}
+												id={id}
+											/>
+										))}
+									</SidebarMenu>
+								</SidebarGroupContent>
+							</SidebarGroup>
+						))}
 					</SidebarContent>
 				</Sidebar>
 				<SidebarInset className="min-w-0">
 					<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
-						<div className="flex items-center gap-2 md:hidden">
-							<SidebarTrigger className="-ml-1" />
-							<span className="font-semibold">{m.settings()}</span>
-						</div>
-						<Breadcrumb>
-							<BreadcrumbList>
-								<BreadcrumbItem>
-									<BreadcrumbLink
-										render={<Link to="/applications">{m.pageApplications()}</Link>}
-									></BreadcrumbLink>
-								</BreadcrumbItem>
-								<BreadcrumbSeparator />
-								{location.pathname.includes("/settings") ? (
-									<>
-										<BreadcrumbItem>
-											<BreadcrumbLink
-												render={
-													<Link to="/applications/$id/details" params={{ id }}>
-														{application?.name}
-													</Link>
-												}
-											></BreadcrumbLink>
-										</BreadcrumbItem>
-										<BreadcrumbSeparator />
-										<BreadcrumbItem>
-											<BreadcrumbPage>{m.settings()}</BreadcrumbPage>
-										</BreadcrumbItem>
-									</>
-								) : (
+						<div className="flex items-center gap-2">
+							<Tooltip>
+								<TooltipTrigger render={<SidebarTrigger className="-ml-1" />} />
+								<TooltipContent>
+									<p>{m.toggleSidebar()}</p>
+
+									<KbdGroup>
+										<Kbd>{isApple ? "⌘" : "Ctrl"}</Kbd>
+										<Kbd>B</Kbd>
+									</KbdGroup>
+								</TooltipContent>
+							</Tooltip>
+							<Separator
+								orientation="vertical"
+								className="mr-2 my-auto data-[orientation=vertical]:h-4"
+							/>
+							<Breadcrumb>
+								<BreadcrumbList>
 									<BreadcrumbItem>
-										<BreadcrumbPage>{application?.name}</BreadcrumbPage>
+										<BreadcrumbLink
+											render={<Link to="/applications">{m.pageApplications()}</Link>}
+										></BreadcrumbLink>
 									</BreadcrumbItem>
-								)}
-							</BreadcrumbList>
-						</Breadcrumb>
+									<BreadcrumbSeparator />
+									{location.pathname.includes("/settings") ? (
+										<>
+											<BreadcrumbItem>
+												<BreadcrumbLink
+													render={
+														<Link to="/applications/$id/details" params={{ id }}>
+															{application?.name}
+														</Link>
+													}
+												></BreadcrumbLink>
+											</BreadcrumbItem>
+											<BreadcrumbSeparator />
+											<BreadcrumbItem>
+												<BreadcrumbPage>{m.settings()}</BreadcrumbPage>
+											</BreadcrumbItem>
+										</>
+									) : (
+										<BreadcrumbItem>
+											<BreadcrumbPage>{application?.name}</BreadcrumbPage>
+										</BreadcrumbItem>
+									)}
+								</BreadcrumbList>
+							</Breadcrumb>
+						</div>
 						<Outlet />
 					</div>
 				</SidebarInset>
