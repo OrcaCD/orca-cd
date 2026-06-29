@@ -3,6 +3,7 @@ package applications
 import (
 	"context"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -50,6 +51,21 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	deployer := application_deployer.DefaultApplicationDeployer
 	if deployer == nil {
 		log.Error().Str("applicationId", job.Application.Id).Msg("application deployer not initialized")
+		failSyncJob(job.Application, log)
+		return
+	}
+
+	if _, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", job.Application.Id).
+		Select("ComposeFile", "PreviousComposeFile", "Commit", "CommitMessage").
+		Updates(context.Background(), models.Application{
+			ComposeFile:         crypto.EncryptedString(content),
+			PreviousComposeFile: job.Application.ComposeFile,
+			Commit:              job.Commit,
+			CommitMessage:       job.CommitMessage,
+		}); err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).
+			Msg("failed to persist compose file before deploy")
 		failSyncJob(job.Application, log)
 		return
 	}

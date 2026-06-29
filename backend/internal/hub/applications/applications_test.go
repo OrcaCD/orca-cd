@@ -10,6 +10,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/rs/zerolog"
@@ -253,6 +254,72 @@ func TestProcessSyncJob_NoComposeChange_UpdatesCommit(t *testing.T) {
 	}
 	if updated.ComposeFile.String() != compose {
 		t.Errorf("expected ComposeFile unchanged, got %q", updated.ComposeFile.String())
+	}
+}
+
+// stubDeployer is a fire-and-forget ApplicationDeploymentManager that records the
+// dispatched compose without touching the DB, so the optimistic persistence in
+// processSyncJob can be asserted in isolation.
+type stubDeployer struct {
+	called  bool
+	compose string
+	err     error
+}
+
+func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile string) error {
+	s.called = true
+	s.compose = composeFile
+	return s.err
+}
+
+// Compose changed: processSyncJob persists the new compose, the previous compose,
+// and the new commit before dispatching the deploy.
+func TestProcessSyncJob_ComposeChanged_PersistsComposeAndCommit(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	const oldCompose = "services:\n  app:\n    image: myimage:1.0\n"
+	const newCompose = "services:\n  app:\n    image: myimage:2.0\n"
+	app := seedApp(t, repo.Id, agent.Id, oldCompose)
+
+	stub := &stubDeployer{}
+	prev := application_deployer.DefaultApplicationDeployer
+	application_deployer.DefaultApplicationDeployer = stub
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = prev })
+
+	provider := &mockProvider{fileContent: newCompose}
+	nop := zerolog.Nop()
+
+	processSyncJob(t.Context(), syncJob{
+		Application:        app,
+		Repository:         repo,
+		RepositoryProvider: provider,
+		Commit:             "newsha",
+		CommitMessage:      "new commit",
+	}, &nop)
+
+	if !stub.called {
+		t.Fatal("expected deployer to be triggered")
+	}
+	if stub.compose != newCompose {
+		t.Errorf("expected dispatched compose %q, got %q", newCompose, stub.compose)
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.ComposeFile.String() != newCompose {
+		t.Errorf("expected ComposeFile %q, got %q", newCompose, updated.ComposeFile.String())
+	}
+	if updated.PreviousComposeFile.String() != oldCompose {
+		t.Errorf("expected PreviousComposeFile %q, got %q", oldCompose, updated.PreviousComposeFile.String())
+	}
+	if updated.Commit != "newsha" {
+		t.Errorf("expected Commit %q, got %q", "newsha", updated.Commit)
+	}
+	if updated.CommitMessage != "new commit" {
+		t.Errorf("expected CommitMessage %q, got %q", "new commit", updated.CommitMessage)
 	}
 }
 
