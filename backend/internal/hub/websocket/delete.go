@@ -24,11 +24,11 @@ func (h *Hub) RemoveApplication(ctx context.Context, agentID, applicationID, app
 	h.pendingDeletes[requestID] = ch
 	h.deleteMu.Unlock()
 
-	cleanup := func() {
+	defer func() {
 		h.deleteMu.Lock()
 		delete(h.pendingDeletes, requestID)
 		h.deleteMu.Unlock()
-	}
+	}()
 
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_DeleteRequest{
@@ -41,7 +41,6 @@ func (h *Hub) RemoveApplication(ctx context.Context, agentID, applicationID, app
 	}
 
 	if !h.Send(agentID, msg) {
-		cleanup()
 		return nil, ErrAgentOffline
 	}
 
@@ -49,7 +48,6 @@ func (h *Hub) RemoveApplication(ctx context.Context, agentID, applicationID, app
 	case result := <-ch:
 		return result, nil
 	case <-ctx.Done():
-		cleanup()
 		return nil, ctx.Err()
 	}
 }
