@@ -24,11 +24,9 @@ import {
 	RefreshCw,
 	Server,
 	Trash2,
-	TriangleAlert,
 	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,6 +45,7 @@ import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/t
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { Separator } from "@/components/ui/separator";
+import ErrorAlert from "@/components/alerts/error-alert";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/")({
 	component: ApplicationDetailsPage,
@@ -236,13 +235,7 @@ function ApplicationDetailsPage() {
 			</Breadcrumb>
 
 			{data?.lastSyncError && (
-				<Alert variant="destructive" className="border-destructive/50 bg-destructive/10">
-					<TriangleAlert className="h-4 w-4" />
-					<AlertTitle>{m.syncFailed()}</AlertTitle>
-					<AlertDescription className="break-words whitespace-pre-wrap">
-						{data.lastSyncError}
-					</AlertDescription>
-				</Alert>
+				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
 			)}
 
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
