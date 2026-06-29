@@ -32,7 +32,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Separator } from "../ui/separator";
 import LucideIconPicker, { type LucideIconName } from "../lucide-icon-picker";
 
-const applicationSchema = z.object({
+export const applicationSchema = z.object({
 	name: z
 		.string()
 		.trim()
@@ -78,7 +78,7 @@ type FileTreeNode = {
 	children: FileTreeNode[];
 };
 
-interface RepositoryTreeEntry {
+export interface RepositoryTreeEntry {
 	path: string;
 	type: "file" | "dir";
 }
@@ -96,7 +96,7 @@ function sortTreeNodes(nodes: FileTreeNode[]): void {
 	}
 }
 
-function buildFileTree(entries: RepositoryTreeEntry[]): FileTreeNode[] {
+export function buildFileTree(entries: RepositoryTreeEntry[]): FileTreeNode[] {
 	const root: FileTreeNode = {
 		name: "",
 		path: "",
@@ -144,7 +144,7 @@ function buildFileTree(entries: RepositoryTreeEntry[]): FileTreeNode[] {
 	return root.children;
 }
 
-function TreeNodeList({
+export function TreeNodeList({
 	nodes,
 	depth,
 	selectedPath,

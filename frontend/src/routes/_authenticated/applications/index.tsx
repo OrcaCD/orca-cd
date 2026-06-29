@@ -1,4 +1,3 @@
-import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -14,6 +13,7 @@ import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
