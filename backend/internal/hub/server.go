@@ -93,6 +93,7 @@ var Log = logger.New("hub", false)
 func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
+	applications.Log = Log
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")

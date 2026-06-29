@@ -7,8 +7,11 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/rs/zerolog"
 )
+
+var Log = logger.New("hub", false)
 
 const defaultWorkerCount = 4
 const maxQueueSize = defaultWorkerCount * 6
@@ -31,14 +34,6 @@ func NewQueue(log *zerolog.Logger) *Queue {
 		log:     log,
 		workers: defaultWorkerCount,
 	}
-}
-
-func QueueLogger() *zerolog.Logger {
-	if DefaultQueue != nil {
-		return DefaultQueue.log
-	}
-	nop := zerolog.Nop()
-	return &nop
 }
 
 func (q *Queue) Start() {

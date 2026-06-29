@@ -106,7 +106,7 @@ func WebhookHandler(c *gin.Context) {
 	// TODO: get commit message for push event and pass it to the queue.
 	// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers.
 	// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit.
-	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), applications.QueueLogger())
+	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), &applications.Log)
 
 	c.AbortWithStatus(http.StatusNoContent)
 }
@@ -150,7 +150,7 @@ func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 	if commit != "" {
 		resolve = applications.StaticCommit(commit, "")
 	}
-	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, resolve, applications.QueueLogger())
+	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, resolve, &applications.Log)
 
 	c.AbortWithStatus(http.StatusNoContent)
 }
