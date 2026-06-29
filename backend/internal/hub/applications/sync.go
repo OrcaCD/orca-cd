@@ -2,6 +2,7 @@ package applications
 
 import (
 	"context"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -41,9 +42,15 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 
 	if content == job.Application.ComposeFile.String() {
 		// Compose file unchanged: record the new commit and mark synced without redeploying.
+		now := time.Now()
+		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
+		cleared := ""
 		_ = updateApplicationStatus(context.Background(), job.Application.Id, models.Application{
+			SyncStatus:    models.Synced,
 			Commit:        job.Commit,
 			CommitMessage: job.CommitMessage,
+			LastSyncedAt:  &now,
+			LastSyncError: &cleared,
 		}, log)
 		return
 	}
