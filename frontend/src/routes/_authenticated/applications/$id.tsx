@@ -134,9 +134,27 @@ function ApplicationsLayout() {
 									></BreadcrumbLink>
 								</BreadcrumbItem>
 								<BreadcrumbSeparator />
-								<BreadcrumbItem>
-									<BreadcrumbPage>{application?.name}</BreadcrumbPage>
-								</BreadcrumbItem>
+								{location.pathname.includes("/settings") ? (
+									<>
+										<BreadcrumbItem>
+											<BreadcrumbLink
+												render={
+													<Link to="/applications/$id/details" params={{ id }}>
+														{application?.name}
+													</Link>
+												}
+											></BreadcrumbLink>
+										</BreadcrumbItem>
+										<BreadcrumbSeparator />
+										<BreadcrumbItem>
+											<BreadcrumbPage>{m.settings()}</BreadcrumbPage>
+										</BreadcrumbItem>
+									</>
+								) : (
+									<BreadcrumbItem>
+										<BreadcrumbPage>{application?.name}</BreadcrumbPage>
+									</BreadcrumbItem>
+								)}
 							</BreadcrumbList>
 						</Breadcrumb>
 						<Outlet />

@@ -196,7 +196,7 @@ function ApplicationDetailsPage() {
 	}
 
 	return (
-		<div className="p-6 space-y-6">
+		<div className="space-y-6">
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
 					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
