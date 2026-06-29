@@ -101,6 +101,9 @@ func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) 
 
 func markRepositorySuccess(ctx context.Context, id string, now *time.Time, log *zerolog.Logger) {
 	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).
+		// Select forces the nil LastSyncError to be written as NULL, clearing any
+		// stale error (a struct Updates would otherwise skip the nil pointer).
+		Select("SyncStatus", "LastSyncError", "LastSyncedAt").
 		Updates(ctx, models.Repository{
 			SyncStatus:    models.SyncStatusSuccess,
 			LastSyncError: nil,
