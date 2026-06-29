@@ -2,6 +2,7 @@ package applications
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -231,6 +232,14 @@ func TestProcessSyncJob_NoComposeChange_UpdatesCommit(t *testing.T) {
 	const compose = "services:\n  app:\n    image: myimage:1.0\n"
 	app := seedApp(t, repo.Id, agent.Id, compose)
 
+	// Pre-state: the app looks failed from an earlier sync.
+	prevErr := "previous failure"
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("SyncStatus", "LastSyncError").
+		Updates(t.Context(), models.Application{SyncStatus: models.OutOfSync, LastSyncError: &prevErr}); err != nil {
+		t.Fatalf("failed to set pre-state: %v", err)
+	}
+
 	provider := &mockProvider{fileContent: compose}
 	nop := zerolog.Nop()
 
@@ -254,6 +263,45 @@ func TestProcessSyncJob_NoComposeChange_UpdatesCommit(t *testing.T) {
 	}
 	if updated.ComposeFile.String() != compose {
 		t.Errorf("expected ComposeFile unchanged, got %q", updated.ComposeFile.String())
+	}
+	if updated.SyncStatus != models.Synced {
+		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
+	}
+	if updated.LastSyncedAt == nil {
+		t.Error("expected LastSyncedAt to be set on a no-op sync")
+	}
+	if updated.LastSyncError != nil && *updated.LastSyncError != "" {
+		t.Errorf("expected LastSyncError to be cleared, got %q", *updated.LastSyncError)
+	}
+}
+
+// Fetching the compose file fails: processSyncJob marks the application failed.
+func TestProcessSyncJob_FetchError_FailsSync(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	app := seedApp(t, repo.Id, agent.Id, "services: {}\n")
+
+	provider := &mockProvider{fileContentErr: errors.New("boom")}
+	nop := zerolog.Nop()
+
+	processSyncJob(t.Context(), syncJob{
+		Application:        app,
+		Repository:         repo,
+		RepositoryProvider: provider,
+		Commit:             "newsha",
+		CommitMessage:      "new commit",
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.SyncStatus != models.OutOfSync {
+		t.Errorf("expected SyncStatus %q, got %q", models.OutOfSync, updated.SyncStatus)
+	}
+	if updated.HealthStatus != models.Unhealthy {
+		t.Errorf("expected HealthStatus %q, got %q", models.Unhealthy, updated.HealthStatus)
 	}
 }
 

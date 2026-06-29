@@ -4,7 +4,32 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/rs/zerolog"
 )
+
+func TestApplicationHealth_NoContainersIsUnknown(t *testing.T) {
+	c := newTestClient(t)
+
+	// No application has ever been deployed with this id, so no containers carry
+	// its label.
+	if got := c.ApplicationHealth(t.Context(), "no-such-application-id"); got != HealthUnknown {
+		t.Errorf("expected HealthUnknown for an app with no containers, got %v", got)
+	}
+}
+
+func TestApplicationHealth_DaemonUnreachableIsUnknown(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "tcp://localhost:1")
+
+	c, err := New(zerolog.Nop(), t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(c.Close)
+
+	if got := c.ApplicationHealth(t.Context(), "any"); got != HealthUnknown {
+		t.Errorf("expected HealthUnknown when daemon is unreachable, got %v", got)
+	}
+}
 
 func TestAggregateHealth(t *testing.T) {
 	tests := []struct {

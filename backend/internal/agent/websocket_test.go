@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -998,6 +999,90 @@ func TestReportApplicationStatus_NoAppsSendsNothing(t *testing.T) {
 	case <-sender.sent:
 		t.Fatal("expected no message when there are no applications")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestExecuteDelete_Success(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployer := &stubDeployer{deleteCh: make(chan agentdocker.DeleteRequest, 1)}
+
+	executeDelete(context.Background(), sender, deployer, &messages.DeleteRequest{
+		RequestId:       "req-1",
+		ApplicationId:   "app-1",
+		ApplicationName: "billing",
+	})
+
+	select {
+	case req := <-deployer.deleteCh:
+		if req.ApplicationID != "app-1" || req.ApplicationName != "billing" {
+			t.Fatalf("unexpected delete request: %+v", req)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Remove call")
+	}
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeleteResult()
+		if result == nil {
+			t.Fatal("expected DeleteResult payload")
+		}
+		if !result.Success {
+			t.Error("expected success=true")
+		}
+		if result.RequestId != "req-1" {
+			t.Errorf("expected request id %q, got %q", "req-1", result.RequestId)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delete result")
+	}
+}
+
+func TestExecuteDelete_NilDeployer(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+
+	executeDelete(context.Background(), sender, nil, &messages.DeleteRequest{
+		RequestId:     "req-1",
+		ApplicationId: "app-1",
+	})
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeleteResult()
+		if result == nil {
+			t.Fatal("expected DeleteResult payload")
+		}
+		if result.Success {
+			t.Error("expected success=false when deployer is nil")
+		}
+		if result.ErrorMessage == "" {
+			t.Error("expected non-empty error message")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delete result")
+	}
+}
+
+func TestExecuteDelete_RemoveError(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployer := &stubDeployer{err: errors.New("remove failed")}
+
+	executeDelete(context.Background(), sender, deployer, &messages.DeleteRequest{
+		RequestId:     "req-1",
+		ApplicationId: "app-1",
+	})
+
+	select {
+	case msg := <-sender.sent:
+		result := msg.GetDeleteResult()
+		if result == nil || result.Success {
+			t.Fatalf("expected failed delete result, got %+v", result)
+		}
+		if result.ErrorMessage == "" {
+			t.Error("expected non-empty error message")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delete result")
 	}
 }
 
