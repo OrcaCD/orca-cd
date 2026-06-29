@@ -19,7 +19,14 @@ import {
 } from "@/components/ui/select";
 import { m } from "@/lib/paraglide/messages";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Card,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "@/components/ui/card";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
 import {
 	applicationSchema,
@@ -109,30 +116,23 @@ function GeneralSettingsPage() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.general()}</h1>
-					<p className="text-muted-foreground text-sm">{m.generalDescription()}</p>
-				</div>
-				<div className="flex items-center gap-2">
-					<ConfirmationDialog
-						onConfirm={async () => await deleteApp()}
-						triggerProps={{ variant: "destructive" }}
-						triggerText={
-							<>
-								<Trash2 />
-								{m.delete()}
-							</>
-						}
-						description={m.deleteApplicationDescription()}
-					></ConfirmationDialog>
-				</div>
-			</div>
-
 			<Card>
 				<CardHeader>
 					<CardTitle>{m.editApplication()}</CardTitle>
 					<CardDescription>{m.editApplicationDescription()}</CardDescription>
+					<CardAction>
+						<ConfirmationDialog
+							onConfirm={async () => await deleteApp()}
+							triggerProps={{ variant: "destructive" }}
+							triggerText={
+								<>
+									<Trash2 />
+									{m.delete()}
+								</>
+							}
+							description={m.deleteApplicationDescription()}
+						></ConfirmationDialog>
+					</CardAction>
 				</CardHeader>
 				<Separator />
 				<CardContent>

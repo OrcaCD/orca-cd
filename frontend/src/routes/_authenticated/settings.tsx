@@ -4,7 +4,6 @@ import {
 	SidebarGroup,
 	SidebarGroupContent,
 	SidebarGroupLabel,
-	SidebarHeader,
 	SidebarInset,
 	SidebarMenu,
 	SidebarMenuButton,
@@ -14,8 +13,18 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Key, Settings, User } from "lucide-react";
+import { Key, User } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
+import { Separator } from "@/components/ui/separator";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 export const Route = createFileRoute("/_authenticated/settings")({
 	component: SettingsLayout,
@@ -36,19 +45,14 @@ const settingsPages = [
 
 function SettingsLayout() {
 	const { location } = useRouterState();
+	const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 	return (
 		<SidebarProvider className="min-h-[calc(100svh-3.5rem)]">
-			<Sidebar className="border-r md:top-14">
-				<SidebarHeader className="px-4 py-5">
-					<div className="flex items-center gap-2 font-semibold">
-						<Settings className="size-4" />
-						{m.settings()}
-					</div>
-				</SidebarHeader>
+			<Sidebar collapsible="icon" className="border-r md:top-14">
 				<SidebarContent>
 					<SidebarGroup>
-						<SidebarGroupLabel>{m.account()}</SidebarGroupLabel>
+						<SidebarGroupLabel>{m.userSettings()}</SidebarGroupLabel>
 						<SidebarGroupContent>
 							<SidebarMenu>
 								{settingsPages.map((item) => (
@@ -65,9 +69,35 @@ function SettingsLayout() {
 			</Sidebar>
 			<SidebarInset className="min-w-0">
 				<div className="w-full space-y-6 overflow-y-auto p-4 sm:p-6">
-					<div className="flex items-center gap-2 md:hidden">
-						<SidebarTrigger className="-ml-1" />
-						<span className="font-semibold">{m.settings()}</span>
+					<div className="flex items-center gap-2">
+						<Tooltip>
+							<TooltipTrigger render={<SidebarTrigger className="-ml-1" />} />
+							<TooltipContent>
+								<p>{m.toggleSidebar()}</p>
+
+								<KbdGroup>
+									<Kbd>{isApple ? "⌘" : "Ctrl"}</Kbd>
+									<Kbd>B</Kbd>
+								</KbdGroup>
+							</TooltipContent>
+						</Tooltip>
+						<Separator
+							orientation="vertical"
+							className="mr-2 my-auto data-[orientation=vertical]:h-4"
+						/>
+						<Breadcrumb>
+							<BreadcrumbList>
+								<BreadcrumbItem>
+									<BreadcrumbPage>{m.settings()}</BreadcrumbPage>
+								</BreadcrumbItem>
+								<BreadcrumbSeparator />
+								<BreadcrumbItem>
+									<BreadcrumbPage>
+										{settingsPages.find((page) => page.path === location.pathname)?.title()}
+									</BreadcrumbPage>
+								</BreadcrumbItem>
+							</BreadcrumbList>
+						</Breadcrumb>
 					</div>
 					<Outlet />
 				</div>
