@@ -448,10 +448,9 @@ func DeployApplicationHandler(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to trigger application deploy: %v", err)})
 		return
-	} else {
-		c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	}
 
+	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	sse.PublishUpdate(ApplicationsPath)
 }
 
