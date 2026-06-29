@@ -18,6 +18,12 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 	defer cancel()
 	now := time.Now()
 
+	app, err := getApplicationByID(ctx, result.ApplicationId, log)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to retrieve application")
+		return
+	}
+
 	if result.Success {
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
@@ -30,7 +36,7 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		if err != nil {
 			return
 		}
-		notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+result.ApplicationId, log)
+		notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}
 
@@ -39,7 +45,7 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		errMsg = "deployment failed"
 	}
 
-	notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+result.ApplicationId, log)
+	notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
 		HealthStatus:  models.Unhealthy,
@@ -56,4 +62,15 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	}
 	sse.PublishUpdate("/api/v1/applications")
 	return err
+}
+
+func getApplicationByID(ctx context.Context, applicationID string, log *zerolog.Logger) (*models.Application, error) {
+	app, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", applicationID).
+		First(ctx)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to retrieve application")
+		return nil, err
+	}
+	return &app, nil
 }
