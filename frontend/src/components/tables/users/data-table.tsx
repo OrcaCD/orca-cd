@@ -24,6 +24,7 @@ import { DataTableViewOptions } from "../data-table-view-options";
 import { Search } from "lucide-react";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
+import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
 
 interface RepositoryDataTable<TData, TValue> {
 	columns: ColumnDef<TData, TValue>[];
@@ -70,7 +71,7 @@ export function UserDataTable<TData, TValue>({
 	return (
 		<div>
 			<div className="flex items-center pb-6">
-				<div className="relative w-md mt-6">
+				<div className="relative w-md">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 					<Input
 						placeholder={m.searchUsers()}
@@ -81,6 +82,10 @@ export function UserDataTable<TData, TValue>({
 				</div>
 
 				<DataTableViewOptions table={table} />
+
+				<div className="mx-2"></div>
+
+				<UpsertUserDialog user={null} />
 			</div>
 			<div className="overflow-hidden rounded-md border">
 				<Table>

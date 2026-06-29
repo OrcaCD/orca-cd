@@ -54,11 +54,6 @@ function OIDCProvidersPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-2xl font-bold">{m.adminOidcProviders()}</h1>
-					<p className="text-muted-foreground text-sm">{m.adminOidcProvidersDescription()}</p>
-				</div>
-
 				<UpsertOIDCProviderDialog provider={null} />
 			</div>
 

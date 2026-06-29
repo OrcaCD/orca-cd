@@ -1,5 +1,4 @@
 import {
-	deleteApplication,
 	deployApplication,
 	generateImageWebhook,
 	revokeImageWebhook,
@@ -7,23 +6,15 @@ import {
 	SyncStatus,
 	type Application,
 } from "@/lib/applications";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-	Breadcrumb,
-	BreadcrumbItem,
-	BreadcrumbLink,
-	BreadcrumbList,
-	BreadcrumbPage,
-	BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
+import { createFileRoute } from "@tanstack/react-router";
 import {
 	Clock,
 	ExternalLink,
 	GitBranch,
 	GitCommit,
+	Link,
 	RefreshCw,
 	Server,
-	Trash2,
 	Webhook,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
@@ -35,7 +26,6 @@ import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
-import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import { toast } from "sonner";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
@@ -44,15 +34,22 @@ import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
-import { Separator } from "@/components/ui/separator";
 import ErrorAlert from "@/components/alerts/error-alert";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
-export const Route = createFileRoute("/_authenticated/applications/$id/")({
+export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
 	head: () => ({
 		meta: [
 			{
-				title: m.pageApplications(),
+				title: `${m.pageApplications()} - ${m.details()}`,
 			},
 		],
 	}),
@@ -150,7 +147,6 @@ function buildComposeDiff(previousComposeFile: string, composeFile: string): str
 
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
-	const navigate = useNavigate();
 	const { theme } = useTheme();
 
 	const { data } = useFetch<Application>("/applications/" + id);
@@ -209,17 +205,8 @@ function ApplicationDetailsPage() {
 		}
 	}
 
-	async function deleteApp() {
-		try {
-			await deleteApplication(id);
-			toast.success(m.toastApplicationDeleted({ name: data?.name ?? "" }));
-			await navigate({ to: "/applications" });
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.toastDeleteApplicationFailed());
-		}
-	}
 	return (
-		<div className="p-6 space-y-6">
+		<div className="space-y-6">
 			<Breadcrumb>
 				<BreadcrumbList>
 					<BreadcrumbItem>
@@ -237,7 +224,6 @@ function ApplicationDetailsPage() {
 			{data?.lastSyncError && (
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
 			)}
-
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
 					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -259,22 +245,6 @@ function ApplicationDetailsPage() {
 						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
 						{deploymentInProgress ? m.deploying() : m.deploy()}
 					</Button>
-
-					<Separator orientation="vertical" />
-
-					<UpsertApplicationDialog application={data ?? null} />
-
-					<ConfirmationDialog
-						onConfirm={async () => await deleteApp()}
-						triggerProps={{ variant: "destructive" }}
-						triggerText={
-							<>
-								<Trash2 />
-								{m.delete()}
-							</>
-						}
-						description={m.deleteApplicationDescription()}
-					></ConfirmationDialog>
 				</div>
 			</div>
 
