@@ -16,8 +16,8 @@ import (
 var defaultCipher *Cipher
 
 type Cipher struct {
-	aead    cipher.AEAD
-	hashKey []byte
+	aead          cipher.AEAD
+	blindIndexKey []byte
 }
 
 func New(appSecret string) (*Cipher, error) {
@@ -29,11 +29,11 @@ func New(appSecret string) (*Cipher, error) {
 	if err != nil {
 		return nil, err
 	}
-	hashKey, err := deriveKey(appSecret, "DB_BLIND_INDEX_KEY")
+	blindIndexKey, err := deriveKey(appSecret, "DB_BLIND_INDEX_KEY")
 	if err != nil {
 		return nil, err
 	}
-	return &Cipher{aead: aead, hashKey: hashKey}, nil
+	return &Cipher{aead: aead, blindIndexKey: blindIndexKey}, nil
 }
 
 func Init(appSecret string) error {
@@ -108,7 +108,7 @@ func BlindIndex(plaintext string) string {
 }
 
 func (c *Cipher) BlindIndex(plaintext string) string {
-	mac := hmac.New(sha256.New, c.hashKey)
+	mac := hmac.New(sha256.New, c.blindIndexKey)
 	mac.Write([]byte(plaintext))
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
