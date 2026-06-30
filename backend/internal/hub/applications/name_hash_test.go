@@ -24,7 +24,7 @@ func TestBackfillNameHashes_PopulatesExistingRows(t *testing.T) {
 		t.Fatalf("expected empty name_hash before backfill, got %q", stored.NameHash)
 	}
 
-	if err := BackfillNameHashes(t.Context()); err != nil {
+	if err := db.BackfillNameHashes(t.Context(), db.DB); err != nil {
 		t.Fatalf("BackfillNameHashes: %v", err)
 	}
 

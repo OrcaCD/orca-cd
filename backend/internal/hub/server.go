@@ -129,15 +129,6 @@ func Run(cfg Config) error {
 		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
 	}
 
-	// Populate the application name_hash blind index for rows created before the
-	// column existed. Skipped in demo mode where the database is read-only.
-	if !cfg.Demo {
-		if err := applications.BackfillNameHashes(context.Background()); err != nil {
-			Log.Error().Err(err).Msg("failed to backfill application name hashes")
-			return err
-		}
-	}
-
 	applications.DefaultQueue = applications.NewQueue(&Log)
 	applications.DefaultQueue.Start()
 
