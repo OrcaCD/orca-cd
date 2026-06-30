@@ -44,7 +44,6 @@ func NewApplicationDeployer(hub messageSender, log *zerolog.Logger) *Application
 var DefaultApplicationDeployer ApplicationDeploymentManager
 
 func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
-
 	req := &messages.DeployRequest{
 		RequestId:       uuid.NewString(),
 		ApplicationId:   app.Id,
