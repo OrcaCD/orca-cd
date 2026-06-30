@@ -43,6 +43,10 @@ func NewApplicationDeployer(hub messageSender, log *zerolog.Logger) *Application
 
 var DefaultApplicationDeployer ApplicationDeploymentManager
 
+// ErrAgentOffline is returned when a deploy cannot be dispatched because the
+// agent is not connected.
+var ErrAgentOffline = errors.New("agent is not connected")
+
 func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
 
 	req := &messages.DeployRequest{
@@ -65,7 +69,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 			HealthStatus:  models.UnknownHealth,
 			LastSyncError: &errMsg,
 		}, d.log)
-		return errors.New("error: " + errMsg)
+		return ErrAgentOffline
 	}
 
 	return markDeploymentInProgress(ctx, app.Id, d.log)

@@ -1212,7 +1212,7 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 	agent := seedTestAgent(t, "agent-deploy-offline")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
 
-	application_deployer.DefaultApplicationDeployer = &stubRouteDeployer{}
+	application_deployer.DefaultApplicationDeployer = &stubRouteDeployer{startErr: application_deployer.ErrAgentOffline}
 	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	c, w := makeAuthContext(t, "user-1")
@@ -1221,11 +1221,10 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 
 	DeployApplicationHandler(c)
 
-	// Deploy is now fire-and-forget: the handler accepts the request and dispatches
-	// asynchronously. Agent-not-connected handling is still a TODO in the deployer,
-	// so the handler does not surface a 409 yet.
-	if w.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	// A deploy against an offline agent is the same conflict condition as delete:
+	// the handler surfaces 409, not 500.
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

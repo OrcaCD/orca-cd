@@ -21,7 +21,10 @@ import (
 
 const ApplicationsPath = "/api/v1/applications"
 const defaultApplicationIcon = "box"
-const agentDeleteTimeout = 30 * time.Second
+// agentDeleteTimeout matches the agent's compose-down timeout (deploymentTimeout)
+// so the hub waits for teardown to finish instead of timing out early and
+// leaving its record out of sync with the agent.
+const agentDeleteTimeout = 5 * time.Minute
 
 type createApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
@@ -442,6 +445,10 @@ func DeployApplicationHandler(c *gin.Context) {
 	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String())
 
 	if err != nil {
+		if errors.Is(err, application_deployer.ErrAgentOffline) {
+			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot deploy application"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to trigger application deploy: %v", err)})
 		return
 	}
