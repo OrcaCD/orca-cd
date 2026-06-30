@@ -10,8 +10,7 @@
 		"lint": "oxlint --type-aware --deny-warnings",
 		"format": "oxfmt --write",
 		"format:check": "oxfmt --check",
-		"translations:check": "inlang validate --project ./project.inlang",
-		"translations:unused": "node scripts/unused-translations.ts"
+		"translations:check": "node scripts/check-translations.ts"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.5.0",
