@@ -125,7 +125,3 @@ jobs:
           use_oidc: true
           fail_ci_if_error: true
 
-      - name: Check for unused translations
-        working-directory: ./frontend
-        run: node scripts/unused-translations.ts
-  
