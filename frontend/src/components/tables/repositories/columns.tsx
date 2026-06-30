@@ -6,7 +6,7 @@ import {
 	syncRepository,
 } from "@/lib/repositories";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, MoreHorizontal, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -19,13 +19,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import EditRepositoryAuthDialog from "@/components/dialogs/edit-repository-auth";
-import EditRepositorySyncDialog from "@/components/dialogs/edit-repository-sync";
 import { toast } from "sonner";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
+import { Link } from "@tanstack/react-router";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
@@ -188,9 +187,14 @@ export const columns: ColumnDef<Repository>[] = [
 									{m.sync()}
 								</DropdownMenuItem>
 								<DropdownMenuSeparator />
-								<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
-								<EditRepositoryAuthDialog repository={row.original} asDropdownItem />
-								<EditRepositorySyncDialog repository={row.original} asDropdownItem />
+								<DropdownMenuItem
+									render={
+										<Link to="/repositories/$id/settings/auth" params={{ id: row.original.id }}>
+											<Settings className="h-4 w-4" />
+											{m.settings()}
+										</Link>
+									}
+								/>
 								<DropdownMenuSeparator />
 								<ConfirmationDialog
 									triggerText={

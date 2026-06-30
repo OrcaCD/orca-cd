@@ -12,6 +12,7 @@ import {
 import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import type { RepositorySyncType } from "@/lib/repositories";
+import { cn } from "@/lib/utils";
 
 export function RepositoryDialogLoadingOverlay({ isLoading }: { isLoading: boolean }) {
 	if (!isLoading) {
@@ -99,10 +100,12 @@ export function SyncTypeRadioGroup({
 	value,
 	onChange,
 	onBlur,
+	className,
 }: {
 	value: RepositorySyncType;
 	onChange: (v: RepositorySyncType) => void;
 	onBlur: () => void;
+	className?: string;
 }) {
 	const syncTypes = getSyncTypes();
 	return (
@@ -110,7 +113,7 @@ export function SyncTypeRadioGroup({
 			value={value}
 			onBlur={onBlur}
 			onValueChange={(v) => onChange(v as RepositorySyncType)}
-			className="w-fit"
+			className={cn("w-fit", className)}
 		>
 			{syncTypes.map((type) => (
 				<FieldLabel

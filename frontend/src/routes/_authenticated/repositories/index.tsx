@@ -1,8 +1,6 @@
 import { columns } from "@/components/tables/repositories/columns";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
 import CreateRepositoryDialog from "@/components/dialogs/create-repository";
-import EditRepositoryAuthDialog from "@/components/dialogs/edit-repository-auth";
-import EditRepositorySyncDialog from "@/components/dialogs/edit-repository-sync";
 import {
 	deleteRepository,
 	syncRepository,
@@ -10,11 +8,11 @@ import {
 	getGitProviderIconPath,
 	type Repository,
 } from "@/lib/repositories";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AppWindow, EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -150,9 +148,17 @@ function RepositoriesPage() {
 															{m.sync()}
 														</DropdownMenuItem>
 														<DropdownMenuSeparator />
-														<DropdownMenuLabel>{m.settings()}</DropdownMenuLabel>
-														<EditRepositoryAuthDialog repository={repository} asDropdownItem />
-														<EditRepositorySyncDialog repository={repository} asDropdownItem />
+														<DropdownMenuItem
+															render={
+																<Link
+																	to="/repositories/$id/settings/auth"
+																	params={{ id: repository.id }}
+																>
+																	<Settings className="h-4 w-4" />
+																	{m.settings()}
+																</Link>
+															}
+														/>
 														<DropdownMenuSeparator />
 														<ConfirmationDialog
 															onConfirm={() => handleDeleteRepo(repository)}
