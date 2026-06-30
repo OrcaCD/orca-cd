@@ -48,7 +48,6 @@ var DefaultApplicationDeployer ApplicationDeploymentManager
 var ErrAgentOffline = errors.New("agent is not connected")
 
 func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
-
 	req := &messages.DeployRequest{
 		RequestId:       uuid.NewString(),
 		ApplicationId:   app.Id,
