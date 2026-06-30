@@ -207,20 +207,6 @@ function ApplicationDetailsPage() {
 
 	return (
 		<div className="space-y-6">
-			<Breadcrumb>
-				<BreadcrumbList>
-					<BreadcrumbItem>
-						<BreadcrumbLink
-							render={<Link to="/applications">{m.pageApplications()}</Link>}
-						></BreadcrumbLink>
-					</BreadcrumbItem>
-					<BreadcrumbSeparator />
-					<BreadcrumbItem>
-						<BreadcrumbPage>{data?.name}</BreadcrumbPage>
-					</BreadcrumbItem>
-				</BreadcrumbList>
-			</Breadcrumb>
-
 			{data?.lastSyncError && (
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
 			)}
