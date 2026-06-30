@@ -22,14 +22,19 @@ import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
+import { Route as AuthenticatedRepositoriesIdRouteImport } from './routes/_authenticated/repositories/$id'
 import { Route as AuthenticatedApplicationsIdRouteImport } from './routes/_authenticated/applications/$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
+import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
 import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
+import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
+import { Route as AuthenticatedRepositoriesIdSettingsSyncRouteImport } from './routes/_authenticated/repositories/$id/settings/sync'
+import { Route as AuthenticatedRepositoriesIdSettingsAuthRouteImport } from './routes/_authenticated/repositories/$id/settings/auth'
 import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
 import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
 
@@ -104,6 +109,12 @@ const AuthenticatedSettingsProfileRoute =
     path: '/profile',
     getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
+const AuthenticatedRepositoriesIdRoute =
+  AuthenticatedRepositoriesIdRouteImport.update({
+    id: '/repositories/$id',
+    path: '/repositories/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedApplicationsIdRoute =
   AuthenticatedApplicationsIdRouteImport.update({
     id: '/applications/$id',
@@ -133,6 +144,12 @@ const AuthenticatedAdminAuditLogRoute =
     path: '/audit-log',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedRepositoriesIdIndexRoute =
+  AuthenticatedRepositoriesIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
+  } as any)
 const AuthenticatedApplicationsIdIndexRoute =
   AuthenticatedApplicationsIdIndexRouteImport.update({
     id: '/',
@@ -145,11 +162,29 @@ const AuthenticatedApplicationsIdDetailsRoute =
     path: '/details',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedRepositoriesIdSettingsIndexRoute =
+  AuthenticatedRepositoriesIdSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
+  } as any)
 const AuthenticatedApplicationsIdSettingsIndexRoute =
   AuthenticatedApplicationsIdSettingsIndexRouteImport.update({
     id: '/settings/',
     path: '/settings/',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
+const AuthenticatedRepositoriesIdSettingsSyncRoute =
+  AuthenticatedRepositoriesIdSettingsSyncRouteImport.update({
+    id: '/settings/sync',
+    path: '/settings/sync',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
+  } as any)
+const AuthenticatedRepositoriesIdSettingsAuthRoute =
+  AuthenticatedRepositoriesIdSettingsAuthRouteImport.update({
+    id: '/settings/auth',
+    path: '/settings/auth',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
 const AuthenticatedApplicationsIdSettingsImagePollingRoute =
   AuthenticatedApplicationsIdSettingsImagePollingRouteImport.update({
@@ -174,6 +209,7 @@ export interface FileRoutesByFullPath {
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdRouteWithChildren
+  '/repositories/$id': typeof AuthenticatedRepositoriesIdRouteWithChildren
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -184,9 +220,13 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
+  '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
+  '/repositories/$id/settings/': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -205,9 +245,13 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
+  '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsIndexRoute
+  '/repositories/$id/settings': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -221,6 +265,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/applications/$id': typeof AuthenticatedApplicationsIdRouteWithChildren
+  '/_authenticated/repositories/$id': typeof AuthenticatedRepositoriesIdRouteWithChildren
   '/_authenticated/settings/profile': typeof AuthenticatedSettingsProfileRoute
   '/_authenticated/settings/security': typeof AuthenticatedSettingsSecurityRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -231,9 +276,13 @@ export interface FileRoutesById {
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
+  '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/_authenticated/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/_authenticated/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/_authenticated/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/_authenticated/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
+  '/_authenticated/repositories/$id/settings/': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -247,6 +296,7 @@ export interface FileRouteTypes {
     | '/admin/system-info'
     | '/admin/users'
     | '/applications/$id'
+    | '/repositories/$id'
     | '/settings/profile'
     | '/settings/security'
     | '/admin/'
@@ -257,9 +307,13 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/applications/$id/details'
     | '/applications/$id/'
+    | '/repositories/$id/'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
+    | '/repositories/$id/settings/auth'
+    | '/repositories/$id/settings/sync'
     | '/applications/$id/settings/'
+    | '/repositories/$id/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -278,9 +332,13 @@ export interface FileRouteTypes {
     | '/settings'
     | '/applications/$id/details'
     | '/applications/$id'
+    | '/repositories/$id'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
+    | '/repositories/$id/settings/auth'
+    | '/repositories/$id/settings/sync'
     | '/applications/$id/settings'
+    | '/repositories/$id/settings'
   id:
     | '__root__'
     | '/_authenticated'
@@ -293,6 +351,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/system-info'
     | '/_authenticated/admin/users'
     | '/_authenticated/applications/$id'
+    | '/_authenticated/repositories/$id'
     | '/_authenticated/settings/profile'
     | '/_authenticated/settings/security'
     | '/_authenticated/admin/'
@@ -303,9 +362,13 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/'
     | '/_authenticated/applications/$id/details'
     | '/_authenticated/applications/$id/'
+    | '/_authenticated/repositories/$id/'
     | '/_authenticated/applications/$id/settings/general'
     | '/_authenticated/applications/$id/settings/image-polling'
+    | '/_authenticated/repositories/$id/settings/auth'
+    | '/_authenticated/repositories/$id/settings/sync'
     | '/_authenticated/applications/$id/settings/'
+    | '/_authenticated/repositories/$id/settings/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -406,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsProfileRouteImport
       parentRoute: typeof AuthenticatedSettingsRoute
     }
+    '/_authenticated/repositories/$id': {
+      id: '/_authenticated/repositories/$id'
+      path: '/repositories/$id'
+      fullPath: '/repositories/$id'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/applications/$id': {
       id: '/_authenticated/applications/$id'
       path: '/applications/$id'
@@ -441,6 +511,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAuditLogRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/repositories/$id/': {
+      id: '/_authenticated/repositories/$id/'
+      path: '/'
+      fullPath: '/repositories/$id/'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdIndexRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
+    }
     '/_authenticated/applications/$id/': {
       id: '/_authenticated/applications/$id/'
       path: '/'
@@ -455,12 +532,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdDetailsRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/repositories/$id/settings/': {
+      id: '/_authenticated/repositories/$id/settings/'
+      path: '/settings'
+      fullPath: '/repositories/$id/settings/'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
+    }
     '/_authenticated/applications/$id/settings/': {
       id: '/_authenticated/applications/$id/settings/'
       path: '/settings'
       fullPath: '/applications/$id/settings/'
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
+    '/_authenticated/repositories/$id/settings/sync': {
+      id: '/_authenticated/repositories/$id/settings/sync'
+      path: '/settings/sync'
+      fullPath: '/repositories/$id/settings/sync'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsSyncRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
+    }
+    '/_authenticated/repositories/$id/settings/auth': {
+      id: '/_authenticated/repositories/$id/settings/auth'
+      path: '/settings/auth'
+      fullPath: '/repositories/$id/settings/auth'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsAuthRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
     '/_authenticated/applications/$id/settings/image-polling': {
       id: '/_authenticated/applications/$id/settings/image-polling'
@@ -542,11 +640,36 @@ const AuthenticatedApplicationsIdRouteWithChildren =
     AuthenticatedApplicationsIdRouteChildren,
   )
 
+interface AuthenticatedRepositoriesIdRouteChildren {
+  AuthenticatedRepositoriesIdIndexRoute: typeof AuthenticatedRepositoriesIdIndexRoute
+  AuthenticatedRepositoriesIdSettingsAuthRoute: typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  AuthenticatedRepositoriesIdSettingsSyncRoute: typeof AuthenticatedRepositoriesIdSettingsSyncRoute
+  AuthenticatedRepositoriesIdSettingsIndexRoute: typeof AuthenticatedRepositoriesIdSettingsIndexRoute
+}
+
+const AuthenticatedRepositoriesIdRouteChildren: AuthenticatedRepositoriesIdRouteChildren =
+  {
+    AuthenticatedRepositoriesIdIndexRoute:
+      AuthenticatedRepositoriesIdIndexRoute,
+    AuthenticatedRepositoriesIdSettingsAuthRoute:
+      AuthenticatedRepositoriesIdSettingsAuthRoute,
+    AuthenticatedRepositoriesIdSettingsSyncRoute:
+      AuthenticatedRepositoriesIdSettingsSyncRoute,
+    AuthenticatedRepositoriesIdSettingsIndexRoute:
+      AuthenticatedRepositoriesIdSettingsIndexRoute,
+  }
+
+const AuthenticatedRepositoriesIdRouteWithChildren =
+  AuthenticatedRepositoriesIdRoute._addFileChildren(
+    AuthenticatedRepositoriesIdRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRouteWithChildren
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedApplicationsIdRoute: typeof AuthenticatedApplicationsIdRouteWithChildren
+  AuthenticatedRepositoriesIdRoute: typeof AuthenticatedRepositoriesIdRouteWithChildren
   AuthenticatedAgentsIndexRoute: typeof AuthenticatedAgentsIndexRoute
   AuthenticatedApplicationsIndexRoute: typeof AuthenticatedApplicationsIndexRoute
   AuthenticatedNotificationsIndexRoute: typeof AuthenticatedNotificationsIndexRoute
@@ -559,6 +682,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedApplicationsIdRoute:
     AuthenticatedApplicationsIdRouteWithChildren,
+  AuthenticatedRepositoriesIdRoute:
+    AuthenticatedRepositoriesIdRouteWithChildren,
   AuthenticatedAgentsIndexRoute: AuthenticatedAgentsIndexRoute,
   AuthenticatedApplicationsIndexRoute: AuthenticatedApplicationsIndexRoute,
   AuthenticatedNotificationsIndexRoute: AuthenticatedNotificationsIndexRoute,

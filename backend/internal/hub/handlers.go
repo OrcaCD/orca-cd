@@ -69,6 +69,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.DELETE("/applications/:id/image-webhook", routes.RevokeImagePullWebhookHandler)
 
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
+			protected.GET("/repositories/:id", routes.GetRepositoryHandler)
 			protected.POST("/repositories", routes.CreateRepositoryHandler)
 			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
