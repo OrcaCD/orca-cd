@@ -90,7 +90,7 @@ for await (const file of glob("**/*.{js,jsx,ts,tsx}", {
 const unusedByFile = new Map<string, string[]>();
 
 for (const [file, keys] of messageKeysByFile) {
-	const unused = [...keys].filter((key) => !usedKeys.has(key)).sort();
+	const unused = [...keys].filter((key) => !usedKeys.has(key) && !key.startsWith("$schema")).sort();
 
 	if (unused.length > 0) {
 		unusedByFile.set(file, unused);
