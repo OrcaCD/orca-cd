@@ -138,6 +138,14 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if applicationErr != nil {
 				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
 			}
+			// Fail any deploy still in progress: the agent that owned it is gone, so
+			// no result will arrive and the app would otherwise spin in syncing.
+			_, syncErr := gorm.G[models.Application](db.DB).
+				Where("agent_id = ? AND sync_status = ?", claims.Subject, models.Syncing).
+				Update(ctx, "sync_status", models.OutOfSync)
+			if syncErr != nil {
+				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
+			}
 		}()
 
 		for {
