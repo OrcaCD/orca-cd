@@ -12,7 +12,6 @@ import {
 	ExternalLink,
 	GitBranch,
 	GitCommit,
-	Link,
 	RefreshCw,
 	Server,
 	Webhook,
