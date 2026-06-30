@@ -1,10 +1,11 @@
 // oxlint-disable no-console
 import { readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-const messagesDir = "messages";
-const sourceDir = "src";
+const root = resolve(import.meta.dirname, "..");
+const messagesDir = join(root, "messages");
+const sourceDir = join(root, "src");
 
 function flattenKeys(obj: Record<string, unknown>, prefix: string = ""): string[] {
 	return Object.entries(obj).flatMap(([key, value]) => {
@@ -36,7 +37,37 @@ for (const file of messageFiles) {
 		unknown
 	>;
 
-	messageKeysByFile.set(file, new Set(flattenKeys(messages)));
+	const keys = new Set(flattenKeys(messages).filter((k) => !k.startsWith("$schema")));
+	messageKeysByFile.set(file, keys);
+}
+
+const allKeys = new Set<string>();
+for (const keys of messageKeysByFile.values()) {
+	for (const key of keys) {
+		allKeys.add(key);
+	}
+}
+
+let hasIssues = false;
+
+if (messageFiles.length >= 2) {
+	for (const key of [...allKeys].sort()) {
+		const missingIn: string[] = [];
+
+		for (const [file, keys] of messageKeysByFile) {
+			if (!keys.has(key)) {
+				missingIn.push(file);
+			}
+		}
+
+		if (missingIn.length > 0) {
+			if (!hasIssues) {
+				console.log("Translation keys out of sync:");
+			}
+			hasIssues = true;
+			console.log(`- "${key}" missing in: ${missingIn.join(", ")}`);
+		}
+	}
 }
 
 const usedKeys = new Set<string>();
@@ -59,16 +90,14 @@ for await (const file of glob("**/*.{js,jsx,ts,tsx}", {
 const unusedByFile = new Map<string, string[]>();
 
 for (const [file, keys] of messageKeysByFile) {
-	const unused = [...keys].filter((key) => !usedKeys.has(key) && !key.startsWith("$schema")).sort();
+	const unused = [...keys].filter((key) => !usedKeys.has(key)).sort();
 
 	if (unused.length > 0) {
 		unusedByFile.set(file, unused);
 	}
 }
 
-if (unusedByFile.size === 0) {
-	console.log("No unused Paraglide messages found.");
-} else {
+if (unusedByFile.size > 0) {
 	console.log("Unused Paraglide messages:");
 	for (const [file, unused] of unusedByFile) {
 		console.log(`${file}:`);
@@ -76,6 +105,11 @@ if (unusedByFile.size === 0) {
 			console.log(`- ${key}`);
 		}
 	}
+	hasIssues = true;
+}
 
+if (!hasIssues) {
+	console.log("All translation checks passed.");
+} else {
 	process.exitCode = 1;
 }
