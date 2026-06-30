@@ -65,7 +65,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 			HealthStatus:  models.UnknownHealth,
 			LastSyncError: &errMsg,
 		}, d.log)
-		return errors.New("Error: " + errMsg)
+		return errors.New("error: " + errMsg)
 	}
 
 	return markDeploymentInProgress(ctx, app.Id, d.log)
