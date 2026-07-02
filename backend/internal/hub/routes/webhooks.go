@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -64,7 +63,7 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	if !hasProviderEventHeader(c) {
-		handleGenericWebhook(c, id, repo)
+		handleGenericWebhook(c, repo)
 		return
 	}
 
@@ -92,30 +91,27 @@ func WebhookHandler(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).Updates(c.Request.Context(), models.Repository{
-		SyncStatus:    models.SyncStatusSuccess,
-		LastSyncError: nil,
-		LastSyncedAt:  &now,
-	}); err != nil {
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	apps, err := applications.GetMatchingApplications(c.Request.Context(), &repo, pushDetails.Branch)
-	if err == nil && len(apps) > 0 {
-		if provider, err := repositories.Get(repo.Provider); err == nil {
-			// TODO: get commit message for push event and pass it to the queue
-			// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers
-			// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit
-			applications.DefaultQueue.Enqueue(&repo, provider, apps, pushDetails.Commit, "")
-		}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
 	}
+
+	// TODO: get commit message for push event and pass it to the queue.
+	// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers.
+	// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit.
+	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), &applications.Log)
 
 	c.AbortWithStatus(http.StatusNoContent)
 }
 
-func handleGenericWebhook(c *gin.Context, id string, repo models.Repository) {
+func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 	secret := repo.WebhookSecret.String()
 	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
@@ -131,12 +127,8 @@ func handleGenericWebhook(c *gin.Context, id string, repo models.Repository) {
 
 	branch, commit := parseGenericWebhookBody(body)
 
-	now := time.Now()
-	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).Updates(c.Request.Context(), models.Repository{
-		SyncStatus:    models.SyncStatusSuccess,
-		LastSyncError: nil,
-		LastSyncedAt:  &now,
-	}); err != nil {
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -147,37 +139,20 @@ func handleGenericWebhook(c *gin.Context, id string, repo models.Repository) {
 	} else {
 		apps, err = applications.GetAllApplicationsForRepo(c.Request.Context(), &repo)
 	}
-	if err == nil && len(apps) > 0 {
-		if provider, err := repositories.Get(repo.Provider); err == nil {
-			enqueueGenericApps(c, &repo, provider, apps, commit)
-		}
-	}
-
-	c.AbortWithStatus(http.StatusNoContent)
-}
-
-// enqueueGenericApps enqueues apps triggered by the generic webhook.
-// When no commit is provided, it resolves the latest commit per branch from the provider.
-func enqueueGenericApps(c *gin.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, commit string) {
-	ctx := c.Request.Context()
-
-	if commit != "" {
-		applications.DefaultQueue.Enqueue(repo, provider, apps, commit, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	// Group apps by branch so we can resolve one latest commit per branch.
-	byBranch := map[string][]models.Application{}
-	for _, app := range apps {
-		byBranch[app.Branch] = append(byBranch[app.Branch], app)
+	// When the payload omits the commit, resolve the latest commit per branch from
+	// the provider; otherwise deploy the commit the caller supplied.
+	resolve := applications.LatestCommit(provider, &repo)
+	if commit != "" {
+		resolve = applications.StaticCommit(commit, "")
 	}
-	for branchName, branchApps := range byBranch {
-		resolvedCommit := ""
-		if info, err := provider.GetLatestCommit(ctx, repo, branchName); err == nil {
-			resolvedCommit = info.Hash
-		}
-		applications.DefaultQueue.Enqueue(repo, provider, branchApps, resolvedCommit, "")
-	}
+	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, resolve, &applications.Log)
+
+	c.AbortWithStatus(http.StatusNoContent)
 }
 
 // parseGenericWebhookBody extracts an optional branch and commit from the request body.

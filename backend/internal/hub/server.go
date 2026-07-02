@@ -93,6 +93,7 @@ var Log = logger.New("hub", false)
 func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
+	applications.Log = Log
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
@@ -126,6 +127,16 @@ func Run(cfg Config) error {
 		Update("sync_status", models.SyncStatusUnknown)
 	if resetSyncStatus.Error != nil {
 		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
+	}
+
+	// Reset applications stuck in syncing status from a previous crash, so a
+	// deploy interrupted by a hub or agent restart does not spin forever.
+	resetAppSyncStatus := db.DB.WithContext(context.Background()).
+		Model(&models.Application{}).
+		Where("sync_status = ?", models.Syncing).
+		Update("sync_status", models.OutOfSync)
+	if resetAppSyncStatus.Error != nil {
+		Log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
 	}
 
 	applications.DefaultQueue = applications.NewQueue(&Log)

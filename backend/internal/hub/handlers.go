@@ -3,7 +3,7 @@ package hub
 import (
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/applications"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -118,7 +118,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 		h := websocket.NewHub(&Log)
 		websocket.DefaultHub = h
-		applications.DefaultDeployer = applications.NewDeployer(h, &Log)
+		d := application_deployer.NewApplicationDeployer(h, &Log)
+		application_deployer.DefaultApplicationDeployer = d
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
 

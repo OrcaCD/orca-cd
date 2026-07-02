@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -14,6 +15,24 @@ import (
 )
 
 const testSyncProvider models.RepositoryProvider = "test_sync_provider"
+
+func TestStaticCommit(t *testing.T) {
+	resolve := StaticCommit("abc123", "initial commit")
+
+	// Same values returned regardless of branch argument.
+	for _, branch := range []string{"main", "dev", ""} {
+		hash, msg, err := resolve(context.Background(), branch)
+		if err != nil {
+			t.Fatalf("branch %q: unexpected error: %v", branch, err)
+		}
+		if hash != "abc123" {
+			t.Errorf("branch %q: hash = %q, want %q", branch, hash, "abc123")
+		}
+		if msg != "initial commit" {
+			t.Errorf("branch %q: message = %q, want %q", branch, msg, "initial commit")
+		}
+	}
+}
 
 func setupSyncQueue(t *testing.T) *Queue {
 	t.Helper()

@@ -1,14 +1,15 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -20,6 +21,11 @@ import (
 
 const ApplicationsPath = "/api/v1/applications"
 const defaultApplicationIcon = "box"
+
+// agentDeleteTimeout matches the agent's compose-down timeout (deploymentTimeout)
+// so the hub waits for teardown to finish instead of timing out early and
+// leaving its record out of sync with the agent.
+const agentDeleteTimeout = 5 * time.Minute
 
 type createApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
@@ -74,6 +80,7 @@ type applicationResponse struct {
 	Commit                   string  `json:"commit"`
 	CommitMessage            string  `json:"commitMessage"`
 	LastSyncedAt             *string `json:"lastSyncedAt"`
+	LastSyncError            *string `json:"lastSyncError,omitempty"`
 	Path                     string  `json:"path"`
 	CreatedAt                string  `json:"createdAt"`
 	UpdatedAt                string  `json:"updatedAt"`
@@ -131,6 +138,22 @@ func GetApplicationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, toApplicationResponse(&application))
 }
 
+// applicationNameTaken reports whether another application on the same agent
+// already uses name (case-insensitive). Names are stored encrypted with a random
+// nonce, so we match on the name_hash blind index instead of decrypting every
+// row. excludeID skips a record (the one being updated). Uniqueness is scoped per
+// agent — the same name may exist on different agents.
+func applicationNameTaken(ctx context.Context, name, agentID, excludeID string) (bool, error) {
+	hash := crypto.BlindIndex(models.NormalizeName(name))
+	count, err := gorm.G[models.Application](db.DB).
+		Where("agent_id = ? AND name_hash = ? AND id != ?", agentID, hash, excludeID).
+		Count(ctx, "*")
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func CreateApplicationHandler(c *gin.Context) {
 	var req createApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -158,6 +181,16 @@ func CreateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if nameTaken {
+		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
+		return
+	}
+
 	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
 	if sourceErr != "" {
 		c.JSON(statusCode, gin.H{"error": sourceErr})
@@ -166,6 +199,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	application := models.Application{
 		Name:                     crypto.EncryptedString(req.Name),
+		NameHash:                 crypto.BlindIndex(models.NormalizeName(req.Name)),
 		Icon:                     defaultString(req.Icon, defaultApplicationIcon),
 		RepositoryId:             req.RepositoryId,
 		AgentId:                  req.AgentId,
@@ -225,6 +259,10 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 
 	sendAgentSettings(c, req.AgentId)
+
+	if application_deployer.DefaultApplicationDeployer != nil {
+		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile)
+	}
 }
 
 func UpdateApplicationHandler(c *gin.Context) {
@@ -266,6 +304,16 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if nameTaken {
+		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
+		return
+	}
+
 	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
 	if sourceErr != "" {
 		c.JSON(statusCode, gin.H{"error": sourceErr})
@@ -274,6 +322,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	oldAgentId := application.AgentId
 	application.Name = crypto.EncryptedString(req.Name)
+	application.NameHash = crypto.BlindIndex(models.NormalizeName(req.Name))
 	if req.Icon != "" {
 		application.Icon = req.Icon
 	}
@@ -331,6 +380,31 @@ func DeleteApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	if websocket.DefaultHub == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "hub not initialized"})
+		return
+	}
+
+	// Tear down on the agent first, and only delete our record once the agent
+	// confirms. This keeps the hub from losing track of still-running containers
+	// when the agent is offline or the removal fails.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), agentDeleteTimeout)
+	defer cancel()
+
+	result, err := websocket.DefaultHub.RemoveApplication(ctx, application.AgentId, application.Id, application.Name.String())
+	if err != nil {
+		if errors.Is(err, websocket.ErrAgentOffline) {
+			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot delete application while its containers may still be running"})
+			return
+		}
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "agent did not respond to the delete request"})
+		return
+	}
+	if !result.Success {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "agent failed to remove application: " + result.ErrorMessage})
+		return
+	}
+
 	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -349,7 +423,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 }
 
 func DeployApplicationHandler(c *gin.Context) {
-	if hubApplications.DefaultDeployer == nil {
+	if application_deployer.DefaultApplicationDeployer == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "application deployer not initialized"})
 		return
 	}
@@ -369,17 +443,16 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	handle, err := hubApplications.DefaultDeployer.StartDeploy(&application, application.ComposeFile.String())
+	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String())
+
 	if err != nil {
-		if errors.Is(err, hubApplications.ErrAgentUnavailable) {
-			c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
+		if errors.Is(err, application_deployer.ErrAgentOffline) {
+			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot deploy application"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start deployment"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to trigger application deploy: %v", err)})
 		return
 	}
-
-	hubApplications.DefaultDeployer.TrackManualDeploy(application, handle)
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	sse.PublishUpdate(ApplicationsPath)
@@ -401,6 +474,15 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 	}
 }
 
+// normalizeSyncError returns nil for a missing or empty error so the JSON field is
+// omitted (cleared errors are stored as "").
+func normalizeSyncError(e *string) *string {
+	if e == nil || *e == "" {
+		return nil
+	}
+	return e
+}
+
 func toApplicationResponse(app *models.Application) applicationResponse {
 	resp := applicationResponse{
 		Id:                       app.Id,
@@ -417,6 +499,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		Commit:                   app.Commit,
 		CommitMessage:            app.CommitMessage,
 		LastSyncedAt:             formatTimestamp(app.LastSyncedAt),
+		LastSyncError:            normalizeSyncError(app.LastSyncError),
 		Path:                     app.Path,
 		CreatedAt:                app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:                app.UpdatedAt.Format(time.RFC3339),

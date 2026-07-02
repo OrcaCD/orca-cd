@@ -144,6 +144,76 @@ func TestDeploy_UpProjectError(t *testing.T) {
 	}
 }
 
+func TestRemove_DownsProjectAndRemovesDir(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origDown := downProject
+	t.Cleanup(func() { downProject = origDown })
+
+	var gotProject string
+	var gotOptions api.DownOptions
+	downProject = func(_ context.Context, _ api.Compose, projectName string, options api.DownOptions) error {
+		gotProject = projectName
+		gotOptions = options
+		return nil
+	}
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	if err := c.Remove(t.Context(), DeleteRequest{ApplicationID: "app-1", ApplicationName: "billing"}); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	if gotProject != "billing" {
+		t.Fatalf("expected project %q, got %q", "billing", gotProject)
+	}
+	if !gotOptions.RemoveOrphans {
+		t.Fatal("expected RemoveOrphans on compose down")
+	}
+	if _, err := os.Stat(appDir); !os.IsNotExist(err) {
+		t.Fatalf("expected deployment directory to be removed, stat err = %v", err)
+	}
+}
+
+func TestRemove_RejectsUnsafeApplicationName(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	for _, name := range []string{"../bad", "bad/../name"} {
+		if err := c.Remove(t.Context(), DeleteRequest{ApplicationID: "app-1", ApplicationName: name}); err == nil {
+			t.Fatalf("expected Remove to reject application name %q", name)
+		}
+	}
+}
+
+func TestRemove_DownProjectError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origDown := downProject
+	t.Cleanup(func() { downProject = origDown })
+	downProject = func(_ context.Context, _ api.Compose, _ string, _ api.DownOptions) error {
+		return errors.New("down failed")
+	}
+
+	if err := c.Remove(t.Context(), DeleteRequest{ApplicationID: "app-1", ApplicationName: "billing"}); err == nil {
+		t.Fatal("expected error when downProject fails")
+	}
+}
+
+func TestRemove_NotConfigured(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = ""
+
+	if err := c.Remove(t.Context(), DeleteRequest{ApplicationID: "app-1", ApplicationName: "billing"}); err == nil {
+		t.Fatal("expected error when deployments directory is not configured")
+	}
+}
+
 func TestNormalizeProjectName(t *testing.T) {
 	tests := []struct {
 		input   string

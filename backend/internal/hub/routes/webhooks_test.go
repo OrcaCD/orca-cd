@@ -788,27 +788,24 @@ func setupEnqueueTest(t *testing.T) {
 	t.Cleanup(func() { applications.DefaultQueue = nil })
 }
 
-func makeGenericContext() *gin.Context {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-	return c
-}
+// These tests cover the commit-resolution strategy the generic webhook hands to
+// SyncApplications: a supplied commit is used verbatim (no provider call), while an
+// omitted commit is resolved once per distinct branch.
 
-func TestEnqueueGenericApps_CommitProvided_SkipsGetLatestCommit(t *testing.T) {
+func TestGenericWebhookResolve_CommitProvided_SkipsGetLatestCommit(t *testing.T) {
 	setupEnqueueTest(t)
 	repo := models.Repository{Provider: models.GitHub}
 	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "latest"}}
 	apps := []models.Application{{Branch: "main"}}
 
-	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "provided-sha")
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.StaticCommit("provided-sha", ""), &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 0 {
 		t.Errorf("expected GetLatestCommit not to be called, got %d calls", len(provider.getLatestCommitCalls))
 	}
 }
 
-func TestEnqueueGenericApps_NoCommit_FetchesLatestCommitPerBranch(t *testing.T) {
+func TestGenericWebhookResolve_NoCommit_FetchesLatestCommitPerBranch(t *testing.T) {
 	setupEnqueueTest(t)
 	repo := models.Repository{Provider: models.GitHub}
 	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "resolved"}}
@@ -817,14 +814,14 @@ func TestEnqueueGenericApps_NoCommit_FetchesLatestCommitPerBranch(t *testing.T) 
 		{Branch: "develop"},
 	}
 
-	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "")
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 2 {
 		t.Errorf("expected 2 GetLatestCommit calls, got %d: %v", len(provider.getLatestCommitCalls), provider.getLatestCommitCalls)
 	}
 }
 
-func TestEnqueueGenericApps_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
+func TestGenericWebhookResolve_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
 	setupEnqueueTest(t)
 	repo := models.Repository{Provider: models.GitHub}
 	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "resolved"}}
@@ -834,7 +831,7 @@ func TestEnqueueGenericApps_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
 		{Branch: "main"},
 	}
 
-	enqueueGenericApps(makeGenericContext(), &repo, provider, apps, "")
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 1 {
 		t.Errorf("expected 1 GetLatestCommit call for same branch, got %d", len(provider.getLatestCommitCalls))

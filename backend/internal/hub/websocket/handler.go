@@ -9,6 +9,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gin-gonic/gin"
@@ -108,6 +109,8 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
+		// Application health is reported by the agent (see handleApplicationStatusReport)
+		// once it has inspected its containers — the hub no longer assumes Healthy on connect.
 
 		go h.WritePump(client, log)
 
@@ -131,6 +134,18 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if err != nil {
 				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
 			}
+			_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(ctx, "health_status", models.UnknownHealth)
+			if applicationErr != nil {
+				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
+			}
+			// Fail any deploy still in progress: the agent that owned it is gone, so
+			// no result will arrive and the app would otherwise spin in syncing.
+			_, syncErr := gorm.G[models.Application](db.DB).
+				Where("agent_id = ? AND sync_status = ?", claims.Subject, models.Syncing).
+				Update(ctx, "sync_status", models.OutOfSync)
+			if syncErr != nil {
+				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
+			}
 		}()
 
 		for {
@@ -150,12 +165,12 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(h, client, msg, log)
+			go handleClientMessage(client, msg, log)
 		}
 	}
 }
 
-func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -188,16 +203,53 @@ func handleClientMessage(h *Hub, client *Client, msg *messages.ClientMessage, lo
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
 	case *messages.ClientMessage_DeployResult:
-		if !h.ResolveDeploy(p.DeployResult) {
-			log.Warn().
-				Str("client", client.Id).
-				Str("request_id", p.DeployResult.RequestId).
-				Msg("received deploy result for unknown request")
+		handleDeployResult(p.DeployResult, log)
+	case *messages.ClientMessage_DeleteResult:
+		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(client, p.PullImagesResult, log)
+	case *messages.ClientMessage_ApplicationStatusReport:
+		handleApplicationStatusReport(client, p.ApplicationStatusReport, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
+	}
+}
+
+// handleApplicationStatusReport applies the health an agent reports for its
+// applications. Updates are scoped to the reporting agent so an agent can only
+// affect its own applications.
+func handleApplicationStatusReport(client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
+	if report == nil || len(report.Statuses) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for _, status := range report.Statuses {
+		if _, err := gorm.G[models.Application](db.DB).
+			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
+			Update(ctx, "health_status", protoHealthToModel(status.Health)); err != nil {
+			log.Error().Err(err).
+				Str("agent_id", client.Id).
+				Str("applicationId", status.ApplicationId).
+				Msg("failed to update application health from status report")
+		}
+	}
+
+	sse.PublishUpdate("/api/v1/applications")
+}
+
+func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
+	switch h {
+	case messages.HealthStatus_HEALTH_STATUS_HEALTHY:
+		return models.Healthy
+	case messages.HealthStatus_HEALTH_STATUS_UNHEALTHY:
+		return models.Unhealthy
+	default:
+		return models.UnknownHealth
 	}
 }
 

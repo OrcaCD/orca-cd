@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
@@ -31,74 +32,72 @@ func GetAllApplicationsForRepo(ctx context.Context, repository *models.Repositor
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	_ = markDeploymentInProgress(context.Background(), job.Application.Id, log)
-
-	success := false
-	defer func() {
-		if !success {
-			markDeploymentExecutionFailure(ctx, job.Application.Id, log)
-			notifications.SendNotification(job.Application.Id, "Error: sync failed for "+job.Application.Name.String(), log)
-		}
-	}()
-
 	content, err := job.RepositoryProvider.GetFileContent(ctx, &job.Repository, job.Commit, job.Application.Path)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).
 			Msg("failed to fetch compose file during sync")
+		failSyncJob(job.Application, log)
 		return
 	}
-
-	now := time.Now()
 
 	if content == job.Application.ComposeFile.String() {
-		// No changes in compose file, just update commit and sync status
-		success = true
-		if _, err := gorm.G[models.Application](db.DB).
-			Where("id = ?", job.Application.Id).
-			Updates(ctx, models.Application{
-				Commit:        job.Commit,
-				CommitMessage: job.CommitMessage,
-				SyncStatus:    models.Synced,
-				LastSyncedAt:  &now,
-			}); err != nil {
-			log.Error().Err(err).Str("applicationId", job.Application.Id).
-				Msg("failed to update application after sync (no compose change)")
-		}
-		sse.PublishUpdate("/api/v1/applications")
+		// Compose file unchanged: record the new commit and mark synced without redeploying.
+		now := time.Now()
+		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
+		cleared := ""
+		_ = updateApplicationStatus(context.Background(), job.Application.Id, models.Application{
+			SyncStatus:    models.Synced,
+			Commit:        job.Commit,
+			CommitMessage: job.CommitMessage,
+			LastSyncedAt:  &now,
+			LastSyncError: &cleared,
+		}, log)
 		return
 	}
 
-	if DefaultDeployer == nil {
+	deployer := application_deployer.DefaultApplicationDeployer
+	if deployer == nil {
 		log.Error().Str("applicationId", job.Application.Id).Msg("application deployer not initialized")
+		failSyncJob(job.Application, log)
 		return
 	}
 
-	result, err := DefaultDeployer.DeployAndWait(ctx, &job.Application, content)
+	if _, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", job.Application.Id).
+		Select("ComposeFile", "PreviousComposeFile", "Commit", "CommitMessage").
+		Updates(context.Background(), models.Application{
+			ComposeFile:         crypto.EncryptedString(content),
+			PreviousComposeFile: job.Application.ComposeFile,
+			Commit:              job.Commit,
+			CommitMessage:       job.CommitMessage,
+		}); err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).
+			Msg("failed to persist compose file before deploy")
+		failSyncJob(job.Application, log)
+		return
+	}
+
+	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content); err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to trigger application deploy")
+		failSyncJob(job.Application, log)
+	}
+}
+
+func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {
+	_, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", applicationID).
+		Updates(ctx, updates)
 	if err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to deploy compose file to agent")
-		return
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
 	}
-	if result == nil {
-		log.Error().Str("applicationId", job.Application.Id).Msg("agent deployment finished without a result")
-		return
-	}
-	if !result.Success {
-		log.Error().
-			Str("applicationId", job.Application.Id).
-			Str("request_id", result.RequestId).
-			Str("error", result.ErrorMessage).
-			Msg("agent reported deployment failure")
-		return
-	}
+	sse.PublishUpdate("/api/v1/applications")
+	return err
+}
 
-	success = true
-	markDeploymentSuccess(ctx, job.Application.Id, func(update *models.Application) {
-		update.ComposeFile = crypto.EncryptedString(content)
-		update.PreviousComposeFile = job.Application.ComposeFile
-		update.Commit = job.Commit
-		update.CommitMessage = job.CommitMessage
-		update.LastSyncedAt = &now
+func failSyncJob(application models.Application, log *zerolog.Logger) {
+	_ = updateApplicationStatus(context.Background(), application.Id, models.Application{
+		SyncStatus:   models.OutOfSync,
+		HealthStatus: models.Unhealthy,
 	}, log)
-
-	notifications.SendNotification(job.Application.Id, "Success: sync succeeded for "+job.Application.Name.String(), log)
+	notifications.SendNotification(application.Id, "Error: sync failed for "+application.Name.String(), log)
 }

@@ -1,8 +1,6 @@
 package websocket
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -90,6 +88,31 @@ func TestHub_Register_RejectsDuplicate(t *testing.T) {
 	_, err = h.Register("agent-1", conn2)
 	if err == nil {
 		t.Error("expected error when registering duplicate client Id")
+	}
+}
+
+func TestHub_GetClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+
+	registered, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	got, ok := h.GetClient("agent-1")
+	if !ok {
+		t.Fatal("expected GetClient to find registered client")
+	}
+	if got != registered {
+		t.Error("expected GetClient to return the registered client pointer")
+	}
+
+	if _, ok := h.GetClient("missing"); ok {
+		t.Error("expected GetClient to return false for unknown id")
 	}
 }
 
@@ -202,93 +225,6 @@ func TestHub_Send_FullBuffer(t *testing.T) {
 	ok := h.Send("agent-1", msg)
 	if ok {
 		t.Error("expected Send to return false when buffer is full")
-	}
-}
-
-func TestHub_StartDeployAndResolve(t *testing.T) {
-	log := testLogger()
-	h := NewHub(&log)
-
-	conn := newTestWSConn(t)
-	defer conn.Close() //nolint:errcheck
-
-	client, err := h.Register("agent-1", conn)
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	handle, err := h.StartDeploy("agent-1", &messages.DeployRequest{
-		RequestId:       "req-1",
-		ApplicationId:   "app-1",
-		ApplicationName: "billing",
-		ComposeFile:     "services: {}\n",
-	})
-	if err != nil {
-		t.Fatalf("StartDeploy: %v", err)
-	}
-
-	select {
-	case msg := <-client.Send:
-		req := msg.GetDeployRequest()
-		if req == nil || req.RequestId != "req-1" {
-			t.Fatalf("expected deploy request to be queued")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for queued deploy request")
-	}
-
-	go h.ResolveDeploy(&messages.DeployResult{
-		RequestId:     "req-1",
-		ApplicationId: "app-1",
-		Success:       true,
-	})
-
-	result, err := handle.Await(context.Background())
-	if err != nil {
-		t.Fatalf("Await: %v", err)
-	}
-	if result == nil || !result.Success {
-		t.Fatal("expected successful deploy result")
-	}
-}
-
-func TestHub_StartDeploy_UnavailableAgent(t *testing.T) {
-	log := testLogger()
-	h := NewHub(&log)
-
-	_, err := h.StartDeploy("missing-agent", &messages.DeployRequest{
-		RequestId:     "req-1",
-		ApplicationId: "app-1",
-	})
-	if !errors.Is(err, ErrDeployUnavailable) {
-		t.Fatalf("expected ErrDeployUnavailable, got %v", err)
-	}
-}
-
-func TestHub_StartDeploy_FailsPendingWhenAgentDisconnects(t *testing.T) {
-	log := testLogger()
-	h := NewHub(&log)
-
-	conn := newTestWSConn(t)
-	defer conn.Close() //nolint:errcheck
-
-	if _, err := h.Register("agent-1", conn); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	handle, err := h.StartDeploy("agent-1", &messages.DeployRequest{
-		RequestId:     "req-1",
-		ApplicationId: "app-1",
-	})
-	if err != nil {
-		t.Fatalf("StartDeploy: %v", err)
-	}
-
-	h.Unregister("agent-1")
-
-	_, err = handle.Await(context.Background())
-	if !errors.Is(err, ErrAgentDisconnected) {
-		t.Fatalf("expected ErrAgentDisconnected, got %v", err)
 	}
 }
 

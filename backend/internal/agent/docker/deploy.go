@@ -46,6 +46,15 @@ var upProject = func(ctx context.Context, composeService api.Compose, project *c
 	return composeService.Up(ctx, project, options)
 }
 
+var downProject = func(ctx context.Context, composeService api.Compose, projectName string, options api.DownOptions) error {
+	return composeService.Down(ctx, projectName, options)
+}
+
+type DeleteRequest struct {
+	ApplicationID   string
+	ApplicationName string
+}
+
 // converts an application name to a valid Docker Compose project name
 func normalizeProjectName(name string) (string, error) {
 	var b strings.Builder
@@ -139,6 +148,49 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		Str("application_name", req.ApplicationName).
 		Str("compose_path", composePath).
 		Msg("deployment completed")
+
+	return nil
+}
+
+// Remove tears down an application: compose down (containers + networks) then
+// delete its deployment directory.
+func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
+	if c.compose == nil {
+		return errors.New("docker compose service is not initialized")
+	}
+	if c.deploymentsDir == "" {
+		return errors.New("deployments directory is not configured")
+	}
+	if !c.Ready() {
+		return errors.New("docker daemon is not ready")
+	}
+
+	if err := utils.DoesNotLookLikeFilePath(req.ApplicationName); err != nil {
+		return fmt.Errorf("invalid application name: %w", err)
+	}
+
+	projectName, err := normalizeProjectName(req.ApplicationName)
+	if err != nil {
+		return err
+	}
+
+	applicationDir := filepath.Join(c.deploymentsDir, projectName)
+	if err := utils.IsPathWithinBase(c.deploymentsDir, applicationDir); err != nil {
+		return fmt.Errorf("invalid deployment directory: %w", err)
+	}
+
+	if err := downProject(ctx, c.compose, projectName, api.DownOptions{RemoveOrphans: true}); err != nil {
+		return fmt.Errorf("compose down: %w", err)
+	}
+
+	if err := os.RemoveAll(applicationDir); err != nil {
+		return fmt.Errorf("remove deployment directory: %w", err)
+	}
+
+	c.log.Info().
+		Str("application_id", req.ApplicationID).
+		Str("application_name", req.ApplicationName).
+		Msg("removal completed")
 
 	return nil
 }
