@@ -91,6 +91,31 @@ func TestHub_Register_RejectsDuplicate(t *testing.T) {
 	}
 }
 
+func TestHub_GetClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+
+	registered, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	got, ok := h.GetClient("agent-1")
+	if !ok {
+		t.Fatal("expected GetClient to find registered client")
+	}
+	if got != registered {
+		t.Error("expected GetClient to return the registered client pointer")
+	}
+
+	if _, ok := h.GetClient("missing"); ok {
+		t.Error("expected GetClient to return false for unknown id")
+	}
+}
+
 func TestHub_Unregister(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)
