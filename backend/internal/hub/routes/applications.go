@@ -21,6 +21,7 @@ import (
 
 const ApplicationsPath = "/api/v1/applications"
 const defaultApplicationIcon = "box"
+
 // agentDeleteTimeout matches the agent's compose-down timeout (deploymentTimeout)
 // so the hub waits for teardown to finish instead of timing out early and
 // leaving its record out of sync with the agent.
