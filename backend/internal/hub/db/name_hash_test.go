@@ -171,6 +171,45 @@ func TestBackfillNameHashes_MultipleRows(t *testing.T) {
 	}
 }
 
+// TestBackfillNameHashes_SkipsCollisions covers pre-existing duplicate names on
+// the same agent (possible because names were not unique before the name_hash
+// migration): the backfill must not abort. The first row gets a valid hash; the
+// colliding row is skipped (hash left empty) so it stays outside the unique index.
+func TestBackfillNameHashes_SkipsCollisions(t *testing.T) {
+	gormDB := setupNameHashTest(t)
+
+	first := newTestApp("Dup App", "")
+	second := newTestApp("Dup App", "")
+	for _, app := range []*models.Application{first, second} {
+		if err := gormDB.Create(app).Error; err != nil {
+			t.Fatalf("failed to create application: %v", err)
+		}
+	}
+
+	if err := BackfillNameHashes(context.Background(), gormDB); err != nil {
+		t.Fatalf("BackfillNameHashes() error: %v", err)
+	}
+
+	want := crypto.BlindIndex(models.NormalizeName("Dup App"))
+	firstHash := fetchApp(t, gormDB, first.Id).NameHash
+	secondHash := fetchApp(t, gormDB, second.Id).NameHash
+
+	hashed, empty := 0, 0
+	for _, h := range []string{firstHash, secondHash} {
+		switch h {
+		case want:
+			hashed++
+		case "":
+			empty++
+		default:
+			t.Errorf("unexpected NameHash %q, want %q or empty", h, want)
+		}
+	}
+	if hashed != 1 || empty != 1 {
+		t.Errorf("expected exactly one hashed and one empty row, got hashed=%d empty=%d", hashed, empty)
+	}
+}
+
 // TestBackfillNameHashes_EmptyTable verifies the no-rows case returns nil.
 func TestBackfillNameHashes_EmptyTable(t *testing.T) {
 	gormDB := setupNameHashTest(t)

@@ -138,22 +138,6 @@ func GetApplicationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, toApplicationResponse(&application))
 }
 
-// applicationNameTaken reports whether another application on the same agent
-// already uses name (case-insensitive). Names are stored encrypted with a random
-// nonce, so we match on the name_hash blind index instead of decrypting every
-// row. excludeID skips a record (the one being updated). Uniqueness is scoped per
-// agent — the same name may exist on different agents.
-func applicationNameTaken(ctx context.Context, name, agentID, excludeID string) (bool, error) {
-	hash := crypto.BlindIndex(models.NormalizeName(name))
-	count, err := gorm.G[models.Application](db.DB).
-		Where("agent_id = ? AND name_hash = ? AND id != ?", agentID, hash, excludeID).
-		Count(ctx, "*")
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
 func CreateApplicationHandler(c *gin.Context) {
 	var req createApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -178,16 +162,6 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 	if !agentExists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
-		return
-	}
-
-	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, "")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if nameTaken {
-		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
 		return
 	}
 
@@ -220,6 +194,10 @@ func CreateApplicationHandler(c *gin.Context) {
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
+			return
+		}
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -304,16 +282,6 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	nameTaken, err := applicationNameTaken(c.Request.Context(), req.Name, req.AgentId, id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if nameTaken {
-		c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
-		return
-	}
-
 	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
 	if sourceErr != "" {
 		c.JSON(statusCode, gin.H{"error": sourceErr})
@@ -341,6 +309,10 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
+			return
+		}
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

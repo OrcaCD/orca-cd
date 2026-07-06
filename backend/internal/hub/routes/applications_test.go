@@ -57,6 +57,14 @@ func setupTestDBWithApplications(t *testing.T) {
 		t.Fatalf("failed to migrate dependencies: %v", err)
 	}
 
+	// AutoMigrate builds the schema from model tags, which do not include the
+	// per-agent name_hash uniqueness index (it lives in the SQL migrations, not a
+	// GORM tag). Recreate it here so handlers exercise the real DB-level
+	// enforcement — mirrors migration 000023.
+	if err := db.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_agent_name_hash ON applications (agent_id, name_hash) WHERE name_hash != ''`).Error; err != nil {
+		t.Fatalf("failed to create name_hash unique index: %v", err)
+	}
+
 	restore := mockApplicationRepositoryHTTPClient()
 	t.Cleanup(restore)
 }
