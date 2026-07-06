@@ -15,6 +15,24 @@ import (
 
 const repositoriesSSEPath = "/api/v1/repositories"
 
+type CommitResolver func(ctx context.Context, branch string) (hash, message string, err error)
+
+func StaticCommit(hash, message string) CommitResolver {
+	return func(context.Context, string) (string, string, error) {
+		return hash, message, nil
+	}
+}
+
+func LatestCommit(provider repositories.Provider, repo *models.Repository) CommitResolver {
+	return func(ctx context.Context, branch string) (string, string, error) {
+		info, err := provider.GetLatestCommit(ctx, repo, branch)
+		if err != nil {
+			return "", "", err
+		}
+		return info.Hash, info.Message, nil
+	}
+}
+
 func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.Logger) {
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
@@ -23,8 +41,6 @@ func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.L
 		return
 	}
 
-	markRepositorySyncing(ctx, repo.Id, log)
-
 	apps, err := gorm.G[models.Application](db.DB).Where("repository_id = ?", repo.Id).Find(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to load applications for sync")
@@ -32,34 +48,40 @@ func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.L
 		return
 	}
 
-	if len(apps) == 0 {
-		now := time.Now()
+	SyncApplications(ctx, repo, provider, apps, LatestCommit(provider, repo), log)
+}
+
+func SyncApplications(ctx context.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, resolve CommitResolver, log *zerolog.Logger) {
+	markRepositorySyncing(ctx, repo.Id, log)
+
+	byBranch := make(map[string][]models.Application)
+	for i := range apps {
+		if branch := apps[i].Branch; branch != "" {
+			byBranch[branch] = append(byBranch[branch], apps[i])
+		}
+	}
+
+	now := time.Now()
+	if len(byBranch) == 0 {
 		markRepositorySuccess(ctx, repo.Id, &now, log)
 		return
 	}
 
-	// Group apps by branch and resolve the latest commit for each branch up front.
-	// This ensures the repository status reflects real connectivity, and passes an
-	// explicit commit hash to the queue (avoiding a redundant GetLatestCommit call).
-	byBranch := make(map[string][]models.Application)
-	for i := range apps {
-		branch := apps[i].Branch
-		if branch == "" {
-			continue
-		}
-		byBranch[branch] = append(byBranch[branch], apps[i])
-	}
-
-	now := time.Now()
 	var lastErrMsg string
 	for branch, branchApps := range byBranch {
-		commitInfo, err := provider.GetLatestCommit(ctx, repo, branch)
+		hash, message, err := resolve(ctx, branch)
 		if err != nil {
-			lastErrMsg = fmt.Sprintf("failed to get latest commit for branch %q: %v", branch, err)
-			log.Error().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("failed to get latest commit during sync")
+			lastErrMsg = fmt.Sprintf("failed to resolve commit for branch %q: %v", branch, err)
+			log.Error().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("failed to resolve commit during sync")
 			continue
 		}
-		DefaultQueue.Enqueue(repo, provider, branchApps, commitInfo.Hash, commitInfo.Message)
+		if DefaultQueue != nil {
+			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message)
+		} else {
+			log.Error().Str("repositoryId", repo.Id).Str("branch", branch).Msg("sync queue not initialized")
+			markRepositoryFailed(ctx, repo.Id, "sync queue not initialized", log)
+			return
+		}
 	}
 
 	if lastErrMsg != "" {
@@ -79,6 +101,9 @@ func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) 
 
 func markRepositorySuccess(ctx context.Context, id string, now *time.Time, log *zerolog.Logger) {
 	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).
+		// Select forces the nil LastSyncError to be written as NULL, clearing any
+		// stale error (a struct Updates would otherwise skip the nil pointer).
+		Select("SyncStatus", "LastSyncError", "LastSyncedAt").
 		Updates(ctx, models.Repository{
 			SyncStatus:    models.SyncStatusSuccess,
 			LastSyncError: nil,

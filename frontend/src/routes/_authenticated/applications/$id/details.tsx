@@ -33,6 +33,7 @@ import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import ErrorAlert from "@/components/alerts/error-alert";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -197,6 +198,9 @@ function ApplicationDetailsPage() {
 
 	return (
 		<div className="space-y-6">
+			{data?.lastSyncError && (
+				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
+			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex items-start gap-4">
 					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">

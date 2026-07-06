@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"embed"
 	"net/url"
 	"sync"
@@ -98,6 +99,14 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 
 	if err := runMigrations(db); err != nil {
 		return err
+	}
+
+	// Populate the application name_hash blind index for rows created before the
+	// column existed. Skipped in demo mode where the database is read-only.
+	if !demo {
+		if err := BackfillNameHashes(context.Background(), db); err != nil {
+			return err
+		}
 	}
 
 	if demo {

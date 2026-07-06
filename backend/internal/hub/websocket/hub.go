@@ -29,17 +29,19 @@ func (c *Client) Close() {
 }
 
 type Hub struct {
-	mu            sync.RWMutex
-	clients       map[string]*Client
-	deployManager *DeployManager
-	log           *zerolog.Logger
+	mu      sync.RWMutex
+	clients map[string]*Client
+	log     *zerolog.Logger
+
+	deleteMu       sync.Mutex
+	pendingDeletes map[string]chan *messages.DeleteResult
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
 	return &Hub{
-		clients:       make(map[string]*Client),
-		deployManager: NewDeployManager(),
-		log:           log,
+		clients:        make(map[string]*Client),
+		log:            log,
+		pendingDeletes: make(map[string]chan *messages.DeleteResult),
 	}
 }
 
@@ -63,7 +65,6 @@ func (h *Hub) Unregister(id string) {
 	h.mu.Lock()
 	delete(h.clients, id)
 	h.mu.Unlock()
-	h.deployManager.FailPendingDeploys(id, ErrAgentDisconnected)
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
@@ -103,33 +104,6 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 			h.log.Warn().Str("client", c.Id).Msg("Client send buffer full, dropping message")
 		}
 	}
-}
-
-func (h *Hub) StartDeploy(agentID string, req *messages.DeployRequest) (*DeployHandle, error) {
-	pending := h.deployManager.StartDeploy(agentID, req)
-
-	msg := &messages.ServerMessage{
-		Payload: &messages.ServerMessage_DeployRequest{
-			DeployRequest: req,
-		},
-	}
-
-	if !h.Send(agentID, msg) {
-		h.deployManager.CancelDeploy(req.RequestId)
-		return nil, ErrDeployUnavailable
-	}
-
-	handle := &DeployHandle{
-		deployManager: h.deployManager,
-		requestID:     req.RequestId,
-		outcome:       pending.outcome,
-	}
-
-	return handle, nil
-}
-
-func (h *Hub) ResolveDeploy(result *messages.DeployResult) bool {
-	return h.deployManager.ResolveDeploy(result)
 }
 
 // SendAgentSettings builds an AgentSettings message from the given applications

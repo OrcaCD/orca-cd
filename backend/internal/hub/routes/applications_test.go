@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	hubapplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -34,33 +34,19 @@ const (
 	seedComposeFileContent = "version: \"3.8\"\nservices:\n  app:\n    image: ghcr.io/orcacd/app:old\n"
 )
 
-type stubRouteDeployHandle struct{}
-
-func (stubRouteDeployHandle) Await(context.Context) (*messages.DeployResult, error) { return nil, nil }
-func (stubRouteDeployHandle) Cancel()                                               {}
-
 type stubRouteDeployer struct {
 	startErr    error
 	startedApp  string
 	startedWith string
-	trackedApp  string
 }
 
-func (d *stubRouteDeployer) StartDeploy(app *models.Application, composeFile string) (hubapplications.DeploymentHandle, error) {
+func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
 	d.startedApp = app.Id
 	d.startedWith = composeFile
 	if d.startErr != nil {
-		return nil, d.startErr
+		return d.startErr
 	}
-	return stubRouteDeployHandle{}, nil
-}
-
-func (d *stubRouteDeployer) DeployAndWait(context.Context, *models.Application, string) (*messages.DeployResult, error) {
-	return nil, nil
-}
-
-func (d *stubRouteDeployer) TrackManualDeploy(app models.Application, _ hubapplications.DeploymentHandle) {
-	d.trackedApp = app.Id
+	return nil
 }
 
 func setupTestDBWithApplications(t *testing.T) {
@@ -69,6 +55,14 @@ func setupTestDBWithApplications(t *testing.T) {
 
 	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}); err != nil {
 		t.Fatalf("failed to migrate dependencies: %v", err)
+	}
+
+	// AutoMigrate builds the schema from model tags, which do not include the
+	// per-agent name_hash uniqueness index (it lives in the SQL migrations, not a
+	// GORM tag). Recreate it here so handlers exercise the real DB-level
+	// enforcement — mirrors migration 000023.
+	if err := db.DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_applications_agent_name_hash ON applications (agent_id, name_hash) WHERE name_hash != ''`).Error; err != nil {
+		t.Fatalf("failed to create name_hash unique index: %v", err)
 	}
 
 	restore := mockApplicationRepositoryHTTPClient()
@@ -148,6 +142,7 @@ func seedTestApplication(t *testing.T, repoId, agentId, name string) models.Appl
 	now := time.Now().UTC().Truncate(time.Second)
 	app := models.Application{
 		Name:                crypto.EncryptedString(name),
+		NameHash:            crypto.BlindIndex(models.NormalizeName(name)),
 		Icon:                "box",
 		RepositoryId:        repoId,
 		AgentId:             agentId,
@@ -462,6 +457,73 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if stored.LastSyncedAt != nil {
 		t.Fatal("expected LastSyncedAt to be nil in DB")
+	}
+}
+
+func TestCreateApplicationHandler_DuplicateName(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-dup")
+	agent := seedTestAgent(t, "agent-dup")
+	seedTestApplication(t, repo.Id, agent.Id, "Billing Service")
+
+	// Different case must still collide (case-insensitive check).
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "billing service",
+		"repositoryId": repo.Id,
+		"agentId":      agent.Id,
+		"branch":       "main",
+		"path":         "services/billing.yml",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.DB.Model(&models.Application{}).Count(&count)
+	if count != 1 {
+		t.Errorf("expected no second application created, got %d", count)
+	}
+}
+
+func TestCreateApplicationHandler_SameNameDifferentAgentAllowed(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-multiagent")
+	agentA := seedTestAgent(t, "agent-a")
+	agentB := seedTestAgent(t, "agent-b")
+	seedTestApplication(t, repo.Id, agentA.Id, "Billing Service")
+
+	// Same name, different agent — uniqueness is scoped per agent, so this is allowed.
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Billing Service",
+		"repositoryId": repo.Id,
+		"agentId":      agentB.Id,
+		"branch":       "main",
+		"path":         "services/billing.yml",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var count int64
+	db.DB.Model(&models.Application{}).Count(&count)
+	if count != 2 {
+		t.Errorf("expected two applications, got %d", count)
 	}
 }
 
@@ -949,6 +1011,46 @@ func TestUpdateApplicationHandler_DBError(t *testing.T) {
 	}
 }
 
+// withDeletingAgent installs a hub with a fake connected agent that auto-replies to
+// the DeleteRequest with the given outcome, so DeleteApplicationHandler can run its
+// confirm-before-delete flow without a real agent.
+func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string) {
+	t.Helper()
+	nop := zerolog.Nop()
+	hub := websocket.NewHub(&nop)
+	websocket.DefaultHub = hub
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register fake agent: %v", err)
+	}
+	go func() {
+		msg, ok := <-client.Send
+		if !ok {
+			return
+		}
+		req := msg.GetDeleteRequest()
+		if req == nil {
+			return
+		}
+		hub.ResolveDeleteResult(&messages.DeleteResult{
+			RequestId:     req.RequestId,
+			ApplicationId: req.ApplicationId,
+			Success:       success,
+			ErrorMessage:  errMsg,
+		})
+	}()
+}
+
+// withOfflineHub installs a hub with no connected agents.
+func withOfflineHub(t *testing.T) {
+	t.Helper()
+	nop := zerolog.Nop()
+	websocket.DefaultHub = websocket.NewHub(&nop)
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+}
+
 func TestDeleteApplicationHandler_NotFound(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -969,6 +1071,7 @@ func TestDeleteApplicationHandler_Success(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-delete")
 	agent := seedTestAgent(t, "agent-delete")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Delete Me")
+	withDeletingAgent(t, agent.Id, true, "")
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
@@ -984,6 +1087,54 @@ func TestDeleteApplicationHandler_Success(t *testing.T) {
 	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
 	if count != 0 {
 		t.Error("expected application to be deleted from DB")
+	}
+}
+
+func TestDeleteApplicationHandler_AgentOffline_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-del-offline")
+	agent := seedTestAgent(t, "agent-del-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Offline Delete")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeleteApplicationHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	var count int64
+	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
+	if count != 1 {
+		t.Error("expected application to remain when agent is offline")
+	}
+}
+
+func TestDeleteApplicationHandler_AgentFailure_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-del-fail")
+	agent := seedTestAgent(t, "agent-del-fail")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Fail Delete")
+	withDeletingAgent(t, agent.Id, false, "compose down: boom")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	DeleteApplicationHandler(c)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	var count int64
+	db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Count(&count)
+	if count != 1 {
+		t.Error("expected application to remain when agent removal fails")
 	}
 }
 
@@ -1042,8 +1193,8 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
 
 	deployer := &stubRouteDeployer{}
-	hubapplications.DefaultDeployer = deployer
-	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+	application_deployer.DefaultApplicationDeployer = deployer
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
@@ -1060,10 +1211,6 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 	if deployer.startedWith != seedComposeFileContent {
 		t.Fatalf("expected deployer compose file to match stored compose")
 	}
-	if deployer.trackedApp != app.Id {
-		t.Fatalf("expected background tracking for app %q, got %q", app.Id, deployer.trackedApp)
-	}
-
 }
 
 func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
@@ -1073,8 +1220,8 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 	agent := seedTestAgent(t, "agent-deploy-offline")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Deploy Me")
 
-	hubapplications.DefaultDeployer = &stubRouteDeployer{startErr: hubapplications.ErrAgentUnavailable}
-	t.Cleanup(func() { hubapplications.DefaultDeployer = nil })
+	application_deployer.DefaultApplicationDeployer = &stubRouteDeployer{startErr: application_deployer.ErrAgentOffline}
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	c, w := makeAuthContext(t, "user-1")
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/deploy", nil)
@@ -1082,16 +1229,10 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 
 	DeployApplicationHandler(c)
 
+	// A deploy against an offline agent is the same conflict condition as delete:
+	// the handler surfaces 409, not 500.
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
-	}
-
-	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to reload app: %v", err)
-	}
-	if updated.SyncStatus != models.UnknownSync {
-		t.Fatalf("expected sync status to remain %q, got %q", models.UnknownSync, updated.SyncStatus)
 	}
 }
 

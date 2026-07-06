@@ -232,6 +232,52 @@ func TestDecrypt_WrongKey(t *testing.T) {
 	}
 }
 
+func TestBlindIndex_Deterministic(t *testing.T) {
+	mustInit(t)
+
+	a := BlindIndex("billing service")
+	b := BlindIndex("billing service")
+	if a != b {
+		t.Errorf("expected deterministic blind index, got %q and %q", a, b)
+	}
+}
+
+func TestBlindIndex_DifferentInputDifferentHash(t *testing.T) {
+	mustInit(t)
+
+	if BlindIndex("billing service") == BlindIndex("payments service") {
+		t.Error("expected different blind indexes for different inputs")
+	}
+}
+
+func TestBlindIndex_StableAcrossInstancesWithSameSecret(t *testing.T) {
+	c1, err := New(validKey)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	c2, err := New(validKey)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c1.BlindIndex("app") != c2.BlindIndex("app") {
+		t.Error("expected same blind index across ciphers built from the same secret")
+	}
+}
+
+func TestBlindIndex_DiffersAcrossSecrets(t *testing.T) {
+	c1, err := New(validKey)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	c2, err := New("a-totally-different-secret-value-here")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c1.BlindIndex("app") == c2.BlindIndex("app") {
+		t.Error("expected different blind index for different secrets (rotation invalidates the index)")
+	}
+}
+
 func TestDeriveKey_Deterministic(t *testing.T) {
 	k1, err := deriveKey("mysecret", "info")
 	if err != nil {

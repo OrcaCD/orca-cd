@@ -13,6 +13,7 @@ export interface Application {
 	commit: string;
 	commitMessage: string;
 	lastSyncedAt?: string;
+	lastSyncError?: string;
 	path: string;
 	agentId: string;
 	agentName: string;
