@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -88,6 +90,21 @@ func createTestAgent(t *testing.T, keyId string) *models.Agent {
 	return agent
 }
 
+func issueTokenAndPersistKeyID(t *testing.T, agent *models.Agent) string {
+	t.Helper()
+
+	token, err := auth.GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Update(t.Context(), "key_id", agent.KeyId); err != nil {
+		t.Fatalf("failed to persist rotated key id: %v", err)
+	}
+
+	return token
+}
+
 func newHandlerTestServer(t *testing.T, h *Hub) *httptest.Server {
 	t.Helper()
 	log := zerolog.New(os.Stderr).Level(zerolog.Disabled)
@@ -125,6 +142,55 @@ func waitForOffline(t *testing.T, agentId string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Errorf("timed out waiting for agent %s to go offline", agentId)
+}
+
+func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Errorf("doHandshake: set deadline: %v", err)
+		return
+	}
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		t.Errorf("doHandshake: read: %v", err)
+		return
+	}
+	serverMsg := &messages.ServerMessage{}
+	if err := proto.Unmarshal(data, serverMsg); err != nil {
+		t.Errorf("doHandshake: unmarshal: %v", err)
+		return
+	}
+	init := serverMsg.GetKeyExchangeInit()
+	if init == nil {
+		t.Errorf("doHandshake: expected KeyExchangeInit, got %T", serverMsg.Payload)
+		return
+	}
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		init.MlkemEncapsulationKey,
+		init.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Errorf("doHandshake: AgentHandshake: %v", err)
+		return
+	}
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("doHandshake: marshal response: %v", err)
+	}
+	if err := conn.WriteMessage(websocket.BinaryMessage, respData); err != nil {
+		t.Errorf("doHandshake: send response: %v", err)
+		return
+	}
+	_ = conn.SetReadDeadline(time.Time{})
 }
 
 func TestWsHandler_MissingAuthHeader(t *testing.T) {
@@ -228,10 +294,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-1")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -240,6 +303,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for the server to register the client (with timeout).
 	msg := &messages.ServerMessage{
@@ -291,10 +355,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-2")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -303,6 +364,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for registration.
 	deadline := time.Now().Add(time.Second)
@@ -355,6 +417,88 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	waitForOffline(t, agent.Id)
 }
 
+func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
+	log := testLogger()
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1)}
+	// KeyExchangeResponse is neither encrypted nor a Pong — must be dropped silently.
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{},
+		},
+	}
+	handleClientMessage(client, msg, &log) // must not panic or block
+}
+
+func TestHandleClientMessage_DecryptError(t *testing.T) {
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{
+				Nonce:      make([]byte, 32),
+				Ciphertext: []byte{0x01, 0x02}, // invalid ciphertext — auth tag will fail
+			},
+		},
+	}
+	handleClientMessage(client, msg, &log) // must return without panic
+}
+
+func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+
+	// Encrypt a message whose inner payload is itself an EncryptedPayload.
+	innerMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{
+			EncryptedPayload: &messages.EncryptedPayload{Nonce: make([]byte, 32), Ciphertext: []byte{0x01}},
+		},
+	}
+	env, err := session.Encrypt(innerMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+	handleClientMessage(client, msg, &log) // doubly-encrypted — must be dropped
+}
+
+func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: "test", Send: make(chan *messages.ServerMessage, 1), session: session}
+
+	// Encrypt a message type that falls into the default switch branch.
+	innerMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{},
+		},
+	}
+	env, err := session.Encrypt(innerMsg)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	msg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
+	}
+	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
+}
+
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
@@ -362,10 +506,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-3")
-	token, err := auth.GenerateAgentToken(agent)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -374,6 +515,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
+	doHandshake(t, conn, agent.Id)
 
 	// Wait for registration then close the connection.
 	deadline := time.Now().Add(time.Second)
@@ -402,4 +544,277 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("expected agent status to be Offline after disconnect")
+}
+
+// MockConn implements a subset of websocket.Conn for testing handshake errors.
+type MockConn struct {
+	readErr      error
+	writeErr     error
+	readDeadErr  error
+	writeDeadErr error
+	messages     [][]byte
+	readIndex    int
+}
+
+func (m *MockConn) ReadMessage() (messageType int, data []byte, err error) {
+	if m.readErr != nil {
+		return 0, nil, m.readErr
+	}
+	if m.readIndex >= len(m.messages) {
+		return 0, nil, websocket.ErrCloseSent
+	}
+	data = m.messages[m.readIndex]
+	m.readIndex++
+	return websocket.BinaryMessage, data, nil
+}
+
+func (m *MockConn) WriteMessage(messageType int, data []byte) error {
+	return m.writeErr
+}
+
+func (m *MockConn) SetReadDeadline(t time.Time) error {
+	return m.readDeadErr
+}
+
+func (m *MockConn) SetWriteDeadline(t time.Time) error {
+	return m.writeDeadErr
+}
+
+func (m *MockConn) Close() error {
+	return nil
+}
+
+func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
+	setupHandlerTestEnv(t)
+
+	// Also migrate Application and Repository tables so the FindApplications query
+	// succeeds and the else-branch (h.SendAgentSettings) is exercised.
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}); err != nil {
+		t.Fatalf("migrate Application: %v", err)
+	}
+
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "key-sa-1")
+	token := issueTokenAndPersistKeyID(t, agent)
+
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	doHandshake(t, conn, agent.Id)
+
+	// The WsHandler sends an encrypted AgentSettings message immediately after
+	// registration. Read and discard it to verify the code path was reached.
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatalf("expected AgentSettings message: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty AgentSettings message")
+	}
+
+	conn.Close() //nolint:errcheck,gosec
+	waitForOffline(t, agent.Id)
+}
+
+func TestPerformHandshake_WriteDeadlineError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{writeDeadErr: errors.New("failed to set write deadline")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from SetWriteDeadline, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "write deadline") {
+		t.Errorf("expected deadline error message, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_WriteMessageError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{writeErr: errors.New("failed to write message")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from WriteMessage, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "write") {
+		t.Errorf("expected write error, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_ReadDeadlineError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	conn := &MockConn{readDeadErr: errors.New("failed to set read deadline")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from SetReadDeadline, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "read deadline") {
+		t.Errorf("expected deadline error message, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_ReadMessageError(t *testing.T) {
+	log := testLogger()
+	conn := &MockConn{readErr: errors.New("connection closed")}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from ReadMessage, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_UnmarshalError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	// Send invalid protobuf data
+	conn := &MockConn{
+		messages: [][]byte{{0xFF, 0xFF, 0xFF, 0xFF}},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from proto.Unmarshal, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_InvalidResponseType(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	// Send a valid ClientMessage with wrong payload type (Pong instead of KeyExchangeResponse)
+	wrongMsg := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{
+			Pong: &messages.PongResponse{Timestamp: 123},
+		},
+	}
+	data, err := proto.Marshal(wrongMsg)
+	if err != nil {
+		t.Fatalf("failed to marshal test message: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{data},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error for invalid response type, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "KeyExchangeResponse") {
+		t.Errorf("expected error mentioning KeyExchangeResponse, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_DerivationError(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	// Create valid handshake init, but respond with invalid derivation data
+	// Send KeyExchangeResponse with invalid ciphertext (too short, will fail MLKEM decapsulation)
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      []byte{0x00}, // invalid MLKEM ciphertext
+				AgentX25519PublicKey: make([]byte, 32),
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, "test-agent-id", &log)
+	if err == nil {
+		t.Error("expected error from key derivation, got nil")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+}
+
+func TestPerformHandshake_Success(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	agentID := "test-agent-id"
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("failed to generate hub keys: %v", err)
+	}
+
+	// Client performs handshake
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		hubKeys.MLKEMEncapKey,
+		hubKeys.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Fatalf("AgentHandshake failed: %v", err)
+	}
+
+	// Server reads this response
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, agentID, &log)
+	if err != nil {
+		t.Fatalf("performHandshake failed: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil session")
+	}
 }

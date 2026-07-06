@@ -17,6 +17,7 @@ DATE := if os_family() == 'windows' {
     `date -u +%Y-%m-%dT%H:%M:%SZ`
 }
 LDFLAGS := "-s -w -X github.com/OrcaCD/orca-cd/internal/version.Version=" + VERSION + " -X github.com/OrcaCD/orca-cd/internal/version.Commit=" + COMMIT + " -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=" + DATE
+EXT := if os_family() == 'windows' { '.exe' } else { '' }
 defaultCommand := ""
 
 # List all available commands
@@ -30,7 +31,8 @@ lint:
     buf lint
 
 # Format source code using golangci-lint
-fmt:
+alias fmt := format
+format:
     golangci-lint fmt
     buf format -w
 
@@ -42,26 +44,26 @@ proto:
 [group('test')]
 [env("CGO_ENABLED", "1")]
 test:
-    go test -v -race ./...
+   gotestsum -- -race -failfast ./...
 
 # Run all tests with race detection and coverage report
 [group('test')]
 [env("CGO_ENABLED", "1")]
 test-coverage:
-    go test -v -race -coverprofile coverage.txt -covermode atomic ./...
+    gotestsum -- -race -coverprofile coverage.txt -covermode atomic ./...
     go tool cover -html coverage.txt
 
 # Build the hub binary to bin/hub
 [group('hub')]
 [env("CGO_ENABLED", "1")]
 build-hub: proto
-    go build -ldflags '{{ LDFLAGS }}' -o bin/hub ./cmd/hub
+    go build -ldflags '{{ LDFLAGS }}' -o bin/hub{{ EXT }} ./cmd/hub
 
 # Build the agent binary to bin/agent
 [group('agent')]
 [env("CGO_ENABLED", "1")]
 build-agent: proto
-    go build -ldflags '{{ LDFLAGS }}' -o bin/agent ./cmd/agent
+    go build -ldflags '{{ LDFLAGS }}' -o bin/agent{{ EXT }} ./cmd/agent
 
 # Build both hub and agent binaries in parallel
 [parallel]

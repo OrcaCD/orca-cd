@@ -13,6 +13,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -106,7 +107,18 @@ func decryptState(encrypted string) (*stateData, error) {
 	return &sd, nil
 }
 
+// oidcHTTPClient is the HTTP client used for OIDC provider discovery and token
+// exchange. Replaced with an unrestricted client in tests.
+var oidcHTTPClient = httpclient.Default
+
+// oidcContext injects the shared HTTP client into ctx so that go-oidc and
+// oauth2 use it for all outbound requests (discovery, token exchange, etc.).
+func oidcContext(ctx context.Context) context.Context {
+	return gooidc.ClientContext(ctx, oidcHTTPClient)
+}
+
 func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string) (authURL string, encryptedState string, err error) {
+	ctx = oidcContext(ctx)
 	oidcProvider, err := gooidc.NewProvider(ctx, provider.IssuerURL)
 	if err != nil {
 		return "", "", fmt.Errorf("discover provider: %w", err)
@@ -148,6 +160,7 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 }
 
 func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL string, code string, stateParam string, encryptedState string) (*OIDCUser, error) {
+	ctx = oidcContext(ctx)
 	sd, err := decryptState(encryptedState)
 	if err != nil {
 		return nil, fmt.Errorf("invalid state cookie: %w", err)

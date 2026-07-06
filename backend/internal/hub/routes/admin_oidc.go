@@ -9,10 +9,14 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+const AdminOIDCProvidersPath = "/api/v1/admin/oidc-providers"
 
 type createOIDCProviderRequest struct {
 	Name                 string `json:"name" binding:"required,min=1,max=100"`
@@ -139,7 +143,10 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "created", "oidc-provider", provider.Id)
+
 	c.JSON(http.StatusCreated, toOIDCProviderResponse(&provider))
+	sse.PublishUpdate(AdminOIDCProvidersPath)
 }
 
 func AdminUpdateOIDCProviderHandler(c *gin.Context) {
@@ -189,7 +196,10 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "updated", "oidc-provider", id)
+
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
+	sse.PublishUpdate(AdminOIDCProvidersPath)
 }
 
 func AdminDeleteOIDCProviderHandler(c *gin.Context) {
@@ -205,5 +215,8 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 		return
 	}
 
+	utils.RecordAuditLog(c, "deleted", "oidc-provider", id)
+
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
+	sse.PublishUpdate(AdminOIDCProvidersPath)
 }

@@ -41,20 +41,20 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    --background: hsl(0, 0%, 11%);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.68 0.15 237);
-    --primary-foreground: oklch(0.29 0.06 243);
+    --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.274 0.006 286.033);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
     --muted-foreground: oklch(0.708 0 0);
     --accent: oklch(0.68 0.15 237);
-    --accent-foreground: oklch(0.29 0.06 243);
+    --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
@@ -67,9 +67,9 @@
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.75 0.14 233);
-    --sidebar-primary-foreground: oklch(0.29 0.06 243);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.68 0.15 237);
-    --sidebar-accent-foreground: oklch(0.29 0.06 243);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
 }
@@ -129,5 +129,58 @@
     button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+.shiki {
+  counter-reset: step;
+  counter-increment: step 0;
+  .tab,
+  .space {
+    position: relative;
+  }
+  .tab::before {
+    content: '⇥';
+    position: absolute;
+    opacity: 0.3;
+  }
+  .space::before {
+    content: '·';
+    position: absolute;
+    opacity: 0.3;
+  }
+  .line {
+    @apply border-l-4 border-transparent;
+    &::before {
+      counter-increment: step;
+      @apply mr-6 inline-block w-4 border-transparent text-right text-neutral-600 content-[counter(step)];
+    }
+    &.highlighted,
+    &.diff {
+      @apply -mr-5 -ml-4 inline-block w-[calc(100%+(--spacing(5)+(--spacing(4))))] pr-5 pl-4;
+    }
+    &.highlighted {
+      @apply border-neutral-500 bg-neutral-800;
+    }
+    &.diff {
+      &.add,
+      &.remove {
+        span:first-child::before {
+          @apply -ml-4 inline-flex w-4;
+        }
+      }
+      &.add {
+        @apply border-green-500 bg-green-500/25 before:text-green-500;
+        span:first-child::before {
+          @apply text-green-500 content-["+"];
+        }
+      }
+      &.remove {
+        @apply border-orange-500 bg-orange-500/30 opacity-70 *:text-neutral-400! before:text-orange-500;
+        span:first-child::before {
+          @apply text-orange-500 content-["-"];
+        }
+      }
+    }
   }
 }

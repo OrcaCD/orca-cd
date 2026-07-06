@@ -7,18 +7,117 @@ option go_package = "./messages";
 message ClientMessage {
   oneof payload {
     PongResponse pong = 1;
+    KeyExchangeResponse key_exchange_response = 2;
+    EncryptedPayload encrypted_payload = 3;
+    DeployResult deploy_result = 4;
+    PullImagesResult pull_images_result = 5;
+    DeleteResult delete_result = 6;
+    ApplicationStatusReport application_status_report = 7;
   }
 }
 
 message ServerMessage {
   oneof payload {
     PingRequest ping = 1;
+    KeyExchangeInit key_exchange_init = 2;
+    EncryptedPayload encrypted_payload = 3;
+    DeployRequest deploy_request = 4;
+    AgentSettings agent_settings = 5;
+    PullImagesRequest pull_images_request = 6;
+    DeleteRequest delete_request = 7;
   }
 }
 
 message PingRequest {
   int64 timestamp = 1;
 }
+
 message PongResponse {
   int64 timestamp = 1;
+}
+
+message KeyExchangeInit {
+  bytes mlkem_encapsulation_key = 1;
+  bytes x25519_public_key = 2;
+  bytes hub_signature = 3;
+}
+
+message KeyExchangeResponse {
+  bytes mlkem_ciphertext = 1;
+  bytes agent_x25519_public_key = 2;
+}
+
+message EncryptedPayload {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+}
+
+message DeployRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  string compose_file = 4;
+}
+
+message DeleteRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message DeleteResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+message DeployResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+message AgentSettings {
+  repeated ImagePollSettings image_poll_settings = 1;
+}
+
+message ImagePollSettings {
+  string application_id = 1;
+  bool enabled = 2;
+  int64 interval_seconds = 3;
+  bool delete_old_images = 4;
+  string application_name = 5;
+}
+
+message PullImagesRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message PullImagesResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  bool images_updated = 4;
+  string error_message = 5;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_UNHEALTHY = 2;
+}
+
+message ApplicationStatus {
+  string application_id = 1;
+  HealthStatus health = 2;
+}
+
+// ApplicationStatusReport carries the health of every application managed by an
+// agent in a single message, sent right after the agent connects.
+message ApplicationStatusReport {
+  repeated ApplicationStatus statuses = 1;
 }

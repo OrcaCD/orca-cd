@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -10,7 +9,6 @@ import (
 
 func RequestLogger(logger zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		start := time.Now()
 
 		c.Next()
 
@@ -20,16 +18,15 @@ func RequestLogger(logger zerolog.Logger) gin.HandlerFunc {
 		case status >= http.StatusInternalServerError:
 			level = zerolog.ErrorLevel
 		case status >= http.StatusBadRequest:
-			level = zerolog.WarnLevel
+			level = zerolog.DebugLevel
 		default:
-			level = zerolog.InfoLevel
+			level = zerolog.DebugLevel
 		}
 
 		logger.WithLevel(level).
 			Str("method", c.Request.Method).
 			Str("path", c.Request.URL.Path).
 			Int("status", status).
-			Dur("latency", time.Since(start)).
 			Str("client_ip", c.ClientIP()).
 			Msg("request")
 	}

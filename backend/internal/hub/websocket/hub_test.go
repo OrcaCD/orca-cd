@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
@@ -25,6 +27,7 @@ func TestNewHub(t *testing.T) {
 
 	if h == nil {
 		t.Fatal("expected non-nil hub")
+		return
 	}
 	if h.clients == nil {
 		t.Fatal("expected non-nil clients map")
@@ -48,6 +51,7 @@ func TestHub_Register(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("expected non-nil client")
+		return
 	}
 	if client.Id != "agent-1" {
 		t.Errorf("expected client id %q, got %q", "agent-1", client.Id)
@@ -84,6 +88,31 @@ func TestHub_Register_RejectsDuplicate(t *testing.T) {
 	_, err = h.Register("agent-1", conn2)
 	if err == nil {
 		t.Error("expected error when registering duplicate client Id")
+	}
+}
+
+func TestHub_GetClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+
+	registered, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	got, ok := h.GetClient("agent-1")
+	if !ok {
+		t.Fatal("expected GetClient to find registered client")
+	}
+	if got != registered {
+		t.Error("expected GetClient to return the registered client pointer")
+	}
+
+	if _, ok := h.GetClient("missing"); ok {
+		t.Error("expected GetClient to return false for unknown id")
 	}
 }
 
@@ -144,6 +173,7 @@ func TestHub_Send_ExistingClient(t *testing.T) {
 		ping := received.GetPing()
 		if ping == nil {
 			t.Fatal("expected ping payload")
+			return
 		}
 		if ping.Timestamp != 1234 {
 			t.Errorf("expected timestamp 1234, got %d", ping.Timestamp)
@@ -336,6 +366,169 @@ func TestHub_WritePump(t *testing.T) {
 
 	// Close the send channel to stop WritePump
 	client.Close()
+}
+
+func TestHub_WritePump_DropsMessageWithNilSession(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	serverConn, clientConn := newWSPair(t)
+	defer clientConn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-nil-session", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	// session is intentionally nil
+	go h.WritePump(client, &log)
+
+	// KeyExchangeInit is not allowed unencrypted and session is nil — must be dropped.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_KeyExchangeInit{
+			KeyExchangeInit: &messages.KeyExchangeInit{},
+		},
+	}
+	client.Send <- msg
+	time.Sleep(50 * time.Millisecond)
+
+	// Close WritePump; the underlying serverConn will also be closed.
+	client.Close()
+
+	// clientConn should not have received any data message.
+	if err := clientConn.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, _, readErr := clientConn.ReadMessage()
+	if readErr == nil {
+		t.Error("expected no message (should have been dropped), but client received data")
+	}
+}
+
+func TestHub_WritePump_EncryptsNonPingMessages(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	serverConn, clientConn := newWSPair(t)
+	defer clientConn.Close() //nolint:errcheck
+
+	sessionKey := make([]byte, 32)
+	session, err := wscrypto.NewSession(sessionKey)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	client, err := h.Register("agent-encrypted", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	client.session = session
+	go h.WritePump(client, &log)
+
+	// KeyExchangeInit is not allowed unencrypted — WritePump must encrypt it.
+	msg := &messages.ServerMessage{
+		Payload: &messages.ServerMessage_KeyExchangeInit{
+			KeyExchangeInit: &messages.KeyExchangeInit{},
+		},
+	}
+	client.Send <- msg
+
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, data, err := clientConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	received := &messages.ServerMessage{}
+	if err := proto.Unmarshal(data, received); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if received.GetEncryptedPayload() == nil {
+		t.Error("expected encrypted payload from WritePump")
+	}
+
+	client.Close()
+}
+
+func TestHub_SendAgentSettings_NoClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	apps := []models.Application{
+		{Base: models.Base{Id: "app-1"}, ImagePollEnabled: true, ImagePollIntervalSeconds: 120},
+	}
+	ok := h.SendAgentSettings("nonexistent-agent", apps)
+	if ok {
+		t.Error("expected false when agent is not connected")
+	}
+}
+
+func TestHub_SendAgentSettings(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	apps := []models.Application{
+		{
+			Base:                     models.Base{Id: "app-1"},
+			ImagePollEnabled:         true,
+			ImagePollIntervalSeconds: 120,
+			ImagePollDeleteOldImages: true,
+		},
+		{
+			Base:             models.Base{Id: "app-2"},
+			ImagePollEnabled: false,
+		},
+	}
+
+	ok := h.SendAgentSettings("agent-1", apps)
+	if !ok {
+		t.Fatal("expected true when agent is connected")
+	}
+
+	select {
+	case msg := <-client.Send:
+		settings := msg.GetAgentSettings()
+		if settings == nil {
+			t.Fatal("expected AgentSettings payload")
+		}
+		if len(settings.ImagePollSettings) != 2 {
+			t.Fatalf("expected 2 poll settings, got %d", len(settings.ImagePollSettings))
+		}
+		byID := make(map[string]*messages.ImagePollSettings)
+		for _, s := range settings.ImagePollSettings {
+			byID[s.ApplicationId] = s
+		}
+		s1, ok := byID["app-1"]
+		if !ok {
+			t.Fatal("expected app-1 in settings")
+		}
+		if !s1.Enabled {
+			t.Error("expected app-1 enabled=true")
+		}
+		if s1.IntervalSeconds != 120 {
+			t.Errorf("expected interval 120, got %d", s1.IntervalSeconds)
+		}
+		if !s1.DeleteOldImages {
+			t.Error("expected DeleteOldImages=true for app-1")
+		}
+		s2, ok := byID["app-2"]
+		if !ok {
+			t.Fatal("expected app-2 in settings")
+		}
+		if s2.Enabled {
+			t.Error("expected app-2 enabled=false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for AgentSettings message")
+	}
 }
 
 func TestClient_Close(t *testing.T) {

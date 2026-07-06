@@ -32,7 +32,7 @@ func TestRequireAdmin_AdminRole(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -62,7 +62,7 @@ func TestRequireAdmin_UserRole(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusForbidden {

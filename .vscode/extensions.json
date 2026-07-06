@@ -1,6 +1,3 @@
 {
-    "recommendations": [
-        "golang.go",
-        "oxc.oxc-vscode"
-    ]
+	"recommendations": ["golang.go", "oxc.oxc-vscode", "inlang.vs-code-extension"]
 }

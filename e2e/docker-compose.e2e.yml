@@ -1,0 +1,11 @@
+services:
+  hub:
+    build:
+      context: ..
+      dockerfile: hub.Dockerfile
+    container_name: orca-hub-e2e-test
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      - APP_URL=http://127.0.0.1:8090
+      - APP_SECRET=supersecretkey_minimum_32_characters

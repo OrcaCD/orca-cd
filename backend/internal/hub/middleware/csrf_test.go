@@ -98,6 +98,23 @@ func TestValidateOrigin_OriginWithTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestValidateOrigin_WebhookRoute_NoOriginAllowed(t *testing.T) {
+	mw := ValidateOrigin("https://example.com")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/repositories/some-repo-id", nil)
+
+	mw(c)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected webhook POST without Origin to pass (200), got %d", w.Code)
+	}
+	if c.IsAborted() {
+		t.Error("webhook request should not be aborted")
+	}
+}
+
 func TestValidateOrigin_PutDeletePatch(t *testing.T) {
 	mw := ValidateOrigin("https://example.com")
 
@@ -113,5 +130,42 @@ func TestValidateOrigin_PutDeletePatch(t *testing.T) {
 				t.Errorf("expected 403 for %s without origin, got %d", method, w.Code)
 			}
 		})
+	}
+}
+
+func TestValidateOrigin_GitHubActionsRoute_NoOriginAllowed(t *testing.T) {
+	mw := ValidateOrigin("https://example.com")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/github-actions", nil)
+
+	mw(c)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected GitHub Actions POST without Origin to pass (200), got %d", w.Code)
+	}
+	if c.IsAborted() {
+		t.Error("GitHub Actions request should not be aborted")
+	}
+}
+
+func TestValidateOrigin_GitHubActionsRoute_WrongOriginAllowed(t *testing.T) {
+	mw := ValidateOrigin("https://example.com")
+
+	// CSRF validation is skipped entirely for this path, so a mismatched Origin
+	// must not block the request either.
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/github-actions", nil)
+	c.Request.Header.Set("Origin", "https://evil.com")
+
+	mw(c)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected GitHub Actions POST with wrong Origin to pass (200), got %d", w.Code)
+	}
+	if c.IsAborted() {
+		t.Error("GitHub Actions request should not be aborted")
 	}
 }

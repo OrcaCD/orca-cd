@@ -12,6 +12,7 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import type { VariantProps } from "class-variance-authority";
+import { m } from "@/lib/paraglide/messages";
 
 interface ConfirmationDialogProps {
 	triggerText?: string | React.ReactNode;
@@ -22,17 +23,19 @@ interface ConfirmationDialogProps {
 	onConfirm: () => void;
 	triggerProps?: VariantProps<typeof buttonVariants>;
 	asDropdownItem?: boolean;
+	dropdownItemVariant?: "default" | "destructive";
 }
 
 export default function ConfirmationDialog({
-	triggerText = "Confirm action",
-	title = "Are you sure?",
-	description = "Do you really want to perform this action? This action cannot be undone.",
-	confirmText = "Yes, proceed",
-	cancelText = "Cancel",
+	triggerText = m.confirmAction(),
+	title = m.areYouSure(),
+	description = m.confirmDialogDefaultDescription(),
+	confirmText = m.confirmProceed(),
+	cancelText = m.cancel(),
 	onConfirm,
 	triggerProps = { variant: "outline" },
 	asDropdownItem = false,
+	dropdownItemVariant = "destructive",
 }: ConfirmationDialogProps) {
 	const [open, setOpen] = useState(false);
 
@@ -43,15 +46,16 @@ export default function ConfirmationDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger asChild>
-				{asDropdownItem ? (
-					<DropdownMenuItem variant="destructive" onSelect={(e) => e.preventDefault()}>
-						{triggerText}
-					</DropdownMenuItem>
-				) : (
-					<Button {...triggerProps}>{triggerText}</Button>
-				)}
-			</DialogTrigger>
+			<DialogTrigger
+				nativeButton={!asDropdownItem}
+				render={
+					asDropdownItem ? (
+						<DropdownMenuItem variant={dropdownItemVariant}>{triggerText}</DropdownMenuItem>
+					) : (
+						<Button {...triggerProps}>{triggerText}</Button>
+					)
+				}
+			></DialogTrigger>
 			<DialogContent className="sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">

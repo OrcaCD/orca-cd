@@ -1,8 +1,10 @@
 package db
 
 import (
+	"context"
 	"embed"
-	"os"
+	"net/url"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -18,30 +20,118 @@ import (
 var migrationFiles embed.FS
 
 var DB *gorm.DB
+var logger zerolog.Logger
 
-func Connect(logger zerolog.Logger, debug bool) error {
-	if err := os.MkdirAll("data", 0750); err != nil {
+const sqliteFilePath = "data/hub.db"
+
+func sqliteDSN(readOnly bool) string {
+	q := url.Values{}
+	// https://sqlite.org/pragma.html#pragma_busy_timeout
+	q.Set("_busy_timeout", "5000") // wait up to 5 seconds if the database is locked
+
+	// https://sqlite.org/pragma.html#pragma_foreign_keys
+	q.Set("_foreign_keys", "ON") // enable foreign key constraints
+
+	// https://sqlite.org/pragma.html#pragma_journal_mode
+	q.Set("_journal_mode", "WAL") // allows concurrent reads during writes
+
+	// https://sqlite.org/pragma.html#pragma_synchronous
+	q.Set("_synchronous", "NORMAL") // safe durability guarantee with WAL
+
+	// https://sqlite.org/pragma.html#pragma_auto_vacuum
+	q.Set("_auto_vacuum", "2") // collect data for running incremental_vacuum to prevent database file from growing indefinitely
+
+	// https://sqlite.org/pragma.html#pragma_cache_size
+	q.Set("_cache_size", "-12000") // 12 MB page cache; negative value = kibibytes
+
+	if readOnly {
+		// https://www.sqlite.org/uri.html
+		q.Set("mode", "ro") // Read-only in demo mode
+	}
+	return sqliteFilePath + "?" + q.Encode()
+}
+
+func GetSQLiteFilePath() string {
+	return sqliteFilePath
+}
+
+func configureSQLitePool(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
 		return err
 	}
 
-	logLevel := gormlogger.Error
-	if debug {
-		logLevel = gormlogger.Info
+	// Allow maximum 10 concurrent connections (default is unlimited)
+	// This allows multiple readers to access the database concurrently
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(10)
+
+	// Set connection max lifetime to 1 hour to close connections periodically and allow SQLite to clean up resources
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	return nil
+}
+
+func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
+	logger = newLogger
+
+	gormLogLevel := gormlogger.Error
+	if logLevel <= zerolog.DebugLevel {
+		gormLogLevel = gormlogger.Info
 	}
 
-	db, err := gorm.Open(sqlite.Open("data/hub.db"), &gorm.Config{
+	gormConfig := &gorm.Config{
 		Logger: NewGormLogger(logger, GormLoggerConfig{
 			SlowThreshold:             200 * time.Millisecond,
-			LogLevel:                  logLevel,
+			LogLevel:                  gormLogLevel,
 			IgnoreRecordNotFoundError: true,
 		}),
-	})
+	}
+
+	db, err := gorm.Open(sqlite.Open(sqliteDSN(false)), gormConfig)
 	if err != nil {
+		return err
+	}
+
+	if err := configureSQLitePool(db); err != nil {
 		return err
 	}
 
 	if err := runMigrations(db); err != nil {
 		return err
+	}
+
+	// Populate the application name_hash blind index for rows created before the
+	// column existed. Skipped in demo mode where the database is read-only.
+	if !demo {
+		if err := BackfillNameHashes(context.Background(), db); err != nil {
+			return err
+		}
+	}
+
+	if demo {
+		if err := seedDemoData(db); err != nil {
+			return err
+		}
+
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+		if err := sqlDB.Close(); err != nil {
+			return err
+		}
+
+		readOnlyDB, err := gorm.Open(sqlite.Open(sqliteDSN(true)), gormConfig)
+		if err != nil {
+			return err
+		}
+
+		if err := configureSQLitePool(readOnlyDB); err != nil {
+			return err
+		}
+
+		db = readOnlyDB
 	}
 
 	DB = db
@@ -74,4 +164,47 @@ func runMigrations(db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func StartVacuumScheduler() (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := IncrementalVacuum(); err != nil {
+					logger.Error().Err(err).Msg("incremental vacuum failed")
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
+}
+
+func IncrementalVacuum() error {
+	logger.Debug().Msg("Running PRAGMA incremental_vacuum(200) and wal_checkpoint(PASSIVE)")
+	if err := DB.Exec("PRAGMA incremental_vacuum(200)").Error; err != nil {
+		return err
+	}
+	if err := DB.Exec("PRAGMA wal_checkpoint(PASSIVE)").Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func Close() error {
+	if DB == nil {
+		return nil
+	}
+	sqlDB, err := DB.DB()
+	DB = nil
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
 }

@@ -1,0 +1,18 @@
+{
+	"include": ["./**/*.ts"],
+	"exclude": ["node_modules/"],
+	"compilerOptions": {
+		"strict": true,
+		"checkJs": true,
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+
+		"rootDir": ".",
+		"target": "esnext",
+		"module": "nodenext",
+		"rewriteRelativeImportExtensions": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"types": ["node"]
+	}
+}

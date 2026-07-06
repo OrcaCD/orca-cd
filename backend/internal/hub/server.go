@@ -6,38 +6,47 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 )
 
 type Config struct {
-	Debug            bool
 	Host             string
 	Port             string
 	LogLevel         zerolog.Level
+	LogJSON          bool
 	TrustedProxies   []string
 	AppURL           string
 	AppSecret        string
 	DisableLocalAuth bool
+	Demo             bool
+	DisableUI        bool
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
-	disableLocalAuth := os.Getenv("DISABLE_LOCAL_AUTH")
 
+	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
+	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
+	disableUI, _ := strconv.ParseBool(os.Getenv("DISABLE_UI"))
 	if port == "" {
 		port = "8080"
 	}
@@ -46,6 +55,8 @@ func DefaultConfig() (Config, error) {
 	if err != nil || logLevelStr == "" {
 		logLevel = zerolog.InfoLevel
 	}
+
+	logJSON := strings.EqualFold(logJSONStr, "true")
 
 	var trustedProxies []string
 	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {
@@ -64,26 +75,25 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Debug:            debug == "true",
 		Host:             host,
 		Port:             port,
 		LogLevel:         logLevel,
+		LogJSON:          logJSON,
 		TrustedProxies:   trustedProxies,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth == "true",
+		DisableLocalAuth: disableLocalAuth,
+		Demo:             demo,
+		DisableUI:        disableUI,
 	}, nil
 }
 
-var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Str("service", "hub").Logger()
+var Log = logger.New("hub", false)
 
 func Run(cfg Config) error {
-	if !cfg.Debug {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
-	Log = Log.Level(cfg.LogLevel)
+	gin.SetMode(gin.ReleaseMode)
+	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
+	applications.Log = Log
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
@@ -95,37 +105,74 @@ func Run(cfg Config) error {
 		return err
 	}
 
+	if err := initDataDir(); err != nil {
+		Log.Error().Err(err).Msg("failed to initialize data directory")
+		return err
+	}
+
 	dbLogger := Log.With().Str("component", "gorm").Logger()
-	err := db.Connect(dbLogger, cfg.Debug)
+	err := db.Connect(dbLogger, cfg.LogLevel, cfg.Demo)
 	if err != nil {
 		Log.Error().Err(err).Msg("failed to connect to database")
 		return err
 	}
 	defer func() {
-		if sqlDB, err := db.DB.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-		db.DB = nil
+		_ = db.Close()
 	}()
+
+	// Reset repositories stuck in syncing status from a previous crash.
+	resetSyncStatus := db.DB.WithContext(context.Background()).
+		Model(&models.Repository{}).
+		Where("sync_status = ?", models.SyncStatusSyncing).
+		Update("sync_status", models.SyncStatusUnknown)
+	if resetSyncStatus.Error != nil {
+		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
+	}
+
+	// Reset applications stuck in syncing status from a previous crash, so a
+	// deploy interrupted by a hub or agent restart does not spin forever.
+	resetAppSyncStatus := db.DB.WithContext(context.Background()).
+		Model(&models.Application{}).
+		Where("sync_status = ?", models.Syncing).
+		Update("sync_status", models.OutOfSync)
+	if resetAppSyncStatus.Error != nil {
+		Log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
+	}
+
+	applications.DefaultQueue = applications.NewQueue(&Log)
+	applications.DefaultQueue.Start()
+
+	applications.DefaultPoller = applications.NewPoller(&Log)
+	applications.DefaultPoller.Start()
+	defer applications.DefaultPoller.Stop()
+
+	if !cfg.Demo {
+		defer db.StartVacuumScheduler()()
+	}
 
 	router := gin.New()
 
-	if cfg.Debug {
-		router.Use(middleware.RequestLogger(Log))
+	router.Use(middleware.RequestLogger(Log))
+
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
 	}
 
 	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
 	}
-	if !cfg.Debug && len(cfg.TrustedProxies) == 0 {
+	if len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
-	RegisterRoutes(router, cfg)
+	err = RegisterRoutes(router, cfg)
+	if err != nil {
+		return err
+	}
 
 	addr := cfg.Host + ":" + cfg.Port
 
@@ -159,6 +206,8 @@ func Run(cfg Config) error {
 	case sig := <-quit:
 		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
 	}
+
+	sse.DefaultBroker.Shutdown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

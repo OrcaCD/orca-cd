@@ -16,6 +16,9 @@ bin
 data
 backend/data
 backend/coverage.txt
+*.exe
 
-# Proto generated files
-*.pb.go
+# Playwright
+e2e/playwright-report
+e2e/playwright
+e2e/test-results

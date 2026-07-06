@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -11,16 +12,25 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func TestInit(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
+const testSecret = "test-secret-that-is-long-enough-32chars"
+const testURL = "http://localhost:8080"
+
+func initAll(t *testing.T) {
+	t.Helper()
+	if err := initJWT(testSecret, testURL); err != nil {
+		t.Fatalf("initJWT: %v", err)
+	}
+	if err := initHandshake(testSecret); err != nil {
+		t.Fatalf("initHandshake: %v", err)
 	}
 }
 
+func TestInit(t *testing.T) {
+	initAll(t)
+}
+
 func TestGenerateAndValidateUserToken(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
 	token, err := GenerateUserToken(user)
@@ -56,12 +66,45 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if len(claims.Audience) != 1 || claims.Audience[0] != "user" {
 		t.Errorf("expected Audience [\"user\"], got %v", claims.Audience)
 	}
+	if claims.PasswordChangeRequired {
+		t.Error("expected PasswordChangeRequired=false by default")
+	}
+	if claims.IsLocal {
+		t.Error("expected IsLocal=false without password hash")
+	}
+}
+
+func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
+	initAll(t)
+
+	hash := "hashed-password"
+
+	user := &models.User{
+		Base:                   models.Base{Id: "user-123"},
+		Name:                   "test",
+		Email:                  "test@example.com",
+		PasswordHash:           &hash,
+		PasswordChangeRequired: true,
+	}
+	token, err := GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	claims, err := ValidateUserToken(token)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+	if !claims.PasswordChangeRequired {
+		t.Error("expected PasswordChangeRequired=true")
+	}
+	if !claims.IsLocal {
+		t.Error("expected IsLocal=true for local user")
+	}
 }
 
 func TestGenerateAndValidateUserTokenWithPicture(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
 	picture := "https://cdn.example.com/test.png"
@@ -81,9 +124,7 @@ func TestGenerateAndValidateUserTokenWithPicture(t *testing.T) {
 }
 
 func TestValidateUserToken_Invalid(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	_, err := ValidateUserToken("invalid.token.here")
 	if err == nil {
@@ -92,9 +133,7 @@ func TestValidateUserToken_Invalid(t *testing.T) {
 }
 
 func TestValidateUserToken_Expired(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	now := time.Now().Add(-2 * time.Hour)
 	claims := UserClaims{
@@ -117,9 +156,7 @@ func TestValidateUserToken_Expired(t *testing.T) {
 }
 
 func TestValidateUserToken_WrongIssuer(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	now := time.Now()
 	claims := UserClaims{
@@ -145,9 +182,7 @@ func TestValidateUserToken_WrongIssuer(t *testing.T) {
 }
 
 func TestValidateUserToken_MissingSubject(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	now := time.Now()
 	claims := UserClaims{
@@ -173,9 +208,7 @@ func TestValidateUserToken_MissingSubject(t *testing.T) {
 }
 
 func TestValidateUserToken_WrongSigningKey(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("Init() error: %v", err)
-	}
+	initAll(t)
 
 	_, wrongKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -202,17 +235,22 @@ func TestValidateUserToken_WrongSigningKey(t *testing.T) {
 }
 
 func TestGenerateAndValidateAgentToken(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
+	initialKeyId := agent.KeyId.String()
 	tokenStr, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
 	}
 	if tokenStr == "" {
 		t.Fatal("GenerateAgentToken() returned empty token")
+	}
+	if agent.KeyId.String() == "" {
+		t.Fatal("GenerateAgentToken() expected to set KeyId")
+	}
+	if agent.KeyId.String() == initialKeyId {
+		t.Fatal("GenerateAgentToken() expected to rotate KeyId")
 	}
 
 	claims, err := ValidateAgentToken(tokenStr)
@@ -225,8 +263,8 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	if claims.Subject != "agent-456" {
 		t.Errorf("expected Subject %q, got %q", "agent-456", claims.Subject)
 	}
-	if claims.KeyId != "key-abc" {
-		t.Errorf("expected KeyId %q, got %q", "key-abc", claims.KeyId)
+	if claims.KeyId != agent.KeyId.String() {
+		t.Errorf("expected KeyId %q, got %q", agent.KeyId.String(), claims.KeyId)
 	}
 	if len(claims.Audience) != 1 || claims.Audience[0] != "agent" {
 		t.Errorf("expected Audience [\"agent\"], got %v", claims.Audience)
@@ -234,12 +272,75 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	if claims.NotBefore == nil {
 		t.Error("expected NotBefore to be set")
 	}
+	if claims.HubPublicKey == "" {
+		t.Error("expected HubPublicKey to be set in agent token claims")
+	}
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(claims.HubPublicKey)
+	if err != nil {
+		t.Fatalf("HubPublicKey base64 decode error: %v", err)
+	}
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		t.Errorf("HubPublicKey decoded length = %d, want %d", len(pubKeyBytes), ed25519.PublicKeySize)
+	}
+}
+
+func TestSignHandshake(t *testing.T) {
+	initAll(t)
+
+	agent := &models.Agent{Base: models.Base{Id: "agent-sign-test"}}
+	tokenStr, err := GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("GenerateAgentToken() error: %v", err)
+	}
+	claims, err := ValidateAgentToken(tokenStr)
+	if err != nil {
+		t.Fatalf("ValidateAgentToken() error: %v", err)
+	}
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(claims.HubPublicKey)
+	if err != nil {
+		t.Fatalf("decode HubPublicKey: %v", err)
+	}
+	pubKey := ed25519.PublicKey(pubKeyBytes)
+
+	payload := []byte("test-handshake-payload")
+	sig := SignHandshake(payload)
+	if len(sig) != ed25519.SignatureSize {
+		t.Errorf("signature length = %d, want %d", len(sig), ed25519.SignatureSize)
+	}
+	if !ed25519.Verify(pubKey, payload, sig) {
+		t.Error("SignHandshake produced a signature that does not verify with the token's hub_pubkey")
+	}
+}
+
+func TestGenerateAndValidateAgentToken_SetsKeyIdWhenMissing(t *testing.T) {
+	initAll(t)
+
+	agent := &models.Agent{Base: models.Base{Id: "agent-789"}}
+	tokenStr, err := GenerateAgentToken(agent)
+	if err != nil {
+		t.Fatalf("GenerateAgentToken() error: %v", err)
+	}
+	if tokenStr == "" {
+		t.Fatal("GenerateAgentToken() returned empty token")
+	}
+	if agent.KeyId.String() == "" {
+		t.Fatal("GenerateAgentToken() expected to set KeyId when missing")
+	}
+
+	claims, err := ValidateAgentToken(tokenStr)
+	if err != nil {
+		t.Fatalf("ValidateAgentToken() error: %v", err)
+	}
+	if claims.Subject != "agent-789" {
+		t.Errorf("expected Subject %q, got %q", "agent-789", claims.Subject)
+	}
+	if claims.KeyId != agent.KeyId.String() {
+		t.Errorf("expected KeyId %q, got %q", agent.KeyId.String(), claims.KeyId)
+	}
 }
 
 func TestGenerateAgentToken_MissingId(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	agent := &models.Agent{KeyId: crypto.EncryptedString("key-abc")}
 	_, err := GenerateAgentToken(agent)
@@ -249,9 +350,7 @@ func TestGenerateAgentToken_MissingId(t *testing.T) {
 }
 
 func TestValidateAgentToken_Invalid(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	_, err := ValidateAgentToken("invalid.token.here")
 	if err == nil {
@@ -260,9 +359,7 @@ func TestValidateAgentToken_Invalid(t *testing.T) {
 }
 
 func TestValidateAgentToken_WrongIssuer(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	now := time.Now()
 	claims := AgentClaims{
@@ -288,9 +385,7 @@ func TestValidateAgentToken_WrongIssuer(t *testing.T) {
 }
 
 func TestValidateAgentToken_MissingSubject(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	now := time.Now()
 	claims := AgentClaims{
@@ -316,9 +411,7 @@ func TestValidateAgentToken_MissingSubject(t *testing.T) {
 }
 
 func TestValidateAgentToken_WrongSigningKey(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	_, wrongKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -349,9 +442,7 @@ func TestValidateAgentToken_WrongSigningKey(t *testing.T) {
 }
 
 func TestValidateAgentToken_WrongAudience(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
 	tokenStr, err := GenerateUserToken(user)
@@ -366,9 +457,7 @@ func TestValidateAgentToken_WrongAudience(t *testing.T) {
 }
 
 func TestValidateUserToken_WrongAudience(t *testing.T) {
-	if err := initJWT("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
-		t.Fatalf("initJWT() error: %v", err)
-	}
+	initAll(t)
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
 	tokenStr, err := GenerateAgentToken(agent)

@@ -1,22 +1,41 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/OrcaCD/orca-cd/internal/hub"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/spf13/cobra"
 )
 
 func main() {
+	rootCmd := newRootCmd()
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:                "hub [flags]",
 		Short:              "Orca Hub",
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+				return cmd.Help()
+			}
+			if slices.Contains(args, "--version") || slices.Contains(args, "-v") {
+				fmt.Println(version.Full())
+				return nil
+			}
+
 			cfg, err := hub.DefaultConfig()
 			if err != nil {
 				return err
@@ -43,8 +62,12 @@ func main() {
 				os.Exit(1)
 			}
 
-			//nolint:gosec
-			resp, err := http.Get("http://localhost:" + cfg.Port + "/api/v1/health")
+			req, err := httpclient.NewRequest(context.Background(), http.MethodGet, "http://localhost:"+cfg.Port+"/api/v1/health", nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+				os.Exit(1)
+			}
+			resp, err := httpclient.UnsafeClient.Do(req)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 				os.Exit(1)
@@ -65,8 +88,10 @@ func main() {
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
+	rootCmd.AddCommand(newResetPasswordCmd())
+	rootCmd.AddCommand(newKeyCmd())
+	rootCmd.AddCommand(newExportCmd())
+	rootCmd.AddCommand(newImportCmd())
 
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+	return rootCmd
 }

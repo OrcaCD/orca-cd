@@ -37,7 +37,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -72,10 +72,62 @@ func TestRequireAuth_InvalidToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
-	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "invalid.token.here"})
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "invalid.token.here"}) //nolint:gosec
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestRequireAuth_PasswordChangeRequired_BlocksOtherPaths(t *testing.T) {
+	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("auth.Init() error: %v", err)
+	}
+
+	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin", PasswordChangeRequired: true}
+	token, err := auth.GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	router := gin.New()
+	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRequireAuth_PasswordChangeRequired_AllowsChangePasswordPath(t *testing.T) {
+	if err := auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"); err != nil {
+		t.Fatalf("auth.Init() error: %v", err)
+	}
+
+	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin", PasswordChangeRequired: true}
+	token, err := auth.GenerateUserToken(user)
+	if err != nil {
+		t.Fatalf("GenerateUserToken() error: %v", err)
+	}
+
+	router := gin.New()
+	router.POST("/api/v1/auth/change-password", RequireAuth(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", nil)
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token}) //nolint:gosec
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }

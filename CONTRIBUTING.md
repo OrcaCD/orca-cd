@@ -31,22 +31,24 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 | [just](https://just.systems/man/en/packages.html)                | latest  | Task runner                 |
 | [buf](https://buf.build/docs/cli/installation/)                  | latest  | Protobuf tooling            |
 | [protoc-gen-go](https://protobuf.dev/reference/go/go-generated/) | latest  | Go protobuf code generation |
+| [gotestsum](https://github.com/gotestyourself/gotestsum#install) | latest  | Cleaner go test summary     |
 
 **Frontend:**
 
-| Tool                           | Version           | Purpose         |
-| ------------------------------ | ----------------- | --------------- |
-| [Node.js](https://nodejs.org/) | 24.x              | Runtime         |
-| [npm](https://docs.npmjs.com/) | bundled with Node | Package manager |
+| Tool                           | Version       | Purpose         |
+| ------------------------------ | ------------- | --------------- |
+| [Node.js](https://nodejs.org/) | 24.x or 25.x  | Runtime         |
+| [pnpm](https://pnpm.io/)       | 11.x or newer | Package manager |
 
 ### Setting up the development environment
 
 1. Install all required tools listed above.
 2. Clone the repository and navigate to the project directory.
-3. For the frontend, navigate to the `frontend/` directory and run `npm ci` to install dependencies.
+3. For the frontend, navigate to the `frontend/` directory and run `pnpm i --frozen-lockfile` to install dependencies.
 4. Run the frontend development server with `node --run dev` from the `frontend/` directory.
-5. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
-6. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
+5. Copy the `.env.dev.example` file in the `backend/` directory to `.env` and adjust any necessary environment variables.
+6. Run the backend services with `just run-hub` and `just run-agent` in the `backend/` directory.
+7. Access the app at `http://localhost:3000` and the hub API at `http://localhost:8080`.
 
 ### Running locally with Docker
 

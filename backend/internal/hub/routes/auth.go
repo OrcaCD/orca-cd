@@ -21,12 +21,22 @@ var LocalAuthDisabled bool
 type registerRequest struct {
 	Name     string `json:"name" binding:"required,min=3,max=64"`
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8,max=128"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
+}
+
+type updateOwnProfileRequest struct {
+	Name  string `json:"name" binding:"required,min=3,max=64"`
+	Email string `json:"email" binding:"required,email"`
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword" binding:"required,min=1,max=128"`
+	NewPassword     string `json:"newPassword" binding:"required,max=128"`
 }
 
 type providerInfo struct {
@@ -41,11 +51,13 @@ type setupResponse struct {
 }
 
 type profileResponse struct {
-	Id      string `json:"id"`
-	Name    string `json:"name"`
-	Email   string `json:"email"`
-	Picture string `json:"picture,omitempty"`
-	Role    string `json:"role"`
+	Id                     string `json:"id"`
+	Name                   string `json:"name"`
+	Email                  string `json:"email"`
+	Picture                string `json:"picture,omitempty"`
+	Role                   string `json:"role"`
+	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
+	IsLocal                bool   `json:"isLocal"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -56,11 +68,80 @@ func ProfileHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
-		Id:      claims.Subject,
-		Name:    claims.Name,
-		Email:   claims.Email,
-		Picture: claims.Picture,
-		Role:    claims.Role,
+		Id:                     claims.Subject,
+		Name:                   claims.Name,
+		Email:                  claims.Email,
+		Picture:                claims.Picture,
+		Role:                   claims.Role,
+		PasswordChangeRequired: claims.PasswordChangeRequired,
+		IsLocal:                claims.IsLocal,
+	})
+}
+
+func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return nil, nil, false
+	}
+
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+			return nil, nil, false
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return nil, nil, false
+	}
+
+	if user.PasswordHash == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
+		return nil, nil, false
+	}
+
+	return claims, &user, true
+}
+
+func UpdateOwnProfileHandler(c *gin.Context) {
+	var req updateOwnProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars) and valid email are required"})
+		return
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	claims, user, ok := getCurrentLocalUser(c)
+	if !ok {
+		return
+	}
+
+	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email}).Error; err != nil {
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	user.Name = req.Name
+	user.Email = req.Email
+
+	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, profileResponse{
+		Id:                     user.Id,
+		Name:                   user.Name,
+		Email:                  user.Email,
+		Picture:                claims.Picture,
+		Role:                   string(user.Role),
+		PasswordChangeRequired: user.PasswordChangeRequired,
+		IsLocal:                true,
 	})
 }
 
@@ -92,10 +173,15 @@ func SetupHandler(c *gin.Context) {
 func RegisterHandler(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 8 chars) and valid email are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 12 chars, must include uppercase, lowercase, number and special character) and valid email are required"})
 		return
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	if !auth.ValidatePasswordStrength(req.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
+		return
+	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -185,6 +271,73 @@ func LoginHandler(c *gin.Context) {
 
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
+}
+
+func ChangePasswordHandler(c *gin.Context) {
+	claims, ok := auth.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "currentPassword and newPassword are required, and newPassword must be at least 12 characters and include uppercase, lowercase, number and special character"})
+		return
+	}
+
+	if !auth.ValidatePasswordStrength(req.NewPassword) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
+		return
+	}
+
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	if user.PasswordHash == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot change password for managed user"})
+		return
+	}
+
+	if !auth.CheckPassword(req.CurrentPassword, *user.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
+		return
+	}
+
+	if auth.CheckPassword(req.NewPassword, *user.PasswordHash) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must be different from current password"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	user.PasswordHash = &hash
+	user.PasswordChangeRequired = false
+
+	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	token, err := auth.GenerateUserToken(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{"message": "password changed successfully"})
 }
 
 func LogoutHandler(c *gin.Context) {

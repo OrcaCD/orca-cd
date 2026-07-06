@@ -16,8 +16,10 @@ const (
 
 type Agent struct {
 	Base
-	Name     crypto.EncryptedString `gorm:"type:text;not null"`
-	KeyId    crypto.EncryptedString `gorm:"type:text;not null;"`
-	Status   AgentStatus            `gorm:"type:integer;default:0"`
-	LastSeen *time.Time
+	Name         crypto.EncryptedString `gorm:"type:text;not null"`
+	Icon         string                 `gorm:"type:text;not null;default:server"`
+	KeyId        crypto.EncryptedString `gorm:"type:text;not null;"`
+	Status       AgentStatus            `gorm:"type:integer;default:0"`
+	LastSeen     *time.Time
+	Applications []Application `gorm:"foreignKey:AgentId;"`
 }

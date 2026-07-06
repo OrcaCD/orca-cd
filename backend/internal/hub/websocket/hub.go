@@ -5,16 +5,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
 
+// DefaultHub is the package-level Hub instance, set during server initialisation.
+var DefaultHub *Hub
+
 type Client struct {
-	Id   string
-	conn *websocket.Conn
-	Send chan *messages.ServerMessage
+	Id      string
+	conn    *websocket.Conn
+	Send    chan *messages.ServerMessage
+	session *wscrypto.Session
 }
 
 // Close signals the WritePump to stop.
@@ -26,10 +32,17 @@ type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]*Client
 	log     *zerolog.Logger
+
+	deleteMu       sync.Mutex
+	pendingDeletes map[string]chan *messages.DeleteResult
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
-	return &Hub{clients: make(map[string]*Client), log: log}
+	return &Hub{
+		clients:        make(map[string]*Client),
+		log:            log,
+		pendingDeletes: make(map[string]chan *messages.DeleteResult),
+	}
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
@@ -53,6 +66,13 @@ func (h *Hub) Unregister(id string) {
 	delete(h.clients, id)
 	h.mu.Unlock()
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
+}
+
+func (h *Hub) GetClient(id string) (*Client, bool) {
+	h.mu.RLock()
+	c, ok := h.clients[id]
+	h.mu.RUnlock()
+	return c, ok
 }
 
 // Send sends a message to a specific client by Id.
@@ -86,6 +106,29 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 	}
 }
 
+// SendAgentSettings builds an AgentSettings message from the given applications
+// and sends it to the specified agent. Returns false if the agent is not connected
+// or the send buffer is full.
+func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool {
+	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
+	for i := range apps {
+		pollSettings = append(pollSettings, &messages.ImagePollSettings{
+			ApplicationId:   apps[i].Id,
+			ApplicationName: apps[i].Name.String(),
+			Enabled:         apps[i].ImagePollEnabled,
+			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
+			DeleteOldImages: apps[i].ImagePollDeleteOldImages,
+		})
+	}
+	return h.Send(agentID, &messages.ServerMessage{
+		Payload: &messages.ServerMessage_AgentSettings{
+			AgentSettings: &messages.AgentSettings{
+				ImagePollSettings: pollSettings,
+			},
+		},
+	})
+}
+
 const writeWait = 10 * time.Second
 
 // WritePump writes outgoing messages to the WebSocket connection.
@@ -98,7 +141,30 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 	}()
 
 	for msg := range c.Send {
-		data, err := proto.Marshal(msg)
+		allowedUnencrypted := wscrypto.AllowedUnencrypted(msg)
+
+		// Refuse to send sensitive messages before the handshake is complete.
+		if c.session == nil && !allowedUnencrypted {
+			log.Error().Str("client", c.Id).Msg("dropping message: session not established")
+			continue
+		}
+
+		outMsg := msg
+
+		if !allowedUnencrypted {
+			env, err := c.session.Encrypt(msg)
+			if err != nil {
+				log.Error().Err(err).Msg("encrypt error")
+				continue
+			}
+			outMsg = &messages.ServerMessage{
+				Payload: &messages.ServerMessage_EncryptedPayload{
+					EncryptedPayload: env,
+				},
+			}
+		}
+
+		data, err := proto.Marshal(outMsg)
 		if err != nil {
 			log.Error().Err(err).Msg("Marshal error")
 			continue

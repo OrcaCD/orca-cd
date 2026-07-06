@@ -6,29 +6,32 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  id-token: write
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         name: Checkout code
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: ./frontend/package.json
 
       - name: Set up Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "24.x.x"
-
-      - name: Setup Aikido Safe Chain
-        working-directory: ./frontend
-        run: |
-          npm i -g @aikidosec/safe-chain
-          safe-chain setup-ci
+          node-version: "25.x.x"
+          cache: "pnpm"
+          cache-dependency-path: ./frontend/pnpm-lock.yaml
 
       - name: Install dependencies
         working-directory: ./frontend
-        run: npm ci --safe-chain-skip-minimum-package-age
+        run: pnpm i --frozen-lockfile
 
       - name: Run Linter
         working-directory: ./frontend
@@ -38,21 +41,32 @@ jobs:
         working-directory: ./frontend
         run: node --run format:check
 
-      - name: Type Checking
-        working-directory: ./frontend
-        run: node --run typecheck
-
       - name: Build
         working-directory: ./frontend
         run: node --run build
 
+      - name: Type Checking
+        working-directory: ./frontend
+        run: node --run typecheck
+
+      - name: Check translations
+        working-directory: ./frontend
+        run: node --run translations:check
+
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write # For Codecov upload
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         name: Checkout code
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         name: Set up Go
         with:
           go-version: stable
@@ -60,7 +74,7 @@ jobs:
           cache-dependency-path: backend/go.sum
 
       - name: Install Buf CLI
-        uses: bufbuild/buf-action@219c9aef02e8f6a27e4b46274db239ef513f5d53 # v1.4.0
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
         with:
           setup_only: true
           version: 1.66.1
@@ -77,12 +91,21 @@ jobs:
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           buf generate
+          if [[ -n "$(git status --porcelain --untracked-files=all -- internal/proto)" ]]; then
+            echo "Generated protobuf files are out of date. Run 'buf generate' and commit the changes."
+            git --no-pager diff -- internal/proto
+            exit 1
+          fi
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.11
           working-directory: ./backend
+
+      - name: Install gotestsum
+        working-directory: ./backend
+        run: go install gotest.tools/gotestsum@v1.13.0
 
       - name: Verify dependencies
         working-directory: ./backend
@@ -94,10 +117,11 @@ jobs:
 
       - name: Run Tests
         working-directory: ./backend
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: gotestsum -- -failfast -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           use_oidc: true
           fail_ci_if_error: true
+

@@ -3,16 +3,32 @@ package hub
 import (
 	"time"
 
+	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 )
 
-func RegisterRoutes(router *gin.Engine, cfg Config) {
+func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
+	routes.SetAdminSystemInfoConfig(routes.AdminSystemInfoConfig{
+		Host:             cfg.Host,
+		Port:             cfg.Port,
+		LogLevel:         cfg.LogLevel.String(),
+		TrustedProxies:   cfg.TrustedProxies,
+		AppURL:           cfg.AppURL,
+		DisableLocalAuth: cfg.DisableLocalAuth,
+		Version:          version.Version,
+		Commit:           version.Commit,
+		BuildDate:        version.BuildDate,
+	})
+	routes.SetRepositoriesConfig(cfg.AppURL)
+	routes.SetGitHubActionsConfig(cfg.AppURL)
 
 	api := router.Group("/api/v1")
 	{
@@ -24,6 +40,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
 		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
 
+		// Webhook endpoints: 1 req/s per IP, burst of 10
+		webhookRateLimit := middleware.RateLimit(time.Second, 10)
+		api.POST("/webhooks/repositories/:id", webhookRateLimit, routes.WebhookHandler)
+		api.POST("/webhooks/images/:id", webhookRateLimit, routes.ImagePullWebhookHandler)
+		api.POST("/github-actions", webhookRateLimit, routes.GitHubActionsDeployHandler)
+
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
 		authRateLimit := middleware.RateLimit(6*time.Second, 5)
 		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
@@ -33,12 +55,58 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
+			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
+			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+
+			protected.GET("/applications", routes.ListApplicationsHandler)
+			protected.GET("/applications/:id", routes.GetApplicationHandler)
+			protected.POST("/applications", routes.CreateApplicationHandler)
+			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
+			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
+			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
+			protected.POST("/applications/:id/image-webhook", routes.GenerateImagePullWebhookHandler)
+			protected.DELETE("/applications/:id/image-webhook", routes.RevokeImagePullWebhookHandler)
+
+			protected.GET("/repositories", routes.ListRepositoriesHandler)
+			protected.GET("/repositories/:id", routes.GetRepositoryHandler)
+			protected.POST("/repositories", routes.CreateRepositoryHandler)
+			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
+			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
+			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
+			protected.GET("/repositories/:id/branches", routes.ListRepositoryBranchesHandler)
+			protected.GET("/repositories/:id/tree", routes.ListRepositoryTreeHandler)
+			protected.POST("/repositories/:id/sync", routes.SyncRepositoryHandler)
+
+			protected.GET("/agents", routes.ListAgentsHandler)
+			protected.POST("/agents", routes.CreateAgentHandler)
+			protected.GET("/agents/:id", routes.GetAgentHandler)
+			protected.PUT("/agents/:id", routes.UpdateAgentHandler)
+			protected.POST("/agents/:id/rotate-token", routes.RotateAgentTokenHandler)
+			protected.DELETE("/agents/:id", routes.DeleteAgentHandler)
+
+			protected.POST("/notifications", routes.CreateNotificationHandler)
+			protected.GET("/notifications", routes.ListNotificationsHandler)
+			protected.PUT("/notifications/:id", routes.UpdateNotificationHandler)
+			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
+			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
+
+			protected.GET("/events", routes.SSEHandler)
 		}
 
 		// Admin routes (authentication + admin role required)
 		admin := api.Group("/admin", middleware.RequireAuth(), middleware.RequireAdmin())
 		{
+			admin.GET("/system-info", routes.AdminSystemInfoHandler)
+
+			admin.GET("/audit-logs", routes.AdminListAuditLogsHandler)
+
+			admin.GET("/users", routes.AdminListUsersHandler)
+			admin.POST("/users", routes.AdminCreateUserHandler)
+			admin.GET("/users/:id", routes.AdminGetUserHandler)
+			admin.PUT("/users/:id", routes.AdminUpdateUserHandler)
+			admin.DELETE("/users/:id", routes.AdminDeleteUserHandler)
+
 			admin.GET("/oidc-providers", routes.AdminListOIDCProvidersHandler)
 			admin.POST("/oidc-providers", routes.AdminCreateOIDCProviderHandler)
 			admin.GET("/oidc-providers/:id", routes.AdminGetOIDCProviderHandler)
@@ -46,7 +114,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 			admin.DELETE("/oidc-providers/:id", routes.AdminDeleteOIDCProviderHandler)
 		}
 
+		sse.DefaultBroker = sse.NewBroker(&Log)
+
 		h := websocket.NewHub(&Log)
+		websocket.DefaultHub = h
+		d := application_deployer.NewApplicationDeployer(h, &Log)
+		application_deployer.DefaultApplicationDeployer = d
 		w := websocket.NewWorker(h, &Log)
 		w.Start()
 
@@ -55,11 +128,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) {
 		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
 	}
 
-	if !cfg.Debug {
-		router.Static("/assets", "./frontend/dist/assets")
-		router.StaticFile("/", "./frontend/dist/index.html")
-		router.NoRoute(func(c *gin.Context) {
-			c.File("./frontend/dist/index.html")
-		})
+	if !cfg.DisableUI {
+		err := middleware.RegisterStatic(router)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

@@ -20,6 +20,19 @@ func ValidateOrigin(appURL string) gin.HandlerFunc {
 			return
 		}
 
+		// External webhook providers (GitHub, GitLab, Gitea) do not send a
+		// matching Origin header, so skip CSRF validation for webhook routes.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/webhooks/") {
+			c.Next()
+			return
+		}
+
+		// GitHub Actions sends requests without a browser Origin header.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/github-actions") {
+			c.Next()
+			return
+		}
+
 		origin := strings.TrimSuffix(c.GetHeader("Origin"), "/")
 		if origin == "" {
 			c.String(http.StatusForbidden, "403 forbidden: missing origin header")

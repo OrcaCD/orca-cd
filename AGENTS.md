@@ -13,7 +13,7 @@ The goal of OrcaCD is to be a simple, self-hosted GitOps solution for Docker Com
 
 ## Prerequisites
 
-Go 1.26+, golangci-lint v2.11+, `just`, Node.js 24.x or 25.x, npm.
+Go 1.26+, golangci-lint v2.11+, `just`, Node.js 24.x or 25.x, pnpm.
 
 ## Commands
 
@@ -43,12 +43,12 @@ go test -v -race ./internal/hub/crypto/...
 ### Frontend
 
 ```sh
-npm ci                 # install dependencies
-node --run dev         # Vite dev server on port 3000
-node --run build       # production bundle
-node --run typecheck   # TypeScript type check
-node --run lint        # oxlint
-node --run format      # oxfmt
+pnpm i --frozen-lockfile # install dependencies
+node --run dev           # Vite dev server on port 3000
+node --run build         # production bundle
+node --run typecheck     # TypeScript type check
+node --run lint          # oxlint
+node --run format        # oxfmt
 ```
 
 ### Local dev (Docker)
@@ -109,3 +109,5 @@ Agent (Go)
 - Write tests for new features and bug fixes, aiming for good coverage.
 - Do not add useless comments, but do add comments to explain complex logic or decisions.
 - The repo uses squash merges, so commit history should be clean and focused on the feature/bug being implemented.
+- Do not try modify files in frontend/src/components/ui
+- Always try to use the Gorm Generics API for database operations

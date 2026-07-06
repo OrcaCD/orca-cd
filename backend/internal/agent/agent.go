@@ -2,42 +2,66 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
-	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
 
+// FatalConfigError signals a misconfiguration that cannot be resolved by restarting.
+type FatalConfigError struct {
+	Msg string
+}
+
+func (e *FatalConfigError) Error() string { return e.Msg }
+
 type Config struct {
-	Debug     bool
-	LogLevel  zerolog.Level
-	HubUrl    string
-	AuthToken string
+	LogLevel       zerolog.Level
+	LogJSON        bool
+	HubUrl         string
+	AuthToken      string
+	AgentID        string
+	HubPublicKey   ed25519.PublicKey
+	HealthPort     string
+	DeploymentsDir string
 }
 
 func DefaultConfig() (Config, error) {
-	debug := os.Getenv("DEBUG")
 	logLevelStr := os.Getenv("LOG_LEVEL")
+	logJSONStr := os.Getenv("LOG_JSON")
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
+	if hubUrl == "" {
+		return Config{}, &FatalConfigError{"HUB_URL is not set — set the HUB_URL environment variable and recreate the container"}
+	}
 	hubUrl, err := parseHubURL(hubUrl)
 	if err != nil {
 		return Config{}, fmt.Errorf("HUB_URL: %w", err)
 	}
 
 	if authToken == "" {
-		return Config{}, errors.New("AUTH_TOKEN is required")
+		return Config{}, &FatalConfigError{"AUTH_TOKEN is not set — set the AUTH_TOKEN environment variable and recreate the container"}
+	}
+
+	agentID, hubPublicKey, err := parseTokenClaims(authToken)
+	if err != nil {
+		return Config{}, fmt.Errorf("AUTH_TOKEN: %w", err)
 	}
 
 	logLevel, err := zerolog.ParseLevel(logLevelStr)
@@ -45,16 +69,85 @@ func DefaultConfig() (Config, error) {
 		logLevel = zerolog.InfoLevel
 	}
 
+	logJSON := strings.EqualFold(logJSONStr, "true")
+
+	healthPort := os.Getenv("HEALTHCHECK_PORT")
+	if healthPort == "" {
+		healthPort = "8090"
+	}
+
+	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
+	if deploymentsDir == "" {
+		deploymentsDir = "/deployments"
+	}
+
 	return Config{
-		Debug:     debug == "true",
-		LogLevel:  logLevel,
-		HubUrl:    hubUrl,
-		AuthToken: authToken,
+		LogLevel:       logLevel,
+		LogJSON:        logJSON,
+		HubUrl:         hubUrl,
+		AuthToken:      authToken,
+		AgentID:        agentID,
+		HubPublicKey:   hubPublicKey,
+		HealthPort:     healthPort,
+		DeploymentsDir: deploymentsDir,
 	}, nil
 }
 
-var Log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339}).
-	With().Timestamp().Str("service", "agent").Logger()
+type agentTokenClaims struct {
+	jwt.RegisteredClaims
+	HubPublicKey string `json:"hub_pubkey"`
+}
+
+// parseTokenClaims extracts the agent ID and hub Ed25519 public key from the AUTH_TOKEN
+func parseTokenClaims(authToken string) (agentID string, hubPublicKey ed25519.PublicKey, err error) {
+	p := jwt.NewParser()
+	unverified, _, err := p.ParseUnverified(authToken, &agentTokenClaims{})
+	if err != nil {
+		return "", nil, fmt.Errorf("could not parse token: %w", err)
+	}
+	claims, ok := unverified.Claims.(*agentTokenClaims)
+	if !ok || claims.HubPublicKey == "" {
+		return "", nil, errors.New("token is missing hub_pubkey claim; re-issue the agent token from the hub")
+	}
+
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(claims.HubPublicKey)
+	if err != nil || len(pubKeyBytes) != ed25519.PublicKeySize {
+		return "", nil, errors.New("token has invalid hub_pubkey claim")
+	}
+	hubPubKey := ed25519.PublicKey(pubKeyBytes)
+
+	if !ok || claims.Subject == "" {
+		return "", nil, errors.New("token is missing subject claim")
+	}
+
+	return claims.Subject, hubPubKey, nil
+}
+
+var Log = logger.New("agent", false)
+
+// senderRef holds an atomic pointer to the current outbound sender so the
+// image poller always uses the latest connection without needing a restart.
+type senderRef struct {
+	p atomic.Pointer[outboundSender]
+}
+
+func (r *senderRef) store(s outboundSender) {
+	r.p.Store(&s)
+}
+
+func (r *senderRef) load() outboundSender {
+	if p := r.p.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (r *senderRef) SendMessage(msg *messages.ClientMessage) error {
+	if s := r.load(); s != nil {
+		return s.SendMessage(msg)
+	}
+	return nil
+}
 
 // connTracker holds the active WebSocket connection under a mutex so the
 // shutdown goroutine can safely close it from a different goroutine.
@@ -83,18 +176,25 @@ func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn)
 }
 
 func Run(cfg Config) error {
-	Log = Log.Level(cfg.LogLevel)
+	Log = logger.New("agent", cfg.LogJSON).Level(cfg.LogLevel)
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}
-	_ = dockerClient // will be passed to handlers once deployment logic is added
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	sRef := &senderRef{}
+	poller := docker.NewImagePoller(dockerClient, sRef, Log)
+	defer poller.StopAll()
+
+	var wsConnected atomic.Bool
+
+	go startHealthServer(ctx, cfg.HealthPort, dockerClient.Ready, wsConnected.Load)
 
 	var tracker connTracker
 	go func() {
@@ -103,15 +203,19 @@ func Run(cfg Config) error {
 		tracker.close()
 	}()
 
-	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-	if err != nil || tracker.setAndCancelled(ctx, conn) {
+	conn, session, err := connectAndHandshake(ctx, cfg, &tracker)
+	if conn == nil {
 		Log.Info().Msg("agent stopped")
-		return nil
+		return err
 	}
+	wsConnected.Store(true)
+	sender := newMessageSender(conn, session)
+	sRef.store(sender)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
 		if readErr != nil {
+			wsConnected.Store(false)
 			if ctx.Err() != nil {
 				Log.Info().Msg("agent stopped")
 				return nil
@@ -120,11 +224,14 @@ func Run(cfg Config) error {
 			if closeErr := conn.Close(); closeErr != nil {
 				Log.Error().Err(closeErr).Msg("error closing connection")
 			}
-			conn, err = connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
-			if err != nil || tracker.setAndCancelled(ctx, conn) {
+			conn, session, err = connectAndHandshake(ctx, cfg, &tracker)
+			if conn == nil {
 				Log.Info().Msg("agent stopped")
-				return nil
+				return err
 			}
+			wsConnected.Store(true)
+			sender = newMessageSender(conn, session)
+			sRef.store(sender)
 			continue
 		}
 		msg := &messages.ServerMessage{}
@@ -132,6 +239,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(msg, conn)
+		handleServerMessage(ctx, msg, session, sender, dockerClient, poller)
 	}
 }
