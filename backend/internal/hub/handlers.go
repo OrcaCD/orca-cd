@@ -21,6 +21,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel.String(),
 		TrustedProxies:   cfg.TrustedProxies,
+		AllowedIPs:       cfg.AllowedIPs,
 		AppURL:           cfg.AppURL,
 		DisableLocalAuth: cfg.DisableLocalAuth,
 		Version:          version.Version,

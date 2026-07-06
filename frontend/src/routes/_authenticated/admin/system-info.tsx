@@ -12,6 +12,7 @@ interface SystemInfo {
 	port: string;
 	logLevel: string;
 	trustedProxies: string[];
+	allowedIps: string[];
 	appUrl: string;
 	disableLocalAuth: boolean;
 	version: string;
@@ -139,6 +140,20 @@ function SystemInfoPage() {
 												className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs"
 											>
 												{proxy}
+											</code>
+										))}
+									</div>
+								) : (
+									<span className="text-muted-foreground text-xs italic">{m.noneConfigured()}</span>
+								)}
+							</InfoRow>
+
+							<InfoRow label={m.allowedIps()}>
+								{data.allowedIps && data.allowedIps.length > 0 ? (
+									<div className="flex flex-wrap gap-1.5">
+										{data.allowedIps.map((ip) => (
+											<code key={ip} className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">
+												{ip}
 											</code>
 										))}
 									</div>

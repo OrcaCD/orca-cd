@@ -160,6 +160,7 @@
 	"logLevel": "Log Level",
 	"passwordAuthentication": "Password Authentication",
 	"trustedProxies": "Trusted Proxies",
+	"allowedIps": "Allowed IPs",
 	"noneConfigured": "None configured",
 	"settingsProfileHeadTitle": "Settings - Profile",
 	"settingsSecurityHeadTitle": "Settings - Security",

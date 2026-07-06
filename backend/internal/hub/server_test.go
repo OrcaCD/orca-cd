@@ -164,6 +164,40 @@ func TestDefaultConfig_TrustedProxies(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_AllowedIPs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"single", "203.0.113.1", []string{"203.0.113.1"}},
+		{"multiple", "203.0.113.1,203.0.113.2,2001:db8::/32", []string{"203.0.113.1", "203.0.113.2", "2001:db8::/32"}},
+		{"spaces trimmed", " 203.0.113.1 , 2001:db8::/32 ", []string{"203.0.113.1", "2001:db8::/32"}},
+		{"empty", "", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("APP_URL", "https://example.com")
+			t.Setenv("APP_SECRET", "a-test-secret-that-is-at-least-32-chars!!")
+			t.Setenv("ALLOWED_IPS", tt.input)
+
+			cfg, err := DefaultConfig()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(cfg.AllowedIPs) != len(tt.want) {
+				t.Fatalf("AllowedIPs = %v, want %v", cfg.AllowedIPs, tt.want)
+			}
+			for i, ip := range cfg.AllowedIPs {
+				if ip != tt.want[i] {
+					t.Errorf("AllowedIPs[%d] = %q, want %q", i, ip, tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestDefaultConfig_Errors(t *testing.T) {
 	tests := []struct {
 		name      string

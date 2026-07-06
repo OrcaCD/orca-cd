@@ -17,17 +17,20 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 	})
 
 	trustedProxies := []string{"10.0.0.1", "10.0.0.2"}
+	allowedIPs := []string{"192.168.1.1", "10.1.0.0/16"}
 	SetAdminSystemInfoConfig(AdminSystemInfoConfig{
 		Host:             "127.0.0.1",
 		Port:             "8080",
 		LogLevel:         "debug",
 		TrustedProxies:   trustedProxies,
+		AllowedIPs:       allowedIPs,
 		AppURL:           "https://example.com",
 		DisableLocalAuth: true,
 		Version:          "test",
 	})
 
 	trustedProxies[0] = "mutated"
+	allowedIPs[0] = "mutated"
 
 	router := gin.New()
 	router.GET("/api/v1/admin/system-info", AdminSystemInfoHandler)
@@ -78,6 +81,22 @@ func TestAdminSystemInfoHandler_ReturnsConfiguredValuesWithoutSecret(t *testing.
 	}
 	if !reflect.DeepEqual(proxies, []string{"10.0.0.1", "10.0.0.2"}) {
 		t.Fatalf("expected trusted proxies to be copied values, got %v", proxies)
+	}
+
+	allowedIPsRaw, ok := body["allowedIps"].([]any)
+	if !ok {
+		t.Fatalf("expected allowedIps to be array, got %T", body["allowedIps"])
+	}
+	gotAllowedIPs := make([]string, 0, len(allowedIPsRaw))
+	for _, v := range allowedIPsRaw {
+		s, ok := v.(string)
+		if !ok {
+			t.Fatalf("expected allowed IP value to be string, got %T", v)
+		}
+		gotAllowedIPs = append(gotAllowedIPs, s)
+	}
+	if !reflect.DeepEqual(gotAllowedIPs, []string{"192.168.1.1", "10.1.0.0/16"}) {
+		t.Fatalf("expected allowed IPs to be copied values, got %v", gotAllowedIPs)
 	}
 
 	if _, found := body["app_secret"]; found {
