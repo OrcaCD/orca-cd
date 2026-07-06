@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -24,6 +25,14 @@ func main() {
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+				return cmd.Help()
+			}
+			if slices.Contains(args, "--version") || slices.Contains(args, "-v") {
+				fmt.Println(version.Full())
+				return nil
+			}
+
 			cfg, err := agent.DefaultConfig()
 			if err != nil {
 				var fatalErr *agent.FatalConfigError

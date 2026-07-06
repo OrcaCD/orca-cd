@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 
 	"github.com/OrcaCD/orca-cd/internal/hub"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
@@ -27,6 +28,14 @@ func newRootCmd() *cobra.Command {
 		DisableFlagParsing: true,
 		SilenceUsage:       true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+				return cmd.Help()
+			}
+			if slices.Contains(args, "--version") || slices.Contains(args, "-v") {
+				fmt.Println(version.Full())
+				return nil
+			}
+
 			cfg, err := hub.DefaultConfig()
 			if err != nil {
 				return err
