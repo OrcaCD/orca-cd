@@ -2,11 +2,9 @@ package middleware
 
 import (
 	"net/http"
-	"net/netip"
-	"slices"
 	"strings"
 
-	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
+	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,8 +23,8 @@ var ipLockExemptPaths = map[string]bool{
 // paths (health check, webhooks, agent WebSocket). If allowedIPs contains no
 // valid entries, the middleware is a no-op.
 func IPLock(allowedIPs []string) gin.HandlerFunc {
-	addrs, prefixes := parseIPAllowlist(allowedIPs)
-	if len(addrs) == 0 && len(prefixes) == 0 {
+	list := iplist.Parse(allowedIPs)
+	if list.Empty() {
 		return func(c *gin.Context) { c.Next() }
 	}
 
@@ -36,8 +34,7 @@ func IPLock(allowedIPs []string) gin.HandlerFunc {
 			return
 		}
 
-		addr, err := httpclient.ParseIP(c.ClientIP())
-		if err != nil || !ipAllowed(addr, addrs, prefixes) {
+		if !list.Contains(c.ClientIP()) {
 			c.String(http.StatusForbidden, "403 forbidden: ip not allowed")
 			c.Abort()
 			return
@@ -53,51 +50,6 @@ func isIPLockExempt(path string) bool {
 	}
 	for _, prefix := range ipLockExemptPrefixes {
 		if strings.HasPrefix(path, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func parseIPAllowlist(entries []string) ([]netip.Addr, []netip.Prefix) {
-	var addrs []netip.Addr
-	var prefixes []netip.Prefix
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		if strings.Contains(entry, "/") {
-			if prefix, err := netip.ParsePrefix(entry); err == nil {
-				prefixes = append(prefixes, unmapPrefix(prefix).Masked())
-			}
-			continue
-		}
-		if addr, err := httpclient.ParseIP(entry); err == nil {
-			addrs = append(addrs, addr)
-		}
-	}
-	return addrs, prefixes
-}
-
-// unmapPrefix converts a CIDR written in IPv4-mapped-IPv6 form (e.g.
-// "::ffff:203.0.113.0/120") to a plain IPv4 prefix, since netip.Prefix.Contains
-// requires the address family of the prefix and the checked address to match,
-// and client IPs are always unmapped to plain IPv4 before comparison.
-func unmapPrefix(p netip.Prefix) netip.Prefix {
-	addr := p.Addr()
-	if !addr.Is4In6() || p.Bits() < 96 {
-		return p
-	}
-	return netip.PrefixFrom(addr.Unmap(), p.Bits()-96)
-}
-
-func ipAllowed(addr netip.Addr, addrs []netip.Addr, prefixes []netip.Prefix) bool {
-	if slices.Contains(addrs, addr) {
-		return true
-	}
-	for _, p := range prefixes {
-		if p.Contains(addr) {
 			return true
 		}
 	}

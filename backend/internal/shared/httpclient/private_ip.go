@@ -2,7 +2,8 @@ package httpclient
 
 import (
 	"net/netip"
-	"strings"
+
+	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
 )
 
 var privateIPRangesStr = []string{
@@ -44,30 +45,12 @@ func init() {
 	}
 }
 
-func ParseIP(ip string) (netip.Addr, error) {
-	// Strip IPv6 zone identifier (e.g. "fe80::1%eth0" → "fe80::1").
-	if i := strings.IndexByte(ip, '%'); i != -1 {
-		ip = ip[:i]
-	}
-
-	result, err := netip.ParseAddr(ip)
-	if err != nil {
-		return netip.Addr{}, err
-	}
-
-	if result.Is4In6() {
-		return result.Unmap(), nil
-	}
-
-	return result, nil
-}
-
 func IsPrivateIP(ip string) bool {
 	if ip == "" {
 		return false
 	}
 
-	ipAddress, err := ParseIP(ip)
+	ipAddress, err := iplist.ParseIP(ip)
 	if err != nil {
 		return false
 	}
