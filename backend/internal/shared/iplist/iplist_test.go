@@ -120,6 +120,14 @@ func TestList_ContainsIPv6ExactAndCIDR(t *testing.T) {
 	}
 }
 
+func TestList_ContainsReturnsFalseForUnparsableIP(t *testing.T) {
+	l := Parse([]string{"203.0.113.5"})
+
+	if l.Contains("not-an-ip") {
+		t.Error("expected unparsable IP to not match")
+	}
+}
+
 func TestParse_UnmapPrefixResult(t *testing.T) {
 	l := Parse([]string{"::ffff:203.0.113.0/120"})
 

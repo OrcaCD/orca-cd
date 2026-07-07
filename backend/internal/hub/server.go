@@ -174,8 +174,8 @@ func Run(cfg Config) error {
 	if len(cfg.TrustedProxies) == 0 {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
-	router.Use(middleware.IPLock(cfg.AllowedIPs))
 	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.IPLock(cfg.AllowedIPs))
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
