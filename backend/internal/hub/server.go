@@ -30,6 +30,7 @@ type Config struct {
 	LogLevel         zerolog.Level
 	LogJSON          bool
 	TrustedProxies   []string
+	AllowedIPs       []string
 	AppURL           string
 	AppSecret        string
 	DisableLocalAuth bool
@@ -65,6 +66,13 @@ func DefaultConfig() (Config, error) {
 		}
 	}
 
+	var allowedIPs []string
+	for entry := range strings.SplitSeq(os.Getenv("ALLOWED_IPS"), ",") {
+		if s := strings.TrimSpace(entry); s != "" {
+			allowedIPs = append(allowedIPs, s)
+		}
+	}
+
 	appURL, err := parseAppURL(os.Getenv("APP_URL"))
 	if err != nil {
 		return Config{}, err
@@ -80,6 +88,7 @@ func DefaultConfig() (Config, error) {
 		LogLevel:         logLevel,
 		LogJSON:          logJSON,
 		TrustedProxies:   trustedProxies,
+		AllowedIPs:       allowedIPs,
 		AppURL:           appURL,
 		AppSecret:        appSecret,
 		DisableLocalAuth: disableLocalAuth,
@@ -166,6 +175,7 @@ func Run(cfg Config) error {
 		Log.Warn().Msg("no trusted proxies configured; in production the server should always run behind a reverse proxy")
 	}
 	router.Use(middleware.SecurityHeaders())
+	router.Use(middleware.IPLock(cfg.AllowedIPs))
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 

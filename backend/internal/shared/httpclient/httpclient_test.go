@@ -283,7 +283,7 @@ func TestParseAllowedInternalIPs_InvalidEntries(t *testing.T) {
 	parseAllowedInternalIPs("notanip, , 300.300.300.300")
 	t.Cleanup(func() { parseAllowedInternalIPs("") })
 
-	if len(allowedInternalAddrs) != 0 || len(allowedInternalPrefixes) != 0 {
+	if !allowedInternal.Empty() {
 		t.Error("expected empty allow-list after all-invalid input")
 	}
 }
