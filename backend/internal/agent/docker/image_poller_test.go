@@ -324,3 +324,49 @@ func TestImagePoller_TriggerNow(t *testing.T) {
 		t.Fatal("timed out waiting for TriggerNow to call checkAndPullImages")
 	}
 }
+
+func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() {
+		releaseOnce.Do(func() {
+			close(release)
+		})
+	}
+	t.Cleanup(releaseAll)
+
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+		started <- struct{}{}
+		<-release
+		return false, nil
+	}
+
+	p := newTestPoller(t, nil)
+	p.TriggerNow("app-1", "billing", "req-1")
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first pull to start")
+	}
+
+	p.TriggerNow("app-1", "billing", "req-2")
+
+	select {
+	case <-started:
+		t.Fatal("second pull started while first pull was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseAll()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for second pull to run after first completed")
+	}
+}

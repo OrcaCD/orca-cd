@@ -43,21 +43,23 @@ type appPollState struct {
 
 // ImagePoller manages per-application image polling tickers.
 type ImagePoller struct {
-	mu     sync.Mutex
-	log    zerolog.Logger
-	apps   map[string]*appPollState // keyed by applicationID
-	client *Client
-	sender MessageSender
+	mu       sync.Mutex
+	log      zerolog.Logger
+	apps     map[string]*appPollState // keyed by applicationID
+	runLocks map[string]*sync.Mutex
+	client   *Client
+	sender   MessageSender
 }
 
 // NewImagePoller creates a new ImagePoller. sender is used to report results to the hub;
 // SendMessage is a no-op when the agent is disconnected.
 func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger) *ImagePoller {
 	return &ImagePoller{
-		log:    log,
-		apps:   make(map[string]*appPollState),
-		client: c,
-		sender: sender,
+		log:      log,
+		apps:     make(map[string]*appPollState),
+		runLocks: make(map[string]*sync.Mutex),
+		client:   c,
+		sender:   sender,
 	}
 }
 
@@ -140,6 +142,10 @@ func (p *ImagePoller) runTicker(appID, appName string, settings PollSettings, st
 }
 
 func (p *ImagePoller) runOnce(appID, appName, requestID string) {
+	runLock := p.lockForRun(appID)
+	runLock.Lock()
+	defer runLock.Unlock()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -178,4 +184,16 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string) {
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Str("application_id", appID).Msg("image poll: failed to send result")
 	}
+}
+
+func (p *ImagePoller) lockForRun(appID string) *sync.Mutex {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	runLock, ok := p.runLocks[appID]
+	if !ok {
+		runLock = &sync.Mutex{}
+		p.runLocks[appID] = runLock
+	}
+	return runLock
 }
