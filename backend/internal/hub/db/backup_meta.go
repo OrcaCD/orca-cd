@@ -33,12 +33,13 @@ func CurrentSchemaVersion() (uint, error) {
 		if !ok {
 			continue
 		}
-		n, err := strconv.ParseUint(prefix, 10, 64)
+		n, err := strconv.ParseUint(prefix, 10, strconv.IntSize)
 		if err != nil {
 			continue
 		}
-		if uint(n) > max {
-			max = uint(n)
+		v := uint(n)
+		if v > max {
+			max = v
 		}
 	}
 
