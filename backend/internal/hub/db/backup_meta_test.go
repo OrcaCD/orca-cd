@@ -84,6 +84,42 @@ func TestReadBackupSchemaVersion_MissingTable(t *testing.T) {
 	}
 }
 
+func TestReadBackupSchemaVersion_OpenError(t *testing.T) {
+	// Point at a directory: sqlite cannot open it as a database file, so
+	// gorm.Open fails during initialization.
+	_, _, err := readBackupSchemaVersion(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "failed to open backup database") {
+		t.Fatalf("expected open error, got %v", err)
+	}
+}
+
+func TestReadBackupSchemaVersion_QueryError(t *testing.T) {
+	// schema_migrations exists but lacks the expected version/dirty columns, so
+	// the SELECT fails at query time rather than the HasTable guard.
+	path := filepath.Join(t.TempDir(), "malformed.db")
+	bad, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	if err := bad.Exec("CREATE TABLE schema_migrations (other INTEGER)").Error; err != nil {
+		t.Fatalf("failed to create malformed table: %v", err)
+	}
+	sqlDB, _ := bad.DB()
+	_ = sqlDB.Close()
+
+	_, _, err = readBackupSchemaVersion(path)
+	if err == nil || !strings.Contains(err.Error(), "failed to read backup schema version") {
+		t.Fatalf("expected query error, got %v", err)
+	}
+}
+
+func TestValidateBackup_PropagatesReadError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "does-not-exist.db")
+	if err := ValidateBackup(path); err == nil {
+		t.Fatal("expected error for unreadable backup, got nil")
+	}
+}
+
 func TestValidateBackup_AcceptsEqualVersion(t *testing.T) {
 	path := newValidBackup(t)
 	if err := ValidateBackup(path); err != nil {
