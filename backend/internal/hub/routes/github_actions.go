@@ -109,7 +109,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	// Reject pull_request and pull_request_target events: these can be triggered
 	// by untrusted fork contributors and should never trigger deployments.
 	if claims.EventName == "pull_request" || claims.EventName == "pull_request_target" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "deployments cannot be triggered by pull_request or pull_request_target events"})
 		return
 	}
 
@@ -139,7 +139,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 		}
 	}
 	if matchedRepo == nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "no repository with GitHub Actions OIDC enabled matches this repository. Add the repository in OrcaCD and enable GitHub Actions OIDC in its sync settings"})
 		return
 	}
 
