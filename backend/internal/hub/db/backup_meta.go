@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,12 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
+
+// schemaMigration mirrors golang-migrate's schema_migrations table.
+type schemaMigration struct {
+	Version uint
+	Dirty   bool
+}
 
 var ErrNotOrcaBackup = errors.New("not a valid OrcaCD backup: missing schema_migrations table")
 
@@ -52,16 +59,12 @@ func readBackupSchemaVersion(path string) (version uint, dirty bool, err error) 
 		return 0, false, ErrNotOrcaBackup
 	}
 
-	var row struct {
-		Version uint
-		Dirty   bool
-	}
-	result := backupDB.Raw("SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&row)
-	if result.Error != nil {
-		return 0, false, fmt.Errorf("failed to read backup schema version: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return 0, false, ErrNotOrcaBackup
+	row, err := gorm.G[schemaMigration](backupDB).Raw("SELECT version, dirty FROM schema_migrations LIMIT 1").First(context.Background())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, false, ErrNotOrcaBackup
+		}
+		return 0, false, fmt.Errorf("failed to read backup schema version: %w", err)
 	}
 
 	return row.Version, row.Dirty, nil
