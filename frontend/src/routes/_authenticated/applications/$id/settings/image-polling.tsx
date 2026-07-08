@@ -3,8 +3,15 @@ import { m } from "@/lib/paraglide/messages";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Webhook } from "lucide-react";
 import z from "zod";
-import { updateApplication, type Application } from "@/lib/applications";
+import {
+	updateApplication,
+	generateImageWebhook,
+	revokeImageWebhook,
+	type Application,
+} from "@/lib/applications";
 import { useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { toast } from "sonner";
@@ -13,6 +20,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useFetch } from "@/lib/api";
+import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
+import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
+import CopyButton from "@/components/copy-btn";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/image-polling")({
 	component: ImagePollingPage,
@@ -55,8 +65,10 @@ const applicationSchema = z.object({
 function ImagePollingPage() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
-	const [, setIsSubmitting] = useState(false);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [, setOpen] = useState(false);
+	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+	const [webhookSecretOpen, setWebhookSecretOpen] = useState(false);
 
 	const form = useForm({
 		defaultValues: {
@@ -88,6 +100,25 @@ function ImagePollingPage() {
 	});
 
 	const imagePollEnabled = useStore(form.store, (state) => state.values.imagePollEnabled);
+
+	async function handleGenerateWebhook() {
+		try {
+			const result = await generateImageWebhook(id);
+			setWebhookSecret(result.secret);
+			setWebhookSecretOpen(true);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedGenerateWebhook());
+		}
+	}
+
+	async function handleRevokeWebhook() {
+		try {
+			await revokeImageWebhook(id);
+			toast.success(m.webhookRevoked());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.failedRevokeWebhook());
+		}
+	}
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -170,10 +201,84 @@ function ImagePollingPage() {
 									</form.Field>
 								</>
 							)}
+
+							<div className="flex gap-2 pt-2">
+								<Button type="submit" disabled={isSubmitting}>
+									{isSubmitting ? m.savingDots() : m.saveChanges()}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									onClick={() => {
+										setOpen(false);
+										form.reset();
+									}}
+									disabled={isSubmitting}
+								>
+									{m.cancel()}
+								</Button>
+							</div>
 						</FieldGroup>
 					</form>
 				</CardContent>
 			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>
+						<div className="flex items-center gap-2">
+							<Webhook className="h-5 w-5" />
+							{m.imagePullWebhookSectionTitle()}
+						</div>
+					</CardTitle>
+				</CardHeader>
+				<Separator />
+				<CardContent className="space-y-4">
+					<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
+
+					{application?.imageWebhookEnabled && application.imageWebhookUrl ? (
+						<div className="space-y-1">
+							<p className="text-xs font-medium">{m.imagePullWebhookUrl()}</p>
+							<div className="flex items-center gap-1 rounded-md border bg-muted/50 px-3 py-1">
+								<code className="flex-1 truncate font-mono text-sm">
+									{application.imageWebhookUrl}
+								</code>
+								<CopyButton text={application.imageWebhookUrl} title={m.imagePullWebhookUrl()} />
+							</div>
+						</div>
+					) : null}
+
+					<div className="flex items-center gap-2">
+						<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+							{application?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+						</Button>
+						{application?.imageWebhookEnabled && (
+							<ConfirmationDialog
+								onConfirm={handleRevokeWebhook}
+								description={m.revokeWebhookConfirmDescription()}
+								triggerText={m.revokeWebhook()}
+								triggerProps={{ variant: "destructive", size: "sm" }}
+							/>
+						)}
+					</div>
+				</CardContent>
+			</Card>
+
+			<CopyValueDialog
+				open={webhookSecretOpen}
+				onOpenChange={(nextOpen) => {
+					setWebhookSecretOpen(nextOpen);
+					if (!nextOpen) {
+						setWebhookSecret(null);
+					}
+				}}
+				title={m.imagePullWebhookSecretModalTitle()}
+				description={m.imagePullWebhookSecretModalDescription()}
+				label={m.imagePullWebhookSecret()}
+				value={webhookSecret ?? ""}
+				inputId={`app-pull-webhook-secret-${id}`}
+				copyTitle={m.imagePullWebhookSecret()}
+			/>
 		</div>
 	);
 }
