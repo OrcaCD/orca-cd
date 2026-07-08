@@ -331,11 +331,15 @@ func setupHubForTest(t *testing.T) *hubws.Hub {
 }
 
 func makeGitHubPackageRequest(appID, body, sig string) (*gin.Context, *httptest.ResponseRecorder) {
+	return makeGitHubEventRequest(appID, "package", body, sig)
+}
+
+func makeGitHubEventRequest(appID, event, body, sig string) (*gin.Context, *httptest.ResponseRecorder) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/images/"+appID, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
-	c.Request.Header.Set("X-GitHub-Event", "package")
+	c.Request.Header.Set("X-GitHub-Event", event)
 	c.Request.Header.Set("X-Hub-Signature-256", sig)
 	c.Params = gin.Params{{Key: "id", Value: appID}}
 	return c, w
@@ -599,6 +603,51 @@ func TestImagePullWebhookHandler_DBError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_GitHubPing_Returns204NoPull(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	setupHubForTest(t)
+
+	const secret = "mysecret"
+	const body = `{"zen":"Non-blocking is better than blocking.","hook_id":1}`
+	app := seedAppWithWebhookSecret(t, secret)
+
+	c, w := makeGitHubEventRequest(app.Id, "ping", body, imagePullHMAC(secret, body))
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_GitHubPing_InvalidSignature_Returns401(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+
+	const body = `{"zen":"Non-blocking is better than blocking.","hook_id":1}`
+	app := seedAppWithWebhookSecret(t, "mysecret")
+
+	c, w := makeGitHubEventRequest(app.Id, "ping", body, imagePullHMAC("wrongsecret", body))
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_GitHubUnsupportedEvent_Returns400(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+
+	const secret = "mysecret"
+	const body = `{"action":"created"}`
+	app := seedAppWithWebhookSecret(t, secret)
+
+	c, w := makeGitHubEventRequest(app.Id, "repository", body, imagePullHMAC(secret, body))
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

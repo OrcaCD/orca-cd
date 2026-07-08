@@ -48,7 +48,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 
 	secret := app.ImageWebhookSecret.String()
 
-	if c.GetHeader("X-GitHub-Event") == "package" {
+	if event := c.GetHeader("X-GitHub-Event"); event != "" {
 		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -56,6 +56,14 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		}
 		if !validateHMACSHA256(secret, body, strings.TrimPrefix(c.GetHeader("X-Hub-Signature-256"), "sha256=")) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid webhook signature"})
+			return
+		}
+		if event == "ping" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		if event != "package" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported event type"})
 			return
 		}
 		var payload githubPackagePayload
