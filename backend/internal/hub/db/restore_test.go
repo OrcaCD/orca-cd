@@ -67,11 +67,15 @@ func TestCopyFile_FailsWhenSourceNotFound(t *testing.T) {
 func TestRestore_MkdirAllFails(t *testing.T) {
 	setupGlobalDB(t)
 
+	backupPath := filepath.Join(t.TempDir(), "test-backup.db")
+	if err := Export(backupPath); err != nil {
+		t.Fatalf("failed to create valid backup: %v", err)
+	}
+
 	fake := newFakeFS()
 	fake.MkdirAllErr = errors.New("disk full")
 	fs = fake // inject
 
-	backupPath := filepath.Join(t.TempDir(), "test-backup.db")
 	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
 	err := Restore(backupPath, sqliteFilePath)
 	if err == nil || !strings.Contains(err.Error(), "disk full") {
@@ -82,15 +86,42 @@ func TestRestore_MkdirAllFails(t *testing.T) {
 func TestRestore_CopyFails_RollbackSucceeds(t *testing.T) {
 	setupGlobalDB(t)
 
+	backupPath := filepath.Join(t.TempDir(), "test-backup"+fmt.Sprintf("%d", time.Now().Unix())+".db")
+	if err := Export(backupPath); err != nil {
+		t.Fatalf("failed to create valid backup: %v", err)
+	}
+
 	fake := newFakeFS()
 	fake.OpenErr = errors.New("I/O error")
 	fs = fake
 
-	backupPath := filepath.Join(t.TempDir(), "test-backup"+fmt.Sprintf("%d", time.Now().Unix())+".db")
 	sqliteFilePath := filepath.Join(t.TempDir(), "/export.db")
 	err := Restore(backupPath, sqliteFilePath)
 	if err == nil || !strings.Contains(err.Error(), "I/O error") {
 		t.Fatalf("expected I/O error, got %v", err)
+	}
+}
+
+func TestRestore_RejectsNewerBackup(t *testing.T) {
+	setupGlobalDB(t)
+
+	backupPath := filepath.Join(t.TempDir(), "newer-backup.db")
+	if err := Export(backupPath); err != nil {
+		t.Fatalf("failed to create backup: %v", err)
+	}
+	current, err := CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion() error: %v", err)
+	}
+	setBackupSchemaVersion(t, backupPath, current+1, false)
+
+	sqliteFilePath := filepath.Join(t.TempDir(), "export.db")
+	err = Restore(backupPath, sqliteFilePath)
+	if err == nil || !strings.Contains(err.Error(), "newer OrcaCD") {
+		t.Fatalf("expected newer-OrcaCD rejection, got %v", err)
+	}
+	if _, statErr := os.Stat(sqliteFilePath); !os.IsNotExist(statErr) {
+		t.Fatalf("live database must not be written when validation fails, stat err = %v", statErr)
 	}
 }
 

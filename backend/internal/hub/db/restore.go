@@ -39,6 +39,11 @@ func Restore(backupPath, sqliteFilePath string) error {
 		return fmt.Errorf("database not connected")
 	}
 
+	// Reject incompatible backups before touching the live database.
+	if err := ValidateBackup(backupPath); err != nil {
+		return err
+	}
+
 	if err := fs.MkdirAll("data", 0750); err != nil {
 		return fmt.Errorf("failed to create database directory: %w", err)
 	}
