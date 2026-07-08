@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.0](https://github.com/OrcaCD/orca-cd/compare/v0.1.0...v0.2.0) (2026-07-08)
+
+
+### Features
+
+* Add check for backup migration version ([#221](https://github.com/OrcaCD/orca-cd/issues/221)) ([27a5936](https://github.com/OrcaCD/orca-cd/commit/27a5936d304d02817690aadfbcde6e52c83e80da))
+* Add env var to limit allowed ip addresses ([#217](https://github.com/OrcaCD/orca-cd/issues/217)) ([b542035](https://github.com/OrcaCD/orca-cd/commit/b54203504cc0990671488dd915a2b3a7af239c24))
+* Various frontend enhancements ([#220](https://github.com/OrcaCD/orca-cd/issues/220)) ([32cfdb7](https://github.com/OrcaCD/orca-cd/commit/32cfdb74f77f6fbd53d942be4d0229e07a7c27f8))
+
+
+### Bug Fixes
+
+* Allow inline wasm loading ([#218](https://github.com/OrcaCD/orca-cd/issues/218)) ([c80a812](https://github.com/OrcaCD/orca-cd/commit/c80a81216ad8207f8bb58a82dc4f17117b87f35a))
+* Handle ping events on image webhook endpoint ([#223](https://github.com/OrcaCD/orca-cd/issues/223)) ([48651dd](https://github.com/OrcaCD/orca-cd/commit/48651dd061b6d6bec4e5c222515b408121983fbe))
+* Image polling locking ([#224](https://github.com/OrcaCD/orca-cd/issues/224)) ([3e35956](https://github.com/OrcaCD/orca-cd/commit/3e359569a4bc0b531bc96f233ee523b0125aa587))
+
+
+### Reverts
+
+* Version fix ([#61](https://github.com/OrcaCD/orca-cd/issues/61)) ([d0cc07b](https://github.com/OrcaCD/orca-cd/commit/d0cc07b9c79c65d7ab46240bb77efc74dab36089))
+
 ## 0.1.0 (2026-07-06)
 
 
