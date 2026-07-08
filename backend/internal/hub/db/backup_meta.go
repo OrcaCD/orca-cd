@@ -3,7 +3,6 @@ package db
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"gorm.io/driver/sqlite"
@@ -23,24 +22,13 @@ func CurrentSchemaVersion() (uint, error) {
 		return 0, fmt.Errorf("failed to read embedded migrations: %w", err)
 	}
 
-	var max uint
+	var max uint = 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if !strings.HasSuffix(name, ".up.sql") {
 			continue
 		}
-		prefix, _, ok := strings.Cut(name, "_")
-		if !ok {
-			continue
-		}
-		n, err := strconv.ParseUint(prefix, 10, strconv.IntSize)
-		if err != nil {
-			continue
-		}
-		v := uint(n)
-		if v > max {
-			max = v
-		}
+		max++
 	}
 
 	if max == 0 {
