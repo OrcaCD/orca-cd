@@ -106,6 +106,7 @@ export default function Navbar() {
 															key={item.key}
 															to={item.href}
 															className={cn(
+																"h-8",
 																location.pathname.startsWith(item.href) &&
 																	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 															)}
@@ -222,7 +223,7 @@ export default function Navbar() {
 												key={item.key}
 												to={item.href}
 												className={cn(
-													"w-full",
+													"h-8 w-full",
 													location.pathname.startsWith(item.href) &&
 														"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 												)}
