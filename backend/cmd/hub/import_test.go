@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func setupImportTestEnv(t *testing.T) {
@@ -166,6 +169,57 @@ func TestRunImportCommand_FailsIfBackupIsInvalid(t *testing.T) {
 		if !strings.Contains(err.Error(), "import failed") && !strings.Contains(err.Error(), "restore") {
 			t.Errorf("expected error related to import or restore, got: %v", err)
 		}
+	}
+}
+
+func TestRunImportCommand_RejectsNewerBackup(t *testing.T) {
+	setupImportTestEnv(t)
+
+	var backupOut bytes.Buffer
+	if err := runBackupCommand(&backupOut, "newer-backup.db"); err != nil {
+		t.Fatalf("runBackupCommand() unexpected error: %v", err)
+	}
+	backupPath := filepath.Join("data", "newer-backup.db")
+
+	// Forge a backup created by a newer OrcaCD by bumping its schema version
+	// above what this binary knows about.
+	current, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion() error: %v", err)
+	}
+	backupDB, err := gorm.Open(sqlite.Open(backupPath), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open backup: %v", err)
+	}
+	if err := backupDB.Exec("UPDATE schema_migrations SET version = ?", current+1).Error; err != nil {
+		t.Fatalf("failed to bump backup version: %v", err)
+	}
+	sqlBackup, _ := backupDB.DB()
+	_ = sqlBackup.Close()
+
+	var importOut bytes.Buffer
+	err = runImportCommandWithInput(&importOut, strings.NewReader("yes\n"), backupPath, true)
+	if err == nil || !strings.Contains(err.Error(), "newer OrcaCD") {
+		t.Fatalf("expected newer-OrcaCD rejection, got %v", err)
+	}
+
+	// The live database must be untouched: still at the binary's schema version,
+	// not the forged newer one that the rejected backup carried.
+	liveDB, err := gorm.Open(sqlite.Open(filepath.Join("data", "hub.db")+"?mode=ro"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open live database after rejected import: %v", err)
+	}
+	defer func() {
+		sqlLive, _ := liveDB.DB()
+		_ = sqlLive.Close()
+	}()
+
+	var liveVersion uint
+	if err := liveDB.Raw("SELECT version FROM schema_migrations LIMIT 1").Scan(&liveVersion).Error; err != nil {
+		t.Fatalf("failed to read live schema version: %v", err)
+	}
+	if liveVersion != current {
+		t.Errorf("live database schema version = %d, want %d (backup must not have been applied)", liveVersion, current)
 	}
 }
 
