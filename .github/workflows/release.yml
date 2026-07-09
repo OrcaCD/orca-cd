@@ -86,6 +86,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set build date
+        id: build_date
+        run: echo "value=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata for ${{ matrix.name }}
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
@@ -113,7 +117,7 @@ jobs:
           build-args: |
             VERSION=${{ github.event_name == 'workflow_dispatch' && 'main' || needs.release-please.outputs.tag-name }}
             COMMIT=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ steps.build_date.outputs.value  }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
