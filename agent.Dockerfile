@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.4-trixie AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
