@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:11.9.0 AS install-deps
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:11.10.0 AS install-deps
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
@@ -16,7 +16,7 @@ COPY --from=install-deps /app/frontend/node_modules ./node_modules
 COPY frontend/ ./
 RUN node --run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.4-trixie AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
