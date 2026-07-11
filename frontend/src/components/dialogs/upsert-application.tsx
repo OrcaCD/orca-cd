@@ -169,7 +169,7 @@ export function TreeNodeList({
 										size="sm"
 										className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
 									>
-										<ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
+										<ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />
 										<FolderIcon />
 										{node.name}
 									</Button>
