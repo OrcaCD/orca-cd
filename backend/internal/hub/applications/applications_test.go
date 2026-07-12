@@ -314,7 +314,7 @@ type stubDeployer struct {
 	err     error
 }
 
-func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile string) error {
+func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, _ string) error {
 	s.called = true
 	s.compose = composeFile
 	return s.err

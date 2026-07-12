@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -36,7 +37,7 @@ func setupDeployTestEnv(t *testing.T) {
 	}
 	// Application + Notification create the application_notifications join table that
 	// SendNotification queries, so the notification path runs cleanly (no rows).
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -88,6 +89,46 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	}
 	if updated.LastSyncedAt == nil {
 		t.Error("expected LastSyncedAt to be set")
+	}
+}
+
+func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	requestID := "deploy-request"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	nop := zerolog.Nop()
+	handleDeployResult(&messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil || event.Status != models.ApplicationEventSucceeded {
+		t.Fatalf("event=%+v err=%v", event, err)
+	}
+}
+
+func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	requestID := "expected-request"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	nop := zerolog.Nop()
+	handleDeployResult(&messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil || event.Status != models.ApplicationEventRunning {
+		t.Fatalf("event=%+v err=%v", event, err)
 	}
 }
 

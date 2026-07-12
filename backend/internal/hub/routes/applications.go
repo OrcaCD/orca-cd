@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
+	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -16,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -239,7 +242,19 @@ func CreateApplicationHandler(c *gin.Context) {
 	sendAgentSettings(c, req.AgentId)
 
 	if application_deployer.DefaultApplicationDeployer != nil {
-		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile)
+		requestID := uuid.NewString()
+		actorUserID, actorName := eventActor(c)
+		if _, err := applicationevents.Start(c.Request.Context(), applicationevents.Params{
+			ApplicationID: createdApplication.Id,
+			RequestID:     &requestID,
+			Type:          models.ApplicationEventDeployment,
+			Source:        models.ApplicationEventSourceApplicationCreated,
+			ActorUserID:   actorUserID,
+			ActorName:     actorName,
+		}); err != nil {
+			hubApplications.Log.Error().Err(err).Str("applicationId", createdApplication.Id).Msg("failed to record initial deployment event")
+		}
+		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile, requestID)
 	}
 }
 
@@ -415,7 +430,20 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String())
+	requestID := uuid.NewString()
+	actorUserID, actorName := eventActor(c)
+	if _, eventErr := applicationevents.Start(c.Request.Context(), applicationevents.Params{
+		ApplicationID: application.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+		ActorUserID:   actorUserID,
+		ActorName:     actorName,
+	}); eventErr != nil {
+		hubApplications.Log.Error().Err(eventErr).Str("applicationId", application.Id).Msg("failed to record manual deployment event")
+	}
+
+	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String(), requestID)
 
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {

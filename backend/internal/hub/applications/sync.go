@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -77,7 +78,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 
-	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content); err != nil {
+	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content, uuid.NewString()); err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to trigger application deploy")
 		failSyncJob(job.Application, log)
 	}
