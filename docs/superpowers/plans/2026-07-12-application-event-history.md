@@ -53,7 +53,7 @@
 - Produces: `models.ApplicationEvent`, `ApplicationEventType`, `ApplicationEventSource`, and `ApplicationEventStatus` constants used by every later backend task.
 - Produces: SQLite constraints `ON DELETE CASCADE` for applications and `ON DELETE SET NULL` for actors.
 
-- [ ] **Step 1: Write the failing migration schema test**
+- [x] **Step 1: Write the failing migration schema test**
 
 Append a test that runs all embedded migrations, requires `application_events`, verifies every column, and inspects `PRAGMA foreign_key_list(application_events)` for the two delete actions:
 
@@ -87,13 +87,13 @@ func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
 
 Also add `"application_events"` to `TestRunMigrations_AllTablesExist`.
 
-- [ ] **Step 2: Run the migration test and verify RED**
+- [x] **Step 2: Run the migration test and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/db -run 'TestRunMigrations_(ApplicationEventsTableSchema|AllTablesExist)$'`
 
 Expected: FAIL because migration 24 and the table do not exist.
 
-- [ ] **Step 3: Add the model and migrations**
+- [x] **Step 3: Add the model and migrations**
 
 Create enum values exactly as specified:
 
@@ -187,13 +187,13 @@ The down migration is:
 DROP TABLE IF EXISTS application_events;
 ```
 
-- [ ] **Step 4: Run model and DB tests and verify GREEN**
+- [x] **Step 4: Run model and DB tests and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub/models ./internal/hub/db`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the schema**
+- [x] **Step 5: Commit the schema**
 
 ```bash
 git add backend/internal/hub/models/application_events.go backend/internal/hub/db/migrations/000024_create_application_events_table.up.sql backend/internal/hub/db/migrations/000024_create_application_events_table.down.sql backend/internal/hub/db/db_test.go
@@ -215,7 +215,7 @@ git commit -m "feat: add application event schema"
 - Produces: `Complete(context.Context, requestID, applicationID, status, errorMessage) (bool, error)`.
 - Produces: `RecoverRunning(context.Context, message) (int64, error)` and `Path(applicationID string) string`.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Create tests against a temporary SQLite DB assigned to `db.DB`. Auto-migrate `User`, `Repository`, `Agent`, `Application`, and `ApplicationEvent`; seed two applications. Cover these assertions with real database reads:
 
@@ -278,13 +278,13 @@ func TestCompleteRejectsWrongApplicationAndDuplicateResult(t *testing.T) {
 
 Add `TestRetentionKeepsNewestThousandPerApplication` by inserting 1,001 terminal events through `RecordTerminal`, asserting exactly 1,000 remain for that app and an event for the second app remains. Add `TestRecoverRunningFailsOnlyRunningEvents` and verify terminal rows remain unchanged. Add `TestDeletingApplicationCascadesEvents` by deleting the seeded application through `gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Delete(ctx)` and asserting its event count becomes zero.
 
-- [ ] **Step 2: Run the service tests and verify RED**
+- [x] **Step 2: Run the service tests and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/applicationevents`
 
 Expected: FAIL because the package and lifecycle functions do not exist.
 
-- [ ] **Step 3: Implement the lifecycle service**
+- [x] **Step 3: Implement the lifecycle service**
 
 Use this public shape:
 
@@ -361,13 +361,13 @@ func create(ctx context.Context, p Params, status models.ApplicationEventStatus,
 
 Implement `Complete` as one conditional generic update with `WHERE request_id = ? AND application_id = ? AND status = 'running'`, selecting `Status`, `ErrorMessage`, and `CompletedAt` so nil/zero values are written. Publish only when `rowsAffected == 1`. Implement `RecoverRunning` as a conditional update of every running row to failed with one shared completion time and the supplied stable message, returning the affected count.
 
-- [ ] **Step 4: Run the service tests and verify GREEN**
+- [x] **Step 4: Run the service tests and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub/applicationevents`
 
 Expected: PASS, including exactly 1,000 retained rows.
 
-- [ ] **Step 5: Commit the service**
+- [x] **Step 5: Commit the service**
 
 ```bash
 git add backend/internal/hub/applicationevents
@@ -388,7 +388,7 @@ git commit -m "feat: add application event lifecycle"
 - Produces: `GET /api/v1/applications/:id/events?limit=20&offset=0` returning `{items, hasMore}`.
 - Produces: `eventActor(*gin.Context) (userID, userName *string)` for later user-driven trigger integrations.
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Test a seeded application with three timestamped events and assert newest-first ordering, `limit=1&offset=1`, `hasMore`, RFC3339 timestamps, nullable metadata, and no `requestId` in JSON. Add table-driven validation cases for `limit=0`, `limit=101`, `limit=abc`, `offset=-1`, and `offset=abc`, all expecting `400`. Add an unknown application case expecting `404`. Add a database-error case that closes the test database after seeding the application and expects `500` with `{"error":"internal server error"}`.
 
@@ -410,13 +410,13 @@ func TestListApplicationEventsHandlerRejectsInvalidPagination(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run route tests and verify RED**
+- [x] **Step 2: Run route tests and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/routes -run 'TestListApplicationEvents'`
 
 Expected: FAIL because the handler and route are missing.
 
-- [ ] **Step 3: Implement and register the endpoint**
+- [x] **Step 3: Implement and register the endpoint**
 
 Define response fields exactly:
 
@@ -439,13 +439,13 @@ Parse strict integer values, default to 20/0, require `1 <= limit <= 100` and `o
 
 Implement `eventActor` from `auth.GetClaims(c)`, copying `claims.Subject` and `claims.Name` into stable local strings before returning pointers.
 
-- [ ] **Step 4: Run route and handler suites and verify GREEN**
+- [x] **Step 4: Run route and handler suites and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub/routes ./internal/hub -run 'Test(ListApplicationEvents|RegisterRoutes)'`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the API**
+- [x] **Step 5: Commit the API**
 
 ```bash
 git add backend/internal/hub/routes/application_events.go backend/internal/hub/routes/application_events_test.go backend/internal/hub/handlers.go
@@ -470,7 +470,7 @@ git commit -m "feat: expose application event history"
 - Consumes: `applicationevents.Start` before dispatch and `Complete` at dispatch/result boundaries.
 - Preserves: deployment failures and history failures remain independent.
 
-- [ ] **Step 1: Write failing correlation tests**
+- [x] **Step 1: Write failing correlation tests**
 
 Extend deployer tests to pass a fixed request ID and assert that an offline send marks the matching running event failed. Extend WebSocket tests so a successful `DeployResult{RequestId: requestID, ApplicationId: app.Id}` completes only that event; add a mismatched request ID case that leaves it running. Extend route tests to authenticate with claims and assert manual deploy creates `type=deployment`, `source=manual`, and actor snapshot; creation creates `source=application_created`.
 
@@ -496,13 +496,13 @@ func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/deployer ./internal/hub/websocket ./internal/hub/routes -run 'Test.*(Deploy|CreateApplication).*Event|TestHandleDeployResultCompletesMatchingEvent'`
 
 Expected: FAIL because request IDs are generated inside the deployer and events are not recorded.
 
-- [ ] **Step 3: Thread one request ID through deployment**
+- [x] **Step 3: Thread one request ID through deployment**
 
 Change the interface and request construction:
 
@@ -524,13 +524,13 @@ In create and manual deploy handlers, generate `requestID := uuid.NewString()`, 
 
 After updating application state in `handleDeployResult`, complete the event using `result.RequestId`, `result.ApplicationId`, and the matching succeeded/failed status. Do not roll back application state if history completion fails.
 
-- [ ] **Step 4: Update all deployer stubs and verify GREEN**
+- [x] **Step 4: Update all deployer stubs and verify GREEN**
 
 Update every `ApplicationDeploymentManager` stub to accept the fourth `requestID string` argument. Run: `cd backend && go test -race ./internal/hub/deployer ./internal/hub/websocket ./internal/hub/routes ./internal/hub/applications`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit deployment history**
+- [x] **Step 5: Commit deployment history**
 
 ```bash
 git add backend/internal/hub/deployer backend/internal/hub/routes/applications.go backend/internal/hub/routes/applications_test.go backend/internal/hub/applications/applications_test.go backend/internal/hub/websocket/deploy.go backend/internal/hub/websocket/deploy_test.go
@@ -559,7 +559,7 @@ git commit -m "feat: record application deployments"
 - Changes: `Queue.Enqueue(repo *models.Repository, provider repositories.Provider, apps []models.Application, commit, commitMessage string, origin SyncOrigin)`.
 - Consumes: the request-aware deployer from Task 4.
 
-- [ ] **Step 1: Write failing sync behavior tests**
+- [x] **Step 1: Write failing sync behavior tests**
 
 Add tests for: polling with identical commit creates no event and never fetches the compose file; polling with a new commit and unchanged compose creates `no_change`; explicit manual sync with identical commit still creates `no_change` and keeps actor data; changed compose leaves a running event whose request ID is passed to the deployer; fetch, resolver, missing queue, and queue-full failures create failed events for identifiable applications.
 
@@ -586,13 +586,13 @@ func TestProcessSyncJobRepositoryPollingSkipsRecordedCommit(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run application and route sync tests and verify RED**
+- [x] **Step 2: Run application and route sync tests and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/applications ./internal/hub/routes -run 'Test.*(Sync|Webhook|GitHubActions).*Event|TestProcessSyncJobRepositoryPollingSkipsRecordedCommit'`
 
 Expected: FAIL because sync origins and event recording are absent.
 
-- [ ] **Step 3: Add sync origin plumbing**
+- [x] **Step 3: Add sync origin plumbing**
 
 Define:
 
@@ -611,7 +611,7 @@ Add `Origin SyncOrigin` to `syncJob`. Pass it through `SyncRepository`, `SyncApp
 - repository webhook and generic webhook: `repository_webhook`;
 - GitHub Actions OIDC sync: `github_actions`.
 
-- [ ] **Step 4: Implement event-aware job processing**
+- [x] **Step 4: Implement event-aware job processing**
 
 At the top of `processSyncJob`, return immediately only when origin is `repository_polling` and `job.Commit == job.Application.Commit`. Otherwise generate one request ID, start `commit_sync` with commit and actor metadata, and keep processing even if history creation fails.
 
@@ -619,13 +619,13 @@ On fetch failure, call `applicationevents.Complete(ctx, requestID, job.Applicati
 
 When commit resolution, queue availability, or queue insertion fails before a job runs, call a `recordSyncFailure` helper for each affected application using `RecordTerminal` and the same origin/known commit metadata. Keep repository-level success/failure behavior unchanged.
 
-- [ ] **Step 5: Run all affected tests and verify GREEN**
+- [x] **Step 5: Run all affected tests and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub/applications ./internal/hub/routes`
 
 Expected: PASS with no event for unchanged scheduled commits and one event for each explicit/no-change operation.
 
-- [ ] **Step 6: Commit commit-sync history**
+- [x] **Step 6: Commit commit-sync history**
 
 ```bash
 git add backend/internal/hub/applications backend/internal/hub/routes/repositories.go backend/internal/hub/routes/webhooks.go backend/internal/hub/routes/webhooks_test.go backend/internal/hub/routes/github_actions.go backend/internal/hub/routes/github_actions_test.go
@@ -650,7 +650,7 @@ git commit -m "feat: record application commit syncs"
 - Changes: `TriggerImagePull(app *models.Application, source models.ApplicationEventSource) bool` persists and dispatches one correlated explicit event.
 - Produces: unsolicited periodic results create terminal `image_polling` rows only for updates or failures.
 
-- [ ] **Step 1: Write failing image history tests**
+- [x] **Step 1: Write failing image history tests**
 
 Cover four result cases after the existing Agent/application ownership lookup:
 
@@ -661,19 +661,19 @@ Cover four result cases after the existing Agent/application ownership lookup:
 
 Also assert image webhook uses `image_webhook`, GitHub Actions uses `github_actions`, and a dispatch failure completes the explicit event as failed.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub/applications ./internal/hub/websocket ./internal/hub/routes -run 'Test.*(Image|PullImages).*Event|TestHandlePullImagesResult'`
 
 Expected: FAIL because image events and source arguments are absent.
 
-- [ ] **Step 3: Start and correlate explicit pulls**
+- [x] **Step 3: Start and correlate explicit pulls**
 
 Change `TriggerImagePull` to accept `source models.ApplicationEventSource`, generate one UUID before dispatch, start an `image_update` event with that request ID, and include it in `PullImagesRequest`. On a missing Hub/offline/full buffer, complete the event as failed and return false. History storage errors are logged and do not change the return value of a successful dispatch.
 
 Pass `ApplicationEventSourceImageWebhook` from every accepted image webhook path and `ApplicationEventSourceGitHubActions` from the OIDC endpoint.
 
-- [ ] **Step 4: Complete or create events from Agent results**
+- [x] **Step 4: Complete or create events from Agent results**
 
 After updating application state, derive terminal status:
 
@@ -688,13 +688,13 @@ if r.Success && r.ImagesUpdated {
 
 First call `applicationevents.Complete` with request/application IDs. If it matched, stop history processing. If it did not match and `r.Success && !r.ImagesUpdated`, skip history creation. Otherwise call `RecordTerminal` with type `image_update`, source `image_polling`, the Agent request ID, derived status, and failure detail.
 
-- [ ] **Step 5: Run all affected tests and verify GREEN**
+- [x] **Step 5: Run all affected tests and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub/applications ./internal/hub/websocket ./internal/hub/routes`
 
 Expected: PASS and no rows for successful no-op periodic image polls.
 
-- [ ] **Step 6: Commit image history**
+- [x] **Step 6: Commit image history**
 
 ```bash
 git add backend/internal/hub/applications/image_pull.go backend/internal/hub/applications/image_pull_test.go backend/internal/hub/routes/image_pull_webhook.go backend/internal/hub/routes/image_pull_webhook_test.go backend/internal/hub/routes/github_actions.go backend/internal/hub/routes/github_actions_test.go backend/internal/hub/websocket/image_poll.go backend/internal/hub/websocket/image_poll_test.go
@@ -713,29 +713,29 @@ git commit -m "feat: record application image updates"
 - Consumes: `applicationevents.RecoverRunning` from Task 2.
 - Produces: no history row remains permanently `running` after Hub restart.
 
-- [ ] **Step 1: Extract and test interrupted-state recovery**
+- [x] **Step 1: Extract and test interrupted-state recovery**
 
 Extract the existing repository/application reset statements into `recoverInterruptedState(ctx, log)`. Seed a syncing application and running event, invoke the helper, and assert application becomes `out_of_sync` and event becomes `failed` with:
 
 `hub restarted before the operation result was received`
 
-- [ ] **Step 2: Run the focused server test and verify RED**
+- [x] **Step 2: Run the focused server test and verify RED**
 
 Run: `cd backend && go test -race ./internal/hub -run TestRecoverInterruptedState`
 
 Expected: FAIL because the helper and event recovery call do not exist.
 
-- [ ] **Step 3: Implement and wire recovery**
+- [x] **Step 3: Implement and wire recovery**
 
 Call `applicationevents.RecoverRunning` after database connection and before queues/pollers start. Log a warning on failure and continue startup, matching the existing status-reset behavior. Publish no SSE update during startup because clients are not connected yet.
 
-- [ ] **Step 4: Run server tests and verify GREEN**
+- [x] **Step 4: Run server tests and verify GREEN**
 
 Run: `cd backend && go test -race ./internal/hub`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit recovery**
+- [x] **Step 5: Commit recovery**
 
 ```bash
 git add backend/internal/hub/server.go backend/internal/hub/server_test.go
@@ -761,7 +761,7 @@ git commit -m "fix: recover interrupted application events"
 - Consumes: Task 3 `{items, hasMore}` API and event enum strings.
 - Produces: `/applications/$id/history`, 20-row offset pagination, live SSE revalidation, localized table, and expandable failure details.
 
-- [ ] **Step 1: Add exact frontend types**
+- [x] **Step 1: Add exact frontend types**
 
 ```ts
 export enum ApplicationEventType {
@@ -806,15 +806,15 @@ export interface ApplicationEventsPage {
 }
 ```
 
-- [ ] **Step 2: Implement localized badge and columns**
+- [x] **Step 2: Implement localized badge and columns**
 
 Map result variants as `running → secondary`, `succeeded → success`, `failed → destructive`, `no_change → outline`. Columns render local time, localized trigger from type/source, actor name or localized automatic source, a selectable seven-character commit hash plus message, and result badge. The result cell includes a ghost icon button only when `errorMessage` exists and calls `row.getToggleExpandedHandler()`.
 
-- [ ] **Step 3: Implement the expandable data table**
+- [x] **Step 3: Implement the expandable data table**
 
 Use `useReactTable` with `getCoreRowModel`, `getExpandedRowModel`, and `getRowCanExpand: row => Boolean(row.original.errorMessage)`. Render each data row and, when expanded, a second row with one `TableCell` spanning `row.getVisibleCells().length`; render `errorMessage` inside a text-only destructive alert. Render `m.applicationHistoryEmpty()` when there are no rows.
 
-- [ ] **Step 4: Implement paginated route**
+- [x] **Step 4: Implement paginated route**
 
 ```tsx
 const APPLICATION_EVENTS_LIMIT = 20;
@@ -837,11 +837,11 @@ function ApplicationHistoryPage() {
 
 Render skeletons during initial loading, `ErrorAlert` on failure, the table on success, `Load more` while `hasMore`, and a localized end message after at least one row. Set head title to application history.
 
-- [ ] **Step 5: Add sidebar, breadcrumb, and translations**
+- [x] **Step 5: Add sidebar, breadcrumb, and translations**
 
 Add `History` from Lucide and the `/applications/$id/history` item directly below details. Treat history like details in the breadcrumb: the application name remains the current page parent and `History` is the final page. Add paired English/German keys for history title, timestamp, trigger, triggered by, commit, result, each trigger/source/status label, error details, empty state, loading state, load-more end state, and fetch failure.
 
-- [ ] **Step 6: Generate route tree and run frontend verification**
+- [x] **Step 6: Generate route tree and run frontend verification**
 
 Run from `frontend/`:
 
@@ -855,7 +855,7 @@ node --run build
 
 Expected: all commands exit 0; the build regenerates `src/routeTree.gen.ts` and includes the history route.
 
-- [ ] **Step 7: Commit the frontend**
+- [x] **Step 7: Commit the frontend**
 
 ```bash
 git add frontend/src/lib/application-events.ts frontend/src/components/badges/application-event-status-badge.tsx frontend/src/components/tables/application-events frontend/src/routes/_authenticated/applications/\$id/history.tsx frontend/src/routes/_authenticated/applications/\$id.tsx frontend/messages/en.json frontend/messages/de.json frontend/src/routeTree.gen.ts
@@ -872,13 +872,13 @@ git commit -m "feat: add application history page"
 **Interfaces:**
 - Verifies every spec requirement and preserves existing behavior.
 
-- [ ] **Step 1: Format backend code**
+- [x] **Step 1: Format backend code**
 
 Run: `cd backend && just fmt`
 
 Expected: exit 0. Review formatter changes and keep only task-related files.
 
-- [ ] **Step 2: Run complete backend verification**
+- [x] **Step 2: Run complete backend verification**
 
 Run: `cd backend && just test`
 
@@ -888,13 +888,13 @@ Run: `cd backend && just lint`
 
 Expected: golangci-lint and `go mod verify` pass.
 
-- [ ] **Step 3: Run complete frontend verification again**
+- [x] **Step 3: Run complete frontend verification again**
 
 Run: `cd frontend && node --run format:check && node --run translations:check && node --run typecheck && node --run lint && node --run build`
 
 Expected: every command exits 0 without warnings treated as errors.
 
-- [ ] **Step 4: Review retention/noise/security invariants**
+- [x] **Step 4: Review retention/noise/security invariants**
 
 Run:
 
@@ -906,7 +906,7 @@ git status --short
 
 Confirm from the call sites that every explicit trigger has a source, periodic no-op paths return before insertion, Agent results use request and application IDs, and no generated UI primitive changed.
 
-- [ ] **Step 5: Commit formatter-only cleanup if needed**
+- [x] **Step 5: Commit formatter-only cleanup if needed**
 
 If verification changed tracked source files, stage only those related files and commit:
 
