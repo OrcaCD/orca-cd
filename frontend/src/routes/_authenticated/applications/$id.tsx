@@ -28,7 +28,7 @@ import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Info, Settings, RefreshCw } from "lucide-react";
+import { History, Info, Settings, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -51,6 +51,11 @@ const sidebarGroups: SidebarGroup[] = [
 				title: () => m.details(),
 				icon: Info,
 				to: "/applications/$id/details",
+			},
+			{
+				title: () => m.applicationHistory(),
+				icon: History,
+				to: "/applications/$id/history",
 			},
 		],
 	},
@@ -126,7 +131,8 @@ function ApplicationsLayout() {
 										></BreadcrumbLink>
 									</BreadcrumbItem>
 									<BreadcrumbSeparator />
-									{location.pathname.includes("/settings") ? (
+									{location.pathname.includes("/settings") ||
+									location.pathname.includes("/history") ? (
 										<>
 											<BreadcrumbItem>
 												<BreadcrumbLink
@@ -139,7 +145,11 @@ function ApplicationsLayout() {
 											</BreadcrumbItem>
 											<BreadcrumbSeparator />
 											<BreadcrumbItem>
-												<BreadcrumbPage>{m.settings()}</BreadcrumbPage>
+												<BreadcrumbPage>
+													{location.pathname.includes("/history")
+														? m.applicationHistory()
+														: m.settings()}
+												</BreadcrumbPage>
 											</BreadcrumbItem>
 										</>
 									) : (
