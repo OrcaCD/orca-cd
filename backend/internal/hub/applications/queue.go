@@ -48,7 +48,7 @@ func (q *Queue) Start() {
 	}
 }
 
-func (q *Queue) Enqueue(repo *models.Repository, provider repositories.Provider, apps []models.Application, commit, commitMessage string) {
+func (q *Queue) Enqueue(repo *models.Repository, provider repositories.Provider, apps []models.Application, commit, commitMessage string, origin SyncOrigin) {
 	for _, app := range apps {
 		job := syncJob{
 			Application:        app,
@@ -56,12 +56,14 @@ func (q *Queue) Enqueue(repo *models.Repository, provider repositories.Provider,
 			RepositoryProvider: provider,
 			Commit:             commit,
 			CommitMessage:      commitMessage,
+			Origin:             origin,
 		}
 
 		select {
 		case q.jobs <- job:
 		default:
 			q.log.Warn().Str("applicationId", app.Id).Msg("sync queue full, dropping job")
+			recordSyncFailure(context.Background(), &app, origin, commit, commitMessage, "sync queue full, job dropped", q.log)
 		}
 	}
 

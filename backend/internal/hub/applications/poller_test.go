@@ -113,7 +113,7 @@ func TestPoller_TriggerSync_NilDB_IsNoOp(t *testing.T) {
 	p := NewPoller(&nop)
 
 	var repo models.Repository
-	p.TriggerSync(&repo)
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
 	p.Stop()
 }
 
@@ -142,11 +142,11 @@ func TestPoller_TriggerSync_DeduplicatesConcurrentSync(t *testing.T) {
 	nop := zerolog.Nop()
 	p := NewPoller(&nop)
 
-	p.TriggerSync(&repo)
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
 	<-started // first sync is blocked in GetLatestCommit
 
-	p.TriggerSync(&repo) // deduplicated — syncing map has the repo ID
-	p.TriggerSync(&repo) // deduplicated
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling}) // deduplicated — syncing map has the repo ID
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling}) // deduplicated
 
 	close(release)
 	p.Stop() // drains the one in-flight goroutine
@@ -177,7 +177,7 @@ func TestPoller_Stop_WaitsForInFlightSyncs(t *testing.T) {
 
 	nop := zerolog.Nop()
 	p := NewPoller(&nop)
-	p.TriggerSync(&repo)
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
 	<-started // sync is now in-flight
 
 	stopped := make(chan struct{})

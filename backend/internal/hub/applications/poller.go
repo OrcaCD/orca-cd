@@ -78,14 +78,14 @@ func (p *Poller) pollRepositories() {
 	now := time.Now()
 	for i := range repos {
 		if isDue(&repos[i], now) {
-			p.TriggerSync(&repos[i])
+			p.TriggerSync(&repos[i], SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
 		}
 	}
 }
 
 // TriggerSync initiates an async sync for the given repository. If a sync for this
 // repository is already in progress it is silently skipped.
-func (p *Poller) TriggerSync(repo *models.Repository) {
+func (p *Poller) TriggerSync(repo *models.Repository, origin SyncOrigin) {
 	if db.DB == nil {
 		return
 	}
@@ -97,7 +97,7 @@ func (p *Poller) TriggerSync(repo *models.Repository) {
 		defer p.syncing.Delete(repoCopy.Id)
 		ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 		defer cancel()
-		SyncRepository(ctx, &repoCopy, p.log)
+		SyncRepository(ctx, &repoCopy, origin, p.log)
 	})
 }
 

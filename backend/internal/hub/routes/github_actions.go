@@ -197,7 +197,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return
 		}
 
-		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), &hubApplications.Log)
+		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}, &hubApplications.Log)
 	}
 
 	// Todo

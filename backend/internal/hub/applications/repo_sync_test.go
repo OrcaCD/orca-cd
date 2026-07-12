@@ -49,7 +49,7 @@ func TestSyncRepository_UnsupportedProvider(t *testing.T) {
 	repo.Provider = "definitely_not_a_real_provider"
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
 	if err != nil {
@@ -70,7 +70,7 @@ func TestSyncRepository_NoApplications_MarksSuccess(t *testing.T) {
 	repositories.Register(testSyncProvider, &mockProvider{})
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
 	if err != nil {
@@ -109,7 +109,7 @@ func TestSyncRepository_AppWithEmptyBranch_Skipped(t *testing.T) {
 	}
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
 	if err != nil {
@@ -131,7 +131,7 @@ func TestSyncRepository_GetLatestCommitError_MarksFailed(t *testing.T) {
 	})
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
 	if err != nil {
@@ -160,7 +160,7 @@ func TestSyncRepository_Success_EnqueuesJob(t *testing.T) {
 	})
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	if len(q.jobs) != 1 {
 		t.Fatalf("expected 1 job in queue, got %d", len(q.jobs))
@@ -198,7 +198,7 @@ func TestSyncRepository_MultipleAppsOnSameBranch_EnqueuesBoth(t *testing.T) {
 	})
 
 	nop := zerolog.Nop()
-	SyncRepository(t.Context(), &repo, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 
 	if len(q.jobs) != 2 {
 		t.Errorf("expected 2 jobs for 2 apps on same branch, got %d", len(q.jobs))
@@ -234,7 +234,7 @@ func TestSyncRepository_MarksSyncingBeforeCommitLookup(t *testing.T) {
 	nop := zerolog.Nop()
 	done := make(chan struct{})
 	go func() {
-		SyncRepository(t.Context(), &repo, &nop)
+		SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
 		close(done)
 	}()
 

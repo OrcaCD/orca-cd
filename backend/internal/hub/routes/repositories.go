@@ -548,7 +548,12 @@ func SyncRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	applications.DefaultPoller.TriggerSync(&repo)
+	actorUserID, actorName := eventActor(c)
+	applications.DefaultPoller.TriggerSync(&repo, applications.SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "sync triggered"})
 }

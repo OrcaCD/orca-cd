@@ -69,7 +69,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -249,6 +249,7 @@ func TestProcessSyncJob_NoComposeChange_UpdatesCommit(t *testing.T) {
 		RepositoryProvider: provider,
 		Commit:             "newsha",
 		CommitMessage:      "new commit",
+		Origin:             SyncOrigin{Source: models.ApplicationEventSourceManual},
 	}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
@@ -291,6 +292,7 @@ func TestProcessSyncJob_FetchError_FailsSync(t *testing.T) {
 		RepositoryProvider: provider,
 		Commit:             "newsha",
 		CommitMessage:      "new commit",
+		Origin:             SyncOrigin{Source: models.ApplicationEventSourceManual},
 	}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
@@ -309,14 +311,16 @@ func TestProcessSyncJob_FetchError_FailsSync(t *testing.T) {
 // dispatched compose without touching the DB, so the optimistic persistence in
 // processSyncJob can be asserted in isolation.
 type stubDeployer struct {
-	called  bool
-	compose string
-	err     error
+	called    bool
+	compose   string
+	requestID string
+	err       error
 }
 
-func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, _ string) error {
+func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, requestID string) error {
 	s.called = true
 	s.compose = composeFile
+	s.requestID = requestID
 	return s.err
 }
 
@@ -344,6 +348,7 @@ func TestProcessSyncJob_ComposeChanged_PersistsComposeAndCommit(t *testing.T) {
 		RepositoryProvider: provider,
 		Commit:             "newsha",
 		CommitMessage:      "new commit",
+		Origin:             SyncOrigin{Source: models.ApplicationEventSourceManual},
 	}, &nop)
 
 	if !stub.called {
@@ -398,7 +403,7 @@ func TestQueue_Enqueue_JobAddedToChannel(t *testing.T) {
 	q := NewQueue(&nop)
 
 	provider := &mockProvider{}
-	q.Enqueue(&repo, provider, []models.Application{app}, "abc123", "")
+	q.Enqueue(&repo, provider, []models.Application{app}, "abc123", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
 	if len(q.jobs) != 1 {
 		t.Errorf("expected 1 job in channel, got %d", len(q.jobs))
@@ -415,7 +420,7 @@ func TestQueue_Enqueue_EmptyCommit_EnqueuesEmptyCommit(t *testing.T) {
 	q := NewQueue(&nop)
 
 	provider := &mockProvider{}
-	q.Enqueue(&repo, provider, []models.Application{app}, "", "")
+	q.Enqueue(&repo, provider, []models.Application{app}, "", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
 	if len(q.jobs) != 1 {
 		t.Fatalf("expected 1 job in channel, got %d", len(q.jobs))
@@ -434,7 +439,7 @@ func TestQueue_Enqueue_EmptyApps_NoOp(t *testing.T) {
 	q := NewQueue(&nop)
 
 	provider := &mockProvider{}
-	q.Enqueue(&repo, provider, []models.Application{}, "abc123", "")
+	q.Enqueue(&repo, provider, []models.Application{}, "abc123", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
 	if len(q.jobs) != 0 {
 		t.Errorf("expected 0 jobs in channel, got %d", len(q.jobs))
@@ -457,7 +462,7 @@ func TestQueue_Enqueue_FullQueue_DropsJob(t *testing.T) {
 		apps[i] = seedApp(t, repo.Id, agent.Id, "compose: v1")
 	}
 
-	q.Enqueue(&repo, provider, apps, "abc123", "")
+	q.Enqueue(&repo, provider, apps, "abc123", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
 	if len(q.jobs) != capacity {
 		t.Errorf("expected queue at capacity (%d), got %d", capacity, len(q.jobs))
@@ -489,7 +494,7 @@ func TestQueue_Start_ProcessesJobs(t *testing.T) {
 		latestCommit: repositories.CommitInfo{Hash: "sha", Message: "msg"},
 		fileContent:  compose,
 	}
-	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "")
+	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
 	// Compose is unchanged, so the worker records the new commit without redeploying.
 	deadline := time.Now().Add(2 * time.Second)
