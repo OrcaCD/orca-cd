@@ -65,6 +65,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"applications",
 		"notifications",
 		"application_notifications",
+		"application_events",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -290,6 +291,64 @@ func TestRunMigrations_ApplicationNotificationsTableSchema(t *testing.T) {
 	for _, col := range required {
 		if !cols[col] {
 			t.Errorf("application_notifications table missing column %q", col)
+		}
+	}
+}
+
+func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+	if !gormDB.Migrator().HasTable("application_events") {
+		t.Fatal("expected application_events table")
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	cols := columnNames(t, sqlDB, "application_events")
+	required := []string{
+		"id", "application_id", "request_id", "type", "source", "status",
+		"actor_user_id", "actor_name", "commit_hash", "commit_message",
+		"error_message", "completed_at", "created_at", "updated_at",
+	}
+	for _, col := range required {
+		if !cols[col] {
+			t.Errorf("application_events table missing column %q", col)
+		}
+	}
+
+	rows, err := sqlDB.Query(`SELECT "from", on_delete FROM pragma_foreign_key_list('application_events')`)
+	if err != nil {
+		t.Fatalf("failed to query application_events foreign keys: %v", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Fatalf("failed to close rows: %v", err)
+		}
+	}()
+
+	deleteActions := make(map[string]string)
+	for rows.Next() {
+		var column, action string
+		if err := rows.Scan(&column, &action); err != nil {
+			t.Fatalf("failed to scan application_events foreign key: %v", err)
+		}
+		deleteActions[column] = action
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows error: %v", err)
+	}
+
+	wantDeleteActions := map[string]string{
+		"application_id": "CASCADE",
+		"actor_user_id":  "SET NULL",
+	}
+	for column, want := range wantDeleteActions {
+		if got := deleteActions[column]; got != want {
+			t.Errorf("application_events foreign key %q ON DELETE = %q, want %q", column, got, want)
 		}
 	}
 }
