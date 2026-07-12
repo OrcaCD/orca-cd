@@ -4,12 +4,18 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/rs/zerolog"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestDefaultConfig_Valid(t *testing.T) {
@@ -272,6 +278,130 @@ func waitForServer(t *testing.T, addr string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("server did not become ready within 5 seconds")
+}
+
+func setupRecoveryTestDB(t *testing.T) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	testDB, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		db.DB = nil
+	})
+	db.DB = testDB
+	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+		t.Fatalf("failed to init crypto: %v", err)
+	}
+}
+
+func TestRecoverInterruptedState(t *testing.T) {
+	setupRecoveryTestDB(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusSyncing,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+	agent := models.Agent{
+		Name:   crypto.EncryptedString("test-agent"),
+		KeyId:  crypto.EncryptedString("test-key"),
+		Status: models.AgentStatusOnline,
+	}
+	if err := db.DB.Select("*").Create(&agent).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+	app := models.Application{
+		Name:         crypto.EncryptedString("test-app"),
+		RepositoryId: repo.Id,
+		AgentId:      agent.Id,
+		SyncStatus:   models.Syncing,
+		HealthStatus: models.UnknownHealth,
+		Branch:       "main",
+		Path:         "deploy.yml",
+		ComposeFile:  crypto.EncryptedString("services: {}\n"),
+	}
+	if err := db.DB.Select("*").Create(&app).Error; err != nil {
+		t.Fatalf("failed to seed application: %v", err)
+	}
+
+	requestID := "interrupted-request"
+	runningEvent := models.ApplicationEvent{
+		ApplicationId: app.Id,
+		RequestId:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+		Status:        models.ApplicationEventRunning,
+	}
+	if err := db.DB.Create(&runningEvent).Error; err != nil {
+		t.Fatalf("failed to seed running event: %v", err)
+	}
+	completed := time.Now()
+	terminalEvent := models.ApplicationEvent{
+		ApplicationId: app.Id,
+		Type:          models.ApplicationEventCommitSync,
+		Source:        models.ApplicationEventSourceRepositoryPolling,
+		Status:        models.ApplicationEventSucceeded,
+		CompletedAt:   &completed,
+	}
+	if err := db.DB.Create(&terminalEvent).Error; err != nil {
+		t.Fatalf("failed to seed terminal event: %v", err)
+	}
+
+	nop := zerolog.Nop()
+	recoverInterruptedState(t.Context(), &nop)
+
+	var recoveredRepo models.Repository
+	if err := db.DB.First(&recoveredRepo, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to load repo: %v", err)
+	}
+	if recoveredRepo.SyncStatus != models.SyncStatusUnknown {
+		t.Errorf("expected repo SyncStatus %q, got %q", models.SyncStatusUnknown, recoveredRepo.SyncStatus)
+	}
+
+	var recoveredApp models.Application
+	if err := db.DB.First(&recoveredApp, "id = ?", app.Id).Error; err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if recoveredApp.SyncStatus != models.OutOfSync {
+		t.Errorf("expected app SyncStatus %q, got %q", models.OutOfSync, recoveredApp.SyncStatus)
+	}
+
+	var recoveredEvent models.ApplicationEvent
+	if err := db.DB.First(&recoveredEvent, "id = ?", runningEvent.Id).Error; err != nil {
+		t.Fatalf("failed to load running event: %v", err)
+	}
+	if recoveredEvent.Status != models.ApplicationEventFailed || recoveredEvent.CompletedAt == nil {
+		t.Fatalf("expected running event failed and completed, got %+v", recoveredEvent)
+	}
+	if recoveredEvent.ErrorMessage == nil ||
+		*recoveredEvent.ErrorMessage != "hub restarted before the operation result was received" {
+		t.Errorf("unexpected recovery error message: %v", recoveredEvent.ErrorMessage)
+	}
+
+	var untouched models.ApplicationEvent
+	if err := db.DB.First(&untouched, "id = ?", terminalEvent.Id).Error; err != nil {
+		t.Fatalf("failed to load terminal event: %v", err)
+	}
+	if untouched.Status != models.ApplicationEventSucceeded || untouched.ErrorMessage != nil {
+		t.Fatalf("expected terminal event unchanged, got %+v", untouched)
+	}
 }
 
 func TestRun_GracefulShutdown(t *testing.T) {
