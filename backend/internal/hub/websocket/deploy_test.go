@@ -53,13 +53,13 @@ func setupDeployTestEnv(t *testing.T) {
 	db.DB = testDB
 }
 
-func seedDeployApp(t *testing.T, syncStatus models.SyncStatus, healthStatus models.HealthStatus) models.Application {
+func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
 	t.Helper()
 	app := models.Application{
 		Name:         crypto.EncryptedString("test-app"),
 		AgentId:      "agent-1",
 		SyncStatus:   syncStatus,
-		HealthStatus: healthStatus,
+		HealthStatus: models.UnknownHealth,
 		Branch:       "main",
 		Path:         "deploy.yml",
 		ComposeFile:  crypto.EncryptedString("version: '3.9'\n"),
@@ -72,7 +72,7 @@ func seedDeployApp(t *testing.T, syncStatus models.SyncStatus, healthStatus mode
 
 func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
 	handleDeployResult(&messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
@@ -94,7 +94,7 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 
 func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	requestID := "deploy-request"
 	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
 		ApplicationID: app.Id,
@@ -114,7 +114,7 @@ func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 
 func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	requestID := "expected-request"
 	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
 		ApplicationID: app.Id,
@@ -134,7 +134,7 @@ func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
 
 func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
 	handleDeployResult(&messages.DeployResult{
@@ -160,7 +160,7 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 
 func TestUpdateApplicationStatus_AppliesUpdate(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.UnknownSync, models.UnknownHealth)
+	app := seedDeployApp(t, models.UnknownSync)
 	nop := zerolog.Nop()
 
 	err := updateApplicationStatus(context.Background(), app.Id, models.Application{

@@ -168,7 +168,7 @@ func TestCompleteRejectsWrongApplicationAndDuplicateResult(t *testing.T) {
 	if err != nil || !matched {
 		t.Fatalf("first completion matched=%v err=%v", matched, err)
 	}
-	matched, err = Complete(t.Context(), requestID, app.Id, models.ApplicationEventFailed, ptr("late"))
+	matched, err = Complete(t.Context(), requestID, app.Id, models.ApplicationEventFailed, new("late"))
 	if err != nil || matched {
 		t.Fatalf("duplicate completion matched=%v err=%v", matched, err)
 	}
@@ -343,8 +343,4 @@ func TestPath(t *testing.T) {
 	if got, want := Path(applicationID), "/api/v1/applications/application-1/events"; got != want {
 		t.Fatalf("Path() = %q, want %q", got, want)
 	}
-}
-
-func ptr[T any](value T) *T {
-	return &value
 }
