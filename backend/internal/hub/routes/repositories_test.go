@@ -26,7 +26,7 @@ import (
 func setupTestDBWithRepos(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate Repository/Agent/Application: %v", err)
 	}
 }

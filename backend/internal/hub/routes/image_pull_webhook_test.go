@@ -23,7 +23,7 @@ import (
 func setupTestDBForImagePullWebhook(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	nop := zerolog.Nop()

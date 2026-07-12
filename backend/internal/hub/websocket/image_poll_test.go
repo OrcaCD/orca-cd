@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -19,7 +20,7 @@ import (
 func setupImagePollTestEnv(t *testing.T) {
 	t.Helper()
 	setupHandlerTestEnv(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate Application: %v", err)
 	}
 	sse.DefaultBroker = sse.NewBroker(&zerolog_disabled)
@@ -243,6 +244,149 @@ func TestHandlePullImagesResult_Failure_SendsNotification(t *testing.T) {
 	}, &log)
 
 	assertCapturedNotificationRequest(t, requests, "Error: image update failed for test-app")
+}
+
+func startImageUpdateEvent(t *testing.T, applicationID, requestID string) {
+	t.Helper()
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: applicationID,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventImageUpdate,
+		Source:        models.ApplicationEventSourceImageWebhook,
+	}); err != nil {
+		t.Fatalf("failed to start image update event: %v", err)
+	}
+}
+
+func loadImageEvents(t *testing.T, applicationID string) []models.ApplicationEvent {
+	t.Helper()
+	var events []models.ApplicationEvent
+	if err := db.DB.Where("application_id = ?", applicationID).Find(&events).Error; err != nil {
+		t.Fatalf("failed to load events: %v", err)
+	}
+	return events
+}
+
+func TestHandlePullImagesResult_ExplicitRequestImagesUpdated_CompletesSucceeded(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-evt-1")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	startImageUpdateEvent(t, app.Id, "image-req-1")
+
+	handlePullImagesResult(client, &messages.PullImagesResult{
+		RequestId:     "image-req-1",
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: true,
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventSucceeded || events[0].CompletedAt == nil {
+		t.Fatalf("expected succeeded completed event, got %+v", events[0])
+	}
+}
+
+func TestHandlePullImagesResult_ExplicitRequestNoUpdates_CompletesNoChange(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-evt-2")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	startImageUpdateEvent(t, app.Id, "image-req-2")
+
+	handlePullImagesResult(client, &messages.PullImagesResult{
+		RequestId:     "image-req-2",
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: false,
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventNoChange {
+		t.Fatalf("expected no_change event, got %+v", events[0])
+	}
+}
+
+func TestHandlePullImagesResult_PeriodicNoOpSuccess_RecordsNothing(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-evt-3")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handlePullImagesResult(client, &messages.PullImagesResult{
+		RequestId:     "unsolicited-poll",
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: false,
+	}, &log)
+
+	if events := loadImageEvents(t, app.Id); len(events) != 0 {
+		t.Fatalf("expected no events for a no-op periodic poll, got %d", len(events))
+	}
+}
+
+func TestHandlePullImagesResult_PeriodicUpdate_RecordsTerminalPollingEvent(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-evt-4")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handlePullImagesResult(client, &messages.PullImagesResult{
+		RequestId:     "periodic-updated",
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: true,
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event for periodic update, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventSucceeded ||
+		events[0].Source != models.ApplicationEventSourceImagePolling ||
+		events[0].Type != models.ApplicationEventImageUpdate {
+		t.Fatalf("unexpected periodic update event: %+v", events[0])
+	}
+}
+
+func TestHandlePullImagesResult_PeriodicFailure_RecordsTerminalPollingEvent(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-evt-5")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handlePullImagesResult(client, &messages.PullImagesResult{
+		RequestId:     "periodic-failed",
+		ApplicationId: app.Id,
+		Success:       false,
+		ErrorMessage:  "registry timeout",
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event for periodic failure, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventFailed ||
+		events[0].Source != models.ApplicationEventSourceImagePolling ||
+		events[0].ErrorMessage == nil || *events[0].ErrorMessage != "registry timeout" {
+		t.Fatalf("unexpected periodic failure event: %+v", events[0])
+	}
 }
 
 func TestHandlePullImagesResult_Failure(t *testing.T) {
