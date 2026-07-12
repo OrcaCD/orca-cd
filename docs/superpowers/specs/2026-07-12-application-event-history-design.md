@@ -47,7 +47,7 @@ The frontend maps type and source together to the user-facing trigger label. For
 - `running`: dispatched or otherwise still in progress.
 - `succeeded`: completed successfully and changed or redeployed the application.
 - `failed`: dispatch or processing failed; an error message is recorded when available.
-- `no_change`: a new commit was evaluated successfully but did not change the application's compose file.
+- `no_change`: an explicit operation completed successfully without changing the application, such as a new commit with an unchanged compose file or an explicit image pull that found no updated images.
 
 ### Noise Rules
 
@@ -95,7 +95,7 @@ Repository synchronization jobs carry their source and optional actor alongside 
 
 Deployment and image-pull dispatch generate the request ID before sending the protobuf message. The same ID is persisted with the history row and included in the request. Agent results complete the row using both `request_id` and `application_id`; the existing Agent/application ownership validation remains mandatory for image results.
 
-Periodic image polls originate on the Agent and therefore have no Hub-created running row. When their result arrives, the Hub creates a terminal `image_polling` event only if images were updated or the operation failed. A successful result with no updated images is ignored.
+Periodic image polls originate on the Agent and therefore have no Hub-created running row. When their result arrives, the Hub creates a terminal `image_polling` event only if images were updated or the operation failed. A successful periodic result with no updated images is ignored. An explicit image pull already has a running row and completes as `no_change` when it succeeds without updated images.
 
 ### Commit synchronization
 
