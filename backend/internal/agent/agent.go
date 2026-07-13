@@ -31,15 +31,16 @@ type FatalConfigError struct {
 func (e *FatalConfigError) Error() string { return e.Msg }
 
 type Config struct {
-	LogLevel              zerolog.Level
-	LogJSON               bool
-	HubUrl                string
-	AuthToken             string
-	AgentID               string
-	HubPublicKey          ed25519.PublicKey
-	HealthPort            string
-	DeploymentsDir        string
-	AllowedPrivilegedApps map[string]struct{}
+	LogLevel                      zerolog.Level
+	LogJSON                       bool
+	HubUrl                        string
+	AuthToken                     string
+	AgentID                       string
+	HubPublicKey                  ed25519.PublicKey
+	HealthPort                    string
+	DeploymentsDir                string
+	AllowedPrivilegedApps         map[string]struct{}
+	RestrictBindMountsToDeployDir bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -89,16 +90,19 @@ func DefaultConfig() (Config, error) {
 		}
 	}
 
+	restrictBindMountsToDeployDir := strings.EqualFold(os.Getenv("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR"), "true")
+
 	return Config{
-		LogLevel:              logLevel,
-		LogJSON:               logJSON,
-		HubUrl:                hubUrl,
-		AuthToken:             authToken,
-		AgentID:               agentID,
-		HubPublicKey:          hubPublicKey,
-		HealthPort:            healthPort,
-		DeploymentsDir:        deploymentsDir,
-		AllowedPrivilegedApps: allowedPrivilegedApps,
+		LogLevel:                      logLevel,
+		LogJSON:                       logJSON,
+		HubUrl:                        hubUrl,
+		AuthToken:                     authToken,
+		AgentID:                       agentID,
+		HubPublicKey:                  hubPublicKey,
+		HealthPort:                    healthPort,
+		DeploymentsDir:                deploymentsDir,
+		AllowedPrivilegedApps:         allowedPrivilegedApps,
+		RestrictBindMountsToDeployDir: restrictBindMountsToDeployDir,
 	}, nil
 }
 
@@ -189,7 +193,7 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log, cfg.DeploymentsDir, cfg.AllowedPrivilegedApps)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir, cfg.AllowedPrivilegedApps, cfg.RestrictBindMountsToDeployDir)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}

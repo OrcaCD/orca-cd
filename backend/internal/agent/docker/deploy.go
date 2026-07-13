@@ -128,7 +128,11 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	if _, allowed := c.allowedPrivilegedApps[req.ApplicationID]; !allowed {
-		if err := checkDeployPolicy(project); err != nil {
+		restrictMountsDir := ""
+		if c.restrictMountsToDeployDir {
+			restrictMountsDir = c.deploymentsDir
+		}
+		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
 			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass)", err, req.ApplicationID)
 		}
 	}

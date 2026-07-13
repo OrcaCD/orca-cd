@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 )
 
@@ -85,10 +86,10 @@ var sensitivePathComponents = map[string]struct{}{
 
 // inspects every service in the project and returns an
 // aggregated error describing every policy violation found
-func checkDeployPolicy(project *composetypes.Project) error {
+func checkDeployPolicy(project *composetypes.Project, restrictMountsDir string) error {
 	var violations []error
 	for name, svc := range project.Services {
-		violations = append(violations, checkServicePolicy(name, svc)...)
+		violations = append(violations, checkServicePolicy(name, svc, restrictMountsDir)...)
 	}
 	if len(violations) == 0 {
 		return nil
@@ -96,12 +97,12 @@ func checkDeployPolicy(project *composetypes.Project) error {
 	return fmt.Errorf("compose project violates deployment security policy: %w", errors.Join(violations...))
 }
 
-func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig) []error {
+func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
 	var violations []error
 	violations = append(violations, checkPrivileged(serviceName, svc)...)
 	violations = append(violations, checkCapabilities(serviceName, svc)...)
 	violations = append(violations, checkHostNamespaces(serviceName, svc)...)
-	violations = append(violations, checkBindMounts(serviceName, svc)...)
+	violations = append(violations, checkBindMounts(serviceName, svc, restrictMountsDir)...)
 	violations = append(violations, checkDevices(serviceName, svc)...)
 	violations = append(violations, checkSecurityOpt(serviceName, svc)...)
 	return violations
@@ -147,12 +148,20 @@ func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []e
 // checkBindMounts rejects bind mounts (not named volumes) whose source is, or
 // is nested under, a sensitive host path.
 // Also checks some paths for sensitive components (like .ssh).
-//
+// If restrictMountsDir is set, this switches to allow-list mode: every bind
+// mount source must resolve inside restrictMountsDir, and the sensitive-path
+// deny-list below is skipped since it becomes redundant.
 // The paths are already resolved by the Docker compose library.
-func checkBindMounts(serviceName string, svc composetypes.ServiceConfig) []error {
+func checkBindMounts(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
 	var violations []error
 	for _, vol := range svc.Volumes {
 		if vol.Type != composetypes.VolumeTypeBind {
+			continue
+		}
+		if restrictMountsDir != "" {
+			if err := utils.IsPathWithinBase(restrictMountsDir, vol.Source); err != nil {
+				violations = append(violations, fmt.Errorf("service %q: bind mount source %q is not inside the agent's deployment directory %q", serviceName, vol.Source, restrictMountsDir))
+			}
 			continue
 		}
 		if underSensitiveComponentRoot(vol.Source) {
