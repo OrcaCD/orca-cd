@@ -133,7 +133,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 			restrictMountsDir = c.deploymentsDir
 		}
 		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
-			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass)", err, req.ApplicationID)
+			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, req.ApplicationID)
 		}
 	}
 
