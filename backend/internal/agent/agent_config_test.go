@@ -160,6 +160,36 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_RestrictBindMountsToDeployDir(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"true", true},
+		{"TRUE", true},
+		{"false", false},
+		{"invalid", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			token, _ := makeTestToken(t, "test-agent-id")
+			t.Setenv("HUB_URL", "https://hub.example.com")
+			t.Setenv("AUTH_TOKEN", token)
+			t.Setenv("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR", tt.input)
+
+			cfg, err := DefaultConfig()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.RestrictBindMountsToDeployDir != tt.want {
+				t.Errorf("RestrictBindMountsToDeployDir = %v, want %v", cfg.RestrictBindMountsToDeployDir, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseTokenClaims_MissingHubPublicKey(t *testing.T) {
 	// JWT without hub_pubkey claim — must be rejected.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
