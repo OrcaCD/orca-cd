@@ -8,7 +8,12 @@ import (
 
 func newTestClient(t *testing.T) *Client {
 	t.Helper()
-	c, err := New(zerolog.Nop(), t.TempDir())
+	return newTestClientWithAllowlist(t, nil)
+}
+
+func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]struct{}) *Client {
+	t.Helper()
+	c, err := New(zerolog.Nop(), t.TempDir(), allowedPrivilegedApps)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -50,7 +55,7 @@ func TestPingDaemon(t *testing.T) {
 func TestNew_DaemonUnreachable(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://localhost:1")
 
-	c, err := New(zerolog.Nop(), t.TempDir())
+	c, err := New(zerolog.Nop(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -62,7 +67,7 @@ func TestNew_DaemonUnreachable(t *testing.T) {
 func TestPingDaemon_Unreachable(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://localhost:1")
 
-	c, err := New(zerolog.Nop(), t.TempDir())
+	c, err := New(zerolog.Nop(), t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -31,14 +31,15 @@ type FatalConfigError struct {
 func (e *FatalConfigError) Error() string { return e.Msg }
 
 type Config struct {
-	LogLevel       zerolog.Level
-	LogJSON        bool
-	HubUrl         string
-	AuthToken      string
-	AgentID        string
-	HubPublicKey   ed25519.PublicKey
-	HealthPort     string
-	DeploymentsDir string
+	LogLevel              zerolog.Level
+	LogJSON               bool
+	HubUrl                string
+	AuthToken             string
+	AgentID               string
+	HubPublicKey          ed25519.PublicKey
+	HealthPort            string
+	DeploymentsDir        string
+	AllowedPrivilegedApps map[string]struct{}
 }
 
 func DefaultConfig() (Config, error) {
@@ -81,15 +82,23 @@ func DefaultConfig() (Config, error) {
 		deploymentsDir = "/deployments"
 	}
 
+	allowedPrivilegedApps := make(map[string]struct{})
+	for entry := range strings.SplitSeq(os.Getenv("ALLOWED_PRIVILEGED_APPS"), ",") {
+		if s := strings.TrimSpace(entry); s != "" {
+			allowedPrivilegedApps[s] = struct{}{}
+		}
+	}
+
 	return Config{
-		LogLevel:       logLevel,
-		LogJSON:        logJSON,
-		HubUrl:         hubUrl,
-		AuthToken:      authToken,
-		AgentID:        agentID,
-		HubPublicKey:   hubPublicKey,
-		HealthPort:     healthPort,
-		DeploymentsDir: deploymentsDir,
+		LogLevel:              logLevel,
+		LogJSON:               logJSON,
+		HubUrl:                hubUrl,
+		AuthToken:             authToken,
+		AgentID:               agentID,
+		HubPublicKey:          hubPublicKey,
+		HealthPort:            healthPort,
+		DeploymentsDir:        deploymentsDir,
+		AllowedPrivilegedApps: allowedPrivilegedApps,
 	}, nil
 }
 
@@ -180,7 +189,7 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log, cfg.DeploymentsDir)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir, cfg.AllowedPrivilegedApps)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}

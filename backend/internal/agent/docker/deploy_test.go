@@ -144,6 +144,113 @@ func TestDeploy_UpProjectError(t *testing.T) {
 	}
 }
 
+func TestDeploy_RejectsPrivilegedService(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name:     opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{Privileged: true}},
+		}, nil
+	}
+	upCalled := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    privileged: true\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy of a privileged service to be rejected")
+	}
+	if upCalled {
+		t.Fatal("expected compose up to never be called for a rejected deploy")
+	}
+}
+
+func TestDeploy_AllowsPrivilegedServiceWhenApplicationAllowlisted(t *testing.T) {
+	const allowedAppID = "019e1ce8-7938-71b8-be55-4b184f307a2d"
+
+	c := newTestClientWithAllowlist(t, map[string]struct{}{allowedAppID: {}})
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name:     opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{Privileged: true}},
+		}, nil
+	}
+	upCalled := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   allowedAppID,
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    privileged: true\n",
+	})
+	if err != nil {
+		t.Fatalf("expected deploy for allowlisted application to succeed, got: %v", err)
+	}
+	if !upCalled {
+		t.Fatal("expected compose up to be called for an allowlisted deploy")
+	}
+}
+
+func TestDeploy_AllowlistBypassIsPerApplicationNotGlobal(t *testing.T) {
+	c := newTestClientWithAllowlist(t, map[string]struct{}{"019e1ce8-7938-71b8-be55-4b184f307a2d": {}})
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name:     opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{Privileged: true}},
+		}, nil
+	}
+	upCalled := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "a-different-application-id",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    privileged: true\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy for a non-allowlisted application to be rejected, even with a non-empty allowlist")
+	}
+	if upCalled {
+		t.Fatal("expected compose up to never be called for a rejected deploy")
+	}
+}
+
 func TestRemove_DownsProjectAndRemovesDir(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
