@@ -156,6 +156,59 @@ func TestPoller_TriggerSync_DeduplicatesConcurrentSync(t *testing.T) {
 	}
 }
 
+func TestPoller_TriggerSync_ManualConflictRecordsFailedEvent(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	apps := []models.Application{
+		seedApp(t, repo.Id, agent.Id, "compose: v1"),
+		seedApp(t, repo.Id, agent.Id, "compose: v2"),
+	}
+
+	nop := zerolog.Nop()
+	p := NewPoller(&nop)
+	t.Cleanup(p.Stop)
+	p.syncing.Store(repo.Id, struct{}{})
+
+	actorID, actorName := "user-1", "Alex"
+	accepted := p.TriggerSync(&repo, SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: &actorID,
+		ActorName:   &actorName,
+	})
+
+	if accepted {
+		t.Fatal("expected concurrent manual sync to be rejected")
+	}
+	for i := range apps {
+		events := loadAppEvents(t, apps[i].Id)
+		if len(events) != 1 {
+			t.Fatalf("expected 1 failed event for application %q, got %d", apps[i].Id, len(events))
+		}
+		event := events[0]
+		if event.Type != models.ApplicationEventCommitSync ||
+			event.Source != models.ApplicationEventSourceManual ||
+			event.Status != models.ApplicationEventFailed ||
+			event.ErrorMessage == nil ||
+			*event.ErrorMessage != repositorySyncInProgressMessage {
+			t.Fatalf("unexpected event: %+v", event)
+		}
+		if event.ActorUserId == nil || *event.ActorUserId != actorID {
+			t.Errorf("expected actor user id %q, got %v", actorID, event.ActorUserId)
+		}
+	}
+
+	accepted = p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
+	if accepted {
+		t.Fatal("expected concurrent scheduled sync to be rejected")
+	}
+	for i := range apps {
+		if events := loadAppEvents(t, apps[i].Id); len(events) != 1 {
+			t.Fatalf("expected scheduled conflict to stay silent for application %q, got %d events", apps[i].Id, len(events))
+		}
+	}
+}
+
 func TestPoller_Stop_WaitsForInFlightSyncs(t *testing.T) {
 	setupTestDB(t)
 	setupSyncQueue(t)

@@ -42,14 +42,15 @@ func GetAllApplicationsForRepo(ctx context.Context, repository *models.Repositor
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	requestID := ""
-	// A scheduled poll for the already-recorded commit still performs the sync so
-	// application status is refreshed, but it does not add a repetitive event.
-	if job.Origin.Source != models.ApplicationEventSourceRepositoryPolling || job.Commit != job.Application.Commit {
-		requestID = uuid.NewString()
-		if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
-			log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to record commit sync event")
-		}
+	// Scheduled polls are edge-triggered by commit. Reprocessing an already-recorded
+	// commit could incorrectly clear a prior deployment failure without redeploying.
+	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && job.Commit == job.Application.Commit {
+		return
+	}
+
+	requestID := uuid.NewString()
+	if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to record commit sync event")
 	}
 
 	content, err := job.RepositoryProvider.GetFileContent(ctx, &job.Repository, job.Commit, job.Application.Path)
@@ -66,13 +67,16 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		now := time.Now()
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
-		_ = updateApplicationStatus(context.Background(), job.Application.Id, models.Application{
+		if err := updateApplicationStatus(context.Background(), job.Application.Id, models.Application{
 			SyncStatus:    models.Synced,
 			Commit:        job.Commit,
 			CommitMessage: job.CommitMessage,
 			LastSyncedAt:  &now,
 			LastSyncError: &cleared,
-		}, log)
+		}, log); err != nil {
+			completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, "failed to persist application sync status: "+err.Error(), log)
+			return
+		}
 		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventNoChange, "", log)
 		return
 	}
@@ -137,7 +141,9 @@ func completeSyncEvent(ctx context.Context, requestID, applicationID string, sta
 	if errorMessage != "" {
 		errPtr = &errorMessage
 	}
-	if _, err := applicationevents.Complete(ctx, requestID, applicationID, status, errPtr); err != nil {
+	eventCtx, cancel := applicationEventWriteContext(ctx)
+	defer cancel()
+	if _, err := applicationevents.Complete(eventCtx, requestID, applicationID, status, errPtr); err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to complete commit sync event")
 	}
 }
@@ -163,9 +169,15 @@ func recordSyncFailure(ctx context.Context, application *models.Application, ori
 	if commitMessage != "" {
 		params.CommitMessage = &commitMessage
 	}
-	if _, err := applicationevents.RecordCompleted(ctx, params, models.ApplicationEventFailed, &errorMessage); err != nil {
+	eventCtx, cancel := applicationEventWriteContext(ctx)
+	defer cancel()
+	if _, err := applicationevents.RecordCompleted(eventCtx, params, models.ApplicationEventFailed, &errorMessage); err != nil {
 		log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to record sync failure event")
 	}
+}
+
+func applicationEventWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 }
 
 func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {

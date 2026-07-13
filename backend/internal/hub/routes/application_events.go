@@ -9,6 +9,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -17,6 +18,8 @@ const (
 	defaultApplicationEventLimit = 20
 	maxApplicationEventLimit     = 100
 )
+
+var applicationEventsLog = logger.New("application-events", false)
 
 type applicationEventResponse struct {
 	Id            string  `json:"id"`
@@ -49,6 +52,8 @@ func ListApplicationEventsHandler(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
 			return
 		}
+		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
+			Msg("failed to load application for event history")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -60,6 +65,8 @@ func ListApplicationEventsHandler(c *gin.Context) {
 		Limit(limit + 1).
 		Find(ctx)
 	if err != nil {
+		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
+			Msg("failed to list application events")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -110,12 +112,43 @@ func TestListApplicationEventsHandlerReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestListApplicationEventsHandlerReturnsInternalError(t *testing.T) {
+func captureApplicationEventsLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var output bytes.Buffer
+	previous := applicationEventsLog
+	applicationEventsLog = zerolog.New(&output)
+	t.Cleanup(func() { applicationEventsLog = previous })
+	return &output
+}
+
+func TestListApplicationEventsHandlerLogsApplicationLookupError(t *testing.T) {
 	app := setupApplicationEventsRouteTest(t)
+	logs := captureApplicationEventsLog(t)
 	closeDBForErrorPath(t)
 	w := invokeApplicationEventsHandler(t, app.Id, "")
 	if w.Code != http.StatusInternalServerError || w.Body.String() != "{\"error\":\"internal server error\"}" {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(logs.String(), "failed to load application for event history") ||
+		!strings.Contains(logs.String(), app.Id) {
+		t.Fatalf("expected application lookup failure to be logged, got %q", logs.String())
+	}
+}
+
+func TestListApplicationEventsHandlerLogsEventQueryError(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	logs := captureApplicationEventsLog(t)
+	if err := db.DB.Exec("DROP TABLE application_events").Error; err != nil {
+		t.Fatalf("drop application events table: %v", err)
+	}
+
+	w := invokeApplicationEventsHandler(t, app.Id, "")
+	if w.Code != http.StatusInternalServerError || w.Body.String() != "{\"error\":\"internal server error\"}" {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(logs.String(), "failed to list application events") ||
+		!strings.Contains(logs.String(), app.Id) {
+		t.Fatalf("expected event query failure to be logged, got %q", logs.String())
 	}
 }
 

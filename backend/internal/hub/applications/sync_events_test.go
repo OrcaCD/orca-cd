@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -24,7 +25,7 @@ func loadAppEvents(t *testing.T, applicationID string) []models.ApplicationEvent
 	return events
 }
 
-func TestProcessSyncJobRepositoryPollingRecordedCommitContinuesWithoutHistory(t *testing.T) {
+func TestProcessSyncJobRepositoryPollingRecordedCommitPreservesFailureState(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
@@ -50,21 +51,21 @@ func TestProcessSyncJobRepositoryPollingRecordedCommitContinuesWithoutHistory(t 
 		Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
 	}, &nop)
 
-	if !fetched {
-		t.Error("expected compose file fetch for a recorded commit")
+	if fetched {
+		t.Error("expected compose file fetch to be skipped for a recorded commit")
 	}
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("failed to load application: %v", err)
 	}
-	if updated.SyncStatus != models.Synced {
-		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
+	if updated.SyncStatus != models.OutOfSync {
+		t.Errorf("expected SyncStatus %q, got %q", models.OutOfSync, updated.SyncStatus)
 	}
-	if updated.LastSyncedAt == nil {
-		t.Error("expected LastSyncedAt to be set")
+	if updated.LastSyncedAt != nil {
+		t.Errorf("expected LastSyncedAt to remain nil, got %v", updated.LastSyncedAt)
 	}
-	if updated.LastSyncError != nil && *updated.LastSyncError != "" {
-		t.Errorf("expected LastSyncError to be cleared, got %q", *updated.LastSyncError)
+	if updated.LastSyncError == nil || *updated.LastSyncError != previousError {
+		t.Errorf("expected LastSyncError %q, got %v", previousError, updated.LastSyncError)
 	}
 	if events := loadAppEvents(t, app.Id); len(events) != 0 {
 		t.Fatalf("expected no events for a recorded commit poll, got %d", len(events))
@@ -101,6 +102,45 @@ func TestProcessSyncJobPollingNewCommitUnchangedComposeRecordsNoChange(t *testin
 	}
 	if event.CompletedAt == nil {
 		t.Error("expected no_change event to be completed")
+	}
+}
+
+func TestProcessSyncJobUnchangedComposeStatusUpdateFailureRecordsFailedEvent(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	const compose = "services: {}\n"
+	app := seedApp(t, repo.Id, agent.Id, compose)
+
+	if err := db.DB.Exec(`CREATE TRIGGER fail_application_status_update
+		BEFORE UPDATE ON applications
+		BEGIN
+			SELECT RAISE(FAIL, 'forced application update failure');
+		END`).Error; err != nil {
+		t.Fatalf("failed to create update trigger: %v", err)
+	}
+
+	provider := &mockProvider{fileContent: compose}
+	nop := zerolog.Nop()
+	processSyncJob(t.Context(), syncJob{
+		Application: app, Repository: repo, RepositoryProvider: provider,
+		Commit: "new-sha", CommitMessage: "new commit",
+		Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
+	}, &nop)
+
+	events := loadAppEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventFailed || events[0].ErrorMessage == nil {
+		t.Fatalf("expected failed event with error message, got %+v", events[0])
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.Commit != app.Commit {
+		t.Fatalf("expected commit to remain %q, got %q", app.Commit, updated.Commit)
 	}
 }
 
@@ -200,6 +240,36 @@ func TestProcessSyncJobFetchFailureRecordsFailedEvent(t *testing.T) {
 	}
 }
 
+func TestProcessSyncJobCanceledContextStillCompletesFailedEvent(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	app := seedApp(t, repo.Id, agent.Id, "services: {}\n")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	provider := &mockProvider{
+		fileContentErr:   errors.New("request canceled"),
+		onGetFileContent: cancel,
+	}
+	nop := zerolog.Nop()
+	processSyncJob(ctx, syncJob{
+		Application: app, Repository: repo, RepositoryProvider: provider,
+		Commit: "new-sha", CommitMessage: "new commit",
+		Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook},
+	}, &nop)
+
+	events := loadAppEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Status != models.ApplicationEventFailed {
+		t.Fatalf("expected canceled sync event to be failed, got %+v", events[0])
+	}
+	if events[0].CompletedAt == nil {
+		t.Fatal("expected canceled sync event to be completed")
+	}
+}
+
 func TestSyncApplicationsResolverFailureRecordsFailedEvents(t *testing.T) {
 	setupTestDB(t)
 	setupSyncQueue(t)
@@ -219,6 +289,27 @@ func TestSyncApplicationsResolverFailureRecordsFailedEvents(t *testing.T) {
 	}
 	if events[0].Status != models.ApplicationEventFailed || events[0].ErrorMessage == nil {
 		t.Fatalf("expected failed event with error message, got %+v", events[0])
+	}
+}
+
+func TestSyncApplicationsCanceledResolverStillRecordsFailedEvent(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	app := seedApp(t, repo.Id, agent.Id, "services: {}\n")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	resolve := func(context.Context, string) (string, string, error) {
+		cancel()
+		return "", "", errors.New("request canceled")
+	}
+	nop := zerolog.Nop()
+	SyncApplications(ctx, &repo, &mockProvider{}, []models.Application{app}, resolve,
+		SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
+
+	events := loadAppEvents(t, app.Id)
+	if len(events) != 1 || events[0].Status != models.ApplicationEventFailed || events[0].CompletedAt == nil {
+		t.Fatalf("expected completed failed event, got %+v", events)
 	}
 }
 

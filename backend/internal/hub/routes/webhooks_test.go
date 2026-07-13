@@ -27,6 +27,7 @@ type mockRepoProvider struct {
 	getLatestCommitCalls []string
 	latestCommitResult   repositories.CommitInfo
 	latestCommitErr      error
+	onGetLatestCommit    func()
 }
 
 func (m *mockRepoProvider) ParseURL(_ string) (string, string, error)                    { return "", "", nil }
@@ -42,6 +43,9 @@ func (m *mockRepoProvider) GetFileContent(_ context.Context, _ *models.Repositor
 	return "", nil
 }
 func (m *mockRepoProvider) GetLatestCommit(_ context.Context, _ *models.Repository, branch string) (repositories.CommitInfo, error) {
+	if m.onGetLatestCommit != nil {
+		m.onGetLatestCommit()
+	}
 	m.getLatestCommitCalls = append(m.getLatestCommitCalls, branch)
 	return m.latestCommitResult, m.latestCommitErr
 }
