@@ -20,7 +20,7 @@ func TestApplicationHealth_NoContainersIsUnknown(t *testing.T) {
 func TestApplicationHealth_DaemonUnreachableIsUnknown(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://localhost:1")
 
-	c, err := New(zerolog.Nop(), t.TempDir(), nil, false)
+	c, err := New(zerolog.Nop(), t.TempDir(), "", nil, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

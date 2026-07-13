@@ -22,6 +22,7 @@ type Client struct {
 	cli                       command.Cli
 	compose                   api.Compose
 	deploymentsDir            string
+	hostDeploymentsDir        string
 	allowedPrivilegedApps     map[string]struct{}
 	restrictMountsToDeployDir bool
 	ready                     bool
@@ -29,7 +30,7 @@ type Client struct {
 	cancel                    context.CancelFunc
 }
 
-func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[string]struct{}, restrictMountsToDeployDir bool) (*Client, error) {
+func New(log zerolog.Logger, deploymentsDir, hostDeploymentsDir string, allowedPrivilegedApps map[string]struct{}, restrictMountsToDeployDir bool) (*Client, error) {
 	dockerCLI, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -50,6 +51,7 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 		cli:                       dockerCLI,
 		compose:                   composeSvc,
 		deploymentsDir:            deploymentsDir,
+		hostDeploymentsDir:        hostDeploymentsDir,
 		allowedPrivilegedApps:     allowedPrivilegedApps,
 		restrictMountsToDeployDir: restrictMountsToDeployDir,
 		ctx:                       ctx,

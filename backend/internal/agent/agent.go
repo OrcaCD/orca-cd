@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,7 @@ type Config struct {
 	HubPublicKey                  ed25519.PublicKey
 	HealthPort                    string
 	DeploymentsDir                string
+	HostDeploymentsDir            string
 	AllowedPrivilegedApps         map[string]struct{}
 	RestrictBindMountsToDeployDir bool
 }
@@ -83,6 +85,15 @@ func DefaultConfig() (Config, error) {
 		deploymentsDir = "/deployments"
 	}
 
+	hostDeploymentsDir := ""
+	if value, configured := os.LookupEnv("HOST_DEPLOYMENTS_DIR"); configured {
+		value = strings.TrimSpace(value)
+		if value == "" || !filepath.IsAbs(value) {
+			return Config{}, &FatalConfigError{Msg: "HOST_DEPLOYMENTS_DIR must be an absolute path on the Docker host"}
+		}
+		hostDeploymentsDir = filepath.Clean(value)
+	}
+
 	allowedPrivilegedApps := make(map[string]struct{})
 	for entry := range strings.SplitSeq(os.Getenv("ALLOWED_PRIVILEGED_APPS"), ",") {
 		if s := strings.TrimSpace(entry); s != "" {
@@ -101,6 +112,7 @@ func DefaultConfig() (Config, error) {
 		HubPublicKey:                  hubPublicKey,
 		HealthPort:                    healthPort,
 		DeploymentsDir:                deploymentsDir,
+		HostDeploymentsDir:            hostDeploymentsDir,
 		AllowedPrivilegedApps:         allowedPrivilegedApps,
 		RestrictBindMountsToDeployDir: restrictBindMountsToDeployDir,
 	}, nil
@@ -193,7 +205,7 @@ func Run(cfg Config) error {
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 
-	dockerClient, err := docker.New(Log, cfg.DeploymentsDir, cfg.AllowedPrivilegedApps, cfg.RestrictBindMountsToDeployDir)
+	dockerClient, err := docker.New(Log, cfg.DeploymentsDir, cfg.HostDeploymentsDir, cfg.AllowedPrivilegedApps, cfg.RestrictBindMountsToDeployDir)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}

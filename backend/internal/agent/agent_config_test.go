@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -37,6 +38,21 @@ func makeTestToken(t *testing.T, agentID string) (tokenStr string, hubPubKey ed2
 		t.Fatalf("sign token: %v", err)
 	}
 	return str, pub
+}
+
+func unsetTestEnv(t *testing.T, key string) {
+	t.Helper()
+	value, set := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if set {
+			_ = os.Setenv(key, value)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
 }
 
 func TestDefaultConfig_Valid(t *testing.T) {
@@ -77,6 +93,7 @@ func TestDefaultConfig_Valid(t *testing.T) {
 
 func TestDefaultConfig_Defaults(t *testing.T) {
 	token, _ := makeTestToken(t, "test-agent-id")
+	unsetTestEnv(t, "HOST_DEPLOYMENTS_DIR")
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", token)
 	t.Setenv("LOG_LEVEL", "")
@@ -96,6 +113,41 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 	if cfg.DeploymentsDir != "/deployments" {
 		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/deployments")
+	}
+	if cfg.HostDeploymentsDir != "" {
+		t.Errorf("HostDeploymentsDir = %q, want empty", cfg.HostDeploymentsDir)
+	}
+}
+
+func TestDefaultConfig_HostDeploymentsDir(t *testing.T) {
+	token, _ := makeTestToken(t, "test-agent-id")
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", token)
+	t.Setenv("HOST_DEPLOYMENTS_DIR", "  /srv/orcacd/deployments/  ")
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
+	if cfg.HostDeploymentsDir != "/srv/orcacd/deployments" {
+		t.Errorf("HostDeploymentsDir = %q, want %q", cfg.HostDeploymentsDir, "/srv/orcacd/deployments")
+	}
+}
+
+func TestDefaultConfig_InvalidHostDeploymentsDir(t *testing.T) {
+	for _, value := range []string{"./deployments", "   "} {
+		t.Run(value, func(t *testing.T) {
+			token, _ := makeTestToken(t, "test-agent-id")
+			t.Setenv("HUB_URL", "https://hub.example.com")
+			t.Setenv("AUTH_TOKEN", token)
+			t.Setenv("HOST_DEPLOYMENTS_DIR", value)
+
+			_, err := DefaultConfig()
+			var configErr *FatalConfigError
+			if !errors.As(err, &configErr) {
+				t.Fatalf("expected FatalConfigError for %q, got %v", value, err)
+			}
+		})
 	}
 }
 

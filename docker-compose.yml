@@ -18,6 +18,8 @@ services:
     container_name: orca-agent
     restart: unless-stopped
     env_file: .env
+    environment:
+      HOST_DEPLOYMENTS_DIR: ${PWD}/deployments # Run Compose from this file's directory
     security_opt:
       - no-new-privileges:true
     cap_drop:

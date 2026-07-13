@@ -209,6 +209,60 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	}
 }
 
+func TestCheckAndPullImages_TranslatesBindMountBeforeUp(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	c.hostDeploymentsDir = "/srv/orca/deployments"
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: ghcr.io/org/app:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		project := makeProject("ghcr.io/org/app:latest")
+		service := project.Services["a"]
+		service.Volumes = []composetypes.ServiceVolumeConfig{
+			{
+				Type:   composetypes.VolumeTypeBind,
+				Source: filepath.Join(appDir, "data"),
+				Target: "/data",
+			},
+		}
+		project.Services["a"] = service
+		return project, nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
+		return "sha256:newdigest", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return []string{"ghcr.io/org/app@sha256:olddigest"}, nil
+	}
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		return nil
+	}
+	var gotSource string
+	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.UpOptions) error {
+		gotSource = project.Services["a"].Volumes[0].Source
+		return nil
+	}
+
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	if err != nil {
+		t.Fatalf("CheckAndPullImages: %v", err)
+	}
+	if !updated {
+		t.Fatal("expected stale image to be updated")
+	}
+	if gotSource != "/srv/orca/deployments/billing/data" {
+		t.Errorf("bind source = %q, want %q", gotSource, "/srv/orca/deployments/billing/data")
+	}
+}
+
 func TestCheckAndPullImages_OrcaLabelsAppliedBeforeUp(t *testing.T) {
 	saveRestoreVars(t)
 	c := newTestClient(t)

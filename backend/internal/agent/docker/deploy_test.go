@@ -331,6 +331,104 @@ func TestDeploy_RestrictMountsToDeployDirAllowsMountInsideDeploymentsDir(t *test
 	}
 }
 
+func TestDeploy_TranslatesBindMountForAllowlistedApplication(t *testing.T) {
+	const allowedAppID = "019e1ce8-7938-71b8-be55-4b184f307a2d"
+
+	c := newTestClientWithAllowlist(t, map[string]struct{}{allowedAppID: {}})
+	c.deploymentsDir = t.TempDir()
+	c.hostDeploymentsDir = "/srv/orca/deployments"
+	c.mu.Lock()
+	c.ready = true
+	c.mu.Unlock()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name: opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{
+				Privileged: true,
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{
+						Type:   composetypes.VolumeTypeBind,
+						Source: filepath.Join(c.deploymentsDir, "billing", "data"),
+						Target: "/data",
+					},
+				},
+			}},
+		}, nil
+	}
+	var gotSource string
+	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.UpOptions) error {
+		gotSource = project.Services["app"].Volumes[0].Source
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   allowedAppID,
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if gotSource != "/srv/orca/deployments/billing/data" {
+		t.Errorf("bind source = %q, want %q", gotSource, "/srv/orca/deployments/billing/data")
+	}
+}
+
+func TestDeploy_RestrictMountsAllowsTranslatedDeploymentBind(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	c.hostDeploymentsDir = "/srv/orca/deployments"
+	c.restrictMountsToDeployDir = true
+	c.mu.Lock()
+	c.ready = true
+	c.mu.Unlock()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name: opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{
+						Type:   composetypes.VolumeTypeBind,
+						Source: filepath.Join(c.deploymentsDir, "billing", "data"),
+						Target: "/data",
+					},
+				},
+			}},
+		}, nil
+	}
+	upCalled := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if !upCalled {
+		t.Fatal("expected compose up to be called")
+	}
+}
+
 func TestRemove_DownsProjectAndRemovesDir(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
