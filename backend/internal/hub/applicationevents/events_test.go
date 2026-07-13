@@ -183,16 +183,16 @@ func TestRetentionKeepsNewestThousandPerApplication(t *testing.T) {
 		Source:        models.ApplicationEventSourceRepositoryPolling,
 	}
 	for range MaxPerApplication + 1 {
-		if _, err := RecordTerminal(ctx, params, models.ApplicationEventNoChange, nil); err != nil {
-			t.Fatalf("RecordTerminal: %v", err)
+		if _, err := RecordCompleted(ctx, params, models.ApplicationEventNoChange, nil); err != nil {
+			t.Fatalf("RecordCompleted: %v", err)
 		}
 	}
-	if _, err := RecordTerminal(ctx, Params{
+	if _, err := RecordCompleted(ctx, Params{
 		ApplicationID: otherApp.Id,
 		Type:          models.ApplicationEventDeployment,
 		Source:        models.ApplicationEventSourceManual,
 	}, models.ApplicationEventSucceeded, nil); err != nil {
-		t.Fatalf("RecordTerminal second application: %v", err)
+		t.Fatalf("RecordCompleted second application: %v", err)
 	}
 
 	count, err := gorm.G[models.ApplicationEvent](db.DB).
@@ -227,16 +227,16 @@ func TestRecoverRunningFailsOnlyRunningEvents(t *testing.T) {
 			t.Fatalf("Start: %v", err)
 		}
 	}
-	terminalMessage := "terminal event failure"
-	terminal, err := RecordTerminal(ctx, Params{
+	completedMessage := "completed event failure"
+	completed, err := RecordCompleted(ctx, Params{
 		ApplicationID: app.Id,
 		Type:          models.ApplicationEventImageUpdate,
 		Source:        models.ApplicationEventSourceImagePolling,
-	}, models.ApplicationEventFailed, &terminalMessage)
+	}, models.ApplicationEventFailed, &completedMessage)
 	if err != nil {
-		t.Fatalf("RecordTerminal: %v", err)
+		t.Fatalf("RecordCompleted: %v", err)
 	}
-	terminalCompletedAt := *terminal.CompletedAt
+	completedAt := *completed.CompletedAt
 
 	const recoveryMessage = "hub restarted while event was running"
 	affected, err := RecoverRunning(ctx, recoveryMessage)
@@ -268,28 +268,28 @@ func TestRecoverRunningFailsOnlyRunningEvents(t *testing.T) {
 		t.Fatalf("recovered events do not share completion time: %v, %v", runningEvents[0].CompletedAt, runningEvents[1].CompletedAt)
 	}
 
-	unchanged, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", terminal.Id).First(ctx)
+	unchanged, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", completed.Id).First(ctx)
 	if err != nil {
-		t.Fatalf("load terminal event: %v", err)
+		t.Fatalf("load completed event: %v", err)
 	}
 	if unchanged.Status != models.ApplicationEventFailed ||
 		unchanged.CompletedAt == nil ||
-		!unchanged.CompletedAt.Equal(terminalCompletedAt) ||
+		!unchanged.CompletedAt.Equal(completedAt) ||
 		unchanged.ErrorMessage == nil ||
-		*unchanged.ErrorMessage != terminalMessage {
-		t.Fatalf("terminal event changed during recovery: %+v", unchanged)
+		*unchanged.ErrorMessage != completedMessage {
+		t.Fatalf("completed event changed during recovery: %+v", unchanged)
 	}
 }
 
 func TestDeletingApplicationCascadesEvents(t *testing.T) {
 	app, _ := setupEventTestDB(t)
 	ctx := t.Context()
-	if _, err := RecordTerminal(ctx, Params{
+	if _, err := RecordCompleted(ctx, Params{
 		ApplicationID: app.Id,
 		Type:          models.ApplicationEventDeployment,
 		Source:        models.ApplicationEventSourceManual,
 	}, models.ApplicationEventSucceeded, nil); err != nil {
-		t.Fatalf("RecordTerminal: %v", err)
+		t.Fatalf("RecordCompleted: %v", err)
 	}
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Delete(ctx); err != nil {
 		t.Fatalf("delete application: %v", err)
@@ -306,14 +306,14 @@ func TestDeletingApplicationCascadesEvents(t *testing.T) {
 	}
 }
 
-func TestRecordTerminalRejectsRunningStatus(t *testing.T) {
+func TestRecordCompletedRejectsRunningStatus(t *testing.T) {
 	app, _ := setupEventTestDB(t)
-	if _, err := RecordTerminal(t.Context(), Params{
+	if _, err := RecordCompleted(t.Context(), Params{
 		ApplicationID: app.Id,
 		Type:          models.ApplicationEventDeployment,
 		Source:        models.ApplicationEventSourceManual,
 	}, models.ApplicationEventRunning, nil); err == nil {
-		t.Fatal("RecordTerminal with running status succeeded")
+		t.Fatal("RecordCompleted with running status succeeded")
 	}
 }
 

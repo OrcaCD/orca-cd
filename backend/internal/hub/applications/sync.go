@@ -42,16 +42,14 @@ func GetAllApplicationsForRepo(ctx context.Context, repository *models.Repositor
 }
 
 func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
-	// Scheduled polls that resolve to the already-recorded commit are pure no-ops:
-	// skip them entirely so the history is not flooded every polling interval.
-	// Explicit triggers (manual, webhook, CI) always leave a history record.
-	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && job.Commit == job.Application.Commit {
-		return
-	}
-
-	requestID := uuid.NewString()
-	if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
-		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to record commit sync event")
+	requestID := ""
+	// A scheduled poll for the already-recorded commit still performs the sync so
+	// application status is refreshed, but it does not add a repetitive event.
+	if job.Origin.Source != models.ApplicationEventSourceRepositoryPolling || job.Commit != job.Application.Commit {
+		requestID = uuid.NewString()
+		if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
+			log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to record commit sync event")
+		}
 	}
 
 	content, err := job.RepositoryProvider.GetFileContent(ctx, &job.Repository, job.Commit, job.Application.Path)
@@ -104,7 +102,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	}
 
 	// The deployer completes the event on dispatch failure; the Agent's deploy
-	// result completes it otherwise, so no terminal write happens here.
+	// result completes it otherwise, so this path does not write a final status.
 	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content, requestID); err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to trigger application deploy")
 		failSyncJob(job.Application, log)
@@ -132,6 +130,9 @@ func syncEventParams(job syncJob, requestID *string) applicationevents.Params {
 }
 
 func completeSyncEvent(ctx context.Context, requestID, applicationID string, status models.ApplicationEventStatus, errorMessage string, log *zerolog.Logger) {
+	if requestID == "" {
+		return
+	}
 	var errPtr *string
 	if errorMessage != "" {
 		errPtr = &errorMessage
@@ -141,7 +142,7 @@ func completeSyncEvent(ctx context.Context, requestID, applicationID string, sta
 	}
 }
 
-// recordSyncFailure writes a terminal failed history event for an application
+// recordSyncFailure writes a completed failed history event for an application
 // whose sync failed before its job could run (resolver, queue, or dispatch setup).
 func recordSyncFailure(ctx context.Context, application *models.Application, origin SyncOrigin, commit, commitMessage, errorMessage string, log *zerolog.Logger) {
 	// Mirror the processSyncJob skip: a scheduled poll for the already-recorded
@@ -162,7 +163,7 @@ func recordSyncFailure(ctx context.Context, application *models.Application, ori
 	if commitMessage != "" {
 		params.CommitMessage = &commitMessage
 	}
-	if _, err := applicationevents.RecordTerminal(ctx, params, models.ApplicationEventFailed, &errorMessage); err != nil {
+	if _, err := applicationevents.RecordCompleted(ctx, params, models.ApplicationEventFailed, &errorMessage); err != nil {
 		log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to record sync failure event")
 	}
 }

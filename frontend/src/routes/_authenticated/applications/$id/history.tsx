@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { columns } from "@/components/tables/application-events/columns";
 import { ApplicationEventsDataTable } from "@/components/tables/application-events/data-table";
-import { API_BASE, getErrorMessage } from "@/lib/api";
+import { API_BASE, fetcher } from "@/lib/api";
 import type { ApplicationEventsPage } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
 
@@ -33,18 +33,10 @@ const getKey =
 
 // Keys include API_BASE so the SSE broker's update events (which publish full
 // API paths) revalidate every loaded page of this list.
-async function fetchEventsPage(url: string): Promise<ApplicationEventsPage> {
-	const res = await fetch(url);
-	if (!res.ok) {
-		throw new Error(await getErrorMessage(res));
-	}
-	return (await res.json()) as ApplicationEventsPage;
-}
-
 function ApplicationHistoryPage() {
 	const { id } = Route.useParams();
 	const { data, error, isLoading, isValidating, size, setSize } =
-		useSWRInfinite<ApplicationEventsPage>(getKey(id), fetchEventsPage);
+		useSWRInfinite<ApplicationEventsPage>(getKey(id), fetcher<ApplicationEventsPage>);
 
 	const events = data?.flatMap((page) => page.items) ?? [];
 	const hasMore = data?.at(-1)?.hasMore ?? false;

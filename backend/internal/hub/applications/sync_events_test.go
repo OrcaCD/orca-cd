@@ -24,14 +24,25 @@ func loadAppEvents(t *testing.T, applicationID string) []models.ApplicationEvent
 	return events
 }
 
-func TestProcessSyncJobRepositoryPollingSkipsRecordedCommit(t *testing.T) {
+func TestProcessSyncJobRepositoryPollingRecordedCommitContinuesWithoutHistory(t *testing.T) {
 	setupTestDB(t)
 	repo := seedRepo(t)
 	agent := seedAgent(t)
-	app := seedApp(t, repo.Id, agent.Id, "services: {}\n")
+	const compose = "services: {}\n"
+	app := seedApp(t, repo.Id, agent.Id, compose)
+	previousError := "previous failure"
+	if _, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", app.Id).
+		Select("SyncStatus", "LastSyncError").
+		Updates(t.Context(), models.Application{
+			SyncStatus:    models.OutOfSync,
+			LastSyncError: &previousError,
+		}); err != nil {
+		t.Fatalf("failed to set application pre-state: %v", err)
+	}
 
 	fetched := false
-	provider := &mockProvider{fileContent: "different", onGetFileContent: func() { fetched = true }}
+	provider := &mockProvider{fileContent: compose, onGetFileContent: func() { fetched = true }}
 	nop := zerolog.Nop()
 	processSyncJob(t.Context(), syncJob{
 		Application: app, Repository: repo, RepositoryProvider: provider,
@@ -39,11 +50,24 @@ func TestProcessSyncJobRepositoryPollingSkipsRecordedCommit(t *testing.T) {
 		Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
 	}, &nop)
 
-	if fetched {
-		t.Error("expected compose file fetch to be skipped for a recorded commit")
+	if !fetched {
+		t.Error("expected compose file fetch for a recorded commit")
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.SyncStatus != models.Synced {
+		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
+	}
+	if updated.LastSyncedAt == nil {
+		t.Error("expected LastSyncedAt to be set")
+	}
+	if updated.LastSyncError != nil && *updated.LastSyncError != "" {
+		t.Errorf("expected LastSyncError to be cleared, got %q", *updated.LastSyncError)
 	}
 	if events := loadAppEvents(t, app.Id); len(events) != 0 {
-		t.Fatalf("expected no events for a skipped poll, got %d", len(events))
+		t.Fatalf("expected no events for a recorded commit poll, got %d", len(events))
 	}
 }
 

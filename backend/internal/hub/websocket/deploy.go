@@ -26,6 +26,10 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 	}
 
 	if result.Success {
+		// History reflects the Agent's deployment result independently of whether
+		// persisting the application's summary status succeeds.
+		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
+
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
@@ -35,10 +39,8 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 			LastSyncError: &cleared,
 		}, log)
 		if err != nil {
-			completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 			return
 		}
-		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 		notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}

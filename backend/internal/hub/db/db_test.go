@@ -320,6 +320,16 @@ func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
 		}
 	}
 
+	var createSQL string
+	if err := sqlDB.QueryRow(
+		"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'application_events'",
+	).Scan(&createSQL); err != nil {
+		t.Fatalf("failed to load application_events schema: %v", err)
+	}
+	if strings.Contains(strings.ToUpper(createSQL), "CHECK (") {
+		t.Errorf("application_events schema contains application-level CHECK constraints: %s", createSQL)
+	}
+
 	rows, err := sqlDB.Query(`SELECT "from", on_delete FROM pragma_foreign_key_list('application_events')`)
 	if err != nil {
 		t.Fatalf("failed to query application_events foreign keys: %v", err)

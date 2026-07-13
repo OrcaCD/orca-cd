@@ -32,19 +32,19 @@ func Start(ctx context.Context, p Params) (*models.ApplicationEvent, error) {
 	return create(ctx, p, models.ApplicationEventRunning, nil)
 }
 
-func RecordTerminal(
+func RecordCompleted(
 	ctx context.Context,
 	p Params,
 	status models.ApplicationEventStatus,
 	errorMessage *string,
 ) (*models.ApplicationEvent, error) {
-	if !isTerminal(status) {
-		return nil, fmt.Errorf("terminal event cannot have running status")
+	if !isCompletedStatus(status) {
+		return nil, fmt.Errorf("completed event cannot have running status")
 	}
 	return create(ctx, p, status, errorMessage)
 }
 
-func isTerminal(status models.ApplicationEventStatus) bool {
+func isCompletedStatus(status models.ApplicationEventStatus) bool {
 	return status == models.ApplicationEventSucceeded ||
 		status == models.ApplicationEventFailed ||
 		status == models.ApplicationEventNoChange
@@ -73,15 +73,13 @@ func create(
 		event.CompletedAt = &now
 	}
 
+	// Keep creation and retention cleanup atomic so an error cannot leave an
+	// inserted event after the caller was told that recording failed.
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := gorm.G[models.ApplicationEvent](tx).Create(ctx, &event); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM application_events
-			WHERE application_id = ? AND id NOT IN (
-				SELECT id FROM application_events WHERE application_id = ?
-				ORDER BY created_at DESC, id DESC LIMIT ?
-			)`, p.ApplicationID, p.ApplicationID, MaxPerApplication).Error
+		return deleteEventsOverLimit(tx, p.ApplicationID)
 	})
 	if err != nil {
 		return nil, err
@@ -91,6 +89,14 @@ func create(
 	return &event, nil
 }
 
+func deleteEventsOverLimit(tx *gorm.DB, applicationID string) error {
+	return tx.Exec(`DELETE FROM application_events
+			WHERE application_id = ? AND id NOT IN (
+				SELECT id FROM application_events WHERE application_id = ?
+				ORDER BY created_at DESC, id DESC LIMIT ?
+			)`, applicationID, applicationID, MaxPerApplication).Error
+}
+
 func Complete(
 	ctx context.Context,
 	requestID string,
@@ -98,8 +104,8 @@ func Complete(
 	status models.ApplicationEventStatus,
 	errorMessage *string,
 ) (bool, error) {
-	if !isTerminal(status) {
-		return false, fmt.Errorf("event completion requires a terminal status")
+	if !isCompletedStatus(status) {
+		return false, fmt.Errorf("event completion requires a completed status")
 	}
 
 	now := time.Now()

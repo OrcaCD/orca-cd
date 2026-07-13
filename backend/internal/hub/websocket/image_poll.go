@@ -64,7 +64,7 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this
-// result, or persists a terminal image_polling event for unsolicited periodic
+// result, or records a completed image_polling event for unsolicited periodic
 // results that changed images or failed. Successful no-op polls leave no history.
 func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, log *zerolog.Logger) {
 	status := models.ApplicationEventFailed
@@ -99,7 +99,7 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, l
 		requestID := r.RequestId
 		params.RequestID = &requestID
 	}
-	if _, err := applicationevents.RecordTerminal(ctx, params, status, errMsg); err != nil {
+	if _, err := applicationevents.RecordCompleted(ctx, params, status, errMsg); err != nil {
 		log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record periodic image update event")
 	}
 }
