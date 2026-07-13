@@ -127,6 +127,16 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("load compose project: %w", err)
 	}
 
+	if _, allowed := c.allowedPrivilegedApps[req.ApplicationID]; !allowed {
+		restrictMountsDir := ""
+		if c.restrictMountsToDeployDir {
+			restrictMountsDir = c.deploymentsDir
+		}
+		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
+			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, req.ApplicationID)
+		}
+	}
+
 	applyOrcaLabels(project, req.ApplicationID)
 
 	if err := upProject(ctx, c.compose, project, api.UpOptions{

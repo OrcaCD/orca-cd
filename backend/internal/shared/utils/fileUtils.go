@@ -44,8 +44,8 @@ func IsPathWithinBase(basePath, filePath string) error {
 		return fmt.Errorf("invalid file path: %w", err)
 	}
 
-	// Ensure the file path is within the base directory
-	if !strings.HasPrefix(absFile, absBase) {
+	rel, err := filepath.Rel(absBase, absFile)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return errors.New("path traversal detected: file path is outside base directory")
 	}
 

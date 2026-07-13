@@ -186,6 +186,13 @@ func TestIsPathWithinBase(t *testing.T) {
 			filePath: baseDir,
 			wantErr:  false,
 		},
+		{
+			name:     "sibling directory sharing a name prefix with base",
+			baseDir:  baseDir,
+			filePath: baseDir + "-other",
+			wantErr:  true,
+			errMsg:   "path traversal detected: file path is outside base directory",
+		},
 	}
 
 	for _, tt := range tests {
