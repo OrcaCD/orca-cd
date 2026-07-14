@@ -39,6 +39,10 @@ jobs:
           localization_branch_name: i18n_crowdin
           create_pull_request: true
           pull_request_base_branch_name: "main"
+          pull_request_title: 'chore(translations): Update translations via Crowdin'
+          commit_message: 'chore(translations): Update translations via Crowdin'
+          pull_request_body: 'New translations available in the [OrcaCD Crowdin project](https://crowdin.com/project/orcacd).'
+          pull_request_labels: i18n
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
