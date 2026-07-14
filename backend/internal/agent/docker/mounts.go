@@ -102,20 +102,31 @@ func detectHostDeploymentsDir(
 	return hostBindSource(result.Container.Mounts, filepath.Clean(deploymentsDir))
 }
 
+// localVolumeDriver is the Docker volume driver whose data lives at a plain
+// host path (/var/lib/docker/volumes/<name>/_data) that sibling containers
+// can bind-mount directly.
+const localVolumeDriver = "local"
+
 func hostBindSource(mountPoints []containerapi.MountPoint, target string) (string, error) {
 	for _, mountPoint := range mountPoints {
 		if filepath.Clean(mountPoint.Destination) != target {
 			continue
 		}
-		if mountPoint.Type != mount.TypeBind {
-			return "", fmt.Errorf("agent deployment directory %q is mounted as %q, not a bind mount", target, mountPoint.Type)
+		switch mountPoint.Type {
+		case mount.TypeBind:
+		case mount.TypeVolume:
+			if mountPoint.Driver != localVolumeDriver {
+				return "", fmt.Errorf("agent deployment volume %q uses driver %q, which cannot be resolved to a host path", mountPoint.Name, mountPoint.Driver)
+			}
+		default:
+			return "", fmt.Errorf("agent deployment directory %q is mounted as %q, not a bind mount or named volume", target, mountPoint.Type)
 		}
 		if mountPoint.Source == "" || !filepath.IsAbs(mountPoint.Source) {
-			return "", fmt.Errorf("agent deployment bind source %q is not an absolute host path", mountPoint.Source)
+			return "", fmt.Errorf("agent deployment mount source %q is not an absolute host path", mountPoint.Source)
 		}
 		return filepath.Clean(mountPoint.Source), nil
 	}
-	return "", fmt.Errorf("agent container has no bind mount at deployment directory %q", target)
+	return "", fmt.Errorf("agent container has no mount at deployment directory %q", target)
 }
 
 func translateBindMountSources(project *composetypes.Project, deploymentsDir, hostDeploymentsDir string) error {

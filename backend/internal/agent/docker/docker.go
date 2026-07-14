@@ -105,14 +105,17 @@ func (c *Client) hostDeploymentsBase() string {
 	return c.hostDeploymentsDir
 }
 
-func (c *Client) resolveHostDeploymentsDir(ctx context.Context) {
+// resolveHostDeploymentsDir returns an error only when ctx is canceled before
+// the detection state could be resolved; detection failures themselves are
+// logged and retried on the next call.
+func (c *Client) resolveHostDeploymentsDir(ctx context.Context) error {
 	var detector func(context.Context) (string, error)
 	for {
 		var pending <-chan struct{}
 		var shouldDetect bool
 		detector, pending, shouldDetect = c.startHostDeploymentsDirDetection()
 		if pending == nil {
-			return
+			return nil
 		}
 		if shouldDetect {
 			break
@@ -121,7 +124,7 @@ func (c *Client) resolveHostDeploymentsDir(ctx context.Context) {
 		select {
 		case <-pending:
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 
@@ -130,13 +133,17 @@ func (c *Client) resolveHostDeploymentsDir(ctx context.Context) {
 
 	if errors.Is(err, errNotContainerized) {
 		c.log.Debug().Msg("agent is running outside a container; using local deployment paths")
-		return
+		return nil
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
 		c.log.Debug().Err(err).Msg("could not auto-detect host deployments directory")
-		return
+		return nil
 	}
 	c.log.Info().Str("host_deployments_dir", hostDeploymentsDir).Msg("auto-detected host deployments directory")
+	return nil
 }
 
 func (c *Client) startHostDeploymentsDirDetection() (
@@ -203,7 +210,9 @@ func (c *Client) pingDaemon() bool {
 		}
 		return false
 	}
-	c.resolveHostDeploymentsDir(c.ctx)
+	if err := c.resolveHostDeploymentsDir(c.ctx); err != nil {
+		c.log.Debug().Err(err).Msg("host deployments directory detection interrupted")
+	}
 
 	c.mu.Lock()
 	wasReady := c.ready

@@ -175,6 +175,33 @@ func TestDetectHostDeploymentsDirUsesExactContainerID(t *testing.T) {
 	}
 }
 
+func TestDetectHostDeploymentsDirSupportsLocalNamedVolume(t *testing.T) {
+	inspector := &fakeContainerInspector{result: client.ContainerInspectResult{
+		Container: containerapi.InspectResponse{
+			ID: testContainerID,
+			Mounts: []containerapi.MountPoint{
+				{
+					Type:        mount.TypeVolume,
+					Name:        "deployments",
+					Driver:      "local",
+					Source:      "/var/lib/docker/volumes/deployments/_data",
+					Destination: "/deployments",
+				},
+			},
+		},
+	}}
+
+	got, err := detectHostDeploymentsDir(t.Context(), inspector, func() (string, error) {
+		return testContainerID, nil
+	}, "/deployments")
+	if err != nil {
+		t.Fatalf("detectHostDeploymentsDir: %v", err)
+	}
+	if want := "/var/lib/docker/volumes/deployments/_data"; got != want {
+		t.Errorf("host deployments dir = %q, want %q", got, want)
+	}
+}
+
 func TestDetectHostDeploymentsDirErrors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -213,11 +240,20 @@ func TestDetectHostDeploymentsDirErrors(t *testing.T) {
 			}},
 		},
 		{
-			name:        "not a bind mount",
+			name:        "volume with non-local driver",
 			containerID: func() (string, error) { return testContainerID, nil },
 			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
 				Container: containerapi.InspectResponse{ID: testContainerID, Mounts: []containerapi.MountPoint{
-					{Type: mount.TypeVolume, Source: "/var/lib/docker/volumes/data/_data", Destination: "/deployments"},
+					{Type: mount.TypeVolume, Name: "data", Driver: "rexray", Source: "", Destination: "/deployments"},
+				}},
+			}},
+		},
+		{
+			name:        "tmpfs mount",
+			containerID: func() (string, error) { return testContainerID, nil },
+			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
+				Container: containerapi.InspectResponse{ID: testContainerID, Mounts: []containerapi.MountPoint{
+					{Type: mount.TypeTmpfs, Destination: "/deployments"},
 				}},
 			}},
 		},

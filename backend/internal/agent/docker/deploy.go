@@ -88,7 +88,9 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if !c.Ready() {
 		return errors.New("docker daemon is not ready")
 	}
-	c.resolveHostDeploymentsDir(ctx)
+	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
+		return fmt.Errorf("resolve host deployments directory: %w", err)
+	}
 
 	if req.ComposeFile == "" {
 		return errors.New("compose file is empty")

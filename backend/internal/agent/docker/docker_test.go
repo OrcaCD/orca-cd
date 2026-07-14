@@ -35,7 +35,9 @@ func TestResolveHostDeploymentsDirUsesDetectedPath(t *testing.T) {
 		},
 	}
 
-	c.resolveHostDeploymentsDir(t.Context())
+	if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+		t.Fatalf("resolveHostDeploymentsDir: %v", err)
+	}
 
 	if got := c.hostDeploymentsBase(); got != "/srv/orcacd/deployments" {
 		t.Errorf("host deployments dir = %q, want %q", got, "/srv/orcacd/deployments")
@@ -59,8 +61,11 @@ func TestResolveHostDeploymentsDirRetriesAfterFailure(t *testing.T) {
 		},
 	}
 
-	c.resolveHostDeploymentsDir(t.Context())
-	c.resolveHostDeploymentsDir(t.Context())
+	for range 2 {
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Fatalf("resolveHostDeploymentsDir: %v", err)
+		}
+	}
 
 	if got := c.hostDeploymentsBase(); got != "/srv/orcacd/deployments" {
 		t.Errorf("host deployments dir = %q, want detected path", got)
@@ -80,8 +85,11 @@ func TestResolveHostDeploymentsDirCachesHostExecution(t *testing.T) {
 		},
 	}
 
-	c.resolveHostDeploymentsDir(t.Context())
-	c.resolveHostDeploymentsDir(t.Context())
+	for range 2 {
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Fatalf("resolveHostDeploymentsDir: %v", err)
+		}
+	}
 
 	if calls != 1 {
 		t.Errorf("detector calls = %d, want 1", calls)
@@ -115,14 +123,18 @@ func TestResolveHostDeploymentsDirCoalescesConcurrentCalls(t *testing.T) {
 
 	firstDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(t.Context())
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Errorf("first resolveHostDeploymentsDir: %v", err)
+		}
 		close(firstDone)
 	}()
 	<-started
 
 	secondDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(t.Context())
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Errorf("second resolveHostDeploymentsDir: %v", err)
+		}
 		close(secondDone)
 	}()
 
@@ -163,7 +175,9 @@ func TestResolveHostDeploymentsDirWaiterRetriesAfterTransientFailure(t *testing.
 
 	ownerDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(t.Context())
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Errorf("owner resolveHostDeploymentsDir: %v", err)
+		}
 		close(ownerDone)
 	}()
 	<-started
@@ -171,7 +185,9 @@ func TestResolveHostDeploymentsDirWaiterRetriesAfterTransientFailure(t *testing.
 	waiterCtx := &observedDoneContext{Context: t.Context(), doneObserved: make(chan struct{})}
 	waiterDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(waiterCtx)
+		if err := c.resolveHostDeploymentsDir(waiterCtx); err != nil {
+			t.Errorf("waiter resolveHostDeploymentsDir: %v", err)
+		}
 		close(waiterDone)
 	}()
 	<-waiterCtx.doneObserved
@@ -210,7 +226,9 @@ func TestResolveHostDeploymentsDirWaiterRetriesAfterOwnerCancellation(t *testing
 	ownerCtx, cancelOwner := context.WithCancel(t.Context())
 	ownerDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(ownerCtx)
+		if err := c.resolveHostDeploymentsDir(ownerCtx); !errors.Is(err, context.Canceled) {
+			t.Errorf("owner resolveHostDeploymentsDir error = %v, want context.Canceled", err)
+		}
 		close(ownerDone)
 	}()
 	<-started
@@ -218,7 +236,9 @@ func TestResolveHostDeploymentsDirWaiterRetriesAfterOwnerCancellation(t *testing
 	waiterCtx := &observedDoneContext{Context: t.Context(), doneObserved: make(chan struct{})}
 	waiterDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(waiterCtx)
+		if err := c.resolveHostDeploymentsDir(waiterCtx); err != nil {
+			t.Errorf("waiter resolveHostDeploymentsDir: %v", err)
+		}
 		close(waiterDone)
 	}()
 	<-waiterCtx.doneObserved
@@ -255,7 +275,9 @@ func TestResolveHostDeploymentsDirCanceledWaiterReturnsWithoutCancelingOwner(t *
 
 	ownerDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(t.Context())
+		if err := c.resolveHostDeploymentsDir(t.Context()); err != nil {
+			t.Errorf("owner resolveHostDeploymentsDir: %v", err)
+		}
 		close(ownerDone)
 	}()
 	<-started
@@ -264,7 +286,9 @@ func TestResolveHostDeploymentsDirCanceledWaiterReturnsWithoutCancelingOwner(t *
 	waiterCtx := &observedDoneContext{Context: baseWaiterCtx, doneObserved: make(chan struct{})}
 	waiterDone := make(chan struct{})
 	go func() {
-		c.resolveHostDeploymentsDir(waiterCtx)
+		if err := c.resolveHostDeploymentsDir(waiterCtx); !errors.Is(err, context.Canceled) {
+			t.Errorf("canceled waiter error = %v, want context.Canceled", err)
+		}
 		close(waiterDone)
 	}()
 	<-waiterCtx.doneObserved
