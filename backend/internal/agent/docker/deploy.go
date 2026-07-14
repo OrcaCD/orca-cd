@@ -88,6 +88,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if !c.Ready() {
 		return errors.New("docker daemon is not ready")
 	}
+	c.resolveHostDeploymentsDir(ctx)
 
 	if req.ComposeFile == "" {
 		return errors.New("compose file is empty")
@@ -126,11 +127,18 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if err != nil {
 		return fmt.Errorf("load compose project: %w", err)
 	}
+	hostDeploymentsDir := c.hostDeploymentsBase()
+	if err := translateBindMountSources(project, c.deploymentsDir, hostDeploymentsDir); err != nil {
+		return fmt.Errorf("translate bind mount sources: %w", err)
+	}
 
 	if _, allowed := c.allowedPrivilegedApps[req.ApplicationID]; !allowed {
 		restrictMountsDir := ""
 		if c.restrictMountsToDeployDir {
 			restrictMountsDir = c.deploymentsDir
+			if hostDeploymentsDir != "" {
+				restrictMountsDir = hostDeploymentsDir
+			}
 		}
 		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
 			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, req.ApplicationID)

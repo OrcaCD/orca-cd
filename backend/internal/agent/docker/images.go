@@ -79,6 +79,10 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	if err != nil {
 		return false, fmt.Errorf("load compose project: %w", err)
 	}
+	c.resolveHostDeploymentsDir(ctx)
+	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
+		return false, fmt.Errorf("translate bind mount sources: %w", err)
+	}
 
 	dockerCLI := c.cli.Client()
 

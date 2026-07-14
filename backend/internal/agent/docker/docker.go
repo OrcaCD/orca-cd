@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -14,14 +16,20 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const daemonCheckInterval = 5 * time.Second
+const (
+	daemonCheckInterval     = 5 * time.Second
+	hostDirDetectionTimeout = 5 * time.Second
+)
 
 type Client struct {
-	mu                        sync.RWMutex // protects ready
+	mu                        sync.RWMutex // protects ready and host deployments directory state
 	log                       zerolog.Logger
 	cli                       command.Cli
 	compose                   api.Compose
 	deploymentsDir            string
+	hostDeploymentsDir        string
+	hostDirDetectionPending   chan struct{}
+	detectHostDeploymentsDir  func(context.Context) (string, error)
 	allowedPrivilegedApps     map[string]struct{}
 	restrictMountsToDeployDir bool
 	ready                     bool
@@ -46,10 +54,13 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Client{
-		log:                       log,
-		cli:                       dockerCLI,
-		compose:                   composeSvc,
-		deploymentsDir:            deploymentsDir,
+		log:            log,
+		cli:            dockerCLI,
+		compose:        composeSvc,
+		deploymentsDir: deploymentsDir,
+		detectHostDeploymentsDir: func(ctx context.Context) (string, error) {
+			return detectHostDeploymentsDir(ctx, dockerCLI.Client(), os.Hostname, deploymentsDir)
+		},
 		allowedPrivilegedApps:     allowedPrivilegedApps,
 		restrictMountsToDeployDir: restrictMountsToDeployDir,
 		ctx:                       ctx,
@@ -85,6 +96,57 @@ func (c *Client) Ready() bool {
 	return c.ready
 }
 
+func (c *Client) hostDeploymentsBase() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostDeploymentsDir
+}
+
+func (c *Client) resolveHostDeploymentsDir(ctx context.Context) {
+	c.mu.Lock()
+	if c.hostDeploymentsDir != "" {
+		c.mu.Unlock()
+		return
+	}
+	if c.hostDirDetectionPending != nil {
+		pending := c.hostDirDetectionPending
+		c.mu.Unlock()
+		select {
+		case <-pending:
+		case <-ctx.Done():
+		}
+		return
+	}
+	pending := make(chan struct{})
+	c.hostDirDetectionPending = pending
+	detector := c.detectHostDeploymentsDir
+	c.mu.Unlock()
+
+	var hostDeploymentsDir string
+	var err error
+	if detector == nil {
+		err = fmt.Errorf("host deployments directory detector is not configured")
+	} else {
+		detectionCtx, cancel := context.WithTimeout(ctx, hostDirDetectionTimeout)
+		hostDeploymentsDir, err = detector(detectionCtx)
+		cancel()
+	}
+
+	c.mu.Lock()
+	if err == nil {
+		c.hostDeploymentsDir = hostDeploymentsDir
+	}
+	c.hostDirDetectionPending = nil
+	close(pending)
+	c.mu.Unlock()
+
+	if err != nil {
+		c.log.Debug().Err(err).Msg("could not auto-detect host deployments directory")
+		return
+	}
+	c.log.Info().Str("host_deployments_dir", hostDeploymentsDir).Msg("auto-detected host deployments directory")
+}
+
 func (c *Client) pingDaemon() bool {
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
@@ -101,6 +163,7 @@ func (c *Client) pingDaemon() bool {
 		}
 		return false
 	}
+	c.resolveHostDeploymentsDir(c.ctx)
 
 	c.mu.Lock()
 	wasReady := c.ready
