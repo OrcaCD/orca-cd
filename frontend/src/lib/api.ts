@@ -62,11 +62,12 @@ async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit):
 
 export async function fetcher<JSON extends Record<string, any> | void = any>(
 	url: string,
-	method: "GET" | "POST" | "PUT" | "DELETE",
+	method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
 	data?: Record<string, any>,
 	additionalHeaders?: Record<string, string>,
 ) {
-	return await fetchWrapper<JSON>(API_BASE + url, {
+	const requestURL = url.startsWith(`${API_BASE}/`) ? url : API_BASE + url;
+	return await fetchWrapper<JSON>(requestURL, {
 		method,
 		headers: data
 			? { "Content-Type": "application/json", ...additionalHeaders }

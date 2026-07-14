@@ -76,7 +76,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-		applications.TriggerImagePull(&app)
+		applications.TriggerImagePull(&app, models.ApplicationEventSourceImageWebhook)
 		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
@@ -98,7 +98,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 
 	// Docker Hub payloads carry a push_data field; all Docker Hub webhooks are push events.
 	if isDockerHubPayload(body) {
-		applications.TriggerImagePull(&app)
+		applications.TriggerImagePull(&app, models.ApplicationEventSourceImageWebhook)
 		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
@@ -109,7 +109,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		return
 	}
 
-	applications.TriggerImagePull(&app)
+	applications.TriggerImagePull(&app, models.ApplicationEventSourceImageWebhook)
 	c.AbortWithStatus(http.StatusNoContent)
 }
 

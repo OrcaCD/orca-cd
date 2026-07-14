@@ -197,7 +197,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return
 		}
 
-		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), &hubApplications.Log)
+		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}, &hubApplications.Log)
 	}
 
 	// Todo
@@ -205,7 +205,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	// (even if compose file did not change)
 	if req.PullImages {
 		for i := range apps {
-			if !hubApplications.TriggerImagePull(&apps[i]) {
+			if !hubApplications.TriggerImagePull(&apps[i], models.ApplicationEventSourceGitHubActions) {
 				c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
 				return
 			}

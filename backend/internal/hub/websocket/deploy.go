@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
@@ -25,6 +26,10 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 	}
 
 	if result.Success {
+		// History reflects the Agent's deployment result independently of whether
+		// persisting the application's summary status succeeds.
+		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
+
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
@@ -51,6 +56,16 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		HealthStatus:  models.Unhealthy,
 		LastSyncError: &errMsg,
 	}, log)
+	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
+}
+
+func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {
+	matched, err := applicationevents.Complete(ctx, result.RequestId, result.ApplicationId, status, errorMessage)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to complete deployment event")
+	} else if !matched && result.RequestId != "" {
+		log.Warn().Str("applicationId", result.ApplicationId).Str("requestId", result.RequestId).Msg("deployment result did not match a running event")
+	}
 }
 
 func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {

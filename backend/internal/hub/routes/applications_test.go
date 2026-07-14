@@ -38,11 +38,13 @@ type stubRouteDeployer struct {
 	startErr    error
 	startedApp  string
 	startedWith string
+	requestID   string
 }
 
-func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
+func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error {
 	d.startedApp = app.Id
 	d.startedWith = composeFile
+	d.requestID = requestID
 	if d.startErr != nil {
 		return d.startErr
 	}
@@ -53,7 +55,7 @@ func setupTestDBWithApplications(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
 
-	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate dependencies: %v", err)
 	}
 
@@ -365,6 +367,9 @@ func TestCreateApplicationHandler_InvalidRequest(t *testing.T) {
 
 func TestCreateApplicationHandler_Success(t *testing.T) {
 	setupTestDBWithApplications(t)
+	deployer := &stubRouteDeployer{}
+	application_deployer.DefaultApplicationDeployer = deployer
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create")
 	agent := seedTestAgent(t, "agent-create")
@@ -457,6 +462,15 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	}
 	if stored.LastSyncedAt != nil {
 		t.Fatal("expected LastSyncedAt to be nil in DB")
+	}
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", deployer.requestID).First(t.Context())
+	if err != nil {
+		t.Fatalf("load initial deployment event: %v", err)
+	}
+	if event.Type != models.ApplicationEventDeployment ||
+		event.Source != models.ApplicationEventSourceApplicationCreated ||
+		event.ActorName == nil || *event.ActorName != "Test User" {
+		t.Fatalf("unexpected initial deployment event: %+v", event)
 	}
 }
 
@@ -1210,6 +1224,19 @@ func TestDeployApplicationHandler_Success(t *testing.T) {
 	}
 	if deployer.startedWith != seedComposeFileContent {
 		t.Fatalf("expected deployer compose file to match stored compose")
+	}
+	if deployer.requestID == "" {
+		t.Fatal("expected deployer request id")
+	}
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", deployer.requestID).First(t.Context())
+	if err != nil {
+		t.Fatalf("load deployment event: %v", err)
+	}
+	if event.Type != models.ApplicationEventDeployment ||
+		event.Source != models.ApplicationEventSourceManual ||
+		event.Status != models.ApplicationEventRunning ||
+		event.ActorName == nil || *event.ActorName != "Test User" {
+		t.Fatalf("unexpected manual deployment event: %+v", event)
 	}
 }
 

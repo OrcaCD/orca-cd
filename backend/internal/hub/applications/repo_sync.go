@@ -33,7 +33,7 @@ func LatestCommit(provider repositories.Provider, repo *models.Repository) Commi
 	}
 }
 
-func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.Logger) {
+func SyncRepository(ctx context.Context, repo *models.Repository, origin SyncOrigin, log *zerolog.Logger) {
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("unsupported provider for sync")
@@ -48,10 +48,10 @@ func SyncRepository(ctx context.Context, repo *models.Repository, log *zerolog.L
 		return
 	}
 
-	SyncApplications(ctx, repo, provider, apps, LatestCommit(provider, repo), log)
+	SyncApplications(ctx, repo, provider, apps, LatestCommit(provider, repo), origin, log)
 }
 
-func SyncApplications(ctx context.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, resolve CommitResolver, log *zerolog.Logger) {
+func SyncApplications(ctx context.Context, repo *models.Repository, provider repositories.Provider, apps []models.Application, resolve CommitResolver, origin SyncOrigin, log *zerolog.Logger) {
 	markRepositorySyncing(ctx, repo.Id, log)
 
 	byBranch := make(map[string][]models.Application)
@@ -73,13 +73,19 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 		if err != nil {
 			lastErrMsg = fmt.Sprintf("failed to resolve commit for branch %q: %v", branch, err)
 			log.Error().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("failed to resolve commit during sync")
+			for i := range branchApps {
+				recordSyncFailure(ctx, &branchApps[i], origin, "", "", lastErrMsg, log)
+			}
 			continue
 		}
 		if DefaultQueue != nil {
-			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message)
+			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message, origin)
 		} else {
 			log.Error().Str("repositoryId", repo.Id).Str("branch", branch).Msg("sync queue not initialized")
 			markRepositoryFailed(ctx, repo.Id, "sync queue not initialized", log)
+			for i := range branchApps {
+				recordSyncFailure(ctx, &branchApps[i], origin, hash, message, "sync queue not initialized", log)
+			}
 			return
 		}
 	}

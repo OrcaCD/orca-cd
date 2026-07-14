@@ -27,6 +27,7 @@ type mockRepoProvider struct {
 	getLatestCommitCalls []string
 	latestCommitResult   repositories.CommitInfo
 	latestCommitErr      error
+	onGetLatestCommit    func()
 }
 
 func (m *mockRepoProvider) ParseURL(_ string) (string, string, error)                    { return "", "", nil }
@@ -42,6 +43,9 @@ func (m *mockRepoProvider) GetFileContent(_ context.Context, _ *models.Repositor
 	return "", nil
 }
 func (m *mockRepoProvider) GetLatestCommit(_ context.Context, _ *models.Repository, branch string) (repositories.CommitInfo, error) {
+	if m.onGetLatestCommit != nil {
+		m.onGetLatestCommit()
+	}
 	m.getLatestCommitCalls = append(m.getLatestCommitCalls, branch)
 	return m.latestCommitResult, m.latestCommitErr
 }
@@ -798,7 +802,7 @@ func TestGenericWebhookResolve_CommitProvided_SkipsGetLatestCommit(t *testing.T)
 	provider := &mockRepoProvider{latestCommitResult: repositories.CommitInfo{Hash: "latest"}}
 	apps := []models.Application{{Branch: "main"}}
 
-	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.StaticCommit("provided-sha", ""), &applications.Log)
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.StaticCommit("provided-sha", ""), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 0 {
 		t.Errorf("expected GetLatestCommit not to be called, got %d calls", len(provider.getLatestCommitCalls))
@@ -814,7 +818,7 @@ func TestGenericWebhookResolve_NoCommit_FetchesLatestCommitPerBranch(t *testing.
 		{Branch: "develop"},
 	}
 
-	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), &applications.Log)
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 2 {
 		t.Errorf("expected 2 GetLatestCommit calls, got %d: %v", len(provider.getLatestCommitCalls), provider.getLatestCommitCalls)
@@ -831,7 +835,7 @@ func TestGenericWebhookResolve_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
 		{Branch: "main"},
 	}
 
-	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), &applications.Log)
+	applications.SyncApplications(context.Background(), &repo, provider, apps, applications.LatestCommit(provider, &repo), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
 	if len(provider.getLatestCommitCalls) != 1 {
 		t.Errorf("expected 1 GetLatestCommit call for same branch, got %d", len(provider.getLatestCommitCalls))

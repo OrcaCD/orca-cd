@@ -452,6 +452,7 @@ function LoginForm({
 							key={provider.id}
 							variant="outline"
 							className="w-full"
+							nativeButton={false}
 							render={
 								<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>
 									{m.continueWith({ providerName: provider.name })}

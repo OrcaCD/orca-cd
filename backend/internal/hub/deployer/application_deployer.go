@@ -3,12 +3,13 @@ package application_deployer
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -26,7 +27,7 @@ const (
 // ApplicationDeploymentManager dispatches a deploy to an agent. It is an interface
 // so route handlers can be tested with a stub.
 type ApplicationDeploymentManager interface {
-	TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error
+	TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error
 }
 
 type ApplicationDeployer struct {
@@ -47,9 +48,9 @@ var DefaultApplicationDeployer ApplicationDeploymentManager
 // agent is not connected.
 var ErrAgentOffline = errors.New("agent is not connected")
 
-func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile string) error {
+func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error {
 	req := &messages.DeployRequest{
-		RequestId:       uuid.NewString(),
+		RequestId:       requestID,
 		ApplicationId:   app.Id,
 		ApplicationName: app.Name.String(),
 		ComposeFile:     composeFile,
@@ -68,10 +69,24 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 			HealthStatus:  models.UnknownHealth,
 			LastSyncError: &errMsg,
 		}, d.log)
+		d.completeFailedEvent(ctx, requestID, app.Id, errMsg)
 		return ErrAgentOffline
 	}
 
-	return markDeploymentInProgress(ctx, app.Id, d.log)
+	if err := markDeploymentInProgress(ctx, app.Id, d.log); err != nil {
+		d.completeFailedEvent(ctx, requestID, app.Id, fmt.Sprintf("failed to mark deployment in progress: %v", err))
+		return err
+	}
+	return nil
+}
+
+func (d *ApplicationDeployer) completeFailedEvent(ctx context.Context, requestID, applicationID, message string) {
+	matched, err := applicationevents.Complete(ctx, requestID, applicationID, models.ApplicationEventFailed, &message)
+	if err != nil {
+		d.log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to complete application event")
+	} else if !matched {
+		d.log.Debug().Str("applicationId", applicationID).Str("requestId", requestID).Msg("no running application event matched deploy failure")
+	}
 }
 
 func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {
