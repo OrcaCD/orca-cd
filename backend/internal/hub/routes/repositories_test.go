@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ import (
 func setupTestDBWithRepos(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate Repository/Agent/Application: %v", err)
 	}
 }
@@ -1562,4 +1563,98 @@ func TestSyncRepositoryHandler_Accepted(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestSyncRepositoryHandler_ConflictRecordsFailedApplicationEvent(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	originalProvider, err := repositories.Get(models.GitHub)
+	if err != nil {
+		t.Fatalf("failed to get original GitHub provider: %v", err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	repositories.Register(models.GitHub, &mockRepoProvider{
+		onGetLatestCommit: func() {
+			close(started)
+			<-release
+		},
+		latestCommitResult: repositories.CommitInfo{Hash: "new-sha", Message: "new commit"},
+	})
+	t.Cleanup(func() { repositories.Register(models.GitHub, originalProvider) })
+
+	nop := zerolog.Nop()
+	poller := applications.NewPoller(&nop)
+	applications.DefaultPoller = poller
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		poller.Stop()
+		applications.DefaultPoller = nil
+	})
+
+	repo := models.Repository{
+		Name:       "GitHub Sync Conflict Repo",
+		Url:        "https://github.com/owner/conflict-repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+	agent := models.Agent{
+		Name:   crypto.EncryptedString("Test Agent"),
+		KeyId:  crypto.EncryptedString("test-agent-key"),
+		Status: models.AgentStatusOnline,
+	}
+	if err := db.DB.Select("*").Create(&agent).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+	app := models.Application{
+		Name:          crypto.EncryptedString("Test App"),
+		RepositoryId:  repo.Id,
+		AgentId:       agent.Id,
+		SyncStatus:    models.UnknownSync,
+		HealthStatus:  models.UnknownHealth,
+		Branch:        "main",
+		Commit:        "old-sha",
+		CommitMessage: "old commit",
+		Path:          "compose.yml",
+		ComposeFile:   crypto.EncryptedString("services: {}"),
+	}
+	if err := db.DB.Select("*").Create(&app).Error; err != nil {
+		t.Fatalf("failed to seed application: %v", err)
+	}
+
+	if accepted := poller.TriggerSync(&repo, applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling}); !accepted {
+		t.Fatal("expected first sync to be accepted")
+	}
+	<-started
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories/"+repo.Id+"/sync", nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+	SyncRepositoryHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	events, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("application_id = ?", app.Id).Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application events: %v", err)
+	}
+	if len(events) != 1 || events[0].Status != models.ApplicationEventFailed ||
+		events[0].Source != models.ApplicationEventSourceManual {
+		t.Fatalf("expected one failed manual sync event, got %+v", events)
+	}
+
+	close(release)
+	poller.Stop()
 }

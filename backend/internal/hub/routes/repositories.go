@@ -548,7 +548,16 @@ func SyncRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	applications.DefaultPoller.TriggerSync(&repo)
+	actorUserID, actorName := eventActor(c)
+	accepted := applications.DefaultPoller.TriggerSync(&repo, applications.SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
+	if !accepted {
+		c.JSON(http.StatusConflict, gin.H{"error": "repository sync already in progress"})
+		return
+	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "sync triggered"})
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -44,7 +45,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -89,7 +90,7 @@ func TestTriggerApplicationDeploy_AgentConnected_MarksSyncingAndSends(t *testing
 	sender := &mockSender{connected: true}
 	d := NewApplicationDeployer(sender, &nop)
 
-	if err := d.TriggerApplicationDeploy(context.Background(), &app, "version: '3.9'\n"); err != nil {
+	if err := d.TriggerApplicationDeploy(context.Background(), &app, "version: '3.9'\n", "request-connected"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -101,6 +102,9 @@ func TestTriggerApplicationDeploy_AgentConnected_MarksSyncingAndSends(t *testing
 	}
 	if got := sender.sent.GetDeployRequest().ApplicationId; got != app.Id {
 		t.Errorf("expected DeployRequest for app %q, got %q", app.Id, got)
+	}
+	if got := sender.sent.GetDeployRequest().RequestId; got != "request-connected" {
+		t.Errorf("expected request id %q, got %q", "request-connected", got)
 	}
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
@@ -120,7 +124,16 @@ func TestTriggerApplicationDeploy_AgentNotConnected_MarksOutOfSync(t *testing.T)
 	sender := &mockSender{connected: false}
 	d := NewApplicationDeployer(sender, &nop)
 
-	err := d.TriggerApplicationDeploy(context.Background(), &app, "version: '3.9'\n")
+	requestID := "request-offline"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	err := d.TriggerApplicationDeploy(context.Background(), &app, "version: '3.9'\n", requestID)
 	if err == nil {
 		t.Fatal("expected error when agent not connected")
 	}
@@ -131,5 +144,12 @@ func TestTriggerApplicationDeploy_AgentNotConnected_MarksOutOfSync(t *testing.T)
 	}
 	if updated.SyncStatus != models.OutOfSync {
 		t.Errorf("expected SyncStatus %q, got %q", models.OutOfSync, updated.SyncStatus)
+	}
+	event, eventErr := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if eventErr != nil {
+		t.Fatalf("load application event: %v", eventErr)
+	}
+	if event.Status != models.ApplicationEventFailed || event.CompletedAt == nil {
+		t.Fatalf("offline event not failed: %+v", event)
 	}
 }

@@ -4,12 +4,22 @@ import (
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/rs/zerolog"
+	"gorm.io/gorm"
 )
 
+func seedImagePullApp(t *testing.T, agentID string) *models.Application {
+	t.Helper()
+	repo := seedRepo(t)
+	app := seedApp(t, repo.Id, agentID, "services: {}\n")
+	return &app
+}
+
 func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
+	setupTestDB(t)
 	log := zerolog.Nop()
 	hub := hubws.NewHub(&log)
 	hubws.DefaultHub = hub
@@ -26,7 +36,7 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 	app.AgentId = agentID
 	app.Name = crypto.EncryptedString("my-app")
 
-	if !TriggerImagePull(app) {
+	if !TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
 		t.Error("expected TriggerImagePull to return true for connected agent")
 	}
 
@@ -45,34 +55,71 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 		if req.RequestId == "" {
 			t.Error("expected non-empty request_id")
 		}
+
+		// The dispatched request ID correlates with a running image_update event.
+		event, err := gorm.G[models.ApplicationEvent](db.DB).
+			Where("request_id = ?", req.RequestId).First(t.Context())
+		if err != nil {
+			t.Fatalf("failed to load image update event: %v", err)
+		}
+		if event.Type != models.ApplicationEventImageUpdate ||
+			event.Source != models.ApplicationEventSourceImageWebhook ||
+			event.Status != models.ApplicationEventRunning {
+			t.Fatalf("unexpected image update event: %+v", event)
+		}
 	default:
 		t.Error("expected a message to be queued on the agent's Send channel")
 	}
 }
 
-func TestTriggerImagePull_AgentNotConnected_ReturnsFalse(t *testing.T) {
+func TestTriggerImagePull_AgentNotConnected_ReturnsFalseAndFailsEvent(t *testing.T) {
+	setupTestDB(t)
 	log := zerolog.Nop()
 	hub := hubws.NewHub(&log)
 	hubws.DefaultHub = hub
 	t.Cleanup(func() { hubws.DefaultHub = nil })
 
-	app := &models.Application{}
-	app.AgentId = "non-existent-agent"
-	app.Name = crypto.EncryptedString("my-app")
+	agent := seedAgent(t)
+	app := seedImagePullApp(t, agent.Id)
 
-	if TriggerImagePull(app) {
+	if TriggerImagePull(app, models.ApplicationEventSourceGitHubActions) {
 		t.Error("expected TriggerImagePull to return false for disconnected agent")
+	}
+
+	events, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("application_id = ?", app.Id).Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	event := events[0]
+	if event.Type != models.ApplicationEventImageUpdate ||
+		event.Source != models.ApplicationEventSourceGitHubActions ||
+		event.Status != models.ApplicationEventFailed ||
+		event.ErrorMessage == nil {
+		t.Fatalf("expected failed github_actions image event with error, got %+v", event)
 	}
 }
 
-func TestTriggerImagePull_HubNil_ReturnsFalse(t *testing.T) {
+func TestTriggerImagePull_HubNil_ReturnsFalseAndFailsEvent(t *testing.T) {
+	setupTestDB(t)
 	hubws.DefaultHub = nil
 
-	app := &models.Application{}
-	app.AgentId = "agent-1"
-	app.Name = crypto.EncryptedString("my-app")
+	agent := seedAgent(t)
+	app := seedImagePullApp(t, agent.Id)
 
-	if TriggerImagePull(app) {
+	if TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
 		t.Error("expected TriggerImagePull to return false when hub is nil")
+	}
+
+	event, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("application_id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load event: %v", err)
+	}
+	if event.Status != models.ApplicationEventFailed {
+		t.Fatalf("expected failed event when hub is nil, got %+v", event)
 	}
 }

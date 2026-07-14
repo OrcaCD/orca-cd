@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -36,7 +37,7 @@ func setupDeployTestEnv(t *testing.T) {
 	}
 	// Application + Notification create the application_notifications join table that
 	// SendNotification queries, so the notification path runs cleanly (no rows).
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -52,13 +53,13 @@ func setupDeployTestEnv(t *testing.T) {
 	db.DB = testDB
 }
 
-func seedDeployApp(t *testing.T, syncStatus models.SyncStatus, healthStatus models.HealthStatus) models.Application {
+func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
 	t.Helper()
 	app := models.Application{
 		Name:         crypto.EncryptedString("test-app"),
 		AgentId:      "agent-1",
 		SyncStatus:   syncStatus,
-		HealthStatus: healthStatus,
+		HealthStatus: models.UnknownHealth,
 		Branch:       "main",
 		Path:         "deploy.yml",
 		ComposeFile:  crypto.EncryptedString("version: '3.9'\n"),
@@ -71,7 +72,7 @@ func seedDeployApp(t *testing.T, syncStatus models.SyncStatus, healthStatus mode
 
 func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
 	handleDeployResult(&messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
@@ -91,9 +92,49 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	}
 }
 
+func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	requestID := "deploy-request"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	nop := zerolog.Nop()
+	handleDeployResult(&messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil || event.Status != models.ApplicationEventSucceeded {
+		t.Fatalf("event=%+v err=%v", event, err)
+	}
+}
+
+func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	requestID := "expected-request"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	nop := zerolog.Nop()
+	handleDeployResult(&messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil || event.Status != models.ApplicationEventRunning {
+		t.Fatalf("event=%+v err=%v", event, err)
+	}
+}
+
 func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing, models.UnknownHealth)
+	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
 	handleDeployResult(&messages.DeployResult{
@@ -119,7 +160,7 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 
 func TestUpdateApplicationStatus_AppliesUpdate(t *testing.T) {
 	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.UnknownSync, models.UnknownHealth)
+	app := seedDeployApp(t, models.UnknownSync)
 	nop := zerolog.Nop()
 
 	err := updateApplicationStatus(context.Background(), app.Id, models.Application{

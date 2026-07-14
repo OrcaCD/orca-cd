@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -129,24 +130,7 @@ func Run(cfg Config) error {
 		_ = db.Close()
 	}()
 
-	// Reset repositories stuck in syncing status from a previous crash.
-	resetSyncStatus := db.DB.WithContext(context.Background()).
-		Model(&models.Repository{}).
-		Where("sync_status = ?", models.SyncStatusSyncing).
-		Update("sync_status", models.SyncStatusUnknown)
-	if resetSyncStatus.Error != nil {
-		Log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
-	}
-
-	// Reset applications stuck in syncing status from a previous crash, so a
-	// deploy interrupted by a hub or agent restart does not spin forever.
-	resetAppSyncStatus := db.DB.WithContext(context.Background()).
-		Model(&models.Application{}).
-		Where("sync_status = ?", models.Syncing).
-		Update("sync_status", models.OutOfSync)
-	if resetAppSyncStatus.Error != nil {
-		Log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
-	}
+	recoverInterruptedState(context.Background(), &Log)
 
 	applications.DefaultQueue = applications.NewQueue(&Log)
 	applications.DefaultQueue.Start()
@@ -229,4 +213,35 @@ func Run(cfg Config) error {
 
 	Log.Info().Msg("hub stopped")
 	return nil
+}
+
+// recoverInterruptedState resets repositories, applications, and history events
+// left mid-operation by a previous crash or restart. Failures are logged and do
+// not block startup. No SSE update is published: clients are not connected yet.
+func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
+	// Reset repositories stuck in syncing status from a previous crash.
+	resetSyncStatus := db.DB.WithContext(ctx).
+		Model(&models.Repository{}).
+		Where("sync_status = ?", models.SyncStatusSyncing).
+		Update("sync_status", models.SyncStatusUnknown)
+	if resetSyncStatus.Error != nil {
+		log.Warn().Err(resetSyncStatus.Error).Msg("failed to reset repositories stuck in syncing status")
+	}
+
+	// Reset applications stuck in syncing status from a previous crash, so a
+	// deploy interrupted by a hub or agent restart does not spin forever.
+	resetAppSyncStatus := db.DB.WithContext(ctx).
+		Model(&models.Application{}).
+		Where("sync_status = ?", models.Syncing).
+		Update("sync_status", models.OutOfSync)
+	if resetAppSyncStatus.Error != nil {
+		log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
+	}
+
+	recovered, err := applicationevents.RecoverRunning(ctx, "hub restarted before the operation result was received")
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to recover interrupted application events")
+	} else if recovered > 0 {
+		log.Info().Int64("count", recovered).Msg("marked interrupted application events as failed")
+	}
 }

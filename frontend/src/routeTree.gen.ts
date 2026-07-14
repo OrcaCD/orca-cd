@@ -30,6 +30,7 @@ import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_a
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
+import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
 import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
 import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
@@ -156,6 +157,12 @@ const AuthenticatedApplicationsIdIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdHistoryRoute =
+  AuthenticatedApplicationsIdHistoryRouteImport.update({
+    id: '/history',
+    path: '/history',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedApplicationsIdDetailsRoute =
   AuthenticatedApplicationsIdDetailsRouteImport.update({
     id: '/details',
@@ -219,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -244,6 +252,7 @@ export interface FileRoutesByTo {
   '/repositories': typeof AuthenticatedRepositoriesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -275,6 +284,7 @@ export interface FileRoutesById {
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/_authenticated/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -306,6 +316,7 @@ export interface FileRouteTypes {
     | '/repositories/'
     | '/settings/'
     | '/applications/$id/details'
+    | '/applications/$id/history'
     | '/applications/$id/'
     | '/repositories/$id/'
     | '/applications/$id/settings/general'
@@ -331,6 +342,7 @@ export interface FileRouteTypes {
     | '/repositories'
     | '/settings'
     | '/applications/$id/details'
+    | '/applications/$id/history'
     | '/applications/$id'
     | '/repositories/$id'
     | '/applications/$id/settings/general'
@@ -361,6 +373,7 @@ export interface FileRouteTypes {
     | '/_authenticated/repositories/'
     | '/_authenticated/settings/'
     | '/_authenticated/applications/$id/details'
+    | '/_authenticated/applications/$id/history'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/repositories/$id/'
     | '/_authenticated/applications/$id/settings/general'
@@ -525,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdIndexRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/history': {
+      id: '/_authenticated/applications/$id/history'
+      path: '/history'
+      fullPath: '/applications/$id/history'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdHistoryRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/applications/$id/details': {
       id: '/_authenticated/applications/$id/details'
       path: '/details'
@@ -615,6 +635,7 @@ const AuthenticatedSettingsRouteWithChildren =
 
 interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdDetailsRoute: typeof AuthenticatedApplicationsIdDetailsRoute
+  AuthenticatedApplicationsIdHistoryRoute: typeof AuthenticatedApplicationsIdHistoryRoute
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   AuthenticatedApplicationsIdSettingsImagePollingRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
@@ -625,6 +646,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
   {
     AuthenticatedApplicationsIdDetailsRoute:
       AuthenticatedApplicationsIdDetailsRoute,
+    AuthenticatedApplicationsIdHistoryRoute:
+      AuthenticatedApplicationsIdHistoryRoute,
     AuthenticatedApplicationsIdIndexRoute:
       AuthenticatedApplicationsIdIndexRoute,
     AuthenticatedApplicationsIdSettingsGeneralRoute:

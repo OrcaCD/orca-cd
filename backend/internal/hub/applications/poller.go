@@ -13,6 +13,8 @@ import (
 
 const pollerCheckInterval = 30 * time.Second
 
+const repositorySyncInProgressMessage = "repository sync already in progress"
+
 var DefaultPoller *Poller
 
 type Poller struct {
@@ -78,27 +80,47 @@ func (p *Poller) pollRepositories() {
 	now := time.Now()
 	for i := range repos {
 		if isDue(&repos[i], now) {
-			p.TriggerSync(&repos[i])
+			p.TriggerSync(&repos[i], SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
 		}
 	}
 }
 
-// TriggerSync initiates an async sync for the given repository. If a sync for this
-// repository is already in progress it is silently skipped.
-func (p *Poller) TriggerSync(repo *models.Repository) {
+// TriggerSync initiates an async sync for the given repository and reports whether
+// it was accepted. Duplicate scheduled polls remain silent; rejected manual syncs
+// are recorded in each affected application's history.
+func (p *Poller) TriggerSync(repo *models.Repository, origin SyncOrigin) bool {
 	if db.DB == nil {
-		return
+		return false
 	}
 	if _, loaded := p.syncing.LoadOrStore(repo.Id, struct{}{}); loaded {
-		return
+		if origin.Source == models.ApplicationEventSourceManual {
+			p.recordManualSyncConflict(repo, origin)
+		}
+		return false
 	}
 	repoCopy := *repo
 	p.wg.Go(func() {
 		defer p.syncing.Delete(repoCopy.Id)
 		ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
 		defer cancel()
-		SyncRepository(ctx, &repoCopy, p.log)
+		SyncRepository(ctx, &repoCopy, origin, p.log)
 	})
+	return true
+}
+
+func (p *Poller) recordManualSyncConflict(repo *models.Repository, origin SyncOrigin) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	apps, err := GetAllApplicationsForRepo(ctx, repo)
+	if err != nil {
+		p.log.Error().Err(err).Str("repositoryId", repo.Id).
+			Msg("failed to load applications for rejected manual sync")
+		return
+	}
+	for i := range apps {
+		recordSyncFailure(ctx, &apps[i], origin, "", "", repositorySyncInProgressMessage, p.log)
+	}
 }
 
 // isDue reports whether a polling repository should be synced right now.
