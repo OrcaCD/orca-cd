@@ -3,12 +3,26 @@ package docker
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+type observedDoneContext struct {
+	context.Context
+	doneObserved chan struct{}
+	once         sync.Once
+}
+
+func (c *observedDoneContext) Done() <-chan struct{} {
+	c.once.Do(func() {
+		close(c.doneObserved)
+	})
+	return c.Context.Done()
+}
 
 func TestResolveHostDeploymentsDirUsesDetectedPath(t *testing.T) {
 	calls := 0
@@ -53,6 +67,33 @@ func TestResolveHostDeploymentsDirRetriesAfterFailure(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("detector calls = %d, want 2", calls)
+	}
+}
+
+func TestResolveHostDeploymentsDirCachesHostExecution(t *testing.T) {
+	calls := 0
+	c := &Client{
+		log: zerolog.Nop(),
+		detectHostDeploymentsDir: func(context.Context) (string, error) {
+			calls++
+			return "", errNotContainerized
+		},
+	}
+
+	c.resolveHostDeploymentsDir(t.Context())
+	c.resolveHostDeploymentsDir(t.Context())
+
+	if calls != 1 {
+		t.Errorf("detector calls = %d, want 1", calls)
+	}
+	if got := c.hostDeploymentsBase(); got != "" {
+		t.Errorf("host deployments dir = %q, want empty", got)
+	}
+}
+
+func TestRunHostDeploymentsDirDetectionRequiresDetector(t *testing.T) {
+	if _, err := runHostDeploymentsDirDetection(t.Context(), nil); err == nil {
+		t.Fatal("expected missing detector error")
 	}
 }
 
@@ -101,6 +142,151 @@ func TestResolveHostDeploymentsDirCoalescesConcurrentCalls(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("detector calls = %d, want 1", got)
+	}
+}
+
+func TestResolveHostDeploymentsDirWaiterRetriesAfterTransientFailure(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	c := &Client{
+		log: zerolog.Nop(),
+		detectHostDeploymentsDir: func(context.Context) (string, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+				<-release
+				return "", errors.New("temporary inspect failure")
+			}
+			return "/srv/orcacd/deployments", nil
+		},
+	}
+
+	ownerDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(t.Context())
+		close(ownerDone)
+	}()
+	<-started
+
+	waiterCtx := &observedDoneContext{Context: t.Context(), doneObserved: make(chan struct{})}
+	waiterDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(waiterCtx)
+		close(waiterDone)
+	}()
+	<-waiterCtx.doneObserved
+
+	close(release)
+	for _, done := range []<-chan struct{}{ownerDone, waiterDone} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("resolver did not finish")
+		}
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("detector calls = %d, want 2", got)
+	}
+	if got := c.hostDeploymentsBase(); got != "/srv/orcacd/deployments" {
+		t.Errorf("host deployments dir = %q, want detected path", got)
+	}
+}
+
+func TestResolveHostDeploymentsDirWaiterRetriesAfterOwnerCancellation(t *testing.T) {
+	started := make(chan struct{})
+	var calls atomic.Int32
+	c := &Client{
+		log: zerolog.Nop(),
+		detectHostDeploymentsDir: func(ctx context.Context) (string, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+				<-ctx.Done()
+				return "", ctx.Err()
+			}
+			return "/srv/orcacd/deployments", nil
+		},
+	}
+
+	ownerCtx, cancelOwner := context.WithCancel(t.Context())
+	ownerDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(ownerCtx)
+		close(ownerDone)
+	}()
+	<-started
+
+	waiterCtx := &observedDoneContext{Context: t.Context(), doneObserved: make(chan struct{})}
+	waiterDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(waiterCtx)
+		close(waiterDone)
+	}()
+	<-waiterCtx.doneObserved
+	cancelOwner()
+
+	for _, done := range []<-chan struct{}{ownerDone, waiterDone} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("resolver did not finish")
+		}
+	}
+	if got := calls.Load(); got != 2 {
+		t.Errorf("detector calls = %d, want 2", got)
+	}
+	if got := c.hostDeploymentsBase(); got != "/srv/orcacd/deployments" {
+		t.Errorf("host deployments dir = %q, want detected path", got)
+	}
+}
+
+func TestResolveHostDeploymentsDirCanceledWaiterReturnsWithoutCancelingOwner(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	c := &Client{
+		log: zerolog.Nop(),
+		detectHostDeploymentsDir: func(context.Context) (string, error) {
+			calls.Add(1)
+			close(started)
+			<-release
+			return "/srv/orcacd/deployments", nil
+		},
+	}
+
+	ownerDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(t.Context())
+		close(ownerDone)
+	}()
+	<-started
+
+	baseWaiterCtx, cancelWaiter := context.WithCancel(t.Context())
+	waiterCtx := &observedDoneContext{Context: baseWaiterCtx, doneObserved: make(chan struct{})}
+	waiterDone := make(chan struct{})
+	go func() {
+		c.resolveHostDeploymentsDir(waiterCtx)
+		close(waiterDone)
+	}()
+	<-waiterCtx.doneObserved
+	cancelWaiter()
+
+	select {
+	case <-waiterDone:
+	case <-time.After(time.Second):
+		t.Fatal("canceled waiter did not return")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("detector calls = %d, want 1", got)
+	}
+
+	close(release)
+	select {
+	case <-ownerDone:
+	case <-time.After(time.Second):
+		t.Fatal("owner did not finish")
+	}
+	if got := c.hostDeploymentsBase(); got != "/srv/orcacd/deployments" {
+		t.Errorf("host deployments dir = %q, want detected path", got)
 	}
 }
 

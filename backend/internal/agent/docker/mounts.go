@@ -2,8 +2,11 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -12,101 +15,91 @@ import (
 	"github.com/moby/moby/client"
 )
 
+var (
+	errNotContainerized = errors.New("agent is not running in a Docker container")
+	containerIDPattern  = regexp.MustCompile(`(?:^|[-/])([0-9a-f]{64})(?:\.scope)?(?:$|/)`)
+	mountRootPattern    = regexp.MustCompile(`(?:^|/)containers/([0-9a-f]{64})/(?:hostname|hosts|resolv\.conf)$`)
+)
+
+func detectContainerID(readFile func(string) ([]byte, error)) (string, error) {
+	cgroup, cgroupErr := readFile("/proc/self/cgroup")
+	if cgroupErr == nil {
+		if id := containerIDFromCgroup(cgroup); id != "" {
+			return id, nil
+		}
+	}
+
+	mountInfo, mountInfoErr := readFile("/proc/self/mountinfo")
+	if mountInfoErr == nil {
+		if id := containerIDFromMountInfo(mountInfo); id != "" {
+			return id, nil
+		}
+	}
+
+	if cgroupErr != nil && !errors.Is(cgroupErr, os.ErrNotExist) {
+		return "", fmt.Errorf("read /proc/self/cgroup: %w", cgroupErr)
+	}
+	if mountInfoErr != nil && !errors.Is(mountInfoErr, os.ErrNotExist) {
+		return "", fmt.Errorf("read /proc/self/mountinfo: %w", mountInfoErr)
+	}
+	return "", errNotContainerized
+}
+
+func containerIDFromCgroup(data []byte) string {
+	for line := range strings.Lines(string(data)) {
+		match := containerIDPattern.FindStringSubmatch(strings.TrimSpace(line))
+		if len(match) == 2 {
+			return match[1]
+		}
+	}
+	return ""
+}
+
+func containerIDFromMountInfo(data []byte) string {
+	for line := range strings.Lines(string(data)) {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		switch fields[4] {
+		case "/etc/hostname", "/etc/hosts", "/etc/resolv.conf":
+		default:
+			continue
+		}
+		match := mountRootPattern.FindStringSubmatch(fields[3])
+		if len(match) == 2 {
+			return match[1]
+		}
+	}
+	return ""
+}
+
 type containerInspector interface {
 	ContainerInspect(context.Context, string, client.ContainerInspectOptions) (client.ContainerInspectResult, error)
-	ContainerList(context.Context, client.ContainerListOptions) (client.ContainerListResult, error)
 }
 
 func detectHostDeploymentsDir(
 	ctx context.Context,
 	inspector containerInspector,
-	hostname func() (string, error),
+	containerID func() (string, error),
 	deploymentsDir string,
 ) (string, error) {
-	containerID, err := hostname()
+	id, err := containerID()
 	if err != nil {
-		return "", fmt.Errorf("get agent container hostname: %w", err)
+		return "", fmt.Errorf("identify agent container: %w", err)
 	}
-	containerID = strings.TrimSpace(containerID)
-	if containerID == "" {
-		return "", fmt.Errorf("agent container hostname is empty")
-	}
-
-	target := filepath.Clean(deploymentsDir)
-	result, directErr := inspector.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
-	if directErr == nil {
-		if strings.HasPrefix(result.Container.ID, containerID) {
-			hostSource, mountErr := hostBindSource(result.Container.Mounts, target)
-			if mountErr == nil {
-				return hostSource, nil
-			}
-			directErr = mountErr
-		} else {
-			directErr = fmt.Errorf(
-				"inspected container ID %q does not match agent hostname %q",
-				result.Container.ID,
-				containerID,
-			)
-		}
+	if id == "" {
+		return "", fmt.Errorf("agent container ID is empty")
 	}
 
-	containers, err := inspector.ContainerList(ctx, client.ContainerListOptions{})
+	result, err := inspector.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
-		return "", fmt.Errorf("inspect agent container %q: %v; list running containers: %w", containerID, directErr, err)
+		return "", fmt.Errorf("inspect agent container %q: %w", id, err)
 	}
-
-	type candidate struct {
-		id         string
-		hostSource string
+	if result.Container.ID != id {
+		return "", fmt.Errorf("inspected container ID %q does not match agent container ID %q", result.Container.ID, id)
 	}
-	var candidates []candidate
-	var candidateErr error
-	for _, summary := range containers.Items {
-		if !hasMountDestination(summary.Mounts, target) {
-			continue
-		}
-
-		candidateResult, err := inspector.ContainerInspect(ctx, summary.ID, client.ContainerInspectOptions{})
-		if err != nil {
-			candidateErr = fmt.Errorf("inspect candidate container %q: %w", summary.ID, err)
-			continue
-		}
-		if candidateResult.Container.Config == nil || candidateResult.Container.Config.Hostname != containerID {
-			continue
-		}
-
-		hostSource, err := hostBindSource(candidateResult.Container.Mounts, target)
-		if err != nil {
-			candidateErr = err
-			continue
-		}
-		candidates = append(candidates, candidate{id: summary.ID, hostSource: hostSource})
-	}
-
-	switch len(candidates) {
-	case 1:
-		return candidates[0].hostSource, nil
-	case 0:
-		if candidateErr != nil {
-			return "", fmt.Errorf("identify agent container with hostname %q: direct lookup failed: %v; candidate lookup failed: %w", containerID, directErr, candidateErr)
-		}
-		return "", fmt.Errorf("identify agent container with hostname %q: direct lookup failed: %v; no matching running container", containerID, directErr)
-	default:
-		candidateIDs := make([]string, 0, len(candidates))
-		for _, match := range candidates {
-			candidateIDs = append(candidateIDs, match.id)
-		}
-		return "", fmt.Errorf("identify agent container with hostname %q: multiple matching containers: %s", containerID, strings.Join(candidateIDs, ", "))
-	}
-}
-
-func hasMountDestination(mountPoints []containerapi.MountPoint, target string) bool {
-	for _, mountPoint := range mountPoints {
-		if filepath.Clean(mountPoint.Destination) == target {
-			return true
-		}
-	}
-	return false
+	return hostBindSource(result.Container.Mounts, filepath.Clean(deploymentsDir))
 }
 
 func hostBindSource(mountPoints []containerapi.MountPoint, target string) (string, error) {

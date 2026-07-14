@@ -3,6 +3,8 @@ package docker
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -11,42 +13,156 @@ import (
 	"github.com/moby/moby/client"
 )
 
+const testContainerID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func TestDetectContainerID(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string][]byte
+		want  string
+	}{
+		{
+			name: "cgroup v2 systemd scope",
+			files: map[string][]byte{
+				"/proc/self/cgroup": []byte("0::/system.slice/docker-" + testContainerID + ".scope\n"),
+			},
+			want: testContainerID,
+		},
+		{
+			name: "cgroup v1 docker path",
+			files: map[string][]byte{
+				"/proc/self/cgroup": []byte("12:memory:/docker/" + testContainerID + "\n"),
+			},
+			want: testContainerID,
+		},
+		{
+			name: "mountinfo fallback",
+			files: map[string][]byte{
+				"/proc/self/cgroup": []byte("0::/\n"),
+				"/proc/self/mountinfo": []byte(
+					"100 99 8:1 /docker/containers/" + testContainerID + "/hostname /etc/hostname rw,relatime - ext4 /dev/sda rw\n",
+				),
+			},
+			want: testContainerID,
+		},
+		{
+			name: "host process",
+			files: map[string][]byte{
+				"/proc/self/cgroup":    []byte("0::/user.slice/user-1000.slice/session-2.scope\n"),
+				"/proc/self/mountinfo": []byte("29 1 8:1 / / rw,relatime - ext4 /dev/sda rw\n"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := detectContainerID(func(path string) ([]byte, error) {
+				if data, ok := tt.files[path]; ok {
+					return data, nil
+				}
+				return nil, os.ErrNotExist
+			})
+			if tt.want == "" {
+				if !errors.Is(err, errNotContainerized) {
+					t.Fatalf("detectContainerID() error = %v, want errNotContainerized", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("detectContainerID: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("detectContainerID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectContainerIDWithoutProcIsNotContainerized(t *testing.T) {
+	_, err := detectContainerID(func(string) ([]byte, error) {
+		return nil, os.ErrNotExist
+	})
+	if !errors.Is(err, errNotContainerized) {
+		t.Fatalf("detectContainerID() error = %v, want errNotContainerized", err)
+	}
+}
+
+func TestDetectContainerIDReadErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		readErr map[string]error
+		want    string
+	}{
+		{
+			name: "cgroup",
+			readErr: map[string]error{
+				"/proc/self/cgroup": errors.New("permission denied"),
+			},
+			want: "/proc/self/cgroup",
+		},
+		{
+			name: "mountinfo",
+			readErr: map[string]error{
+				"/proc/self/mountinfo": errors.New("permission denied"),
+			},
+			want: "/proc/self/mountinfo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := detectContainerID(func(path string) ([]byte, error) {
+				if err, ok := tt.readErr[path]; ok {
+					return nil, err
+				}
+				return []byte("0::/\n"), nil
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("detectContainerID() error = %v, want path %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainerIDParsersRejectNonDockerData(t *testing.T) {
+	if got := containerIDFromCgroup([]byte("0::/docker/0123456789ab\n")); got != "" {
+		t.Fatalf("containerIDFromCgroup() = %q, want empty", got)
+	}
+	mountInfo := []byte("100 99 8:1 /home/user/hostname /etc/hostname rw - ext4 /dev/sda rw\n")
+	if got := containerIDFromMountInfo(mountInfo); got != "" {
+		t.Fatalf("containerIDFromMountInfo() = %q, want empty", got)
+	}
+	if got := containerIDFromMountInfo([]byte("malformed\n")); got != "" {
+		t.Fatalf("containerIDFromMountInfo() malformed = %q, want empty", got)
+	}
+}
+
 type fakeContainerInspector struct {
-	result       client.ContainerInspectResult
-	err          error
-	inspect      func(string) (client.ContainerInspectResult, error)
-	listResult   client.ContainerListResult
-	listErr      error
-	calls        int
-	listCalls    int
-	gotID        string
-	inspectedIDs []string
+	result client.ContainerInspectResult
+	err    error
+	calls  int
+	gotID  string
 }
 
 func (f *fakeContainerInspector) ContainerInspect(_ context.Context, containerID string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
 	f.calls++
 	f.gotID = containerID
-	f.inspectedIDs = append(f.inspectedIDs, containerID)
-	if f.inspect != nil {
-		return f.inspect(containerID)
-	}
 	return f.result, f.err
 }
 
-func (f *fakeContainerInspector) ContainerList(_ context.Context, _ client.ContainerListOptions) (client.ContainerListResult, error) {
-	f.listCalls++
-	return f.listResult, f.listErr
-}
-
-func TestDetectHostDeploymentsDir(t *testing.T) {
+func TestDetectHostDeploymentsDirUsesExactContainerID(t *testing.T) {
 	inspector := &fakeContainerInspector{result: client.ContainerInspectResult{
-		Container: containerapi.InspectResponse{ID: "abc123def4567890", Mounts: []containerapi.MountPoint{
-			{Type: mount.TypeBind, Source: "/srv/orcacd/deployments", Destination: "/deployments/"},
-		}},
+		Container: containerapi.InspectResponse{
+			ID:     testContainerID,
+			Config: &containerapi.Config{Hostname: "custom-agent-hostname"},
+			Mounts: []containerapi.MountPoint{
+				{Type: mount.TypeBind, Source: "/srv/orcacd/deployments", Destination: "/deployments/"},
+			},
+		},
 	}}
 
 	got, err := detectHostDeploymentsDir(t.Context(), inspector, func() (string, error) {
-		return "abc123def456", nil
+		return testContainerID, nil
 	}, "/deployments")
 	if err != nil {
 		t.Fatalf("detectHostDeploymentsDir: %v", err)
@@ -54,142 +170,62 @@ func TestDetectHostDeploymentsDir(t *testing.T) {
 	if got != "/srv/orcacd/deployments" {
 		t.Errorf("host deployments dir = %q, want %q", got, "/srv/orcacd/deployments")
 	}
-	if inspector.calls != 1 || inspector.gotID != "abc123def456" {
+	if inspector.calls != 1 || inspector.gotID != testContainerID {
 		t.Errorf("ContainerInspect calls = %d, id = %q", inspector.calls, inspector.gotID)
-	}
-	if inspector.listCalls != 0 {
-		t.Errorf("ContainerList calls = %d, want 0", inspector.listCalls)
-	}
-}
-
-func TestDetectHostDeploymentsDirFallsBackForCustomHostname(t *testing.T) {
-	inspector := &fakeContainerInspector{
-		listResult: client.ContainerListResult{Items: []containerapi.Summary{
-			{
-				ID: "real-container-id",
-				Mounts: []containerapi.MountPoint{
-					{Type: mount.TypeBind, Source: "/srv/orcacd/deployments", Destination: "/deployments"},
-				},
-			},
-		}},
-		inspect: func(containerID string) (client.ContainerInspectResult, error) {
-			switch containerID {
-			case "custom-agent-hostname":
-				return client.ContainerInspectResult{}, errors.New("container not found")
-			case "real-container-id":
-				return client.ContainerInspectResult{Container: containerapi.InspectResponse{
-					Config: &containerapi.Config{Hostname: "custom-agent-hostname"},
-					Mounts: []containerapi.MountPoint{
-						{Type: mount.TypeBind, Source: "/srv/orcacd/deployments", Destination: "/deployments"},
-					},
-				}}, nil
-			default:
-				return client.ContainerInspectResult{}, errors.New("unexpected container")
-			}
-		},
-	}
-
-	got, err := detectHostDeploymentsDir(t.Context(), inspector, func() (string, error) {
-		return "custom-agent-hostname", nil
-	}, "/deployments")
-	if err != nil {
-		t.Fatalf("detectHostDeploymentsDir: %v", err)
-	}
-	if got != "/srv/orcacd/deployments" {
-		t.Errorf("host deployments dir = %q, want %q", got, "/srv/orcacd/deployments")
-	}
-	if inspector.listCalls != 1 {
-		t.Errorf("ContainerList calls = %d, want 1", inspector.listCalls)
-	}
-	if len(inspector.inspectedIDs) != 2 || inspector.inspectedIDs[0] != "custom-agent-hostname" || inspector.inspectedIDs[1] != "real-container-id" {
-		t.Errorf("inspected container ids = %#v", inspector.inspectedIDs)
-	}
-}
-
-func TestDetectHostDeploymentsDirRejectsDirectLookupNameCollision(t *testing.T) {
-	inspector := &fakeContainerInspector{
-		listResult: client.ContainerListResult{Items: []containerapi.Summary{
-			{
-				ID: "real-agent-container-id",
-				Mounts: []containerapi.MountPoint{
-					{Type: mount.TypeBind, Source: "/srv/correct/deployments", Destination: "/deployments"},
-				},
-			},
-		}},
-		inspect: func(containerID string) (client.ContainerInspectResult, error) {
-			switch containerID {
-			case "custom-agent-hostname":
-				return client.ContainerInspectResult{Container: containerapi.InspectResponse{
-					ID:     "unrelated-container-id",
-					Config: &containerapi.Config{Hostname: "unrelated-hostname"},
-					Mounts: []containerapi.MountPoint{
-						{Type: mount.TypeBind, Source: "/srv/wrong/deployments", Destination: "/deployments"},
-					},
-				}}, nil
-			case "real-agent-container-id":
-				return client.ContainerInspectResult{Container: containerapi.InspectResponse{
-					ID:     "real-agent-container-id",
-					Config: &containerapi.Config{Hostname: "custom-agent-hostname"},
-					Mounts: []containerapi.MountPoint{
-						{Type: mount.TypeBind, Source: "/srv/correct/deployments", Destination: "/deployments"},
-					},
-				}}, nil
-			default:
-				return client.ContainerInspectResult{}, errors.New("unexpected container")
-			}
-		},
-	}
-
-	got, err := detectHostDeploymentsDir(t.Context(), inspector, func() (string, error) {
-		return "custom-agent-hostname", nil
-	}, "/deployments")
-	if err != nil {
-		t.Fatalf("detectHostDeploymentsDir: %v", err)
-	}
-	if got != "/srv/correct/deployments" {
-		t.Errorf("host deployments dir = %q, want %q", got, "/srv/correct/deployments")
 	}
 }
 
 func TestDetectHostDeploymentsDirErrors(t *testing.T) {
 	tests := []struct {
-		name      string
-		hostname  func() (string, error)
-		inspector *fakeContainerInspector
+		name        string
+		containerID func() (string, error)
+		inspector   *fakeContainerInspector
 	}{
 		{
-			name:      "hostname",
-			hostname:  func() (string, error) { return "", errors.New("hostname failed") },
-			inspector: &fakeContainerInspector{},
+			name:        "identity",
+			containerID: func() (string, error) { return "", errors.New("identity failed") },
+			inspector:   &fakeContainerInspector{},
 		},
 		{
-			name:      "inspect",
-			hostname:  func() (string, error) { return "container-id", nil },
-			inspector: &fakeContainerInspector{err: errors.New("inspect failed")},
+			name:        "inspect",
+			containerID: func() (string, error) { return testContainerID, nil },
+			inspector:   &fakeContainerInspector{err: errors.New("inspect failed")},
 		},
 		{
-			name:     "mount missing",
-			hostname: func() (string, error) { return "container-id", nil },
+			name:        "empty container ID",
+			containerID: func() (string, error) { return "", nil },
+			inspector:   &fakeContainerInspector{},
+		},
+		{
+			name:        "container ID mismatch",
+			containerID: func() (string, error) { return testContainerID, nil },
 			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
-				Container: containerapi.InspectResponse{Mounts: []containerapi.MountPoint{
+				Container: containerapi.InspectResponse{ID: "different-container-id"},
+			}},
+		},
+		{
+			name:        "mount missing",
+			containerID: func() (string, error) { return testContainerID, nil },
+			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
+				Container: containerapi.InspectResponse{ID: testContainerID, Mounts: []containerapi.MountPoint{
 					{Type: mount.TypeBind, Source: "/srv/other", Destination: "/other"},
 				}},
 			}},
 		},
 		{
-			name:     "not a bind mount",
-			hostname: func() (string, error) { return "container-id", nil },
+			name:        "not a bind mount",
+			containerID: func() (string, error) { return testContainerID, nil },
 			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
-				Container: containerapi.InspectResponse{Mounts: []containerapi.MountPoint{
+				Container: containerapi.InspectResponse{ID: testContainerID, Mounts: []containerapi.MountPoint{
 					{Type: mount.TypeVolume, Source: "/var/lib/docker/volumes/data/_data", Destination: "/deployments"},
 				}},
 			}},
 		},
 		{
-			name:     "relative source",
-			hostname: func() (string, error) { return "container-id", nil },
+			name:        "relative source",
+			containerID: func() (string, error) { return testContainerID, nil },
 			inspector: &fakeContainerInspector{result: client.ContainerInspectResult{
-				Container: containerapi.InspectResponse{Mounts: []containerapi.MountPoint{
+				Container: containerapi.InspectResponse{ID: testContainerID, Mounts: []containerapi.MountPoint{
 					{Type: mount.TypeBind, Source: "relative/deployments", Destination: "/deployments"},
 				}},
 			}},
@@ -198,7 +234,7 @@ func TestDetectHostDeploymentsDirErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := detectHostDeploymentsDir(t.Context(), tt.inspector, tt.hostname, "/deployments"); err == nil {
+			if _, err := detectHostDeploymentsDir(t.Context(), tt.inspector, tt.containerID, "/deployments"); err == nil {
 				t.Fatal("expected detection error")
 			}
 		})
