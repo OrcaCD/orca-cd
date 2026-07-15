@@ -1,0 +1,4 @@
+ALTER TABLE repositories DROP COLUMN github_actions_oidc_allow_repo_sync;
+ALTER TABLE repositories DROP COLUMN github_actions_oidc_allow_image_sync;
+ALTER TABLE repositories DROP COLUMN github_actions_oidc_allowed_branches;
+ALTER TABLE repositories DROP COLUMN github_actions_oidc_allowed_workflows;

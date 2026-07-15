@@ -50,22 +50,33 @@ for (const keys of messageKeysByFile.values()) {
 
 let hasIssues = false;
 
+const defaultLocaleFile = "en.json";
+const defaultKeys = messageKeysByFile.get(defaultLocaleFile);
+
+if (!defaultKeys) {
+	throw new Error(`Default locale file "${defaultLocaleFile}" not found in ${messagesDir}`);
+}
+
+// Other locales are synced via Crowdin and may lag behind en, so only missing keys
+// in the default locale (which other locales already have) are treated as an issue.
 if (messageFiles.length >= 2) {
 	for (const key of [...allKeys].sort()) {
-		const missingIn: string[] = [];
-
-		for (const [file, keys] of messageKeysByFile) {
-			if (!keys.has(key)) {
-				missingIn.push(file);
-			}
+		if (defaultKeys.has(key)) {
+			continue;
 		}
 
-		if (missingIn.length > 0) {
+		const presentIn = [...messageKeysByFile.entries()]
+			.filter(([file, keys]) => file !== defaultLocaleFile && keys.has(key))
+			.map(([file]) => file);
+
+		if (presentIn.length > 0) {
 			if (!hasIssues) {
 				console.log("Translation keys out of sync:");
 			}
 			hasIssues = true;
-			console.log(`- "${key}" missing in: ${missingIn.join(", ")}`);
+			console.log(
+				`- "${key}" missing in ${defaultLocaleFile}, present in: ${presentIn.join(", ")}`,
+			);
 		}
 	}
 }

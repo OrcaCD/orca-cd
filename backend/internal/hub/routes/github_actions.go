@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -66,7 +67,21 @@ type githubActionsClaims struct {
 	Sha         string `json:"sha"`
 	EventName   string `json:"event_name"`
 	Workflow    string `json:"workflow"`
+	WorkflowRef string `json:"workflow_ref"`
 	Environment string `json:"environment"`
+}
+
+// extractWorkflowFilename returns the workflow file name (e.g. "deploy.yml") from a
+// workflow_ref claim of the form "owner/repo/.github/workflows/file.yml@ref", after
+// verifying the owner/repo prefix matches the token's repository claim. Returns "" if
+// the ref is missing, malformed, or refers to a different repository.
+func extractWorkflowFilename(workflowRef, expectedRepo string) string {
+	path, _, _ := strings.Cut(workflowRef, "@")
+	prefix, file, found := strings.Cut(path, "/.github/workflows/")
+	if !found || !strings.EqualFold(prefix, expectedRepo) {
+		return ""
+	}
+	return file
 }
 
 // GitHubActionsDeployHandler handles POST /api/v1/github-actions.
@@ -143,6 +158,14 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 		return
 	}
 
+	if len(matchedRepo.GitHubActionsOIDCAllowedWorkflows) > 0 {
+		workflowFile := extractWorkflowFilename(claims.WorkflowRef, claims.Repository)
+		if workflowFile == "" || !slices.Contains(matchedRepo.GitHubActionsOIDCAllowedWorkflows, workflowFile) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "workflow is not permitted by GitHub Actions OIDC settings for this repository"})
+			return
+		}
+	}
+
 	var branches []string
 	switch claims.RefType {
 	case "branch":
@@ -162,6 +185,16 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	default:
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "unsupported ref type"})
 		return
+	}
+
+	if len(matchedRepo.GitHubActionsOIDCAllowedBranches) > 0 {
+		branches = slices.DeleteFunc(branches, func(b string) bool {
+			return !slices.Contains(matchedRepo.GitHubActionsOIDCAllowedBranches, b)
+		})
+		if len(branches) == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "branch is not permitted by GitHub Actions OIDC settings for this repository"})
+			return
+		}
 	}
 
 	var apps []models.Application
@@ -188,6 +221,15 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 
 	if !req.SyncRepo && !req.PullImages {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of syncRepo or pullImages must be true"})
+		return
+	}
+
+	if req.SyncRepo && !matchedRepo.GitHubActionsOIDCAllowRepoSync {
+		c.JSON(http.StatusForbidden, gin.H{"error": "repository sync is not permitted by GitHub Actions OIDC settings for this repository"})
+		return
+	}
+	if req.PullImages && !matchedRepo.GitHubActionsOIDCAllowImageSync {
+		c.JSON(http.StatusForbidden, gin.H{"error": "image sync is not permitted by GitHub Actions OIDC settings for this repository"})
 		return
 	}
 

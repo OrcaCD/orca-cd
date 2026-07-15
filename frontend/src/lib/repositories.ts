@@ -30,6 +30,10 @@ export interface Repository {
 	webhookSecret?: string | undefined;
 	webhookUrl?: string | undefined;
 	githubActionsOIDCEnabled: boolean;
+	githubActionsOIDCAllowRepoSync: boolean;
+	githubActionsOIDCAllowImageSync: boolean;
+	githubActionsOIDCAllowedBranches: string[];
+	githubActionsOIDCAllowedWorkflows: string[];
 }
 
 export interface CreateRepositoryRequest {
@@ -51,6 +55,10 @@ export interface UpdateRepositoryRequest {
 	pollingIntervalSeconds?: number;
 	webhookSecret?: string;
 	githubActionsOIDCEnabled?: boolean;
+	githubActionsOIDCAllowRepoSync?: boolean;
+	githubActionsOIDCAllowImageSync?: boolean;
+	githubActionsOIDCAllowedBranches?: string[];
+	githubActionsOIDCAllowedWorkflows?: string[];
 }
 
 export interface TestConnectionRequest {

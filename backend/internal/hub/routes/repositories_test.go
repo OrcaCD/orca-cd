@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -596,6 +597,278 @@ func TestCreateRepositoryHandler_Success_Polling(t *testing.T) {
 	}
 	if repo.AuthToken.String() != "ghp_secret" {
 		t.Errorf("expected decrypted token %q, got %q", "ghp_secret", repo.AuthToken.String())
+	}
+}
+
+func TestCreateRepositoryHandler_OIDCDefaultsAndNormalization(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":        "https://github.com/owner/oidc-repo",
+		"provider":   "github",
+		"authMethod": "none",
+		"syncType":   "manual",
+		// githubActionsOIDCAllowRepoSync/AllowImageSync omitted — should default to true
+		"githubActionsOIDCAllowedBranches":  []string{" main ", "main", "", "release"},
+		"githubActionsOIDCAllowedWorkflows": []string{" deploy.yml ", ""},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.GitHubActionsOIDCAllowRepoSync {
+		t.Error("expected githubActionsOIDCAllowRepoSync to default to true")
+	}
+	if !body.GitHubActionsOIDCAllowImageSync {
+		t.Error("expected githubActionsOIDCAllowImageSync to default to true")
+	}
+	if len(body.GitHubActionsOIDCAllowedBranches) != 2 ||
+		body.GitHubActionsOIDCAllowedBranches[0] != "main" || body.GitHubActionsOIDCAllowedBranches[1] != "release" {
+		t.Errorf("expected trimmed/deduped branches [main release], got %v", body.GitHubActionsOIDCAllowedBranches)
+	}
+	if len(body.GitHubActionsOIDCAllowedWorkflows) != 1 || body.GitHubActionsOIDCAllowedWorkflows[0] != "deploy.yml" {
+		t.Errorf("expected trimmed workflows [deploy.yml], got %v", body.GitHubActionsOIDCAllowedWorkflows)
+	}
+}
+
+func TestCreateRepositoryHandler_OIDCAllowedWorkflowsAcceptsYaml(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                               "https://github.com/owner/oidc-yaml-repo",
+		"provider":                          "github",
+		"authMethod":                        "none",
+		"syncType":                          "manual",
+		"githubActionsOIDCAllowedWorkflows": []string{"deploy.yaml"},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateRepositoryHandler_OIDCAllowedWorkflowsRejectsInvalidExtension(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                               "https://github.com/owner/oidc-invalid-workflow-repo",
+		"provider":                          "github",
+		"authMethod":                        "none",
+		"syncType":                          "manual",
+		"githubActionsOIDCAllowedWorkflows": []string{"deploy.sh"},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_OIDCAllowedWorkflowsRejectsInvalidExtension(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/workflow-repo",
+		Url:        "https://github.com/owner/workflow-repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"githubActionsOIDCAllowedWorkflows": []string{"deploy.txt"},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateRepositoryHandler_NoDefaultRepoOrImageSyncWhenOIDCDisabled(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	// githubActionsOIDCEnabled omitted (defaults to false) — both action-scope flags
+	// disabled is fine since OIDC isn't active.
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                             "https://github.com/owner/oidc-disabled",
+		"provider":                        "github",
+		"authMethod":                      "none",
+		"syncType":                        "manual",
+		"githubActionsOIDCAllowRepoSync":  false,
+		"githubActionsOIDCAllowImageSync": false,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateRepositoryHandler_OIDCEnabledWithBothActionsDisabled(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                             "https://github.com/owner/oidc-no-actions",
+		"provider":                        "github",
+		"authMethod":                      "none",
+		"syncType":                        "manual",
+		"githubActionsOIDCEnabled":        true,
+		"githubActionsOIDCAllowRepoSync":  false,
+		"githubActionsOIDCAllowImageSync": false,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateRepositoryHandler_OIDCAllowedListExceedsMaxItems(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	branches := make([]string, maxOIDCListItems+1)
+	for i := range branches {
+		branches[i] = fmt.Sprintf("branch-%d", i)
+	}
+	reqBody, _ := json.Marshal(map[string]any{
+		"url":                              "https://github.com/owner/too-many-branches",
+		"provider":                         "github",
+		"authMethod":                       "none",
+		"syncType":                         "manual",
+		"githubActionsOIDCAllowedBranches": branches,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_OIDCEnabledWithBothActionsDisabled(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:                            "owner/repo",
+		Url:                             "https://github.com/owner/repo",
+		Provider:                        models.GitHub,
+		AuthMethod:                      models.AuthMethodNone,
+		SyncType:                        models.SyncTypeManual,
+		SyncStatus:                      models.SyncStatusUnknown,
+		GitHubActionsOIDCEnabled:        true,
+		GitHubActionsOIDCAllowRepoSync:  true,
+		GitHubActionsOIDCAllowImageSync: true,
+		CreatedBy:                       "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"githubActionsOIDCAllowRepoSync":  false,
+		"githubActionsOIDCAllowImageSync": false,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateRepositoryHandler_OIDCAllowedBranchesUpdated(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:                            "owner/repo",
+		Url:                             "https://github.com/owner/repo",
+		Provider:                        models.GitHub,
+		AuthMethod:                      models.AuthMethodNone,
+		SyncType:                        models.SyncTypeManual,
+		SyncStatus:                      models.SyncStatusUnknown,
+		GitHubActionsOIDCAllowRepoSync:  true,
+		GitHubActionsOIDCAllowImageSync: true,
+		CreatedBy:                       "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"githubActionsOIDCAllowedBranches": []string{"main", "main", " release "},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/"+repo.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	UpdateRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body repositoryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.GitHubActionsOIDCAllowedBranches) != 2 ||
+		body.GitHubActionsOIDCAllowedBranches[0] != "main" || body.GitHubActionsOIDCAllowedBranches[1] != "release" {
+		t.Errorf("expected deduped/trimmed branches [main release], got %v", body.GitHubActionsOIDCAllowedBranches)
 	}
 }
 
