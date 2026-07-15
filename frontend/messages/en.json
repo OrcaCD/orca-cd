@@ -540,8 +540,6 @@
 	"failedRevokeWebhook": "Failed to revoke webhook",
 	"githubActionsOIDCEnabled": "GitHub Actions Access",
 	"githubActionsOIDCEnabledTooltip": "Allows GitHub Actions to trigger deployments using OIDC authentication without storing credentials",
-	"githubActionsOIDCAllowRepoSync": "Allow repository sync",
-	"githubActionsOIDCAllowImageSync": "Allow image sync",
 	"githubActionsOIDCAtLeastOneActionRequired": "At least one of repository sync or image sync must be allowed",
 	"githubActionsOIDCAllowedActions": "Allowed actions",
 	"githubActionsOIDCAllowedActionsTooltip": "Choose which actions GitHub Actions is allowed to trigger via OIDC authentication",
