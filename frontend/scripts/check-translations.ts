@@ -74,7 +74,9 @@ if (messageFiles.length >= 2) {
 				console.log("Translation keys out of sync:");
 			}
 			hasIssues = true;
-			console.log(`- "${key}" missing in ${defaultLocaleFile}, present in: ${presentIn.join(", ")}`);
+			console.log(
+				`- "${key}" missing in ${defaultLocaleFile}, present in: ${presentIn.join(", ")}`,
+			);
 		}
 	}
 }
