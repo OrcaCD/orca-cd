@@ -144,14 +144,16 @@ func makeGHActionsRequest(token, body string) (*gin.Context, *httptest.ResponseR
 func seedGHActionsRepo(t *testing.T) models.Repository {
 	t.Helper()
 	repo := models.Repository{
-		Name:                     "owner/testrepo",
-		Url:                      "https://github.com/owner/testrepo",
-		Provider:                 models.GitHub,
-		AuthMethod:               models.AuthMethodNone,
-		SyncType:                 models.SyncTypeManual,
-		SyncStatus:               models.SyncStatusUnknown,
-		GitHubActionsOIDCEnabled: true,
-		CreatedBy:                "user-1",
+		Name:                            "owner/testrepo",
+		Url:                             "https://github.com/owner/testrepo",
+		Provider:                        models.GitHub,
+		AuthMethod:                      models.AuthMethodNone,
+		SyncType:                        models.SyncTypeManual,
+		SyncStatus:                      models.SyncStatusUnknown,
+		GitHubActionsOIDCEnabled:        true,
+		GitHubActionsOIDCAllowRepoSync:  true,
+		GitHubActionsOIDCAllowImageSync: true,
+		CreatedBy:                       "user-1",
 	}
 	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
 		t.Fatalf("seed GitHub Actions repo: %v", err)
@@ -535,6 +537,290 @@ func TestGitHubActionsDeployHandler_TagRef_ResolvesAndTriggers(t *testing.T) {
 		Repository: "owner/testrepo",
 		Ref:        "refs/tags/v1.0.0",
 		RefType:    "tag",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_WorkflowAllowList_Match(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_workflows = ? WHERE id = ?`, `["deploy.yml"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed workflows: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository:  "owner/testrepo",
+		Ref:         "refs/heads/main",
+		RefType:     "branch",
+		EventName:   "push",
+		Sha:         "abc123",
+		WorkflowRef: "owner/testrepo/.github/workflows/deploy.yml@refs/heads/main",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_WorkflowAllowList_NoMatch(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_workflows = ? WHERE id = ?`, `["deploy.yml"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed workflows: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository:  "owner/testrepo",
+		Ref:         "refs/heads/main",
+		RefType:     "branch",
+		EventName:   "push",
+		Sha:         "abc123",
+		WorkflowRef: "owner/testrepo/.github/workflows/other.yml@refs/heads/main",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_WorkflowAllowList_MissingClaim(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_workflows = ? WHERE id = ?`, `["deploy.yml"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed workflows: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+		// WorkflowRef intentionally omitted
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_WorkflowAllowList_RepoPrefixMismatch(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_workflows = ? WHERE id = ?`, `["deploy.yml"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed workflows: %v", err)
+	}
+
+	// workflow_ref points at a reusable workflow in a different repository, but
+	// happens to share a filename with the allow-list — must not match.
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository:  "owner/testrepo",
+		Ref:         "refs/heads/main",
+		RefType:     "branch",
+		EventName:   "push",
+		Sha:         "abc123",
+		WorkflowRef: "some-org/shared-workflows/.github/workflows/deploy.yml@refs/heads/main",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_BranchAllowList_Match(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_branches = ? WHERE id = ?`, `["main"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed branches: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_BranchAllowList_NoMatch(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_branches = ? WHERE id = ?`, `["release"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed branches: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_BranchAllowList_TagResolvesToMixOfAllowedAndDisallowed(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id) // app is configured for branch "main"
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allowed_branches = ? WHERE id = ?`, `["main"]`, repo.Id).Error; err != nil {
+		t.Fatalf("failed to set allowed branches: %v", err)
+	}
+
+	// The tag's commit resolves to two branches; only "main" is allowed.
+	withGHProvider(t, ghActionsTagProvider{branches: []string{"main", "staging"}})
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/tags/v1.0.0",
+		RefType:    "tag",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_ActionScope_RepoSyncDisallowed(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allow_repo_sync = ? WHERE id = ?`, false, repo.Id).Error; err != nil {
+		t.Fatalf("failed to disable repo sync: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_ActionScope_ImageSyncDisallowed(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allow_image_sync = ? WHERE id = ?`, false, repo.Id).Error; err != nil {
+		t.Fatalf("failed to disable image sync: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"pullImages": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_ActionScope_MixedRequestRejectedWhenOneDisallowed(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	if err := db.DB.Exec(`UPDATE repositories SET github_actions_oidc_allow_image_sync = ? WHERE id = ?`, false, repo.Id).Error; err != nil {
+		t.Fatalf("failed to disable image sync: %v", err)
+	}
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	// syncRepo is allowed but pullImages is not — the whole request must be rejected,
+	// not partially dispatched.
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true, "pullImages": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsDeployHandler_EmptyAllowListsUnrestricted(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	// No allow-lists configured on the seeded repo (default) — should behave exactly
+	// like the pre-restriction handler.
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
 		EventName:  "push",
 		Sha:        "abc123",
 	})

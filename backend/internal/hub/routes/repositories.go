@@ -25,6 +25,9 @@ const (
 	RepositoriesPath                    = "/api/v1/repositories"
 	DefaultPollingIntervalSeconds int64 = 60
 	MinPollingIntervalSeconds     int64 = 30
+
+	maxOIDCListItems  = 50
+	maxOIDCItemLength = 255
 )
 
 var appUrl string
@@ -34,51 +37,114 @@ func SetRepositoriesConfig(url string) {
 }
 
 type createRepositoryRequest struct {
-	Url                      string                      `json:"url" binding:"required"`
-	Provider                 models.RepositoryProvider   `json:"provider" binding:"required"`
-	AuthMethod               models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
-	AuthUser                 *string                     `json:"authUser"`
-	AuthToken                *string                     `json:"authToken"`
-	SyncType                 models.RepositorySyncType   `json:"syncType" binding:"required"`
-	PollingInterval          *int64                      `json:"pollingIntervalSeconds"`
-	GitHubActionsOIDCEnabled bool                        `json:"githubActionsOIDCEnabled"`
+	Url                               string                      `json:"url" binding:"required"`
+	Provider                          models.RepositoryProvider   `json:"provider" binding:"required"`
+	AuthMethod                        models.RepositoryAuthMethod `json:"authMethod" binding:"required"`
+	AuthUser                          *string                     `json:"authUser"`
+	AuthToken                         *string                     `json:"authToken"`
+	SyncType                          models.RepositorySyncType   `json:"syncType" binding:"required"`
+	PollingInterval                   *int64                      `json:"pollingIntervalSeconds"`
+	GitHubActionsOIDCEnabled          bool                        `json:"githubActionsOIDCEnabled"`
+	GitHubActionsOIDCAllowRepoSync    *bool                       `json:"githubActionsOIDCAllowRepoSync"`
+	GitHubActionsOIDCAllowImageSync   *bool                       `json:"githubActionsOIDCAllowImageSync"`
+	GitHubActionsOIDCAllowedBranches  []string                    `json:"githubActionsOIDCAllowedBranches"`
+	GitHubActionsOIDCAllowedWorkflows []string                    `json:"githubActionsOIDCAllowedWorkflows"`
 }
 
 type repositoryResponse struct {
-	Id                       string  `json:"id"`
-	Name                     string  `json:"name"`
-	Url                      string  `json:"url"`
-	Provider                 string  `json:"provider"`
-	AuthMethod               string  `json:"authMethod"`
-	SyncType                 string  `json:"syncType"`
-	SyncStatus               string  `json:"syncStatus"`
-	LastSyncError            *string `json:"lastSyncError"`
-	PollingIntervalSeconds   *int64  `json:"pollingIntervalSeconds"`
-	LastSyncedAt             *string `json:"lastSyncedAt"`
-	CreatedBy                string  `json:"createdBy"`
-	CreatedAt                string  `json:"createdAt"`
-	UpdatedAt                string  `json:"updatedAt"`
-	WebhookSecret            *string `json:"webhookSecret,omitempty"`
-	WebhookUrl               *string `json:"webhookUrl,omitempty"`
-	AppCount                 int     `json:"appCount"`
-	GitHubActionsOIDCEnabled bool    `json:"githubActionsOIDCEnabled"`
+	Id                                string   `json:"id"`
+	Name                              string   `json:"name"`
+	Url                               string   `json:"url"`
+	Provider                          string   `json:"provider"`
+	AuthMethod                        string   `json:"authMethod"`
+	SyncType                          string   `json:"syncType"`
+	SyncStatus                        string   `json:"syncStatus"`
+	LastSyncError                     *string  `json:"lastSyncError"`
+	PollingIntervalSeconds            *int64   `json:"pollingIntervalSeconds"`
+	LastSyncedAt                      *string  `json:"lastSyncedAt"`
+	CreatedBy                         string   `json:"createdBy"`
+	CreatedAt                         string   `json:"createdAt"`
+	UpdatedAt                         string   `json:"updatedAt"`
+	WebhookSecret                     *string  `json:"webhookSecret,omitempty"`
+	WebhookUrl                        *string  `json:"webhookUrl,omitempty"`
+	AppCount                          int      `json:"appCount"`
+	GitHubActionsOIDCEnabled          bool     `json:"githubActionsOIDCEnabled"`
+	GitHubActionsOIDCAllowRepoSync    bool     `json:"githubActionsOIDCAllowRepoSync"`
+	GitHubActionsOIDCAllowImageSync   bool     `json:"githubActionsOIDCAllowImageSync"`
+	GitHubActionsOIDCAllowedBranches  []string `json:"githubActionsOIDCAllowedBranches"`
+	GitHubActionsOIDCAllowedWorkflows []string `json:"githubActionsOIDCAllowedWorkflows"`
+}
+
+// normalizeOIDCStringList trims, drops empty entries, and deduplicates the given list
+// while preserving order. Returns an error if any entry or the list itself exceeds the
+// configured size limits.
+func normalizeOIDCStringList(items []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if len(trimmed) > maxOIDCItemLength {
+			return nil, fmt.Errorf("entry exceeds maximum length of %d characters", maxOIDCItemLength)
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	if len(result) > maxOIDCListItems {
+		return nil, fmt.Errorf("list exceeds maximum of %d entries", maxOIDCListItems)
+	}
+	return result, nil
+}
+
+// normalizeOIDCAllowedWorkflows normalizes the given list like normalizeOIDCStringList and
+// additionally requires every entry to end with .yml or .yaml
+func normalizeOIDCAllowedWorkflows(items []string) ([]string, error) {
+	normalized, err := normalizeOIDCStringList(items)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range normalized {
+		lower := strings.ToLower(item)
+		if !strings.HasSuffix(lower, ".yml") && !strings.HasSuffix(lower, ".yaml") {
+			return nil, fmt.Errorf("workflow file name %q must end with .yml or .yaml", item)
+		}
+	}
+	return normalized, nil
 }
 
 func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
+	allowedBranches := r.GitHubActionsOIDCAllowedBranches
+	if allowedBranches == nil {
+		allowedBranches = []string{}
+	}
+	allowedWorkflows := r.GitHubActionsOIDCAllowedWorkflows
+	if allowedWorkflows == nil {
+		allowedWorkflows = []string{}
+	}
+
 	resp := repositoryResponse{
-		Id:                       r.Id,
-		Name:                     r.Name,
-		Url:                      r.Url,
-		Provider:                 string(r.Provider),
-		AuthMethod:               string(r.AuthMethod),
-		SyncType:                 string(r.SyncType),
-		SyncStatus:               string(r.SyncStatus),
-		LastSyncError:            r.LastSyncError,
-		CreatedBy:                r.CreatedBy,
-		CreatedAt:                r.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:                r.UpdatedAt.Format(time.RFC3339),
-		AppCount:                 appCount,
-		GitHubActionsOIDCEnabled: r.GitHubActionsOIDCEnabled,
+		Id:                                r.Id,
+		Name:                              r.Name,
+		Url:                               r.Url,
+		Provider:                          string(r.Provider),
+		AuthMethod:                        string(r.AuthMethod),
+		SyncType:                          string(r.SyncType),
+		SyncStatus:                        string(r.SyncStatus),
+		LastSyncError:                     r.LastSyncError,
+		CreatedBy:                         r.CreatedBy,
+		CreatedAt:                         r.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                         r.UpdatedAt.Format(time.RFC3339),
+		AppCount:                          appCount,
+		GitHubActionsOIDCEnabled:          r.GitHubActionsOIDCEnabled,
+		GitHubActionsOIDCAllowRepoSync:    r.GitHubActionsOIDCAllowRepoSync,
+		GitHubActionsOIDCAllowImageSync:   r.GitHubActionsOIDCAllowImageSync,
+		GitHubActionsOIDCAllowedBranches:  allowedBranches,
+		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
 	}
 
 	if r.PollingInterval != nil {
@@ -211,15 +277,44 @@ func CreateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	allowRepoSync := true
+	if req.GitHubActionsOIDCAllowRepoSync != nil {
+		allowRepoSync = *req.GitHubActionsOIDCAllowRepoSync
+	}
+	allowImageSync := true
+	if req.GitHubActionsOIDCAllowImageSync != nil {
+		allowImageSync = *req.GitHubActionsOIDCAllowImageSync
+	}
+
+	if req.GitHubActionsOIDCEnabled && !allowRepoSync && !allowImageSync {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of allow repo sync or allow image sync must be true when GitHub Actions OIDC is enabled"})
+		return
+	}
+
+	allowedBranches, err := normalizeOIDCStringList(req.GitHubActionsOIDCAllowedBranches)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid Github Actions OIDC allowed branches: %v", err)})
+		return
+	}
+	allowedWorkflows, err := normalizeOIDCAllowedWorkflows(req.GitHubActionsOIDCAllowedWorkflows)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid Github Actions OIDC allowed workflows: %v", err)})
+		return
+	}
+
 	repo := models.Repository{
-		Name:                     fmt.Sprintf("%s/%s", repoOwner, repoName),
-		Url:                      req.Url,
-		Provider:                 req.Provider,
-		AuthMethod:               req.AuthMethod,
-		SyncType:                 req.SyncType,
-		SyncStatus:               models.SyncStatusUnknown,
-		CreatedBy:                claims.Subject,
-		GitHubActionsOIDCEnabled: req.GitHubActionsOIDCEnabled,
+		Name:                              fmt.Sprintf("%s/%s", repoOwner, repoName),
+		Url:                               req.Url,
+		Provider:                          req.Provider,
+		AuthMethod:                        req.AuthMethod,
+		SyncType:                          req.SyncType,
+		SyncStatus:                        models.SyncStatusUnknown,
+		CreatedBy:                         claims.Subject,
+		GitHubActionsOIDCEnabled:          req.GitHubActionsOIDCEnabled,
+		GitHubActionsOIDCAllowRepoSync:    allowRepoSync,
+		GitHubActionsOIDCAllowImageSync:   allowImageSync,
+		GitHubActionsOIDCAllowedBranches:  allowedBranches,
+		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
 	}
 
 	if req.AuthUser != nil && *req.AuthUser != "" {
@@ -399,12 +494,16 @@ func DeleteRepositoryHandler(c *gin.Context) {
 }
 
 type updateRepositoryRequest struct {
-	AuthMethod               *models.RepositoryAuthMethod `json:"authMethod"`
-	AuthUser                 *string                      `json:"authUser"`
-	AuthToken                *string                      `json:"authToken"`
-	SyncType                 *models.RepositorySyncType   `json:"syncType"`
-	PollingInterval          *int64                       `json:"pollingIntervalSeconds"`
-	GitHubActionsOIDCEnabled *bool                        `json:"githubActionsOIDCEnabled"`
+	AuthMethod                        *models.RepositoryAuthMethod `json:"authMethod"`
+	AuthUser                          *string                      `json:"authUser"`
+	AuthToken                         *string                      `json:"authToken"`
+	SyncType                          *models.RepositorySyncType   `json:"syncType"`
+	PollingInterval                   *int64                       `json:"pollingIntervalSeconds"`
+	GitHubActionsOIDCEnabled          *bool                        `json:"githubActionsOIDCEnabled"`
+	GitHubActionsOIDCAllowRepoSync    *bool                        `json:"githubActionsOIDCAllowRepoSync"`
+	GitHubActionsOIDCAllowImageSync   *bool                        `json:"githubActionsOIDCAllowImageSync"`
+	GitHubActionsOIDCAllowedBranches  *[]string                    `json:"githubActionsOIDCAllowedBranches"`
+	GitHubActionsOIDCAllowedWorkflows *[]string                    `json:"githubActionsOIDCAllowedWorkflows"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -416,7 +515,10 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil && req.GitHubActionsOIDCEnabled == nil {
+	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil &&
+		req.GitHubActionsOIDCEnabled == nil && req.GitHubActionsOIDCAllowRepoSync == nil &&
+		req.GitHubActionsOIDCAllowImageSync == nil && req.GitHubActionsOIDCAllowedBranches == nil &&
+		req.GitHubActionsOIDCAllowedWorkflows == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field must be provided"})
 		return
 	}
@@ -502,6 +604,34 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	if req.GitHubActionsOIDCEnabled != nil {
 		repo.GitHubActionsOIDCEnabled = *req.GitHubActionsOIDCEnabled
+	}
+
+	if req.GitHubActionsOIDCAllowRepoSync != nil {
+		repo.GitHubActionsOIDCAllowRepoSync = *req.GitHubActionsOIDCAllowRepoSync
+	}
+	if req.GitHubActionsOIDCAllowImageSync != nil {
+		repo.GitHubActionsOIDCAllowImageSync = *req.GitHubActionsOIDCAllowImageSync
+	}
+	if req.GitHubActionsOIDCAllowedBranches != nil {
+		normalized, err := normalizeOIDCStringList(*req.GitHubActionsOIDCAllowedBranches)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid Github Actions OIDC allowed branches: %v", err)})
+			return
+		}
+		repo.GitHubActionsOIDCAllowedBranches = normalized
+	}
+	if req.GitHubActionsOIDCAllowedWorkflows != nil {
+		normalized, err := normalizeOIDCAllowedWorkflows(*req.GitHubActionsOIDCAllowedWorkflows)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid Github Actions OIDC workflows: %v", err)})
+			return
+		}
+		repo.GitHubActionsOIDCAllowedWorkflows = normalized
+	}
+
+	if repo.GitHubActionsOIDCEnabled && !repo.GitHubActionsOIDCAllowRepoSync && !repo.GitHubActionsOIDCAllowImageSync {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of repo sync or image sync must be true when GitHub Actions OIDC is enabled"})
+		return
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {
