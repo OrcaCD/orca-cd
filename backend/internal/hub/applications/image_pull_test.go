@@ -72,6 +72,34 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 	}
 }
 
+func TestTriggerImagePull_AgentConnected_MarksApplicationSyncing(t *testing.T) {
+	setupTestDB(t)
+	log := zerolog.Nop()
+	hub := hubws.NewHub(&log)
+	hubws.DefaultHub = hub
+	t.Cleanup(func() { hubws.DefaultHub = nil })
+
+	agent := seedAgent(t)
+	app := seedImagePullApp(t, agent.Id)
+	if _, err := hub.Register(agent.Id, nil); err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	if !TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
+		t.Fatal("expected TriggerImagePull to return true for connected agent")
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", app.Id).
+		First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.SyncStatus != models.Syncing {
+		t.Errorf("expected SyncStatus %q, got %q", models.Syncing, updated.SyncStatus)
+	}
+}
+
 func TestTriggerImagePull_AgentNotConnected_ReturnsFalseAndFailsEvent(t *testing.T) {
 	setupTestDB(t)
 	log := zerolog.Nop()

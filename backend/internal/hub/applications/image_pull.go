@@ -40,8 +40,18 @@ func TriggerImagePull(app *models.Application, source models.ApplicationEventSou
 	})
 	if !sent {
 		failImagePullEvent(ctx, requestID, app.Id, "agent is not connected")
+		return false
 	}
-	return sent
+
+	// Image-only updates redeploy affected services just like compose updates do.
+	// Persist the in-progress state and notify the UI after the request is accepted.
+	cleared := ""
+	_ = updateApplicationStatus(ctx, app.Id, models.Application{
+		SyncStatus:    models.Syncing,
+		HealthStatus:  models.UnknownHealth,
+		LastSyncError: &cleared,
+	}, &Log)
+	return true
 }
 
 func failImagePullEvent(ctx context.Context, requestID, applicationID, message string) {
