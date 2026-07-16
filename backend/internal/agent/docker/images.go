@@ -158,5 +158,10 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	}
 
 	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")
+
+	// The hub resets the application to unknown health when it processes the
+	// pull result, so always report the settled state even if it didn't change.
+	c.observeApplicationHealth(appID)
+
 	return true, nil
 }

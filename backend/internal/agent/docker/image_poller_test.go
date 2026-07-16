@@ -181,31 +181,6 @@ func TestImagePoller_ApplySettings_RemovesStaleApp(t *testing.T) {
 	p.StopAll()
 }
 
-// stubHealthWait overrides waitApplicationHealth for the duration of the test.
-// The returned channel receives once per invocation; tests must wait on it
-// before returning so the background health-report goroutine no longer touches
-// the package var when the cleanup restores it.
-func stubHealthWait(t *testing.T, state HealthState) <-chan struct{} {
-	t.Helper()
-	called := make(chan struct{}, 8)
-	origWait := waitApplicationHealth
-	t.Cleanup(func() { waitApplicationHealth = origWait })
-	waitApplicationHealth = func(_ context.Context, _ *Client, _ string) HealthState {
-		called <- struct{}{}
-		return state
-	}
-	return called
-}
-
-func awaitHealthWait(t *testing.T, called <-chan struct{}) {
-	t.Helper()
-	select {
-	case <-called:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for post-update health check")
-	}
-}
-
 func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
@@ -213,7 +188,6 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // images updated
 	}
-	stubHealthWait(t, HealthHealthy)
 
 	sender := &stubMessageSender{}
 	p := newTestPoller(t, sender)
@@ -222,31 +196,11 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 
 	p.runOnce("app-1", "myapp", "req-1")
 
-	// The pull result is sent synchronously; the post-update health report
-	// arrives from a background goroutine.
-	var msgs []*messages.ClientMessage
-	for start := time.Now(); ; {
-		msgs = sender.received()
-		if len(msgs) >= 2 {
-			break
-		}
-		if time.Since(start) > 2*time.Second {
-			t.Fatalf("expected 2 messages, got %d", len(msgs))
-		}
-		time.Sleep(10 * time.Millisecond)
+	msgs := sender.received()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
 	}
-
-	var result *messages.PullImagesResult
-	var report *messages.ApplicationStatusReport
-	for _, m := range msgs {
-		if r := m.GetPullImagesResult(); r != nil {
-			result = r
-		}
-		if r := m.GetApplicationStatusReport(); r != nil {
-			report = r
-		}
-	}
-
+	result := msgs[0].GetPullImagesResult()
 	if result == nil {
 		t.Fatal("expected PullImagesResult payload")
 	}
@@ -258,16 +212,6 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	}
 	if result.RequestId != "req-1" {
 		t.Errorf("expected request_id %q, got %q", "req-1", result.RequestId)
-	}
-
-	if report == nil {
-		t.Fatal("expected post-update ApplicationStatusReport payload")
-	}
-	if len(report.Statuses) != 1 || report.Statuses[0].ApplicationId != "app-1" {
-		t.Fatalf("unexpected statuses in health report: %v", report.Statuses)
-	}
-	if report.Statuses[0].Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
-		t.Errorf("expected healthy, got %v", report.Statuses[0].Health)
 	}
 }
 
@@ -329,7 +273,6 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // trigger a send
 	}
-	called := stubHealthWait(t, HealthHealthy)
 
 	sender := &stubMessageSender{err: errors.New("send failed")}
 	p := newTestPoller(t, sender)
@@ -338,7 +281,6 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 
 	// Must not panic when sender returns an error; the error is logged.
 	p.runOnce("app-1", "myapp", "req-1")
-	awaitHealthWait(t, called)
 }
 
 type noopSender struct{}
@@ -352,7 +294,6 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil
 	}
-	called := stubHealthWait(t, HealthHealthy)
 
 	c := newTestClient(t)
 	p := NewImagePoller(c, noopSender{}, zerolog.Nop())
@@ -360,7 +301,6 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "") // must not panic
-	awaitHealthWait(t, called)
 }
 
 func TestImagePoller_TriggerNow(t *testing.T) {

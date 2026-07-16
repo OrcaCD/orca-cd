@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/moby/moby/api/types/container"
@@ -18,12 +17,6 @@ const (
 	HealthHealthy
 	HealthUnhealthy
 )
-
-// HealthSettleTimeout bounds how long post-deploy health monitoring waits for
-// an application's healthchecks to settle before reporting the current state.
-const HealthSettleTimeout = 2 * time.Minute
-
-const healthSettlePollInterval = 3 * time.Second
 
 // Proto converts the health state to its protobuf representation.
 func (s HealthState) Proto() messages.HealthStatus {
@@ -58,37 +51,6 @@ func (c *Client) ApplicationHealth(ctx context.Context, appID string) HealthStat
 	}
 
 	return aggregateHealth(result.Items)
-}
-
-// WaitForApplicationHealth polls the application's containers until their
-// aggregate health settles to healthy or unhealthy, or ctx expires. Deployments
-// no longer block on healthchecks, so this is how health is observed after the
-// containers have been started. Returns the last observed state (HealthUnknown
-// if it never settled).
-func (c *Client) WaitForApplicationHealth(ctx context.Context, appID string) HealthState {
-	return waitForSettledHealth(ctx, healthSettlePollInterval, func() HealthState {
-		return c.ApplicationHealth(ctx, appID)
-	})
-}
-
-func waitForSettledHealth(ctx context.Context, interval time.Duration, check func() HealthState) HealthState {
-	state := check()
-	if state != HealthUnknown {
-		return state
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return state
-		case <-ticker.C:
-			if state = check(); state != HealthUnknown {
-				return state
-			}
-		}
-	}
 }
 
 // aggregateHealth derives an application's health from the state of its

@@ -35,11 +35,6 @@ var checkAndPullImages = func(ctx context.Context, c *Client, appID, appName str
 	return c.CheckAndPullImages(ctx, appID, appName, deleteOld)
 }
 
-// waitApplicationHealth is a package-level var so tests can override it.
-var waitApplicationHealth = func(ctx context.Context, c *Client, appID string) HealthState {
-	return c.WaitForApplicationHealth(ctx, appID)
-}
-
 type appPollState struct {
 	settings PollSettings
 	appName  string
@@ -188,28 +183,6 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string) {
 		},
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Str("application_id", appID).Msg("image poll: failed to send result")
-	}
-
-	// Containers were recreated without waiting on healthchecks; observe their
-	// health in the background and report it once it settles.
-	if updated && err == nil {
-		go p.reportPostUpdateHealth(appID)
-	}
-}
-
-func (p *ImagePoller) reportPostUpdateHealth(appID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), HealthSettleTimeout)
-	defer cancel()
-
-	health := waitApplicationHealth(ctx, p.client, appID)
-	if err := p.sender.SendMessage(&messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health.Proto()}},
-			},
-		},
-	}); err != nil {
-		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to send post-update health report")
 	}
 }
 

@@ -38,10 +38,6 @@ type statusReporter interface {
 	ApplicationHealth(ctx context.Context, appID string) docker.HealthState
 }
 
-type applicationHealthWaiter interface {
-	WaitForApplicationHealth(ctx context.Context, appID string) docker.HealthState
-}
-
 type messageSender struct {
 	conn    *websocket.Conn
 	mu      sync.Mutex
@@ -278,31 +274,8 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 
 	result.Success = true
 	sendDeployResult(sender, result)
-
-	// The deploy no longer blocks on healthchecks, so observe the application's
-	// health now that its containers are up and report it once it settles.
-	if waiter, ok := deployer.(applicationHealthWaiter); ok {
-		reportPostDeployHealth(ctx, sender, waiter, req.ApplicationId)
-	}
-}
-
-// reportPostDeployHealth waits for the freshly deployed application's health to
-// settle (bounded by docker.HealthSettleTimeout) and sends the outcome to the
-// hub as an ApplicationStatusReport.
-func reportPostDeployHealth(ctx context.Context, sender outboundSender, waiter applicationHealthWaiter, appID string) {
-	waitCtx, cancel := context.WithTimeout(ctx, docker.HealthSettleTimeout)
-	defer cancel()
-
-	health := waiter.WaitForApplicationHealth(waitCtx, appID)
-	if err := sender.SendMessage(&messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health.Proto()}},
-			},
-		},
-	}); err != nil {
-		Log.Error().Err(err).Str("application_id", appID).Msg("failed to send post-deploy health report")
-	}
+	// The deploy does not block on healthchecks; the docker client observes the
+	// application's health via daemon events and reports it once it settles.
 }
 
 func executeDelete(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeleteRequest) {

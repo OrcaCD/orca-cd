@@ -34,6 +34,7 @@ type Client struct {
 	allowedPrivilegedApps     map[string]struct{}
 	restrictMountsToDeployDir bool
 	ready                     bool
+	healthWatcher             *healthWatcher
 	ctx                       context.Context
 	cancel                    context.CancelFunc
 }
@@ -69,6 +70,7 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 		ctx:                       ctx,
 		cancel:                    cancel,
 	}
+	c.healthWatcher = newHealthWatcher(c)
 
 	if c.pingDaemon() {
 		go c.startEventLoop()
@@ -82,6 +84,7 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 
 func (c *Client) Close() {
 	c.cancel()
+	c.healthWatcher.stop()
 }
 
 func (c *Client) CLI() command.Cli {
@@ -254,8 +257,41 @@ func (c *Client) startEventLoop() {
 }
 
 func (c *Client) handleEvent(msg events.Message) {
-	// TODO: We can handle certain events here in the future
-	_ = msg
+	if msg.Type != events.ContainerEventType {
+		return
+	}
+	appID := msg.Actor.Attributes[labelApplicationID]
+	if appID == "" || !healthRelevantAction(msg.Action) {
+		return
+	}
+	c.healthWatcher.schedule(appID)
+}
+
+// resyncApplicationHealth re-evaluates the health of every known application.
+// Called after the event stream was interrupted, since health transitions may
+// have been missed while the daemon was unreachable.
+func (c *Client) resyncApplicationHealth() {
+	appIDs := c.healthWatcher.knownApps()
+
+	ctx, cancel := context.WithTimeout(c.ctx, healthEvaluateTimeout)
+	defer cancel()
+	result, err := c.cli.Client().ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", labelApplicationID),
+	})
+	if err != nil {
+		c.log.Error().Err(err).Msg("health resync: failed to list containers")
+	} else {
+		for _, item := range result.Items {
+			if appID := item.Labels[labelApplicationID]; appID != "" {
+				appIDs[appID] = struct{}{}
+			}
+		}
+	}
+
+	for appID := range appIDs {
+		c.healthWatcher.schedule(appID)
+	}
 }
 
 // waitForDaemon polls until the daemon is reachable again, then resumes the event loop.
@@ -271,6 +307,7 @@ func (c *Client) waitForDaemon() {
 			ticks++
 			if c.pingDaemon() {
 				go c.startEventLoop()
+				go c.resyncApplicationHealth()
 				return
 			}
 			if ticks%12 == 0 {

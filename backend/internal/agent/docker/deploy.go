@@ -148,9 +148,9 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	applyOrcaLabels(project, req.ApplicationID)
 
 	// Do not wait for healthchecks here: deployment is considered complete once
-	// the containers are started. Runtime health is observed afterwards and
-	// reported separately (see WaitForApplicationHealth), so a slow or failing
-	// healthcheck doesn't hold the application in a deploying state.
+	// the containers are started. Runtime health is observed afterwards via
+	// daemon events (see healthWatcher) and reported separately, so a slow or
+	// failing healthcheck doesn't hold the application in a deploying state.
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{
 			RemoveOrphans:        true,
@@ -166,6 +166,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		Str("application_name", req.ApplicationName).
 		Str("compose_path", composePath).
 		Msg("deployment completed")
+
+	// The hub reset the application to unknown health when it started the
+	// deployment, so always report the settled state even if it didn't change.
+	c.observeApplicationHealth(req.ApplicationID)
 
 	return nil
 }
@@ -209,6 +213,8 @@ func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
 		Str("application_id", req.ApplicationID).
 		Str("application_name", req.ApplicationName).
 		Msg("removal completed")
+
+	c.healthWatcher.forget(req.ApplicationID)
 
 	return nil
 }
