@@ -1,7 +1,9 @@
 package docker
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/rs/zerolog"
@@ -62,6 +64,19 @@ func TestAggregateHealth(t *testing.T) {
 			items: []container.Summary{{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Unhealthy}}},
 			want:  HealthUnhealthy,
 		},
+		{
+			name:  "healthcheck still starting is unknown",
+			items: []container.Summary{{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Starting}}},
+			want:  HealthUnknown,
+		},
+		{
+			name: "starting healthcheck does not mask an unhealthy container",
+			items: []container.Summary{
+				{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Starting}},
+				{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Unhealthy}},
+			},
+			want: HealthUnhealthy,
+		},
 	}
 
 	for _, tt := range tests {
@@ -70,5 +85,48 @@ func TestAggregateHealth(t *testing.T) {
 				t.Errorf("aggregateHealth() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestWaitForSettledHealth_ReturnsImmediatelyWhenSettled(t *testing.T) {
+	calls := 0
+	got := waitForSettledHealth(t.Context(), time.Hour, func() HealthState {
+		calls++
+		return HealthHealthy
+	})
+	if got != HealthHealthy {
+		t.Errorf("expected HealthHealthy, got %v", got)
+	}
+	if calls != 1 {
+		t.Errorf("expected a single check, got %d", calls)
+	}
+}
+
+func TestWaitForSettledHealth_PollsUntilSettled(t *testing.T) {
+	calls := 0
+	got := waitForSettledHealth(t.Context(), time.Millisecond, func() HealthState {
+		calls++
+		if calls < 3 {
+			return HealthUnknown
+		}
+		return HealthUnhealthy
+	})
+	if got != HealthUnhealthy {
+		t.Errorf("expected HealthUnhealthy, got %v", got)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 checks, got %d", calls)
+	}
+}
+
+func TestWaitForSettledHealth_ReturnsUnknownOnTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+
+	got := waitForSettledHealth(ctx, time.Millisecond, func() HealthState {
+		return HealthUnknown
+	})
+	if got != HealthUnknown {
+		t.Errorf("expected HealthUnknown when health never settles, got %v", got)
 	}
 }

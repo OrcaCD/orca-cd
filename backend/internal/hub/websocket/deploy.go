@@ -30,11 +30,14 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		// persisting the application's summary status succeeds.
 		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 
+		// A successful deploy means the compose project was applied, not that the
+		// application is healthy: the agent observes runtime health after the
+		// containers start and reports it separately (ApplicationStatusReport), so
+		// health stays "unknown" here until that report arrives.
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 			SyncStatus:    models.Synced,
-			HealthStatus:  models.Healthy,
 			LastSyncedAt:  &now,
 			LastSyncError: &cleared,
 		}, log)

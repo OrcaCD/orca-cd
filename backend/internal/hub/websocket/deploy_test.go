@@ -84,8 +84,10 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	if updated.SyncStatus != models.Synced {
 		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
 	}
-	if updated.HealthStatus != models.Healthy {
-		t.Errorf("expected HealthStatus %q, got %q", models.Healthy, updated.HealthStatus)
+	// Health is not assumed on deploy success; it stays unknown until the agent's
+	// post-deploy status report arrives.
+	if updated.HealthStatus != models.UnknownHealth {
+		t.Errorf("expected HealthStatus %q, got %q", models.UnknownHealth, updated.HealthStatus)
 	}
 	if updated.LastSyncedAt == nil {
 		t.Error("expected LastSyncedAt to be set")

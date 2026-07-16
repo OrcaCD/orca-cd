@@ -134,15 +134,13 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	applyOrcaLabels(project, appID)
 
+	// Like Deploy, don't block on healthchecks: health is observed after the
+	// containers are recreated and reported separately.
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{
 			RemoveOrphans:        true,
 			Recreate:             api.RecreateForce,
 			RecreateDependencies: api.RecreateForce,
-		},
-		Start: api.StartOptions{
-			Wait:        true,
-			WaitTimeout: deployWaitTimeout,
 		},
 	}); err != nil {
 		return false, fmt.Errorf("compose up after pull: %w", err)

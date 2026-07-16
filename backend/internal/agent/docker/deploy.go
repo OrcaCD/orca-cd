@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -16,7 +15,6 @@ import (
 
 const (
 	composeFileName    = "compose.yaml"
-	deployWaitTimeout  = 2 * time.Minute
 	labelManagedBy     = "managed_by"
 	labelApplicationID = "orca-cd.application-id"
 )
@@ -149,15 +147,15 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 
 	applyOrcaLabels(project, req.ApplicationID)
 
+	// Do not wait for healthchecks here: deployment is considered complete once
+	// the containers are started. Runtime health is observed afterwards and
+	// reported separately (see WaitForApplicationHealth), so a slow or failing
+	// healthcheck doesn't hold the application in a deploying state.
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
 		Create: api.CreateOptions{
 			RemoveOrphans:        true,
 			Recreate:             api.RecreateDiverged,
 			RecreateDependencies: api.RecreateDiverged,
-		},
-		Start: api.StartOptions{
-			Wait:        true,
-			WaitTimeout: deployWaitTimeout,
 		},
 	}); err != nil {
 		return fmt.Errorf("compose up: %w", err)
