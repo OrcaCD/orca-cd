@@ -116,6 +116,24 @@ func TestInitPassword_SetsDummyHash(t *testing.T) {
 	}
 }
 
+func TestInitPassword_ReusesDummyHash(t *testing.T) {
+	prev := dummyHash
+	dummyHash = ""
+	t.Cleanup(func() { dummyHash = prev })
+
+	if err := initPassword(); err != nil {
+		t.Fatalf("first initPassword() error: %v", err)
+	}
+	first := dummyHash
+
+	if err := initPassword(); err != nil {
+		t.Fatalf("second initPassword() error: %v", err)
+	}
+	if dummyHash != first {
+		t.Error("initPassword() regenerated an already initialized dummy hash")
+	}
+}
+
 func TestCompareWithDummy_DoesNotPanic(t *testing.T) {
 	if err := initPassword(); err != nil {
 		t.Fatalf("initPassword() error: %v", err)
