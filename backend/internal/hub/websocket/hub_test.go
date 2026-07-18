@@ -145,6 +145,50 @@ func TestHub_Unregister_Nonexistent(t *testing.T) {
 	h.Unregister("does-not-exist")
 }
 
+func TestHub_DisconnectReservesRegistrationUntilCleanupFinishes(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+	serverConn, peerConn := newWSPair(t)
+	defer peerConn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-1", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	h.BeginDisconnect(client)
+
+	if h.Send("agent-1", &messages.ServerMessage{}) {
+		t.Error("expected closing client to reject messages")
+	}
+	if _, ok := h.GetClient("agent-1"); ok {
+		t.Error("expected closing client to be unavailable")
+	}
+	if !h.IsRegistered("agent-1") {
+		t.Error("expected registration to remain reserved during cleanup")
+	}
+	if _, err := h.Register("agent-1", nil); err == nil {
+		t.Error("expected registration to stay reserved during cleanup")
+	}
+	if _, ok := <-client.Send; ok {
+		t.Error("expected client send channel to be closed")
+	}
+	if err := peerConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if _, _, err := peerConn.ReadMessage(); err == nil {
+		t.Error("expected peer connection to close immediately")
+	}
+
+	h.FinishDisconnect(client)
+	if h.IsRegistered("agent-1") {
+		t.Error("expected reservation to be released after cleanup")
+	}
+	if _, err := h.Register("agent-1", nil); err != nil {
+		t.Fatalf("expected registration after cleanup to succeed: %v", err)
+	}
+}
+
 func TestHub_Send_ExistingClient(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)

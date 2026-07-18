@@ -19,6 +19,7 @@ import (
 
 func setupImagePollTestEnv(t *testing.T) {
 	t.Helper()
+	runNotificationsSynchronously(t)
 	setupHandlerTestEnv(t)
 	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate Application: %v", err)

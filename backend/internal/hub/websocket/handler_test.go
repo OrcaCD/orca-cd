@@ -287,6 +287,30 @@ func TestWsHandler_KeyIdMismatch(t *testing.T) {
 	}
 }
 
+func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "reserved-key-id")
+	token := issueTokenAndPersistKeyID(t, agent)
+	if _, err := h.Register(agent.Id, nil); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	_, resp, dialErr := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if dialErr == nil {
+		t.Fatal("expected dial error, got nil")
+	}
+	if resp == nil || resp.StatusCode != http.StatusConflict {
+		t.Errorf("expected 409, got %v", resp)
+	}
+}
+
 func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
@@ -497,6 +521,62 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
 	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
+}
+
+func TestDispatchClientMessage_ProcessesStatusUpdatesSynchronously(t *testing.T) {
+	tests := map[string]*messages.ClientMessage{
+		"health report": {
+			Payload: &messages.ClientMessage_ApplicationStatusReport{
+				ApplicationStatusReport: &messages.ApplicationStatusReport{},
+			},
+		},
+		"deploy result": {
+			Payload: &messages.ClientMessage_DeployResult{DeployResult: &messages.DeployResult{}},
+		},
+		"image pull result": {
+			Payload: &messages.ClientMessage_PullImagesResult{PullImagesResult: &messages.PullImagesResult{}},
+		},
+	}
+	for name, msg := range tests {
+		t.Run(name, func(t *testing.T) {
+			firstStarted := make(chan struct{})
+			releaseFirst := make(chan struct{})
+			secondStarted := make(chan struct{})
+			done := make(chan struct{})
+
+			go func() {
+				dispatchClientMessage(msg, func() {
+					close(firstStarted)
+					<-releaseFirst
+				})
+				dispatchClientMessage(msg, func() { close(secondStarted) })
+				close(done)
+			}()
+
+			select {
+			case <-firstStarted:
+			case <-time.After(time.Second):
+				t.Fatal("first status update did not start")
+			}
+			select {
+			case <-secondStarted:
+				t.Fatal("second status update started before the first completed")
+			default:
+			}
+
+			close(releaseFirst)
+			select {
+			case <-secondStarted:
+			case <-time.After(time.Second):
+				t.Fatal("second status update did not start after the first completed")
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("status update dispatch did not finish")
+			}
+		})
+	}
 }
 
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {

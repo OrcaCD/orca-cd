@@ -307,7 +307,7 @@ func (c *Client) resyncApplicationHealth() {
 func (c *Client) reconcileApplicationHealth(appIDs map[string]struct{}) {
 	for appID := range c.healthWatcher.knownApps() {
 		if _, active := appIDs[appID]; !active {
-			c.healthWatcher.forget(appID)
+			c.healthWatcher.reconcileMissingApplication(appID)
 		}
 	}
 	for appID := range appIDs {

@@ -20,6 +20,7 @@ import (
 
 func setupDeployTestEnv(t *testing.T) {
 	t.Helper()
+	runNotificationsSynchronously(t)
 
 	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
 		t.Fatalf("failed to init crypto: %v", err)
@@ -51,6 +52,13 @@ func setupDeployTestEnv(t *testing.T) {
 	})
 
 	db.DB = testDB
+}
+
+func runNotificationsSynchronously(t *testing.T) {
+	t.Helper()
+	previous := launchNotification
+	launchNotification = func(send func()) { send() }
+	t.Cleanup(func() { launchNotification = previous })
 }
 
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {

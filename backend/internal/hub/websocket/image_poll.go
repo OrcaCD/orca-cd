@@ -7,7 +7,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
@@ -54,13 +53,13 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 
 	recordImagePullHistory(ctx, r, log)
 
-	if r.Success {
-		notifications.SendNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
-	} else {
-		notifications.SendNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
-	}
-
 	sse.PublishUpdate("/api/v1/applications")
+
+	if r.Success {
+		dispatchNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
+	} else {
+		dispatchNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
+	}
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this

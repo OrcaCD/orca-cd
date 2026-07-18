@@ -29,6 +29,28 @@ type stubSender struct {
 	sent chan *messages.ClientMessage
 }
 
+type recordingMessageConn struct {
+	deadline    time.Time
+	deadlineErr error
+	writeCalled bool
+	closed      bool
+}
+
+func (c *recordingMessageConn) SetWriteDeadline(deadline time.Time) error {
+	c.deadline = deadline
+	return c.deadlineErr
+}
+
+func (c *recordingMessageConn) WriteMessage(int, []byte) error {
+	c.writeCalled = true
+	return nil
+}
+
+func (c *recordingMessageConn) Close() error {
+	c.closed = true
+	return nil
+}
+
 func (s *stubSender) SendMessage(msg *messages.ClientMessage) error {
 	if s.sent != nil {
 		s.sent <- msg
@@ -570,6 +592,44 @@ func TestSendMessage_Encrypted(t *testing.T) {
 	}
 }
 
+func TestSendMessage_SetsWriteDeadline(t *testing.T) {
+	conn := &recordingMessageConn{}
+	sender := &messageSender{conn: conn}
+	before := time.Now()
+
+	err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if !conn.writeCalled {
+		t.Fatal("expected WriteMessage to be called")
+	}
+	if conn.deadline.Before(before.Add(writeWait-time.Second)) || conn.deadline.After(time.Now().Add(writeWait+time.Second)) {
+		t.Errorf("write deadline %s is not approximately %s from now", conn.deadline, writeWait)
+	}
+}
+
+func TestSendMessage_DeadlineErrorClosesConnection(t *testing.T) {
+	deadlineErr := errors.New("deadline failed")
+	conn := &recordingMessageConn{deadlineErr: deadlineErr}
+	sender := &messageSender{conn: conn}
+
+	err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_Pong{Pong: &messages.PongResponse{}},
+	})
+	if !errors.Is(err, deadlineErr) {
+		t.Fatalf("SendMessage error = %v, want %v", err, deadlineErr)
+	}
+	if conn.writeCalled {
+		t.Fatal("WriteMessage was called after SetWriteDeadline failed")
+	}
+	if !conn.closed {
+		t.Fatal("connection was not closed after SetWriteDeadline failed")
+	}
+}
+
 func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 	sessionKey := make([]byte, 32)
 	session, err := wscrypto.NewSession(sessionKey)
@@ -940,8 +1000,19 @@ type stubReporter struct {
 	health map[string]agentdocker.HealthState
 }
 
-func (r *stubReporter) ApplicationHealth(_ context.Context, appID string) agentdocker.HealthState {
-	return r.health[appID]
+func (r *stubReporter) ReportApplicationStatus(_ context.Context, sender agentdocker.MessageSender, appIDs []string) {
+	statuses := make([]*messages.ApplicationStatus, 0, len(appIDs))
+	for _, appID := range appIDs {
+		statuses = append(statuses, &messages.ApplicationStatus{
+			ApplicationId: appID,
+			Health:        r.health[appID].Proto(),
+		})
+	}
+	_ = sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{Statuses: statuses},
+		},
+	})
 }
 
 func TestReportApplicationStatus_SendsOneReportForAllApps(t *testing.T) {

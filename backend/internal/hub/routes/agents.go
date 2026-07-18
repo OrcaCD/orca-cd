@@ -319,8 +319,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "rotated-token", "agent", agent.Id)
 
 	if client, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
-		websocket.DefaultHub.Unregister(agent.Id)
-		client.Close()
+		websocket.DefaultHub.BeginDisconnect(client)
 	}
 
 	c.JSON(http.StatusOK, agentWithTokenResponse{
@@ -346,8 +345,7 @@ func DeleteAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "agent", id)
 
 	if client, ok := websocket.DefaultHub.GetClient(id); ok {
-		websocket.DefaultHub.Unregister(id)
-		client.Close()
+		websocket.DefaultHub.BeginDisconnect(client)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})

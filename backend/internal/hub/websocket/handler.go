@@ -66,6 +66,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
+		if h.IsRegistered(claims.Subject) {
+			c.AbortWithStatus(http.StatusConflict)
+			return
+		}
 
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -126,8 +130,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		}
 
 		defer func() {
-			h.Unregister(claims.Subject)
-			client.Close()
+			// Reserve the registration until cleanup finishes. Otherwise a new
+			// session can report fresh state that this old session then overwrites.
+			h.BeginDisconnect(client)
+			defer h.FinishDisconnect(client)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(ctx, "status", models.AgentStatusOffline)
@@ -165,16 +171,28 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(client, msg, log)
+			decoded, ok := decodeClientMessage(client, msg, log)
+			if !ok {
+				continue
+			}
+			dispatchClientMessage(decoded, func() { handleDecodedClientMessage(client, decoded, log) })
 		}
 	}
 }
 
 func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+	decoded, ok := decodeClientMessage(client, msg, log)
+	if !ok {
+		return
+	}
+	handleDecodedClientMessage(client, decoded, log)
+}
+
+func decodeClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) (*messages.ClientMessage, bool) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
-		return
+		return nil, false
 	}
 
 	// Unwrap at most one layer of encryption to prevent a malicious client from
@@ -183,15 +201,29 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		inner := &messages.ClientMessage{}
 		if err := client.session.Decrypt(p.EncryptedPayload, inner); err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to decrypt message")
-			return
+			return nil, false
 		}
 		if _, stillEncrypted := inner.Payload.(*messages.ClientMessage_EncryptedPayload); stillEncrypted {
 			log.Warn().Str("client", client.Id).Msg("Dropping doubly-encrypted message")
-			return
+			return nil, false
 		}
 		msg = inner
 	}
+	return msg, true
+}
 
+func dispatchClientMessage(msg *messages.ClientMessage, handle func()) {
+	switch msg.Payload.(type) {
+	case *messages.ClientMessage_ApplicationStatusReport,
+		*messages.ClientMessage_DeployResult,
+		*messages.ClientMessage_PullImagesResult:
+		handle()
+		return
+	}
+	go handle()
+}
+
+func handleDecodedClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	switch p := msg.Payload.(type) {
 	case *messages.ClientMessage_Pong:
 		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)

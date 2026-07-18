@@ -19,6 +19,7 @@ import (
 
 const handshakeTimeout = 15 * time.Second
 const deploymentTimeout = 5 * time.Minute
+const writeWait = 10 * time.Second
 
 type outboundSender interface {
 	SendMessage(msg *messages.ClientMessage) error
@@ -35,11 +36,17 @@ type pollerHandler interface {
 }
 
 type statusReporter interface {
-	ApplicationHealth(ctx context.Context, appID string) docker.HealthState
+	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
+}
+
+type messageConn interface {
+	SetWriteDeadline(deadline time.Time) error
+	WriteMessage(messageType int, data []byte) error
+	Close() error
 }
 
 type messageSender struct {
-	conn    *websocket.Conn
+	conn    messageConn
 	mu      sync.Mutex
 	session *wscrypto.Session
 }
@@ -96,6 +103,9 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 	if err != nil {
 		return nil, fmt.Errorf("marshal KeyExchangeResponse: %w", err)
 	}
+	if err := conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		return nil, fmt.Errorf("set KeyExchangeResponse write deadline: %w", err)
+	}
 	if err := conn.WriteMessage(websocket.BinaryMessage, respData); err != nil {
 		return nil, fmt.Errorf("send KeyExchangeResponse: %w", err)
 	}
@@ -130,7 +140,15 @@ func (s *messageSender) SendMessage(msg *messages.ClientMessage) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	return s.conn.WriteMessage(websocket.BinaryMessage, data)
+	if err := s.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+		_ = s.conn.Close()
+		return fmt.Errorf("set write deadline: %w", err)
+	}
+	if err := s.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+		_ = s.conn.Close()
+		return fmt.Errorf("write message: %w", err)
+	}
+	return nil
 }
 
 func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor, poller pollerHandler) {
@@ -217,24 +235,14 @@ func reportApplicationStatus(ctx context.Context, sender outboundSender, reporte
 		return
 	}
 
-	statuses := make([]*messages.ApplicationStatus, 0, len(settings.ImagePollSettings))
+	appIDs := make([]string, 0, len(settings.ImagePollSettings))
 	for _, s := range settings.ImagePollSettings {
-		statuses = append(statuses, &messages.ApplicationStatus{
-			ApplicationId: s.ApplicationId,
-			Health:        reporter.ApplicationHealth(ctx, s.ApplicationId).Proto(),
-		})
+		appIDs = append(appIDs, s.ApplicationId)
 	}
-	if len(statuses) == 0 {
+	if len(appIDs) == 0 {
 		return
 	}
-
-	if err := sender.SendMessage(&messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{Statuses: statuses},
-		},
-	}); err != nil {
-		Log.Error().Err(err).Msg("failed to send application status report")
-	}
+	reporter.ReportApplicationStatus(ctx, sender, appIDs)
 }
 
 func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {

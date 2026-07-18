@@ -298,6 +298,89 @@ func TestHealthWatcher_SerializesEvaluationsPerApplication(t *testing.T) {
 	}
 }
 
+func TestHealthWatcher_SerializesSnapshotAndIncrementalReports(t *testing.T) {
+	sender := &stubMessageSender{}
+	snapshotStarted := make(chan struct{})
+	incrementalStarted := make(chan struct{})
+	releaseSnapshot := make(chan struct{})
+	var calls atomic.Int32
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+		switch calls.Add(1) {
+		case 1:
+			close(snapshotStarted)
+			<-releaseSnapshot
+			return HealthHealthy
+		case 2:
+			close(incrementalStarted)
+			return HealthUnhealthy
+		default:
+			return HealthUnknown
+		}
+	})
+	w.debounce = time.Hour
+	w.maxDelay = time.Hour
+	t.Cleanup(func() {
+		select {
+		case <-releaseSnapshot:
+		default:
+			close(releaseSnapshot)
+		}
+	})
+
+	snapshotDone := make(chan struct{})
+	go func() {
+		w.reportApplicationStatus(t.Context(), sender, []string{"app-1"})
+		close(snapshotDone)
+	}()
+	awaitSignal(t, snapshotStarted, "snapshot evaluation to start")
+
+	w.schedule("app-1")
+	pending := pendingEvaluationForTest(t, w)
+	incrementalDone := make(chan struct{})
+	go func() {
+		w.evaluate("app-1", pending)
+		close(incrementalDone)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		w.mu.Lock()
+		running := w.evaluating["app-1"] != nil
+		w.mu.Unlock()
+		if running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("incremental evaluation was not registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	select {
+	case <-incrementalStarted:
+		t.Fatal("incremental evaluation overlapped the reconnect snapshot")
+	default:
+	}
+	close(releaseSnapshot)
+
+	msgs := awaitReports(t, sender, 2)
+	awaitSignal(t, snapshotDone, "snapshot report to finish")
+	awaitSignal(t, incrementalDone, "incremental report to finish")
+
+	want := []messages.HealthStatus{
+		messages.HealthStatus_HEALTH_STATUS_HEALTHY,
+		messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
+	}
+	for i, msg := range msgs {
+		report := msg.GetApplicationStatusReport()
+		if report == nil || len(report.Statuses) != 1 {
+			t.Fatalf("message %d: unexpected report: %v", i, report)
+		}
+		if got := report.Statuses[0].Health; got != want[i] {
+			t.Errorf("message %d: health = %v, want %v", i, got, want[i])
+		}
+	}
+}
+
 func TestHealthWatcher_ForgetInvalidatesRunningEvaluation(t *testing.T) {
 	sender := &stubMessageSender{}
 	started := make(chan struct{})
@@ -469,6 +552,8 @@ func TestReconcileApplicationHealth_ReEvaluatesActiveApps(t *testing.T) {
 
 func TestReconcileApplicationHealth_ForgetsAppsWithoutContainers(t *testing.T) {
 	c := newTestClient(t)
+	sender := &stubMessageSender{}
+	c.healthWatcher.sender = sender
 	c.healthWatcher.debounce = time.Hour
 	c.healthWatcher.lastReported["removed-app"] = HealthHealthy
 	c.healthWatcher.schedule("removed-app")
@@ -483,5 +568,74 @@ func TestReconcileApplicationHealth_ForgetsAppsWithoutContainers(t *testing.T) {
 	c.healthWatcher.mu.Unlock()
 	if pending {
 		t.Error("expected pending evaluation for removed app to be cancelled")
+	}
+
+	msgs := awaitReports(t, sender, 1)
+	report := msgs[0].GetApplicationStatusReport()
+	if report == nil || len(report.Statuses) != 1 {
+		t.Fatalf("unexpected report for removed app: %v", report)
+	}
+	status := report.Statuses[0]
+	if status.ApplicationId != "removed-app" {
+		t.Errorf("application id = %q, want removed-app", status.ApplicationId)
+	}
+	if status.Health != messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED {
+		t.Errorf("health = %v, want unspecified", status.Health)
+	}
+}
+
+func TestReconcileApplicationHealth_RechecksStaleMissingSnapshot(t *testing.T) {
+	c := newTestClient(t)
+	sender := &stubMessageSender{}
+	c.healthWatcher.sender = sender
+	c.healthWatcher.lastReported["recreated-app"] = HealthHealthy
+	c.healthWatcher.checkHealth = func(context.Context, string) HealthState {
+		return HealthHealthy
+	}
+
+	c.reconcileApplicationHealth(map[string]struct{}{})
+
+	msgs := awaitReports(t, sender, 1)
+	status := msgs[0].GetApplicationStatusReport().Statuses[0]
+	if status.Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("health = %v, want healthy", status.Health)
+	}
+	if got := c.healthWatcher.lastReported["recreated-app"]; got != HealthHealthy {
+		t.Errorf("last reported health = %v, want healthy", got)
+	}
+}
+
+func TestReconcileApplicationHealth_RetriesAfterRecheckCancellation(t *testing.T) {
+	c := newTestClient(t)
+	sender := &stubMessageSender{}
+	c.healthWatcher.sender = sender
+	c.healthWatcher.lastReported["missing-app"] = HealthHealthy
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.healthWatcher.ctx = cancelled
+	c.healthWatcher.checkHealth = func(ctx context.Context, _ string) HealthState {
+		<-ctx.Done()
+		return HealthUnknown
+	}
+
+	c.reconcileApplicationHealth(map[string]struct{}{})
+
+	if msgs := sender.received(); len(msgs) != 0 {
+		t.Fatalf("expected no report after cancelled recheck, got %d", len(msgs))
+	}
+	if _, known := c.healthWatcher.knownApps()["missing-app"]; !known {
+		t.Error("expected missing app to remain eligible for the next resync")
+	}
+}
+
+func TestReconcileApplicationHealth_RetriesAfterSendFailure(t *testing.T) {
+	sender := &stubMessageSender{err: context.DeadlineExceeded}
+	w := newTestWatcher(t, sender, staticHealth(HealthUnknown))
+	w.lastReported["missing-app"] = HealthHealthy
+
+	w.reconcileMissingApplication("missing-app")
+
+	if _, known := w.knownApps()["missing-app"]; !known {
+		t.Error("expected missing app to remain eligible for the next resync")
 	}
 }

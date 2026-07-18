@@ -14,6 +14,16 @@ import (
 	"gorm.io/gorm"
 )
 
+var launchNotification = func(send func()) {
+	go send()
+}
+
+func dispatchNotification(applicationID, message string, log *zerolog.Logger) {
+	launchNotification(func() {
+		notifications.SendNotification(applicationID, message, log)
+	})
+}
+
 func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -44,7 +54,7 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		if err != nil {
 			return
 		}
-		notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
+		dispatchNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}
 
@@ -53,13 +63,13 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		errMsg = "deployment failed"
 	}
 
-	notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
 		HealthStatus:  models.Unhealthy,
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
+	dispatchNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
 }
 
 func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {

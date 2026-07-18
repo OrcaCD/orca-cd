@@ -41,6 +41,7 @@ type healthEvaluation struct {
 // differs from what was last reported.
 type healthWatcher struct {
 	mu           sync.Mutex
+	reportMu     sync.Mutex
 	ctx          context.Context
 	log          zerolog.Logger
 	debounce     time.Duration
@@ -74,6 +75,13 @@ func newHealthWatcher(c *Client) *healthWatcher {
 // status report the agent sends on (re)connect brings the hub up to date.
 func (c *Client) SetHealthReporter(sender MessageSender) {
 	c.healthWatcher.setSender(sender)
+}
+
+// ReportApplicationStatus sends a current health snapshot for appIDs. Snapshot
+// and event-driven reports share one serialization point so an older snapshot
+// cannot overtake a newer incremental report.
+func (c *Client) ReportApplicationStatus(ctx context.Context, sender MessageSender, appIDs []string) {
+	c.healthWatcher.reportApplicationStatus(ctx, sender, appIDs)
 }
 
 // observeApplicationHealth forces the next settled health evaluation for appID
@@ -178,7 +186,31 @@ func (w *healthWatcher) forget(appID string) {
 }
 
 func (w *healthWatcher) reset(appID string) {
+	evaluations := make(map[*healthEvaluation]struct{}, 2)
+
 	w.mu.Lock()
+	if evaluation := w.resetLocked(appID); evaluation != nil {
+		evaluations[evaluation] = struct{}{}
+	}
+	w.mu.Unlock()
+
+	// A report already in its check/send phase owns reportMu. The first reset
+	// above invalidates its epoch; this barrier waits for it to observe that
+	// invalidation, then clears any work queued while the barrier was pending.
+	w.reportMu.Lock()
+	w.mu.Lock()
+	if evaluation := w.resetLocked(appID); evaluation != nil {
+		evaluations[evaluation] = struct{}{}
+	}
+	w.mu.Unlock()
+	w.reportMu.Unlock()
+
+	for evaluation := range evaluations {
+		<-evaluation.done
+	}
+}
+
+func (w *healthWatcher) resetLocked(appID string) *healthEvaluation {
 	delete(w.lastReported, appID)
 	delete(w.epochs, appID)
 	if pending, ok := w.pending[appID]; ok {
@@ -189,11 +221,7 @@ func (w *healthWatcher) reset(appID string) {
 	if evaluation != nil {
 		evaluation.cancel()
 	}
-	w.mu.Unlock()
-
-	if evaluation != nil {
-		<-evaluation.done
-	}
+	return evaluation
 }
 
 // stop prevents future evaluations, cancels pending and running work, and
@@ -202,22 +230,32 @@ func (w *healthWatcher) stop() {
 	if w == nil {
 		return
 	}
+	evaluations := make(map[*healthEvaluation]struct{})
 	w.mu.Lock()
+	w.stopLocked(evaluations)
+	w.mu.Unlock()
+
+	w.reportMu.Lock()
+	w.mu.Lock()
+	w.stopLocked(evaluations)
+	w.mu.Unlock()
+	w.reportMu.Unlock()
+
+	for evaluation := range evaluations {
+		<-evaluation.done
+	}
+}
+
+func (w *healthWatcher) stopLocked(evaluations map[*healthEvaluation]struct{}) {
 	w.stopped = true
 	for appID, pending := range w.pending {
 		pending.timer.Stop()
 		delete(w.pending, appID)
 	}
 	clear(w.epochs)
-	evaluations := make([]*healthEvaluation, 0, len(w.evaluating))
 	for _, evaluation := range w.evaluating {
 		evaluation.cancel()
-		evaluations = append(evaluations, evaluation)
-	}
-	w.mu.Unlock()
-
-	for _, evaluation := range evaluations {
-		<-evaluation.done
+		evaluations[evaluation] = struct{}{}
 	}
 }
 
@@ -260,7 +298,7 @@ func (w *healthWatcher) evaluate(appID string, pending *pendingHealthEvaluation)
 
 func (w *healthWatcher) newEvaluationLocked(epoch uint64) *healthEvaluation {
 	// cancel is retained by healthEvaluation and called during finish or reset
-	ctx, cancel := context.WithTimeout(w.ctx, healthEvaluateTimeout) //nolint:gosec
+	ctx, cancel := context.WithCancel(w.ctx)
 	return &healthEvaluation{
 		ctx:    ctx,
 		cancel: cancel,
@@ -271,6 +309,8 @@ func (w *healthWatcher) newEvaluationLocked(epoch uint64) *healthEvaluation {
 
 func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation) {
 	defer w.finishEvaluation(appID, evaluation)
+	w.reportMu.Lock()
+	defer w.reportMu.Unlock()
 
 	w.mu.Lock()
 	current := !w.stopped && w.evaluating[appID] == evaluation && w.epochs[appID] == evaluation.epoch
@@ -279,7 +319,9 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 		return
 	}
 
-	health := w.checkHealth(evaluation.ctx, appID)
+	checkCtx, cancel := context.WithTimeout(evaluation.ctx, healthEvaluateTimeout)
+	health := w.checkHealth(checkCtx, appID)
+	cancel()
 	if health == HealthUnknown {
 		return
 	}
@@ -309,6 +351,124 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 		},
 	}); err != nil {
 		w.log.Error().Err(err).Str("application_id", appID).Msg("failed to send health report")
+	}
+}
+
+func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender MessageSender, appIDs []string) {
+	if w == nil || sender == nil || len(appIDs) == 0 {
+		return
+	}
+
+	w.reportMu.Lock()
+	defer w.reportMu.Unlock()
+	w.mu.Lock()
+	stopped := w.stopped
+	w.mu.Unlock()
+	if stopped {
+		return
+	}
+
+	snapshotCtx, cancel := context.WithTimeout(ctx, healthEvaluateTimeout)
+	defer cancel()
+	statuses := make([]*messages.ApplicationStatus, 0, len(appIDs))
+	reported := make(map[string]HealthState, len(appIDs))
+	for _, appID := range appIDs {
+		health := w.checkHealth(snapshotCtx, appID)
+		statuses = append(statuses, &messages.ApplicationStatus{ApplicationId: appID, Health: health.Proto()})
+		reported[appID] = health
+	}
+	w.mu.Lock()
+	stopped = w.stopped
+	w.mu.Unlock()
+	if stopped || snapshotCtx.Err() != nil {
+		return
+	}
+
+	if err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{Statuses: statuses},
+		},
+	}); err != nil {
+		w.log.Error().Err(err).Msg("failed to send application status snapshot")
+		return
+	}
+
+	w.mu.Lock()
+	if !w.stopped {
+		for appID, health := range reported {
+			if health == HealthUnknown {
+				delete(w.lastReported, appID)
+				continue
+			}
+			w.lastReported[appID] = health
+		}
+	}
+	w.mu.Unlock()
+}
+
+// reconcileMissingApplication rechecks an application that was absent from a
+// container-list snapshot before reporting Unknown. Compose recreate can make
+// that snapshot stale while a replacement container is already running.
+func (w *healthWatcher) reconcileMissingApplication(appID string) {
+	if w == nil {
+		return
+	}
+	evaluations := make(map[*healthEvaluation]struct{}, 2)
+	w.mu.Lock()
+	previous, previouslyReported := w.lastReported[appID]
+	if evaluation := w.resetLocked(appID); evaluation != nil {
+		evaluations[evaluation] = struct{}{}
+	}
+	w.mu.Unlock()
+
+	w.reportMu.Lock()
+	w.mu.Lock()
+	if evaluation := w.resetLocked(appID); evaluation != nil {
+		evaluations[evaluation] = struct{}{}
+	}
+	stopped := w.stopped
+	sender := w.sender
+	w.mu.Unlock()
+	reported := false
+	reportedHealth := HealthUnknown
+	if !stopped && sender != nil {
+		checkCtx, cancel := context.WithTimeout(w.ctx, healthEvaluateTimeout)
+		health := w.checkHealth(checkCtx, appID)
+		checkErr := checkCtx.Err()
+		cancel()
+		if checkErr == nil {
+			if err := sender.SendMessage(&messages.ClientMessage{
+				Payload: &messages.ClientMessage_ApplicationStatusReport{
+					ApplicationStatusReport: &messages.ApplicationStatusReport{
+						Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health.Proto()}},
+					},
+				},
+			}); err != nil {
+				w.log.Error().Err(err).Str("application_id", appID).Msg("failed to reconcile missing application")
+			} else {
+				reported = true
+				reportedHealth = health
+			}
+		}
+	}
+	w.mu.Lock()
+	if !w.stopped {
+		switch {
+		case reported && reportedHealth != HealthUnknown:
+			w.lastReported[appID] = reportedHealth
+		case reported:
+			delete(w.lastReported, appID)
+		case previouslyReported:
+			// Keep the app eligible for the next resync when validation or
+			// delivery failed; otherwise the hub could retain stale health forever.
+			w.lastReported[appID] = previous
+		}
+	}
+	w.mu.Unlock()
+	w.reportMu.Unlock()
+
+	for evaluation := range evaluations {
+		<-evaluation.done
 	}
 }
 
