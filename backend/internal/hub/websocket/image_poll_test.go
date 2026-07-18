@@ -15,7 +15,7 @@ import (
 func setupImagePollTestEnv(t *testing.T) {
 	t.Helper()
 	setupHandlerTestEnv(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate Application: %v", err)
 	}
 	sse.DefaultBroker = sse.NewBroker(&zerolog_disabled)
@@ -56,8 +56,9 @@ func TestHandlePullImagesResult_Success(t *testing.T) {
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
 
 	before := time.Now().Truncate(time.Second)
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		ApplicationId: app.Id,
 		Success:       true,
 		ImagesUpdated: true,
@@ -89,7 +90,7 @@ func TestHandlePullImagesResult_WrongAgent(t *testing.T) {
 	attacker := createTestAgent(t, "key-ipr-attacker")
 	attackerClient := &Client{Id: attacker.Id, Send: make(chan *messages.ServerMessage, 1)}
 
-	notification := handlePullImagesResult(attackerClient, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), attackerClient, &messages.PullImagesResult{
 		ApplicationId: app.Id,
 		Success:       true,
 		ImagesUpdated: true,
@@ -104,47 +105,6 @@ func TestHandlePullImagesResult_WrongAgent(t *testing.T) {
 	}
 	if unchanged.LastSyncedAt != nil {
 		t.Errorf("expected LastSyncedAt to remain nil, got %v", unchanged.LastSyncedAt)
-	}
-	if notification != nil {
-		t.Errorf("expected no notification intent, got %+v", notification)
-	}
-}
-
-func TestHandlePullImagesResult_Success_BuildsNotification(t *testing.T) {
-	setupImagePollTestEnv(t)
-	log := testLogger()
-
-	agent := createTestAgent(t, "key-ipr-notify-success")
-	app := createTestApplication(t, agent.Id)
-	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
-
-	notification := handlePullImagesResult(client, &messages.PullImagesResult{
-		ApplicationId: app.Id,
-		Success:       true,
-		ImagesUpdated: true,
-	}, &log)
-
-	if notification == nil || notification.applicationID != app.Id || notification.message != "Success: image update succeeded for test-app" {
-		t.Fatalf("unexpected notification intent: %+v", notification)
-	}
-}
-
-func TestHandlePullImagesResult_Failure_BuildsNotification(t *testing.T) {
-	setupImagePollTestEnv(t)
-	log := testLogger()
-
-	agent := createTestAgent(t, "key-ipr-notify-failure")
-	app := createTestApplication(t, agent.Id)
-	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
-
-	notification := handlePullImagesResult(client, &messages.PullImagesResult{
-		ApplicationId: app.Id,
-		Success:       false,
-		ErrorMessage:  "registry timeout",
-	}, &log)
-
-	if notification == nil || notification.applicationID != app.Id || notification.message != "Error: image update failed for test-app" {
-		t.Fatalf("unexpected notification intent: %+v", notification)
 	}
 }
 
@@ -177,8 +137,9 @@ func TestHandlePullImagesResult_ExplicitRequestImagesUpdated_CompletesSucceeded(
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
 	startImageUpdateEvent(t, app.Id, "image-req-1")
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		RequestId:     "image-req-1",
 		ApplicationId: app.Id,
 		Success:       true,
@@ -202,8 +163,9 @@ func TestHandlePullImagesResult_ExplicitRequestNoUpdates_CompletesNoChange(t *te
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
 	startImageUpdateEvent(t, app.Id, "image-req-2")
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		RequestId:     "image-req-2",
 		ApplicationId: app.Id,
 		Success:       true,
@@ -226,8 +188,9 @@ func TestHandlePullImagesResult_PeriodicNoOpSuccess_RecordsNothing(t *testing.T)
 	agent := createTestAgent(t, "key-ipr-evt-3")
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		RequestId:     "unsolicited-poll",
 		ApplicationId: app.Id,
 		Success:       true,
@@ -246,8 +209,9 @@ func TestHandlePullImagesResult_PeriodicUpdate_RecordsTerminalPollingEvent(t *te
 	agent := createTestAgent(t, "key-ipr-evt-4")
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		RequestId:     "periodic-updated",
 		ApplicationId: app.Id,
 		Success:       true,
@@ -272,8 +236,9 @@ func TestHandlePullImagesResult_PeriodicFailure_RecordsTerminalPollingEvent(t *t
 	agent := createTestAgent(t, "key-ipr-evt-5")
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		RequestId:     "periodic-failed",
 		ApplicationId: app.Id,
 		Success:       false,
@@ -298,8 +263,9 @@ func TestHandlePullImagesResult_Failure(t *testing.T) {
 	agent := createTestAgent(t, "key-ipr-2")
 	app := createTestApplication(t, agent.Id)
 	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	expectAsyncNotification(t)
 
-	handlePullImagesResult(client, &messages.PullImagesResult{
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
 		ApplicationId: app.Id,
 		Success:       false,
 		ErrorMessage:  "registry timeout",

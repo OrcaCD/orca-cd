@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -35,7 +36,7 @@ func setupDeployTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -49,6 +50,38 @@ func setupDeployTestEnv(t *testing.T) {
 	})
 
 	db.DB = testDB
+}
+
+// expectAsyncNotification creates an observable completion barrier for the
+// fire-and-forget notification goroutine. The invalid provider fails locally
+// and sets the notification status after its final database access.
+func expectAsyncNotification(t *testing.T) {
+	t.Helper()
+	notification := models.Notification{
+		Name:            crypto.EncryptedString("async notification barrier"),
+		Enabled:         true,
+		EnableByDefault: true,
+		Status:          models.NotificationStatusUnknown,
+		Type:            models.NotificationType("test-invalid"),
+		Config:          crypto.EncryptedString("{}"),
+	}
+	if err := db.DB.Select("*").Create(&notification).Error; err != nil {
+		t.Fatalf("create notification barrier: %v", err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			got, err := gorm.G[models.Notification](db.DB).
+				Select("status").
+				Where("id = ?", notification.Id).
+				First(context.Background())
+			if err == nil && got.Status == models.NotificationStatusError {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Error("async notification did not finish")
+	})
 }
 
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
@@ -72,8 +105,9 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
+	expectAsyncNotification(t)
 
-	notification := handleDeployResult(&messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
+	handleDeployResult(t.Context(), &messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
 	if err != nil {
@@ -90,9 +124,6 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	if updated.LastSyncedAt == nil {
 		t.Error("expected LastSyncedAt to be set")
 	}
-	if notification == nil || notification.applicationID != app.Id || notification.message != "Success: deployment succeeded for test-app" {
-		t.Fatalf("unexpected notification intent: %+v", notification)
-	}
 }
 
 func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
@@ -108,7 +139,8 @@ func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 		t.Fatalf("start event: %v", err)
 	}
 	nop := zerolog.Nop()
-	handleDeployResult(&messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
+	expectAsyncNotification(t)
+	handleDeployResult(t.Context(), &messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventSucceeded {
 		t.Fatalf("event=%+v err=%v", event, err)
@@ -128,10 +160,54 @@ func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
 		t.Fatalf("start event: %v", err)
 	}
 	nop := zerolog.Nop()
-	handleDeployResult(&messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
+	expectAsyncNotification(t)
+	handleDeployResult(t.Context(), &messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventRunning {
 		t.Fatalf("event=%+v err=%v", event, err)
+	}
+}
+
+func TestFailRunningDeploymentEventsForAgent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	other := seedAppForAgent(t, "agent-2")
+	tests := []struct {
+		requestID     string
+		applicationID string
+		eventType     models.ApplicationEventType
+		want          models.ApplicationEventStatus
+	}{
+		{"deployment", app.Id, models.ApplicationEventDeployment, models.ApplicationEventFailed},
+		{"commit-sync", app.Id, models.ApplicationEventCommitSync, models.ApplicationEventRunning},
+		{"image-update", app.Id, models.ApplicationEventImageUpdate, models.ApplicationEventRunning},
+		{"other-agent", other.Id, models.ApplicationEventDeployment, models.ApplicationEventRunning},
+	}
+	for _, test := range tests {
+		requestID := test.requestID
+		if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+			ApplicationID: test.applicationID,
+			RequestID:     &requestID,
+			Type:          test.eventType,
+			Source:        models.ApplicationEventSourceManual,
+		}); err != nil {
+			t.Fatalf("start %s event: %v", test.requestID, err)
+		}
+	}
+
+	nop := zerolog.Nop()
+	failRunningDeploymentEventsForAgent(t.Context(), "agent-1", &nop)
+
+	for _, test := range tests {
+		event, err := gorm.G[models.ApplicationEvent](db.DB).
+			Where("request_id = ?", test.requestID).
+			First(t.Context())
+		if err != nil {
+			t.Fatalf("load %s event: %v", test.requestID, err)
+		}
+		if event.Status != test.want {
+			t.Errorf("%s status = %q, want %q", test.requestID, event.Status, test.want)
+		}
 	}
 }
 
@@ -139,8 +215,9 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
+	expectAsyncNotification(t)
 
-	notification := handleDeployResult(&messages.DeployResult{
+	handleDeployResult(t.Context(), &messages.DeployResult{
 		ApplicationId: app.Id,
 		Success:       false,
 		ErrorMessage:  "boom",
@@ -158,9 +235,6 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	}
 	if updated.LastSyncedAt != nil {
 		t.Error("expected LastSyncedAt to remain nil on failure")
-	}
-	if notification == nil || notification.applicationID != app.Id || notification.message != "Error: deployment failed for test-app" {
-		t.Fatalf("unexpected notification intent: %+v", notification)
 	}
 }
 

@@ -7,22 +7,14 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
-type notificationRequest struct {
-	applicationID string
-	message       string
-}
-
-func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) *notificationRequest {
-	return handleDeployResultContext(context.Background(), result, log)
-}
-
-func handleDeployResultContext(parent context.Context, result *messages.DeployResult, log *zerolog.Logger) *notificationRequest {
+func handleDeployResult(parent context.Context, result *messages.DeployResult, log *zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	now := time.Now()
@@ -30,7 +22,7 @@ func handleDeployResultContext(parent context.Context, result *messages.DeployRe
 	app, err := getApplicationByID(ctx, result.ApplicationId, log)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to retrieve application")
-		return nil
+		return
 	}
 
 	if result.Success {
@@ -50,12 +42,10 @@ func handleDeployResultContext(parent context.Context, result *messages.DeployRe
 			LastSyncError: &cleared,
 		}, log)
 		if err != nil {
-			return nil
+			return
 		}
-		return &notificationRequest{
-			applicationID: result.ApplicationId,
-			message:       "Success: deployment succeeded for " + app.Name.String(),
-		}
+		go notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
+		return
 	}
 
 	errMsg := result.ErrorMessage
@@ -69,9 +59,8 @@ func handleDeployResultContext(parent context.Context, result *messages.DeployRe
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
-	return &notificationRequest{
-		applicationID: result.ApplicationId,
-		message:       "Error: deployment failed for " + app.Name.String(),
+	if ctx.Err() == nil {
+		go notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
 	}
 }
 

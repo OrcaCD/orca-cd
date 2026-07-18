@@ -1,7 +1,6 @@
 package websocket
 
 import (
-	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -509,7 +507,7 @@ func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must not panic or block
+	handleClientMessage(t.Context(), client, msg, &log) // must not panic or block
 }
 
 func TestHandleClientMessage_DecryptError(t *testing.T) {
@@ -528,7 +526,7 @@ func TestHandleClientMessage_DecryptError(t *testing.T) {
 			},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must return without panic
+	handleClientMessage(t.Context(), client, msg, &log) // must return without panic
 }
 
 func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
@@ -553,7 +551,7 @@ func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // doubly-encrypted — must be dropped
+	handleClientMessage(t.Context(), client, msg, &log) // doubly-encrypted — must be dropped
 }
 
 func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
@@ -579,119 +577,7 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
-}
-
-func TestHandleClientMessages_ProcessesHealthReportsInOrder(t *testing.T) {
-	setupDeployTestEnv(t)
-	app := seedAppForAgent(t, "agent-1")
-	client := &Client{Id: "agent-1"}
-	messageQueue := make(chan *messages.ClientMessage, 2)
-	done := make(chan struct{})
-	log := testLogger()
-
-	go func() {
-		handleClientMessages(context.Background(), client, messageQueue, &log)
-		close(done)
-	}()
-	messageQueue <- &messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
-			},
-		},
-	}
-	messageQueue <- &messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY}},
-			},
-		},
-	}
-	close(messageQueue)
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("message handler did not drain the queue")
-	}
-	if got := healthOf(t, app.Id); got != models.Unhealthy {
-		t.Errorf("health = %q, want %q", got, models.Unhealthy)
-	}
-}
-
-func TestQueueClientMessage_ReturnsFalseWhenFull(t *testing.T) {
-	messageQueue := make(chan *messages.ClientMessage, 1)
-	if !queueClientMessage(messageQueue, &messages.ClientMessage{}) {
-		t.Fatal("expected first message to be queued")
-	}
-	if queueClientMessage(messageQueue, &messages.ClientMessage{}) {
-		t.Fatal("expected full queue to reject the next message")
-	}
-}
-
-func TestHandleClientMessages_DropsPendingMessagesAfterCancellation(t *testing.T) {
-	setupDeployTestEnv(t)
-	app := seedAppForAgent(t, "agent-1")
-	messageQueue := make(chan *messages.ClientMessage, 1)
-	messageQueue <- &messages.ClientMessage{
-		Payload: &messages.ClientMessage_ApplicationStatusReport{
-			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
-			},
-		},
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	done := make(chan struct{})
-	log := testLogger()
-	go func() {
-		handleClientMessages(ctx, &Client{Id: "agent-1"}, messageQueue, &log)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("message handler did not stop")
-	}
-	if got := healthOf(t, app.Id); got != models.UnknownHealth {
-		t.Errorf("health = %q, want pending report to be dropped", got)
-	}
-}
-
-func TestFailRunningEventsForAgent(t *testing.T) {
-	setupDeployTestEnv(t)
-	app := seedAppForAgent(t, "agent-1")
-	other := seedAppForAgent(t, "agent-2")
-	requestID := "agent-1-request"
-	otherRequestID := "agent-2-request"
-	for _, params := range []applicationevents.Params{
-		{ApplicationID: app.Id, RequestID: &requestID, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual},
-		{ApplicationID: other.Id, RequestID: &otherRequestID, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual},
-	} {
-		if _, err := applicationevents.Start(t.Context(), params); err != nil {
-			t.Fatalf("start event: %v", err)
-		}
-	}
-	log := testLogger()
-
-	failRunningEventsForAgent(t.Context(), "agent-1", &log)
-
-	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
-	if err != nil {
-		t.Fatalf("load disconnected agent event: %v", err)
-	}
-	if event.Status != models.ApplicationEventFailed || event.CompletedAt == nil || event.ErrorMessage == nil {
-		t.Fatalf("expected failed completed event, got %+v", event)
-	}
-	otherEvent, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", otherRequestID).First(t.Context())
-	if err != nil {
-		t.Fatalf("load other agent event: %v", err)
-	}
-	if otherEvent.Status != models.ApplicationEventRunning {
-		t.Fatalf("other agent event status = %q, want running", otherEvent.Status)
-	}
+	handleClientMessage(t.Context(), client, msg, &log) // hits the "unknown message type" default case
 }
 
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {

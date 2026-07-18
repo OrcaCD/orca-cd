@@ -210,6 +210,8 @@ func (w *healthWatcher) reset(appID string) {
 	}
 }
 
+// resetLocked clears the tracked state for appID and cancels its active
+// evaluation. The caller must hold w.mu.
 func (w *healthWatcher) resetLocked(appID string) *healthEvaluation {
 	delete(w.lastReported, appID)
 	delete(w.epochs, appID)

@@ -7,17 +7,14 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
-func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *zerolog.Logger) *notificationRequest {
-	return handlePullImagesResultContext(context.Background(), client, r, log)
-}
-
-func handlePullImagesResultContext(parent context.Context, client *Client, r *messages.PullImagesResult, log *zerolog.Logger) *notificationRequest {
+func handlePullImagesResult(parent context.Context, client *Client, r *messages.PullImagesResult, log *zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 
@@ -29,7 +26,7 @@ func handlePullImagesResultContext(parent context.Context, client *Client, r *me
 			Str("client", client.Id).
 			Str("application_id", r.ApplicationId).
 			Msg("failed to retrieve application after image poll")
-		return nil
+		return
 	}
 
 	updates := models.Application{}
@@ -54,21 +51,22 @@ func handlePullImagesResultContext(parent context.Context, client *Client, r *me
 			Str("application_id", r.ApplicationId).
 			Msg("failed to update application after image poll")
 	}
+	if ctx.Err() != nil {
+		return
+	}
 
 	recordImagePullHistory(ctx, r, log)
+	if ctx.Err() != nil {
+		return
+	}
 
 	sse.PublishUpdate("/api/v1/applications")
 
 	if r.Success {
-		return &notificationRequest{
-			applicationID: r.ApplicationId,
-			message:       "Success: image update succeeded for " + app.Name.String(),
-		}
+		go notifications.SendNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
+		return
 	}
-	return &notificationRequest{
-		applicationID: r.ApplicationId,
-		message:       "Error: image update failed for " + app.Name.String(),
-	}
+	go notifications.SendNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this

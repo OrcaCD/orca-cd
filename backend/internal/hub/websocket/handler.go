@@ -9,7 +9,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -132,7 +131,12 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		messageHandlerDone := make(chan struct{})
 		go func() {
 			defer close(messageHandlerDone)
-			handleClientMessages(messageHandlerCtx, client, messageQueue, log)
+			for msg := range messageQueue {
+				if messageHandlerCtx.Err() != nil {
+					return
+				}
+				handleClientMessage(messageHandlerCtx, client, msg, log)
+			}
 		}()
 		defer func() {
 			// Reserve the registration until cleanup finishes. Otherwise a new
@@ -141,18 +145,13 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			defer h.FinishDisconnect(client)
 			close(messageQueue)
 			drainTimer := time.NewTimer(clientMessageDrainTimeout)
+			defer drainTimer.Stop()
 			select {
 			case <-messageHandlerDone:
 			case <-drainTimer.C:
 				log.Warn().Str("client", claims.Subject).Msg("client message drain timed out, cancelling pending messages")
 				cancelMessageHandler()
 				<-messageHandlerDone
-			}
-			if !drainTimer.Stop() {
-				select {
-				case <-drainTimer.C:
-				default:
-				}
 			}
 			cancelMessageHandler()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -173,7 +172,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if syncErr != nil {
 				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
 			}
-			failRunningEventsForAgent(ctx, claims.Subject, log)
+			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
 		}()
 
 		_, err = gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
@@ -213,11 +212,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			decoded, ok := decodeClientMessage(client, msg, log)
-			if !ok {
+			select {
+			case messageQueue <- msg:
 				continue
-			}
-			if !queueClientMessage(messageQueue, decoded) {
+			default:
 				log.Error().Str("client", claims.Subject).Msg("client message queue full, disconnecting")
 				return
 			}
@@ -225,19 +223,11 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 	}
 }
 
-func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
-	decoded, ok := decodeClientMessage(client, msg, log)
-	if !ok {
-		return
-	}
-	handleDecodedClientMessage(context.Background(), client, decoded, log)
-}
-
-func decodeClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) (*messages.ClientMessage, bool) {
+func handleClientMessage(ctx context.Context, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
-		return nil, false
+		return
 	}
 
 	// Unwrap at most one layer of encryption to prevent a malicious client from
@@ -246,76 +236,34 @@ func decodeClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		inner := &messages.ClientMessage{}
 		if err := client.session.Decrypt(p.EncryptedPayload, inner); err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to decrypt message")
-			return nil, false
+			return
 		}
 		if _, stillEncrypted := inner.Payload.(*messages.ClientMessage_EncryptedPayload); stillEncrypted {
 			log.Warn().Str("client", client.Id).Msg("Dropping doubly-encrypted message")
-			return nil, false
+			return
 		}
 		msg = inner
 	}
-	return msg, true
-}
-
-func queueClientMessage(messageQueue chan<- *messages.ClientMessage, msg *messages.ClientMessage) bool {
-	select {
-	case messageQueue <- msg:
-		return true
-	default:
-		return false
-	}
-}
-
-func handleClientMessages(ctx context.Context, client *Client, messageQueue <-chan *messages.ClientMessage, log *zerolog.Logger) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-messageQueue:
-			if !ok {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				handleDecodedClientMessage(ctx, client, msg, log)
-			}
-		}
-	}
-}
-
-func handleDecodedClientMessage(ctx context.Context, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	switch p := msg.Payload.(type) {
 	case *messages.ClientMessage_Pong:
 		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		lastSeen := time.UnixMilli(p.Pong.Timestamp)
-		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(ctx, "last_seen", lastSeen)
+		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(requestCtx, "last_seen", lastSeen)
 		if err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
 	case *messages.ClientMessage_DeployResult:
-		if notification := handleDeployResultContext(ctx, p.DeployResult, log); notification != nil {
-			go notifications.SendNotification(notification.applicationID, notification.message, log)
-		}
+		handleDeployResult(ctx, p.DeployResult, log)
 	case *messages.ClientMessage_DeleteResult:
 		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
 	case *messages.ClientMessage_PullImagesResult:
-		if notification := handlePullImagesResultContext(ctx, client, p.PullImagesResult, log); notification != nil {
-			go notifications.SendNotification(notification.applicationID, notification.message, log)
-		}
+		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:
-		handleApplicationStatusReportContext(ctx, client, p.ApplicationStatusReport, log)
+		handleApplicationStatusReport(ctx, client, p.ApplicationStatusReport, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}
@@ -324,11 +272,7 @@ func handleDecodedClientMessage(ctx context.Context, client *Client, msg *messag
 // handleApplicationStatusReport applies the health an agent reports for its
 // applications. Updates are scoped to the reporting agent so an agent can only
 // affect its own applications.
-func handleApplicationStatusReport(client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
-	handleApplicationStatusReportContext(context.Background(), client, report, log)
-}
-
-func handleApplicationStatusReportContext(parent context.Context, client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
+func handleApplicationStatusReport(parent context.Context, client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
 	if report == nil || len(report.Statuses) == 0 {
 		return
 	}
@@ -364,13 +308,14 @@ func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
 	}
 }
 
-func failRunningEventsForAgent(ctx context.Context, agentID string, log *zerolog.Logger) {
+func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, log *zerolog.Logger) {
 	now := time.Now()
-	errorMessage := "agent disconnected before the operation result was received"
+	errorMessage := "agent disconnected before the deployment result was received"
 	_, err := gorm.G[models.ApplicationEvent](db.DB).
 		Where(
-			"status = ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
+			"status = ? AND type = ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
 			models.ApplicationEventRunning,
+			models.ApplicationEventDeployment,
 			agentID,
 		).
 		Select("Status", "ErrorMessage", "CompletedAt").
@@ -380,7 +325,7 @@ func failRunningEventsForAgent(ctx context.Context, agentID string, log *zerolog
 			CompletedAt:  &now,
 		})
 	if err != nil {
-		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to complete running application events after disconnect")
+		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to complete running deployment events after disconnect")
 	}
 }
 
