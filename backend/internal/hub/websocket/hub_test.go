@@ -189,6 +189,30 @@ func TestHub_DisconnectReservesRegistrationUntilCleanupFinishes(t *testing.T) {
 	}
 }
 
+func TestHub_BeginDisconnectAlwaysClosesUnregisteredClient(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+	serverConn, peerConn := newWSPair(t)
+	defer peerConn.Close() //nolint:errcheck
+	client := &Client{
+		Id:   "stale-agent",
+		conn: serverConn,
+		Send: make(chan *messages.ServerMessage),
+	}
+
+	h.BeginDisconnect(client)
+
+	if _, ok := <-client.Send; ok {
+		t.Error("expected stale client send channel to be closed")
+	}
+	if err := peerConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if _, _, err := peerConn.ReadMessage(); err == nil {
+		t.Error("expected stale peer connection to close immediately")
+	}
+}
+
 func TestHub_Send_ExistingClient(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)

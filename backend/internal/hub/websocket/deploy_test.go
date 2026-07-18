@@ -20,7 +20,6 @@ import (
 
 func setupDeployTestEnv(t *testing.T) {
 	t.Helper()
-	runNotificationsSynchronously(t)
 
 	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
 		t.Fatalf("failed to init crypto: %v", err)
@@ -36,9 +35,7 @@ func setupDeployTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	// Application + Notification create the application_notifications join table that
-	// SendNotification queries, so the notification path runs cleanly (no rows).
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -52,13 +49,6 @@ func setupDeployTestEnv(t *testing.T) {
 	})
 
 	db.DB = testDB
-}
-
-func runNotificationsSynchronously(t *testing.T) {
-	t.Helper()
-	previous := launchNotification
-	launchNotification = func(send func()) { send() }
-	t.Cleanup(func() { launchNotification = previous })
 }
 
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
@@ -83,7 +73,7 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
-	handleDeployResult(&messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
+	notification := handleDeployResult(&messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
 	if err != nil {
@@ -99,6 +89,9 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	}
 	if updated.LastSyncedAt == nil {
 		t.Error("expected LastSyncedAt to be set")
+	}
+	if notification == nil || notification.applicationID != app.Id || notification.message != "Success: deployment succeeded for test-app" {
+		t.Fatalf("unexpected notification intent: %+v", notification)
 	}
 }
 
@@ -147,7 +140,7 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	app := seedDeployApp(t, models.Syncing)
 	nop := zerolog.Nop()
 
-	handleDeployResult(&messages.DeployResult{
+	notification := handleDeployResult(&messages.DeployResult{
 		ApplicationId: app.Id,
 		Success:       false,
 		ErrorMessage:  "boom",
@@ -165,6 +158,9 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	}
 	if updated.LastSyncedAt != nil {
 		t.Error("expected LastSyncedAt to remain nil on failure")
+	}
+	if notification == nil || notification.applicationID != app.Id || notification.message != "Error: deployment failed for test-app" {
+		t.Fatalf("unexpected notification intent: %+v", notification)
 	}
 }
 

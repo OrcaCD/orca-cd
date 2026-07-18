@@ -7,32 +7,30 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
-var launchNotification = func(send func()) {
-	go send()
+type notificationRequest struct {
+	applicationID string
+	message       string
 }
 
-func dispatchNotification(applicationID, message string, log *zerolog.Logger) {
-	launchNotification(func() {
-		notifications.SendNotification(applicationID, message, log)
-	})
+func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) *notificationRequest {
+	return handleDeployResultContext(context.Background(), result, log)
 }
 
-func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func handleDeployResultContext(parent context.Context, result *messages.DeployResult, log *zerolog.Logger) *notificationRequest {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	now := time.Now()
 
 	app, err := getApplicationByID(ctx, result.ApplicationId, log)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to retrieve application")
-		return
+		return nil
 	}
 
 	if result.Success {
@@ -52,10 +50,12 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 			LastSyncError: &cleared,
 		}, log)
 		if err != nil {
-			return
+			return nil
 		}
-		dispatchNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
-		return
+		return &notificationRequest{
+			applicationID: result.ApplicationId,
+			message:       "Success: deployment succeeded for " + app.Name.String(),
+		}
 	}
 
 	errMsg := result.ErrorMessage
@@ -69,7 +69,10 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
-	dispatchNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
+	return &notificationRequest{
+		applicationID: result.ApplicationId,
+		message:       "Error: deployment failed for " + app.Name.String(),
+	}
 }
 
 func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {

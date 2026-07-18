@@ -303,6 +303,11 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+	if client, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
+		// The socket is closed immediately. WsHandler then drains accepted messages
+		// within a bounded window, cleans up state, and releases the registration.
+		websocket.DefaultHub.BeginDisconnect(client)
+	}
 
 	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(ctx)
 	if err != nil {
@@ -317,10 +322,6 @@ func RotateAgentTokenHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "rotated-token", "agent", agent.Id)
-
-	if client, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
-		websocket.DefaultHub.BeginDisconnect(client)
-	}
 
 	c.JSON(http.StatusOK, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
@@ -342,11 +343,12 @@ func DeleteAgentHandler(c *gin.Context) {
 		return
 	}
 
-	utils.RecordAuditLog(c, "deleted", "agent", id)
-
 	if client, ok := websocket.DefaultHub.GetClient(id); ok {
+		// WsHandler owns the matching FinishDisconnect after its cleanup.
 		websocket.DefaultHub.BeginDisconnect(client)
 	}
+
+	utils.RecordAuditLog(c, "deleted", "agent", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
 	sse.PublishUpdate(AgentsPath)

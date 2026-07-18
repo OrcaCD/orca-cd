@@ -80,20 +80,17 @@ func (h *Hub) Unregister(id string) {
 // state before the old connection's database cleanup has finished.
 func (h *Hub) BeginDisconnect(c *Client) {
 	h.mu.Lock()
-	registered, ok := h.clients[c.Id]
-	if !ok || registered != c {
-		h.mu.Unlock()
-		return
-	}
-	registered.Close()
-	conn := registered.conn
+	// Close while holding the hub lock so Send/Broadcast cannot race with the
+	// channel close. This is unconditional: even a stale or already unregistered
+	// client must have its socket torn down immediately.
+	c.Close()
 	h.mu.Unlock()
 
 	// Closing Send stops the writer; closing the socket also unblocks the reader
 	// immediately and prevents queued commands from being drained to a session
 	// whose results can no longer be processed.
-	if conn != nil {
-		_ = conn.Close()
+	if c.conn != nil {
+		_ = c.conn.Close()
 	}
 }
 

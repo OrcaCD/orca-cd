@@ -13,8 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *zerolog.Logger) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *zerolog.Logger) *notificationRequest {
+	return handlePullImagesResultContext(context.Background(), client, r, log)
+}
+
+func handlePullImagesResultContext(parent context.Context, client *Client, r *messages.PullImagesResult, log *zerolog.Logger) *notificationRequest {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 
 	app, err := gorm.G[models.Application](db.DB).
@@ -25,7 +29,7 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 			Str("client", client.Id).
 			Str("application_id", r.ApplicationId).
 			Msg("failed to retrieve application after image poll")
-		return
+		return nil
 	}
 
 	updates := models.Application{}
@@ -56,9 +60,14 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 	sse.PublishUpdate("/api/v1/applications")
 
 	if r.Success {
-		dispatchNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
-	} else {
-		dispatchNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
+		return &notificationRequest{
+			applicationID: r.ApplicationId,
+			message:       "Success: image update succeeded for " + app.Name.String(),
+		}
+	}
+	return &notificationRequest{
+		applicationID: r.ApplicationId,
+		message:       "Error: image update failed for " + app.Name.String(),
 	}
 }
 

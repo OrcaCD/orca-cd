@@ -381,6 +381,11 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 	agent := createTestAgentRecord(t, "Rotate Me", "old-key", models.AgentStatusOffline, nil)
 	repository := createTestRepositoryRecord(t, "Repo", "https://github.com/orcacd/rotate-agent-token-test")
 	createTestApplicationRecord(t, "My App", repository.Id, agent.Id)
+	client, err := websocket.DefaultHub.Register(agent.Id, nil)
+	if err != nil {
+		t.Fatalf("register connected agent: %v", err)
+	}
+	t.Cleanup(func() { websocket.DefaultHub.FinishDisconnect(client) })
 
 	router := gin.New()
 	router.POST("/api/v1/agents/:id/rotate-token", RotateAgentTokenHandler)
@@ -391,6 +396,14 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	select {
+	case _, ok := <-client.Send:
+		if ok {
+			t.Fatal("expected token rotation to close the client send channel")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("token rotation did not disconnect the active client immediately")
 	}
 
 	var body agentWithTokenResponse

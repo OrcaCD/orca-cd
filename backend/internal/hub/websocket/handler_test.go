@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -144,6 +146,18 @@ func waitForOffline(t *testing.T, agentId string) {
 	t.Errorf("timed out waiting for agent %s to go offline", agentId)
 }
 
+func waitForUnregistered(t *testing.T, h *Hub, agentID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !h.IsRegistered(agentID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("timed out waiting for agent %s registration to be released", agentID)
+}
+
 func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 	t.Helper()
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
@@ -155,6 +169,11 @@ func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 		t.Errorf("doHandshake: read: %v", err)
 		return
 	}
+	respondToHandshake(t, conn, data, agentID)
+}
+
+func respondToHandshake(t *testing.T, conn *websocket.Conn, data []byte, agentID string) {
+	t.Helper()
 	serverMsg := &messages.ServerMessage{}
 	if err := proto.Unmarshal(data, serverMsg); err != nil {
 		t.Errorf("doHandshake: unmarshal: %v", err)
@@ -309,6 +328,46 @@ func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusConflict {
 		t.Errorf("expected 409, got %v", resp)
 	}
+}
+
+func TestWsHandler_RejectsTokenRotatedDuringHandshake(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "old-key-id")
+	token := issueTokenAndPersistKeyID(t, agent)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected WebSocket upgrade, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set handshake read deadline: %v", err)
+	}
+	_, initData, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read KeyExchangeInit: %v", err)
+	}
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("id = ?", agent.Id).
+		Update(t.Context(), "key_id", crypto.EncryptedString("rotated-key-id")); err != nil {
+		t.Fatalf("rotate key during handshake: %v", err)
+	}
+
+	respondToHandshake(t, conn, initData, agent.Id)
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set close read deadline: %v", err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected revoked connection to be closed")
+	}
+	waitForUnregistered(t, h, agent.Id)
 }
 
 func TestWsHandler_Success_ReceivesPing(t *testing.T) {
@@ -523,59 +582,115 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
 }
 
-func TestDispatchClientMessage_ProcessesStatusUpdatesSynchronously(t *testing.T) {
-	tests := map[string]*messages.ClientMessage{
-		"health report": {
-			Payload: &messages.ClientMessage_ApplicationStatusReport{
-				ApplicationStatusReport: &messages.ApplicationStatusReport{},
+func TestHandleClientMessages_ProcessesHealthReportsInOrder(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	client := &Client{Id: "agent-1"}
+	messageQueue := make(chan *messages.ClientMessage, 2)
+	done := make(chan struct{})
+	log := testLogger()
+
+	go func() {
+		handleClientMessages(context.Background(), client, messageQueue, &log)
+		close(done)
+	}()
+	messageQueue <- &messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{
+				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
 			},
 		},
-		"deploy result": {
-			Payload: &messages.ClientMessage_DeployResult{DeployResult: &messages.DeployResult{}},
-		},
-		"image pull result": {
-			Payload: &messages.ClientMessage_PullImagesResult{PullImagesResult: &messages.PullImagesResult{}},
+	}
+	messageQueue <- &messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{
+				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY}},
+			},
 		},
 	}
-	for name, msg := range tests {
-		t.Run(name, func(t *testing.T) {
-			firstStarted := make(chan struct{})
-			releaseFirst := make(chan struct{})
-			secondStarted := make(chan struct{})
-			done := make(chan struct{})
+	close(messageQueue)
 
-			go func() {
-				dispatchClientMessage(msg, func() {
-					close(firstStarted)
-					<-releaseFirst
-				})
-				dispatchClientMessage(msg, func() { close(secondStarted) })
-				close(done)
-			}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("message handler did not drain the queue")
+	}
+	if got := healthOf(t, app.Id); got != models.Unhealthy {
+		t.Errorf("health = %q, want %q", got, models.Unhealthy)
+	}
+}
 
-			select {
-			case <-firstStarted:
-			case <-time.After(time.Second):
-				t.Fatal("first status update did not start")
-			}
-			select {
-			case <-secondStarted:
-				t.Fatal("second status update started before the first completed")
-			default:
-			}
+func TestQueueClientMessage_ReturnsFalseWhenFull(t *testing.T) {
+	messageQueue := make(chan *messages.ClientMessage, 1)
+	if !queueClientMessage(messageQueue, &messages.ClientMessage{}) {
+		t.Fatal("expected first message to be queued")
+	}
+	if queueClientMessage(messageQueue, &messages.ClientMessage{}) {
+		t.Fatal("expected full queue to reject the next message")
+	}
+}
 
-			close(releaseFirst)
-			select {
-			case <-secondStarted:
-			case <-time.After(time.Second):
-				t.Fatal("second status update did not start after the first completed")
-			}
-			select {
-			case <-done:
-			case <-time.After(time.Second):
-				t.Fatal("status update dispatch did not finish")
-			}
-		})
+func TestHandleClientMessages_DropsPendingMessagesAfterCancellation(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	messageQueue := make(chan *messages.ClientMessage, 1)
+	messageQueue <- &messages.ClientMessage{
+		Payload: &messages.ClientMessage_ApplicationStatusReport{
+			ApplicationStatusReport: &messages.ApplicationStatusReport{
+				Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
+			},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	log := testLogger()
+	go func() {
+		handleClientMessages(ctx, &Client{Id: "agent-1"}, messageQueue, &log)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("message handler did not stop")
+	}
+	if got := healthOf(t, app.Id); got != models.UnknownHealth {
+		t.Errorf("health = %q, want pending report to be dropped", got)
+	}
+}
+
+func TestFailRunningEventsForAgent(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	other := seedAppForAgent(t, "agent-2")
+	requestID := "agent-1-request"
+	otherRequestID := "agent-2-request"
+	for _, params := range []applicationevents.Params{
+		{ApplicationID: app.Id, RequestID: &requestID, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual},
+		{ApplicationID: other.Id, RequestID: &otherRequestID, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual},
+	} {
+		if _, err := applicationevents.Start(t.Context(), params); err != nil {
+			t.Fatalf("start event: %v", err)
+		}
+	}
+	log := testLogger()
+
+	failRunningEventsForAgent(t.Context(), "agent-1", &log)
+
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil {
+		t.Fatalf("load disconnected agent event: %v", err)
+	}
+	if event.Status != models.ApplicationEventFailed || event.CompletedAt == nil || event.ErrorMessage == nil {
+		t.Fatalf("expected failed completed event, got %+v", event)
+	}
+	otherEvent, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", otherRequestID).First(t.Context())
+	if err != nil {
+		t.Fatalf("load other agent event: %v", err)
+	}
+	if otherEvent.Status != models.ApplicationEventRunning {
+		t.Fatalf("other agent event status = %q, want running", otherEvent.Status)
 	}
 }
 
@@ -624,6 +739,42 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("expected agent status to be Offline after disconnect")
+}
+
+func TestWsHandler_ServerDisconnectFinishesRegistration(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "key-server-disconnect")
+	token := issueTokenAndPersistKeyID(t, agent)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+	doHandshake(t, conn, agent.Id)
+
+	var client *Client
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if current, ok := h.GetClient(agent.Id); ok {
+			client = current
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if client == nil {
+		t.Fatal("agent was not registered")
+	}
+
+	h.BeginDisconnect(client)
+	waitForOffline(t, agent.Id)
+	waitForUnregistered(t, h, agent.Id)
 }
 
 // MockConn implements a subset of websocket.Conn for testing handshake errors.
