@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,11 +11,20 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// healthEvaluateDebounce coalesces the burst of container events a compose up
-// produces into a single health evaluation per application.
-const healthEvaluateDebounce = time.Second
+const (
+	// healthEvaluateDebounce coalesces the burst of container events a compose up
+	// produces into a single health evaluation per application.
+	healthEvaluateDebounce = time.Second
+	// healthEvaluateMaxDelay prevents a continuous event stream, such as a crash
+	// loop, from postponing the evaluation indefinitely.
+	healthEvaluateMaxDelay = 10 * time.Second
+	healthEvaluateTimeout  = 10 * time.Second
+)
 
-const healthEvaluateTimeout = 10 * time.Second
+type pendingHealthEvaluation struct {
+	timer    *time.Timer
+	deadline time.Time
+}
 
 // healthWatcher turns Docker daemon container events into per-application
 // health reports. Events only trigger a (debounced) re-evaluation of the
@@ -25,9 +35,10 @@ type healthWatcher struct {
 	ctx          context.Context
 	log          zerolog.Logger
 	debounce     time.Duration
+	maxDelay     time.Duration
 	checkHealth  func(ctx context.Context, appID string) HealthState
 	sender       MessageSender
-	pending      map[string]*time.Timer
+	pending      map[string]*pendingHealthEvaluation
 	lastReported map[string]HealthState
 }
 
@@ -36,8 +47,9 @@ func newHealthWatcher(c *Client) *healthWatcher {
 		ctx:          c.ctx,
 		log:          c.log,
 		debounce:     healthEvaluateDebounce,
+		maxDelay:     healthEvaluateMaxDelay,
 		checkHealth:  c.ApplicationHealth,
-		pending:      make(map[string]*time.Timer),
+		pending:      make(map[string]*pendingHealthEvaluation),
 		lastReported: make(map[string]HealthState),
 	}
 }
@@ -58,15 +70,21 @@ func (c *Client) observeApplicationHealth(appID string) {
 	c.healthWatcher.schedule(appID)
 }
 
-// healthRelevantAction reports whether a container event action can change the
+// isHealthRelevantAction reports whether a container event action can change the
 // aggregate health derived in aggregateHealth (running state or healthcheck
 // status). Notably this excludes the exec_* events emitted for every
 // healthcheck run.
-func healthRelevantAction(action events.Action) bool {
+func isHealthRelevantAction(action events.Action) bool {
+	// ActionHealthStatus is a prefix. Besides the predefined states, Docker may
+	// append free-form healthcheck output to it.
+	healthStatusPrefix := string(events.ActionHealthStatus)
+	if action == events.ActionHealthStatus || strings.HasPrefix(string(action), healthStatusPrefix+": ") {
+		return true
+	}
+
 	switch action {
 	case events.ActionStart, events.ActionRestart, events.ActionStop, events.ActionDie,
-		events.ActionOOM, events.ActionPause, events.ActionUnPause, events.ActionDestroy,
-		events.ActionHealthStatusRunning, events.ActionHealthStatusHealthy, events.ActionHealthStatusUnhealthy:
+		events.ActionOOM, events.ActionPause, events.ActionUnPause, events.ActionDestroy:
 		return true
 	}
 	return false
@@ -81,19 +99,29 @@ func (w *healthWatcher) setSender(sender MessageSender) {
 	w.mu.Unlock()
 }
 
-// schedule queues a debounced health evaluation for appID, extending the
-// window if one is already pending.
+// schedule queues a debounced health evaluation for appID. Repeated events
+// extend the debounce window only up to maxDelay from the first event.
 func (w *healthWatcher) schedule(appID string) {
 	if w == nil {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if timer, ok := w.pending[appID]; ok {
-		timer.Reset(w.debounce)
-		return
+
+	now := time.Now()
+	deadline := now.Add(w.maxDelay)
+	if w.maxDelay <= 0 {
+		deadline = now.Add(w.debounce)
 	}
-	w.pending[appID] = time.AfterFunc(w.debounce, func() { w.evaluate(appID) })
+	if pending, ok := w.pending[appID]; ok {
+		deadline = pending.deadline
+		pending.timer.Stop()
+	}
+
+	delay := max(time.Duration(0), min(w.debounce, time.Until(deadline)))
+	pending := &pendingHealthEvaluation{deadline: deadline}
+	pending.timer = time.AfterFunc(delay, func() { w.evaluate(appID, pending) })
+	w.pending[appID] = pending
 }
 
 // invalidate drops the last reported state so the next settled evaluation is
@@ -114,8 +142,8 @@ func (w *healthWatcher) forget(appID string) {
 	}
 	w.mu.Lock()
 	delete(w.lastReported, appID)
-	if timer, ok := w.pending[appID]; ok {
-		timer.Stop()
+	if pending, ok := w.pending[appID]; ok {
+		pending.timer.Stop()
 		delete(w.pending, appID)
 	}
 	w.mu.Unlock()
@@ -127,8 +155,8 @@ func (w *healthWatcher) stop() {
 		return
 	}
 	w.mu.Lock()
-	for appID, timer := range w.pending {
-		timer.Stop()
+	for appID, pending := range w.pending {
+		pending.timer.Stop()
 		delete(w.pending, appID)
 	}
 	w.mu.Unlock()
@@ -153,8 +181,12 @@ func (w *healthWatcher) knownApps() map[string]struct{} {
 // reported: a healthcheck that is still starting emits another event once it
 // settles, and a transiently unreachable daemon is followed by a resync when
 // the event stream is re-established.
-func (w *healthWatcher) evaluate(appID string) {
+func (w *healthWatcher) evaluate(appID string, pending *pendingHealthEvaluation) {
 	w.mu.Lock()
+	if w.pending[appID] != pending {
+		w.mu.Unlock()
+		return
+	}
 	delete(w.pending, appID)
 	sender := w.sender
 	w.mu.Unlock()

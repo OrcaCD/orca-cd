@@ -18,6 +18,7 @@ import (
 
 const (
 	daemonCheckInterval     = 5 * time.Second
+	healthResyncInterval    = time.Minute
 	hostDirDetectionTimeout = 5 * time.Second
 )
 
@@ -35,6 +36,7 @@ type Client struct {
 	restrictMountsToDeployDir bool
 	ready                     bool
 	healthWatcher             *healthWatcher
+	healthResyncMu            sync.Mutex
 	ctx                       context.Context
 	cancel                    context.CancelFunc
 }
@@ -74,10 +76,12 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 
 	if c.pingDaemon() {
 		go c.startEventLoop()
+		c.resyncApplicationHealth()
 	} else {
 		log.Warn().Msg("Docker daemon unreachable, will keep retrying in the background")
 		go c.waitForDaemon()
 	}
+	go c.startHealthResyncLoop()
 
 	return c, nil
 }
@@ -261,17 +265,24 @@ func (c *Client) handleEvent(msg events.Message) {
 		return
 	}
 	appID := msg.Actor.Attributes[labelApplicationID]
-	if appID == "" || !healthRelevantAction(msg.Action) {
+	if appID == "" || !isHealthRelevantAction(msg.Action) {
 		return
 	}
 	c.healthWatcher.schedule(appID)
 }
 
-// resyncApplicationHealth re-evaluates the health of every known application.
-// Called after the event stream was interrupted, since health transitions may
-// have been missed while the daemon was unreachable.
+// resyncApplicationHealth reconciles the watcher's state with the containers
+// currently known to Docker, then re-evaluates each active application.
 func (c *Client) resyncApplicationHealth() {
-	appIDs := c.healthWatcher.knownApps()
+	if !c.Ready() {
+		return
+	}
+
+	c.healthResyncMu.Lock()
+	defer c.healthResyncMu.Unlock()
+	if !c.Ready() {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(c.ctx, healthEvaluateTimeout)
 	defer cancel()
@@ -281,16 +292,42 @@ func (c *Client) resyncApplicationHealth() {
 	})
 	if err != nil {
 		c.log.Error().Err(err).Msg("health resync: failed to list containers")
-	} else {
-		for _, item := range result.Items {
-			if appID := item.Labels[labelApplicationID]; appID != "" {
-				appIDs[appID] = struct{}{}
-			}
-		}
+		return
 	}
 
+	appIDs := make(map[string]struct{})
+	for _, item := range result.Items {
+		if appID := item.Labels[labelApplicationID]; appID != "" {
+			appIDs[appID] = struct{}{}
+		}
+	}
+	c.reconcileApplicationHealth(appIDs)
+}
+
+func (c *Client) reconcileApplicationHealth(appIDs map[string]struct{}) {
+	for appID := range c.healthWatcher.knownApps() {
+		if _, active := appIDs[appID]; !active {
+			c.healthWatcher.forget(appID)
+		}
+	}
 	for appID := range appIDs {
 		c.healthWatcher.schedule(appID)
+	}
+}
+
+// startHealthResyncLoop periodically repairs missed event transitions and
+// drops watcher state for applications whose containers disappeared outside
+// OrcaCD, for example through a manual docker compose down.
+func (c *Client) startHealthResyncLoop() {
+	ticker := time.NewTicker(healthResyncInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			c.resyncApplicationHealth()
+		}
 	}
 }
 

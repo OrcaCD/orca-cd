@@ -75,6 +75,8 @@ func aggregateHealth(items []container.Summary) HealthState {
 		case container.Unhealthy:
 			return HealthUnhealthy
 		case container.Starting:
+			// TODO: Expose a distinct starting state once the hub protocol and
+			// application health model can represent it end to end.
 			settling = true
 		}
 	}

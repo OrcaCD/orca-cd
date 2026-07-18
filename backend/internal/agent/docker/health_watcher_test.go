@@ -16,9 +16,10 @@ func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.C
 		ctx:          t.Context(),
 		log:          zerolog.Nop(),
 		debounce:     time.Millisecond,
+		maxDelay:     10 * time.Millisecond,
 		checkHealth:  check,
 		sender:       sender,
-		pending:      make(map[string]*time.Timer),
+		pending:      make(map[string]*pendingHealthEvaluation),
 		lastReported: make(map[string]HealthState),
 	}
 	t.Cleanup(w.stop)
@@ -136,6 +137,40 @@ func TestHealthWatcher_ForgetCancelsPendingEvaluation(t *testing.T) {
 	}
 }
 
+func TestHealthWatcher_ContinuousEventsCannotPostponeEvaluationIndefinitely(t *testing.T) {
+	sender := &stubMessageSender{}
+	w := newTestWatcher(t, sender, staticHealth(HealthUnhealthy))
+	w.debounce = 40 * time.Millisecond
+	w.maxDelay = 100 * time.Millisecond
+
+	started := time.Now()
+	stopEvents := make(chan struct{})
+	eventsDone := make(chan struct{})
+	go func() {
+		defer close(eventsDone)
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopEvents:
+				return
+			case <-ticker.C:
+				w.schedule("app-1")
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stopEvents)
+		<-eventsDone
+	})
+
+	w.schedule("app-1")
+	awaitReports(t, sender, 1)
+	if elapsed := time.Since(started); elapsed >= 250*time.Millisecond {
+		t.Errorf("continuous events postponed evaluation for %s", elapsed)
+	}
+}
+
 func TestHealthWatcher_NilSenderStillTracksState(t *testing.T) {
 	w := newTestWatcher(t, nil, staticHealth(HealthHealthy))
 
@@ -159,14 +194,16 @@ func TestHealthWatcher_NilSenderStillTracksState(t *testing.T) {
 	}
 }
 
-func TestHealthRelevantAction(t *testing.T) {
+func TestIsHealthRelevantAction(t *testing.T) {
 	relevant := []events.Action{
 		events.ActionStart, events.ActionRestart, events.ActionStop, events.ActionDie,
 		events.ActionOOM, events.ActionPause, events.ActionUnPause, events.ActionDestroy,
-		events.ActionHealthStatusRunning, events.ActionHealthStatusHealthy, events.ActionHealthStatusUnhealthy,
+		events.ActionHealthStatus, events.ActionHealthStatusRunning,
+		events.ActionHealthStatusHealthy, events.ActionHealthStatusUnhealthy,
+		events.Action("health_status: custom output"),
 	}
 	for _, action := range relevant {
-		if !healthRelevantAction(action) {
+		if !isHealthRelevantAction(action) {
 			t.Errorf("expected %q to be health relevant", action)
 		}
 	}
@@ -176,9 +213,10 @@ func TestHealthRelevantAction(t *testing.T) {
 	irrelevant := []events.Action{
 		events.ActionExecCreate, events.ActionExecStart, events.ActionExecDie,
 		events.ActionCreate, events.ActionAttach, events.ActionRename,
+		events.Action("health_status_changed"),
 	}
 	for _, action := range irrelevant {
-		if healthRelevantAction(action) {
+		if isHealthRelevantAction(action) {
 			t.Errorf("expected %q to not be health relevant", action)
 		}
 	}
@@ -215,7 +253,7 @@ func TestHandleEvent_SchedulesOnlyLabeledContainerEvents(t *testing.T) {
 	}
 }
 
-func TestResyncApplicationHealth_ReEvaluatesKnownApps(t *testing.T) {
+func TestReconcileApplicationHealth_ReEvaluatesActiveApps(t *testing.T) {
 	c := newTestClient(t)
 	sender := &stubMessageSender{}
 	c.healthWatcher.sender = sender
@@ -223,7 +261,7 @@ func TestResyncApplicationHealth_ReEvaluatesKnownApps(t *testing.T) {
 	c.healthWatcher.checkHealth = staticHealth(HealthHealthy)
 	c.healthWatcher.lastReported["app-1"] = HealthUnhealthy
 
-	c.resyncApplicationHealth()
+	c.reconcileApplicationHealth(map[string]struct{}{"app-1": {}})
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -244,5 +282,24 @@ func TestResyncApplicationHealth_ReEvaluatesKnownApps(t *testing.T) {
 			t.Fatal("timed out waiting for resync to re-report app-1")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestReconcileApplicationHealth_ForgetsAppsWithoutContainers(t *testing.T) {
+	c := newTestClient(t)
+	c.healthWatcher.debounce = time.Hour
+	c.healthWatcher.lastReported["removed-app"] = HealthHealthy
+	c.healthWatcher.schedule("removed-app")
+
+	c.reconcileApplicationHealth(map[string]struct{}{})
+
+	if _, known := c.healthWatcher.knownApps()["removed-app"]; known {
+		t.Error("expected app without containers to be removed from known apps")
+	}
+	c.healthWatcher.mu.Lock()
+	_, pending := c.healthWatcher.pending["removed-app"]
+	c.healthWatcher.mu.Unlock()
+	if pending {
+		t.Error("expected pending evaluation for removed app to be cancelled")
 	}
 }
