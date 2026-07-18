@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,8 @@ func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.C
 		checkHealth:  check,
 		sender:       sender,
 		pending:      make(map[string]*pendingHealthEvaluation),
+		evaluating:   make(map[string]*healthEvaluation),
+		epochs:       make(map[string]uint64),
 		lastReported: make(map[string]HealthState),
 	}
 	t.Cleanup(w.stop)
@@ -43,6 +46,27 @@ func awaitReports(t *testing.T, sender *stubMessageSender, n int) []*messages.Cl
 			t.Fatalf("timed out waiting for %d messages, got %d", n, len(msgs))
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func pendingEvaluationForTest(t *testing.T, w *healthWatcher) *pendingHealthEvaluation {
+	t.Helper()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	pending := w.pending["app-1"]
+	if pending == nil {
+		t.Fatal("expected pending evaluation for app-1")
+	}
+	pending.timer.Stop()
+	return pending
+}
+
+func awaitSignal(t *testing.T, signal <-chan struct{}, description string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
 	}
 }
 
@@ -168,6 +192,164 @@ func TestHealthWatcher_ContinuousEventsCannotPostponeEvaluationIndefinitely(t *t
 	awaitReports(t, sender, 1)
 	if elapsed := time.Since(started); elapsed >= 250*time.Millisecond {
 		t.Errorf("continuous events postponed evaluation for %s", elapsed)
+	}
+}
+
+func TestHealthWatcher_DoesNotReplaceEvaluationAtDeadline(t *testing.T) {
+	w := newTestWatcher(t, nil, staticHealth(HealthHealthy))
+	w.debounce = time.Hour
+	w.maxDelay = time.Hour
+	w.schedule("app-1")
+
+	pending := pendingEvaluationForTest(t, w)
+	w.mu.Lock()
+	pending.deadline = time.Now().Add(-time.Second)
+	w.mu.Unlock()
+
+	for range 100 {
+		w.schedule("app-1")
+	}
+
+	w.mu.Lock()
+	current := w.pending["app-1"]
+	w.mu.Unlock()
+	if current != pending {
+		t.Error("events replaced an evaluation whose deadline had already elapsed")
+	}
+}
+
+func TestHealthWatcher_SerializesEvaluationsPerApplication(t *testing.T) {
+	sender := &stubMessageSender{}
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+		switch calls.Add(1) {
+		case 1:
+			close(firstStarted)
+			<-releaseFirst
+			return HealthHealthy
+		case 2:
+			close(secondStarted)
+			return HealthUnhealthy
+		default:
+			return HealthUnknown
+		}
+	})
+	w.debounce = time.Hour
+	w.maxDelay = time.Hour
+
+	release := func() {
+		select {
+		case <-releaseFirst:
+		default:
+			close(releaseFirst)
+		}
+	}
+	t.Cleanup(release)
+
+	w.schedule("app-1")
+	first := pendingEvaluationForTest(t, w)
+	firstDone := make(chan struct{})
+	go func() {
+		w.evaluate("app-1", first)
+		close(firstDone)
+	}()
+	awaitSignal(t, firstStarted, "first evaluation to start")
+
+	w.schedule("app-1")
+	second := pendingEvaluationForTest(t, w)
+	secondCallbackDone := make(chan struct{})
+	go func() {
+		w.evaluate("app-1", second)
+		close(secondCallbackDone)
+	}()
+	awaitSignal(t, secondCallbackDone, "second timer callback")
+
+	select {
+	case <-secondStarted:
+		t.Error("second evaluation started while the first was still running")
+	default:
+	}
+
+	release()
+	msgs := awaitReports(t, sender, 2)
+	awaitSignal(t, firstDone, "first evaluation to finish")
+
+	want := []messages.HealthStatus{
+		messages.HealthStatus_HEALTH_STATUS_HEALTHY,
+		messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
+	}
+	for i, msg := range msgs {
+		report := msg.GetApplicationStatusReport()
+		if report == nil || len(report.Statuses) != 1 {
+			t.Fatalf("message %d: unexpected report: %v", i, report)
+		}
+		if got := report.Statuses[0].Health; got != want[i] {
+			t.Errorf("message %d: health = %v, want %v", i, got, want[i])
+		}
+	}
+	w.mu.Lock()
+	last := w.lastReported["app-1"]
+	w.mu.Unlock()
+	if last != HealthUnhealthy {
+		t.Errorf("last reported health = %v, want unhealthy", last)
+	}
+}
+
+func TestHealthWatcher_ForgetInvalidatesRunningEvaluation(t *testing.T) {
+	sender := &stubMessageSender{}
+	started := make(chan struct{})
+	canceled := make(chan struct{})
+	releaseCheck := make(chan struct{})
+	w := newTestWatcher(t, sender, func(ctx context.Context, _ string) HealthState {
+		close(started)
+		<-ctx.Done()
+		close(canceled)
+		<-releaseCheck
+		return HealthHealthy
+	})
+	release := func() {
+		select {
+		case <-releaseCheck:
+		default:
+			close(releaseCheck)
+		}
+	}
+	t.Cleanup(release)
+	w.debounce = time.Hour
+	w.maxDelay = time.Hour
+
+	w.schedule("app-1")
+	pending := pendingEvaluationForTest(t, w)
+	done := make(chan struct{})
+	go func() {
+		w.evaluate("app-1", pending)
+		close(done)
+	}()
+	awaitSignal(t, started, "health evaluation to start")
+
+	forgetDone := make(chan struct{})
+	go func() {
+		w.forget("app-1")
+		close(forgetDone)
+	}()
+	awaitSignal(t, canceled, "running evaluation to be canceled")
+	select {
+	case <-forgetDone:
+		t.Fatal("forget returned while an invalidated evaluation was still running")
+	default:
+	}
+	release()
+	awaitSignal(t, done, "invalidated evaluation to finish")
+	awaitSignal(t, forgetDone, "forget to finish")
+
+	if msgs := sender.received(); len(msgs) != 0 {
+		t.Errorf("expected no report after forgetting app, got %d", len(msgs))
+	}
+	if _, known := w.knownApps()["app-1"]; known {
+		t.Error("forgotten app was added back by a running evaluation")
 	}
 }
 
