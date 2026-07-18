@@ -297,8 +297,7 @@ func (w *healthWatcher) evaluate(appID string, pending *pendingHealthEvaluation)
 }
 
 func (w *healthWatcher) newEvaluationLocked(epoch uint64) *healthEvaluation {
-	// cancel is retained by healthEvaluation and called during finish or reset
-	ctx, cancel := context.WithCancel(w.ctx)
+	ctx, cancel := context.WithCancel(w.ctx) //nolint:gosec // cancel is retained by healthEvaluation
 	return &healthEvaluation{
 		ctx:    ctx,
 		cancel: cancel,
