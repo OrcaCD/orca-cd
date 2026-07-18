@@ -119,7 +119,7 @@ jobs:
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.build_date.outputs.value  }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha
           provenance: mode=max
           sbom: true
 
