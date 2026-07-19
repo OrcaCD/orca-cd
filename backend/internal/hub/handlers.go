@@ -56,6 +56,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
+			protected.GET("/auth/profile-picture", routes.ProfilePictureHandler)
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)

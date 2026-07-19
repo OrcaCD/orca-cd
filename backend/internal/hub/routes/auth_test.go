@@ -601,8 +601,8 @@ func TestProfileHandler_ReturnsPicture(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Picture != picture {
-		t.Errorf("expected Picture %q, got %q", picture, body.Picture)
+	if body.Picture != profilePicturePath {
+		t.Errorf("expected Picture %q, got %q", profilePicturePath, body.Picture)
 	}
 }
 
