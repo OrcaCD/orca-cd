@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -41,7 +40,6 @@ jobs:
   build:
     name: Build ${{ matrix.name }} Image
     needs: release-please
-    if: needs.release-please.outputs.new-release-created == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -96,12 +94,12 @@ jobs:
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.name }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
-            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
-            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ github.event_name != 'workflow_dispatch' }}
-            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' }}
-            type=raw,value=main,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ needs.release-please.outputs.new-release-created == 'true' }}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ needs.release-please.outputs.new-release-created == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ needs.release-please.outputs.new-release-created == 'true' }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag-name }},enable=${{ needs.release-please.outputs.new-release-created == 'true' }}
+            type=raw,value=latest,enable=${{ needs.release-please.outputs.new-release-created == 'true' }}
+            type=raw,value=main
 
       - name: Build and push ${{ matrix.name }} image
         id: build
@@ -115,7 +113,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
-            VERSION=${{ github.event_name == 'workflow_dispatch' && 'main' || needs.release-please.outputs.tag-name }}
+            VERSION=${{ needs.release-please.outputs.new-release-created == 'true' && needs.release-please.outputs.tag-name || 'main' }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ steps.build_date.outputs.value  }}
           cache-from: type=gha
