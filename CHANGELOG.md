@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/OrcaCD/orca-cd/compare/v0.2.0...v0.3.0) (2026-07-19)
+
+
+### Features
+
+* Add crowdin translation sync ([#235](https://github.com/OrcaCD/orca-cd/issues/235)) ([3a633c8](https://github.com/OrcaCD/orca-cd/commit/3a633c8b5382c81698a615f84d3ef7a710d19cb6))
+* Add more GitHub action settings ([#242](https://github.com/OrcaCD/orca-cd/issues/242)) ([58d1822](https://github.com/OrcaCD/orca-cd/commit/58d1822df1f76e89cbbe4333625c4492dfbc4ba0))
+* Application event history ([#230](https://github.com/OrcaCD/orca-cd/issues/230)) ([9b1cd55](https://github.com/OrcaCD/orca-cd/commit/9b1cd5545330e09ff8e800004b45a6cdcf1426f4))
+* Image pull notifications ([#229](https://github.com/OrcaCD/orca-cd/issues/229)) ([b80610c](https://github.com/OrcaCD/orca-cd/commit/b80610c18d6fde91b2a9b30e2e15a4282a76a37a))
+* Security policy to detect privileged containers ([#232](https://github.com/OrcaCD/orca-cd/issues/232)) ([b350ddd](https://github.com/OrcaCD/orca-cd/commit/b350ddd0e830b1e95a9ccf8634b9a2f5b2d60bf6))
+
+
+### Bug Fixes
+
+* Build date not set for workflow dispatch release ([#225](https://github.com/OrcaCD/orca-cd/issues/225)) ([dc6e73f](https://github.com/OrcaCD/orca-cd/commit/dc6e73fd28ee4605037583d8534d415d1b23dcc1))
+* Deployment waiting on app being healthy ([#245](https://github.com/OrcaCD/orca-cd/issues/245)) ([e9926f8](https://github.com/OrcaCD/orca-cd/commit/e9926f8b7c63fbec22b5f501a79ed0cbe8a7d0b3))
+* Flaky test ([#249](https://github.com/OrcaCD/orca-cd/issues/249)) ([79fa180](https://github.com/OrcaCD/orca-cd/commit/79fa1802577c2a992011ef2477a7686765fcd063))
+* Image update sync status ([#243](https://github.com/OrcaCD/orca-cd/issues/243)) ([4accfc5](https://github.com/OrcaCD/orca-cd/commit/4accfc519436ff1f67031d1a206f85cac8d4d583))
+* Support relative bind mounts from agent containers ([#234](https://github.com/OrcaCD/orca-cd/issues/234)) ([56d956a](https://github.com/OrcaCD/orca-cd/commit/56d956a702169b4baf40357f28187ae545b0f720))
+
 ## [0.2.0](https://github.com/OrcaCD/orca-cd/compare/v0.1.0...v0.2.0) (2026-07-08)
 
 
