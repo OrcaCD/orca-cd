@@ -14,8 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func handleDeployResult(parent context.Context, result *messages.DeployResult, log *zerolog.Logger) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	now := time.Now()
 
@@ -30,18 +30,21 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		// persisting the application's summary status succeeds.
 		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 
+		// A successful deploy means the compose project was applied, not that the
+		// application is healthy: the agent observes runtime health after the
+		// containers start and reports it separately (ApplicationStatusReport), so
+		// health stays "unknown" here until that report arrives.
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 			SyncStatus:    models.Synced,
-			HealthStatus:  models.Healthy,
 			LastSyncedAt:  &now,
 			LastSyncError: &cleared,
 		}, log)
 		if err != nil {
 			return
 		}
-		notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
+		go notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}
 
@@ -50,13 +53,15 @@ func handleDeployResult(result *messages.DeployResult, log *zerolog.Logger) {
 		errMsg = "deployment failed"
 	}
 
-	notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
 		HealthStatus:  models.Unhealthy,
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
+	if ctx.Err() == nil {
+		go notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
+	}
 }
 
 func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {

@@ -48,7 +48,7 @@ func TestHandleApplicationStatusReport_UpdatesOnlyReportingAgentApps(t *testing.
 	nop := zerolog.Nop()
 	client := &Client{Id: "agent-1"}
 
-	handleApplicationStatusReport(client, &messages.ApplicationStatusReport{
+	handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
 		Statuses: []*messages.ApplicationStatus{
 			{ApplicationId: appA.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
 			{ApplicationId: appB.Id, Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY},

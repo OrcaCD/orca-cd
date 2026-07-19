@@ -144,6 +144,18 @@ func waitForOffline(t *testing.T, agentId string) {
 	t.Errorf("timed out waiting for agent %s to go offline", agentId)
 }
 
+func waitForUnregistered(t *testing.T, h *Hub, agentID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !h.IsRegistered(agentID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Errorf("timed out waiting for agent %s registration to be released", agentID)
+}
+
 func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 	t.Helper()
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
@@ -155,6 +167,11 @@ func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 		t.Errorf("doHandshake: read: %v", err)
 		return
 	}
+	respondToHandshake(t, conn, data, agentID)
+}
+
+func respondToHandshake(t *testing.T, conn *websocket.Conn, data []byte, agentID string) {
+	t.Helper()
 	serverMsg := &messages.ServerMessage{}
 	if err := proto.Unmarshal(data, serverMsg); err != nil {
 		t.Errorf("doHandshake: unmarshal: %v", err)
@@ -285,6 +302,70 @@ func TestWsHandler_KeyIdMismatch(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %v", resp)
 	}
+}
+
+func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "reserved-key-id")
+	token := issueTokenAndPersistKeyID(t, agent)
+	if _, err := h.Register(agent.Id, nil); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	_, resp, dialErr := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if dialErr == nil {
+		t.Fatal("expected dial error, got nil")
+	}
+	if resp == nil || resp.StatusCode != http.StatusConflict {
+		t.Errorf("expected 409, got %v", resp)
+	}
+}
+
+func TestWsHandler_RejectsTokenRotatedDuringHandshake(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "old-key-id")
+	token := issueTokenAndPersistKeyID(t, agent)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected WebSocket upgrade, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set handshake read deadline: %v", err)
+	}
+	_, initData, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read KeyExchangeInit: %v", err)
+	}
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("id = ?", agent.Id).
+		Update(t.Context(), "key_id", crypto.EncryptedString("rotated-key-id")); err != nil {
+		t.Fatalf("rotate key during handshake: %v", err)
+	}
+
+	respondToHandshake(t, conn, initData, agent.Id)
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set close read deadline: %v", err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected revoked connection to be closed")
+	}
+	waitForUnregistered(t, h, agent.Id)
 }
 
 func TestWsHandler_Success_ReceivesPing(t *testing.T) {
@@ -426,7 +507,7 @@ func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must not panic or block
+	handleClientMessage(t.Context(), client, msg, &log) // must not panic or block
 }
 
 func TestHandleClientMessage_DecryptError(t *testing.T) {
@@ -445,7 +526,7 @@ func TestHandleClientMessage_DecryptError(t *testing.T) {
 			},
 		},
 	}
-	handleClientMessage(client, msg, &log) // must return without panic
+	handleClientMessage(t.Context(), client, msg, &log) // must return without panic
 }
 
 func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
@@ -470,7 +551,7 @@ func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // doubly-encrypted — must be dropped
+	handleClientMessage(t.Context(), client, msg, &log) // doubly-encrypted — must be dropped
 }
 
 func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
@@ -496,7 +577,7 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	msg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleClientMessage(client, msg, &log) // hits the "unknown message type" default case
+	handleClientMessage(t.Context(), client, msg, &log) // hits the "unknown message type" default case
 }
 
 func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
@@ -544,6 +625,42 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("expected agent status to be Offline after disconnect")
+}
+
+func TestWsHandler_ServerDisconnectFinishesRegistration(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "key-server-disconnect")
+	token := issueTokenAndPersistKeyID(t, agent)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+	doHandshake(t, conn, agent.Id)
+
+	var client *Client
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if current, ok := h.GetClient(agent.Id); ok {
+			client = current
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if client == nil {
+		t.Fatal("agent was not registered")
+	}
+
+	h.BeginDisconnect(client)
+	waitForOffline(t, agent.Id)
+	waitForUnregistered(t, h, agent.Id)
 }
 
 // MockConn implements a subset of websocket.Conn for testing handshake errors.

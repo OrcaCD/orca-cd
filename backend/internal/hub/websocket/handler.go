@@ -30,6 +30,8 @@ type WSConn interface {
 
 const pongWait = 90 * time.Second // must be greater than the worker ping interval (60s)
 const handshakeTimeout = 15 * time.Second
+const clientMessageQueueSize = 32
+const clientMessageDrainTimeout = 10 * time.Second
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
@@ -64,6 +66,10 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		if agent.KeyId.String() != claims.KeyId {
 			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		if h.IsRegistered(claims.Subject) {
+			c.AbortWithStatus(http.StatusConflict)
 			return
 		}
 
@@ -103,7 +109,71 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			}
 			return
 		}
+		// Token rotation can happen while the key exchange is in flight, before
+		// this client is visible to the route that closes registered sessions.
+		// Revalidate after registration so a revoked token cannot win that race.
+		registeredAgent, verifyErr := gorm.G[models.Agent](db.DB).
+			Where("id = ?", claims.Subject).
+			First(c.Request.Context())
+		if verifyErr != nil || registeredAgent.KeyId.String() != claims.KeyId {
+			if verifyErr != nil {
+				log.Error().Err(verifyErr).Str("agent_id", claims.Subject).Msg("Failed to revalidate agent after handshake")
+			} else {
+				log.Warn().Str("agent_id", claims.Subject).Msg("Rejecting connection with revoked token")
+			}
+			h.BeginDisconnect(client)
+			h.FinishDisconnect(client)
+			return
+		}
 		client.session = session
+		messageQueue := make(chan *messages.ClientMessage, clientMessageQueueSize)
+		messageHandlerCtx, cancelMessageHandler := context.WithCancel(context.Background())
+		messageHandlerDone := make(chan struct{})
+		go func() {
+			defer close(messageHandlerDone)
+			for msg := range messageQueue {
+				if messageHandlerCtx.Err() != nil {
+					return
+				}
+				handleClientMessage(messageHandlerCtx, client, msg, log)
+			}
+		}()
+		defer func() {
+			// Reserve the registration until cleanup finishes. Otherwise a new
+			// session can report fresh state that this old session then overwrites.
+			h.BeginDisconnect(client)
+			defer h.FinishDisconnect(client)
+			close(messageQueue)
+			drainTimer := time.NewTimer(clientMessageDrainTimeout)
+			defer drainTimer.Stop()
+			select {
+			case <-messageHandlerDone:
+			case <-drainTimer.C:
+				log.Warn().Str("client", claims.Subject).Msg("client message drain timed out, cancelling pending messages")
+				cancelMessageHandler()
+				<-messageHandlerDone
+			}
+			cancelMessageHandler()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(ctx, "status", models.AgentStatusOffline)
+			if err != nil {
+				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
+			}
+			_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(ctx, "health_status", models.UnknownHealth)
+			if applicationErr != nil {
+				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
+			}
+			// Fail any deploy still in progress: the agent that owned it is gone, so
+			// no result will arrive and the app would otherwise spin in syncing.
+			_, syncErr := gorm.G[models.Application](db.DB).
+				Where("agent_id = ? AND sync_status = ?", claims.Subject, models.Syncing).
+				Update(ctx, "sync_status", models.OutOfSync)
+			if syncErr != nil {
+				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
+			}
+			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
+		}()
 
 		_, err = gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
 		if err != nil {
@@ -125,29 +195,6 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			h.SendAgentSettings(claims.Subject, apps)
 		}
 
-		defer func() {
-			h.Unregister(claims.Subject)
-			client.Close()
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(ctx, "status", models.AgentStatusOffline)
-			if err != nil {
-				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
-			}
-			_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(ctx, "health_status", models.UnknownHealth)
-			if applicationErr != nil {
-				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
-			}
-			// Fail any deploy still in progress: the agent that owned it is gone, so
-			// no result will arrive and the app would otherwise spin in syncing.
-			_, syncErr := gorm.G[models.Application](db.DB).
-				Where("agent_id = ? AND sync_status = ?", claims.Subject, models.Syncing).
-				Update(ctx, "sync_status", models.OutOfSync)
-			if syncErr != nil {
-				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
-			}
-		}()
-
 		for {
 			_, data, err := conn.ReadMessage()
 			if err != nil {
@@ -165,12 +212,18 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				continue
 			}
 
-			go handleClientMessage(client, msg, log)
+			select {
+			case messageQueue <- msg:
+				continue
+			default:
+				log.Error().Str("client", claims.Subject).Msg("client message queue full, disconnecting")
+				return
+			}
 		}
 	}
 }
 
-func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
+func handleClientMessage(ctx context.Context, client *Client, msg *messages.ClientMessage, log *zerolog.Logger) {
 	_, isEncrypted := msg.Payload.(*messages.ClientMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		log.Warn().Str("client", client.Id).Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -191,27 +244,26 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 		}
 		msg = inner
 	}
-
 	switch p := msg.Payload.(type) {
 	case *messages.ClientMessage_Pong:
 		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		lastSeen := time.UnixMilli(p.Pong.Timestamp)
-		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(ctx, "last_seen", lastSeen)
+		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(requestCtx, "last_seen", lastSeen)
 		if err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
 	case *messages.ClientMessage_DeployResult:
-		handleDeployResult(p.DeployResult, log)
+		handleDeployResult(ctx, p.DeployResult, log)
 	case *messages.ClientMessage_DeleteResult:
 		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
 	case *messages.ClientMessage_PullImagesResult:
-		handlePullImagesResult(client, p.PullImagesResult, log)
+		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:
-		handleApplicationStatusReport(client, p.ApplicationStatusReport, log)
+		handleApplicationStatusReport(ctx, client, p.ApplicationStatusReport, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}
@@ -220,15 +272,18 @@ func handleClientMessage(client *Client, msg *messages.ClientMessage, log *zerol
 // handleApplicationStatusReport applies the health an agent reports for its
 // applications. Updates are scoped to the reporting agent so an agent can only
 // affect its own applications.
-func handleApplicationStatusReport(client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
+func handleApplicationStatusReport(parent context.Context, client *Client, report *messages.ApplicationStatusReport, log *zerolog.Logger) {
 	if report == nil || len(report.Statuses) == 0 {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 
 	for _, status := range report.Statuses {
+		if ctx.Err() != nil {
+			return
+		}
 		if _, err := gorm.G[models.Application](db.DB).
 			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
 			Update(ctx, "health_status", protoHealthToModel(status.Health)); err != nil {
@@ -250,6 +305,27 @@ func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
 		return models.Unhealthy
 	default:
 		return models.UnknownHealth
+	}
+}
+
+func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, log *zerolog.Logger) {
+	now := time.Now()
+	errorMessage := "agent disconnected before the deployment result was received"
+	_, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where(
+			"status = ? AND type = ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
+			models.ApplicationEventRunning,
+			models.ApplicationEventDeployment,
+			agentID,
+		).
+		Select("Status", "ErrorMessage", "CompletedAt").
+		Updates(ctx, models.ApplicationEvent{
+			Status:       models.ApplicationEventFailed,
+			ErrorMessage: &errorMessage,
+			CompletedAt:  &now,
+		})
+	if err != nil {
+		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to complete running deployment events after disconnect")
 	}
 }
 

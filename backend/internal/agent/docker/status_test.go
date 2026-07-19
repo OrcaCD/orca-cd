@@ -62,6 +62,19 @@ func TestAggregateHealth(t *testing.T) {
 			items: []container.Summary{{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Unhealthy}}},
 			want:  HealthUnhealthy,
 		},
+		{
+			name:  "healthcheck still starting is unknown",
+			items: []container.Summary{{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Starting}}},
+			want:  HealthUnknown,
+		},
+		{
+			name: "starting healthcheck does not mask an unhealthy container",
+			items: []container.Summary{
+				{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Starting}},
+				{State: container.StateRunning, Health: &container.HealthSummary{Status: container.Unhealthy}},
+			},
+			want: HealthUnhealthy,
+		},
 	}
 
 	for _, tt := range tests {

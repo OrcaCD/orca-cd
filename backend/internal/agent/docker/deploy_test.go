@@ -67,11 +67,8 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 		t.Fatalf("expected working dir %q, got %q", filepath.Join(c.deploymentsDir, req.ApplicationName), gotLoadOptions.WorkingDir)
 	}
 
-	if !gotUpOptions.Start.Wait {
-		t.Fatal("expected compose up to wait for services to become ready")
-	}
-	if gotUpOptions.Start.WaitTimeout != deployWaitTimeout {
-		t.Fatalf("expected wait timeout %s, got %s", deployWaitTimeout, gotUpOptions.Start.WaitTimeout)
+	if gotUpOptions.Start.Wait {
+		t.Fatal("expected compose up not to block on healthchecks; health is reported after deployment")
 	}
 	if !gotUpOptions.Create.RemoveOrphans {
 		t.Fatal("expected compose up to remove orphaned containers")

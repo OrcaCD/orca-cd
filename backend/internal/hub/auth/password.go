@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -42,10 +43,17 @@ var (
 		KeyLength:   32,
 	}
 
-	dummyHash string
+	dummyHash   string
+	dummyHashMu sync.Mutex
 )
 
 func initPassword() error {
+	dummyHashMu.Lock()
+	defer dummyHashMu.Unlock()
+	if dummyHash != "" {
+		return nil
+	}
+
 	h, err := argon2id.CreateHash("orca-cd-dummy-timing-password", params)
 	if err != nil {
 		return fmt.Errorf("failed to create dummy password hash: %w", err)

@@ -14,8 +14,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *zerolog.Logger) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func handlePullImagesResult(parent context.Context, client *Client, r *messages.PullImagesResult, log *zerolog.Logger) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 
 	app, err := gorm.G[models.Application](db.DB).
@@ -51,16 +51,22 @@ func handlePullImagesResult(client *Client, r *messages.PullImagesResult, log *z
 			Str("application_id", r.ApplicationId).
 			Msg("failed to update application after image poll")
 	}
+	if ctx.Err() != nil {
+		return
+	}
 
 	recordImagePullHistory(ctx, r, log)
-
-	if r.Success {
-		notifications.SendNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
-	} else {
-		notifications.SendNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
+	if ctx.Err() != nil {
+		return
 	}
 
 	sse.PublishUpdate("/api/v1/applications")
+
+	if r.Success {
+		go notifications.SendNotification(r.ApplicationId, "Success: image update succeeded for "+app.Name.String(), log)
+		return
+	}
+	go notifications.SendNotification(r.ApplicationId, "Error: image update failed for "+app.Name.String(), log)
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this

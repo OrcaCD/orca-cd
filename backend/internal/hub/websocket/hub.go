@@ -3,6 +3,7 @@ package websocket
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -21,11 +22,17 @@ type Client struct {
 	conn    *websocket.Conn
 	Send    chan *messages.ServerMessage
 	session *wscrypto.Session
+
+	closeOnce sync.Once
+	closing   atomic.Bool
 }
 
 // Close signals the WritePump to stop.
 func (c *Client) Close() {
-	close(c.Send)
+	c.closing.Store(true)
+	c.closeOnce.Do(func() {
+		close(c.Send)
+	})
 }
 
 type Hub struct {
@@ -68,11 +75,54 @@ func (h *Hub) Unregister(id string) {
 	h.log.Debug().Str("client", id).Msg("Client unregistered")
 }
 
+// BeginDisconnect makes a client unavailable while retaining its registration.
+// Keeping the registration reserved prevents a reconnect from publishing fresh
+// state before the old connection's database cleanup has finished.
+func (h *Hub) BeginDisconnect(c *Client) {
+	h.mu.Lock()
+	// Close while holding the hub lock so Send/Broadcast cannot race with the
+	// channel close. This is unconditional: even a stale or already unregistered
+	// client must have its socket torn down immediately.
+	c.Close()
+	h.mu.Unlock()
+
+	// Closing Send stops the writer; closing the socket also unblocks the reader
+	// immediately and prevents queued commands from being drained to a session
+	// whose results can no longer be processed.
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+}
+
+// FinishDisconnect releases the registration reserved by BeginDisconnect.
+func (h *Hub) FinishDisconnect(c *Client) {
+	h.mu.Lock()
+	if registered, ok := h.clients[c.Id]; ok && registered == c {
+		delete(h.clients, c.Id)
+	}
+	h.mu.Unlock()
+	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
+}
+
 func (h *Hub) GetClient(id string) (*Client, bool) {
 	h.mu.RLock()
 	c, ok := h.clients[id]
+	if ok && c.closing.Load() {
+		ok = false
+		c = nil
+	}
 	h.mu.RUnlock()
 	return c, ok
+}
+
+// IsRegistered reports whether an ID is reserved by an active or closing
+// client. It allows duplicate reconnects to be rejected before the expensive
+// WebSocket and key-exchange handshakes.
+func (h *Hub) IsRegistered(id string) bool {
+	h.mu.RLock()
+	_, ok := h.clients[id]
+	h.mu.RUnlock()
+	return ok
 }
 
 // Send sends a message to a specific client by Id.
@@ -81,7 +131,7 @@ func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
 	h.mu.RLock()
 	c, ok := h.clients[id]
 	defer h.mu.RUnlock()
-	if !ok {
+	if !ok || c.closing.Load() {
 		return false
 	}
 	select {
@@ -98,6 +148,9 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, c := range h.clients {
+		if c.closing.Load() {
+			continue
+		}
 		select {
 		case c.Send <- msg:
 		default:
@@ -141,6 +194,9 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 	}()
 
 	for msg := range c.Send {
+		if c.closing.Load() {
+			return
+		}
 		allowedUnencrypted := wscrypto.AllowedUnencrypted(msg)
 
 		// Refuse to send sensitive messages before the handshake is complete.
@@ -168,6 +224,9 @@ func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 		if err != nil {
 			log.Error().Err(err).Msg("Marshal error")
 			continue
+		}
+		if c.closing.Load() {
+			return
 		}
 		if err := c.conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
 			log.Error().Err(err).Msg("failed to set write deadline")

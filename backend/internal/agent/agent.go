@@ -202,6 +202,7 @@ func Run(cfg Config) error {
 	defer cancel()
 
 	sRef := &senderRef{}
+	dockerClient.SetHealthReporter(sRef)
 	poller := docker.NewImagePoller(dockerClient, sRef, Log)
 	defer poller.StopAll()
 
