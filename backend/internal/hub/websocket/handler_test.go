@@ -114,6 +114,20 @@ func newHandlerTestServer(t *testing.T, h *Hub) *httptest.Server {
 	t.Cleanup(func() {
 		server.CloseClientConnections()
 		server.Close()
+		// server.Close does not wait for hijacked WebSocket handlers. Wait until
+		// every handler has released its registration (FinishDisconnect runs after
+		// the handler's last DB access) so the DB cleanup cannot race with them.
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			h.mu.RLock()
+			remaining := len(h.clients)
+			h.mu.RUnlock()
+			if remaining == 0 {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Error("timed out waiting for WebSocket handlers to finish during cleanup")
 	})
 	return server
 }
@@ -315,6 +329,7 @@ func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
 	if _, err := h.Register(agent.Id, nil); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
+	t.Cleanup(func() { h.Unregister(agent.Id) })
 
 	_, resp, dialErr := dialWS(server, token)
 	if resp != nil {
