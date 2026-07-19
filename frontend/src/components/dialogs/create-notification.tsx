@@ -838,11 +838,11 @@ function StepperNavigation({
 	const isAtFirstVisibleStep = stepper.index === 0;
 
 	return (
-		<div className="flex items-center justify-between gap-4 pt-2">
+		<div className="flex flex-wrap items-center justify-between gap-2 pt-2">
 			<Button type="button" variant="outline" disabled={isSubmitting} onClick={handleClose}>
 				{m.cancel()}
 			</Button>
-			<div className="flex gap-2">
+			<div className="flex flex-wrap gap-2">
 				{!isAtFirstVisibleStep && (
 					<Stepper.Prev
 						render={(domProps) => (
@@ -972,13 +972,14 @@ export default function CreateNotificationDialog() {
 				}
 			></DialogTrigger>
 
-			<DialogContent className="sm:max-w-106.25">
+			<DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
 				<DialogHeader>
 					<DialogTitle>{m.addNotification()}</DialogTitle>
 					<DialogDescription>{m.addNotificationDescription()}</DialogDescription>
 				</DialogHeader>
 
 				<form
+					className="min-h-0 min-w-0 flex-1 overflow-y-auto"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();

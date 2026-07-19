@@ -320,11 +320,11 @@ function StepperNavigation({
 	const isAtFirstVisibleStep = stepper.index === 0;
 
 	return (
-		<div className="flex items-center justify-between gap-4 pt-2">
+		<div className="flex flex-wrap items-center justify-between gap-2 pt-2">
 			<Button type="button" variant="outline" onClick={handleClose}>
 				{stepper.isLast ? m.close() : m.cancel()}
 			</Button>
-			<div className="flex gap-2">
+			<div className="flex flex-wrap gap-2">
 				{!isAtFirstVisibleStep && !stepper.isLast && (
 					<Stepper.Prev
 						render={(domProps) => (

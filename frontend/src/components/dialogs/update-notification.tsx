@@ -207,7 +207,7 @@ export default function UpdateNotificationDialog({
 							)}
 						/>
 
-						<div className="flex gap-2 pt-2">
+						<div className="flex flex-wrap gap-2 pt-2">
 							<Button type="submit" disabled={isLoading}>
 								{isLoading ? m.savingDots() : m.saveChanges()}
 							</Button>

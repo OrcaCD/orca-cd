@@ -163,13 +163,13 @@ function ApplicationDetailsPage() {
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-				<div className="flex items-start gap-4">
-					<div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
+				<div className="flex min-w-0 items-start gap-4">
+					<div className="h-14 w-14 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
 						<StaticLucideIcon name={data?.icon} className="h-7 w-7 text-primary" />
 					</div>
-					<div>
-						<div className="flex items-center gap-3">
-							<h1 className="text-2xl font-bold">{data?.name}</h1>
+					<div className="min-w-0 space-y-2">
+						<h1 className="text-2xl font-bold wrap-break-word">{data?.name}</h1>
+						<div className="flex flex-wrap items-center gap-2">
 							<ApplicationStatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
 							<ApplicationStatusBadge
 								status={data?.healthStatus ?? HealthStatus.Unknown}
