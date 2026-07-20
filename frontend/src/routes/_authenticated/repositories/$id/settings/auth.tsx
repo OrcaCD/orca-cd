@@ -105,7 +105,7 @@ function RepositoryAuthPage() {
 								}}
 							</form.Field>
 							{error && <ErrorAlert title={m.cantConnectToRepository()} description={error} />}
-							<div className="flex gap-2 pt-2">
+							<div className="flex flex-wrap gap-2 pt-2">
 								<Button type="submit" disabled={isLoading || !repository}>
 									{m.updateAuthentication()}
 								</Button>
