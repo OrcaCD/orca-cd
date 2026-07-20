@@ -202,7 +202,7 @@ function ImagePollingPage() {
 								</>
 							)}
 
-							<div className="flex gap-2 pt-2">
+							<div className="flex flex-wrap gap-2 pt-2">
 								<Button type="submit" disabled={isSubmitting}>
 									{isSubmitting ? m.savingDots() : m.saveChanges()}
 								</Button>
