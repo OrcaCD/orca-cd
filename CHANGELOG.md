@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/OrcaCD/orca-cd/compare/v0.3.0...v0.3.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* Loading OIDC profile pictures ([#250](https://github.com/OrcaCD/orca-cd/issues/250)) ([81c49b5](https://github.com/OrcaCD/orca-cd/commit/81c49b5ab2c1a66fa5e800661c3e27e61893eec7))
+* Minor responsive UI issues ([#251](https://github.com/OrcaCD/orca-cd/issues/251)) ([89ac59e](https://github.com/OrcaCD/orca-cd/commit/89ac59eb6e1deb3e59ee811ba886b68695ec6ceb))
+
 ## [0.3.0](https://github.com/OrcaCD/orca-cd/compare/v0.2.0...v0.3.0) (2026-07-19)
 
 
