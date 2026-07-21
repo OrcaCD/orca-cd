@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Webhook } from "lucide-react";
+import { ExternalLink, Webhook } from "lucide-react";
 import z from "zod";
 import {
 	updateApplication,
@@ -23,6 +23,8 @@ import { useFetch } from "@/lib/api";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
 import CopyButton from "@/components/copy-btn";
+
+const webhookDocsUrl = "https://orcacd.dev/docs/configuration/webhooks";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/image-polling")({
 	component: ImagePollingPage,
@@ -235,6 +237,16 @@ function ImagePollingPage() {
 				<Separator />
 				<CardContent className="space-y-4">
 					<p className="text-sm text-muted-foreground">{m.imagePullWebhookDescription()}</p>
+
+					<a
+						href={webhookDocsUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+					>
+						{m.webhookDocsLink()}
+						<ExternalLink className="h-3 w-3" />
+					</a>
 
 					{application?.imageWebhookEnabled && application.imageWebhookUrl ? (
 						<div className="space-y-1">

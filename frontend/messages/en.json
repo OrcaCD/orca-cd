@@ -376,7 +376,7 @@
 	"revealSecret": "Reveal secret",
 	"hideSecret": "Hide secret",
 	"saveSecretNow": "Save this secret now as it won't be shown again.",
-	"docsLinkComingSoon": "TODO: Link to docs",
+	"webhookDocsLink": "View webhook documentation",
 	"connectRepository": "Connect Repository",
 	"updateRepository": "Update Repository",
 	"addRepository": "Add Repository",
