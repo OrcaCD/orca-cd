@@ -376,6 +376,7 @@
 	"revealSecret": "Secret anzeigen",
 	"hideSecret": "Secret ausblenden",
 	"saveSecretNow": "Speichere dieses Secret jetzt. Es wird nicht erneut angezeigt.",
+	"webhookDocsLink": "Webhook-Dokumentation anzeigen",
 	"connectRepository": "Repository verbinden",
 	"updateRepository": "Repository aktualisieren",
 	"addRepository": "Repository hinzufügen",
