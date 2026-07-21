@@ -1,4 +1,4 @@
-import { EyeIcon, EyeOffIcon, Loader2Icon } from "lucide-react";
+import { ExternalLink, EyeIcon, EyeOffIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -13,6 +13,8 @@ import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
 import type { RepositorySyncType } from "@/lib/repositories";
 import { cn } from "@/lib/utils";
+
+const webhookDocsUrl = "https://orcacd.dev/docs/configuration/webhooks";
 
 export function RepositoryDialogLoadingOverlay({ isLoading }: { isLoading: boolean }) {
 	if (!isLoading) {
@@ -71,7 +73,15 @@ export function WebhookSetupDetails({
 				</div>
 				<p className="text-xs text-muted-foreground">{m.saveSecretNow()}</p>
 			</div>
-			<div className="text-destructive">{m.docsLinkComingSoon()}</div>
+			<a
+				href={webhookDocsUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+			>
+				{m.webhookDocsLink()}
+				<ExternalLink className="h-3 w-3" />
+			</a>
 		</div>
 	);
 }
