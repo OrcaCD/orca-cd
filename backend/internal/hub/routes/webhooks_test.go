@@ -223,6 +223,42 @@ func TestWebhookHandler_GitHub_PushEvent_UpdatesDB(t *testing.T) {
 	}
 }
 
+func TestWebhookHandler_GitHub_PushEvent_DeduplicatesConcurrentDelivery(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	nop := zerolog.Nop()
+	applications.DefaultPoller = applications.NewPoller(&nop)
+	t.Cleanup(func() { applications.DefaultPoller = nil })
+
+	const secret = "mysecret"
+	const body = `{"ref":"refs/heads/main","after":"sha-after"}`
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	// Simulate a sync for this repository already in flight, e.g. from the
+	// original delivery of a webhook the provider is now retrying.
+	release, ok := applications.DefaultPoller.TryLockRepositorySync(repo.Id)
+	if !ok {
+		t.Fatal("failed to pre-lock repository sync slot")
+	}
+	defer release()
+
+	c, w := makeWebhookRequest(repo.Id, body)
+	c.Request.Header.Set("X-GitHub-Event", "push")
+	c.Request.Header.Set("X-Hub-Signature-256", githubSig(secret, body))
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusUnknown {
+		t.Errorf("expected duplicate delivery to be skipped while a sync is in progress, got sync_status %s", got.SyncStatus)
+	}
+}
+
 func TestWebhookHandler_Gitea_InvalidSignature(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 	repo := seedWebhookRepo(t, models.Gitea, "mysecret")
@@ -693,6 +729,38 @@ func TestWebhookHandler_Generic_EmptyBody_UpdatesDB(t *testing.T) {
 	}
 	if got.LastSyncedAt == nil {
 		t.Error("expected last_synced_at to be set")
+	}
+}
+
+func TestWebhookHandler_Generic_DeduplicatesConcurrentDelivery(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	nop := zerolog.Nop()
+	applications.DefaultPoller = applications.NewPoller(&nop)
+	t.Cleanup(func() { applications.DefaultPoller = nil })
+
+	const secret = "mysecret"
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	release, ok := applications.DefaultPoller.TryLockRepositorySync(repo.Id)
+	if !ok {
+		t.Fatal("failed to pre-lock repository sync slot")
+	}
+	defer release()
+
+	c, w := makeWebhookRequest(repo.Id, "")
+	c.Request.Header.Set("Authorization", "Bearer "+secret)
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusUnknown {
+		t.Errorf("expected duplicate delivery to be skipped while a sync is in progress, got sync_status %s", got.SyncStatus)
 	}
 }
 

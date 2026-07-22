@@ -996,6 +996,56 @@ func TestExecuteDeployment_NilDeployer(t *testing.T) {
 	}
 }
 
+func TestExecuteDeployment_SerializesSameApplication(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 2)}
+	deployer := &stubDeployer{
+		reqCh: make(chan agentdocker.DeployRequest, 2),
+		block: make(chan struct{}),
+	}
+
+	req := &messages.DeployRequest{
+		ApplicationId:   "app-1",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	}
+
+	go executeDeployment(context.Background(), sender, deployer, &messages.DeployRequest{
+		RequestId: "req-1", ApplicationId: req.ApplicationId, ApplicationName: req.ApplicationName, ComposeFile: req.ComposeFile,
+	})
+
+	select {
+	case <-deployer.reqCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first deploy to start")
+	}
+
+	go executeDeployment(context.Background(), sender, deployer, &messages.DeployRequest{
+		RequestId: "req-2", ApplicationId: req.ApplicationId, ApplicationName: req.ApplicationName, ComposeFile: req.ComposeFile,
+	})
+
+	select {
+	case <-deployer.reqCh:
+		t.Fatal("second deploy started while the first was still running for the same application")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(deployer.block)
+
+	select {
+	case <-deployer.reqCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for second deploy to run after the first completed")
+	}
+
+	for range 2 {
+		select {
+		case <-sender.sent:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for deploy result")
+		}
+	}
+}
+
 type stubReporter struct {
 	health map[string]agentdocker.HealthState
 }

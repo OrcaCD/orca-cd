@@ -239,6 +239,13 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return
 		}
 
+		release, ok := tryLockRepositorySync(matchedRepo.Id)
+		if !ok {
+			c.JSON(http.StatusConflict, gin.H{"error": "repository sync already in progress"})
+			return
+		}
+		defer release()
+
 		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}, &hubApplications.Log)
 	}
 

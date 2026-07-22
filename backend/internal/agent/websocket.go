@@ -252,6 +252,28 @@ func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
 	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId)
 }
 
+// appExecLocks serializes Deploy/Remove calls per application ID. The hub has
+// no cross-request guarantee that only one deploy is ever in flight for a
+// given application (e.g. a duplicated webhook delivery can dispatch two
+// DeployRequests, or a delete can race a deploy), and executeDeployment /
+// executeDelete each run in their own goroutine. Without this lock, two
+// docker compose invocations for the same project could run concurrently.
+var (
+	appExecMu    sync.Mutex
+	appExecLocks = make(map[string]*sync.Mutex)
+)
+
+func lockForApplication(appID string) *sync.Mutex {
+	appExecMu.Lock()
+	defer appExecMu.Unlock()
+	lock, ok := appExecLocks[appID]
+	if !ok {
+		lock = &sync.Mutex{}
+		appExecLocks[appID] = lock
+	}
+	return lock
+}
+
 func executeDeployment(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeployRequest) {
 	Log.Info().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("starting deployment")
 
@@ -265,6 +287,10 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		sendDeployResult(sender, result)
 		return
 	}
+
+	lock := lockForApplication(req.ApplicationId)
+	lock.Lock()
+	defer lock.Unlock()
 
 	deployCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
 	defer cancel()
@@ -299,6 +325,10 @@ func executeDelete(ctx context.Context, sender outboundSender, deployer deployEx
 		sendDeleteResult(sender, result)
 		return
 	}
+
+	lock := lockForApplication(req.ApplicationId)
+	lock.Lock()
+	defer lock.Unlock()
 
 	delCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
 	defer cancel()

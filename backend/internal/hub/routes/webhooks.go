@@ -103,12 +103,34 @@ func WebhookHandler(c *gin.Context) {
 		return
 	}
 
+	release, ok := tryLockRepositorySync(repo.Id)
+	if !ok {
+		// A sync for this repository is already in progress, most likely this
+		// exact push redelivered by the provider's webhook retry logic. Skip
+		// silently instead of dispatching a duplicate deploy.
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	defer release()
+
 	// TODO: get commit message for push event and pass it to the queue.
 	// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers.
 	// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit.
 	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
 	c.AbortWithStatus(http.StatusNoContent)
+}
+
+// tryLockRepositorySync claims the in-flight sync slot for repoID via the
+// default poller so a duplicated webhook delivery cannot dispatch the same
+// sync twice concurrently. Falls back to allowing the sync when the poller
+// isn't initialized (e.g. in tests), since the lock is a best-effort guard,
+// not a correctness requirement.
+func tryLockRepositorySync(repoID string) (release func(), ok bool) {
+	if applications.DefaultPoller == nil {
+		return func() {}, true
+	}
+	return applications.DefaultPoller.TryLockRepositorySync(repoID)
 }
 
 func handleGenericWebhook(c *gin.Context, repo models.Repository) {
@@ -143,6 +165,13 @@ func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	release, ok := tryLockRepositorySync(repo.Id)
+	if !ok {
+		c.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	defer release()
 
 	// When the payload omits the commit, resolve the latest commit per branch from
 	// the provider; otherwise deploy the commit the caller supplied.

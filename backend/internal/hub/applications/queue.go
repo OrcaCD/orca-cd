@@ -17,8 +17,12 @@ const defaultWorkerCount = 4
 const maxQueueSize = defaultWorkerCount * 6
 const jobTimeout = 3 * time.Minute
 
-// TODO
-// Prevent multiple concurrent syncs for the same application
+// Concurrent syncs for the same application are guarded at two levels: every
+// sync entry point (poller, manual trigger, webhooks, GitHub Actions) claims
+// the target repository's slot via Poller.TryLockRepositorySync before
+// enqueuing jobs, and the agent serializes Deploy/Remove calls per
+// application, so overlapping triggers cannot run docker compose concurrently
+// against the same project.
 
 type Queue struct {
 	jobs    chan syncJob

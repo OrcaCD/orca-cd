@@ -209,6 +209,67 @@ func TestPoller_TriggerSync_ManualConflictRecordsFailedEvent(t *testing.T) {
 	}
 }
 
+func TestPoller_TryLockRepositorySync_DeduplicatesAcrossCallers(t *testing.T) {
+	nop := zerolog.Nop()
+	p := NewPoller(&nop)
+	t.Cleanup(p.Stop)
+
+	release, ok := p.TryLockRepositorySync("repo-1")
+	if !ok {
+		t.Fatal("expected first lock attempt to succeed")
+	}
+
+	if _, ok := p.TryLockRepositorySync("repo-1"); ok {
+		t.Error("expected second lock attempt for the same repository to be rejected while the first is held")
+	}
+
+	// A different repository must not be blocked by repo-1's lock.
+	otherRelease, ok := p.TryLockRepositorySync("repo-2")
+	if !ok {
+		t.Fatal("expected lock attempt for a different repository to succeed")
+	}
+	otherRelease()
+
+	release()
+
+	if _, ok := p.TryLockRepositorySync("repo-1"); !ok {
+		t.Error("expected lock attempt to succeed again after release")
+	}
+}
+
+func TestPoller_TryLockRepositorySync_CoordinatesWithTriggerSync(t *testing.T) {
+	setupTestDB(t)
+	setupSyncQueue(t)
+
+	repo := seedRepo(t)
+	repo.Provider = testSyncProvider
+	agent := seedAgent(t)
+	seedApp(t, repo.Id, agent.Id, "compose: v1")
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	repositories.Register(testSyncProvider, &mockProvider{
+		onGetLatestCommit: func() {
+			close(started)
+			<-release
+		},
+		latestCommit: repositories.CommitInfo{Hash: "sha", Message: "msg"},
+	})
+
+	nop := zerolog.Nop()
+	p := NewPoller(&nop)
+	t.Cleanup(p.Stop)
+
+	p.TriggerSync(&repo, SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling})
+	<-started // TriggerSync's sync is in-flight, holding the repo's syncing slot
+
+	if _, ok := p.TryLockRepositorySync(repo.Id); ok {
+		t.Error("expected TryLockRepositorySync to be rejected while TriggerSync holds the same repository's slot")
+	}
+
+	close(release)
+}
+
 func TestPoller_Stop_WaitsForInFlightSyncs(t *testing.T) {
 	setupTestDB(t)
 	setupSyncQueue(t)
