@@ -158,8 +158,14 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string) {
 
 	updated, err := checkAndPullImages(ctx, p.client, appID, appName, deleteOld)
 
-	// Only notify the hub when something changed or an error occurred.
-	if !updated && err == nil {
+	// Unsolicited periodic ticks stay silent when nothing changed, to avoid
+	// spamming history/notifications. Explicitly triggered requests (webhook,
+	// manual, GitHub Actions) always report back, even with no change, so the
+	// hub can complete the correlated event and clear the application's
+	// syncing status. Otherwise a duplicate webhook delivery whose pull is a
+	// no-op (the first delivery already pulled the image) leaves its event
+	// stuck "running" and the application stuck "Syncing" until hub restart.
+	if requestID == "" && !updated && err == nil {
 		return
 	}
 

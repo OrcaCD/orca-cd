@@ -108,6 +108,18 @@ func (p *Poller) TriggerSync(repo *models.Repository, origin SyncOrigin) bool {
 	return true
 }
 
+// TryLockRepositorySync attempts to claim the in-flight sync slot for repoID,
+// coordinating with TriggerSync so any trigger source (scheduled poll, manual
+// sync, or a webhook/GitHub Actions handler calling this directly) cannot run
+// a sync for the same repository concurrently. Callers must invoke the
+// returned release func once their own sync attempt returns.
+func (p *Poller) TryLockRepositorySync(repoID string) (release func(), ok bool) {
+	if _, loaded := p.syncing.LoadOrStore(repoID, struct{}{}); loaded {
+		return nil, false
+	}
+	return func() { p.syncing.Delete(repoID) }, true
+}
+
 func (p *Poller) recordManualSyncConflict(repo *models.Repository, origin SyncOrigin) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

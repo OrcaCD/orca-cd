@@ -266,6 +266,40 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	}
 }
 
+func TestImagePoller_RunOnce_SendsResultOnExplicitRequestEvenWhenNothingChanged(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+		return false, nil // nothing changed, e.g. a duplicate webhook delivery
+	}
+
+	sender := &stubMessageSender{}
+	p := newTestPoller(t, sender)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	p.runOnce("app-1", "myapp", "req-1")
+
+	msgs := sender.received()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	result := msgs[0].GetPullImagesResult()
+	if result == nil {
+		t.Fatal("expected PullImagesResult payload")
+	}
+	if !result.Success {
+		t.Error("expected success=true")
+	}
+	if result.ImagesUpdated {
+		t.Error("expected images_updated=false")
+	}
+	if result.RequestId != "req-1" {
+		t.Errorf("expected request_id %q, got %q", "req-1", result.RequestId)
+	}
+}
+
 func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
@@ -315,7 +349,7 @@ func TestImagePoller_TriggerNow(t *testing.T) {
 		return false, nil
 	}
 
-	p := newTestPoller(t, nil)
+	p := newTestPoller(t, noopSender{})
 	p.TriggerNow("app-1", "billing", "req-99")
 
 	select {
@@ -345,7 +379,7 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 		return false, nil
 	}
 
-	p := newTestPoller(t, nil)
+	p := newTestPoller(t, noopSender{})
 	p.TriggerNow("app-1", "billing", "req-1")
 
 	select {

@@ -484,6 +484,37 @@ func TestGitHubActionsDeployHandler_SyncTriggered(t *testing.T) {
 	}
 }
 
+func TestGitHubActionsDeployHandler_SyncRejectedWhenRepositoryAlreadySyncing(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+
+	nop := zerolog.Nop()
+	applications.DefaultPoller = applications.NewPoller(&nop)
+	t.Cleanup(func() { applications.DefaultPoller = nil })
+
+	release, ok := applications.DefaultPoller.TryLockRepositorySync(repo.Id)
+	if !ok {
+		t.Fatal("failed to pre-lock repository sync slot")
+	}
+	defer release()
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestGitHubActionsDeployHandler_UnsupportedRefType(t *testing.T) {
 	srv := setupGHActionsTest(t)
 	seedGHActionsRepo(t)
