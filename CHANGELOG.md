@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/OrcaCD/orca-cd/compare/v0.3.1...v0.3.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* Agent and sync bugs ([#259](https://github.com/OrcaCD/orca-cd/issues/259)) ([1f6ea97](https://github.com/OrcaCD/orca-cd/commit/1f6ea97d8bb88447800e7dc73f4adaf8ee6abfe4))
+* Replace todo with docs link ([#256](https://github.com/OrcaCD/orca-cd/issues/256)) ([1e7fc45](https://github.com/OrcaCD/orca-cd/commit/1e7fc45c90bae0aaa7483d32874bfe46bf63131f))
+
 ## [0.3.1](https://github.com/OrcaCD/orca-cd/compare/v0.3.0...v0.3.1) (2026-07-20)
 
 
