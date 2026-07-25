@@ -526,7 +526,7 @@
 	"imagePollDeleteOldImagesDescription": "Remove replaced image versions after a successful update",
 	"validationImagePollIntervalMin": "Polling interval must be at least 60 seconds",
 	"imagePullWebhookSectionTitle": "Image Pull Webhook",
-	"imagePullWebhookDescription": "Trigger an image pull when a container image is pushed to your registry. Supports Docker Hub, Harbor, GitHub Container Registry, and any generic registry. For Docker Hub, append ?token=<secret> to the webhook URL instead of using an Authorization header.",
+	"imagePullWebhookDescription": "Trigger an image pull when a container image is pushed to your registry. Supports Docker Hub, Harbor, GitHub Container Registry, and any generic registry. For Docker Hub, append ?token=<secret> to the webhook URL instead of using an Authorization header. Deliveries arriving within a few seconds of each other are combined into a single pull, so one push that fires several webhooks results in one deployment.",
 	"generateWebhook": "Generate Webhook",
 	"regenerateWebhook": "Regenerate",
 	"revokeWebhook": "Revoke",

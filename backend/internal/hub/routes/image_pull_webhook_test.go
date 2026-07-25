@@ -428,6 +428,60 @@ func TestImagePullWebhookHandler_GitHubPackage_Updated_TriggersPull(t *testing.T
 	}
 }
 
+// A registry push fans out into several deliveries (GHCR sends one package event
+// per manifest). They must collapse into a single pull instead of one deploy
+// attempt, history entry and notification each.
+func TestImagePullWebhookHandler_GitHubPackage_BurstIsDebounced(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	hub := setupHubForTest(t)
+
+	const secret = "mysecret"
+	const agentID = "agent-pkg-burst"
+	const body = `{"action":"published","package":{"package_type":"CONTAINER"}}`
+
+	app := seedAppWithWebhookSecret(t, secret)
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("agent_id", agentID).Error; err != nil {
+		t.Fatalf("failed to update agent_id: %v", err)
+	}
+
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	nop := zerolog.Nop()
+	debouncer := applications.NewImagePullDebouncer(&nop)
+	applications.DefaultImagePullDebouncer = debouncer
+	t.Cleanup(func() {
+		debouncer.Stop()
+		applications.DefaultImagePullDebouncer = nil
+	})
+
+	for range 3 {
+		c, w := makeGitHubPackageRequest(app.Id, body, imagePullHMAC(secret, body))
+		ImagePullWebhookHandler(c)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+
+	// Nothing is dispatched while the debounce window is still open.
+	select {
+	case msg := <-client.Send:
+		t.Fatalf("expected the burst to be debounced, got %T", msg.Payload)
+	default:
+	}
+
+	events, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("application_id = ?", app.Id).Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("expected no history events while the burst settles, got %d", len(events))
+	}
+}
+
 func TestImagePullWebhookHandler_GitHubPackage_InvalidSignature_Returns401(t *testing.T) {
 	setupTestDBForImagePullWebhook(t)
 

@@ -13,7 +13,11 @@ import (
 // TriggerImagePull sends a PullImagesRequest to the agent for the given application
 // and records a correlated image_update history event for the explicit trigger.
 // Returns false if the hub is not initialized, the agent is not connected, or the send buffer is full.
+// Triggers that may arrive in bursts should go through ScheduleImagePull instead.
 func TriggerImagePull(app *models.Application, source models.ApplicationEventSource) bool {
+	// This pull supersedes a debounced one queued for the same application.
+	DefaultImagePullDebouncer.Cancel(app.Id)
+
 	ctx := context.Background()
 	requestID := uuid.NewString()
 	if _, err := applicationevents.Start(ctx, applicationevents.Params{

@@ -139,6 +139,9 @@ func Run(cfg Config) error {
 	applications.DefaultPoller.Start()
 	defer applications.DefaultPoller.Stop()
 
+	applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
+	defer applications.DefaultImagePullDebouncer.Stop()
+
 	if !cfg.Demo {
 		defer db.StartVacuumScheduler()()
 	}
