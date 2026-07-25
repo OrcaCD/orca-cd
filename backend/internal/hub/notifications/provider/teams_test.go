@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 const validTeamsWebhookURL = "https://contoso.webhook.office.com/webhookb2/11111111-4444-4444-8444-cccccccccccc@22222222-4444-4444-8444-cccccccccccc/IncomingWebhook/33333333012222222222333333333344/44444444-4444-4444-8444-cccccccccccc/V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"
@@ -114,7 +115,7 @@ func TestTeamsProviderBuildsStructuredURL(t *testing.T) {
 		t.Fatalf("expected title query parameter, got %q", query.Get("title"))
 	}
 
-	if _, err := shoutrrr.CreateSender(urls...); err != nil {
+	if _, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, urls...); err != nil {
 		t.Fatalf("expected Shoutrrr to accept Teams URL: %v", err)
 	}
 }

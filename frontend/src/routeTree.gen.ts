@@ -9,43 +9,43 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedRepositoriesIndexRouteImport } from './routes/_authenticated/repositories/index'
-import { Route as AuthenticatedNotificationsIndexRouteImport } from './routes/_authenticated/notifications/index'
-import { Route as AuthenticatedApplicationsIndexRouteImport } from './routes/_authenticated/applications/index'
-import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
-import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
-import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
-import { Route as AuthenticatedRepositoriesIdRouteImport } from './routes/_authenticated/repositories/$id'
-import { Route as AuthenticatedApplicationsIdRouteImport } from './routes/_authenticated/applications/$id'
-import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
-import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
-import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
-import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
+import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
+import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
+import { Route as AuthenticatedApplicationsIndexRouteImport } from './routes/_authenticated/applications/index'
+import { Route as AuthenticatedApplicationsIdRouteImport } from './routes/_authenticated/applications/$id'
+import { Route as AuthenticatedNotificationsIndexRouteImport } from './routes/_authenticated/notifications/index'
+import { Route as AuthenticatedRepositoriesIndexRouteImport } from './routes/_authenticated/repositories/index'
+import { Route as AuthenticatedRepositoriesIdRouteImport } from './routes/_authenticated/repositories/$id'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_authenticated/settings/profile'
+import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
-import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
 import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
-import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
+import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
+import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
-import { Route as AuthenticatedRepositoriesIdSettingsSyncRouteImport } from './routes/_authenticated/repositories/$id/settings/sync'
-import { Route as AuthenticatedRepositoriesIdSettingsAuthRouteImport } from './routes/_authenticated/repositories/$id/settings/auth'
-import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
 import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
+import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
+import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
+import { Route as AuthenticatedRepositoriesIdSettingsAuthRouteImport } from './routes/_authenticated/repositories/$id/settings/auth'
+import { Route as AuthenticatedRepositoriesIdSettingsSyncRouteImport } from './routes/_authenticated/repositories/$id/settings/sync'
 
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -53,84 +53,25 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsIndexRoute =
-  AuthenticatedSettingsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedRepositoriesIndexRoute =
-  AuthenticatedRepositoriesIndexRouteImport.update({
-    id: '/repositories/',
-    path: '/repositories/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedNotificationsIndexRoute =
-  AuthenticatedNotificationsIndexRouteImport.update({
-    id: '/notifications/',
-    path: '/notifications/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedApplicationsIndexRoute =
-  AuthenticatedApplicationsIndexRouteImport.update({
-    id: '/applications/',
-    path: '/applications/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedAgentsIndexRoute =
-  AuthenticatedAgentsIndexRouteImport.update({
-    id: '/agents/',
-    path: '/agents/',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
-const AuthenticatedSettingsSecurityRoute =
-  AuthenticatedSettingsSecurityRouteImport.update({
-    id: '/security',
-    path: '/security',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedSettingsProfileRoute =
-  AuthenticatedSettingsProfileRouteImport.update({
-    id: '/profile',
-    path: '/profile',
-    getParentRoute: () => AuthenticatedSettingsRoute,
-  } as any)
-const AuthenticatedRepositoriesIdRoute =
-  AuthenticatedRepositoriesIdRouteImport.update({
-    id: '/repositories/$id',
-    path: '/repositories/$id',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedApplicationsIdRoute =
-  AuthenticatedApplicationsIdRouteImport.update({
-    id: '/applications/$id',
-    path: '/applications/$id',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
-const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AuthenticatedAdminRoute,
-} as any)
-const AuthenticatedAdminSystemInfoRoute =
-  AuthenticatedAdminSystemInfoRouteImport.update({
-    id: '/system-info',
-    path: '/system-info',
+const AuthenticatedAdminAuditLogRoute =
+  AuthenticatedAdminAuditLogRouteImport.update({
+    id: '/audit-log',
+    path: '/audit-log',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminOidcProvidersRoute =
@@ -139,28 +80,75 @@ const AuthenticatedAdminOidcProvidersRoute =
     path: '/oidc-providers',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedAdminAuditLogRoute =
-  AuthenticatedAdminAuditLogRouteImport.update({
-    id: '/audit-log',
-    path: '/audit-log',
+const AuthenticatedAdminSystemInfoRoute =
+  AuthenticatedAdminSystemInfoRouteImport.update({
+    id: '/system-info',
+    path: '/system-info',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
-const AuthenticatedRepositoriesIdIndexRoute =
-  AuthenticatedRepositoriesIdIndexRouteImport.update({
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const AuthenticatedAgentsIndexRoute =
+  AuthenticatedAgentsIndexRouteImport.update({
+    id: '/agents/',
+    path: '/agents/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsIndexRoute =
+  AuthenticatedApplicationsIndexRouteImport.update({
+    id: '/applications/',
+    path: '/applications/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedApplicationsIdRoute =
+  AuthenticatedApplicationsIdRouteImport.update({
+    id: '/applications/$id',
+    path: '/applications/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedNotificationsIndexRoute =
+  AuthenticatedNotificationsIndexRouteImport.update({
+    id: '/notifications/',
+    path: '/notifications/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedRepositoriesIndexRoute =
+  AuthenticatedRepositoriesIndexRouteImport.update({
+    id: '/repositories/',
+    path: '/repositories/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedRepositoriesIdRoute =
+  AuthenticatedRepositoriesIdRouteImport.update({
+    id: '/repositories/$id',
+    path: '/repositories/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSettingsIndexRoute =
+  AuthenticatedSettingsIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsProfileRoute =
+  AuthenticatedSettingsProfileRouteImport.update({
+    id: '/profile',
+    path: '/profile',
+    getParentRoute: () => AuthenticatedSettingsRoute,
+  } as any)
+const AuthenticatedSettingsSecurityRoute =
+  AuthenticatedSettingsSecurityRouteImport.update({
+    id: '/security',
+    path: '/security',
+    getParentRoute: () => AuthenticatedSettingsRoute,
   } as any)
 const AuthenticatedApplicationsIdIndexRoute =
   AuthenticatedApplicationsIdIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => AuthenticatedApplicationsIdRoute,
-  } as any)
-const AuthenticatedApplicationsIdHistoryRoute =
-  AuthenticatedApplicationsIdHistoryRouteImport.update({
-    id: '/history',
-    path: '/history',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
 const AuthenticatedApplicationsIdDetailsRoute =
@@ -169,10 +157,16 @@ const AuthenticatedApplicationsIdDetailsRoute =
     path: '/details',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
-const AuthenticatedRepositoriesIdSettingsIndexRoute =
-  AuthenticatedRepositoriesIdSettingsIndexRouteImport.update({
-    id: '/settings/',
-    path: '/settings/',
+const AuthenticatedApplicationsIdHistoryRoute =
+  AuthenticatedApplicationsIdHistoryRouteImport.update({
+    id: '/history',
+    path: '/history',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
+const AuthenticatedRepositoriesIdIndexRoute =
+  AuthenticatedRepositoriesIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
     getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
 const AuthenticatedApplicationsIdSettingsIndexRoute =
@@ -181,10 +175,22 @@ const AuthenticatedApplicationsIdSettingsIndexRoute =
     path: '/settings/',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
-const AuthenticatedRepositoriesIdSettingsSyncRoute =
-  AuthenticatedRepositoriesIdSettingsSyncRouteImport.update({
-    id: '/settings/sync',
-    path: '/settings/sync',
+const AuthenticatedApplicationsIdSettingsGeneralRoute =
+  AuthenticatedApplicationsIdSettingsGeneralRouteImport.update({
+    id: '/settings/general',
+    path: '/settings/general',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
+const AuthenticatedApplicationsIdSettingsImagePollingRoute =
+  AuthenticatedApplicationsIdSettingsImagePollingRouteImport.update({
+    id: '/settings/image-polling',
+    path: '/settings/image-polling',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
+const AuthenticatedRepositoriesIdSettingsIndexRoute =
+  AuthenticatedRepositoriesIdSettingsIndexRouteImport.update({
+    id: '/settings/',
+    path: '/settings/',
     getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
 const AuthenticatedRepositoriesIdSettingsAuthRoute =
@@ -193,17 +199,11 @@ const AuthenticatedRepositoriesIdSettingsAuthRoute =
     path: '/settings/auth',
     getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
-const AuthenticatedApplicationsIdSettingsImagePollingRoute =
-  AuthenticatedApplicationsIdSettingsImagePollingRouteImport.update({
-    id: '/settings/image-polling',
-    path: '/settings/image-polling',
-    getParentRoute: () => AuthenticatedApplicationsIdRoute,
-  } as any)
-const AuthenticatedApplicationsIdSettingsGeneralRoute =
-  AuthenticatedApplicationsIdSettingsGeneralRouteImport.update({
-    id: '/settings/general',
-    path: '/settings/general',
-    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+const AuthenticatedRepositoriesIdSettingsSyncRoute =
+  AuthenticatedRepositoriesIdSettingsSyncRouteImport.update({
+    id: '/settings/sync',
+    path: '/settings/sync',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -391,18 +391,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -412,13 +412,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -426,39 +419,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings/': {
-      id: '/_authenticated/settings/'
-      path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
-    }
-    '/_authenticated/repositories/': {
-      id: '/_authenticated/repositories/'
-      path: '/repositories'
-      fullPath: '/repositories/'
-      preLoaderRoute: typeof AuthenticatedRepositoriesIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/notifications/': {
-      id: '/_authenticated/notifications/'
-      path: '/notifications'
-      fullPath: '/notifications/'
-      preLoaderRoute: typeof AuthenticatedNotificationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/applications/': {
-      id: '/_authenticated/applications/'
-      path: '/applications'
-      fullPath: '/applications/'
-      preLoaderRoute: typeof AuthenticatedApplicationsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/agents/': {
-      id: '/_authenticated/agents/'
-      path: '/agents'
-      fullPath: '/agents/'
-      preLoaderRoute: typeof AuthenticatedAgentsIndexRouteImport
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/': {
@@ -468,46 +433,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/settings/security': {
-      id: '/_authenticated/settings/security'
-      path: '/security'
-      fullPath: '/settings/security'
-      preLoaderRoute: typeof AuthenticatedSettingsSecurityRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
-    }
-    '/_authenticated/settings/profile': {
-      id: '/_authenticated/settings/profile'
-      path: '/profile'
-      fullPath: '/settings/profile'
-      preLoaderRoute: typeof AuthenticatedSettingsProfileRouteImport
-      parentRoute: typeof AuthenticatedSettingsRoute
-    }
-    '/_authenticated/repositories/$id': {
-      id: '/_authenticated/repositories/$id'
-      path: '/repositories/$id'
-      fullPath: '/repositories/$id'
-      preLoaderRoute: typeof AuthenticatedRepositoriesIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/applications/$id': {
-      id: '/_authenticated/applications/$id'
-      path: '/applications/$id'
-      fullPath: '/applications/$id'
-      preLoaderRoute: typeof AuthenticatedApplicationsIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/users': {
-      id: '/_authenticated/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof AuthenticatedAdminRoute
-    }
-    '/_authenticated/admin/system-info': {
-      id: '/_authenticated/admin/system-info'
-      path: '/system-info'
-      fullPath: '/admin/system-info'
-      preLoaderRoute: typeof AuthenticatedAdminSystemInfoRouteImport
+    '/_authenticated/admin/audit-log': {
+      id: '/_authenticated/admin/audit-log'
+      path: '/audit-log'
+      fullPath: '/admin/audit-log'
+      preLoaderRoute: typeof AuthenticatedAdminAuditLogRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/oidc-providers': {
@@ -517,32 +447,88 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/admin/audit-log': {
-      id: '/_authenticated/admin/audit-log'
-      path: '/audit-log'
-      fullPath: '/admin/audit-log'
-      preLoaderRoute: typeof AuthenticatedAdminAuditLogRouteImport
+    '/_authenticated/admin/system-info': {
+      id: '/_authenticated/admin/system-info'
+      path: '/system-info'
+      fullPath: '/admin/system-info'
+      preLoaderRoute: typeof AuthenticatedAdminSystemInfoRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
-    '/_authenticated/repositories/$id/': {
-      id: '/_authenticated/repositories/$id/'
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/agents/': {
+      id: '/_authenticated/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AuthenticatedAgentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/': {
+      id: '/_authenticated/applications/'
+      path: '/applications'
+      fullPath: '/applications/'
+      preLoaderRoute: typeof AuthenticatedApplicationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/applications/$id': {
+      id: '/_authenticated/applications/$id'
+      path: '/applications/$id'
+      fullPath: '/applications/$id'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/notifications/': {
+      id: '/_authenticated/notifications/'
+      path: '/notifications'
+      fullPath: '/notifications/'
+      preLoaderRoute: typeof AuthenticatedNotificationsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/repositories/': {
+      id: '/_authenticated/repositories/'
+      path: '/repositories'
+      fullPath: '/repositories/'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/repositories/$id': {
+      id: '/_authenticated/repositories/$id'
+      path: '/repositories/$id'
+      fullPath: '/repositories/$id'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings/': {
+      id: '/_authenticated/settings/'
       path: '/'
-      fullPath: '/repositories/$id/'
-      preLoaderRoute: typeof AuthenticatedRepositoriesIdIndexRouteImport
-      parentRoute: typeof AuthenticatedRepositoriesIdRoute
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/profile': {
+      id: '/_authenticated/settings/profile'
+      path: '/profile'
+      fullPath: '/settings/profile'
+      preLoaderRoute: typeof AuthenticatedSettingsProfileRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
+    }
+    '/_authenticated/settings/security': {
+      id: '/_authenticated/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof AuthenticatedSettingsSecurityRouteImport
+      parentRoute: typeof AuthenticatedSettingsRoute
     }
     '/_authenticated/applications/$id/': {
       id: '/_authenticated/applications/$id/'
       path: '/'
       fullPath: '/applications/$id/'
       preLoaderRoute: typeof AuthenticatedApplicationsIdIndexRouteImport
-      parentRoute: typeof AuthenticatedApplicationsIdRoute
-    }
-    '/_authenticated/applications/$id/history': {
-      id: '/_authenticated/applications/$id/history'
-      path: '/history'
-      fullPath: '/applications/$id/history'
-      preLoaderRoute: typeof AuthenticatedApplicationsIdHistoryRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
     '/_authenticated/applications/$id/details': {
@@ -552,11 +538,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdDetailsRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
-    '/_authenticated/repositories/$id/settings/': {
-      id: '/_authenticated/repositories/$id/settings/'
-      path: '/settings'
-      fullPath: '/repositories/$id/settings/'
-      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsIndexRouteImport
+    '/_authenticated/applications/$id/history': {
+      id: '/_authenticated/applications/$id/history'
+      path: '/history'
+      fullPath: '/applications/$id/history'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdHistoryRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
+    '/_authenticated/repositories/$id/': {
+      id: '/_authenticated/repositories/$id/'
+      path: '/'
+      fullPath: '/repositories/$id/'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdIndexRouteImport
       parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
     '/_authenticated/applications/$id/settings/': {
@@ -566,11 +559,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
-    '/_authenticated/repositories/$id/settings/sync': {
-      id: '/_authenticated/repositories/$id/settings/sync'
-      path: '/settings/sync'
-      fullPath: '/repositories/$id/settings/sync'
-      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsSyncRouteImport
+    '/_authenticated/applications/$id/settings/general': {
+      id: '/_authenticated/applications/$id/settings/general'
+      path: '/settings/general'
+      fullPath: '/applications/$id/settings/general'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
+    '/_authenticated/applications/$id/settings/image-polling': {
+      id: '/_authenticated/applications/$id/settings/image-polling'
+      path: '/settings/image-polling'
+      fullPath: '/applications/$id/settings/image-polling'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
+    '/_authenticated/repositories/$id/settings/': {
+      id: '/_authenticated/repositories/$id/settings/'
+      path: '/settings'
+      fullPath: '/repositories/$id/settings/'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
     '/_authenticated/repositories/$id/settings/auth': {
@@ -580,19 +587,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsAuthRouteImport
       parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
-    '/_authenticated/applications/$id/settings/image-polling': {
-      id: '/_authenticated/applications/$id/settings/image-polling'
-      path: '/settings/image-polling'
-      fullPath: '/applications/$id/settings/image-polling'
-      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRouteImport
-      parentRoute: typeof AuthenticatedApplicationsIdRoute
-    }
-    '/_authenticated/applications/$id/settings/general': {
-      id: '/_authenticated/applications/$id/settings/general'
-      path: '/settings/general'
-      fullPath: '/applications/$id/settings/general'
-      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRouteImport
-      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    '/_authenticated/repositories/$id/settings/sync': {
+      id: '/_authenticated/repositories/$id/settings/sync'
+      path: '/settings/sync'
+      fullPath: '/repositories/$id/settings/sync'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsSyncRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
   }
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 	"gorm.io/gorm"
 )
 
@@ -369,7 +370,7 @@ func validateNotificationConfig(notificationType models.NotificationType, rawCon
 		return err
 	}
 
-	if _, err := shoutrrr.CreateSender(targets...); err != nil {
+	if _, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, targets...); err != nil {
 		return err
 	}
 

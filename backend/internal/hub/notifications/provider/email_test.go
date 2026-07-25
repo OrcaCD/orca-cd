@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 func TestEmailProviderBuildShoutrrrUrls(t *testing.T) {
@@ -154,7 +155,7 @@ func TestEmailProviderBuildsStructuredURL(t *testing.T) {
 		t.Fatalf("expected TLS defaults to be omitted, got query %q", parsed.RawQuery)
 	}
 
-	if _, err := shoutrrr.CreateSender(urls...); err != nil {
+	if _, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, urls...); err != nil {
 		t.Fatalf("expected Shoutrrr to accept URL %q: %v", urls[0], err)
 	}
 }
