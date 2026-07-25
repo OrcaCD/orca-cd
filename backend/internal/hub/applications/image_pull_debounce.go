@@ -13,16 +13,13 @@ import (
 )
 
 const (
-	// imagePullDebounceWindow is the quiet period a burst of image update
-	// triggers has to settle for before the pull is dispatched. Registries fan a
-	// single push out into several deliveries — GHCR publishes one package event
-	// per manifest of a multi-arch image — so pulling on the first delivery both
-	// floods history and notifications and can race the tag update itself.
+	// imagePullDebounceWindow is the quiet period a burst of image update triggers
+	// has to settle for before the pull is dispatched. One registry push can fan out
+	// into a delivery per manifest of a multi-arch image.
 	imagePullDebounceWindow = 5 * time.Second
 	// imagePullDebounceMaxDelay caps how long a continuous stream of triggers can
 	// postpone the pull.
 	imagePullDebounceMaxDelay = 30 * time.Second
-	imagePullDebounceTimeout  = 10 * time.Second
 )
 
 // DefaultImagePullDebouncer coalesces image update webhook deliveries. It is nil
@@ -37,8 +34,7 @@ type pendingImagePull struct {
 }
 
 // ImagePullDebouncer collapses bursts of image update triggers for the same
-// application into a single pull, so one registry push results in one history
-// entry and one notification instead of one per webhook delivery.
+// application into one pull, so one push yields one history entry and one notification.
 type ImagePullDebouncer struct {
 	mu       sync.Mutex
 	wg       sync.WaitGroup // tracks in-flight dispatches
@@ -69,8 +65,7 @@ func ScheduleImagePull(app *models.Application, source models.ApplicationEventSo
 }
 
 // Schedule queues a pull for appID once no further trigger arrives within the
-// debounce window. Repeated triggers restart that window, but never postpone the
-// pull beyond maxDelay from the first trigger of the burst.
+// debounce window, but never later than maxDelay after the first trigger.
 func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEventSource) {
 	if d == nil {
 		return
@@ -83,12 +78,9 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 
 	now := time.Now()
 	deadline := now.Add(d.maxDelay)
-	if d.maxDelay <= 0 {
-		deadline = now.Add(d.window)
-	}
 	if pending, ok := d.pending[appID]; ok {
 		if !now.Before(pending.deadline) {
-			// The hard cap elapsed, so the queued pull is already on its way out.
+			// Hard cap elapsed; the queued pull is already on its way out.
 			return
 		}
 		deadline = pending.deadline
@@ -96,15 +88,14 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 	}
 
 	pending := &pendingImagePull{deadline: deadline, source: source}
-	delay := max(time.Duration(0), min(d.window, deadline.Sub(now)))
+	delay := min(d.window, deadline.Sub(now))
 	pending.timer = time.AfterFunc(delay, func() { d.dispatch(appID, pending) })
 	d.pending[appID] = pending
 
 	d.log.Debug().Str("applicationId", appID).Dur("delay", delay).Msg("image pull scheduled")
 }
 
-// Cancel drops a queued pull for appID. Callers that dispatch a pull through
-// another path use this so the pending burst does not pull a second time.
+// Cancel drops a queued pull for appID, used when a pull is dispatched elsewhere.
 func (d *ImagePullDebouncer) Cancel(appID string) {
 	if d == nil {
 		return
@@ -118,7 +109,6 @@ func (d *ImagePullDebouncer) Cancel(appID string) {
 }
 
 // Stop drops all queued pulls and waits for in-flight dispatches to finish.
-// A pull lost to shutdown is picked up by the next webhook delivery or poll.
 func (d *ImagePullDebouncer) Stop() {
 	if d == nil {
 		return
@@ -133,8 +123,8 @@ func (d *ImagePullDebouncer) Stop() {
 	d.wg.Wait()
 }
 
-// dispatch reloads the application before triggering, since it may have been
-// changed or deleted while the burst was settling.
+// dispatch reloads the application, which may have changed or been deleted while
+// the burst settled, and triggers the pull.
 func (d *ImagePullDebouncer) dispatch(appID string, pending *pendingImagePull) {
 	d.mu.Lock()
 	if d.stopped || d.pending[appID] != pending {
@@ -149,7 +139,7 @@ func (d *ImagePullDebouncer) dispatch(appID string, pending *pendingImagePull) {
 	if db.DB == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), imagePullDebounceTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	app, err := gorm.G[models.Application](db.DB).Where("id = ?", appID).First(ctx)
