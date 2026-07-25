@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,6 +21,13 @@ import (
 )
 
 const validDiscordConfig = `{"token":"token-abc","webhookId":"123456789"}`
+
+func TestMain(m *testing.M) {
+	// Tests spin up local httptest servers; swap in an unrestricted client so
+	// the SSRF-safe production client does not block 127.0.0.1.
+	notificationHTTPClient = http.DefaultClient
+	os.Exit(m.Run())
+}
 
 func setupNotificationsTestDB(t *testing.T) {
 	t.Helper()

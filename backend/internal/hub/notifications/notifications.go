@@ -10,6 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 	"github.com/rs/zerolog"
@@ -19,6 +20,10 @@ import (
 const notificationQueryTimeout = 10 * time.Second
 
 const DefaultTestNotificationMessage = "This is a test notification from OrcaCD."
+
+// notificationHTTPClient is the HTTP client used by shoutrrr for all outbound
+// notification requests.
+var notificationHTTPClient = httpclient.Default
 
 var (
 	ErrInvalidNotificationConfig = errors.New("invalid notification config")
@@ -55,7 +60,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 			continue
 		}
 
-		sender, createErr := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, targets...)
+		sender, createErr := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
 		if createErr != nil {
 			log.Error().
 				Err(createErr).
@@ -120,7 +125,7 @@ func SendTestNotification(notificationType models.NotificationType, rawConfig, m
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, targets...)
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}

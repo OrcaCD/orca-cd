@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -213,6 +214,39 @@ func TestSendNotificationHTTPWebhookErrorMarksStatusError(t *testing.T) {
 	SendNotification(app.Id, "deploy failed", newNotificationLogger())
 
 	assertCapturedNotificationRequest(t, requests, "deploy failed")
+	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
+}
+
+func assertNoNotificationRequestReceived(t *testing.T, requests <-chan capturedNotificationRequest) {
+	t.Helper()
+
+	select {
+	case <-requests:
+		t.Fatal("expected notification request to be blocked by SSRF protection, but the server received one")
+	default:
+	}
+}
+
+func TestSendNotificationBlocksSSRFToPrivateIP(t *testing.T) {
+	setupNotificationsTestDB(t)
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	// Use the real SSRF-protected client instead of the package-wide test
+	// override so this test exercises the actual production dial guard.
+	previousClient := notificationHTTPClient
+	notificationHTTPClient = httpclient.Default
+	t.Cleanup(func() {
+		notificationHTTPClient = previousClient
+	})
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	notification := seedNotificationRecord(t, "ssrf-blocked", true, false, models.NotificationStatusUnknown, app.Id)
+	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+
+	SendNotification(app.Id, "deploy done", newNotificationLogger())
+
+	assertNoNotificationRequestReceived(t, requests)
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
 }
 
