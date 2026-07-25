@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/nicholas-fedor/shoutrrr"
+	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -54,7 +55,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 			continue
 		}
 
-		sender, createErr := shoutrrr.CreateSender(targets...)
+		sender, createErr := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, targets...)
 		if createErr != nil {
 			log.Error().
 				Err(createErr).
@@ -119,7 +120,7 @@ func SendTestNotification(notificationType models.NotificationType, rawConfig, m
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}
 
-	sender, err := shoutrrr.CreateSender(targets...)
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{}, targets...)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
 	}
