@@ -26,4 +26,5 @@ services:
     volumes:
       - ./deployments:/deployments
     depends_on: # Remove this if you are only deploying the agent on a host without the hub
-      - hub
+      hub:
+        condition: service_healthy
