@@ -9,6 +9,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -239,11 +240,11 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
 	initialKeyId := agent.KeyId.String()
-	tokenStr, err := GenerateAgentToken(agent)
+	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
 	}
-	if tokenStr == "" {
+	if compoundToken == "" {
 		t.Fatal("GenerateAgentToken() returned empty token")
 	}
 	if agent.KeyId.String() == "" {
@@ -251,6 +252,21 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 	}
 	if agent.KeyId.String() == initialKeyId {
 		t.Fatal("GenerateAgentToken() expected to rotate KeyId")
+	}
+	if agent.SigningPublicKey == "" {
+		t.Fatal("GenerateAgentToken() expected to set SigningPublicKey")
+	}
+
+	tokenStr, signingKey, err := agenttoken.Decode(compoundToken)
+	if err != nil {
+		t.Fatalf("agenttoken.Decode() error: %v", err)
+	}
+	signingPubBytes, err := base64.StdEncoding.DecodeString(agent.SigningPublicKey)
+	if err != nil {
+		t.Fatalf("decode SigningPublicKey: %v", err)
+	}
+	if !signingKey.Public().(ed25519.PublicKey).Equal(ed25519.PublicKey(signingPubBytes)) {
+		t.Error("signing key encoded into the token does not match agent.SigningPublicKey")
 	}
 
 	claims, err := ValidateAgentToken(tokenStr)
@@ -288,9 +304,13 @@ func TestSignHandshake(t *testing.T) {
 	initAll(t)
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-sign-test"}}
-	tokenStr, err := GenerateAgentToken(agent)
+	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
+	}
+	tokenStr, _, err := agenttoken.Decode(compoundToken)
+	if err != nil {
+		t.Fatalf("agenttoken.Decode() error: %v", err)
 	}
 	claims, err := ValidateAgentToken(tokenStr)
 	if err != nil {
@@ -316,17 +336,21 @@ func TestGenerateAndValidateAgentToken_SetsKeyIdWhenMissing(t *testing.T) {
 	initAll(t)
 
 	agent := &models.Agent{Base: models.Base{Id: "agent-789"}}
-	tokenStr, err := GenerateAgentToken(agent)
+	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
 	}
-	if tokenStr == "" {
+	if compoundToken == "" {
 		t.Fatal("GenerateAgentToken() returned empty token")
 	}
 	if agent.KeyId.String() == "" {
 		t.Fatal("GenerateAgentToken() expected to set KeyId when missing")
 	}
 
+	tokenStr, _, err := agenttoken.Decode(compoundToken)
+	if err != nil {
+		t.Fatalf("agenttoken.Decode() error: %v", err)
+	}
 	claims, err := ValidateAgentToken(tokenStr)
 	if err != nil {
 		t.Fatalf("ValidateAgentToken() error: %v", err)

@@ -2,6 +2,9 @@ package websocket
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -73,6 +76,13 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			return
 		}
 
+		agentSigningPubKey, err := decodeAgentSigningPublicKey(agent.SigningPublicKey)
+		if err != nil {
+			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Invalid agent signing public key; re-issue the agent token")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			log.Error().Err(err).Msg("Upgrade error")
@@ -81,7 +91,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		conn.SetReadLimit(20 << 20) // 20MB max message size to prevent DoS with large messages
 
-		session, err := performHandshake(conn, claims.Subject, log)
+		session, err := performHandshake(conn, claims.Subject, agentSigningPubKey, log)
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Handshake failed")
 			err = conn.Close()
@@ -329,7 +339,18 @@ func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, lo
 	}
 }
 
-func performHandshake(conn WSConn, agentID string, log *zerolog.Logger) (*wscrypto.Session, error) {
+func decodeAgentSigningPublicKey(encoded string) (ed25519.PublicKey, error) {
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decode agent signing public key: %w", err)
+	}
+	if len(decoded) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("agent signing public key has invalid length %d, want %d", len(decoded), ed25519.PublicKeySize)
+	}
+	return ed25519.PublicKey(decoded), nil
+}
+
+func performHandshake(conn WSConn, agentID string, agentSigningPubKey ed25519.PublicKey, log *zerolog.Logger) (*wscrypto.Session, error) {
 	hubKeys, err := wscrypto.GenerateHubKeys()
 	if err != nil {
 		return nil, err
@@ -372,6 +393,11 @@ func performHandshake(conn WSConn, agentID string, log *zerolog.Logger) (*wscryp
 	resp, ok := clientMsg.Payload.(*messages.ClientMessage_KeyExchangeResponse)
 	if !ok {
 		return nil, fmt.Errorf("expected KeyExchangeResponse, got %T", clientMsg.Payload)
+	}
+
+	responsePayload := wscrypto.AgentResponseSignaturePayload(resp.KeyExchangeResponse.MlkemCiphertext, resp.KeyExchangeResponse.AgentX25519PublicKey, agentID)
+	if !ed25519.Verify(agentSigningPubKey, responsePayload, resp.KeyExchangeResponse.AgentSignature) {
+		return nil, errors.New("agent signature verification failed: agent identity not confirmed")
 	}
 
 	sessionKey, err := wscrypto.HubDeriveSessionKey(hubKeys, resp.KeyExchangeResponse.MlkemCiphertext, resp.KeyExchangeResponse.AgentX25519PublicKey, agentID)

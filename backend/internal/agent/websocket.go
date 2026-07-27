@@ -58,7 +58,7 @@ func newMessageSender(conn *websocket.Conn, session *wscrypto.Session) *messageS
 	}
 }
 
-func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.PublicKey) (*wscrypto.Session, error) {
+func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.PublicKey, signingPrivKey ed25519.PrivateKey) (*wscrypto.Session, error) {
 	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
 		return nil, fmt.Errorf("set read deadline: %w", err)
 	}
@@ -91,11 +91,14 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 		return nil, fmt.Errorf("agent handshake: %w", err)
 	}
 
+	agentSignature := ed25519.Sign(signingPrivKey, wscrypto.AgentResponseSignaturePayload(mlkemCiphertext, agentX25519Pub, agentID))
+
 	resp := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{
 				MlkemCiphertext:      mlkemCiphertext,
 				AgentX25519PublicKey: agentX25519Pub,
+				AgentSignature:       agentSignature,
 			},
 		},
 	}
@@ -380,7 +383,7 @@ func connectAndHandshake(ctx context.Context, cfg Config, tracker *connTracker) 
 	if err != nil || tracker.setAndCancelled(ctx, conn) {
 		return nil, nil, nil
 	}
-	session, err := performHandshake(conn, cfg.AgentID, cfg.HubPublicKey)
+	session, err := performHandshake(conn, cfg.AgentID, cfg.HubPublicKey, cfg.SigningPrivateKey)
 	if err != nil {
 		Log.Error().Err(err).Msg("handshake failed")
 		_ = conn.Close()

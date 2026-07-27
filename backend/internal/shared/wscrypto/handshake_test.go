@@ -6,6 +6,34 @@ import (
 	"testing"
 )
 
+func TestAgentResponseSignaturePayload_Deterministic(t *testing.T) {
+	ciphertext := []byte("mlkem-ciphertext")
+	x25519Pub := []byte("x25519-pub")
+	agentID := "agent-1"
+
+	a := AgentResponseSignaturePayload(ciphertext, x25519Pub, agentID)
+	b := AgentResponseSignaturePayload(ciphertext, x25519Pub, agentID)
+	if !bytes.Equal(a, b) {
+		t.Error("expected identical inputs to produce identical payloads")
+	}
+}
+
+func TestAgentResponseSignaturePayload_DiffersOnInputChange(t *testing.T) {
+	base := AgentResponseSignaturePayload([]byte("ciphertext"), []byte("x25519-pub"), "agent-1")
+
+	cases := map[string][]byte{
+		"different ciphertext": AgentResponseSignaturePayload([]byte("other-ciphertext"), []byte("x25519-pub"), "agent-1"),
+		"different x25519 pub": AgentResponseSignaturePayload([]byte("ciphertext"), []byte("other-pub"), "agent-1"),
+		"different agentID":    AgentResponseSignaturePayload([]byte("ciphertext"), []byte("x25519-pub"), "agent-2"),
+	}
+
+	for name, payload := range cases {
+		if bytes.Equal(base, payload) {
+			t.Errorf("%s: expected payload to differ from base", name)
+		}
+	}
+}
+
 func TestFullHandshake(t *testing.T) {
 	hubKeys, err := GenerateHubKeys()
 	if err != nil {

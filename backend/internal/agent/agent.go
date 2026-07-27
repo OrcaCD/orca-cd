@@ -15,6 +15,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/golang-jwt/jwt/v5"
@@ -37,6 +38,7 @@ type Config struct {
 	AuthToken                     string
 	AgentID                       string
 	HubPublicKey                  ed25519.PublicKey
+	SigningPrivateKey             ed25519.PrivateKey
 	HealthPort                    string
 	DeploymentsDir                string
 	AllowedPrivilegedApps         map[string]struct{}
@@ -61,7 +63,12 @@ func DefaultConfig() (Config, error) {
 		return Config{}, &FatalConfigError{"AUTH_TOKEN is not set — set the AUTH_TOKEN environment variable and recreate the container"}
 	}
 
-	agentID, hubPublicKey, err := parseTokenClaims(authToken)
+	jwtToken, signingPrivateKey, err := agenttoken.Decode(authToken)
+	if err != nil {
+		return Config{}, &FatalConfigError{fmt.Sprintf("AUTH_TOKEN: %s", err)}
+	}
+
+	agentID, hubPublicKey, err := parseTokenClaims(jwtToken)
 	if err != nil {
 		return Config{}, fmt.Errorf("AUTH_TOKEN: %w", err)
 	}
@@ -96,9 +103,10 @@ func DefaultConfig() (Config, error) {
 		LogLevel:                      logLevel,
 		LogJSON:                       logJSON,
 		HubUrl:                        hubUrl,
-		AuthToken:                     authToken,
+		AuthToken:                     jwtToken,
 		AgentID:                       agentID,
 		HubPublicKey:                  hubPublicKey,
+		SigningPrivateKey:             signingPrivateKey,
 		HealthPort:                    healthPort,
 		DeploymentsDir:                deploymentsDir,
 		AllowedPrivilegedApps:         allowedPrivilegedApps,

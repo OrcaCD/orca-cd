@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/ed25519"
 	"crypto/hkdf"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -132,6 +134,12 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 	}
 	agent.KeyId = crypto.EncryptedString(keyId)
 
+	signingPub, signingPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate agent signing key: %w", err)
+	}
+	agent.SigningPublicKey = base64.StdEncoding.EncodeToString(signingPub)
+
 	now := time.Now()
 
 	claims := AgentClaims{
@@ -147,7 +155,12 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
-	return token.SignedString(privateKey)
+	signedToken, err := token.SignedString(privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	return agenttoken.Encode(signedToken, signingPriv.Seed())
 }
 
 func ValidateAgentToken(tokenString string) (*AgentClaims, error) {

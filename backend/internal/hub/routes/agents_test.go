@@ -2,6 +2,8 @@ package routes
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -279,7 +282,11 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 		t.Fatal("expected authToken to be set")
 	}
 
-	claims, err := auth.ValidateAgentToken(body.AuthToken)
+	jwtToken, signingPriv, err := agenttoken.Decode(body.AuthToken)
+	if err != nil {
+		t.Fatalf("failed to decode compound auth token: %v", err)
+	}
+	claims, err := auth.ValidateAgentToken(jwtToken)
 	if err != nil {
 		t.Fatalf("failed to validate returned auth token: %v", err)
 	}
@@ -302,6 +309,16 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 	}
 	if agent.Icon != "satellite-dish" {
 		t.Fatalf("expected stored icon %q, got %q", "satellite-dish", agent.Icon)
+	}
+	if agent.SigningPublicKey == "" {
+		t.Fatal("expected stored SigningPublicKey to be set")
+	}
+	signingPubBytes, err := base64.StdEncoding.DecodeString(agent.SigningPublicKey)
+	if err != nil {
+		t.Fatalf("failed to decode stored SigningPublicKey: %v", err)
+	}
+	if !signingPriv.Public().(ed25519.PublicKey).Equal(ed25519.PublicKey(signingPubBytes)) {
+		t.Fatal("signing key encoded into the token does not match the stored SigningPublicKey")
 	}
 }
 
@@ -423,7 +440,11 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 		t.Fatal("expected authToken to be set")
 	}
 
-	claims, err := auth.ValidateAgentToken(body.AuthToken)
+	jwtToken, signingPriv, err := agenttoken.Decode(body.AuthToken)
+	if err != nil {
+		t.Fatalf("failed to decode compound auth token: %v", err)
+	}
+	claims, err := auth.ValidateAgentToken(jwtToken)
 	if err != nil {
 		t.Fatalf("failed to validate returned auth token: %v", err)
 	}
@@ -443,6 +464,16 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 	}
 	if updated.KeyId.String() != claims.KeyId {
 		t.Fatalf("expected stored KeyId %q to match token KeyId %q", updated.KeyId.String(), claims.KeyId)
+	}
+	if updated.SigningPublicKey == "" {
+		t.Fatal("expected stored SigningPublicKey to be set")
+	}
+	signingPubBytes, err := base64.StdEncoding.DecodeString(updated.SigningPublicKey)
+	if err != nil {
+		t.Fatalf("failed to decode stored SigningPublicKey: %v", err)
+	}
+	if !signingPriv.Public().(ed25519.PublicKey).Equal(ed25519.PublicKey(signingPubBytes)) {
+		t.Fatal("signing key encoded into the token does not match the stored SigningPublicKey")
 	}
 }
 

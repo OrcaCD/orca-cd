@@ -200,7 +200,10 @@ func CreateAgentHandler(c *gin.Context) {
 
 		authToken = token
 
-		if _, err := gorm.G[models.Agent](tx).Where("id = ?", agent.Id).Update(ctx, "key_id", agent.KeyId); err != nil {
+		if _, err := gorm.G[models.Agent](tx).Where("id = ?", agent.Id).Updates(ctx, models.Agent{
+			KeyId:            agent.KeyId,
+			SigningPublicKey: agent.SigningPublicKey,
+		}); err != nil {
 			return err
 		}
 
@@ -299,7 +302,10 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		return
 	}
 
-	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Update(ctx, "key_id", agent.KeyId); err != nil {
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Updates(ctx, models.Agent{
+		KeyId:            agent.KeyId,
+		SigningPublicKey: agent.SigningPublicKey,
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}

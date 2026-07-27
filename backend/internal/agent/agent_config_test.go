@@ -10,6 +10,7 @@ import (
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -39,8 +40,25 @@ func makeTestToken(t *testing.T, agentID string) (tokenStr string, hubPubKey ed2
 	return str, pub
 }
 
+// makeTestAuthToken builds a full compound AUTH_TOKEN (JWT + appended signing
+// seed) as issued by the hub, for tests exercising DefaultConfig end-to-end.
+func makeTestAuthToken(t *testing.T) (authToken string, hubPubKey ed25519.PublicKey, signingPriv ed25519.PrivateKey) {
+	t.Helper()
+	jwtStr, hubPub := makeTestToken(t, "test-agent-id")
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ed25519 signing key: %v", err)
+	}
+	token, err := agenttoken.Encode(jwtStr, priv.Seed())
+	if err != nil {
+		t.Fatalf("agenttoken.Encode: %v", err)
+	}
+	return token, hubPub, priv
+}
+
 func TestDefaultConfig_Valid(t *testing.T) {
-	token, _ := makeTestToken(t, "test-agent-id")
+	token, _, signingPriv := makeTestAuthToken(t)
+	jwtToken, _, _ := agenttoken.Decode(token)
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", token)
 	t.Setenv("LOG_LEVEL", "debug")
@@ -61,8 +79,8 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if cfg.HubUrl != "wss://hub.example.com/api/v1/ws" {
 		t.Errorf("HubUrl = %q, want %q", cfg.HubUrl, "wss://hub.example.com/api/v1/ws")
 	}
-	if cfg.AuthToken != token {
-		t.Errorf("AuthToken not set correctly")
+	if cfg.AuthToken != jwtToken {
+		t.Errorf("AuthToken = %q, want the bare JWT %q", cfg.AuthToken, jwtToken)
 	}
 	if cfg.AgentID != "test-agent-id" {
 		t.Errorf("AgentID = %q, want %q", cfg.AgentID, "test-agent-id")
@@ -70,13 +88,16 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if len(cfg.HubPublicKey) != ed25519.PublicKeySize {
 		t.Errorf("HubPublicKey length = %d, want %d", len(cfg.HubPublicKey), ed25519.PublicKeySize)
 	}
+	if !cfg.SigningPrivateKey.Equal(signingPriv) {
+		t.Error("SigningPrivateKey does not match the key encoded into the token")
+	}
 	if cfg.DeploymentsDir != "/test/deployments" {
 		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/test/deployments")
 	}
 }
 
 func TestDefaultConfig_Defaults(t *testing.T) {
-	token, _ := makeTestToken(t, "test-agent-id")
+	token, _, _ := makeTestAuthToken(t)
 	t.Setenv("HUB_URL", "https://hub.example.com")
 	t.Setenv("AUTH_TOKEN", token)
 	t.Setenv("LOG_LEVEL", "")
@@ -114,7 +135,7 @@ func TestDefaultConfig_LogLevels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			token, _ := makeTestToken(t, "test-agent-id")
+			token, _, _ := makeTestAuthToken(t)
 			t.Setenv("HUB_URL", "https://hub.example.com")
 			t.Setenv("AUTH_TOKEN", token)
 			t.Setenv("LOG_LEVEL", tt.input)
@@ -144,7 +165,7 @@ func TestDefaultConfig_LogJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			token, _ := makeTestToken(t, "test-agent-id")
+			token, _, _ := makeTestAuthToken(t)
 			t.Setenv("HUB_URL", "https://hub.example.com")
 			t.Setenv("AUTH_TOKEN", token)
 			t.Setenv("LOG_JSON", tt.input)
@@ -174,7 +195,7 @@ func TestDefaultConfig_RestrictBindMountsToDeployDir(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			token, _ := makeTestToken(t, "test-agent-id")
+			token, _, _ := makeTestAuthToken(t)
 			t.Setenv("HUB_URL", "https://hub.example.com")
 			t.Setenv("AUTH_TOKEN", token)
 			t.Setenv("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR", tt.input)
@@ -332,8 +353,24 @@ func TestSenderRef_SendMessageDelegates(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_MissingSigningKeySegment(t *testing.T) {
+	// A bare 3-segment JWT (pre-compound-token format) must be rejected.
+	bareJWT, _ := makeTestToken(t, "test-agent-id")
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", bareJWT)
+
+	_, err := DefaultConfig()
+	if err == nil {
+		t.Fatal("expected error for token missing signing-key segment")
+	}
+	var fatalErr *FatalConfigError
+	if !errors.As(err, &fatalErr) {
+		t.Errorf("expected *FatalConfigError, got %T: %v", err, err)
+	}
+}
+
 func TestDefaultConfig_Errors(t *testing.T) {
-	validToken, _ := makeTestToken(t, "test-agent-id")
+	validToken, _, _ := makeTestAuthToken(t)
 	tests := []struct {
 		name      string
 		hubURL    string
