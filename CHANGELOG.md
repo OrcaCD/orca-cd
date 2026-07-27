@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/OrcaCD/orca-cd/compare/v0.3.2...v0.4.0) (2026-07-27)
+
+
+### Features
+
+* Enhance handshake security (Breaking Change) ([#269](https://github.com/OrcaCD/orca-cd/issues/269)) ([a79b33f](https://github.com/OrcaCD/orca-cd/commit/a79b33f7165a5a0b6d806e8a108ad4e74c79407f))
+* Image pull debounce ([#264](https://github.com/OrcaCD/orca-cd/issues/264)) ([6f2400f](https://github.com/OrcaCD/orca-cd/commit/6f2400fb1ee49c5d832b4c682423f610ce4d259f))
+
+
+### Bug Fixes
+
+* Depends on healthy ([#271](https://github.com/OrcaCD/orca-cd/issues/271)) ([6b7abcf](https://github.com/OrcaCD/orca-cd/commit/6b7abcf107c991544414a4eaf48ac17e92b9c255))
+* Policy not detecting use_api_socket ([#270](https://github.com/OrcaCD/orca-cd/issues/270)) ([a13ff5c](https://github.com/OrcaCD/orca-cd/commit/a13ff5cff2cd002886bdddfde83e6c0d8c7b1bae))
+
 ## [0.3.2](https://github.com/OrcaCD/orca-cd/compare/v0.3.1...v0.3.2) (2026-07-22)
 
 
