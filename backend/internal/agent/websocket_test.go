@@ -373,6 +373,10 @@ func TestPerformHandshake_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
+	agentSigningPub, agentSigningPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
 	const agentID = "agent-1"
 	sig := signHandshakeInit(t, hubPriv, hubKeys.MLKEMEncapKey, hubKeys.X25519PublicKey, agentID)
@@ -406,11 +410,16 @@ func TestPerformHandshake_Success(t *testing.T) {
 		resp := clientMsg.GetKeyExchangeResponse()
 		if resp == nil {
 			t.Error("expected KeyExchangeResponse")
+			return
+		}
+		payload := wscrypto.AgentResponseSignaturePayload(resp.MlkemCiphertext, resp.AgentX25519PublicKey, agentID)
+		if !ed25519.Verify(agentSigningPub, payload, resp.AgentSignature) {
+			t.Error("KeyExchangeResponse signature does not verify against agent's public key")
 		}
 	})
 
 	conn := dialServer(t, srv)
-	session, err := performHandshake(conn, agentID, hubPub)
+	session, err := performHandshake(conn, agentID, hubPub, agentSigningPriv)
 	if err != nil {
 		t.Fatalf("performHandshake: %v", err)
 	}
@@ -425,6 +434,11 @@ func TestPerformHandshake_InvalidSignature(t *testing.T) {
 		t.Fatalf("GenerateHubKeys: %v", err)
 	}
 	hubPub, hubPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	_, agentSigningPriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
@@ -448,14 +462,14 @@ func TestPerformHandshake_InvalidSignature(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	_, err = performHandshake(conn, "agent-1", hubPub)
+	_, err = performHandshake(conn, "agent-1", hubPub, agentSigningPriv)
 	if err == nil {
 		t.Fatal("expected error for invalid hub signature")
 	}
 }
 
 func TestPerformHandshake_WrongMessageType(t *testing.T) {
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
@@ -473,14 +487,14 @@ func TestPerformHandshake_WrongMessageType(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	_, err = performHandshake(conn, "agent-1", pub)
+	_, err = performHandshake(conn, "agent-1", pub, priv)
 	if err == nil {
 		t.Fatal("expected error when server sends wrong message type")
 	}
 }
 
 func TestPerformHandshake_InvalidProtoData(t *testing.T) {
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
@@ -494,7 +508,7 @@ func TestPerformHandshake_InvalidProtoData(t *testing.T) {
 	})
 
 	conn := dialServer(t, srv)
-	_, err = performHandshake(conn, "agent-1", pub)
+	_, err = performHandshake(conn, "agent-1", pub, priv)
 	if err == nil {
 		t.Fatal("expected error for invalid protobuf data")
 	}

@@ -546,6 +546,7 @@ type KeyExchangeResponse struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	MlkemCiphertext      []byte                 `protobuf:"bytes,1,opt,name=mlkem_ciphertext,json=mlkemCiphertext,proto3" json:"mlkem_ciphertext,omitempty"`
 	AgentX25519PublicKey []byte                 `protobuf:"bytes,2,opt,name=agent_x25519_public_key,json=agentX25519PublicKey,proto3" json:"agent_x25519_public_key,omitempty"`
+	AgentSignature       []byte                 `protobuf:"bytes,3,opt,name=agent_signature,json=agentSignature,proto3" json:"agent_signature,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -590,6 +591,13 @@ func (x *KeyExchangeResponse) GetMlkemCiphertext() []byte {
 func (x *KeyExchangeResponse) GetAgentX25519PublicKey() []byte {
 	if x != nil {
 		return x.AgentX25519PublicKey
+	}
+	return nil
+}
+
+func (x *KeyExchangeResponse) GetAgentSignature() []byte {
+	if x != nil {
+		return x.AgentSignature
 	}
 	return nil
 }
@@ -1294,10 +1302,11 @@ const file_messages_proto_rawDesc = "" +
 	"\x0fKeyExchangeInit\x126\n" +
 	"\x17mlkem_encapsulation_key\x18\x01 \x01(\fR\x15mlkemEncapsulationKey\x12*\n" +
 	"\x11x25519_public_key\x18\x02 \x01(\fR\x0fx25519PublicKey\x12#\n" +
-	"\rhub_signature\x18\x03 \x01(\fR\fhubSignature\"w\n" +
+	"\rhub_signature\x18\x03 \x01(\fR\fhubSignature\"\xa0\x01\n" +
 	"\x13KeyExchangeResponse\x12)\n" +
 	"\x10mlkem_ciphertext\x18\x01 \x01(\fR\x0fmlkemCiphertext\x125\n" +
-	"\x17agent_x25519_public_key\x18\x02 \x01(\fR\x14agentX25519PublicKey\"H\n" +
+	"\x17agent_x25519_public_key\x18\x02 \x01(\fR\x14agentX25519PublicKey\x12'\n" +
+	"\x0fagent_signature\x18\x03 \x01(\fR\x0eagentSignature\"H\n" +
 	"\x10EncryptedPayload\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x1e\n" +
 	"\n" +

@@ -45,6 +45,7 @@ message KeyExchangeInit {
 message KeyExchangeResponse {
   bytes mlkem_ciphertext = 1;
   bytes agent_x25519_public_key = 2;
+  bytes agent_signature = 3;
 }
 
 message EncryptedPayload {

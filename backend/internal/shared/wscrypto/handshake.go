@@ -109,3 +109,14 @@ func HandshakeSignaturePayload(mlkemEncapKey, x25519PublicKey []byte, agentID st
 	payload = append(payload, agentID...)
 	return payload
 }
+
+// AgentResponseSignaturePayload is the mirror of HandshakeSignaturePayload for the
+// agent->hub direction: the agent signs this with its per-agent Ed25519 key so the
+// hub can confirm the KeyExchangeResponse actually came from the enrolled agent.
+func AgentResponseSignaturePayload(mlkemCiphertext, agentX25519PubKey []byte, agentID string) []byte {
+	payload := make([]byte, 0, len(mlkemCiphertext)+len(agentX25519PubKey)+len(agentID))
+	payload = append(payload, mlkemCiphertext...)
+	payload = append(payload, agentX25519PubKey...)
+	payload = append(payload, agentID...)
+	return payload
+}

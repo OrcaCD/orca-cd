@@ -1,6 +1,8 @@
 package websocket
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"log"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -90,7 +93,7 @@ func createTestAgent(t *testing.T, keyId string) *models.Agent {
 	return agent
 }
 
-func issueTokenAndPersistKeyID(t *testing.T, agent *models.Agent) string {
+func issueTokenAndPersistKeyID(t *testing.T, agent *models.Agent) (authToken string, signingPriv ed25519.PrivateKey) {
 	t.Helper()
 
 	token, err := auth.GenerateAgentToken(agent)
@@ -98,11 +101,19 @@ func issueTokenAndPersistKeyID(t *testing.T, agent *models.Agent) string {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Update(t.Context(), "key_id", agent.KeyId); err != nil {
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Updates(t.Context(), models.Agent{
+		KeyId:            agent.KeyId,
+		SigningPublicKey: agent.SigningPublicKey,
+	}); err != nil {
 		t.Fatalf("failed to persist rotated key id: %v", err)
 	}
 
-	return token
+	jwtToken, signingPriv, err := agenttoken.Decode(token)
+	if err != nil {
+		t.Fatalf("failed to decode compound token: %v", err)
+	}
+
+	return jwtToken, signingPriv
 }
 
 func newHandlerTestServer(t *testing.T, h *Hub) *httptest.Server {
@@ -170,7 +181,7 @@ func waitForUnregistered(t *testing.T, h *Hub, agentID string) {
 	t.Errorf("timed out waiting for agent %s registration to be released", agentID)
 }
 
-func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
+func doHandshake(t *testing.T, conn *websocket.Conn, agentID string, signingPriv ed25519.PrivateKey) {
 	t.Helper()
 	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Errorf("doHandshake: set deadline: %v", err)
@@ -181,10 +192,10 @@ func doHandshake(t *testing.T, conn *websocket.Conn, agentID string) {
 		t.Errorf("doHandshake: read: %v", err)
 		return
 	}
-	respondToHandshake(t, conn, data, agentID)
+	respondToHandshake(t, conn, data, agentID, signingPriv)
 }
 
-func respondToHandshake(t *testing.T, conn *websocket.Conn, data []byte, agentID string) {
+func respondToHandshake(t *testing.T, conn *websocket.Conn, data []byte, agentID string, signingPriv ed25519.PrivateKey) {
 	t.Helper()
 	serverMsg := &messages.ServerMessage{}
 	if err := proto.Unmarshal(data, serverMsg); err != nil {
@@ -205,11 +216,13 @@ func respondToHandshake(t *testing.T, conn *websocket.Conn, data []byte, agentID
 		t.Errorf("doHandshake: AgentHandshake: %v", err)
 		return
 	}
+	sig := signHandshakeResponse(t, signingPriv, mlkemCiphertext, agentX25519Pub, agentID)
 	resp := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{
 				MlkemCiphertext:      mlkemCiphertext,
 				AgentX25519PublicKey: agentX25519Pub,
+				AgentSignature:       sig,
 			},
 		},
 	}
@@ -325,7 +338,7 @@ func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "reserved-key-id")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, _ := issueTokenAndPersistKeyID(t, agent)
 	if _, err := h.Register(agent.Id, nil); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -350,7 +363,7 @@ func TestWsHandler_RejectsTokenRotatedDuringHandshake(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "old-key-id")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
 		defer resp.Body.Close() //nolint:errcheck
@@ -373,7 +386,7 @@ func TestWsHandler_RejectsTokenRotatedDuringHandshake(t *testing.T) {
 		t.Fatalf("rotate key during handshake: %v", err)
 	}
 
-	respondToHandshake(t, conn, initData, agent.Id)
+	respondToHandshake(t, conn, initData, agent.Id, signingPriv)
 	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("set close read deadline: %v", err)
 	}
@@ -390,7 +403,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-1")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -399,7 +412,7 @@ func TestWsHandler_Success_ReceivesPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
-	doHandshake(t, conn, agent.Id)
+	doHandshake(t, conn, agent.Id, signingPriv)
 
 	// Wait for the server to register the client (with timeout).
 	msg := &messages.ServerMessage{
@@ -451,7 +464,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-2")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -460,7 +473,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
-	doHandshake(t, conn, agent.Id)
+	doHandshake(t, conn, agent.Id, signingPriv)
 
 	// Wait for registration.
 	deadline := time.Now().Add(time.Second)
@@ -602,7 +615,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-id-3")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -611,7 +624,7 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
-	doHandshake(t, conn, agent.Id)
+	doHandshake(t, conn, agent.Id, signingPriv)
 
 	// Wait for registration then close the connection.
 	deadline := time.Now().Add(time.Second)
@@ -649,7 +662,7 @@ func TestWsHandler_ServerDisconnectFinishesRegistration(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-server-disconnect")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
 		defer resp.Body.Close() //nolint:errcheck
@@ -658,7 +671,7 @@ func TestWsHandler_ServerDisconnectFinishesRegistration(t *testing.T) {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
 	defer conn.Close() //nolint:errcheck
-	doHandshake(t, conn, agent.Id)
+	doHandshake(t, conn, agent.Id, signingPriv)
 
 	var client *Client
 	deadline := time.Now().Add(time.Second)
@@ -730,7 +743,7 @@ func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
 	server := newHandlerTestServer(t, h)
 
 	agent := createTestAgent(t, "key-sa-1")
-	token := issueTokenAndPersistKeyID(t, agent)
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
 
 	conn, resp, err := dialWS(server, token)
 	if resp != nil {
@@ -739,7 +752,7 @@ func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected successful WS connection, got: %v", err)
 	}
-	doHandshake(t, conn, agent.Id)
+	doHandshake(t, conn, agent.Id, signingPriv)
 
 	// The WsHandler sends an encrypted AgentSettings message immediately after
 	// registration. Read and discard it to verify the code path was reached.
@@ -760,12 +773,22 @@ func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
 	waitForOffline(t, agent.Id)
 }
 
+// signHandshakeResponse signs an agent's KeyExchangeResponse payload for testing.
+func signHandshakeResponse(t *testing.T, priv ed25519.PrivateKey, mlkemCiphertext, agentX25519PubKey []byte, agentID string) []byte {
+	t.Helper()
+	return ed25519.Sign(priv, wscrypto.AgentResponseSignaturePayload(mlkemCiphertext, agentX25519PubKey, agentID))
+}
+
 func TestPerformHandshake_WriteDeadlineError(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
 	conn := &MockConn{writeDeadErr: errors.New("failed to set write deadline")}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from SetWriteDeadline, got nil")
 	}
@@ -781,8 +804,12 @@ func TestPerformHandshake_WriteMessageError(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
 	conn := &MockConn{writeErr: errors.New("failed to write message")}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from WriteMessage, got nil")
 	}
@@ -798,8 +825,12 @@ func TestPerformHandshake_ReadDeadlineError(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
 	conn := &MockConn{readDeadErr: errors.New("failed to set read deadline")}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from SetReadDeadline, got nil")
 	}
@@ -814,8 +845,12 @@ func TestPerformHandshake_ReadDeadlineError(t *testing.T) {
 func TestPerformHandshake_ReadMessageError(t *testing.T) {
 	log := testLogger()
 	conn := &MockConn{readErr: errors.New("connection closed")}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from ReadMessage, got nil")
 	}
@@ -831,8 +866,12 @@ func TestPerformHandshake_UnmarshalError(t *testing.T) {
 	conn := &MockConn{
 		messages: [][]byte{{0xFF, 0xFF, 0xFF, 0xFF}},
 	}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from proto.Unmarshal, got nil")
 	}
@@ -859,8 +898,12 @@ func TestPerformHandshake_InvalidResponseType(t *testing.T) {
 	conn := &MockConn{
 		messages: [][]byte{data},
 	}
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error for invalid response type, got nil")
 	}
@@ -876,13 +919,24 @@ func TestPerformHandshake_DerivationError(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
 
+	agentSigningPub, agentSigningPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
 	// Create valid handshake init, but respond with invalid derivation data
-	// Send KeyExchangeResponse with invalid ciphertext (too short, will fail MLKEM decapsulation)
+	// Send KeyExchangeResponse with invalid ciphertext (too short, will fail MLKEM decapsulation),
+	// but a correctly computed signature over it so the derivation error (not a
+	// signature error) is what's actually exercised.
+	invalidCiphertext := []byte{0x00}
+	agentX25519Pub := make([]byte, 32)
+	sig := signHandshakeResponse(t, agentSigningPriv, invalidCiphertext, agentX25519Pub, "test-agent-id")
 	resp := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{
-				MlkemCiphertext:      []byte{0x00}, // invalid MLKEM ciphertext
-				AgentX25519PublicKey: make([]byte, 32),
+				MlkemCiphertext:      invalidCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+				AgentSignature:       sig,
 			},
 		},
 	}
@@ -895,7 +949,7 @@ func TestPerformHandshake_DerivationError(t *testing.T) {
 		messages: [][]byte{respData},
 	}
 
-	session, err := performHandshake(conn, "test-agent-id", &log)
+	session, err := performHandshake(conn, "test-agent-id", agentSigningPub, &log)
 	if err == nil {
 		t.Error("expected error from key derivation, got nil")
 	}
@@ -914,6 +968,11 @@ func TestPerformHandshake_Success(t *testing.T) {
 		t.Fatalf("failed to generate hub keys: %v", err)
 	}
 
+	agentSigningPub, agentSigningPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
 	// Client performs handshake
 	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
 		hubKeys.MLKEMEncapKey,
@@ -923,8 +982,122 @@ func TestPerformHandshake_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AgentHandshake failed: %v", err)
 	}
+	sig := signHandshakeResponse(t, agentSigningPriv, mlkemCiphertext, agentX25519Pub, agentID)
 
 	// Server reads this response
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+				AgentSignature:       sig,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, agentID, agentSigningPub, &log)
+	if err != nil {
+		t.Fatalf("performHandshake failed: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected non-nil session")
+	}
+}
+
+func TestPerformHandshake_InvalidAgentSignature(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	agentID := "test-agent-id"
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("failed to generate hub keys: %v", err)
+	}
+
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	// A different keypair signs the response — verification against
+	// agentSigningPub must fail.
+	_, wrongSigningPriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		hubKeys.MLKEMEncapKey,
+		hubKeys.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Fatalf("AgentHandshake failed: %v", err)
+	}
+	sig := signHandshakeResponse(t, wrongSigningPriv, mlkemCiphertext, agentX25519Pub, agentID)
+
+	resp := &messages.ClientMessage{
+		Payload: &messages.ClientMessage_KeyExchangeResponse{
+			KeyExchangeResponse: &messages.KeyExchangeResponse{
+				MlkemCiphertext:      mlkemCiphertext,
+				AgentX25519PublicKey: agentX25519Pub,
+				AgentSignature:       sig,
+			},
+		},
+	}
+	respData, err := proto.Marshal(resp)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+
+	conn := &MockConn{
+		messages: [][]byte{respData},
+	}
+
+	session, err := performHandshake(conn, agentID, agentSigningPub, &log)
+	if err == nil {
+		t.Fatal("expected error for invalid agent signature")
+	}
+	if session != nil {
+		t.Error("expected nil session on error")
+	}
+	if !strings.Contains(err.Error(), "agent signature") {
+		t.Errorf("expected error mentioning agent signature, got: %v", err)
+	}
+}
+
+func TestPerformHandshake_MissingAgentSignature(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	agentID := "test-agent-id"
+	hubKeys, err := wscrypto.GenerateHubKeys()
+	if err != nil {
+		t.Fatalf("failed to generate hub keys: %v", err)
+	}
+
+	agentSigningPub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	mlkemCiphertext, agentX25519Pub, _, err := wscrypto.AgentHandshake(
+		hubKeys.MLKEMEncapKey,
+		hubKeys.X25519PublicKey,
+		agentID,
+	)
+	if err != nil {
+		t.Fatalf("AgentHandshake failed: %v", err)
+	}
+
+	// No AgentSignature set at all.
 	resp := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_KeyExchangeResponse{
 			KeyExchangeResponse: &messages.KeyExchangeResponse{
@@ -942,11 +1115,11 @@ func TestPerformHandshake_Success(t *testing.T) {
 		messages: [][]byte{respData},
 	}
 
-	session, err := performHandshake(conn, agentID, &log)
-	if err != nil {
-		t.Fatalf("performHandshake failed: %v", err)
+	session, err := performHandshake(conn, agentID, agentSigningPub, &log)
+	if err == nil {
+		t.Fatal("expected error for missing agent signature")
 	}
-	if session == nil {
-		t.Fatal("expected non-nil session")
+	if session != nil {
+		t.Error("expected nil session on error")
 	}
 }
