@@ -37,6 +37,13 @@ func TestCheckDeployPolicy_RejectsPrivileged(t *testing.T) {
 	}
 }
 
+func TestCheckDeployPolicy_RejectsUseAPISocket(t *testing.T) {
+	project := projectWithService(composetypes.ServiceConfig{UseAPISocket: true})
+	if err := checkDeployPolicy(project, ""); err == nil {
+		t.Fatal("expected use_api_socket to be rejected")
+	}
+}
+
 func TestCheckDeployPolicy_RejectsDangerousCapability(t *testing.T) {
 	tests := []string{"SYS_ADMIN", "cap_sys_admin", "NET_ADMIN", "ALL", "sys_ptrace", "CAP_SYS_MODULE"}
 	for _, capability := range tests {

@@ -100,6 +100,7 @@ func checkDeployPolicy(project *composetypes.Project, restrictMountsDir string) 
 func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
 	var violations []error
 	violations = append(violations, checkPrivileged(serviceName, svc)...)
+	violations = append(violations, checkAPISocket(serviceName, svc)...)
 	violations = append(violations, checkCapabilities(serviceName, svc)...)
 	violations = append(violations, checkHostNamespaces(serviceName, svc)...)
 	violations = append(violations, checkBindMounts(serviceName, svc, restrictMountsDir)...)
@@ -111,6 +112,15 @@ func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rest
 func checkPrivileged(serviceName string, svc composetypes.ServiceConfig) []error {
 	if svc.Privileged {
 		return []error{fmt.Errorf("service %q: privileged mode is not allowed", serviceName)}
+	}
+	return nil
+}
+
+// use_api_socket bind-mounts the Docker API socket (and its auth) into the
+// container, granting the same host control as mounting docker.sock directly.
+func checkAPISocket(serviceName string, svc composetypes.ServiceConfig) []error {
+	if svc.UseAPISocket {
+		return []error{fmt.Errorf("service %q: use_api_socket is not allowed", serviceName)}
 	}
 	return nil
 }
