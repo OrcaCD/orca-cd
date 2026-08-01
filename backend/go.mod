@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	charm.land/lipgloss/v2 v2.0.5
-	github.com/aegis-aead/go-libaegis v0.2.14
+	github.com/aegis-aead/go-libaegis v0.2.15
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/docker/cli v29.6.2+incompatible
@@ -15,8 +15,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/moby/moby/api v1.55.0
-	github.com/moby/moby/client v0.5.0
-	github.com/nicholas-fedor/shoutrrr v0.16.2
+	github.com/moby/moby/client v0.5.1
+	github.com/nicholas-fedor/shoutrrr v0.16.3
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.36.0
@@ -107,7 +107,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
-	github.com/mattn/go-isatty v0.0.23 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/mattn/go-shellwords v1.0.13 // indirect
 	github.com/mattn/go-sqlite3 v1.14.37 // indirect
