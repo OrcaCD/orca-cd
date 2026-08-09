@@ -10,26 +10,20 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { ApplicationEvent } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
 
-import {
-	flexRender,
-	getCoreRowModel,
-	getExpandedRowModel,
-	useReactTable,
-	type ColumnDef,
-} from "@tanstack/react-table";
+import { type ColumnDef, useTable } from "@tanstack/react-table";
 import { Fragment } from "react";
+import { applicationEventsTableFeatures } from "./table-features";
 
 interface ApplicationEventsDataTableProps {
-	columns: ColumnDef<ApplicationEvent>[];
+	columns: ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[];
 	data: ApplicationEvent[];
 }
 
 export function ApplicationEventsDataTable({ columns, data }: ApplicationEventsDataTableProps) {
-	const table = useReactTable({
+	const table = useTable({
+		features: applicationEventsTableFeatures,
 		data,
 		columns,
-		getCoreRowModel: getCoreRowModel(),
-		getExpandedRowModel: getExpandedRowModel(),
 		getRowCanExpand: (row) => Boolean(row.original.errorMessage),
 	});
 
@@ -41,9 +35,7 @@ export function ApplicationEventsDataTable({ columns, data }: ApplicationEventsD
 						<TableRow key={headerGroup.id}>
 							{headerGroup.headers.map((header) => (
 								<TableHead key={header.id} className="px-4">
-									{header.isPlaceholder
-										? null
-										: flexRender(header.column.columnDef.header, header.getContext())}
+									{header.isPlaceholder ? null : <table.FlexRender header={header} />}
 								</TableHead>
 							))}
 						</TableRow>
@@ -56,7 +48,7 @@ export function ApplicationEventsDataTable({ columns, data }: ApplicationEventsD
 								<TableRow data-state={row.getIsSelected() && "selected"}>
 									{row.getVisibleCells().map((cell) => (
 										<TableCell key={cell.id} className="px-4">
-											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											<table.FlexRender cell={cell} />
 										</TableCell>
 									))}
 								</TableRow>

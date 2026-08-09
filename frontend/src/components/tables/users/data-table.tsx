@@ -1,13 +1,10 @@
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
-	flexRender,
-	getCoreRowModel,
-	getFilteredRowModel,
-	getSortedRowModel,
+	type ColumnVisibilityState,
+	type RowData,
 	type SortingState,
-	useReactTable,
-	type VisibilityState,
+	useTable,
 } from "@tanstack/react-table";
 
 import {
@@ -25,27 +22,27 @@ import { Search } from "lucide-react";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
+import { dataTableFeatures } from "../table-features";
 
-interface RepositoryDataTable<TData, TValue> {
-	columns: ColumnDef<TData, TValue>[];
+interface RepositoryDataTable<TData extends RowData> {
+	columns: ColumnDef<typeof dataTableFeatures, TData>[];
 	data: TData[];
 }
 
-export function UserDataTable<TData, TValue>({
+export function UserDataTable<TData extends RowData>({
 	columns,
 	data,
-}: RepositoryDataTable<TData, TValue>) {
+}: RepositoryDataTable<TData>) {
 	const [sorting, setSorting] = useState<SortingState>([]);
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+	const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({});
 
-	const table = useReactTable({
+	const table = useTable({
+		features: dataTableFeatures,
 		data,
 		columns,
-		getCoreRowModel: getCoreRowModel(),
 		onSortingChange: setSorting,
-		getSortedRowModel: getSortedRowModel(),
 		onGlobalFilterChange: setGlobalFilter,
 		getColumnCanGlobalFilter: () => true,
 		globalFilterFn: (row, columnId, filterValue) => {
@@ -58,7 +55,6 @@ export function UserDataTable<TData, TValue>({
 			return toSearchableText(row.getValue(columnId)).includes(query);
 		},
 		onColumnFiltersChange: setColumnFilters,
-		getFilteredRowModel: getFilteredRowModel(),
 		onColumnVisibilityChange: setColumnVisibility,
 		state: {
 			sorting,
@@ -95,9 +91,7 @@ export function UserDataTable<TData, TValue>({
 								{headerGroup.headers.map((header) => {
 									return (
 										<TableHead key={header.id}>
-											{header.isPlaceholder
-												? null
-												: flexRender(header.column.columnDef.header, header.getContext())}
+											{header.isPlaceholder ? null : <table.FlexRender header={header} />}
 										</TableHead>
 									);
 								})}
@@ -110,7 +104,7 @@ export function UserDataTable<TData, TValue>({
 								<TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
 									{row.getVisibleCells().map((cell) => (
 										<TableCell key={cell.id} className="px-4">
-											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											<table.FlexRender cell={cell} />
 										</TableCell>
 									))}
 								</TableRow>

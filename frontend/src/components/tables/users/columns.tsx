@@ -16,8 +16,9 @@ import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
 import { m } from "@/lib/paraglide/messages";
+import { dataTableFeatures } from "../table-features";
 
-export const columns: ColumnDef<UserDetail>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {

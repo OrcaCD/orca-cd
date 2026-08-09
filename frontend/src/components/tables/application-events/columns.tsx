@@ -8,6 +8,7 @@ import { m } from "@/lib/paraglide/messages";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { applicationEventsTableFeatures } from "./table-features";
 
 const typeLabels: Record<ApplicationEventType, () => string> = {
 	[ApplicationEventType.Deployment]: () => m.eventTypeDeployment(),
@@ -33,7 +34,7 @@ function sourceLabel(source: ApplicationEventSource): string {
 	return sourceLabels[source]?.() ?? source;
 }
 
-export const columns: ColumnDef<ApplicationEvent>[] = [
+export const columns: ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[] = [
 	{
 		accessorKey: "createdAt",
 		header: () => m.applicationHistoryTimestamp(),

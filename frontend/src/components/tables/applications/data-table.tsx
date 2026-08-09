@@ -1,12 +1,9 @@
 import {
 	type ColumnDef,
-	flexRender,
-	getCoreRowModel,
-	getFilteredRowModel,
-	getSortedRowModel,
+	type ColumnVisibilityState,
+	type RowData,
 	type SortingState,
-	useReactTable,
-	type VisibilityState,
+	useTable,
 } from "@tanstack/react-table";
 
 import {
@@ -20,30 +17,29 @@ import {
 import { useState } from "react";
 import { DataTableViewOptions } from "../data-table-view-options";
 import { m } from "@/lib/paraglide/messages";
+import { dataTableFeatures } from "../table-features";
 
-interface ApplicationsDataTable<TData, TValue> {
-	columns: ColumnDef<TData, TValue>[];
+interface ApplicationsDataTable<TData extends RowData> {
+	columns: ColumnDef<typeof dataTableFeatures, TData>[];
 	data: TData[];
 }
 
-export function ApplicationsDataTable<TData, TValue>({
+export function ApplicationsDataTable<TData extends RowData>({
 	columns,
 	data,
-}: ApplicationsDataTable<TData, TValue>) {
+}: ApplicationsDataTable<TData>) {
 	const [sorting, setSorting] = useState<SortingState>([]);
-	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+	const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>({
 		branch: false,
 		path: false,
 		commit: false,
 	});
 
-	const table = useReactTable({
+	const table = useTable({
+		features: dataTableFeatures,
 		data,
 		columns,
-		getCoreRowModel: getCoreRowModel(),
 		onSortingChange: setSorting,
-		getSortedRowModel: getSortedRowModel(),
-		getFilteredRowModel: getFilteredRowModel(),
 		onColumnVisibilityChange: setColumnVisibility,
 		state: {
 			sorting,
@@ -61,9 +57,7 @@ export function ApplicationsDataTable<TData, TValue>({
 								{headerGroup.headers.map((header) => {
 									return (
 										<TableHead key={header.id}>
-											{header.isPlaceholder
-												? null
-												: flexRender(header.column.columnDef.header, header.getContext())}
+											{header.isPlaceholder ? null : <table.FlexRender header={header} />}
 										</TableHead>
 									);
 								})}
@@ -76,7 +70,7 @@ export function ApplicationsDataTable<TData, TValue>({
 								<TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
 									{row.getVisibleCells().map((cell) => (
 										<TableCell key={cell.id} className="px-4">
-											{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											<table.FlexRender cell={cell} />
 										</TableCell>
 									))}
 								</TableRow>

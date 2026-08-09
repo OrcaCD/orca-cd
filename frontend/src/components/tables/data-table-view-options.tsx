@@ -1,6 +1,6 @@
 "use client";
 
-import { type Table } from "@tanstack/react-table";
+import { type RowData, type Table } from "@tanstack/react-table";
 import { Settings2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,13 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { m } from "@/lib/paraglide/messages";
+import { dataTableFeatures } from "./table-features";
 
-export function DataTableViewOptions<TData>({ table }: { table: Table<TData> }) {
+export function DataTableViewOptions<TData extends RowData>({
+	table,
+}: {
+	table: Table<typeof dataTableFeatures, TData>;
+}) {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger

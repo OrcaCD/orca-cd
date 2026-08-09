@@ -5,8 +5,9 @@ import { m } from "@/lib/paraglide/messages";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth";
 import { EventTypeBadge } from "@/components/badges/audit-status-badge";
+import { dataTableFeatures } from "../table-features";
 
-export const columns: ColumnDef<AuditLog>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, AuditLog>[] = [
 	{
 		accessorKey: "createdAt",
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnTime()} />,

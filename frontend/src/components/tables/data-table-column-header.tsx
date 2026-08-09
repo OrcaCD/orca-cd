@@ -1,4 +1,4 @@
-import { type Column } from "@tanstack/react-table";
+import { type Column, type RowData } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ChevronsUpDown, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -12,13 +12,17 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { m } from "@/lib/paraglide/messages";
+import { dataTableFeatures } from "./table-features";
 
-interface DataTableColumnHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
-	column: Column<TData, TValue>;
+interface DataTableColumnHeaderProps<
+	TData extends RowData,
+	TValue,
+> extends React.HTMLAttributes<HTMLDivElement> {
+	column: Column<typeof dataTableFeatures, TData, TValue>;
 	title: string;
 }
 
-export function DataTableColumnHeader<TData, TValue>({
+export function DataTableColumnHeader<TData extends RowData, TValue>({
 	column,
 	title,
 	className,
