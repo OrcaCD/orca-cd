@@ -6,8 +6,9 @@ import { Link } from "@tanstack/react-router";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { m } from "@/lib/paraglide/messages";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { dataTableFeatures } from "../table-features";
 
-export const columns: ColumnDef<ApplicationListItem>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, ApplicationListItem>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {

@@ -23,6 +23,7 @@ import {
 	type Notification,
 	testNotification,
 } from "@/lib/notifications";
+import { dataTableFeatures } from "@/components/tables/table-features";
 
 function formatDate(value: string): string {
 	const parsed = new Date(value);
@@ -33,7 +34,7 @@ function formatDate(value: string): string {
 	return parsed.toLocaleString();
 }
 
-export const columns: ColumnDef<Notification>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnName()} />,

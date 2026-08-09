@@ -18,8 +18,9 @@ import { toast } from "sonner";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { dataTableFeatures } from "../table-features";
 
-export const columns: ColumnDef<Agent>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 	{
 		accessorKey: "name",
 		header: ({ column }) => {

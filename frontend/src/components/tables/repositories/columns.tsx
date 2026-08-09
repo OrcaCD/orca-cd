@@ -25,6 +25,7 @@ import { m } from "@/lib/paraglide/messages";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
 import { Link } from "@tanstack/react-router";
+import { dataTableFeatures } from "../table-features";
 
 function getLastSyncSearchText(lastSync?: string | null): string {
 	if (!lastSync) {
@@ -44,7 +45,7 @@ function getLastSyncSearchText(lastSync?: string | null): string {
 	].join(" ");
 }
 
-export const columns: ColumnDef<Repository>[] = [
+export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 	{
 		id: "name",
 		accessorFn: (row) => `${row.provider} ${row.url} ${row.name}`,
@@ -105,7 +106,7 @@ export const columns: ColumnDef<Repository>[] = [
 	{
 		id: "lastSyncedAt",
 		accessorFn: (row) => getLastSyncSearchText(row.lastSyncedAt),
-		sortingFn: (rowA, rowB) => {
+		sortFn: (rowA, rowB) => {
 			const firstSync = rowA.original.lastSyncedAt
 				? new Date(rowA.original.lastSyncedAt).getTime()
 				: 0;
