@@ -16,7 +16,7 @@ COPY --from=install-deps /app/frontend/node_modules ./node_modules
 COPY frontend/ ./
 RUN node --run build
 
-FROM --platform=$BUILDPLATFORM golang:1.27rc2-trixie AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS builder
 
 ARG VERSION=dev
 ARG COMMIT=none
