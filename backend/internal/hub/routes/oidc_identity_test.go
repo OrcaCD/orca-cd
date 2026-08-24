@@ -13,7 +13,7 @@ func TestResolveOIDCUser_CreatesNewUserAndIdentity(t *testing.T) {
 	setupTestDB(t)
 
 	provider := models.OIDCProvider{
-		Base:       models.Base{Id: "provider-1"},
+		Id:         "provider-1",
 		AutoSignup: true,
 	}
 	claims := &oidc.OIDCUser{
@@ -47,11 +47,11 @@ func TestResolveOIDCUser_LinksMultipleProvidersToSameUser(t *testing.T) {
 	setupTestDB(t)
 
 	provider1 := models.OIDCProvider{
-		Base:       models.Base{Id: "provider-1"},
+		Id:         "provider-1",
 		AutoSignup: true,
 	}
 	provider2 := models.OIDCProvider{
-		Base:       models.Base{Id: "provider-2"},
+		Id:         "provider-2",
 		AutoSignup: true,
 	}
 
@@ -103,7 +103,7 @@ func TestResolveOIDCUser_RejectsProviderEmailConflict(t *testing.T) {
 	setupTestDB(t)
 
 	provider := models.OIDCProvider{
-		Base:       models.Base{Id: "provider-1"},
+		Id:         "provider-1",
 		AutoSignup: true,
 	}
 
@@ -162,7 +162,7 @@ func TestResolveOIDCUser_RejectsNewUserWhenSignupDisabled(t *testing.T) {
 	setupTestDB(t)
 
 	provider := models.OIDCProvider{
-		Base:       models.Base{Id: "provider-1"},
+		Id:         "provider-1",
 		AutoSignup: false,
 	}
 	claims := &oidc.OIDCUser{

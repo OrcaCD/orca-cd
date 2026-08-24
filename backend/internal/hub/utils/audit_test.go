@@ -185,7 +185,7 @@ func TestRecordAuditLog(t *testing.T) {
 		)
 
 		user := &models.User{
-			Base: models.Base{Id: "user-456"},
+			Id:   "user-456",
 			Name: "test-admin",
 		}
 

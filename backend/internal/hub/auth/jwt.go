@@ -78,14 +78,12 @@ func GenerateUserTokenWithPicture(user *models.User, picture string) (string, er
 	now := time.Now()
 
 	claims := UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   user.Id,
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(tokenExpiry)),
-			Audience:  []string{"user"},
-		},
+		Issuer:                 issuer,
+		Subject:                user.Id,
+		IssuedAt:               jwt.NewNumericDate(now),
+		NotBefore:              jwt.NewNumericDate(now),
+		ExpiresAt:              jwt.NewNumericDate(now.Add(tokenExpiry)),
+		Audience:               []string{"user"},
 		Name:                   user.Name,
 		Email:                  user.Email,
 		Picture:                picture,
@@ -143,13 +141,11 @@ func GenerateAgentToken(agent *models.Agent) (string, error) {
 	now := time.Now()
 
 	claims := AgentClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   agent.Id,
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Audience:  []string{"agent"},
-		},
+		Issuer:       issuer,
+		Subject:      agent.Id,
+		IssuedAt:     jwt.NewNumericDate(now),
+		NotBefore:    jwt.NewNumericDate(now),
+		Audience:     []string{"agent"},
 		KeyId:        agent.KeyId.String(),
 		HubPublicKey: base64.StdEncoding.EncodeToString(handshakePrivKey.Public().(ed25519.PublicKey)),
 	}

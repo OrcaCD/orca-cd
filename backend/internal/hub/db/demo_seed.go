@@ -44,7 +44,7 @@ func seedDemoData(db *gorm.DB) error {
 		}
 
 		user := models.User{
-			Base:                   models.Base{Id: demoSeedUserID},
+			Id:                     demoSeedUserID,
 			Email:                  demoSeedUserEmail,
 			Name:                   demoSeedUserName,
 			Role:                   models.UserRoleAdmin,
@@ -64,7 +64,7 @@ func seedDemoData(db *gorm.DB) error {
 		}
 
 		agent := models.Agent{
-			Base:   models.Base{Id: demoSeedAgentID},
+			Id:     demoSeedAgentID,
 			Name:   crypto.EncryptedString(demoSeedAgentName),
 			KeyId:  crypto.EncryptedString(demoSeedAgentKeyID),
 			Status: models.AgentStatusOffline,
@@ -74,7 +74,7 @@ func seedDemoData(db *gorm.DB) error {
 		}
 
 		repository := models.Repository{
-			Base:       models.Base{Id: demoSeedRepositoryID},
+			Id:         demoSeedRepositoryID,
 			Name:       demoSeedRepositoryName,
 			Url:        demoSeedRepositoryURL,
 			Provider:   models.GitHub,

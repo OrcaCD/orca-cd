@@ -523,7 +523,7 @@ func TestHub_SendAgentSettings_NoClient(t *testing.T) {
 	h := NewHub(&log)
 
 	apps := []models.Application{
-		{Base: models.Base{Id: "app-1"}, ImagePollEnabled: true, ImagePollIntervalSeconds: 120},
+		{Id: "app-1", ImagePollEnabled: true, ImagePollIntervalSeconds: 120},
 	}
 	ok := h.SendAgentSettings("nonexistent-agent", apps)
 	if ok {
@@ -545,13 +545,13 @@ func TestHub_SendAgentSettings(t *testing.T) {
 
 	apps := []models.Application{
 		{
-			Base:                     models.Base{Id: "app-1"},
+			Id:                       "app-1",
 			ImagePollEnabled:         true,
 			ImagePollIntervalSeconds: 120,
 			ImagePollDeleteOldImages: true,
 		},
 		{
-			Base:             models.Base{Id: "app-2"},
+			Id:               "app-2",
 			ImagePollEnabled: false,
 		},
 	}

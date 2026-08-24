@@ -33,7 +33,7 @@ func TestInit(t *testing.T) {
 func TestGenerateAndValidateUserToken(t *testing.T) {
 	initAll(t)
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
+	user := &models.User{Id: "user-123", Name: "test", Email: "test@example.com"}
 	token, err := GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -81,7 +81,7 @@ func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
 	hash := "hashed-password"
 
 	user := &models.User{
-		Base:                   models.Base{Id: "user-123"},
+		Id:                     "user-123",
 		Name:                   "test",
 		Email:                  "test@example.com",
 		PasswordHash:           &hash,
@@ -107,7 +107,7 @@ func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
 func TestGenerateAndValidateUserTokenWithPicture(t *testing.T) {
 	initAll(t)
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
+	user := &models.User{Id: "user-123", Name: "test", Email: "test@example.com"}
 	picture := "https://cdn.example.com/test.png"
 
 	token, err := GenerateUserTokenWithPicture(user, picture)
@@ -138,11 +138,9 @@ func TestValidateUserToken_Expired(t *testing.T) {
 
 	now := time.Now().Add(-2 * time.Hour)
 	claims := UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(-1 * time.Hour)),
-		},
-		Name: "test",
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(-1 * time.Hour)),
+		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -161,14 +159,12 @@ func TestValidateUserToken_WrongIssuer(t *testing.T) {
 
 	now := time.Now()
 	claims := UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "http://evil.example.com",
-			Subject:   "user-123",
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
-		},
-		Name: "test",
+		Issuer:    "http://evil.example.com",
+		Subject:   "user-123",
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -217,11 +213,9 @@ func TestValidateUserToken_WrongSigningKey(t *testing.T) {
 	}
 
 	claims := UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		},
-		Name: "test",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(wrongKey)
@@ -238,7 +232,7 @@ func TestValidateUserToken_WrongSigningKey(t *testing.T) {
 func TestGenerateAndValidateAgentToken(t *testing.T) {
 	initAll(t)
 
-	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
+	agent := &models.Agent{Id: "agent-456", KeyId: crypto.EncryptedString("key-abc")}
 	initialKeyId := agent.KeyId.String()
 	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
@@ -303,7 +297,7 @@ func TestGenerateAndValidateAgentToken(t *testing.T) {
 func TestSignHandshake(t *testing.T) {
 	initAll(t)
 
-	agent := &models.Agent{Base: models.Base{Id: "agent-sign-test"}}
+	agent := &models.Agent{Id: "agent-sign-test"}
 	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
@@ -335,7 +329,7 @@ func TestSignHandshake(t *testing.T) {
 func TestGenerateAndValidateAgentToken_SetsKeyIdWhenMissing(t *testing.T) {
 	initAll(t)
 
-	agent := &models.Agent{Base: models.Base{Id: "agent-789"}}
+	agent := &models.Agent{Id: "agent-789"}
 	compoundToken, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)
@@ -387,14 +381,12 @@ func TestValidateAgentToken_WrongIssuer(t *testing.T) {
 
 	now := time.Now()
 	claims := AgentClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "http://evil.example.com",
-			Subject:   "agent-456",
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Audience:  []string{"agent"},
-		},
-		KeyId: "key-abc",
+		Issuer:    "http://evil.example.com",
+		Subject:   "agent-456",
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		Audience:  []string{"agent"},
+		KeyId:     "key-abc",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -444,14 +436,12 @@ func TestValidateAgentToken_WrongSigningKey(t *testing.T) {
 
 	now := time.Now()
 	claims := AgentClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "http://localhost:8080",
-			Subject:   "agent-456",
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Audience:  []string{"agent"},
-		},
-		KeyId: "key-abc",
+		Issuer:    "http://localhost:8080",
+		Subject:   "agent-456",
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		Audience:  []string{"agent"},
+		KeyId:     "key-abc",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(wrongKey)
@@ -468,7 +458,7 @@ func TestValidateAgentToken_WrongSigningKey(t *testing.T) {
 func TestValidateAgentToken_WrongAudience(t *testing.T) {
 	initAll(t)
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "test", Email: "test@example.com"}
+	user := &models.User{Id: "user-123", Name: "test", Email: "test@example.com"}
 	tokenStr, err := GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -483,7 +473,7 @@ func TestValidateAgentToken_WrongAudience(t *testing.T) {
 func TestValidateUserToken_WrongAudience(t *testing.T) {
 	initAll(t)
 
-	agent := &models.Agent{Base: models.Base{Id: "agent-456"}, KeyId: crypto.EncryptedString("key-abc")}
+	agent := &models.Agent{Id: "agent-456", KeyId: crypto.EncryptedString("key-abc")}
 	tokenStr, err := GenerateAgentToken(agent)
 	if err != nil {
 		t.Fatalf("GenerateAgentToken() error: %v", err)

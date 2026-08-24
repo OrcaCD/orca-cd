@@ -281,7 +281,7 @@ func TestWsHandler_AgentNotFound(t *testing.T) {
 
 	// Valid token but no matching record in DB.
 	ghost := &models.Agent{
-		Base:  models.Base{Id: "nonexistent-agent-id"},
+		Id:    "nonexistent-agent-id",
 		KeyId: crypto.EncryptedString("some-key"),
 	}
 	token, err := auth.GenerateAgentToken(ghost)
@@ -311,7 +311,7 @@ func TestWsHandler_KeyIdMismatch(t *testing.T) {
 
 	// Token claims a different KeyId than what is stored.
 	tokenAgent := &models.Agent{
-		Base:  models.Base{Id: agent.Id},
+		Id:    agent.Id,
 		KeyId: crypto.EncryptedString("wrong-key-id"),
 	}
 	token, err := auth.GenerateAgentToken(tokenAgent)

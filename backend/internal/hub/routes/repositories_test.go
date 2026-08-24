@@ -20,7 +20,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -38,10 +37,10 @@ func makeAuthContext(t *testing.T, userID string) (*gin.Context, *httptest.Respo
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	claims := &auth.UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{Subject: userID},
-		Name:             "Test User",
-		Email:            "test@example.com",
-		Role:             "admin",
+		Subject: userID,
+		Name:    "Test User",
+		Email:   "test@example.com",
+		Role:    "admin",
 	}
 	auth.SetClaims(c, claims)
 	return c, w

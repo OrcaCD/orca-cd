@@ -16,7 +16,7 @@ func TestRequireAdmin_AdminRole(t *testing.T) {
 	}
 
 	user := &models.User{
-		Base: models.Base{Id: "user-1"},
+		Id:   "user-1",
 		Name: "Admin",
 		Role: models.UserRoleAdmin,
 	}
@@ -46,7 +46,7 @@ func TestRequireAdmin_UserRole(t *testing.T) {
 	}
 
 	user := &models.User{
-		Base: models.Base{Id: "user-2"},
+		Id:   "user-2",
 		Name: "Regular",
 		Role: models.UserRoleUser,
 	}

@@ -42,7 +42,7 @@ func initCrypto(t *testing.T) {
 
 func TestBuildOAuth2Config_DefaultScopes(t *testing.T) {
 	provider := &models.OIDCProvider{
-		Base:         models.Base{Id: "prov-1"},
+		Id:           "prov-1",
 		ClientId:     "my-client",
 		ClientSecret: crypto.EncryptedString("my-secret"),
 		Scopes:       "",
@@ -72,7 +72,7 @@ func TestBuildOAuth2Config_DefaultScopes(t *testing.T) {
 
 func TestBuildOAuth2Config_ExtraScopes(t *testing.T) {
 	provider := &models.OIDCProvider{
-		Base:         models.Base{Id: "prov-2"},
+		Id:           "prov-2",
 		ClientId:     "my-client",
 		ClientSecret: crypto.EncryptedString("my-secret"),
 		Scopes:       "groups, offline_access",
@@ -200,7 +200,7 @@ func makeEncryptedState(t *testing.T, sd *stateData) string {
 func TestHandleCallback_ExpiredState(t *testing.T) {
 	initCrypto(t)
 
-	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	provider := &models.OIDCProvider{Id: "prov-1"}
 	sd := &stateData{State: "s", Verifier: "v", ProviderId: "prov-1", ExpiresAt: time.Now().Add(-1 * time.Minute).Unix()}
 	enc := makeEncryptedState(t, sd)
 
@@ -213,7 +213,7 @@ func TestHandleCallback_ExpiredState(t *testing.T) {
 func TestHandleCallback_StateMismatch(t *testing.T) {
 	initCrypto(t)
 
-	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	provider := &models.OIDCProvider{Id: "prov-1"}
 	sd := &stateData{State: "correct-state", Verifier: "v", ProviderId: "prov-1", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
 	enc := makeEncryptedState(t, sd)
 
@@ -226,7 +226,7 @@ func TestHandleCallback_StateMismatch(t *testing.T) {
 func TestHandleCallback_ProviderMismatch(t *testing.T) {
 	initCrypto(t)
 
-	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-DIFFERENT"}}
+	provider := &models.OIDCProvider{Id: "prov-DIFFERENT"}
 	sd := &stateData{State: "s", Verifier: "v", ProviderId: "prov-1", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
 	enc := makeEncryptedState(t, sd)
 
@@ -239,7 +239,7 @@ func TestHandleCallback_ProviderMismatch(t *testing.T) {
 func TestHandleCallback_InvalidStateCookie(t *testing.T) {
 	initCrypto(t)
 
-	provider := &models.OIDCProvider{Base: models.Base{Id: "prov-1"}}
+	provider := &models.OIDCProvider{Id: "prov-1"}
 	_, err := HandleCallback(t.Context(), provider, "http://localhost", "code", "s", "garbage-data")
 	if err == nil || !strings.Contains(err.Error(), "invalid state cookie") {
 		t.Errorf("expected 'invalid state cookie' error, got: %v", err)
@@ -326,7 +326,7 @@ func TestStartAuth_Success(t *testing.T) {
 	srv := newTestOIDCServer(t)
 
 	provider := &models.OIDCProvider{
-		Base:         models.Base{Id: "prov-test"},
+		Id:           "prov-test",
 		ClientId:     "test-client-id",
 		ClientSecret: crypto.EncryptedString("test-client-secret"),
 		IssuerURL:    srv.URL(),
@@ -372,7 +372,7 @@ func TestHandleCallback_Success(t *testing.T) {
 	srv := newTestOIDCServer(t)
 
 	provider := &models.OIDCProvider{
-		Base:         models.Base{Id: "prov-test"},
+		Id:           "prov-test",
 		ClientId:     "test-client-id",
 		ClientSecret: crypto.EncryptedString("test-client-secret"),
 		IssuerURL:    srv.URL(),
@@ -449,7 +449,7 @@ func TestHandleCallback_MissingEmail(t *testing.T) {
 	})
 
 	provider := &models.OIDCProvider{
-		Base: models.Base{Id: "prov-noemail"}, ClientId: "test-client",
+		Id: "prov-noemail", ClientId: "test-client",
 		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
 	}
 	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderId: "prov-noemail", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
@@ -500,7 +500,7 @@ func TestHandleCallback_RequireVerifiedEmailFalseClaim(t *testing.T) {
 	})
 
 	provider := &models.OIDCProvider{
-		Base: models.Base{Id: "prov-email-false"}, ClientId: "test-client",
+		Id: "prov-email-false", ClientId: "test-client",
 		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
 		RequireVerifiedEmail: true,
 	}
@@ -551,7 +551,7 @@ func TestHandleCallback_RequireVerifiedEmailMissingClaim(t *testing.T) {
 	})
 
 	provider := &models.OIDCProvider{
-		Base: models.Base{Id: "prov-email-missing-verified"}, ClientId: "test-client",
+		Id: "prov-email-missing-verified", ClientId: "test-client",
 		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
 		RequireVerifiedEmail: true,
 	}
@@ -603,7 +603,7 @@ func TestHandleCallback_NameFallsBackToEmail(t *testing.T) {
 	})
 
 	provider := &models.OIDCProvider{
-		Base: models.Base{Id: "prov-noname"}, ClientId: "test-client",
+		Id: "prov-noname", ClientId: "test-client",
 		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
 	}
 	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderId: "prov-noname", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}

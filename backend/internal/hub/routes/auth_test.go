@@ -289,7 +289,7 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 
 	hash, _ := auth.HashPassword("password123")
 	user := models.User{
-		Base:                   models.Base{Id: "user-change-password"},
+		Id:                     "user-change-password",
 		Email:                  "test@example.com",
 		Name:                   "Test",
 		PasswordHash:           &hash,
@@ -344,7 +344,7 @@ func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := models.User{Base: models.Base{Id: "user-change-password"}, Email: "test@example.com", Name: "Test", PasswordHash: &hash}
+	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("Password123!")
-	user := models.User{Base: models.Base{Id: "user-change-password"}, Email: "test@example.com", Name: "Test", PasswordHash: &hash}
+	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 func TestChangePasswordHandler_RejectsManagedUser(t *testing.T) {
 	setupTestDB(t)
 
-	user := models.User{Base: models.Base{Id: "user-oidc"}, Email: "oidc@example.com", Name: "OIDC User"}
+	user := models.User{Id: "user-oidc", Email: "oidc@example.com", Name: "OIDC User"}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestLoginHandler_UserNotFound(t *testing.T) {
 func TestProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Base: models.Base{Id: "user-abc"}, Name: "Alice", Email: "alice@example.com"}
+	user := &models.User{Id: "user-abc", Name: "Alice", Email: "alice@example.com"}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -536,7 +536,7 @@ func TestProfileHandler_ReturnsIsLocalFromClaimsWithoutDBUser(t *testing.T) {
 
 	hash, _ := auth.HashPassword("password123")
 	user := &models.User{
-		Base:         models.Base{Id: "user-local-claims"},
+		Id:           "user-local-claims",
 		Name:         "Local User",
 		Email:        "local@example.com",
 		PasswordHash: &hash,
@@ -574,7 +574,7 @@ func TestProfileHandler_ReturnsIsLocalFromClaimsWithoutDBUser(t *testing.T) {
 func TestProfileHandler_ReturnsPicture(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Base: models.Base{Id: "user-abc"}, Name: "Alice", Email: "alice@example.com"}
+	user := &models.User{Id: "user-abc", Name: "Alice", Email: "alice@example.com"}
 	picture := "https://cdn.example.com/alice.png"
 	token, err := auth.GenerateUserTokenWithPicture(user, picture)
 	if err != nil {
@@ -668,7 +668,7 @@ func TestProfileHandler_ReturnsRole(t *testing.T) {
 	setupTestDB(t)
 
 	user := &models.User{
-		Base:                   models.Base{Id: "user-admin"},
+		Id:                     "user-admin",
 		Name:                   "Admin",
 		Email:                  "admin@example.com",
 		Role:                   models.UserRoleAdmin,
@@ -711,7 +711,7 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-local-1"}, Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -763,8 +763,8 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 
 	hashA, _ := auth.HashPassword("password123")
 	hashB, _ := auth.HashPassword("password456")
-	userA := &models.User{Base: models.Base{Id: "user-local-3"}, Email: "first@example.com", Name: "First", PasswordHash: &hashA, Role: models.UserRoleUser}
-	userB := &models.User{Base: models.Base{Id: "user-local-4"}, Email: "second@example.com", Name: "Second", PasswordHash: &hashB, Role: models.UserRoleUser}
+	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA, Role: models.UserRoleUser}
+	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB, Role: models.UserRoleUser}
 	if err := db.DB.Create(userA).Error; err != nil {
 		t.Fatalf("failed to create user A: %v", err)
 	}
@@ -798,7 +798,7 @@ func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-local-invalid-req"}, Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -853,7 +853,7 @@ func TestUpdateOwnProfileHandler_NoClaims(t *testing.T) {
 func TestUpdateOwnProfileHandler_UserNotFound(t *testing.T) {
 	setupTestDB(t)
 
-	missingUser := &models.User{Base: models.Base{Id: "user-local-missing"}, Email: "missing@example.com", Name: "Missing", Role: models.UserRoleUser}
+	missingUser := &models.User{Id: "user-local-missing", Email: "missing@example.com", Name: "Missing", Role: models.UserRoleUser}
 
 	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
 	w := httptest.NewRecorder()
@@ -872,7 +872,7 @@ func TestUpdateOwnProfileHandler_UserNotFound(t *testing.T) {
 func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Base: models.Base{Id: "user-managed-no-password"}, Email: "managed@example.com", Name: "Managed User", Role: models.UserRoleUser}
+	user := &models.User{Id: "user-managed-no-password", Email: "managed@example.com", Name: "Managed User", Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -895,7 +895,7 @@ func TestUpdateOwnProfileHandler_InternalErrorWhenUserLookupFails(t *testing.T) 
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Base: models.Base{Id: "user-local-db-error"}, Email: "db-error@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestUpdateOwnProfileHandler_InternalErrorWhenUserLookupFails(t *testing.T) 
 func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Base: models.Base{Id: "user-sso-1"}, Email: "user@example.com", Name: "User", Role: models.UserRoleUser}
+	user := &models.User{Id: "user-sso-1", Email: "user@example.com", Name: "User", Role: models.UserRoleUser}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}

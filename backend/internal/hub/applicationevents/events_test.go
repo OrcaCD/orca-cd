@@ -58,7 +58,7 @@ func setupEventTestDB(t *testing.T) (models.Application, models.Application) {
 
 	ctx := t.Context()
 	user := models.User{
-		Base:  models.Base{Id: "user-1"},
+		Id:    "user-1",
 		Email: "alex@example.com",
 		Name:  "Alex",
 		Role:  models.UserRoleAdmin,
