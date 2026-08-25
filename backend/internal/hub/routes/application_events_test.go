@@ -31,7 +31,7 @@ func setupApplicationEventsRouteTest(t *testing.T) models.Application {
 func seedApplicationEventAt(t *testing.T, appID, id string, createdAt time.Time) {
 	t.Helper()
 	event := models.ApplicationEvent{
-		Base:          models.Base{Id: id},
+		Id:            id,
 		ApplicationId: appID,
 		Type:          models.ApplicationEventCommitSync,
 		Source:        models.ApplicationEventSourceRepositoryWebhook,

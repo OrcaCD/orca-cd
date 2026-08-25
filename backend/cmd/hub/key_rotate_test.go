@@ -571,7 +571,7 @@ func TestRotateEncryptedBatchesPropagatesRotateError(t *testing.T) {
 
 	wantErr := errors.New("rotate batch failed")
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		return rotateEncryptedBatches[models.Agent](t.Context(), tx, secrets.oldCipher, secrets.newCipher, func([]models.Agent) error {
+		return rotateEncryptedBatches(t.Context(), tx, secrets.oldCipher, secrets.newCipher, func([]models.Agent) error {
 			return wantErr
 		})
 	})
@@ -583,7 +583,7 @@ func TestRotateEncryptedBatchesPropagatesRotateError(t *testing.T) {
 func TestRotateEncryptedModelSkipsRowsWithoutEncryptedValues(t *testing.T) {
 	setupKeyRotateTestDB(t)
 	repository := models.Repository{
-		Base:       models.Base{Id: "repo-without-secrets"},
+		Id:         "repo-without-secrets",
 		Name:       "repository-name",
 		Url:        "https://example.com/org/repo-without-secrets.git",
 		Provider:   models.GitHub,
@@ -627,7 +627,7 @@ func TestRotateEncryptedBatchReturnsNotFound(t *testing.T) {
 	}
 
 	_, err = rotateEncryptedBatch(t.Context(), db.DB, []models.Agent{{
-		Base:  models.Base{Id: "missing-agent"},
+		Id:    "missing-agent",
 		Name:  crypto.EncryptedString("agent"),
 		KeyId: crypto.EncryptedString("key"),
 	}}, modelSchema, "agents")

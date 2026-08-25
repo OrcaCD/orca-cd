@@ -19,7 +19,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 		t.Fatalf("auth.Init() error: %v", err)
 	}
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin"}
+	user := &models.User{Id: "user-123", Name: "admin"}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -85,7 +85,7 @@ func TestRequireAuth_PasswordChangeRequired_BlocksOtherPaths(t *testing.T) {
 		t.Fatalf("auth.Init() error: %v", err)
 	}
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin", PasswordChangeRequired: true}
+	user := &models.User{Id: "user-123", Name: "admin", PasswordChangeRequired: true}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -111,7 +111,7 @@ func TestRequireAuth_PasswordChangeRequired_AllowsChangePasswordPath(t *testing.
 		t.Fatalf("auth.Init() error: %v", err)
 	}
 
-	user := &models.User{Base: models.Base{Id: "user-123"}, Name: "admin", PasswordChangeRequired: true}
+	user := &models.User{Id: "user-123", Name: "admin", PasswordChangeRequired: true}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)

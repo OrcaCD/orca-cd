@@ -59,11 +59,9 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	mockLog := models.AuditLog{
-		Base: models.Base{
-			Id:        "log-123",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		},
+		Id:         "log-123",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 		EventType:  "user.login",
 		UserId:     ptr("user-456"),
 		TargetType: "system",
@@ -128,11 +126,9 @@ func TestAdminListAuditLogsHandler_LimitAndHasMore(t *testing.T) {
 
 	for i := range 2 {
 		mockLog := models.AuditLog{
-			Base: models.Base{
-				Id:        fmt.Sprintf("log-%d", i),
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			},
+			Id:         fmt.Sprintf("log-%d", i),
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
 			EventType:  "user.login",
 			TargetType: "system",
 		}
@@ -178,10 +174,8 @@ func TestAdminListAuditLogsHandler_Offset(t *testing.T) {
 
 	for i := range 3 {
 		mockLog := models.AuditLog{
-			Base: models.Base{
-				Id:        fmt.Sprintf("log-offset-%d", i),
-				CreatedAt: base.Add(time.Duration(i) * time.Minute),
-			},
+			Id:         fmt.Sprintf("log-offset-%d", i),
+			CreatedAt:  base.Add(time.Duration(i) * time.Minute),
 			EventType:  "user.login",
 			TargetType: "system",
 		}
@@ -229,9 +223,7 @@ func TestAdminListAuditLogsHandler_InvalidLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	mockLog := models.AuditLog{
-		Base: models.Base{
-			Id: "log-1",
-		},
+		Id:         "log-1",
 		EventType:  "user.login",
 		TargetType: "system",
 	}

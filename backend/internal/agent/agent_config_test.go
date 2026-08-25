@@ -24,12 +24,10 @@ func makeTestToken(t *testing.T, agentID string) (tokenStr string, hubPubKey ed2
 	}
 	now := time.Now()
 	claims := agentTokenClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   agentID,
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Audience:  jwt.ClaimStrings{"agent"},
-		},
+		Subject:      agentID,
+		IssuedAt:     jwt.NewNumericDate(now),
+		NotBefore:    jwt.NewNumericDate(now),
+		Audience:     jwt.ClaimStrings{"agent"},
 		HubPublicKey: base64.StdEncoding.EncodeToString(pub),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
@@ -363,8 +361,7 @@ func TestDefaultConfig_MissingSigningKeySegment(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for token missing signing-key segment")
 	}
-	var fatalErr *FatalConfigError
-	if !errors.As(err, &fatalErr) {
+	if _, ok := errors.AsType[*FatalConfigError](err); !ok {
 		t.Errorf("expected *FatalConfigError, got %T: %v", err, err)
 	}
 }

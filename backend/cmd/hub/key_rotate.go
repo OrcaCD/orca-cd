@@ -268,7 +268,7 @@ func rotateEncryptedModel[T any](
 		return nil
 	}
 
-	return rotateEncryptedBatches[T](ctx, tx, secrets.oldCipher, secrets.newCipher, func(batch []T) error {
+	return rotateEncryptedBatches(ctx, tx, secrets.oldCipher, secrets.newCipher, func(batch []T) error {
 		rows, err := rotateEncryptedBatch(ctx, tx, batch, modelSchema, label)
 		if err != nil {
 			return err

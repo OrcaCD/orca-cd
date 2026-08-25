@@ -35,8 +35,7 @@ func main() {
 
 			cfg, err := agent.DefaultConfig()
 			if err != nil {
-				var fatalErr *agent.FatalConfigError
-				if errors.As(err, &fatalErr) {
+				if _, ok := errors.AsType[*agent.FatalConfigError](err); ok {
 					logJSON := strings.EqualFold(os.Getenv("LOG_JSON"), "true")
 					agent.Log = logger.New("agent", logJSON)
 					agent.Log.Error().Msg(err.Error())

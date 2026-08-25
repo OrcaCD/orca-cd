@@ -53,7 +53,7 @@ func TestProfilePictureHandler_NoPicture(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile-picture", nil)
-	setUserClaimsWithPicture(t, c, &models.User{Base: models.Base{Id: "user-1"}, Name: "Test User", Email: "test@example.com"}, "")
+	setUserClaimsWithPicture(t, c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"}, "")
 
 	ProfilePictureHandler(c)
 
@@ -76,7 +76,7 @@ func TestProfilePictureHandler_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile-picture", nil)
-	setUserClaimsWithPicture(t, c, &models.User{Base: models.Base{Id: "user-1"}, Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
+	setUserClaimsWithPicture(t, c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
 
 	ProfilePictureHandler(c)
 
@@ -106,7 +106,7 @@ func TestProfilePictureHandler_UpstreamError(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile-picture", nil)
-	setUserClaimsWithPicture(t, c, &models.User{Base: models.Base{Id: "user-1"}, Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
+	setUserClaimsWithPicture(t, c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
 
 	ProfilePictureHandler(c)
 
@@ -128,7 +128,7 @@ func TestProfilePictureHandler_NonImageContentType(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile-picture", nil)
-	setUserClaimsWithPicture(t, c, &models.User{Base: models.Base{Id: "user-1"}, Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
+	setUserClaimsWithPicture(t, c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.png")
 
 	ProfilePictureHandler(c)
 

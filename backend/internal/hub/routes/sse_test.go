@@ -31,13 +31,11 @@ func newTestSSEBroker(t *testing.T) *sse.Broker {
 func injectClaimsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := &auth.UserClaims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:   "test-user",
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-			},
-			Name:  "Test User",
-			Email: "test@example.com",
-			Role:  "admin",
+			Subject:   "test-user",
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			Name:      "Test User",
+			Email:     "test@example.com",
+			Role:      "admin",
 		}
 		auth.SetClaims(c, claims)
 		c.Next()

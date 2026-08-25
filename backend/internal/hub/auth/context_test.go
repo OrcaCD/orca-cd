@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestSetClaims_And_GetClaims(t *testing.T) {
@@ -23,9 +22,7 @@ func TestSetClaims_And_GetClaims(t *testing.T) {
 
 	// Set claims
 	testClaims := &UserClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject: "user-123",
-		},
+		Subject: "user-123",
 		IsLocal: true,
 	}
 	SetClaims(c, testClaims)
