@@ -8,8 +8,8 @@
 		"install:browsers": "playwright install"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.62.1",
-		"@types/node": "^26.4.1",
+		"@playwright/test": "^1.63.0",
+		"@types/node": "^26.5.0",
 		"typescript": "^7.0.2"
 	},
 	"engines": {
