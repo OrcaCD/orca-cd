@@ -39,7 +39,7 @@ const router = createRouter({
 			<div className="text-center">
 				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
 					<p>{m.somethingWentWrong()}</p>
-					<pre>{error.message}</pre>
+					<pre>{error instanceof Error ? error.message : String(error)}</pre>
 					<Link to="/">
 						<Button size="lg">{m.goHome()}</Button>
 					</Link>

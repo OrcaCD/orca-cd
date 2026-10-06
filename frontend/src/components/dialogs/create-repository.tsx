@@ -32,7 +32,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { defineStepper } from "@stepperize/react";
+import { defineStepper, type NavigationResult } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
 import { cn } from "@/lib/utils";
 import ErrorAlert from "../alerts/error-alert";
@@ -362,7 +362,7 @@ export default function CreateRepositoryDialog({
 	const [isLoading, setIsLoading] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | undefined>();
-	const stepperRef = React.useRef<{ next: () => Promise<boolean> } | null>(null);
+	const stepperRef = React.useRef<{ next: () => Promise<NavigationResult> } | null>(null);
 	const [webhookSecret, setWebhookSecret] = useState<string | undefined>();
 	const [webhookUrl, setWebhookUrl] = useState<string | undefined>();
 
