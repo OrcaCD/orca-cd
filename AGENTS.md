@@ -13,7 +13,10 @@ The goal of OrcaCD is to be a simple, self-hosted GitOps solution for Docker Com
 
 ## Prerequisites
 
-Go 1.26+, golangci-lint v2.11+, `just`, Node.js 24.x or 25.x, pnpm.
+Backend: Go 1.26+, golangci-lint v2.11+, `just`, `buf`, `protoc-gen-go`, `gotestsum`.
+Frontend: Node.js 24.x or 25.x, pnpm 11+.
+
+The Justfile loads `backend/.env` (copy from `backend/.env.dev.example`).
 
 ## Commands
 
@@ -22,39 +25,51 @@ All backend commands are run from `backend/`. All frontend commands from `fronte
 ### Backend
 
 ```sh
-just build          # build both hub and agent binaries → bin/
+just build          # proto + build hub and agent binaries → bin/
 just build-hub      # build hub only
 just build-agent    # build agent only
-just run-hub        # run hub
+just run            # run hub and agent in parallel
+just run-hub        # run hub (pass a subcommand: just run-hub help)
 just run-agent      # run agent
-just lint           # golangci-lint + go mod verify
-just fmt            # format with golangci-lint
-just test           # run all tests with race detection
+just lint           # golangci-lint + go mod verify + buf lint
+just fmt            # golangci-lint fmt + buf format
+just test           # all tests with race detection (gotestsum, -failfast)
 just test-coverage  # tests + HTML coverage report
-just proto          # generate Go code from .proto files, used for WebSocket messages
+just proto          # regenerate internal/proto/messages.pb.go from messages.proto
 ```
 
-Running a single test package:
+Tests require `CGO_ENABLED=1` (SQLite, race detector). Running a single package or test:
 
 ```sh
-go test -v -race ./internal/hub/crypto/...
+CGO_ENABLED=1 go test -v -race ./internal/hub/crypto/...
+CGO_ENABLED=1 go test -v -race -run TestName ./internal/hub/routes/
 ```
 
 ### Frontend
 
 ```sh
-pnpm i --frozen-lockfile # install dependencies
-node --run dev           # Vite dev server on port 3000
-node --run build         # production bundle
-node --run typecheck     # TypeScript type check
-node --run lint          # oxlint
-node --run format        # oxfmt
+pnpm i --frozen-lockfile        # install dependencies
+node --run dev                  # Vite dev server on port 3000
+node --run build                # production bundle
+node --run typecheck            # TypeScript type check
+node --run lint                 # oxlint (type-aware, warnings are errors)
+node --run format               # oxfmt
+node --run format:check         # oxfmt check only
+node --run translations:check   # verify all locales have the same message keys
+```
+
+### E2E tests (Playwright, from `e2e/`)
+
+```sh
+pnpm i --frozen-lockfile && pnpm run install:browsers
+pnpm test       # builds and starts the stack via docker-compose.e2e.yml on :8090
+pnpm test:ui    # interactive mode
 ```
 
 ### Local dev (Docker)
 
 ```sh
-docker compose -f docker-compose.dev.yaml up --build
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 Vite proxies `/api` → Hub at `localhost:8080` during development (see `frontend/vite.config.ts`).
@@ -63,42 +78,58 @@ Vite proxies `/api` → Hub at `localhost:8080` during development (see `fronten
 
 ```
 Frontend (React SPA)
-    │  HTTP /api/*
+    │  HTTP /api/v1/*  +  SSE for live updates
     ▼
-Hub (Go, port 8080)
-    ├─ auth/        JWT + password hashing, cookies
-    ├─ crypto/      AEGIS-256 encryption for sensitive DB fields
-    ├─ db/          SQLite + golang-migrate + GORM
-    ├─ models/      GORM models (Agent, …)
-    ├─ middleware/  CSRF, security headers, origin validation, authentication
-    ├─ routes/      /api/v1/ — health, auth endpoints
-    ├─ websocket/   Hub-side WebSocket handler + worker pool
-    ├─ server.go    Config, Gin setup, middleware wiring
-    ├─ handlers.go  registers all routes
-    └─ url.go       APP_URL parsing and validation
-
-Agent (Go)
-    ├─ agent.go     Config, connection lifecycle
-    ├─ websocket.go WebSocket client connecting to Hub
-    └─ url.go       Hub URL parsing and validation
+Hub (Go, port 8080)  ◄── WebSocket (encrypted, protobuf) ──►  Agent (Go, on each Docker host)
 ```
+
+### Hub (`backend/internal/hub/`)
+
+- `server.go` / `handlers.go` — Config, Gin setup, middleware wiring; `RegisterRoutes` defines every `/api/v1` route (public, rate-limited webhooks, protected)
+- `routes/` — HTTP handlers
+- `models/` + `db/` — GORM models; SQLite with numbered golang-migrate SQL files in `db/migrations/`; also backup/export/restore
+- `repositories/`, `applications/` — Git repo sync, polling, image-pull webhooks, deploy queue
+- `deployer/` — turns application state into deploy commands sent to agents
+- `websocket/` — Hub-side agent connections, worker pool, deploy/delete/status/image-poll messages
+- `sse/` + `applicationevents/` — broker pushing events to the frontend
+- `auth/`, `oidc/`, `middleware/` — JWT cookies, OIDC login, CSRF/origin/security headers
+- `crypto/` — AEGIS-256 encryption for sensitive DB fields
+- `notifications/` — outbound notifications
+
+### Agent (`backend/internal/agent/`)
+
+- `agent.go`, `websocket.go` — config and connection lifecycle to the Hub
+- `docker/` — Compose deploys, image polling, health watching, mount/policy checks
+
+### Shared (`backend/internal/shared/`, `backend/internal/proto/`)
+
+- `proto/messages.proto` — all Hub↔Agent WebSocket message types (regenerate with `just proto`)
+- `wscrypto/` — hybrid ML-KEM-768 + X25519 handshake that derives the WebSocket session key
+- `agenttoken/` — agent auth tokens
+
+### Frontend (`frontend/src/`)
+
+- `routes/` — TanStack Router file-based routes; authenticated pages under `_authenticated/`. `routeTree.gen.ts` is generated.
+- `lib/` — API clients per domain (`api.ts`, `applications.ts`, …), SSE client, auth
+- i18n uses Paraglide: messages in `frontend/messages/{en,de}.json`, compiled into `src/lib/paraglide` (generated). Add new keys to every locale.
 
 **Version info** is injected at build time via `ldflags` into `internal/version/version.go`.
 
-**Production build**: `hub.Dockerfile` is a multi-stage build (Node → Go) that embeds the compiled frontend into the Go binary.
+**Production build**: `hub.Dockerfile` is a multi-stage build (Node → Go) that embeds the compiled frontend into the Go binary. `agent.Dockerfile` builds the agent.
 
 ## Key technology choices
 
 | Layer             | Choice                                             |
 | ----------------- | -------------------------------------------------- |
-| Backend framework | Gin + gorilla/websocket                            |
+| Backend framework | Gin + gorilla/websocket + protobuf (buf)           |
 | ORM / DB          | GORM + SQLite + golang-migrate                     |
 | Encryption        | AEGIS-256 via go-libaegis                          |
 | CLI               | Cobra                                              |
 | Logging           | Zerolog                                            |
 | Frontend router   | TanStack Router (file-based, `src/routes/`)        |
 | Forms             | TanStack Form + Zod validation                     |
-| UI components     | shadcn/ui + Radix UI + Tailwind CSS 4              |
+| UI components     | shadcn/ui (base-nova) + Base UI + Tailwind CSS 4   |
+| i18n              | Paraglide (inlang)                                 |
 | Linter/formatter  | oxlint + oxfmt (frontend), golangci-lint (backend) |
 
 ## Development guidelines
@@ -111,3 +142,4 @@ Agent (Go)
 - The repo uses squash merges, so commit history should be clean and focused on the feature/bug being implemented.
 - Do not try modify files in frontend/src/components/ui
 - Always try to use the Gorm Generics API for database operations
+- Schema changes need a new numbered up/down migration pair in `backend/internal/hub/db/migrations/`.
