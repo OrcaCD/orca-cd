@@ -384,6 +384,44 @@ func TestImagePoller_TriggerNow_PassesDeleteOldWithoutPollSettings(t *testing.T)
 	}
 }
 
+func TestImagePoller_RunTicker_UsesPollSettingsDeleteOld(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	got := make(chan bool, 1)
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool) (bool, error) {
+		select {
+		case got <- deleteOld:
+		default:
+		}
+		return false, nil
+	}
+
+	p := newTestPoller(t, noopSender{})
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		p.runTicker("app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 1, DeleteOldImages: true}, stop)
+		close(done)
+	}()
+
+	select {
+	case deleteOld := <-got:
+		if !deleteOld {
+			t.Error("expected periodic ticks to pass deleteOld from the poll settings")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for a tick")
+	}
+
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ticker did not stop")
+	}
+}
+
 func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
