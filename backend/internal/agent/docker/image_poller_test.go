@@ -194,7 +194,7 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "req-1")
+	p.runOnce("app-1", "myapp", "req-1", false)
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -228,7 +228,7 @@ func TestImagePoller_RunOnce_SendsResultOnError(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "")
+	p.runOnce("app-1", "myapp", "", false)
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -259,7 +259,7 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "")
+	p.runOnce("app-1", "myapp", "", false)
 
 	if msgs := sender.received(); len(msgs) != 0 {
 		t.Errorf("expected no message when nothing changed, got %d", len(msgs))
@@ -279,7 +279,7 @@ func TestImagePoller_RunOnce_SendsResultOnExplicitRequestEvenWhenNothingChanged(
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "req-1")
+	p.runOnce("app-1", "myapp", "req-1", false)
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -314,7 +314,7 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	defer p.StopAll()
 
 	// Must not panic when sender returns an error; the error is logged.
-	p.runOnce("app-1", "myapp", "req-1")
+	p.runOnce("app-1", "myapp", "req-1", false)
 }
 
 type noopSender struct{}
@@ -334,7 +334,7 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "") // must not panic
+	p.runOnce("app-1", "myapp", "", false) // must not panic
 }
 
 func TestImagePoller_TriggerNow(t *testing.T) {
@@ -350,10 +350,35 @@ func TestImagePoller_TriggerNow(t *testing.T) {
 	}
 
 	p := newTestPoller(t, noopSender{})
-	p.TriggerNow("app-1", "billing", "req-99")
+	p.TriggerNow("app-1", "billing", "req-99", false)
 
 	select {
 	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TriggerNow to call checkAndPullImages")
+	}
+}
+
+func TestImagePoller_TriggerNow_PassesDeleteOldWithoutPollSettings(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	got := make(chan bool, 1)
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool) (bool, error) {
+		got <- deleteOld
+		return false, nil
+	}
+
+	// No ApplySettings: polling is disabled for the app, but an explicit
+	// trigger (webhook, manual, GitHub Actions) must still honor cleanup.
+	p := newTestPoller(t, noopSender{})
+	p.TriggerNow("app-1", "billing", "req-1", true)
+
+	select {
+	case deleteOld := <-got:
+		if !deleteOld {
+			t.Error("expected deleteOld=true to be passed to checkAndPullImages")
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for TriggerNow to call checkAndPullImages")
 	}
@@ -380,7 +405,7 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	}
 
 	p := newTestPoller(t, noopSender{})
-	p.TriggerNow("app-1", "billing", "req-1")
+	p.TriggerNow("app-1", "billing", "req-1", false)
 
 	select {
 	case <-started:
@@ -388,7 +413,7 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 		t.Fatal("timed out waiting for first pull to start")
 	}
 
-	p.TriggerNow("app-1", "billing", "req-2")
+	p.TriggerNow("app-1", "billing", "req-2", false)
 
 	select {
 	case <-started:

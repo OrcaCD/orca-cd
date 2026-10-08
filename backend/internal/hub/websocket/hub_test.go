@@ -548,7 +548,7 @@ func TestHub_SendAgentSettings(t *testing.T) {
 			Id:                       "app-1",
 			ImagePollEnabled:         true,
 			ImagePollIntervalSeconds: 120,
-			ImagePollDeleteOldImages: true,
+			DeleteOldImages:          true,
 		},
 		{
 			Id:               "app-2",

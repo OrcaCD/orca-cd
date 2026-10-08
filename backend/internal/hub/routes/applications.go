@@ -39,7 +39,7 @@ type createApplicationRequest struct {
 	Path                     string `json:"path" binding:"required"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
-	ImagePollDeleteOldImages bool   `json:"imagePollDeleteOldImages"`
+	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
 type updateApplicationRequest struct {
@@ -51,7 +51,7 @@ type updateApplicationRequest struct {
 	Path                     string `json:"path" binding:"required"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
-	ImagePollDeleteOldImages bool   `json:"imagePollDeleteOldImages"`
+	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
 type applicationListResponse struct {
@@ -91,7 +91,7 @@ type applicationResponse struct {
 	PreviousComposeFile      string  `json:"previousComposeFile,omitempty"`
 	ImagePollEnabled         bool    `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
-	ImagePollDeleteOldImages bool    `json:"imagePollDeleteOldImages"`
+	DeleteOldImages          bool    `json:"deleteOldImages"`
 	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
 	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
 }
@@ -191,7 +191,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		PreviousComposeFile:      crypto.EncryptedString(""),
 		ImagePollEnabled:         req.ImagePollEnabled,
 		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
-		ImagePollDeleteOldImages: req.ImagePollDeleteOldImages,
+		DeleteOldImages:          req.DeleteOldImages,
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
@@ -319,7 +319,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.ComposeFile = crypto.EncryptedString(composeFile)
 	application.ImagePollEnabled = req.ImagePollEnabled
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
-	application.ImagePollDeleteOldImages = req.ImagePollDeleteOldImages
+	application.DeleteOldImages = req.DeleteOldImages
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -507,7 +507,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		PreviousComposeFile:      app.PreviousComposeFile.String(),
 		ImagePollEnabled:         app.ImagePollEnabled,
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
-		ImagePollDeleteOldImages: app.ImagePollDeleteOldImages,
+		DeleteOldImages:          app.DeleteOldImages,
 		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
 	if app.ImageWebhookSecret != nil {

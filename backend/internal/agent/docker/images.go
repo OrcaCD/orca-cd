@@ -46,10 +46,8 @@ var pullProject = func(ctx context.Context, svc api.Compose, project *composetyp
 // appears in any of the "repo@sha256:…" entries from ImageInspect.RepoDigests.
 func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 	for _, d := range localDigests {
-		if idx := strings.LastIndex(d, "@"); idx >= 0 {
-			if d[idx+1:] == remoteDigest {
-				return true
-			}
+		if _, digest, ok := strings.CutLast(d, "@"); ok && digest == remoteDigest {
+			return true
 		}
 	}
 	return false
@@ -88,12 +86,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	dockerCLI := c.cli.Client()
 
-	type staleImage struct {
-		ref       string
-		oldDigest string // may be empty for first-pull
-	}
-
-	var stale []staleImage
+	var stale []string
 	for _, service := range project.Services {
 		if service.Image == "" {
 			continue
@@ -106,21 +99,9 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		}
 
 		localDigests, err := getLocalDigests(ctx, dockerCLI, service.Image)
-		if err != nil {
-			// Image not present locally
-			stale = append(stale, staleImage{ref: service.Image})
-			continue
-		}
-
-		if !digestMatchesLocal(localDigests, remoteDigest) {
-			var oldDigest string
-			for _, d := range localDigests {
-				if idx := strings.LastIndex(d, "@"); idx >= 0 {
-					oldDigest = d[idx+1:]
-					break
-				}
-			}
-			stale = append(stale, staleImage{ref: service.Image, oldDigest: oldDigest})
+		if err != nil || !digestMatchesLocal(localDigests, remoteDigest) {
+			// Missing locally or outdated
+			stale = append(stale, service.Image)
 		}
 	}
 
@@ -134,6 +115,8 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	applyOrcaLabels(project, appID)
 
+	previousImages := c.applicationImages(ctx, appID, deleteOldImages)
+
 	// Like Deploy, don't block on healthchecks: health is observed after the
 	// containers are recreated and reported separately.
 	if err := upProject(ctx, c.compose, project, api.UpOptions{
@@ -146,16 +129,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("compose up after pull: %w", err)
 	}
 
-	if deleteOldImages {
-		for _, img := range stale {
-			if img.oldDigest == "" {
-				continue
-			}
-			if _, err := dockerCLI.ImageRemove(ctx, img.oldDigest, client.ImageRemoveOptions{PruneChildren: true}); err != nil {
-				c.log.Warn().Err(err).Str("digest", img.oldDigest).Msg("could not remove old image")
-			}
-		}
-	}
+	c.removeReplacedImages(ctx, appID, previousImages)
 
 	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")
 

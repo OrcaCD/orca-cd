@@ -20,12 +20,16 @@ func saveRestoreVars(t *testing.T) {
 	origPull := pullProject
 	origLoad := loadProject
 	origUp := upProject
+	origListImages := listApplicationImageIDs
+	origRemoveImage := removeImage
 	t.Cleanup(func() {
 		getRemoteDigest = origGetRemote
 		getLocalDigests = origGetLocal
 		pullProject = origPull
 		loadProject = origLoad
 		upProject = origUp
+		listApplicationImageIDs = origListImages
+		removeImage = origRemoveImage
 	})
 }
 
@@ -489,11 +493,36 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 	}
 }
 
-func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
-	saveRestoreVars(t)
-	c := newTestClient(t)
-	c.deploymentsDir = t.TempDir()
+// stubImageCleanup simulates the application's containers switching from the
+// images in before to the images in after once compose up has run, and records
+// every image removal.
+func stubImageCleanup(t *testing.T, before, after []string) (upDone func(), removed *[]string) {
+	t.Helper()
+	var up bool
+	listApplicationImageIDs = func(_ context.Context, _ client.APIClient, appID string) (map[string]struct{}, error) {
+		if appID != "app-123" {
+			t.Errorf("expected application id %q, got %q", "app-123", appID)
+		}
+		ids := before
+		if up {
+			ids = after
+		}
+		set := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			set[id] = struct{}{}
+		}
+		return set, nil
+	}
+	var removedIDs []string
+	removeImage = func(_ context.Context, _ client.APIClient, imageID string) error {
+		removedIDs = append(removedIDs, imageID)
+		return nil
+	}
+	return func() { up = true }, &removedIDs
+}
 
+func setupStaleImageApp(t *testing.T, c *Client, upDone func()) {
+	t.Helper()
 	appDir := filepath.Join(c.deploymentsDir, "myapp")
 	if err := os.MkdirAll(appDir, 0o750); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -503,7 +532,7 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	}
 
 	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
-		return makeProject("ghcr.io/org/app:latest"), nil
+		return makeProject("ghcr.io/org/app:latest", "ghcr.io/org/sidecar:1"), nil
 	}
 	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "sha256:newdigest", nil
@@ -515,10 +544,19 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 		return nil
 	}
 	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upDone()
 		return nil
 	}
+}
 
-	// ImageRemove on the real daemon will fail with "not found" — logged as a warning, not an error.
+func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app", "sha256:sidecar"}, []string{"sha256:new-app", "sha256:sidecar"})
+	setupStaleImageApp(t, c, upDone)
+
 	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -526,45 +564,41 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	if !updated {
 		t.Error("expected updated=true when images are stale")
 	}
+	if len(*removed) != 1 || (*removed)[0] != "sha256:old-app" {
+		t.Errorf("expected only the replaced image to be removed, got %v", *removed)
+	}
 }
 
-func TestCheckAndPullImages_DeleteOldImages_SkipsEmptyDigest(t *testing.T) {
+func TestCheckAndPullImages_KeepsOldImagesWhenDisabled(t *testing.T) {
 	saveRestoreVars(t)
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	appDir := filepath.Join(c.deploymentsDir, "myapp")
-	if err := os.MkdirAll(appDir, 0o750); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: ghcr.io/org/app:latest\n"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app"}, []string{"sha256:new-app"})
+	setupStaleImageApp(t, c, upDone)
 
-	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
-		return makeProject("ghcr.io/org/app:latest"), nil
-	}
-	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
-		return "sha256:new", nil
-	}
-	// Image not present locally — stale with empty oldDigest (first pull).
-	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
-	}
-	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
-		return nil
-	}
-	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
-		return nil
-	}
-
-	// deleteOldImages=true but oldDigest is "" so ImageRemove must be skipped.
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
-	if err != nil {
+	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !updated {
-		t.Error("expected updated=true for first-pull of missing image")
+	if len(*removed) != 0 {
+		t.Errorf("expected no images to be removed, got %v", *removed)
+	}
+}
+
+func TestCheckAndPullImages_DeleteOldImages_FirstDeploy(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	// No containers existed before the update, so there is nothing to clean up.
+	upDone, removed := stubImageCleanup(t, nil, []string{"sha256:new-app"})
+	setupStaleImageApp(t, c, upDone)
+
+	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(*removed) != 0 {
+		t.Errorf("expected no images to be removed, got %v", *removed)
 	}
 }
 

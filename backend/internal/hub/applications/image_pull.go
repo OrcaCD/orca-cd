@@ -39,6 +39,7 @@ func TriggerImagePull(app *models.Application, source models.ApplicationEventSou
 				RequestId:       requestID,
 				ApplicationId:   app.Id,
 				ApplicationName: app.Name.String(),
+				DeleteOldImages: app.DeleteOldImages,
 			},
 		},
 	})

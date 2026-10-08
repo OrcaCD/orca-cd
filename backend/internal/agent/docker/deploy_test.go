@@ -528,3 +528,86 @@ func TestNormalizeProjectName(t *testing.T) {
 		}
 	}
 }
+
+func TestDeploy_DeleteOldImagesRemovesReplacedImages(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	upDone, removed := stubImageCleanup(t, []string{"sha256:app-1.0.0"}, []string{"sha256:app-1.1.0"})
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: options.ProjectName}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upDone()
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/app:1.1.0\n",
+		DeleteOldImages: true,
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if len(*removed) != 1 || (*removed)[0] != "sha256:app-1.0.0" {
+		t.Errorf("expected the replaced image to be removed, got %v", *removed)
+	}
+}
+
+func TestDeploy_KeepsOldImagesWhenDisabled(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	upDone, removed := stubImageCleanup(t, []string{"sha256:app-1.0.0"}, []string{"sha256:app-1.1.0"})
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: options.ProjectName}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upDone()
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/app:1.1.0\n",
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if len(*removed) != 0 {
+		t.Errorf("expected no images to be removed, got %v", *removed)
+	}
+}
+
+func TestDeploy_DeleteOldImages_SkipsWhenImagesUnchanged(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	upDone, removed := stubImageCleanup(t, []string{"sha256:app-1.0.0"}, []string{"sha256:app-1.0.0"})
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: options.ProjectName}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upDone()
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/app:1.0.0\n",
+		DeleteOldImages: true,
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if len(*removed) != 0 {
+		t.Errorf("expected no images to be removed, got %v", *removed)
+	}
+}

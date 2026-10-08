@@ -660,6 +660,7 @@ type DeployRequest struct {
 	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	ComposeFile     string                 `protobuf:"bytes,4,opt,name=compose_file,json=composeFile,proto3" json:"compose_file,omitempty"`
+	DeleteOldImages bool                   `protobuf:"varint,5,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -720,6 +721,13 @@ func (x *DeployRequest) GetComposeFile() string {
 		return x.ComposeFile
 	}
 	return ""
+}
+
+func (x *DeployRequest) GetDeleteOldImages() bool {
+	if x != nil {
+		return x.DeleteOldImages
+	}
+	return false
 }
 
 type DeleteRequest struct {
@@ -1043,6 +1051,7 @@ type PullImagesRequest struct {
 	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	DeleteOldImages bool                   `protobuf:"varint,4,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1096,6 +1105,13 @@ func (x *PullImagesRequest) GetApplicationName() string {
 		return x.ApplicationName
 	}
 	return ""
+}
+
+func (x *PullImagesRequest) GetDeleteOldImages() bool {
+	if x != nil {
+		return x.DeleteOldImages
+	}
+	return false
 }
 
 type PullImagesResult struct {
@@ -1311,13 +1327,14 @@ const file_messages_proto_rawDesc = "" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x02 \x01(\fR\n" +
-	"ciphertext\"\xa3\x01\n" +
+	"ciphertext\"\xcf\x01\n" +
 	"\rDeployRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
 	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12!\n" +
-	"\fcompose_file\x18\x04 \x01(\tR\vcomposeFile\"\x80\x01\n" +
+	"\fcompose_file\x18\x04 \x01(\tR\vcomposeFile\x12*\n" +
+	"\x11delete_old_images\x18\x05 \x01(\bR\x0fdeleteOldImages\"\x80\x01\n" +
 	"\rDeleteRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -1342,12 +1359,13 @@ const file_messages_proto_rawDesc = "" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12)\n" +
 	"\x10interval_seconds\x18\x03 \x01(\x03R\x0fintervalSeconds\x12*\n" +
 	"\x11delete_old_images\x18\x04 \x01(\bR\x0fdeleteOldImages\x12)\n" +
-	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\"\x84\x01\n" +
+	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\"\xb0\x01\n" +
 	"\x11PullImagesRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
-	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\"\xbe\x01\n" +
+	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12*\n" +
+	"\x11delete_old_images\x18\x04 \x01(\bR\x0fdeleteOldImages\"\xbe\x01\n" +
 	"\x10PullImagesResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +

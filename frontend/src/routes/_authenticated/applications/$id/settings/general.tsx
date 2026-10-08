@@ -7,6 +7,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useFetch } from "@/lib/api";
 import type { Agent } from "@/lib/agents";
 import { type Repository } from "@/lib/repositories";
@@ -70,7 +71,7 @@ function GeneralSettingsPage() {
 			path: application?.path ?? "",
 			imagePollEnabled: application?.imagePollEnabled ?? false,
 			imagePollIntervalSeconds: application?.imagePollIntervalSeconds || 120,
-			imagePollDeleteOldImages: application?.imagePollDeleteOldImages ?? false,
+			deleteOldImages: application?.deleteOldImages ?? false,
 		},
 		validators: {
 			onSubmit: applicationSchema,
@@ -369,6 +370,26 @@ function GeneralSettingsPage() {
 										</Field>
 									);
 								}}
+							</form.Field>
+
+							<form.Field name="deleteOldImages">
+								{(field) => (
+									<Field>
+										<div className="flex items-start gap-2">
+											<Checkbox
+												id={field.name}
+												checked={field.state.value}
+												onCheckedChange={(checked) => field.handleChange(checked === true)}
+											/>
+											<div className="space-y-1">
+												<Label htmlFor={field.name}>{m.deleteOldImages()}</Label>
+												<p className="text-muted-foreground text-xs">
+													{m.deleteOldImagesDescription()}
+												</p>
+											</div>
+										</div>
+									</Field>
+								)}
 							</form.Field>
 
 							<div className="flex flex-wrap gap-2 pt-2">
