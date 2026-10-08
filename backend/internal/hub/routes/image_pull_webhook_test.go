@@ -482,6 +482,49 @@ func TestImagePullWebhookHandler_GitHubPackage_BurstIsDebounced(t *testing.T) {
 	}
 }
 
+func githubPackageBodyWithTag(tag string) string {
+	return `{"action":"published","package":{"package_type":"CONTAINER","package_version":{"container_metadata":{"tag":{"name":"` +
+		tag + `","digest":"sha256:0123"}}}}}`
+}
+
+// A multi-arch push delivers one package event per manifest. Only the tagged
+// manifest list may trigger a pull; untagged platform images, attestations and
+// signatures must not.
+func TestImagePullWebhookHandler_GitHubPackage_MultiArchPush_PullsOnlyForTag(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	hub := setupHubForTest(t)
+
+	const secret = "mysecret"
+	const agentID = "agent-pkg-multiarch"
+
+	app := seedAppWithWebhookSecret(t, secret)
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("agent_id", agentID).Error; err != nil {
+		t.Fatalf("failed to update agent_id: %v", err)
+	}
+
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	signatureTag := "sha256-" + strings.Repeat("ab", 32) + ".sig"
+	for _, tag := range []string{"", "", "", "latest", signatureTag} {
+		body := githubPackageBodyWithTag(tag)
+		c, w := makeGitHubPackageRequest(app.Id, body, imagePullHMAC(secret, body))
+		ImagePullWebhookHandler(c)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("tag %q: expected 204, got %d: %s", tag, w.Code, w.Body.String())
+		}
+	}
+
+	if len(client.Send) != 1 {
+		t.Fatalf("expected exactly one PullImagesRequest, got %d", len(client.Send))
+	}
+	if msg := <-client.Send; msg.GetPullImagesRequest() == nil {
+		t.Errorf("expected PullImagesRequest payload, got %T", msg.Payload)
+	}
+}
+
 func TestImagePullWebhookHandler_GitHubPackage_InvalidSignature_Returns401(t *testing.T) {
 	setupTestDBForImagePullWebhook(t)
 
@@ -873,6 +916,38 @@ func TestIsHarborPushEvent(t *testing.T) {
 			got := isHarborPushEvent([]byte(tt.body))
 			if got != tt.want {
 				t.Errorf("isHarborPushEvent(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsGitHubImageTagEvent(t *testing.T) {
+	digest := strings.Repeat("ab", 32)
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"tagged manifest triggers", githubPackageBodyWithTag("latest"), true},
+		{"version tag triggers", githubPackageBodyWithTag("v1.2.3"), true},
+		{"untagged manifest ignored", githubPackageBodyWithTag(""), false},
+		{"whitespace tag ignored", githubPackageBodyWithTag("  "), false},
+		{"cosign signature ignored", githubPackageBodyWithTag("sha256-" + digest + ".sig"), false},
+		{"cosign attestation ignored", githubPackageBodyWithTag("sha256-" + digest + ".att"), false},
+		{"referrers fallback tag ignored", githubPackageBodyWithTag("sha256-" + digest), false},
+		{"short sha tag triggers", githubPackageBodyWithTag("sha-0123abc"), true},
+		{"no package version triggers", `{"package":{"package_type":"CONTAINER"}}`, true},
+		{"no container metadata triggers", `{"package":{"package_version":{}}}`, true},
+		{"no tag triggers", `{"package":{"package_version":{"container_metadata":{}}}}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var payload githubPackagePayload
+			if err := json.Unmarshal([]byte(tt.body), &payload); err != nil {
+				t.Fatalf("invalid test payload: %v", err)
+			}
+			if got := isGitHubImageTagEvent(&payload); got != tt.want {
+				t.Errorf("isGitHubImageTagEvent(%s) = %v, want %v", tt.body, got, tt.want)
 			}
 		})
 	}
