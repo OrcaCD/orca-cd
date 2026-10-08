@@ -16,6 +16,7 @@ import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "sonner";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
+import { AgentVersionBadge } from "@/components/badges/agent-version-badge";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { dataTableFeatures } from "../table-features";
@@ -61,6 +62,26 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 		cell: ({ row }) => {
 			const agent = row.original;
 			return agent.appsCount ?? 0;
+		},
+	},
+	{
+		accessorKey: "version",
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title={m.columnAgentVersion()} />;
+		},
+		cell: ({ row }) => {
+			const agent = row.original;
+			return <AgentVersionBadge version={agent.version} status={agent.versionStatus} />;
+		},
+	},
+	{
+		accessorKey: "dockerVersion",
+		header: ({ column }) => {
+			return <DataTableColumnHeader column={column} title={m.columnDockerVersion()} />;
+		},
+		cell: ({ row }) => {
+			const agent = row.original;
+			return agent.dockerVersion ?? m.notAvailableShort();
 		},
 	},
 	{

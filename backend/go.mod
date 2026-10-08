@@ -21,6 +21,7 @@ require (
 	github.com/nicholas-fedor/shoutrrr v0.21.1
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/mod v0.41.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/time v0.16.0
 	google.golang.org/protobuf v1.36.12
@@ -160,7 +161,6 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/arch v0.25.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect

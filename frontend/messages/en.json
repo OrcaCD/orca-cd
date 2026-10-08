@@ -579,5 +579,18 @@
 	"eventStatusRunning": "Running",
 	"eventStatusSucceeded": "Succeeded",
 	"eventStatusFailed": "Failed",
-	"eventStatusNoChange": "No change"
+	"eventStatusNoChange": "No change",
+	"agentVersion": "Agent version",
+	"dockerVersion": "Docker version",
+	"columnAgentVersion": "Agent Version",
+	"columnDockerVersion": "Docker Version",
+	"agentVersionOutdated": "Outdated",
+	"agentVersionUnsupported": "Unsupported",
+	"agentVersionOutdatedDescription": "This agent is older than the hub. Update it to get the latest features and fixes.",
+	"agentVersionUnsupportedDescription": "This agent version is no longer supported by the hub. Update it to keep deployments working.",
+	"agentVersionUnknownDescription": "This agent has not reported its version. It may be outdated or has not connected since the hub was updated.",
+	"outdatedAgentsAlertTitle": "Outdated agents",
+	"outdatedAgentsAlertDescription": "Some agents are running an older version than the hub. Update them to get the latest features and fixes.",
+	"unsupportedAgentsAlertTitle": "Unsupported agents",
+	"unsupportedAgentsAlertDescription": "Some agents are running a version that is no longer supported by the hub. Update them to keep deployments working."
 }

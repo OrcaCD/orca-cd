@@ -106,6 +106,15 @@ func (c *Client) Ready() bool {
 	return c.ready
 }
 
+// ServerVersion returns the version of the Docker engine the agent talks to.
+func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+	result, err := c.cli.Client().ServerVersion(ctx, client.ServerVersionOptions{})
+	if err != nil {
+		return "", err
+	}
+	return result.Version, nil
+}
+
 func (c *Client) hostDeploymentsBase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

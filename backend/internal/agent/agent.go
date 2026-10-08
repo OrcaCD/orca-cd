@@ -233,6 +233,7 @@ func Run(cfg Config) error {
 	wsConnected.Store(true)
 	sender := newMessageSender(conn, session)
 	sRef.store(sender)
+	go sendAgentInfo(ctx, sender, dockerClient)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -254,6 +255,7 @@ func Run(cfg Config) error {
 			wsConnected.Store(true)
 			sender = newMessageSender(conn, session)
 			sRef.store(sender)
+			go sendAgentInfo(ctx, sender, dockerClient)
 			continue
 		}
 		msg := &messages.ServerMessage{}

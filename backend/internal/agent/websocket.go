@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
@@ -20,6 +21,7 @@ import (
 const handshakeTimeout = 15 * time.Second
 const deploymentTimeout = 5 * time.Minute
 const writeWait = 10 * time.Second
+const dockerVersionTimeout = 5 * time.Second
 
 type outboundSender interface {
 	SendMessage(msg *messages.ClientMessage) error
@@ -37,6 +39,10 @@ type pollerHandler interface {
 
 type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
+}
+
+type dockerVersionProvider interface {
+	ServerVersion(ctx context.Context) (string, error)
 }
 
 type messageConn interface {
@@ -209,6 +215,27 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		go executePullImages(poller, p.PullImagesRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
+	}
+}
+
+// sendAgentInfo reports the agent and Docker versions to the hub so it can
+// display them and warn about outdated agents.
+func sendAgentInfo(ctx context.Context, sender outboundSender, docker dockerVersionProvider) {
+	info := &messages.AgentInfo{Version: version.Version}
+	if docker != nil {
+		versionCtx, cancel := context.WithTimeout(ctx, dockerVersionTimeout)
+		dockerVersion, err := docker.ServerVersion(versionCtx)
+		cancel()
+		if err != nil {
+			Log.Warn().Err(err).Msg("failed to determine Docker version")
+		}
+		info.DockerVersion = dockerVersion
+	}
+
+	if err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_AgentInfo{AgentInfo: info},
+	}); err != nil {
+		Log.Error().Err(err).Msg("failed to send agent info")
 	}
 }
 
