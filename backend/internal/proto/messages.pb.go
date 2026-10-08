@@ -1288,8 +1288,6 @@ func (x *ApplicationStatusReport) GetStatuses() []*ApplicationStatus {
 	return nil
 }
 
-// AgentInfo describes the agent build and the Docker engine it manages. It is
-// sent by the agent right after every successful handshake.
 type AgentInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
