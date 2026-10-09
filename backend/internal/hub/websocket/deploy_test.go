@@ -60,7 +60,8 @@ func expectAsyncNotification(t *testing.T) {
 	notification := models.Notification{
 		Name:            crypto.EncryptedString("async notification barrier"),
 		Enabled:         true,
-		EnableByDefault: true,
+		AllApplications: true,
+		Events:          models.NotificationEvents,
 		Status:          models.NotificationStatusUnknown,
 		Type:            models.NotificationType("test-invalid"),
 		Config:          crypto.EncryptedString("{}"),

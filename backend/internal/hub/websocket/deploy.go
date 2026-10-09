@@ -44,7 +44,7 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 		if err != nil {
 			return
 		}
-		go notifications.SendNotification(result.ApplicationId, "Success: deployment succeeded for "+app.Name.String(), log)
+		go notifications.NotifyApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}
 
@@ -60,7 +60,7 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
 	if ctx.Err() == nil {
-		go notifications.SendNotification(result.ApplicationId, "Error: deployment failed for "+app.Name.String(), log)
+		go notifications.NotifyApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
 	}
 }
 

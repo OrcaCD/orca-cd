@@ -32,22 +32,12 @@ import {
 	createNotification,
 	isHttpUrl,
 	normalizeNotificationApplicationIds,
+	type NotificationEvent,
+	notificationEvents,
 	type NotificationType,
 	notificationTypes,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
-import {
-	Combobox,
-	ComboboxChip,
-	ComboboxChips,
-	ComboboxChipsInput,
-	ComboboxContent,
-	ComboboxEmpty,
-	ComboboxItem,
-	ComboboxList,
-	ComboboxValue,
-	useComboboxAnchor,
-} from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 import {
 	buildDiscordNotificationConfig,
@@ -103,9 +93,13 @@ import {
 	CustomShoutrrrUrlField,
 	isValidShoutrrrUrl,
 } from "./custom-notification-builder";
-import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
+import {
+	NotificationAllApplicationsField,
+	NotificationApplicationsField,
+	NotificationEventsField,
+} from "./notification-subscription-fields";
 
-const { Stepper } = defineStepper([{ id: "config" }, { id: "provider" }]);
+const { Stepper } = defineStepper([{ id: "config" }, { id: "events" }, { id: "provider" }]);
 
 const notificationBaseSchema = z.object({
 	name: z
@@ -137,7 +131,8 @@ const notificationBaseSchema = z.object({
 	webhookHeaders: z.string(),
 	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
-	enableByDefault: z.boolean(),
+	allApplications: z.boolean(),
+	events: z.array(z.enum(notificationEvents)),
 	applicationIds: z.array(z.string()),
 });
 
@@ -472,7 +467,8 @@ function useNotificationForm() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			enableByDefault: false,
+			allApplications: false,
+			events: [...notificationEvents] as NotificationEvent[],
 			applicationIds: [] as string[],
 		},
 		validators: { onSubmit: notificationSchema },
@@ -528,14 +524,7 @@ const StepperSeparatorWithStatus = ({
 	);
 };
 
-function NotificationConfigStepContent({
-	form,
-	applications,
-}: {
-	form: NotificationFormApi;
-	applications: ApplicationListItem[] | undefined;
-}) {
-	const anchor = useComboboxAnchor();
+function NotificationConfigStepContent({ form }: { form: NotificationFormApi }) {
 	return (
 		<FieldGroup>
 			<form.Field name="name" validators={{ onSubmit: notificationBaseSchema.shape.name }}>
@@ -597,67 +586,49 @@ function NotificationConfigStepContent({
 					</div>
 				)}
 			</form.Field>
+		</FieldGroup>
+	);
+}
 
-			<form.Field name="enableByDefault">
+function NotificationEventsStepContent({
+	form,
+	applications,
+}: {
+	form: NotificationFormApi;
+	applications: ApplicationListItem[] | undefined;
+}) {
+	return (
+		<FieldGroup>
+			<form.Field name="events">
 				{(field) => (
-					<div className="flex items-center justify-between rounded-md border p-3 gap-4">
-						<div>
-							<p className="text-sm font-medium">{m.enableByDefault()}</p>
-							<p className="text-xs text-muted-foreground">{m.enableByDefaultDescription()}</p>
-						</div>
-						<Switch checked={field.state.value} onCheckedChange={field.handleChange} />
-					</div>
+					<NotificationEventsField value={field.state.value} onChange={field.handleChange} />
 				)}
 			</form.Field>
 
-			<form.Field name="applicationIds">
+			<form.Field name="allApplications">
 				{(field) => (
-					<Field>
-						<Label>{m.navApplications()}</Label>
-						<Combobox
-							items={applications}
-							multiple
-							autoHighlight
-							value={field.state.value}
-							onValueChange={field.handleChange}
-						>
-							<ComboboxChips ref={anchor}>
-								<ComboboxValue>
-									{(values) => (
-										<>
-											{values.map((value: string) => (
-												<ComboboxChip key={value}>
-													{applications?.find((app) => app.id === value)?.name ?? value}
-												</ComboboxChip>
-											))}
-											<ComboboxChipsInput
-												placeholder={field.state.value.length === 0 ? m.selectApplications() : ""}
-											/>
-										</>
-									)}
-								</ComboboxValue>
-							</ComboboxChips>
-							<ComboboxContent anchor={anchor}>
-								<ComboboxEmpty>{m.noApplicationsAvailable()}</ComboboxEmpty>
-								<ComboboxList>
-									{(item) => (
-										<ComboboxItem key={item.id} value={item.id}>
-											<Item className="p-0">
-												<ItemContent>
-													<ItemTitle className="whitespace-nowrap">{item.name}</ItemTitle>
-													<ItemDescription>
-														{item.repositoryName} / {item.agentName}
-													</ItemDescription>
-												</ItemContent>
-											</Item>
-										</ComboboxItem>
-									)}
-								</ComboboxList>
-							</ComboboxContent>
-						</Combobox>
-					</Field>
+					<NotificationAllApplicationsField
+						value={field.state.value}
+						onChange={field.handleChange}
+					/>
 				)}
 			</form.Field>
+
+			<form.Subscribe selector={(state) => state.values.allApplications}>
+				{(allApplications) =>
+					!allApplications && (
+						<form.Field name="applicationIds">
+							{(field) => (
+								<NotificationApplicationsField
+									value={field.state.value}
+									onChange={field.handleChange}
+									applications={applications}
+								/>
+							)}
+						</form.Field>
+					)
+				}
+			</form.Subscribe>
 		</FieldGroup>
 	);
 }
@@ -908,7 +879,8 @@ export default function CreateNotificationDialog() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			enableByDefault: false,
+			allApplications: false,
+			events: [...notificationEvents] as NotificationEvent[],
 			applicationIds: [] as string[],
 		},
 		validators: {
@@ -922,7 +894,8 @@ export default function CreateNotificationDialog() {
 					type: value.type,
 					config: buildNotificationConfig(value),
 					enabled: value.enabled,
-					enableByDefault: value.enableByDefault,
+					allApplications: value.allApplications,
+					events: value.events,
 					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
 				};
 
@@ -1025,7 +998,17 @@ export default function CreateNotificationDialog() {
 												step="config"
 												render={(props) => (
 													<div {...props} className={cn("space-y-4", props.className)}>
-														<NotificationConfigStepContent
+														<NotificationConfigStepContent form={form} />
+													</div>
+												)}
+											/>
+										),
+										events: () => (
+											<Stepper.Content
+												step="events"
+												render={(props) => (
+													<div {...props} className={cn("space-y-4", props.className)}>
+														<NotificationEventsStepContent
 															form={form}
 															applications={applications}
 														/>
