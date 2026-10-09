@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
@@ -18,9 +19,21 @@ import (
 type githubPackagePayload struct {
 	Action  string `json:"action"`
 	Package struct {
-		PackageType string `json:"package_type"`
+		PackageType    string `json:"package_type"`
+		PackageVersion *struct {
+			ContainerMetadata *struct {
+				Tag *struct {
+					Name string `json:"name"`
+				} `json:"tag"`
+			} `json:"container_metadata"`
+		} `json:"package_version"`
 	} `json:"package"`
 }
+
+// signatureTagPattern matches tags registries derive from a manifest digest to attach
+// artifacts to an image: cosign signatures/attestations/SBOMs (sha256-<hex>.sig) and
+// the OCI referrers fallback tag (sha256-<hex>).
+var signatureTagPattern = regexp.MustCompile(`^sha256-[a-f0-9]{64}(\..+)?$`)
 
 type dockerHubPayload struct {
 	PushData *json.RawMessage `json:"push_data"`
@@ -72,7 +85,8 @@ func ImagePullWebhookHandler(c *gin.Context) {
 			return
 		}
 		if !strings.EqualFold(payload.Package.PackageType, "CONTAINER") ||
-			(!strings.EqualFold(payload.Action, "published") && !strings.EqualFold(payload.Action, "updated")) {
+			(!strings.EqualFold(payload.Action, "published") && !strings.EqualFold(payload.Action, "updated")) ||
+			!isGitHubImageTagEvent(&payload) {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
@@ -111,6 +125,21 @@ func ImagePullWebhookHandler(c *gin.Context) {
 
 	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook)
 	c.AbortWithStatus(http.StatusNoContent)
+}
+
+// isGitHubImageTagEvent reports whether a GHCR package event moved a tag an application
+// can reference. One push of a multi-arch image fans out into a delivery per manifest:
+// the untagged per-platform images and attestations, the tagged manifest list, and
+// possibly signatures pushed afterwards. Only the tagged manifest changes what a compose
+// file resolves to, so the other deliveries would only cause redundant pulls.
+// Payloads without container metadata are let through.
+func isGitHubImageTagEvent(payload *githubPackagePayload) bool {
+	version := payload.Package.PackageVersion
+	if version == nil || version.ContainerMetadata == nil || version.ContainerMetadata.Tag == nil {
+		return true
+	}
+	tag := strings.TrimSpace(version.ContainerMetadata.Tag.Name)
+	return tag != "" && !signatureTagPattern.MatchString(tag)
 }
 
 // isDockerHubPayload returns true when body contains a Docker Hub push_data field.
