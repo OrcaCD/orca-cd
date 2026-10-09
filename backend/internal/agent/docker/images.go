@@ -46,10 +46,8 @@ var pullProject = func(ctx context.Context, svc api.Compose, project *composetyp
 // appears in any of the "repo@sha256:…" entries from ImageInspect.RepoDigests.
 func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 	for _, d := range localDigests {
-		if idx := strings.LastIndex(d, "@"); idx >= 0 {
-			if d[idx+1:] == remoteDigest {
-				return true
-			}
+		if _, digest, ok := strings.CutLast(d, "@"); ok && digest == remoteDigest {
+			return true
 		}
 	}
 	return false
@@ -115,8 +113,8 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		if !digestMatchesLocal(localDigests, remoteDigest) {
 			var oldDigest string
 			for _, d := range localDigests {
-				if idx := strings.LastIndex(d, "@"); idx >= 0 {
-					oldDigest = d[idx+1:]
+				if _, digest, ok := strings.CutLast(d, "@"); ok {
+					oldDigest = digest
 					break
 				}
 			}
