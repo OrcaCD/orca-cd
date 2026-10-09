@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,18 +27,20 @@ import (
 const NotificationsPath = "/api/v1/notifications"
 
 type createNotificationRequest struct {
-	Name            string                  `json:"name" binding:"required,min=1,max=128"`
-	Enabled         *bool                   `json:"enabled"`
-	EnableByDefault *bool                   `json:"enableByDefault"`
-	Type            models.NotificationType `json:"type" binding:"required"`
-	Config          json.RawMessage         `json:"config" binding:"required"`
-	ApplicationIds  []string                `json:"applicationIds"`
+	Name            string                     `json:"name" binding:"required,min=1,max=128"`
+	Enabled         *bool                      `json:"enabled"`
+	AllApplications *bool                      `json:"allApplications"`
+	Events          []models.NotificationEvent `json:"events"`
+	Type            models.NotificationType    `json:"type" binding:"required"`
+	Config          json.RawMessage            `json:"config" binding:"required"`
+	ApplicationIds  []string                   `json:"applicationIds"`
 }
 
 type updateNotificationRequest struct {
-	Enabled         *bool    `json:"enabled"`
-	EnableByDefault *bool    `json:"enableByDefault"`
-	ApplicationIds  []string `json:"applicationIds"`
+	Enabled         *bool                      `json:"enabled"`
+	AllApplications *bool                      `json:"allApplications"`
+	Events          []models.NotificationEvent `json:"events"`
+	ApplicationIds  []string                   `json:"applicationIds"`
 }
 
 type testNotificationRequest struct {
@@ -47,15 +50,16 @@ type testNotificationRequest struct {
 var sendTestNotification = hubnotifications.SendTestNotification
 
 type notificationResponse struct {
-	Id              string   `json:"id"`
-	Name            string   `json:"name"`
-	Enabled         bool     `json:"enabled"`
-	EnableByDefault bool     `json:"enableByDefault"`
-	Status          string   `json:"status"`
-	Type            string   `json:"type"`
-	ApplicationIds  []string `json:"applicationIds"`
-	CreatedAt       string   `json:"createdAt"`
-	UpdatedAt       string   `json:"updatedAt"`
+	Id              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	Enabled         bool                       `json:"enabled"`
+	AllApplications bool                       `json:"allApplications"`
+	Events          []models.NotificationEvent `json:"events"`
+	Status          string                     `json:"status"`
+	Type            string                     `json:"type"`
+	ApplicationIds  []string                   `json:"applicationIds"`
+	CreatedAt       string                     `json:"createdAt"`
+	UpdatedAt       string                     `json:"updatedAt"`
 }
 
 func ListNotificationsHandler(c *gin.Context) {
@@ -104,6 +108,17 @@ func CreateNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	// Omitting events subscribes to everything, matching the behavior before
+	// events became selectable.
+	events := slices.Clone(models.NotificationEvents)
+	if req.Events != nil {
+		events, err = normalizeNotificationEvents(req.Events)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	ctx := c.Request.Context()
 	applications, missingApplicationId, err := loadNotificationApplications(ctx, req.ApplicationIds)
 	if err != nil {
@@ -119,15 +134,16 @@ func CreateNotificationHandler(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	enableByDefault := false
-	if req.EnableByDefault != nil {
-		enableByDefault = *req.EnableByDefault
+	allApplications := false
+	if req.AllApplications != nil {
+		allApplications = *req.AllApplications
 	}
 
 	notification := models.Notification{
 		Name:            crypto.EncryptedString(normalizedName),
 		Enabled:         enabled,
-		EnableByDefault: enableByDefault,
+		AllApplications: allApplications,
+		Events:          events,
 		Status:          models.NotificationStatusUnknown,
 		Type:            req.Type,
 		Config:          crypto.EncryptedString(normalizedConfig),
@@ -163,8 +179,14 @@ func UpdateNotificationHandler(c *gin.Context) {
 	id := c.Param("id")
 
 	var req updateNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil || req.EnableByDefault == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled and enableByDefault are required"})
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil || req.AllApplications == nil || req.Events == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled, allApplications and events are required"})
+		return
+	}
+
+	events, err := normalizeNotificationEvents(req.Events)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -192,11 +214,12 @@ func UpdateNotificationHandler(c *gin.Context) {
 	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		updates := models.Notification{
 			Enabled:         *req.Enabled,
-			EnableByDefault: *req.EnableByDefault,
+			AllApplications: *req.AllApplications,
+			Events:          events,
 		}
 		rowsAffected, err := gorm.G[models.Notification](tx).
 			Where("id = ?", id).
-			Select("enabled", "enable_by_default").
+			Select("enabled", "all_applications", "events").
 			Updates(ctx, updates)
 		if err != nil {
 			return err
@@ -335,7 +358,8 @@ func toNotificationResponse(notification *models.Notification) notificationRespo
 		Id:              notification.Id,
 		Name:            notification.Name.String(),
 		Enabled:         notification.Enabled,
-		EnableByDefault: notification.EnableByDefault,
+		AllApplications: notification.AllApplications,
+		Events:          notification.Events,
 		Status:          string(notification.Status),
 		Type:            string(notification.Type),
 		ApplicationIds:  applicationIds,
@@ -429,6 +453,25 @@ func normalizeNotificationApplicationIds(applicationIds []string) []string {
 	}
 
 	return normalized
+}
+
+// normalizeNotificationEvents validates events, drops duplicates and returns
+// them in catalog order.
+func normalizeNotificationEvents(events []models.NotificationEvent) ([]models.NotificationEvent, error) {
+	for _, event := range events {
+		if !event.IsValid() {
+			return nil, errors.New("invalid event: " + string(event))
+		}
+	}
+
+	normalized := make([]models.NotificationEvent, 0, len(events))
+	for _, event := range models.NotificationEvents {
+		if slices.Contains(events, event) {
+			normalized = append(normalized, event)
+		}
+	}
+
+	return normalized, nil
 }
 
 func loadNotificationApplications(ctx context.Context, applicationIds []string) ([]models.Application, string, error) {

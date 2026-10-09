@@ -97,7 +97,8 @@ func createNotificationRecord(t *testing.T, applicationIds []string) models.Noti
 	notification := models.Notification{
 		Name:            crypto.EncryptedString("Initial Notification"),
 		Enabled:         true,
-		EnableByDefault: false,
+		AllApplications: false,
+		Events:          models.NotificationEvents,
 		Status:          models.NotificationStatusUnknown,
 		Type:            models.NotificationTypeDiscord,
 		Config:          crypto.EncryptedString(validDiscordConfig),
@@ -184,10 +185,15 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":            "Deploy Alerts",
 		"enabled":         true,
-		"enableByDefault": false,
-		"type":            "discord",
-		"config":          validDiscordConfig,
-		"applicationIds":  []string{appA.Id, appB.Id},
+		"allApplications": false,
+		"events": []string{
+			string(models.NotificationEventSyncFailed),
+			string(models.NotificationEventDeploymentFailed),
+			string(models.NotificationEventDeploymentFailed),
+		},
+		"type":           "discord",
+		"config":         validDiscordConfig,
+		"applicationIds": []string{appA.Id, appB.Id},
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -223,6 +229,10 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if !slices.Contains(body.ApplicationIds, appA.Id) || !slices.Contains(body.ApplicationIds, appB.Id) {
 		t.Fatalf("response applicationIds missing expected ids: %v", body.ApplicationIds)
 	}
+	wantEvents := []models.NotificationEvent{models.NotificationEventDeploymentFailed, models.NotificationEventSyncFailed}
+	if !slices.Equal(body.Events, wantEvents) {
+		t.Fatalf("expected events %v, got %v", wantEvents, body.Events)
+	}
 
 	stored, err := gorm.G[models.Notification](db.DB).Preload("Applications", nil).Where("id = ?", body.Id).First(t.Context())
 	if err != nil {
@@ -233,6 +243,30 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	}
 	if len(stored.Applications) != 2 {
 		t.Fatalf("expected 2 associated applications, got %d", len(stored.Applications))
+	}
+	if !slices.Equal(stored.Events, wantEvents) {
+		t.Fatalf("expected stored events %v, got %v", wantEvents, stored.Events)
+	}
+}
+
+func TestCreateNotificationHandler_InvalidEvent(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Invalid Event",
+		"type":   "discord",
+		"config": validDiscordConfig,
+		"events": []string{"application.unknown"},
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -515,7 +549,8 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":            "Ignored Name",
 		"enabled":         false,
-		"enableByDefault": true,
+		"allApplications": true,
+		"events":          []string{string(models.NotificationEventImageUpdateFailed)},
 		"type":            "slack",
 		"config":          `{"webhookUrl":"https://hooks.slack.com/services/T/B/C"}`,
 		"applicationIds":  []string{appB.Id, appB.Id, " "},
@@ -543,8 +578,11 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	if body.Enabled {
 		t.Fatal("expected enabled to be false")
 	}
-	if !body.EnableByDefault {
-		t.Fatal("expected enableByDefault to be true")
+	if !body.AllApplications {
+		t.Fatal("expected allApplications to be true")
+	}
+	if !slices.Equal(body.Events, []models.NotificationEvent{models.NotificationEventImageUpdateFailed}) {
+		t.Fatalf("expected events [%s], got %v", models.NotificationEventImageUpdateFailed, body.Events)
 	}
 	if body.Type != string(models.NotificationTypeDiscord) {
 		t.Fatalf("expected type to remain %q, got %q", models.NotificationTypeDiscord, body.Type)
@@ -580,7 +618,8 @@ func TestUpdateNotificationHandler_UnknownApplication(t *testing.T) {
 	notification := createNotificationRecord(t, nil)
 	reqBody, _ := json.Marshal(map[string]any{
 		"enabled":         true,
-		"enableByDefault": false,
+		"allApplications": false,
+		"events":          []string{},
 		"applicationIds":  []string{"missing-app"},
 	})
 
@@ -602,7 +641,8 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"enabled":         true,
-		"enableByDefault": false,
+		"allApplications": false,
+		"events":          []string{},
 		"applicationIds":  []string{},
 	})
 
@@ -638,6 +678,45 @@ func TestUpdateNotificationHandler_InvalidRequest(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateNotificationHandler_RejectsInvalidEvents(t *testing.T) {
+	tests := []struct {
+		name   string
+		events any
+	}{
+		{name: "missing events", events: nil},
+		{name: "unknown event", events: []string{"application.unknown"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDBWithNotifications(t)
+
+			notification := createNotificationRecord(t, nil)
+			payload := map[string]any{
+				"enabled":         true,
+				"allApplications": false,
+				"applicationIds":  []string{},
+			}
+			if tt.events != nil {
+				payload["events"] = tt.events
+			}
+			reqBody, _ := json.Marshal(payload)
+
+			router := gin.New()
+			router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -884,8 +963,11 @@ func TestCreateNotificationHandler_DefaultFlagsWhenOmitted(t *testing.T) {
 	if !body.Enabled {
 		t.Fatal("expected enabled default to true")
 	}
-	if body.EnableByDefault {
-		t.Fatal("expected enableByDefault default to false")
+	if body.AllApplications {
+		t.Fatal("expected allApplications default to false")
+	}
+	if !slices.Equal(body.Events, models.NotificationEvents) {
+		t.Fatalf("expected all events by default, got %v", body.Events)
 	}
 }
 

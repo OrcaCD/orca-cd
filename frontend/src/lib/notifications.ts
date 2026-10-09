@@ -12,11 +12,21 @@ export const notificationTypes = [
 ] as const;
 export type NotificationType = (typeof notificationTypes)[number];
 
+export const notificationEvents = [
+	"application.deployment.succeeded",
+	"application.deployment.failed",
+	"application.image_update.succeeded",
+	"application.image_update.failed",
+	"application.sync.failed",
+] as const;
+export type NotificationEvent = (typeof notificationEvents)[number];
+
 export interface Notification {
 	id: string;
 	name: string;
 	enabled: boolean;
-	enableByDefault: boolean;
+	allApplications: boolean;
+	events: NotificationEvent[];
 	status: NotificationStatus;
 	type: NotificationType;
 	applicationIds: string[];
@@ -27,7 +37,8 @@ export interface Notification {
 export interface UpsertNotificationRequest {
 	name: string;
 	enabled?: boolean;
-	enableByDefault?: boolean;
+	allApplications?: boolean;
+	events?: NotificationEvent[];
 	type: NotificationType;
 	config: string;
 	applicationIds?: string[];
@@ -35,7 +46,8 @@ export interface UpsertNotificationRequest {
 
 export interface UpdateNotificationRequest {
 	enabled: boolean;
-	enableByDefault: boolean;
+	allApplications: boolean;
+	events: NotificationEvent[];
 	applicationIds: string[];
 }
 

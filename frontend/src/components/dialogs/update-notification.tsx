@@ -6,18 +6,6 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
-	Combobox,
-	ComboboxChip,
-	ComboboxChips,
-	ComboboxChipsInput,
-	ComboboxContent,
-	ComboboxEmpty,
-	ComboboxItem,
-	ComboboxList,
-	ComboboxValue,
-	useComboboxAnchor,
-} from "@/components/ui/combobox";
-import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -26,22 +14,27 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Field, FieldGroup } from "@/components/ui/field";
-import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
-import { Label } from "@/components/ui/label";
+import { FieldGroup } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import {
 	normalizeNotificationApplicationIds,
 	type Notification,
+	notificationEvents,
 	updateNotification,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import {
+	NotificationAllApplicationsField,
+	NotificationApplicationsField,
+	NotificationEventsField,
+} from "./notification-subscription-fields";
 
 const notificationSettingsSchema = z.object({
 	enabled: z.boolean(),
-	enableByDefault: z.boolean(),
+	allApplications: z.boolean(),
+	events: z.array(z.enum(notificationEvents)),
 	applicationIds: z.array(z.uuid()),
 });
 
@@ -54,14 +47,14 @@ export default function UpdateNotificationDialog({
 }) {
 	const [open, setOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
-	const anchor = useComboboxAnchor();
 
 	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
 
 	const form = useForm({
 		defaultValues: {
 			enabled: notification.enabled,
-			enableByDefault: notification.enableByDefault,
+			allApplications: notification.allApplications,
+			events: notification.events,
 			applicationIds: notification.applicationIds,
 		},
 		validators: { onSubmit: notificationSettingsSchema },
@@ -70,7 +63,8 @@ export default function UpdateNotificationDialog({
 			try {
 				await updateNotification(notification.id, {
 					enabled: value.enabled,
-					enableByDefault: value.enableByDefault,
+					allApplications: value.allApplications,
+					events: value.events,
 					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
 				});
 				toast.success(m.notificationUpdated());
@@ -140,72 +134,39 @@ export default function UpdateNotificationDialog({
 						/>
 
 						<form.Field
-							name="enableByDefault"
+							name="events"
 							children={(field) => (
-								<div className="flex items-center justify-between gap-4 rounded-md border p-3">
-									<div>
-										<p className="text-sm font-medium">{m.enableByDefault()}</p>
-										<p className="text-xs text-muted-foreground">
-											{m.enableByDefaultDescription()}
-										</p>
-									</div>
-									<Switch checked={field.state.value} onCheckedChange={field.handleChange} />
-								</div>
+								<NotificationEventsField value={field.state.value} onChange={field.handleChange} />
 							)}
 						/>
 
 						<form.Field
-							name="applicationIds"
+							name="allApplications"
 							children={(field) => (
-								<Field>
-									<Label>{m.navApplications()}</Label>
-									<Combobox
-										items={applications}
-										multiple
-										autoHighlight
-										value={field.state.value}
-										onValueChange={field.handleChange}
-										modal={false}
-									>
-										<ComboboxChips ref={anchor}>
-											<ComboboxValue>
-												{(values) => (
-													<>
-														{values.map((value: string) => (
-															<ComboboxChip key={value}>
-																{applications?.find((app) => app.id === value)?.name ?? value}
-															</ComboboxChip>
-														))}
-														<ComboboxChipsInput
-															placeholder={
-																field.state.value.length === 0 ? m.selectApplications() : ""
-															}
-														/>
-													</>
-												)}
-											</ComboboxValue>
-										</ComboboxChips>
-										<ComboboxContent anchor={anchor}>
-											<ComboboxEmpty>{m.noApplicationsAvailable()}</ComboboxEmpty>
-											<ComboboxList>
-												{(item) => (
-													<ComboboxItem key={item.id} value={item.id}>
-														<Item className="p-0">
-															<ItemContent>
-																<ItemTitle className="whitespace-nowrap">{item.name}</ItemTitle>
-																<ItemDescription>
-																	{item.repositoryName} / {item.agentName}
-																</ItemDescription>
-															</ItemContent>
-														</Item>
-													</ComboboxItem>
-												)}
-											</ComboboxList>
-										</ComboboxContent>
-									</Combobox>
-								</Field>
+								<NotificationAllApplicationsField
+									value={field.state.value}
+									onChange={field.handleChange}
+								/>
 							)}
 						/>
+
+						<form.Subscribe selector={(state) => state.values.allApplications}>
+							{(allApplications) =>
+								!allApplications && (
+									<form.Field
+										name="applicationIds"
+										children={(field) => (
+											<NotificationApplicationsField
+												value={field.state.value}
+												onChange={field.handleChange}
+												applications={applications}
+												modal={false}
+											/>
+										)}
+									/>
+								)
+							}
+						</form.Subscribe>
 
 						<div className="flex flex-wrap gap-2 pt-2">
 							<Button type="submit" disabled={isLoading}>
