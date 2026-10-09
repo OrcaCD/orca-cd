@@ -54,13 +54,13 @@ func setNotificationConfig(t *testing.T, notificationId, rawConfig string) {
 	}
 }
 
-func setNotificationTypeAndConfig(t *testing.T, notificationId string, notificationType models.NotificationType, rawConfig string) {
+func setHTTPNotificationConfig(t *testing.T, notificationId, rawConfig string) {
 	t.Helper()
 
 	rowsAffected, err := gorm.G[models.Notification](db.DB).
 		Where("id = ?", notificationId).
 		Updates(t.Context(), models.Notification{
-			Type:   notificationType,
+			Type:   testHTTPNotificationType,
 			Config: crypto.EncryptedString(rawConfig),
 		})
 	if err != nil {
@@ -194,7 +194,7 @@ func TestNotifyApplicationPostsToHTTPWebhook(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "http-webhook", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
 	NotifyApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
 
@@ -209,7 +209,7 @@ func TestNotifyApplicationHTTPWebhookErrorMarksStatusError(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "http-webhook-error", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
 	NotifyApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy failed", newNotificationLogger())
 
@@ -234,7 +234,7 @@ func TestNotifyApplicationSkipsUnsubscribedEvent(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "failures-only", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 	if _, err := gorm.G[models.Notification](db.DB).
 		Where("id = ?", notification.Id).
 		Select("events").
@@ -263,7 +263,7 @@ func TestNotifyApplicationBlocksSSRFToPrivateIP(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "ssrf-blocked", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
 	NotifyApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
 
