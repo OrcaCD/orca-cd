@@ -16,26 +16,20 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FieldGroup } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
-import { useFetch } from "@/lib/api";
-import type { ApplicationListItem } from "@/lib/applications";
 import {
-	normalizeNotificationApplicationIds,
+	normalizeNotificationSubscription,
 	type Notification,
-	notificationEvents,
 	updateNotification,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import {
-	NotificationAllApplicationsField,
-	NotificationApplicationsField,
-	NotificationEventsField,
+	NotificationSubscriptionFields,
+	notificationSubscriptionSchema,
 } from "./notification-subscription-fields";
 
 const notificationSettingsSchema = z.object({
 	enabled: z.boolean(),
-	allApplications: z.boolean(),
-	events: z.array(z.enum(notificationEvents)).min(1, m.validationNotificationEventsRequired()),
-	applicationIds: z.array(z.uuid()),
+	subscription: notificationSubscriptionSchema,
 });
 
 export default function UpdateNotificationDialog({
@@ -48,14 +42,18 @@ export default function UpdateNotificationDialog({
 	const [open, setOpen] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 
-	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
-
 	const form = useForm({
 		defaultValues: {
 			enabled: notification.enabled,
-			allApplications: notification.allApplications,
-			events: notification.events,
-			applicationIds: notification.applicationIds,
+			subscription: {
+				events: notification.events,
+				allApplications: notification.allApplications,
+				applicationIds: notification.applicationIds,
+				allAgents: notification.allAgents,
+				agentIds: notification.agentIds,
+				allRepositories: notification.allRepositories,
+				repositoryIds: notification.repositoryIds,
+			},
 		},
 		validators: { onSubmit: notificationSettingsSchema },
 		onSubmit: async ({ value }) => {
@@ -63,11 +61,7 @@ export default function UpdateNotificationDialog({
 			try {
 				await updateNotification(notification.id, {
 					enabled: value.enabled,
-					allApplications: value.allApplications,
-					events: value.events,
-					applicationIds: value.allApplications
-						? []
-						: normalizeNotificationApplicationIds(value.applicationIds),
+					...normalizeNotificationSubscription(value.subscription),
 				});
 				toast.success(m.notificationUpdated());
 				setOpen(false);
@@ -136,43 +130,17 @@ export default function UpdateNotificationDialog({
 						/>
 
 						<form.Field
-							name="events"
+							name="subscription"
+							validators={{ onSubmit: notificationSubscriptionSchema }}
 							children={(field) => (
-								<NotificationEventsField
+								<NotificationSubscriptionFields
 									value={field.state.value}
 									onChange={field.handleChange}
 									errors={field.state.meta.errors}
+									modal={false}
 								/>
 							)}
 						/>
-
-						<form.Field
-							name="allApplications"
-							children={(field) => (
-								<NotificationAllApplicationsField
-									value={field.state.value}
-									onChange={field.handleChange}
-								/>
-							)}
-						/>
-
-						<form.Subscribe selector={(state) => state.values.allApplications}>
-							{(allApplications) =>
-								!allApplications && (
-									<form.Field
-										name="applicationIds"
-										children={(field) => (
-											<NotificationApplicationsField
-												value={field.state.value}
-												onChange={field.handleChange}
-												applications={applications}
-												modal={false}
-											/>
-										)}
-									/>
-								)
-							}
-						</form.Subscribe>
 
 						<div className="flex flex-wrap gap-2 pt-2">
 							<Button type="submit" disabled={isLoading}>

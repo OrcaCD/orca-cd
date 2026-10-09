@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/rs/zerolog"
@@ -14,6 +15,8 @@ import (
 )
 
 const repositoriesSSEPath = "/api/v1/repositories"
+
+var sendForRepository = notifications.SendForRepository
 
 type CommitResolver func(ctx context.Context, branch string) (hash, message string, err error)
 
@@ -37,14 +40,14 @@ func SyncRepository(ctx context.Context, repo *models.Repository, origin SyncOri
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("unsupported provider for sync")
-		markRepositoryFailed(ctx, repo.Id, "unsupported provider", log)
+		markRepositoryFailed(ctx, repo, "unsupported provider", log)
 		return
 	}
 
 	apps, err := gorm.G[models.Application](db.DB).Where("repository_id = ?", repo.Id).Find(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to load applications for sync")
-		markRepositoryFailed(ctx, repo.Id, "failed to load applications", log)
+		markRepositoryFailed(ctx, repo, "failed to load applications", log)
 		return
 	}
 
@@ -63,7 +66,7 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 
 	now := time.Now()
 	if len(byBranch) == 0 {
-		markRepositorySuccess(ctx, repo.Id, &now, log)
+		markRepositorySuccess(ctx, repo, &now, log)
 		return
 	}
 
@@ -82,7 +85,7 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message, origin)
 		} else {
 			log.Error().Str("repositoryId", repo.Id).Str("branch", branch).Msg("sync queue not initialized")
-			markRepositoryFailed(ctx, repo.Id, "sync queue not initialized", log)
+			markRepositoryFailed(ctx, repo, "sync queue not initialized", log)
 			for i := range branchApps {
 				recordSyncFailure(ctx, &branchApps[i], origin, hash, message, "sync queue not initialized", log)
 			}
@@ -91,10 +94,10 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 	}
 
 	if lastErrMsg != "" {
-		markRepositoryFailed(ctx, repo.Id, lastErrMsg, log)
+		markRepositoryFailed(ctx, repo, lastErrMsg, log)
 		return
 	}
-	markRepositorySuccess(ctx, repo.Id, &now, log)
+	markRepositorySuccess(ctx, repo, &now, log)
 }
 
 func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) {
@@ -105,28 +108,73 @@ func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) 
 	sse.PublishUpdate(repositoriesSSEPath)
 }
 
-func markRepositorySuccess(ctx context.Context, id string, now *time.Time, log *zerolog.Logger) {
-	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).
-		// Select forces the nil LastSyncError to be written as NULL, clearing any
-		// stale error (a struct Updates would otherwise skip the nil pointer).
-		Select("SyncStatus", "LastSyncError", "LastSyncedAt").
-		Updates(ctx, models.Repository{
-			SyncStatus:    models.SyncStatusSuccess,
-			LastSyncError: nil,
-			LastSyncedAt:  now,
-		}); err != nil {
-		log.Error().Err(err).Str("repositoryId", id).Msg("failed to mark repository as success")
+func markRepositorySuccess(ctx context.Context, repo *models.Repository, now *time.Time, log *zerolog.Logger) {
+	recovered, err := updateRepositorySyncResult(repo.Id, "last_sync_error IS NOT NULL",
+		func(q gorm.ChainInterface[models.Repository]) (int, error) {
+			// Select forces the nil LastSyncError to be written as NULL, clearing any
+			// stale error (a struct Updates would otherwise skip the nil pointer).
+			return q.Select("SyncStatus", "LastSyncError", "LastSyncedAt").
+				Updates(ctx, models.Repository{
+					SyncStatus:    models.SyncStatusSuccess,
+					LastSyncError: nil,
+					LastSyncedAt:  now,
+				})
+		})
+	if err != nil {
+		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as success")
 	}
 	sse.PublishUpdate(repositoriesSSEPath)
+
+	if recovered {
+		sendForRepository(repo.Id, models.NotificationEventRepositorySyncRecovered,
+			"Success: sync recovered for repository "+repo.Name, log)
+	}
 }
 
-func markRepositoryFailed(ctx context.Context, id string, errMsg string, log *zerolog.Logger) {
-	if _, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).
-		Updates(ctx, models.Repository{
-			SyncStatus:    models.SyncStatusFailed,
-			LastSyncError: &errMsg,
-		}); err != nil {
-		log.Error().Err(err).Str("repositoryId", id).Msg("failed to mark repository as failed")
+func markRepositoryFailed(ctx context.Context, repo *models.Repository, errMsg string, log *zerolog.Logger) {
+	failed, err := updateRepositorySyncResult(repo.Id, "last_sync_error IS NULL",
+		func(q gorm.ChainInterface[models.Repository]) (int, error) {
+			return q.Updates(ctx, models.Repository{
+				SyncStatus:    models.SyncStatusFailed,
+				LastSyncError: &errMsg,
+			})
+		})
+	if err != nil {
+		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as failed")
 	}
 	sse.PublishUpdate(repositoriesSSEPath)
+
+	if failed {
+		sendForRepository(repo.Id, models.NotificationEventRepositorySyncFailed,
+			"Error: sync failed for repository "+repo.Name+": "+truncateNotificationDetail(errMsg), log)
+	}
+}
+
+// updateRepositorySyncResult stores a sync result and reports whether it
+// changed the repository between failing and succeeding. The sync status is
+// useless for that, since markRepositorySyncing overwrites it before every
+// sync, but last_sync_error survives until the next successful sync. The
+// transition is claimed with a conditional update first, so repeated results
+// (e.g. every polling interval) and concurrent syncs notify at most once.
+func updateRepositorySyncResult(id, transition string, update func(gorm.ChainInterface[models.Repository]) (int, error)) (bool, error) {
+	rowsAffected, err := update(gorm.G[models.Repository](db.DB).Where("id = ?", id).Where(transition))
+	if err != nil {
+		return false, err
+	}
+	if rowsAffected > 0 {
+		return true, nil
+	}
+
+	_, err = update(gorm.G[models.Repository](db.DB).Where("id = ?", id))
+	return false, err
+}
+
+const maxNotificationDetailLength = 500
+
+func truncateNotificationDetail(detail string) string {
+	runes := []rune(detail)
+	if len(runes) <= maxNotificationDetailLength {
+		return detail
+	}
+	return string(runes[:maxNotificationDetailLength]) + "…"
 }

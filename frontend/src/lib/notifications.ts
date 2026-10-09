@@ -18,37 +18,59 @@ export const notificationEvents = [
 	"application.image_update.succeeded",
 	"application.image_update.failed",
 	"application.sync.failed",
+	"application.health.unhealthy",
+	"application.health.recovered",
+	"agent.offline",
+	"agent.online",
+	"repository.sync.failed",
+	"repository.sync.recovered",
 ] as const;
 export type NotificationEvent = (typeof notificationEvents)[number];
 
-export interface Notification {
+export const notificationResources = ["applications", "agents", "repositories"] as const;
+export type NotificationResource = (typeof notificationResources)[number];
+
+const notificationEventPrefixes: Record<NotificationResource, string> = {
+	applications: "application.",
+	agents: "agent.",
+	repositories: "repository.",
+};
+
+export function getNotificationResourceEvents(resource: NotificationResource): NotificationEvent[] {
+	return notificationEvents.filter((event) =>
+		event.startsWith(notificationEventPrefixes[resource]),
+	);
+}
+
+export interface NotificationSubscription {
+	events: NotificationEvent[];
+	allApplications: boolean;
+	applicationIds: string[];
+	allAgents: boolean;
+	agentIds: string[];
+	allRepositories: boolean;
+	repositoryIds: string[];
+}
+
+export interface Notification extends NotificationSubscription {
 	id: string;
 	name: string;
 	enabled: boolean;
-	allApplications: boolean;
-	events: NotificationEvent[];
 	status: NotificationStatus;
 	type: NotificationType;
-	applicationIds: string[];
 	createdAt: string;
 	updatedAt: string;
 }
 
-export interface UpsertNotificationRequest {
+export interface UpsertNotificationRequest extends Partial<NotificationSubscription> {
 	name: string;
 	enabled?: boolean;
-	allApplications?: boolean;
-	events?: NotificationEvent[];
 	type: NotificationType;
 	config: string;
-	applicationIds?: string[];
 }
 
-export interface UpdateNotificationRequest {
+export interface UpdateNotificationRequest extends NotificationSubscription {
 	enabled: boolean;
-	allApplications: boolean;
-	events: NotificationEvent[];
-	applicationIds: string[];
 }
 
 export function isHttpUrl(rawUrl: string): boolean {
@@ -60,8 +82,17 @@ export function isHttpUrl(rawUrl: string): boolean {
 	}
 }
 
-export function normalizeNotificationApplicationIds(ids: string[]): string[] {
-	return Array.from(new Set(ids));
+export function normalizeNotificationSubscription(
+	subscription: NotificationSubscription,
+): NotificationSubscription {
+	// Explicit IDs are redundant when a scope covers every resource.
+	const scopedIds = (all: boolean, ids: string[]) => (all ? [] : Array.from(new Set(ids)));
+	return {
+		...subscription,
+		applicationIds: scopedIds(subscription.allApplications, subscription.applicationIds),
+		agentIds: scopedIds(subscription.allAgents, subscription.agentIds),
+		repositoryIds: scopedIds(subscription.allRepositories, subscription.repositoryIds),
+	};
 }
 
 export function createNotification(data: UpsertNotificationRequest): Promise<Notification> {
