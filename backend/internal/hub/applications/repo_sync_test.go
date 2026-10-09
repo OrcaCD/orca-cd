@@ -3,8 +3,10 @@ package applications
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -250,4 +252,118 @@ func TestSyncRepository_MarksSyncingBeforeCommitLookup(t *testing.T) {
 
 	close(release)
 	<-done
+}
+
+type repositoryNotification struct {
+	repositoryId string
+	event        models.NotificationEvent
+	message      string
+}
+
+func captureRepositoryNotifications(t *testing.T) *[]repositoryNotification {
+	t.Helper()
+	var sent []repositoryNotification
+	prev := sendForRepository
+	sendForRepository = func(repositoryId string, event models.NotificationEvent, message string, _ *zerolog.Logger) {
+		sent = append(sent, repositoryNotification{repositoryId, event, message})
+	}
+	t.Cleanup(func() { sendForRepository = prev })
+	return &sent
+}
+
+func repositoryNotificationEvents(sent []repositoryNotification) []models.NotificationEvent {
+	events := make([]models.NotificationEvent, 0, len(sent))
+	for _, n := range sent {
+		events = append(events, n.event)
+	}
+	return events
+}
+
+func TestRepositorySyncNotifications_OnlyOnTransitions(t *testing.T) {
+	setupTestDB(t)
+	sent := captureRepositoryNotifications(t)
+	repo := seedRepo(t)
+	repo.Provider = testSyncProvider
+	agent := seedAgent(t)
+	seedApp(t, repo.Id, agent.Id, "compose: v1")
+	nop := zerolog.Nop()
+
+	failing := &mockProvider{latestCommitErr: errors.New("connection refused")}
+	repositories.Register(testSyncProvider, failing)
+	// Every sync marks the repository as syncing first; the repeated failure
+	// must still be recognized as "already failing".
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
+
+	if got := repositoryNotificationEvents(*sent); len(got) != 1 || got[0] != models.NotificationEventRepositorySyncFailed {
+		t.Fatalf("expected a single failed notification, got %v", got)
+	}
+	if n := (*sent)[0]; n.repositoryId != repo.Id || !strings.Contains(n.message, repo.Name) || !strings.Contains(n.message, "connection refused") {
+		t.Fatalf("unexpected failed notification %+v", n)
+	}
+
+	now := time.Now()
+	markRepositorySyncing(t.Context(), repo.Id, &nop)
+	markRepositorySuccess(t.Context(), &repo, &now, &nop)
+	markRepositorySyncing(t.Context(), repo.Id, &nop)
+	markRepositorySuccess(t.Context(), &repo, &now, &nop)
+
+	markRepositoryFailed(t.Context(), &repo, "boom", &nop)
+
+	want := []models.NotificationEvent{
+		models.NotificationEventRepositorySyncFailed,
+		models.NotificationEventRepositorySyncRecovered,
+		models.NotificationEventRepositorySyncFailed,
+	}
+	if got := repositoryNotificationEvents(*sent); !slices.Equal(got, want) {
+		t.Fatalf("expected events %v, got %v", want, got)
+	}
+}
+
+func TestRepositorySyncNotifications_FirstSuccessIsSilent(t *testing.T) {
+	setupTestDB(t)
+	sent := captureRepositoryNotifications(t)
+	repo := seedRepo(t)
+	nop := zerolog.Nop()
+
+	now := time.Now()
+	markRepositorySuccess(t.Context(), &repo, &now, &nop)
+
+	if len(*sent) != 0 {
+		t.Fatalf("expected no notification for a repository that never failed, got %v", *sent)
+	}
+}
+
+func TestRepositorySyncNotifications_FailedUpdatesErrorWithoutRenotifying(t *testing.T) {
+	setupTestDB(t)
+	sent := captureRepositoryNotifications(t)
+	repo := seedRepo(t)
+	nop := zerolog.Nop()
+
+	markRepositoryFailed(t.Context(), &repo, "first error", &nop)
+	markRepositoryFailed(t.Context(), &repo, "second error", &nop)
+
+	if len(*sent) != 1 {
+		t.Fatalf("expected one notification, got %v", *sent)
+	}
+	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load repository: %v", err)
+	}
+	if got.LastSyncError == nil || *got.LastSyncError != "second error" {
+		t.Fatalf("expected latest error to be stored, got %v", got.LastSyncError)
+	}
+}
+
+func TestTruncateNotificationDetail(t *testing.T) {
+	short := "short error"
+	if got := truncateNotificationDetail(short); got != short {
+		t.Errorf("expected short detail unchanged, got %q", got)
+	}
+
+	long := strings.Repeat("ä", maxNotificationDetailLength+10)
+	got := truncateNotificationDetail(long)
+	if want := strings.Repeat("ä", maxNotificationDetailLength) + "…"; got != want {
+		t.Errorf("expected detail truncated to %d runes, got %d runes", maxNotificationDetailLength, len([]rune(got)))
+	}
 }

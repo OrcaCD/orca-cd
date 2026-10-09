@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -183,12 +184,14 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
 			}
 			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
+			h.presence.Disconnected(claims.Subject)
 		}()
 
 		_, err = gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
+		h.presence.Connected(claims.Subject)
 		// Application health is reported by the agent (see handleApplicationStatusReport)
 		// once it has inspected its containers — the hub no longer assumes Healthy on connect.
 
@@ -294,17 +297,70 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
-		if _, err := gorm.G[models.Application](db.DB).
-			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
-			Update(ctx, "health_status", protoHealthToModel(status.Health)); err != nil {
+		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, protoHealthToModel(status.Health))
+		if err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
 				Str("applicationId", status.ApplicationId).
 				Msg("failed to update application health from status report")
+			continue
+		}
+		if event != "" {
+			notifyHealthChange(ctx, status.ApplicationId, event, log)
 		}
 	}
 
 	sse.PublishUpdate("/api/v1/applications")
+}
+
+// applyReportedHealth stores the reported health and returns the health event
+// the change triggers, if any. Transitions are detected with conditional
+// updates so concurrent reports cannot notify twice.
+//
+// Only Healthy→Unhealthy and Unhealthy→Healthy notify. Unknown→Unhealthy is
+// deliberately silent: health is reset to Unknown on every disconnect, so it
+// would re-announce unhealthy apps after each agent reconnect. Apps that are
+// currently deploying are skipped, as the deployment reports its own outcome.
+func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, error) {
+	var event models.NotificationEvent
+	transition := gorm.G[models.Application](db.DB).Where("id = ? AND agent_id = ?", applicationId, agentId)
+	switch health {
+	case models.Unhealthy:
+		event = models.NotificationEventHealthUnhealthy
+		transition = transition.Where("health_status = ? AND sync_status <> ?", models.Healthy, models.Syncing)
+	case models.Healthy:
+		event = models.NotificationEventHealthRecovered
+		transition = transition.Where("health_status = ?", models.Unhealthy)
+	}
+
+	if event != "" {
+		rowsAffected, err := transition.Update(ctx, "health_status", health)
+		if err != nil {
+			return "", err
+		}
+		if rowsAffected > 0 {
+			return event, nil
+		}
+	}
+
+	_, err := gorm.G[models.Application](db.DB).
+		Where("id = ? AND agent_id = ?", applicationId, agentId).
+		Update(ctx, "health_status", health)
+	return "", err
+}
+
+func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, log *zerolog.Logger) {
+	app, err := gorm.G[models.Application](db.DB).Select("id", "name").Where("id = ?", applicationId).First(ctx)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", applicationId).Msg("failed to load application for health notification")
+		return
+	}
+
+	message := "Success: application " + app.Name.String() + " is healthy again"
+	if event == models.NotificationEventHealthUnhealthy {
+		message = "Error: application " + app.Name.String() + " is unhealthy"
+	}
+	go notifications.SendForApplication(applicationId, event, message, log)
 }
 
 func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {

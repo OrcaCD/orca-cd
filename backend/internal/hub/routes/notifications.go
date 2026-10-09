@@ -30,17 +30,25 @@ type createNotificationRequest struct {
 	Name            string                     `json:"name" binding:"required,min=1,max=128"`
 	Enabled         *bool                      `json:"enabled"`
 	AllApplications *bool                      `json:"allApplications"`
+	AllAgents       *bool                      `json:"allAgents"`
+	AllRepositories *bool                      `json:"allRepositories"`
 	Events          []models.NotificationEvent `json:"events"`
 	Type            models.NotificationType    `json:"type" binding:"required"`
 	Config          json.RawMessage            `json:"config" binding:"required"`
 	ApplicationIds  []string                   `json:"applicationIds"`
+	AgentIds        []string                   `json:"agentIds"`
+	RepositoryIds   []string                   `json:"repositoryIds"`
 }
 
 type updateNotificationRequest struct {
 	Enabled         *bool                      `json:"enabled"`
 	AllApplications *bool                      `json:"allApplications"`
+	AllAgents       *bool                      `json:"allAgents"`
+	AllRepositories *bool                      `json:"allRepositories"`
 	Events          []models.NotificationEvent `json:"events"`
 	ApplicationIds  []string                   `json:"applicationIds"`
+	AgentIds        []string                   `json:"agentIds"`
+	RepositoryIds   []string                   `json:"repositoryIds"`
 }
 
 type testNotificationRequest struct {
@@ -54,10 +62,14 @@ type notificationResponse struct {
 	Name            string                     `json:"name"`
 	Enabled         bool                       `json:"enabled"`
 	AllApplications bool                       `json:"allApplications"`
+	AllAgents       bool                       `json:"allAgents"`
+	AllRepositories bool                       `json:"allRepositories"`
 	Events          []models.NotificationEvent `json:"events"`
 	Status          string                     `json:"status"`
 	Type            string                     `json:"type"`
 	ApplicationIds  []string                   `json:"applicationIds"`
+	AgentIds        []string                   `json:"agentIds"`
+	RepositoryIds   []string                   `json:"repositoryIds"`
 	CreatedAt       string                     `json:"createdAt"`
 	UpdatedAt       string                     `json:"updatedAt"`
 }
@@ -65,6 +77,8 @@ type notificationResponse struct {
 func ListNotificationsHandler(c *gin.Context) {
 	items, err := gorm.G[models.Notification](db.DB).
 		Preload("Applications", nil).
+		Preload("Agents", nil).
+		Preload("Repositories", nil).
 		Order("created_at ASC").
 		Find(c.Request.Context())
 	if err != nil {
@@ -123,25 +137,17 @@ func CreateNotificationHandler(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	allApplications := false
-	if req.AllApplications != nil {
-		allApplications = *req.AllApplications
-	}
-
-	applicationIds := req.ApplicationIds
-	if allApplications {
-		// Explicit associations are redundant when the notification covers every application.
-		applicationIds = nil
-	}
+	allApplications := req.AllApplications != nil && *req.AllApplications
+	allAgents := req.AllAgents != nil && *req.AllAgents
+	allRepositories := req.AllRepositories != nil && *req.AllRepositories
 
 	ctx := c.Request.Context()
-	applications, missingApplicationId, err := loadNotificationApplications(ctx, applicationIds)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if missingApplicationId != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
+	targets, ok := loadNotificationTargets(c,
+		scopedNotificationResourceIds(allApplications, req.ApplicationIds),
+		scopedNotificationResourceIds(allAgents, req.AgentIds),
+		scopedNotificationResourceIds(allRepositories, req.RepositoryIds),
+	)
+	if !ok {
 		return
 	}
 
@@ -149,6 +155,8 @@ func CreateNotificationHandler(c *gin.Context) {
 		Name:            crypto.EncryptedString(normalizedName),
 		Enabled:         enabled,
 		AllApplications: allApplications,
+		AllAgents:       allAgents,
+		AllRepositories: allRepositories,
 		Events:          events,
 		Status:          models.NotificationStatusUnknown,
 		Type:            req.Type,
@@ -160,11 +168,7 @@ func CreateNotificationHandler(c *gin.Context) {
 			return err
 		}
 
-		if err := tx.Model(&notification).Association("Applications").Replace(applications); err != nil {
-			return err
-		}
-
-		return nil
+		return targets.replace(tx, &notification)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -185,8 +189,9 @@ func UpdateNotificationHandler(c *gin.Context) {
 	id := c.Param("id")
 
 	var req updateNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil || req.AllApplications == nil || req.Events == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled, allApplications and events are required"})
+	if err := c.ShouldBindJSON(&req); err != nil ||
+		req.Enabled == nil || req.AllApplications == nil || req.AllAgents == nil || req.AllRepositories == nil || req.Events == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled, allApplications, allAgents, allRepositories and events are required"})
 		return
 	}
 
@@ -207,17 +212,12 @@ func UpdateNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	applicationIds := req.ApplicationIds
-	if *req.AllApplications {
-		applicationIds = nil
-	}
-	applications, missingApplicationId, err := loadNotificationApplications(ctx, applicationIds)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if missingApplicationId != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
+	targets, ok := loadNotificationTargets(c,
+		scopedNotificationResourceIds(*req.AllApplications, req.ApplicationIds),
+		scopedNotificationResourceIds(*req.AllAgents, req.AgentIds),
+		scopedNotificationResourceIds(*req.AllRepositories, req.RepositoryIds),
+	)
+	if !ok {
 		return
 	}
 
@@ -225,11 +225,13 @@ func UpdateNotificationHandler(c *gin.Context) {
 		updates := models.Notification{
 			Enabled:         *req.Enabled,
 			AllApplications: *req.AllApplications,
+			AllAgents:       *req.AllAgents,
+			AllRepositories: *req.AllRepositories,
 			Events:          events,
 		}
 		rowsAffected, err := gorm.G[models.Notification](tx).
 			Where("id = ?", id).
-			Select("enabled", "all_applications", "events").
+			Select("enabled", "all_applications", "all_agents", "all_repositories", "events").
 			Updates(ctx, updates)
 		if err != nil {
 			return err
@@ -238,11 +240,7 @@ func UpdateNotificationHandler(c *gin.Context) {
 			return gorm.ErrRecordNotFound
 		}
 
-		if err := tx.Model(&notification).Association("Applications").Replace(applications); err != nil {
-			return err
-		}
-
-		return nil
+		return targets.replace(tx, &notification)
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -353,26 +351,26 @@ func updateNotificationStatus(ctx context.Context, id string, status models.Noti
 func getNotificationById(ctx context.Context, id string) (models.Notification, error) {
 	return gorm.G[models.Notification](db.DB).
 		Preload("Applications", nil).
+		Preload("Agents", nil).
+		Preload("Repositories", nil).
 		Where("id = ?", id).
 		First(ctx)
 }
 
 func toNotificationResponse(notification *models.Notification) notificationResponse {
-	applicationIds := make([]string, 0, len(notification.Applications))
-	for i := range notification.Applications {
-		applicationIds = append(applicationIds, notification.Applications[i].Id)
-	}
-	sort.Strings(applicationIds)
-
 	response := notificationResponse{
 		Id:              notification.Id,
 		Name:            notification.Name.String(),
 		Enabled:         notification.Enabled,
 		AllApplications: notification.AllApplications,
+		AllAgents:       notification.AllAgents,
+		AllRepositories: notification.AllRepositories,
 		Events:          notification.Events,
 		Status:          string(notification.Status),
 		Type:            string(notification.Type),
-		ApplicationIds:  applicationIds,
+		ApplicationIds:  sortedIds(notification.Applications, applicationIdOf),
+		AgentIds:        sortedIds(notification.Agents, agentIdOf),
+		RepositoryIds:   sortedIds(notification.Repositories, repositoryIdOf),
 		CreatedAt:       notification.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       notification.UpdatedAt.Format(time.RFC3339),
 	}
@@ -442,29 +440,6 @@ func normalizeNotificationConfig(raw json.RawMessage) (string, error) {
 	return trimmed, nil
 }
 
-func normalizeNotificationApplicationIds(applicationIds []string) []string {
-	if len(applicationIds) == 0 {
-		return nil
-	}
-
-	normalized := make([]string, 0, len(applicationIds))
-	seen := make(map[string]struct{}, len(applicationIds))
-
-	for i := range applicationIds {
-		id := strings.TrimSpace(applicationIds[i])
-		if id == "" {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		normalized = append(normalized, id)
-	}
-
-	return normalized
-}
-
 // normalizeNotificationEvents validates events, drops duplicates and returns
 // them in catalog order.
 func normalizeNotificationEvents(events []models.NotificationEvent) ([]models.NotificationEvent, error) {
@@ -487,27 +462,124 @@ func normalizeNotificationEvents(events []models.NotificationEvent) ([]models.No
 	return normalized, nil
 }
 
-func loadNotificationApplications(ctx context.Context, applicationIds []string) ([]models.Application, string, error) {
-	normalizedIds := normalizeNotificationApplicationIds(applicationIds)
-	if len(normalizedIds) == 0 {
-		return []models.Application{}, "", nil
+// notificationTargets holds the resources a notification is explicitly
+// assigned to.
+type notificationTargets struct {
+	applications []models.Application
+	agents       []models.Agent
+	repositories []models.Repository
+}
+
+func (t *notificationTargets) replace(tx *gorm.DB, notification *models.Notification) error {
+	if err := tx.Model(notification).Association("Applications").Replace(t.applications); err != nil {
+		return err
+	}
+	if err := tx.Model(notification).Association("Agents").Replace(t.agents); err != nil {
+		return err
+	}
+	return tx.Model(notification).Association("Repositories").Replace(t.repositories)
+}
+
+// loadNotificationTargets loads the assigned resources and writes the error
+// response if one of them does not exist.
+func loadNotificationTargets(c *gin.Context, applicationIds, agentIds, repositoryIds []string) (notificationTargets, bool) {
+	ctx := c.Request.Context()
+	var targets notificationTargets
+	var missing string
+	var err error
+
+	if targets.applications, missing, err = loadNotificationResources(ctx, applicationIds, applicationIdOf); err != nil || missing != "" {
+		respondNotificationResourceError(c, "application", missing, err)
+		return targets, false
+	}
+	if targets.agents, missing, err = loadNotificationResources(ctx, agentIds, agentIdOf); err != nil || missing != "" {
+		respondNotificationResourceError(c, "agent", missing, err)
+		return targets, false
+	}
+	if targets.repositories, missing, err = loadNotificationResources(ctx, repositoryIds, repositoryIdOf); err != nil || missing != "" {
+		respondNotificationResourceError(c, "repository", missing, err)
+		return targets, false
 	}
 
-	applications, err := gorm.G[models.Application](db.DB).Where("id IN ?", normalizedIds).Find(ctx)
+	return targets, true
+}
+
+func respondNotificationResourceError(c *gin.Context, resource, missingId string, err error) {
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": resource + " not found: " + missingId})
+}
+
+// loadNotificationResources loads the resources with the given IDs. It returns
+// the first ID that does not exist, if any.
+func loadNotificationResources[T any](ctx context.Context, ids []string, idOf func(*T) string) ([]T, string, error) {
+	normalizedIds := normalizeNotificationResourceIds(ids)
+	if len(normalizedIds) == 0 {
+		return []T{}, "", nil
+	}
+
+	resources, err := gorm.G[T](db.DB).Where("id IN ?", normalizedIds).Find(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	if len(applications) != len(normalizedIds) {
-		foundById := make(map[string]struct{}, len(applications))
-		for i := range applications {
-			foundById[applications[i].Id] = struct{}{}
+	if len(resources) != len(normalizedIds) {
+		foundById := make(map[string]struct{}, len(resources))
+		for i := range resources {
+			foundById[idOf(&resources[i])] = struct{}{}
 		}
-		for i := range normalizedIds {
-			if _, ok := foundById[normalizedIds[i]]; !ok {
-				return nil, normalizedIds[i], nil
+		for _, id := range normalizedIds {
+			if _, ok := foundById[id]; !ok {
+				return nil, id, nil
 			}
 		}
 	}
 
-	return applications, "", nil
+	return resources, "", nil
+}
+
+// scopedNotificationResourceIds drops explicit assignments when the notification
+// already covers every resource of that type.
+func scopedNotificationResourceIds(all bool, ids []string) []string {
+	if all {
+		return nil
+	}
+	return ids
+}
+
+func normalizeNotificationResourceIds(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+
+	for i := range ids {
+		id := strings.TrimSpace(ids[i])
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+
+	return normalized
+}
+
+func applicationIdOf(a *models.Application) string { return a.Id }
+func agentIdOf(a *models.Agent) string             { return a.Id }
+func repositoryIdOf(r *models.Repository) string   { return r.Id }
+
+func sortedIds[T any](resources []T, idOf func(*T) string) []string {
+	ids := make([]string, 0, len(resources))
+	for i := range resources {
+		ids = append(ids, idOf(&resources[i]))
+	}
+	sort.Strings(ids)
+	return ids
 }
