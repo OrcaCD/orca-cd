@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,13 +20,19 @@ const (
 	labelApplicationID = "orca-cd.application-id"
 )
 
+func orcaLabels(appID string) map[string]string {
+	return map[string]string{
+		labelManagedBy:     "orca-cd",
+		labelApplicationID: appID,
+	}
+}
+
 func applyOrcaLabels(project *composetypes.Project, appID string) {
 	for name, service := range project.Services {
 		if service.Labels == nil {
 			service.Labels = make(composetypes.Labels)
 		}
-		service.Labels[labelManagedBy] = "orca-cd"
-		service.Labels[labelApplicationID] = appID
+		maps.Copy(service.Labels, orcaLabels(appID))
 		project.Services[name] = service
 	}
 }
@@ -147,6 +154,9 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	applyOrcaLabels(project, req.ApplicationID)
+	if err := writeComposeOverride(applicationDir, orcaOverride(project, req.ApplicationID)); err != nil {
+		return err
+	}
 
 	previousImages := c.applicationImages(ctx, req.ApplicationID, req.DeleteOldImages)
 
