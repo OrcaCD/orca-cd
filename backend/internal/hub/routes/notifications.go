@@ -119,17 +119,6 @@ func CreateNotificationHandler(c *gin.Context) {
 		}
 	}
 
-	ctx := c.Request.Context()
-	applications, missingApplicationId, err := loadNotificationApplications(ctx, req.ApplicationIds)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-	if missingApplicationId != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
-		return
-	}
-
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -137,6 +126,23 @@ func CreateNotificationHandler(c *gin.Context) {
 	allApplications := false
 	if req.AllApplications != nil {
 		allApplications = *req.AllApplications
+	}
+
+	applicationIds := req.ApplicationIds
+	if allApplications {
+		// Explicit associations are redundant when the notification covers every application.
+		applicationIds = nil
+	}
+
+	ctx := c.Request.Context()
+	applications, missingApplicationId, err := loadNotificationApplications(ctx, applicationIds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if missingApplicationId != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "application not found: " + missingApplicationId})
+		return
 	}
 
 	notification := models.Notification{
@@ -201,7 +207,11 @@ func UpdateNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	applications, missingApplicationId, err := loadNotificationApplications(ctx, req.ApplicationIds)
+	applicationIds := req.ApplicationIds
+	if *req.AllApplications {
+		applicationIds = nil
+	}
+	applications, missingApplicationId, err := loadNotificationApplications(ctx, applicationIds)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -458,6 +468,9 @@ func normalizeNotificationApplicationIds(applicationIds []string) []string {
 // normalizeNotificationEvents validates events, drops duplicates and returns
 // them in catalog order.
 func normalizeNotificationEvents(events []models.NotificationEvent) ([]models.NotificationEvent, error) {
+	if len(events) == 0 {
+		return nil, errors.New("at least one event is required")
+	}
 	for _, event := range events {
 		if !event.IsValid() {
 			return nil, errors.New("invalid event: " + string(event))

@@ -261,6 +261,7 @@
 	"allApplicationsDescription": "Send this notification for every application, including ones created later.",
 	"notificationEvents": "Events",
 	"notificationEventsDescription": "Choose which events trigger this notification.",
+	"validationNotificationEventsRequired": "Select at least one event.",
 	"notificationEventDeploymentSucceeded": "Deployment succeeded",
 	"notificationEventDeploymentFailed": "Deployment failed",
 	"notificationEventImageUpdateSucceeded": "Image update succeeded",

@@ -249,14 +249,52 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	}
 }
 
-func TestCreateNotificationHandler_InvalidEvent(t *testing.T) {
+func TestCreateNotificationHandler_InvalidEvents(t *testing.T) {
+	tests := []struct {
+		name   string
+		events []string
+	}{
+		{name: "empty events", events: []string{}},
+		{name: "unknown event", events: []string{"application.unknown"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDBWithNotifications(t)
+
+			reqBody, _ := json.Marshal(map[string]any{
+				"name":   "Invalid Event",
+				"type":   "discord",
+				"config": validDiscordConfig,
+				"events": tt.events,
+			})
+
+			c, w := makeAuthContext(t, "user-1")
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			CreateNotificationHandler(c)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateNotificationHandler_AllApplicationsIgnoresApplicationIds(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":   "Invalid Event",
-		"type":   "discord",
-		"config": validDiscordConfig,
-		"events": []string{"application.unknown"},
+		"name":            "All Apps",
+		"allApplications": true,
+		"type":            "discord",
+		"config":          validDiscordConfig,
+		"applicationIds":  []string{app.Id},
 	})
 
 	c, w := makeAuthContext(t, "user-1")
@@ -265,8 +303,19 @@ func TestCreateNotificationHandler_InvalidEvent(t *testing.T) {
 
 	CreateNotificationHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body notificationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !body.AllApplications {
+		t.Fatal("expected allApplications to be true")
+	}
+	if len(body.ApplicationIds) != 0 {
+		t.Fatalf("expected no explicit applicationIds, got %v", body.ApplicationIds)
 	}
 }
 
@@ -549,7 +598,7 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":            "Ignored Name",
 		"enabled":         false,
-		"allApplications": true,
+		"allApplications": false,
 		"events":          []string{string(models.NotificationEventImageUpdateFailed)},
 		"type":            "slack",
 		"config":          `{"webhookUrl":"https://hooks.slack.com/services/T/B/C"}`,
@@ -578,8 +627,8 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	if body.Enabled {
 		t.Fatal("expected enabled to be false")
 	}
-	if !body.AllApplications {
-		t.Fatal("expected allApplications to be true")
+	if body.AllApplications {
+		t.Fatal("expected allApplications to be false")
 	}
 	if !slices.Equal(body.Events, []models.NotificationEvent{models.NotificationEventImageUpdateFailed}) {
 		t.Fatalf("expected events [%s], got %v", models.NotificationEventImageUpdateFailed, body.Events)
@@ -612,6 +661,45 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateNotificationHandler_AllApplicationsClearsAssociations(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+	notification := createNotificationRecord(t, []string{app.Id})
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"enabled":         true,
+		"allApplications": true,
+		"events":          []string{string(models.NotificationEventDeploymentFailed)},
+		"applicationIds":  []string{app.Id},
+	})
+
+	router := gin.New()
+	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+notification.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Preload("Applications", nil).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load stored notification: %v", err)
+	}
+	if !stored.AllApplications {
+		t.Fatal("expected stored allApplications to be true")
+	}
+	if len(stored.Applications) != 0 {
+		t.Fatalf("expected explicit applications to be cleared, got %d", len(stored.Applications))
+	}
+}
+
 func TestUpdateNotificationHandler_UnknownApplication(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
@@ -619,7 +707,7 @@ func TestUpdateNotificationHandler_UnknownApplication(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"enabled":         true,
 		"allApplications": false,
-		"events":          []string{},
+		"events":          []string{string(models.NotificationEventDeploymentFailed)},
 		"applicationIds":  []string{"missing-app"},
 	})
 
@@ -642,7 +730,7 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 	reqBody, _ := json.Marshal(map[string]any{
 		"enabled":         true,
 		"allApplications": false,
-		"events":          []string{},
+		"events":          []string{string(models.NotificationEventDeploymentFailed)},
 		"applicationIds":  []string{},
 	})
 
@@ -687,6 +775,7 @@ func TestUpdateNotificationHandler_RejectsInvalidEvents(t *testing.T) {
 		events any
 	}{
 		{name: "missing events", events: nil},
+		{name: "empty events", events: []string{}},
 		{name: "unknown event", events: []string{"application.unknown"}},
 	}
 

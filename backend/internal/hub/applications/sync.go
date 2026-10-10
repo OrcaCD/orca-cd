@@ -196,5 +196,5 @@ func failSyncJob(application models.Application, log *zerolog.Logger) {
 		SyncStatus:   models.OutOfSync,
 		HealthStatus: models.Unhealthy,
 	}, log)
-	notifications.NotifyApplication(application.Id, models.NotificationEventSyncFailed, "Error: sync failed for "+application.Name.String(), log)
+	notifications.SendForApplication(application.Id, models.NotificationEventSyncFailed, "Error: sync failed for "+application.Name.String(), log)
 }

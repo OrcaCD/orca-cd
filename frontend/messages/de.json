@@ -261,6 +261,7 @@
 	"allApplicationsDescription": "Sende diese Benachrichtigung für alle Anwendungen, auch für später erstellte.",
 	"notificationEvents": "Ereignisse",
 	"notificationEventsDescription": "Wähle aus, bei welchen Ereignissen diese Benachrichtigung gesendet wird.",
+	"validationNotificationEventsRequired": "Wähle mindestens ein Ereignis aus.",
 	"notificationEventDeploymentSucceeded": "Deployment erfolgreich",
 	"notificationEventDeploymentFailed": "Deployment fehlgeschlagen",
 	"notificationEventImageUpdateSucceeded": "Image-Update erfolgreich",

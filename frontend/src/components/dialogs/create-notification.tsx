@@ -132,7 +132,7 @@ const notificationBaseSchema = z.object({
 	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
 	allApplications: z.boolean(),
-	events: z.array(z.enum(notificationEvents)),
+	events: z.array(z.enum(notificationEvents)).min(1, m.validationNotificationEventsRequired()),
 	applicationIds: z.array(z.string()),
 });
 
@@ -599,9 +599,13 @@ function NotificationEventsStepContent({
 }) {
 	return (
 		<FieldGroup>
-			<form.Field name="events">
+			<form.Field name="events" validators={{ onSubmit: notificationBaseSchema.shape.events }}>
 				{(field) => (
-					<NotificationEventsField value={field.state.value} onChange={field.handleChange} />
+					<NotificationEventsField
+						value={field.state.value}
+						onChange={field.handleChange}
+						errors={field.state.meta.errors}
+					/>
 				)}
 			</form.Field>
 
@@ -896,7 +900,9 @@ export default function CreateNotificationDialog() {
 					enabled: value.enabled,
 					allApplications: value.allApplications,
 					events: value.events,
-					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
+					applicationIds: value.allApplications
+						? []
+						: normalizeNotificationApplicationIds(value.applicationIds),
 				};
 
 				await createNotification(payload);
@@ -918,12 +924,13 @@ export default function CreateNotificationDialog() {
 	};
 
 	async function handleNext(advance: () => void) {
-		const [nameErrors, typeErrors] = await Promise.all([
+		const [nameErrors, typeErrors, eventErrors] = await Promise.all([
 			form.validateField("name", "submit"),
 			form.validateField("type", "submit"),
+			form.validateField("events", "submit"),
 		]);
 
-		if (nameErrors?.length || typeErrors?.length) {
+		if (nameErrors?.length || typeErrors?.length || eventErrors?.length) {
 			return;
 		}
 

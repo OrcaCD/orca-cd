@@ -34,7 +34,7 @@ import {
 const notificationSettingsSchema = z.object({
 	enabled: z.boolean(),
 	allApplications: z.boolean(),
-	events: z.array(z.enum(notificationEvents)),
+	events: z.array(z.enum(notificationEvents)).min(1, m.validationNotificationEventsRequired()),
 	applicationIds: z.array(z.uuid()),
 });
 
@@ -65,7 +65,9 @@ export default function UpdateNotificationDialog({
 					enabled: value.enabled,
 					allApplications: value.allApplications,
 					events: value.events,
-					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
+					applicationIds: value.allApplications
+						? []
+						: normalizeNotificationApplicationIds(value.applicationIds),
 				});
 				toast.success(m.notificationUpdated());
 				setOpen(false);
@@ -136,7 +138,11 @@ export default function UpdateNotificationDialog({
 						<form.Field
 							name="events"
 							children={(field) => (
-								<NotificationEventsField value={field.state.value} onChange={field.handleChange} />
+								<NotificationEventsField
+									value={field.state.value}
+									onChange={field.handleChange}
+									errors={field.state.meta.errors}
+								/>
 							)}
 						/>
 
