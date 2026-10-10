@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -15,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -274,6 +276,8 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:
 		handleApplicationStatusReport(ctx, client, p.ApplicationStatusReport, log)
+	case *messages.ClientMessage_AgentInfo:
+		handleAgentInfo(ctx, client, p.AgentInfo, log)
 	default:
 		log.Warn().Str("client", client.Id).Msg("Unknown message type received")
 	}
@@ -305,6 +309,58 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 	}
 
 	sse.PublishUpdate("/api/v1/applications")
+}
+
+// maxReportedVersionLength bounds agent-reported version strings before they
+// are persisted and rendered. It leaves room for `git describe` builds such as
+// "v0.10.0-rc.1-123-gabcdef1-dirty" and distro Docker versions.
+const maxReportedVersionLength = 64
+
+// handleAgentInfo stores the agent and Docker versions reported by the agent.
+func handleAgentInfo(parent context.Context, client *Client, info *messages.AgentInfo, log *zerolog.Logger) {
+	if info == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+
+	agentVersion := sanitizeReportedVersion(info.Version)
+	dockerVersion := sanitizeReportedVersion(info.DockerVersion)
+
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("id = ?", client.Id).
+		Select("Version", "DockerVersion").
+		Updates(ctx, models.Agent{Version: agentVersion, DockerVersion: dockerVersion}); err != nil {
+		log.Error().Err(err).Str("agent_id", client.Id).Msg("Failed to store agent info")
+		return
+	}
+
+	agentLog := log.With().
+		Str("agent_id", client.Id).
+		Str("agent_version", agentVersion).
+		Str("hub_version", version.Version).
+		Str("docker_version", dockerVersion).
+		Logger()
+	switch version.CheckAgentCompatibility(version.Version, agentVersion) {
+	case version.AgentIncompatible:
+		agentLog.Warn().Str("min_agent_version", version.MinAgentVersion).
+			Msg("Agent is incompatible with this hub version, please update the agent")
+	case version.AgentOutdated:
+		agentLog.Info().Msg("Agent is outdated, please update the agent")
+	default:
+		agentLog.Debug().Msg("Agent info received")
+	}
+
+	sse.PublishUpdate("/api/v1/agents")
+}
+
+func sanitizeReportedVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) > maxReportedVersionLength {
+		v = v[:maxReportedVersionLength]
+	}
+	return strings.ToValidUTF8(v, "")
 }
 
 func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {

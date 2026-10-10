@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
 )
@@ -37,6 +38,10 @@ type pollerHandler interface {
 
 type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
+}
+
+type dockerVersionProvider interface {
+	ServerVersion() string
 }
 
 type messageConn interface {
@@ -209,6 +214,21 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		go executePullImages(poller, p.PullImagesRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
+	}
+}
+
+// sendAgentInfo reports the agent and Docker versions to the hub so it can
+// display them and warn about outdated agents.
+func sendAgentInfo(sender outboundSender, dockerVersion dockerVersionProvider) {
+	info := &messages.AgentInfo{Version: version.Version}
+	if dockerVersion != nil {
+		info.DockerVersion = dockerVersion.ServerVersion()
+	}
+
+	if err := sender.SendMessage(&messages.ClientMessage{
+		Payload: &messages.ClientMessage_AgentInfo{AgentInfo: info},
+	}); err != nil {
+		Log.Error().Err(err).Msg("failed to send agent info")
 	}
 }
 

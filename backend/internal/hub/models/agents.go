@@ -22,5 +22,7 @@ type Agent struct {
 	SigningPublicKey string                 `gorm:"type:text;not null;default:''"`
 	Status           AgentStatus            `gorm:"type:integer;default:0"`
 	LastSeen         *time.Time
+	Version          string        `gorm:"type:text;not null;default:''"`
+	DockerVersion    string        `gorm:"type:text;not null;default:''"`
 	Applications     []Application `gorm:"foreignKey:AgentId;"`
 }

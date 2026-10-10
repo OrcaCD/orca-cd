@@ -13,6 +13,7 @@ message ClientMessage {
     PullImagesResult pull_images_result = 5;
     DeleteResult delete_result = 6;
     ApplicationStatusReport application_status_report = 7;
+    AgentInfo agent_info = 8;
   }
 }
 
@@ -123,4 +124,9 @@ message ApplicationStatus {
 // agent in a single message, sent right after the agent connects.
 message ApplicationStatusReport {
   repeated ApplicationStatus statuses = 1;
+}
+
+message AgentInfo {
+  string version = 1;
+  string docker_version = 2;
 }

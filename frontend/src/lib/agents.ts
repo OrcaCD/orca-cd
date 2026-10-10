@@ -6,6 +6,13 @@ export enum AgentStatus {
 	Error = "error",
 }
 
+export enum AgentVersionStatus {
+	UpToDate = "upToDate",
+	Outdated = "outdated",
+	Incompatible = "incompatible",
+	Unknown = "unknown",
+}
+
 export interface Agent {
 	id: string;
 	icon: string;
@@ -13,6 +20,9 @@ export interface Agent {
 	status: AgentStatus;
 	appsCount?: number;
 	lastSeen?: string;
+	version?: string | null;
+	dockerVersion?: string | null;
+	versionStatus: AgentVersionStatus;
 	createdAt: string;
 	updatedAt: string;
 }
