@@ -54,6 +54,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 		ApplicationId:   app.Id,
 		ApplicationName: app.Name.String(),
 		ComposeFile:     composeFile,
+		DeleteOldImages: app.DeleteOldImages,
 	}
 
 	msg := &messages.ServerMessage{

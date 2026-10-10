@@ -41,6 +41,7 @@ type DeployRequest struct {
 	ApplicationID   string
 	ApplicationName string
 	ComposeFile     string
+	DeleteOldImages bool
 }
 
 var loadProject = func(ctx context.Context, composeService api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
@@ -157,6 +158,11 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return err
 	}
 
+	var previousImages map[string]struct{}
+	if req.DeleteOldImages {
+		previousImages = c.applicationImages(ctx, req.ApplicationID)
+	}
+
 	// Do not wait for healthchecks here: deployment is considered complete once
 	// the containers are started. Runtime health is observed afterwards via
 	// daemon events (see healthWatcher) and reported separately, so a slow or
@@ -169,6 +175,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		},
 	}); err != nil {
 		return fmt.Errorf("compose up: %w", err)
+	}
+
+	if req.DeleteOldImages {
+		c.removeReplacedImages(ctx, req.ApplicationID, previousImages)
 	}
 
 	c.log.Info().

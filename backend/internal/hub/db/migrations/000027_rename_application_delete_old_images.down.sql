@@ -1,0 +1,1 @@
+ALTER TABLE applications RENAME COLUMN delete_old_images TO image_poll_delete_old_images;

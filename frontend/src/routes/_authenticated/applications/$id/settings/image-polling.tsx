@@ -18,7 +18,6 @@ import { toast } from "sonner";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useFetch } from "@/lib/api";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
@@ -61,7 +60,7 @@ const applicationSchema = z.object({
 		}),
 	imagePollEnabled: z.boolean(),
 	imagePollIntervalSeconds: z.number().int().min(60, m.validationImagePollIntervalMin()),
-	imagePollDeleteOldImages: z.boolean(),
+	deleteOldImages: z.boolean(),
 });
 
 function ImagePollingPage() {
@@ -82,7 +81,7 @@ function ImagePollingPage() {
 			path: application?.path ?? "",
 			imagePollEnabled: application?.imagePollEnabled ?? false,
 			imagePollIntervalSeconds: application?.imagePollIntervalSeconds || 120,
-			imagePollDeleteOldImages: application?.imagePollDeleteOldImages ?? false,
+			deleteOldImages: application?.deleteOldImages ?? false,
 		},
 		validators: {
 			onSubmit: applicationSchema,
@@ -158,50 +157,26 @@ function ImagePollingPage() {
 								)}
 							</form.Field>
 							{imagePollEnabled && (
-								<>
-									<form.Field name="imagePollIntervalSeconds">
-										{(field) => {
-											const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-											return (
-												<Field data-invalid={isInvalid}>
-													<Label htmlFor={field.name}>{m.imagePollIntervalSeconds()}</Label>
-													<Input
-														id={field.name}
-														type="number"
-														min={60}
-														value={field.state.value}
-														onBlur={field.handleBlur}
-														onChange={(e) => field.handleChange(Number(e.target.value))}
-													/>
-													<p className="text-muted-foreground text-xs">
-														{m.imagePollIntervalHint()}
-													</p>
-													{isInvalid && <FieldError errors={field.state.meta.errors} />}
-												</Field>
-											);
-										}}
-									</form.Field>
-
-									<form.Field name="imagePollDeleteOldImages">
-										{(field) => (
-											<Field>
-												<div className="flex items-start gap-2">
-													<Checkbox
-														id={field.name}
-														checked={field.state.value}
-														onCheckedChange={(checked) => field.handleChange(checked === true)}
-													/>
-													<div className="space-y-1">
-														<Label htmlFor={field.name}>{m.imagePollDeleteOldImages()}</Label>
-														<p className="text-muted-foreground text-xs">
-															{m.imagePollDeleteOldImagesDescription()}
-														</p>
-													</div>
-												</div>
+								<form.Field name="imagePollIntervalSeconds">
+									{(field) => {
+										const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+										return (
+											<Field data-invalid={isInvalid}>
+												<Label htmlFor={field.name}>{m.imagePollIntervalSeconds()}</Label>
+												<Input
+													id={field.name}
+													type="number"
+													min={60}
+													value={field.state.value}
+													onBlur={field.handleBlur}
+													onChange={(e) => field.handleChange(Number(e.target.value))}
+												/>
+												<p className="text-muted-foreground text-xs">{m.imagePollIntervalHint()}</p>
+												{isInvalid && <FieldError errors={field.state.meta.errors} />}
 											</Field>
-										)}
-									</form.Field>
-								</>
+										);
+									}}
+								</form.Field>
 							)}
 
 							<div className="flex flex-wrap gap-2 pt-2">

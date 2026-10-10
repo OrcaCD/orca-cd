@@ -170,7 +170,7 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 			ApplicationName: apps[i].Name.String(),
 			Enabled:         apps[i].ImagePollEnabled,
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
-			DeleteOldImages: apps[i].ImagePollDeleteOldImages,
+			DeleteOldImages: apps[i].DeleteOldImages,
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{

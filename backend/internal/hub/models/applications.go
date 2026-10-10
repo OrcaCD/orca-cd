@@ -52,7 +52,7 @@ type Application struct {
 	PreviousComposeFile      crypto.EncryptedString  `gorm:"type:text;not null"`
 	ImagePollEnabled         bool                    `gorm:"not null;default:false"`
 	ImagePollIntervalSeconds int64                   `gorm:"not null;default:120"`
-	ImagePollDeleteOldImages bool                    `gorm:"not null;default:false"`
+	DeleteOldImages          bool                    `gorm:"not null;default:false"`
 	ImageWebhookSecret       *crypto.EncryptedString `gorm:"type:text;"`
 	Notifications            []Notification          `gorm:"many2many:application_notifications;"`
 }

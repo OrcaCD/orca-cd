@@ -68,7 +68,7 @@ const sidebarGroups: SidebarGroup[] = [
 				to: "/applications/$id/settings/general",
 			},
 			{
-				title: () => m.imagePollSectionTitle(),
+				title: () => m.imageUpdatesSectionTitle(),
 				icon: RefreshCw,
 				to: "/applications/$id/settings/image-polling",
 			},

@@ -713,6 +713,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 				ApplicationId:   "app-1",
 				ApplicationName: "billing",
 				ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n",
+				DeleteOldImages: true,
 			},
 		},
 	}
@@ -734,6 +735,9 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if req.ApplicationName != "billing" {
 			t.Fatalf("expected application name %q, got %q", "billing", req.ApplicationName)
+		}
+		if !req.DeleteOldImages {
+			t.Fatal("expected DeleteOldImages=true to be passed through from the request")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy request")
@@ -809,6 +813,7 @@ type stubPoller struct {
 	snapshots      [][]agentdocker.AppPollConfig
 	triggeredAppID string
 	triggeredReqID string
+	triggeredDel   bool
 	applyCh        chan struct{}
 	triggerCh      chan struct{}
 }
@@ -823,9 +828,10 @@ func (p *stubPoller) ApplySettings(apps []agentdocker.AppPollConfig) {
 	}
 }
 
-func (p *stubPoller) TriggerNow(appID, appName, requestID string) {
+func (p *stubPoller) TriggerNow(appID, appName, requestID string, deleteOld bool) {
 	p.triggeredAppID = appID
 	p.triggeredReqID = requestID
+	p.triggeredDel = deleteOld
 	if p.triggerCh != nil {
 		p.triggerCh <- struct{}{}
 	}
@@ -939,6 +945,7 @@ func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 				RequestId:       "req-42",
 				ApplicationId:   "app-2",
 				ApplicationName: "billing",
+				DeleteOldImages: true,
 			},
 		},
 	}
@@ -962,6 +969,9 @@ func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 	}
 	if poller.triggeredReqID != "req-42" {
 		t.Errorf("expected requestID %q, got %q", "req-42", poller.triggeredReqID)
+	}
+	if !poller.triggeredDel {
+		t.Error("expected deleteOld=true to be passed through from the request")
 	}
 }
 

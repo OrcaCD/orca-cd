@@ -113,8 +113,10 @@ func (p *ImagePoller) SettingsFor(appID string) *PollSettings {
 }
 
 // TriggerNow performs an immediate image check for appID outside the normal tick cycle.
-func (p *ImagePoller) TriggerNow(appID, appName, requestID string) {
-	go p.runOnce(appID, appName, requestID)
+// deleteOld comes from the request rather than the poll settings, so cleanup also
+// applies to applications that don't have periodic polling enabled.
+func (p *ImagePoller) TriggerNow(appID, appName, requestID string, deleteOld bool) {
+	go p.runOnce(appID, appName, requestID, deleteOld)
 }
 
 // StopAll stops all running tickers and clears the state map.
@@ -136,25 +138,18 @@ func (p *ImagePoller) runTicker(appID, appName string, settings PollSettings, st
 		case <-stop:
 			return
 		case <-ticker.C:
-			p.runOnce(appID, appName, "")
+			p.runOnce(appID, appName, "", settings.DeleteOldImages)
 		}
 	}
 }
 
-func (p *ImagePoller) runOnce(appID, appName, requestID string) {
+func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) {
 	runLock := p.lockForRun(appID)
 	runLock.Lock()
 	defer runLock.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-
-	p.mu.Lock()
-	var deleteOld bool
-	if state, ok := p.apps[appID]; ok {
-		deleteOld = state.settings.DeleteOldImages
-	}
-	p.mu.Unlock()
 
 	updated, err := checkAndPullImages(ctx, p.client, appID, appName, deleteOld)
 
