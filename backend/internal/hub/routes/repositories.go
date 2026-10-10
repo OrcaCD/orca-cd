@@ -205,6 +205,15 @@ func countApplicationsByRepositoryIDs(ctx context.Context, repositoryIds []strin
 	return counts, nil
 }
 
+// normalizeRepositoryURL strips surrounding whitespace, trailing slashes and a ".git"
+// suffix so the same repository is always stored (and deduplicated) under one URL.
+func normalizeRepositoryURL(rawURL string) string {
+	u := strings.TrimRight(strings.TrimSpace(rawURL), "/")
+	u = strings.TrimSuffix(u, ".git")
+
+	return strings.TrimRight(u, "/")
+}
+
 func ListRepositoriesHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -304,7 +313,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 
 	repo := models.Repository{
 		Name:                              fmt.Sprintf("%s/%s", repoOwner, repoName),
-		Url:                               req.Url,
+		Url:                               normalizeRepositoryURL(req.Url),
 		Provider:                          req.Provider,
 		AuthMethod:                        req.AuthMethod,
 		SyncType:                          req.SyncType,
