@@ -1088,6 +1088,46 @@ func TestCreateRepositoryHandler_DuplicateUrlAndSyncType(t *testing.T) {
 	}
 }
 
+func TestCreateRepositoryHandler_DuplicateURLWithGitSuffix(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	create := func(url string) int {
+		reqBody, _ := json.Marshal(map[string]any{
+			"url":        url,
+			"provider":   "github",
+			"authMethod": "none",
+			"syncType":   "manual",
+		})
+		c, w := makeAuthContext(t, "user-1")
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/repositories", bytes.NewReader(reqBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+		CreateRepositoryHandler(c)
+		return w.Code
+	}
+
+	if code := create("https://github.com/owner/my-repo"); code != http.StatusCreated {
+		t.Fatalf("expected 201 on first create, got %d", code)
+	}
+	if code := create("https://github.com/owner/my-repo.git"); code != http.StatusConflict {
+		t.Errorf("expected 409 for url with .git suffix, got %d", code)
+	}
+
+	if code := create("https://github.com/owner/other.git"); code != http.StatusCreated {
+		t.Fatalf("expected 201 on create with .git suffix, got %d", code)
+	}
+	if code := create("https://github.com/owner/other"); code != http.StatusConflict {
+		t.Errorf("expected 409 for url without .git suffix, got %d", code)
+	}
+
+	stored, err := gorm.G[models.Repository](db.DB).Where("name = ?", "owner/other").First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load repository: %v", err)
+	}
+	if stored.Url != "https://github.com/owner/other" {
+		t.Errorf("expected normalized url, got %q", stored.Url)
+	}
+}
+
 func TestDeleteRepositoryHandler_NotFound(t *testing.T) {
 	setupTestDBWithRepos(t)
 
