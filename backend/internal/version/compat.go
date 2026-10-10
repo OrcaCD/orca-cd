@@ -49,21 +49,6 @@ func CheckAgentCompatibility(hubVersion, agentVersion string) AgentCompatibility
 	return AgentUpToDate
 }
 
-// AtLeast reports whether version is a release greater than or equal to min.
-// It can be used to gate features that require a newer agent. Versions that
-// are not valid semver never satisfy the check.
-func AtLeast(version, minVersion string) bool {
-	v, ok := normalize(version)
-	if !ok {
-		return false
-	}
-	m, ok := normalize(minVersion)
-	if !ok {
-		return false
-	}
-	return semver.Compare(v, m) >= 0
-}
-
 // gitDescribeSuffix matches what `git describe --tags --dirty` appends to the
 // tag for local builds, e.g. "-3-gabc1234" or "-3-gabc1234-dirty".
 var gitDescribeSuffix = regexp.MustCompile(`(?:-\d+-g[0-9a-f]+)?(?:-dirty)?$`)

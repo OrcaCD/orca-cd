@@ -38,26 +38,3 @@ func TestCheckAgentCompatibility(t *testing.T) {
 		})
 	}
 }
-
-func TestAtLeast(t *testing.T) {
-	tests := []struct {
-		version string
-		min     string
-		want    bool
-	}{
-		{"v0.5.0", "v0.4.0", true},
-		{"v0.4.0", "v0.4.0", true},
-		{"v0.3.9", "v0.4.0", false},
-		{"1.0.0", "v0.4.0", true},
-		{"dev", "v0.4.0", false},
-		{"v0.5.0", "invalid", false},
-		{"v0.4.0-rc.1", "v0.4.0", false},
-		{"v0.4.0-2-gabc123", "v0.4.0", true},
-	}
-
-	for _, tt := range tests {
-		if got := AtLeast(tt.version, tt.min); got != tt.want {
-			t.Errorf("AtLeast(%q, %q) = %v, want %v", tt.version, tt.min, got, tt.want)
-		}
-	}
-}
