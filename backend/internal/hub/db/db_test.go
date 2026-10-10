@@ -2,15 +2,20 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -264,7 +269,7 @@ func TestRunMigrations_NotificationsTableSchema(t *testing.T) {
 	cols := columnNames(t, sqlDB, "notifications")
 
 	required := []string{
-		"id", "name", "enabled", "enable_by_default",
+		"id", "name", "enabled", "all_applications", "events",
 		"status", "type", "config",
 		"created_at", "updated_at",
 	}
@@ -272,6 +277,111 @@ func TestRunMigrations_NotificationsTableSchema(t *testing.T) {
 		if !cols[col] {
 			t.Errorf("notifications table missing column %q", col)
 		}
+	}
+}
+
+func TestRunMigrations_NotificationEventsBackfill(t *testing.T) {
+	gormDB := openTestDB(t)
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatalf("failed to create migrate driver: %v", err)
+	}
+	src, err := iofs.New(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatalf("failed to open migration source: %v", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	if err != nil {
+		t.Fatalf("failed to create migrator: %v", err)
+	}
+	if err := m.Migrate(26); err != nil {
+		t.Fatalf("failed to migrate to version 26: %v", err)
+	}
+
+	seed := []string{
+		`INSERT INTO agents (id, name, key_id) VALUES ('agent', 'a', 'k')`,
+		`INSERT INTO repositories (id, name, url, provider, auth_method, sync_type, created_by)
+			VALUES ('repo', 'r', 'https://example.com/r.git', 'generic', 'none', 'manual', 'user')`,
+		`INSERT INTO applications (id, name, repository_id, agent_id, sync_status, health_status, branch, "commit", commit_message, path)
+			VALUES ('app-1', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p'),
+				('app-2', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p')`,
+		`INSERT INTO notifications (id, name, enabled, enable_by_default, status, type, config)
+			VALUES ('covering', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('partial', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('assigned', 'n', 1, 0, 'unknown', 'discord', '{}')`,
+		`INSERT INTO application_notifications (application_id, notification_id)
+			VALUES ('app-1', 'covering'), ('app-2', 'covering'), ('app-1', 'partial'), ('app-2', 'assigned')`,
+	}
+	for _, stmt := range seed {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("failed to seed data: %v", err)
+		}
+	}
+
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	// Raw query: the seeded names are not encrypted, so loading the model would fail.
+	rows, err := sqlDB.Query(`SELECT id, all_applications, events FROM notifications`)
+	if err != nil {
+		t.Fatalf("failed to query notifications: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Only a default notification already attached to every application becomes all_applications.
+	wantAllApplications := map[string]bool{"covering": true, "partial": false, "assigned": false}
+	wantEvents, err := json.Marshal(models.NotificationEvents)
+	if err != nil {
+		t.Fatalf("failed to marshal events: %v", err)
+	}
+	count := 0
+	for rows.Next() {
+		var id, events string
+		var allApplications bool
+		if err := rows.Scan(&id, &allApplications, &events); err != nil {
+			t.Fatalf("failed to scan notification: %v", err)
+		}
+		count++
+		if allApplications != wantAllApplications[id] {
+			t.Errorf("notification %q: expected all_applications=%v, got %v", id, wantAllApplications[id], allApplications)
+		}
+		if events != string(wantEvents) {
+			t.Errorf("notification %q: expected events %s, got %s", id, wantEvents, events)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("failed to iterate notifications: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 notifications, got %d", count)
+	}
+
+	assocRows, err := sqlDB.Query(`SELECT application_id || ':' || notification_id FROM application_notifications ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("failed to query application_notifications: %v", err)
+	}
+	defer func() { _ = assocRows.Close() }()
+
+	var associations []string
+	for assocRows.Next() {
+		var association string
+		if err := assocRows.Scan(&association); err != nil {
+			t.Fatalf("failed to scan association: %v", err)
+		}
+		associations = append(associations, association)
+	}
+	if err := assocRows.Err(); err != nil {
+		t.Fatalf("failed to iterate associations: %v", err)
+	}
+	wantAssociations := []string{"app-1:partial", "app-2:assigned"}
+	if !slices.Equal(associations, wantAssociations) {
+		t.Fatalf("expected associations %v, got %v", wantAssociations, associations)
 	}
 }
 

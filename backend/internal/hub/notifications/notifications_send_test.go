@@ -54,13 +54,13 @@ func setNotificationConfig(t *testing.T, notificationId, rawConfig string) {
 	}
 }
 
-func setNotificationTypeAndConfig(t *testing.T, notificationId string, notificationType models.NotificationType, rawConfig string) {
+func setHTTPNotificationConfig(t *testing.T, notificationId, rawConfig string) {
 	t.Helper()
 
 	rowsAffected, err := gorm.G[models.Notification](db.DB).
 		Where("id = ?", notificationId).
 		Updates(t.Context(), models.Notification{
-			Type:   notificationType,
+			Type:   testHTTPNotificationType,
 			Config: crypto.EncryptedString(rawConfig),
 		})
 	if err != nil {
@@ -148,70 +148,70 @@ func assertNotificationStatus(t *testing.T, notificationId string, want models.N
 func TestGetNotificationConfigApplicationNotFound(t *testing.T) {
 	setupNotificationsTestDB(t)
 
-	_, err := getNotificationConfig(context.Background(), "missing-application")
+	_, err := getNotificationConfig(context.Background(), "missing-application", models.NotificationEventDeploymentFailed)
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
 	}
 }
 
-func TestSendNotificationIgnoresEmptyMessage(t *testing.T) {
+func TestSendForApplicationIgnoresEmptyMessage(t *testing.T) {
 	setupNotificationsTestDB(t)
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "empty-message", true, false, models.NotificationStatusUnknown, app.Id)
 
-	SendNotification(app.Id, "   ", newNotificationLogger())
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "   ", newNotificationLogger())
 
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusUnknown)
 }
 
-func TestSendNotificationApplicationNotFound(t *testing.T) {
+func TestSendForApplicationApplicationNotFound(t *testing.T) {
 	setupNotificationsTestDB(t)
 
 	notification := seedNotificationRecord(t, "default", true, true, models.NotificationStatusUnknown)
 
-	SendNotification("missing-application", "ping", newNotificationLogger())
+	SendForApplication("missing-application", models.NotificationEventDeploymentSucceeded, "ping", newNotificationLogger())
 
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusUnknown)
 }
 
-func TestSendNotificationInvalidConfigMarksStatusError(t *testing.T) {
+func TestSendForApplicationInvalidConfigMarksStatusError(t *testing.T) {
 	setupNotificationsTestDB(t)
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "invalid-config", true, false, models.NotificationStatusUnknown, app.Id)
 	setNotificationConfig(t, notification.Id, `{"webhookId":"123456789"}`)
 
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
 
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
 }
 
-func TestSendNotificationPostsToHTTPWebhook(t *testing.T) {
+func TestSendForApplicationPostsToHTTPWebhook(t *testing.T) {
 	setupNotificationsTestDB(t)
 	registerTestHTTPNotificationProvider(t)
 	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "http-webhook", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
 
 	assertCapturedNotificationRequest(t, requests, "deploy done")
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusSuccess)
 }
 
-func TestSendNotificationHTTPWebhookErrorMarksStatusError(t *testing.T) {
+func TestSendForApplicationHTTPWebhookErrorMarksStatusError(t *testing.T) {
 	setupNotificationsTestDB(t)
 	registerTestHTTPNotificationProvider(t)
 	server, requests := newNotificationCaptureServer(t, http.StatusInternalServerError)
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "http-webhook-error", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
-	SendNotification(app.Id, "deploy failed", newNotificationLogger())
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy failed", newNotificationLogger())
 
 	assertCapturedNotificationRequest(t, requests, "deploy failed")
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)
@@ -222,12 +222,33 @@ func assertNoNotificationRequestReceived(t *testing.T, requests <-chan capturedN
 
 	select {
 	case <-requests:
-		t.Fatal("expected notification request to be blocked by SSRF protection, but the server received one")
+		t.Fatal("expected no notification request, but the server received one")
 	default:
 	}
 }
 
-func TestSendNotificationBlocksSSRFToPrivateIP(t *testing.T) {
+func TestSendForApplicationSkipsUnsubscribedEvent(t *testing.T) {
+	setupNotificationsTestDB(t)
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	notification := seedNotificationRecord(t, "failures-only", true, false, models.NotificationStatusUnknown, app.Id)
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
+	if _, err := gorm.G[models.Notification](db.DB).
+		Where("id = ?", notification.Id).
+		Select("events").
+		Updates(t.Context(), models.Notification{Events: []models.NotificationEvent{models.NotificationEventDeploymentFailed}}); err != nil {
+		t.Fatalf("failed to update notification events: %v", err)
+	}
+
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
+
+	assertNoNotificationRequestReceived(t, requests)
+	assertNotificationStatus(t, notification.Id, models.NotificationStatusUnknown)
+}
+
+func TestSendForApplicationBlocksSSRFToPrivateIP(t *testing.T) {
 	setupNotificationsTestDB(t)
 	registerTestHTTPNotificationProvider(t)
 	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
@@ -242,9 +263,9 @@ func TestSendNotificationBlocksSSRFToPrivateIP(t *testing.T) {
 
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "ssrf-blocked", true, false, models.NotificationStatusUnknown, app.Id)
-	setNotificationTypeAndConfig(t, notification.Id, testHTTPNotificationType, genericNotificationURL(t, server.URL))
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
 
-	SendNotification(app.Id, "deploy done", newNotificationLogger())
+	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
 
 	assertNoNotificationRequestReceived(t, requests)
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusError)

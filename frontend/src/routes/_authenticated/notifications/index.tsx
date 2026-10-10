@@ -202,7 +202,11 @@ function NotificationsPage() {
 											</div>
 											<div className="rounded-lg border bg-muted/50 p-2">
 												<p className="text-muted-foreground">{m.appsCount()}</p>
-												<p className="mt-1 font-medium">{notification.applicationIds.length}</p>
+												<p className="mt-1 font-medium">
+													{notification.allApplications
+														? m.allApplications()
+														: notification.applicationIds.length}
+												</p>
 											</div>
 										</div>
 

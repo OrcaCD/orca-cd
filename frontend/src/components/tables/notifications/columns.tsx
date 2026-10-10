@@ -83,7 +83,8 @@ export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 		id: "apps",
 		accessorFn: (row) => row.applicationIds.length,
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnApps()} />,
-		cell: ({ row }) => row.original.applicationIds.length,
+		cell: ({ row }) =>
+			row.original.allApplications ? m.allApplications() : row.original.applicationIds.length,
 	},
 	{
 		id: "updatedAt",
