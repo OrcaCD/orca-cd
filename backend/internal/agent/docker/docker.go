@@ -20,10 +20,11 @@ const (
 	daemonCheckInterval     = 5 * time.Second
 	healthResyncInterval    = time.Minute
 	hostDirDetectionTimeout = 5 * time.Second
+	serverVersionTimeout    = 5 * time.Second
 )
 
 type Client struct {
-	mu                        sync.RWMutex // protects ready and host deployments directory state
+	mu                        sync.RWMutex // protects ready, serverVersion, onDaemonReady and host deployments directory state
 	log                       zerolog.Logger
 	cli                       command.Cli
 	compose                   api.Compose
@@ -35,6 +36,8 @@ type Client struct {
 	allowedPrivilegedApps     map[string]struct{}
 	restrictMountsToDeployDir bool
 	ready                     bool
+	serverVersion             string
+	onDaemonReady             func()
 	healthWatcher             *healthWatcher
 	healthResyncMu            sync.Mutex
 	ctx                       context.Context
@@ -106,13 +109,32 @@ func (c *Client) Ready() bool {
 	return c.ready
 }
 
-// ServerVersion returns the version of the Docker engine the agent talks to.
-func (c *Client) ServerVersion(ctx context.Context) (string, error) {
+// ServerVersion returns the Docker engine version determined when the daemon
+// last became reachable, or an empty string if it never was.
+func (c *Client) ServerVersion() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.serverVersion
+}
+
+// SetDaemonReadyHandler registers fn to be called whenever the Docker daemon
+// becomes reachable after being unreachable, e.g. after a daemon restart.
+func (c *Client) SetDaemonReadyHandler(fn func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onDaemonReady = fn
+}
+
+func (c *Client) fetchServerVersion() string {
+	ctx, cancel := context.WithTimeout(c.ctx, serverVersionTimeout)
+	defer cancel()
+
 	result, err := c.cli.Client().ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
-		return "", err
+		c.log.Warn().Err(err).Msg("failed to determine Docker version")
+		return ""
 	}
-	return result.Version, nil
+	return result.Version
 }
 
 func (c *Client) hostDeploymentsBase() string {
@@ -236,7 +258,20 @@ func (c *Client) pingDaemon() bool {
 	c.mu.Unlock()
 
 	if !wasReady {
-		c.log.Info().Str("api_version", ping.APIVersion).Msg("Docker daemon is reachable")
+		// The engine may have been upgraded while it was unreachable.
+		serverVersion := c.fetchServerVersion()
+		c.mu.Lock()
+		c.serverVersion = serverVersion
+		onDaemonReady := c.onDaemonReady
+		c.mu.Unlock()
+
+		c.log.Info().
+			Str("api_version", ping.APIVersion).
+			Str("docker_version", serverVersion).
+			Msg("Docker daemon is reachable")
+		if onDaemonReady != nil {
+			onDaemonReady()
+		}
 	}
 	return true
 }

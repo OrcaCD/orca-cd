@@ -1,6 +1,7 @@
 package version
 
 import (
+	"regexp"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -28,6 +29,7 @@ func CheckAgentCompatibility(hubVersion, agentVersion string) AgentCompatibility
 	if agentVersion == "" {
 		return AgentUnknown
 	}
+	// Fast path that also covers identical non-release builds such as "dev".
 	if agentVersion == hubVersion {
 		return AgentUpToDate
 	}
@@ -36,12 +38,12 @@ func CheckAgentCompatibility(hubVersion, agentVersion string) AgentCompatibility
 	if !ok {
 		return AgentUnknown
 	}
-	if !AtLeast(agent, MinAgentVersion) {
+	if semver.Compare(agent, MinAgentVersion) < 0 {
 		return AgentIncompatible
 	}
 	// Non-release hub builds (e.g. "dev", "main") can only be checked against
 	// MinAgentVersion.
-	if hub, ok := normalize(hubVersion); ok && !AtLeast(agent, hub) {
+	if hub, ok := normalize(hubVersion); ok && semver.Compare(agent, hub) < 0 {
 		return AgentOutdated
 	}
 	return AgentUpToDate
@@ -62,16 +64,18 @@ func AtLeast(version, minVersion string) bool {
 	return semver.Compare(v, m) >= 0
 }
 
-// normalize converts a version to canonical semver without pre-release suffix.
-// The suffix is dropped because `git describe` builds (v0.4.0-3-gabc123) are
-// newer than their tag, while semver would order them before it.
+// gitDescribeSuffix matches what `git describe --tags --dirty` appends to the
+// tag for local builds, e.g. "-3-gabc1234" or "-3-gabc1234-dirty".
+var gitDescribeSuffix = regexp.MustCompile(`(?:-\d+-g[0-9a-f]+)?(?:-dirty)?$`)
+
+// normalize converts a version to canonical semver. The `git describe` suffix
+// is dropped because such builds are newer than their tag, while semver would
+// order them before it as a pre-release. Real pre-releases (v0.5.0-rc.1) keep
+// their suffix and therefore sort before the release.
 func normalize(version string) (string, bool) {
 	if !strings.HasPrefix(version, "v") {
 		version = "v" + version
 	}
-	canonical := semver.Canonical(version)
-	if canonical == "" {
-		return "", false
-	}
-	return strings.TrimSuffix(canonical, semver.Prerelease(canonical)), true
+	canonical := semver.Canonical(gitDescribeSuffix.ReplaceAllString(version, ""))
+	return canonical, canonical != ""
 }

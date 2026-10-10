@@ -66,6 +66,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 	},
 	{
 		accessorKey: "version",
+		sortFn: "alphanumeric",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title={m.columnAgentVersion()} />;
 		},
@@ -76,6 +77,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 	},
 	{
 		accessorKey: "dockerVersion",
+		sortFn: "alphanumeric",
 		header: ({ column }) => {
 			return <DataTableColumnHeader column={column} title={m.columnDockerVersion()} />;
 		},

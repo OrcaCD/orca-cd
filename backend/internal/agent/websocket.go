@@ -21,7 +21,6 @@ import (
 const handshakeTimeout = 15 * time.Second
 const deploymentTimeout = 5 * time.Minute
 const writeWait = 10 * time.Second
-const dockerVersionTimeout = 5 * time.Second
 
 type outboundSender interface {
 	SendMessage(msg *messages.ClientMessage) error
@@ -42,7 +41,7 @@ type statusReporter interface {
 }
 
 type dockerVersionProvider interface {
-	ServerVersion(ctx context.Context) (string, error)
+	ServerVersion() string
 }
 
 type messageConn interface {
@@ -220,16 +219,10 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 
 // sendAgentInfo reports the agent and Docker versions to the hub so it can
 // display them and warn about outdated agents.
-func sendAgentInfo(ctx context.Context, sender outboundSender, docker dockerVersionProvider) {
+func sendAgentInfo(sender outboundSender, dockerVersion dockerVersionProvider) {
 	info := &messages.AgentInfo{Version: version.Version}
-	if docker != nil {
-		versionCtx, cancel := context.WithTimeout(ctx, dockerVersionTimeout)
-		dockerVersion, err := docker.ServerVersion(versionCtx)
-		cancel()
-		if err != nil {
-			Log.Warn().Err(err).Msg("failed to determine Docker version")
-		}
-		info.DockerVersion = dockerVersion
+	if dockerVersion != nil {
+		info.DockerVersion = dockerVersion.ServerVersion()
 	}
 
 	if err := sender.SendMessage(&messages.ClientMessage{

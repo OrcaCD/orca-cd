@@ -312,8 +312,9 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 }
 
 // maxReportedVersionLength bounds agent-reported version strings before they
-// are persisted and rendered.
-const maxReportedVersionLength = 128
+// are persisted and rendered. It leaves room for `git describe` builds such as
+// "v0.10.0-rc.1-123-gabcdef1-dirty" and distro Docker versions.
+const maxReportedVersionLength = 64
 
 // handleAgentInfo stores the agent and Docker versions reported by the agent.
 func handleAgentInfo(parent context.Context, client *Client, info *messages.AgentInfo, log *zerolog.Logger) {
@@ -335,19 +336,21 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 		return
 	}
 
-	level := zerolog.DebugLevel
-	switch version.CheckAgentCompatibility(version.Version, agentVersion) {
-	case version.AgentIncompatible:
-		level = zerolog.WarnLevel
-	case version.AgentOutdated:
-		level = zerolog.InfoLevel
-	}
-	log.WithLevel(level).
+	agentLog := log.With().
 		Str("agent_id", client.Id).
 		Str("agent_version", agentVersion).
 		Str("hub_version", version.Version).
 		Str("docker_version", dockerVersion).
-		Msg("Agent info received")
+		Logger()
+	switch version.CheckAgentCompatibility(version.Version, agentVersion) {
+	case version.AgentIncompatible:
+		agentLog.Warn().Str("min_agent_version", version.MinAgentVersion).
+			Msg("Agent is incompatible with this hub version, please update the agent")
+	case version.AgentOutdated:
+		agentLog.Info().Msg("Agent is outdated, please update the agent")
+	default:
+		agentLog.Debug().Msg("Agent info received")
+	}
 
 	sse.PublishUpdate("/api/v1/agents")
 }

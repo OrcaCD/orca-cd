@@ -1,21 +1,16 @@
 package agent
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/version"
 )
 
-type stubDockerVersion struct {
-	version string
-	err     error
-}
+type stubDockerVersion string
 
-func (s stubDockerVersion) ServerVersion(context.Context) (string, error) {
-	return s.version, s.err
+func (s stubDockerVersion) ServerVersion() string {
+	return string(s)
 }
 
 func receiveAgentInfo(t *testing.T, sender *stubSender) *messages.AgentInfo {
@@ -36,7 +31,7 @@ func receiveAgentInfo(t *testing.T, sender *stubSender) *messages.AgentInfo {
 func TestSendAgentInfo_IncludesVersions(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 
-	sendAgentInfo(t.Context(), sender, stubDockerVersion{version: "28.1.1"})
+	sendAgentInfo(sender, stubDockerVersion("28.1.1"))
 
 	info := receiveAgentInfo(t, sender)
 	if info.Version != version.Version {
@@ -50,7 +45,7 @@ func TestSendAgentInfo_IncludesVersions(t *testing.T) {
 func TestSendAgentInfo_DockerUnavailable(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 
-	sendAgentInfo(t.Context(), sender, stubDockerVersion{err: errors.New("daemon unreachable")})
+	sendAgentInfo(sender, stubDockerVersion(""))
 
 	info := receiveAgentInfo(t, sender)
 	if info.Version != version.Version {
@@ -59,4 +54,8 @@ func TestSendAgentInfo_DockerUnavailable(t *testing.T) {
 	if info.DockerVersion != "" {
 		t.Errorf("expected empty docker version, got %q", info.DockerVersion)
 	}
+}
+
+func TestSendAgentInfo_WithoutConnectionIsNoop(t *testing.T) {
+	sendAgentInfo(&senderRef{}, stubDockerVersion("28.1.1"))
 }

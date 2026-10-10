@@ -360,6 +360,41 @@ func TestPingDaemon(t *testing.T) {
 	}
 }
 
+func TestNew_ServerVersion(t *testing.T) {
+	c := newTestClient(t)
+	if c.ServerVersion() == "" {
+		t.Error("expected ServerVersion() to be set with Docker available")
+	}
+}
+
+func TestPingDaemon_CallsReadyHandlerOnRecovery(t *testing.T) {
+	c := newTestClient(t)
+	var calls int
+	c.SetDaemonReadyHandler(func() { calls++ })
+
+	if !c.pingDaemon() {
+		t.Fatal("pingDaemon() returned false with Docker available")
+	}
+	if calls != 0 {
+		t.Errorf("expected no ready handler call while already ready, got %d", calls)
+	}
+
+	c.mu.Lock()
+	c.ready = false
+	c.serverVersion = ""
+	c.mu.Unlock()
+
+	if !c.pingDaemon() {
+		t.Fatal("pingDaemon() returned false with Docker available")
+	}
+	if calls != 1 {
+		t.Errorf("expected ready handler to be called once, got %d", calls)
+	}
+	if c.ServerVersion() == "" {
+		t.Error("expected ServerVersion() to be refreshed after recovery")
+	}
+}
+
 func TestNew_DaemonUnreachable(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://localhost:1")
 
@@ -369,6 +404,9 @@ func TestNew_DaemonUnreachable(t *testing.T) {
 	}
 	if c.Ready() {
 		t.Error("expected Ready() == false with unreachable Docker host")
+	}
+	if v := c.ServerVersion(); v != "" {
+		t.Errorf("expected empty ServerVersion() with unreachable Docker host, got %q", v)
 	}
 }
 
