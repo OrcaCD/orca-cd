@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.1](https://github.com/OrcaCD/orca-cd/compare/v0.4.0...v0.4.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **agent:** Create compose.override.yaml ([#317](https://github.com/OrcaCD/orca-cd/issues/317)) ([39975c6](https://github.com/OrcaCD/orca-cd/commit/39975c6f418d2e7a6db4669f42cb8924acc1e5a4))
+* Clean up replaced images by ID on deploy and manual pulls ([#309](https://github.com/OrcaCD/orca-cd/issues/309)) ([8e0fc2c](https://github.com/OrcaCD/orca-cd/commit/8e0fc2cf4c99f66bdd06fc1793f4edc45ce736b0))
+* Prevent adding the same repository with and without .git suffix ([#318](https://github.com/OrcaCD/orca-cd/issues/318)) ([e4cfe13](https://github.com/OrcaCD/orca-cd/commit/e4cfe1317e0c0012998574ade4eb60b9d25bbd63))
+* Skip duplicate GHCR webhook deliveries for untagged/signature manifests ([#307](https://github.com/OrcaCD/orca-cd/issues/307)) ([b7bb92f](https://github.com/OrcaCD/orca-cd/commit/b7bb92f7387f0d5cc7d2b3cbd672b8e3a2fb4d96))
+
 ## [0.4.0](https://github.com/OrcaCD/orca-cd/compare/v0.3.2...v0.4.0) (2026-07-27)
 
 
