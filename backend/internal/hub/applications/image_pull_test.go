@@ -35,6 +35,7 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 	app.Id = "app-pull-test"
 	app.AgentId = agentID
 	app.Name = crypto.EncryptedString("my-app")
+	app.DeleteOldImages = true
 
 	if !TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
 		t.Error("expected TriggerImagePull to return true for connected agent")
@@ -54,6 +55,9 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 		}
 		if req.RequestId == "" {
 			t.Error("expected non-empty request_id")
+		}
+		if !req.DeleteOldImages {
+			t.Error("expected delete_old_images=true")
 		}
 
 		// The dispatched request ID correlates with a running image_update event.

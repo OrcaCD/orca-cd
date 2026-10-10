@@ -86,12 +86,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	dockerCLI := c.cli.Client()
 
-	type staleImage struct {
-		ref       string
-		oldDigest string // may be empty for first-pull
-	}
-
-	var stale []staleImage
+	var stale []string
 	for _, service := range project.Services {
 		if service.Image == "" {
 			continue
@@ -104,21 +99,9 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		}
 
 		localDigests, err := getLocalDigests(ctx, dockerCLI, service.Image)
-		if err != nil {
-			// Image not present locally
-			stale = append(stale, staleImage{ref: service.Image})
-			continue
-		}
-
-		if !digestMatchesLocal(localDigests, remoteDigest) {
-			var oldDigest string
-			for _, d := range localDigests {
-				if _, digest, ok := strings.CutLast(d, "@"); ok {
-					oldDigest = digest
-					break
-				}
-			}
-			stale = append(stale, staleImage{ref: service.Image, oldDigest: oldDigest})
+		if err != nil || !digestMatchesLocal(localDigests, remoteDigest) {
+			// Missing locally or outdated
+			stale = append(stale, service.Image)
 		}
 	}
 
@@ -131,6 +114,11 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	}
 
 	applyOrcaLabels(project, appID)
+
+	var previousImages map[string]struct{}
+	if deleteOldImages {
+		previousImages = c.applicationImages(ctx, appID)
+	}
 
 	// Like Deploy, don't block on healthchecks: health is observed after the
 	// containers are recreated and reported separately.
@@ -145,14 +133,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	}
 
 	if deleteOldImages {
-		for _, img := range stale {
-			if img.oldDigest == "" {
-				continue
-			}
-			if _, err := dockerCLI.ImageRemove(ctx, img.oldDigest, client.ImageRemoveOptions{PruneChildren: true}); err != nil {
-				c.log.Warn().Err(err).Str("digest", img.oldDigest).Msg("could not remove old image")
-			}
-		}
+		c.removeReplacedImages(ctx, appID, previousImages)
 	}
 
 	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")

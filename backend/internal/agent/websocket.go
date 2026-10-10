@@ -32,7 +32,7 @@ type deployExecutor interface {
 
 type pollerHandler interface {
 	ApplySettings(apps []docker.AppPollConfig)
-	TriggerNow(appID, appName, requestID string)
+	TriggerNow(appID, appName, requestID string, deleteOld bool)
 }
 
 type statusReporter interface {
@@ -252,7 +252,7 @@ func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
 	if poller == nil {
 		return
 	}
-	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId)
+	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId, req.DeleteOldImages)
 }
 
 // appExecLocks serializes Deploy/Remove calls per application ID. The hub has
@@ -302,6 +302,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ApplicationID:   req.ApplicationId,
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
+		DeleteOldImages: req.DeleteOldImages,
 	}); err != nil {
 		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("deployment failed")
 		result.ErrorMessage = err.Error()

@@ -58,6 +58,7 @@ message DeployRequest {
   string application_id = 2;
   string application_name = 3;
   string compose_file = 4;
+  bool delete_old_images = 5;
 }
 
 message DeleteRequest {
@@ -96,6 +97,7 @@ message PullImagesRequest {
   string request_id = 1;
   string application_id = 2;
   string application_name = 3;
+  bool delete_old_images = 4;
 }
 
 message PullImagesResult {

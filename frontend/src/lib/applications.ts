@@ -23,7 +23,7 @@ export interface Application {
 	previousComposeFile?: string;
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
-	imagePollDeleteOldImages: boolean;
+	deleteOldImages: boolean;
 	imageWebhookEnabled: boolean;
 	imageWebhookUrl?: string;
 }
@@ -71,7 +71,7 @@ interface CreateApplicationRequest {
 	path: string;
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
-	imagePollDeleteOldImages: boolean;
+	deleteOldImages: boolean;
 }
 
 interface UpdateApplicationRequest {
@@ -83,7 +83,7 @@ interface UpdateApplicationRequest {
 	path: string;
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
-	imagePollDeleteOldImages: boolean;
+	deleteOldImages: boolean;
 }
 
 interface DeployApplicationResponse {

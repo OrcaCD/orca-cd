@@ -87,6 +87,8 @@ func TestTriggerApplicationDeploy_AgentConnected_MarksSyncingAndSends(t *testing
 	app := seedApp(t)
 	nop := zerolog.Nop()
 
+	app.DeleteOldImages = true
+
 	sender := &mockSender{connected: true}
 	d := NewApplicationDeployer(sender, &nop)
 
@@ -105,6 +107,9 @@ func TestTriggerApplicationDeploy_AgentConnected_MarksSyncingAndSends(t *testing
 	}
 	if got := sender.sent.GetDeployRequest().RequestId; got != "request-connected" {
 		t.Errorf("expected request id %q, got %q", "request-connected", got)
+	}
+	if !sender.sent.GetDeployRequest().DeleteOldImages {
+		t.Error("expected DeployRequest to carry DeleteOldImages=true")
 	}
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
