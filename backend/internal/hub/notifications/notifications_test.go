@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -149,14 +150,9 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	seedNotificationRecord(t, "disabled", false, true, models.NotificationStatusSuccess)
 	seedNotificationRecord(t, "other-app", true, false, models.NotificationStatusSuccess, otherApp.Id)
 	otherEvent := seedNotificationRecord(t, "other-event", true, true, models.NotificationStatusUnknown)
-	if _, err := gorm.G[models.Notification](db.DB).
-		Where("id = ?", otherEvent.Id).
-		Select("events").
-		Updates(t.Context(), models.Notification{Events: []models.NotificationEvent{models.NotificationEventDeploymentSucceeded}}); err != nil {
-		t.Fatalf("failed to update notification events: %v", err)
-	}
+	setNotificationEvents(t, otherEvent.Id, models.NotificationEventDeploymentSucceeded)
 
-	configs, err := getNotificationConfig(context.Background(), app.Id, models.NotificationEventDeploymentFailed)
+	configs, err := getNotificationConfig(context.Background(), applicationScope, app.Id, models.NotificationEventDeploymentFailed)
 	if err != nil {
 		t.Fatalf("getNotificationConfig() error: %v", err)
 	}
@@ -177,6 +173,122 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	}
 	if len(ids) != 3 {
 		t.Fatalf("expected exactly 3 matching notifications, got %d (%v)", len(ids), ids)
+	}
+}
+
+func associateNotification[T any](t *testing.T, notification *models.Notification, association string, ids ...string) {
+	t.Helper()
+
+	records, err := gorm.G[T](db.DB).Where("id IN ?", ids).Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load %s: %v", association, err)
+	}
+	if err := db.DB.Model(notification).Association(association).Replace(records); err != nil {
+		t.Fatalf("failed to associate %s: %v", association, err)
+	}
+}
+
+func setNotificationEvents(t *testing.T, notificationId string, events ...models.NotificationEvent) {
+	t.Helper()
+
+	if _, err := gorm.G[models.Notification](db.DB).
+		Where("id = ?", notificationId).
+		Select("events").
+		Updates(t.Context(), models.Notification{Events: events}); err != nil {
+		t.Fatalf("failed to update notification events: %v", err)
+	}
+}
+
+func notificationIds(configs []models.Notification) []string {
+	ids := make([]string, 0, len(configs))
+	for i := range configs {
+		ids = append(ids, configs[i].Id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func TestGetNotificationConfig_ScopesByResourceType(t *testing.T) {
+	setupNotificationsTestDB(t)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	otherApp := seedNotificationTestApp(t, models.Healthy)
+
+	allAgents := seedNotificationRecord(t, "all-agents", true, false, models.NotificationStatusUnknown)
+	if _, err := gorm.G[models.Notification](db.DB).Where("id = ?", allAgents.Id).Update(t.Context(), "all_agents", true); err != nil {
+		t.Fatalf("failed to set all_agents: %v", err)
+	}
+	allRepositories := seedNotificationRecord(t, "all-repositories", true, false, models.NotificationStatusUnknown)
+	if _, err := gorm.G[models.Notification](db.DB).Where("id = ?", allRepositories.Id).Update(t.Context(), "all_repositories", true); err != nil {
+		t.Fatalf("failed to set all_repositories: %v", err)
+	}
+
+	assigned := seedNotificationRecord(t, "assigned", true, false, models.NotificationStatusUnknown)
+	associateNotification[models.Agent](t, &assigned, "Agents", app.AgentId)
+	associateNotification[models.Repository](t, &assigned, "Repositories", app.RepositoryId)
+
+	// Covers every application, but neither agents nor repositories.
+	seedNotificationRecord(t, "all-applications", true, true, models.NotificationStatusUnknown)
+
+	tests := []struct {
+		name  string
+		scope notificationScope
+		id    string
+		event models.NotificationEvent
+		want  []string
+	}{
+		{"assigned agent", agentScope, app.AgentId, models.NotificationEventAgentOffline, []string{allAgents.Id, assigned.Id}},
+		{"other agent", agentScope, otherApp.AgentId, models.NotificationEventAgentOffline, []string{allAgents.Id}},
+		{"assigned repository", repositoryScope, app.RepositoryId, models.NotificationEventRepositorySyncFailed, []string{allRepositories.Id, assigned.Id}},
+		{"other repository", repositoryScope, otherApp.RepositoryId, models.NotificationEventRepositorySyncFailed, []string{allRepositories.Id}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configs, err := getNotificationConfig(t.Context(), tt.scope, tt.id, tt.event)
+			if err != nil {
+				t.Fatalf("getNotificationConfig() error: %v", err)
+			}
+			want := slices.Clone(tt.want)
+			slices.Sort(want)
+			if got := notificationIds(configs); !slices.Equal(got, want) {
+				t.Fatalf("expected notifications %v, got %v", want, got)
+			}
+		})
+	}
+}
+
+func TestGetNotificationConfig_FiltersAgentEvents(t *testing.T) {
+	setupNotificationsTestDB(t)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	offlineOnly := seedNotificationRecord(t, "offline-only", true, false, models.NotificationStatusUnknown)
+	setNotificationEvents(t, offlineOnly.Id, models.NotificationEventAgentOffline)
+	associateNotification[models.Agent](t, &offlineOnly, "Agents", app.AgentId)
+
+	configs, err := getNotificationConfig(t.Context(), agentScope, app.AgentId, models.NotificationEventAgentOnline)
+	if err != nil {
+		t.Fatalf("getNotificationConfig() error: %v", err)
+	}
+	if len(configs) != 0 {
+		t.Fatalf("expected no notifications for unsubscribed event, got %v", notificationIds(configs))
+	}
+
+	configs, err = getNotificationConfig(t.Context(), agentScope, app.AgentId, models.NotificationEventAgentOffline)
+	if err != nil {
+		t.Fatalf("getNotificationConfig() error: %v", err)
+	}
+	if got := notificationIds(configs); !slices.Equal(got, []string{offlineOnly.Id}) {
+		t.Fatalf("expected offline-only notification, got %v", got)
+	}
+}
+
+func TestGetNotificationConfig_ResourceNotFound(t *testing.T) {
+	setupNotificationsTestDB(t)
+
+	for _, scope := range []notificationScope{applicationScope, agentScope, repositoryScope} {
+		if _, err := getNotificationConfig(t.Context(), scope, "missing", models.NotificationEventAgentOffline); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("%s: expected gorm.ErrRecordNotFound, got %v", scope.logKey, err)
+		}
 	}
 }
 

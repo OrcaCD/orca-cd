@@ -26,14 +26,12 @@ import { Switch } from "@/components/ui/switch";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFetch } from "@/lib/api";
-import type { ApplicationListItem } from "@/lib/applications";
 import {
 	createNotification,
 	isHttpUrl,
-	normalizeNotificationApplicationIds,
-	type NotificationEvent,
+	normalizeNotificationSubscription,
 	notificationEvents,
+	type NotificationSubscription,
 	type NotificationType,
 	notificationTypes,
 } from "@/lib/notifications";
@@ -94,9 +92,8 @@ import {
 	isValidShoutrrrUrl,
 } from "./custom-notification-builder";
 import {
-	NotificationAllApplicationsField,
-	NotificationApplicationsField,
-	NotificationEventsField,
+	NotificationSubscriptionFields,
+	notificationSubscriptionSchema,
 } from "./notification-subscription-fields";
 
 const { Stepper } = defineStepper([{ id: "config" }, { id: "events" }, { id: "provider" }]);
@@ -131,10 +128,18 @@ const notificationBaseSchema = z.object({
 	webhookHeaders: z.string(),
 	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
-	allApplications: z.boolean(),
-	events: z.array(z.enum(notificationEvents)).min(1, m.validationNotificationEventsRequired()),
-	applicationIds: z.array(z.string()),
+	subscription: notificationSubscriptionSchema,
 });
+
+const defaultSubscription: NotificationSubscription = {
+	events: [...notificationEvents],
+	allApplications: false,
+	applicationIds: [],
+	allAgents: false,
+	agentIds: [],
+	allRepositories: false,
+	repositoryIds: [],
+};
 
 const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 	if (value.type === "discord") {
@@ -467,9 +472,7 @@ function useNotificationForm() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			allApplications: false,
-			events: [...notificationEvents] as NotificationEvent[],
-			applicationIds: [] as string[],
+			subscription: defaultSubscription,
 		},
 		validators: { onSubmit: notificationSchema },
 		// oxlint-disable-next-line no-empty-function
@@ -590,50 +593,20 @@ function NotificationConfigStepContent({ form }: { form: NotificationFormApi }) 
 	);
 }
 
-function NotificationEventsStepContent({
-	form,
-	applications,
-}: {
-	form: NotificationFormApi;
-	applications: ApplicationListItem[] | undefined;
-}) {
+function NotificationEventsStepContent({ form }: { form: NotificationFormApi }) {
 	return (
-		<FieldGroup>
-			<form.Field name="events" validators={{ onSubmit: notificationBaseSchema.shape.events }}>
-				{(field) => (
-					<NotificationEventsField
-						value={field.state.value}
-						onChange={field.handleChange}
-						errors={field.state.meta.errors}
-					/>
-				)}
-			</form.Field>
-
-			<form.Field name="allApplications">
-				{(field) => (
-					<NotificationAllApplicationsField
-						value={field.state.value}
-						onChange={field.handleChange}
-					/>
-				)}
-			</form.Field>
-
-			<form.Subscribe selector={(state) => state.values.allApplications}>
-				{(allApplications) =>
-					!allApplications && (
-						<form.Field name="applicationIds">
-							{(field) => (
-								<NotificationApplicationsField
-									value={field.state.value}
-									onChange={field.handleChange}
-									applications={applications}
-								/>
-							)}
-						</form.Field>
-					)
-				}
-			</form.Subscribe>
-		</FieldGroup>
+		<form.Field
+			name="subscription"
+			validators={{ onSubmit: notificationBaseSchema.shape.subscription }}
+		>
+			{(field) => (
+				<NotificationSubscriptionFields
+					value={field.state.value}
+					onChange={field.handleChange}
+					errors={field.state.meta.errors}
+				/>
+			)}
+		</form.Field>
 	);
 }
 
@@ -854,8 +827,6 @@ export default function CreateNotificationDialog() {
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
-
 	const form = useForm({
 		defaultValues: {
 			name: "",
@@ -883,9 +854,7 @@ export default function CreateNotificationDialog() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			allApplications: false,
-			events: [...notificationEvents] as NotificationEvent[],
-			applicationIds: [] as string[],
+			subscription: defaultSubscription,
 		},
 		validators: {
 			onSubmit: notificationSchema,
@@ -898,11 +867,7 @@ export default function CreateNotificationDialog() {
 					type: value.type,
 					config: buildNotificationConfig(value),
 					enabled: value.enabled,
-					allApplications: value.allApplications,
-					events: value.events,
-					applicationIds: value.allApplications
-						? []
-						: normalizeNotificationApplicationIds(value.applicationIds),
+					...normalizeNotificationSubscription(value.subscription),
 				};
 
 				await createNotification(payload);
@@ -924,13 +889,13 @@ export default function CreateNotificationDialog() {
 	};
 
 	async function handleNext(advance: () => void) {
-		const [nameErrors, typeErrors, eventErrors] = await Promise.all([
+		const [nameErrors, typeErrors, subscriptionErrors] = await Promise.all([
 			form.validateField("name", "submit"),
 			form.validateField("type", "submit"),
-			form.validateField("events", "submit"),
+			form.validateField("subscription", "submit"),
 		]);
 
-		if (nameErrors?.length || typeErrors?.length || eventErrors?.length) {
+		if (nameErrors?.length || typeErrors?.length || subscriptionErrors?.length) {
 			return;
 		}
 
@@ -1015,10 +980,7 @@ export default function CreateNotificationDialog() {
 												step="events"
 												render={(props) => (
 													<div {...props} className={cn("space-y-4", props.className)}>
-														<NotificationEventsStepContent
-															form={form}
-															applications={applications}
-														/>
+														<NotificationEventsStepContent form={form} />
 													</div>
 												)}
 											/>
