@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -302,9 +303,24 @@ func TestRunMigrations_NotificationEventsBackfill(t *testing.T) {
 		t.Fatalf("failed to migrate to version 26: %v", err)
 	}
 
-	if _, err := sqlDB.Exec(`INSERT INTO notifications (id, name, enabled, enable_by_default, status, type, config)
-		VALUES ('default', 'n', 1, 1, 'unknown', 'discord', '{}'), ('assigned', 'n', 1, 0, 'unknown', 'discord', '{}')`); err != nil {
-		t.Fatalf("failed to seed notifications: %v", err)
+	seed := []string{
+		`INSERT INTO agents (id, name, key_id) VALUES ('agent', 'a', 'k')`,
+		`INSERT INTO repositories (id, name, url, provider, auth_method, sync_type, created_by)
+			VALUES ('repo', 'r', 'https://example.com/r.git', 'generic', 'none', 'manual', 'user')`,
+		`INSERT INTO applications (id, name, repository_id, agent_id, sync_status, health_status, branch, "commit", commit_message, path)
+			VALUES ('app-1', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p'),
+				('app-2', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p')`,
+		`INSERT INTO notifications (id, name, enabled, enable_by_default, status, type, config)
+			VALUES ('covering', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('partial', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('assigned', 'n', 1, 0, 'unknown', 'discord', '{}')`,
+		`INSERT INTO application_notifications (application_id, notification_id)
+			VALUES ('app-1', 'covering'), ('app-2', 'covering'), ('app-1', 'partial'), ('app-2', 'assigned')`,
+	}
+	for _, stmt := range seed {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("failed to seed data: %v", err)
+		}
 	}
 
 	if err := runMigrations(gormDB); err != nil {
@@ -318,7 +334,8 @@ func TestRunMigrations_NotificationEventsBackfill(t *testing.T) {
 	}
 	defer func() { _ = rows.Close() }()
 
-	wantAllApplications := map[string]bool{"assigned": false, "default": true}
+	// Only a default notification already attached to every application becomes all_applications.
+	wantAllApplications := map[string]bool{"covering": true, "partial": false, "assigned": false}
 	wantEvents, err := json.Marshal(models.NotificationEvents)
 	if err != nil {
 		t.Fatalf("failed to marshal events: %v", err)
@@ -341,8 +358,30 @@ func TestRunMigrations_NotificationEventsBackfill(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("failed to iterate notifications: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("expected 2 notifications, got %d", count)
+	if count != 3 {
+		t.Fatalf("expected 3 notifications, got %d", count)
+	}
+
+	assocRows, err := sqlDB.Query(`SELECT application_id || ':' || notification_id FROM application_notifications ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("failed to query application_notifications: %v", err)
+	}
+	defer func() { _ = assocRows.Close() }()
+
+	var associations []string
+	for assocRows.Next() {
+		var association string
+		if err := assocRows.Scan(&association); err != nil {
+			t.Fatalf("failed to scan association: %v", err)
+		}
+		associations = append(associations, association)
+	}
+	if err := assocRows.Err(); err != nil {
+		t.Fatalf("failed to iterate associations: %v", err)
+	}
+	wantAssociations := []string{"app-1:partial", "app-2:assigned"}
+	if !slices.Equal(associations, wantAssociations) {
+		t.Fatalf("expected associations %v, got %v", wantAssociations, associations)
 	}
 }
 

@@ -11,7 +11,7 @@ import {
 	ComboboxValue,
 	useComboboxAnchor,
 } from "@/components/ui/combobox";
-import { Field, FieldDescription } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError } from "@/components/ui/field";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -30,17 +30,21 @@ const notificationEventLabels: Record<NotificationEvent, () => string> = {
 export function NotificationEventsField({
 	value,
 	onChange,
+	errors,
 }: {
 	value: NotificationEvent[];
 	onChange: (events: NotificationEvent[]) => void;
+	errors?: Array<{ message?: string } | undefined>;
 }) {
+	const isInvalid = (errors?.length ?? 0) > 0;
+
 	const toggle = (event: NotificationEvent, checked: boolean) => {
 		// Keep the catalog order so the payload is stable regardless of click order.
 		onChange(notificationEvents.filter((e) => (e === event ? checked : value.includes(e))));
 	};
 
 	return (
-		<Field>
+		<Field data-invalid={isInvalid}>
 			<Label>{m.notificationEvents()}</Label>
 			<FieldDescription>{m.notificationEventsDescription()}</FieldDescription>
 			<div className="grid gap-3 rounded-md border p-3">
@@ -57,6 +61,7 @@ export function NotificationEventsField({
 					</div>
 				))}
 			</div>
+			{isInvalid && <FieldError errors={errors} />}
 		</Field>
 	);
 }

@@ -63,10 +63,10 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	sse.PublishUpdate("/api/v1/applications")
 
 	if r.Success {
-		go notifications.NotifyApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
+		go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
 		return
 	}
-	go notifications.NotifyApplication(r.ApplicationId, models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String(), log)
+	go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String(), log)
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this

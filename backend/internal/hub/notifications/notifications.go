@@ -31,7 +31,7 @@ var (
 	ErrNotificationDispatch      = errors.New("notification dispatch failed")
 )
 
-func NotifyApplication(applicationId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
+func SendForApplication(applicationId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
 	if strings.TrimSpace(message) == "" {
 		return
 	}
