@@ -115,7 +115,10 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	applyOrcaLabels(project, appID)
 
-	previousImages := c.applicationImages(ctx, appID, deleteOldImages)
+	var previousImages map[string]struct{}
+	if deleteOldImages {
+		previousImages = c.applicationImages(ctx, appID)
+	}
 
 	// Like Deploy, don't block on healthchecks: health is observed after the
 	// containers are recreated and reported separately.
@@ -129,7 +132,9 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("compose up after pull: %w", err)
 	}
 
-	c.removeReplacedImages(ctx, appID, previousImages)
+	if deleteOldImages {
+		c.removeReplacedImages(ctx, appID, previousImages)
+	}
 
 	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")
 

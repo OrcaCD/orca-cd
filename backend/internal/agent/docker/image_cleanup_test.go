@@ -99,20 +99,6 @@ func TestRemoveImage_Error(t *testing.T) {
 	}
 }
 
-func TestApplicationImages_Disabled(t *testing.T) {
-	saveRestoreVars(t)
-	c := newTestClient(t)
-
-	listApplicationImageIDs = func(_ context.Context, _ client.APIClient, _ string) (map[string]struct{}, error) {
-		t.Fatal("must not list images when cleanup is disabled")
-		return nil, nil
-	}
-
-	if got := c.applicationImages(t.Context(), "app-123", false); got != nil {
-		t.Errorf("expected nil snapshot, got %v", got)
-	}
-}
-
 func TestApplicationImages_ListError(t *testing.T) {
 	saveRestoreVars(t)
 	c := newTestClient(t)
@@ -121,7 +107,7 @@ func TestApplicationImages_ListError(t *testing.T) {
 		return nil, errors.New("daemon unavailable")
 	}
 
-	if got := c.applicationImages(t.Context(), "app-123", true); got != nil {
+	if got := c.applicationImages(t.Context(), "app-123"); got != nil {
 		t.Errorf("expected nil snapshot on list error, got %v", got)
 	}
 }

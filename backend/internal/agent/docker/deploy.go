@@ -158,7 +158,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return err
 	}
 
-	previousImages := c.applicationImages(ctx, req.ApplicationID, req.DeleteOldImages)
+	var previousImages map[string]struct{}
+	if req.DeleteOldImages {
+		previousImages = c.applicationImages(ctx, req.ApplicationID)
+	}
 
 	// Do not wait for healthchecks here: deployment is considered complete once
 	// the containers are started. Runtime health is observed afterwards via
@@ -174,7 +177,9 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("compose up: %w", err)
 	}
 
-	c.removeReplacedImages(ctx, req.ApplicationID, previousImages)
+	if req.DeleteOldImages {
+		c.removeReplacedImages(ctx, req.ApplicationID, previousImages)
+	}
 
 	c.log.Info().
 		Str("application_id", req.ApplicationID).

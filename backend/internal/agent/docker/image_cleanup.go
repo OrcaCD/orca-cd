@@ -30,12 +30,9 @@ var removeImage = func(ctx context.Context, cli client.APIClient, imageID string
 }
 
 // applicationImages snapshots the image IDs used by the application's
-// containers so they can be compared after an update. Returns nil when cleanup
-// is disabled or the snapshot fails, which makes removeReplacedImages a no-op.
-func (c *Client) applicationImages(ctx context.Context, appID string, deleteOldImages bool) map[string]struct{} {
-	if !deleteOldImages {
-		return nil
-	}
+// containers so they can be compared after an update. Returns nil when the
+// snapshot fails, which makes removeReplacedImages a no-op.
+func (c *Client) applicationImages(ctx context.Context, appID string) map[string]struct{} {
 	ids, err := listApplicationImageIDs(ctx, c.cli.Client(), appID)
 	if err != nil {
 		c.log.Warn().Err(err).Str("application_id", appID).Msg("could not list application images, skipping old image cleanup")
