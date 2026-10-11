@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { GITEA_MOCK_CONTROL_URL } from "./tests/const.ts";
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -36,13 +37,22 @@ export default defineConfig({
 
 	globalTeardown: "./global-teardown.ts",
 
-	webServer: {
-		command:
-			"docker compose -f docker-compose.e2e.yml --profile agent build && docker compose -f docker-compose.e2e.yml up --force-recreate hub",
-		url: "http://127.0.0.1:8090/api/v1/health",
-		timeout: 6 * 60 * 1000, // 6 minutes
-		reuseExistingServer: false,
-		stdout: "pipe",
-		stderr: "pipe",
-	},
+	webServer: [
+		{
+			command:
+				"docker compose -f docker-compose.e2e.yml --profile agent build && docker compose -f docker-compose.e2e.yml up --force-recreate hub",
+			url: "http://127.0.0.1:8090/api/v1/health",
+			timeout: 6 * 60 * 1000, // 6 minutes
+			reuseExistingServer: false,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+		{
+			command: "node mock/gitea/app.ts",
+			url: `${GITEA_MOCK_CONTROL_URL}/__control/health`,
+			reuseExistingServer: false,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	],
 });
