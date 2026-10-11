@@ -37,9 +37,10 @@ export default defineConfig({
 	globalTeardown: "./global-teardown.ts",
 
 	webServer: {
-		command: "docker compose -f docker-compose.e2e.yml up --force-recreate --build",
+		command:
+			"docker compose -f docker-compose.e2e.yml --profile agent build && docker compose -f docker-compose.e2e.yml up --force-recreate hub",
 		url: "http://127.0.0.1:8090/api/v1/health",
-		timeout: 3 * 60 * 1000, // 3 minutes
+		timeout: 6 * 60 * 1000, // 6 minutes
 		reuseExistingServer: false,
 		stdout: "pipe",
 		stderr: "pipe",

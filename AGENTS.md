@@ -62,7 +62,7 @@ node --run translations:check   # verify all locales have the same message keys
 
 ```sh
 pnpm i --frozen-lockfile && pnpm run install:browsers
-pnpm test       # builds and starts the stack via docker-compose.e2e.yml on :8090
+pnpm test       # builds and starts the hub via docker-compose.e2e.yml on :8090; agent tests start the agent container themselves (needs Docker socket access)
 pnpm test:ui    # interactive mode
 ```
 
