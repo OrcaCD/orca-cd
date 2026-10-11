@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -28,14 +29,17 @@ func defaultString(value, fallback string) string {
 }
 
 type agentResponse struct {
-	Id        string  `json:"id"`
-	Icon      string  `json:"icon"`
-	Name      string  `json:"name"`
-	Status    string  `json:"status"`
-	AppsCount int64   `json:"appsCount"`
-	LastSeen  *string `json:"lastSeen"`
-	CreatedAt string  `json:"createdAt"`
-	UpdatedAt string  `json:"updatedAt"`
+	Id            string                     `json:"id"`
+	Icon          string                     `json:"icon"`
+	Name          string                     `json:"name"`
+	Status        string                     `json:"status"`
+	AppsCount     int64                      `json:"appsCount"`
+	LastSeen      *string                    `json:"lastSeen"`
+	Version       *string                    `json:"version"`
+	DockerVersion *string                    `json:"dockerVersion"`
+	VersionStatus version.AgentCompatibility `json:"versionStatus"`
+	CreatedAt     string                     `json:"createdAt"`
+	UpdatedAt     string                     `json:"updatedAt"`
 }
 
 type agentWithTokenResponse struct {
@@ -68,18 +72,25 @@ func toAgentStatus(status models.AgentStatus) string {
 
 func toAgentResponse(agent *models.Agent, appsCount int64) agentResponse {
 	response := agentResponse{
-		Id:        agent.Id,
-		Icon:      agent.Icon,
-		Name:      agent.Name.String(),
-		Status:    toAgentStatus(agent.Status),
-		AppsCount: appsCount,
-		CreatedAt: agent.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: agent.UpdatedAt.Format(time.RFC3339),
+		Id:            agent.Id,
+		Icon:          agent.Icon,
+		Name:          agent.Name.String(),
+		Status:        toAgentStatus(agent.Status),
+		AppsCount:     appsCount,
+		VersionStatus: version.CheckAgentCompatibility(version.Version, agent.Version),
+		CreatedAt:     agent.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:     agent.UpdatedAt.Format(time.RFC3339),
 	}
 
 	if agent.LastSeen != nil {
 		lastSeen := agent.LastSeen.Format(time.RFC3339)
 		response.LastSeen = &lastSeen
+	}
+	if agent.Version != "" {
+		response.Version = &agent.Version
+	}
+	if agent.DockerVersion != "" {
+		response.DockerVersion = &agent.DockerVersion
 	}
 
 	return response

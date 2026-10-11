@@ -3,7 +3,7 @@ import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, Search, Trash2 } from "lucide-react";
+import { AppWindow, Container, EllipsisVertical, Search, Tag, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import { AgentsDataTable } from "@/components/tables/agents/data-table";
 import { columns } from "@/components/tables/agents/columns";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
+import { AgentVersionBadge } from "@/components/badges/agent-version-badge";
+import OutdatedAgentsAlert from "@/components/alerts/outdated-agents-alert";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
@@ -83,6 +85,8 @@ function RouteComponent() {
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingAgents()}</p>}
+
+			<OutdatedAgentsAlert agents={data ?? []} />
 
 			<div className="space-y-4">
 				<div className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -162,8 +166,8 @@ function RouteComponent() {
 									<CardContent className="space-y-3">
 										<AgentStatusBadge status={agent.status} />
 
-										<div className="grid grid-cols-1 gap-2 text-xs">
-											<div className="rounded-lg border bg-muted/50 p-2">
+										<div className="grid grid-cols-2 gap-2 text-xs">
+											<div className="min-w-0 rounded-lg border bg-muted/50 p-2">
 												<p className="flex items-center gap-1 text-muted-foreground">
 													<AppWindow className="h-3 w-3" />
 													{m.appsCount()}
@@ -171,6 +175,27 @@ function RouteComponent() {
 												<p className="mt-1 font-medium">
 													{agent.appsCount ?? m.notAvailableShort()}
 												</p>
+											</div>
+											<div className="min-w-0 rounded-lg border bg-muted/50 p-2">
+												<p className="flex items-center gap-1 text-muted-foreground">
+													<Container className="h-3 w-3" />
+													{m.dockerVersion()}
+												</p>
+												<p
+													className="mt-1 truncate font-medium"
+													title={agent.dockerVersion ?? undefined}
+												>
+													{agent.dockerVersion ?? m.notAvailableShort()}
+												</p>
+											</div>
+											<div className="col-span-2 rounded-lg border bg-muted/50 p-2">
+												<p className="flex items-center gap-1 text-muted-foreground">
+													<Tag className="h-3 w-3" />
+													{m.agentVersion()}
+												</p>
+												<div className="mt-1">
+													<AgentVersionBadge version={agent.version} status={agent.versionStatus} />
+												</div>
 											</div>
 										</div>
 									</CardContent>

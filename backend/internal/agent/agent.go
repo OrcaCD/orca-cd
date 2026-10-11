@@ -211,6 +211,9 @@ func Run(cfg Config) error {
 
 	sRef := &senderRef{}
 	dockerClient.SetHealthReporter(sRef)
+	// Re-report the Docker version when the daemon comes (back) up after the
+	// agent already connected; without a connection this is a no-op.
+	dockerClient.SetDaemonReadyHandler(func() { sendAgentInfo(sRef, dockerClient) })
 	poller := docker.NewImagePoller(dockerClient, sRef, Log)
 	defer poller.StopAll()
 
@@ -233,6 +236,7 @@ func Run(cfg Config) error {
 	wsConnected.Store(true)
 	sender := newMessageSender(conn, session)
 	sRef.store(sender)
+	sendAgentInfo(sender, dockerClient)
 
 	for {
 		_, data, readErr := conn.ReadMessage()
@@ -254,6 +258,7 @@ func Run(cfg Config) error {
 			wsConnected.Store(true)
 			sender = newMessageSender(conn, session)
 			sRef.store(sender)
+			sendAgentInfo(sender, dockerClient)
 			continue
 		}
 		msg := &messages.ServerMessage{}

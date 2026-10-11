@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
+	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -242,6 +243,59 @@ func TestGetAgentHandler_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetAgentHandler_Versions(t *testing.T) {
+	setupTestDBWithAgents(t)
+
+	originalVersion := version.Version
+	version.Version = "v0.6.0"
+	t.Cleanup(func() { version.Version = originalVersion })
+
+	reported := createTestAgentRecord(t, "Reported", "reported-key", models.AgentStatusOnline, nil)
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("id = ?", reported.Id).
+		Select("Version", "DockerVersion").
+		Updates(t.Context(), models.Agent{Version: "v0.5.0", DockerVersion: "28.1.1"}); err != nil {
+		t.Fatalf("failed to set agent versions: %v", err)
+	}
+	unreported := createTestAgentRecord(t, "Unreported", "unreported-key", models.AgentStatusOffline, nil)
+
+	router := gin.New()
+	router.GET("/api/v1/agents/:id", GetAgentHandler)
+
+	get := func(id string) agentResponse {
+		t.Helper()
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/agents/"+id, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var body agentResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		return body
+	}
+
+	body := get(reported.Id)
+	if body.Version == nil || *body.Version != "v0.5.0" {
+		t.Fatalf("expected version v0.5.0, got %v", body.Version)
+	}
+	if body.DockerVersion == nil || *body.DockerVersion != "28.1.1" {
+		t.Fatalf("expected docker version 28.1.1, got %v", body.DockerVersion)
+	}
+	if body.VersionStatus != version.AgentOutdated {
+		t.Fatalf("expected versionStatus %q, got %q", version.AgentOutdated, body.VersionStatus)
+	}
+
+	body = get(unreported.Id)
+	if body.Version != nil || body.DockerVersion != nil {
+		t.Fatalf("expected no versions, got %v / %v", body.Version, body.DockerVersion)
+	}
+	if body.VersionStatus != version.AgentUnknown {
+		t.Fatalf("expected versionStatus %q, got %q", version.AgentUnknown, body.VersionStatus)
 	}
 }
 
