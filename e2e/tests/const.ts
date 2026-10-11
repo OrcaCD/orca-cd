@@ -5,3 +5,7 @@ export const AGENT_CONTAINER = "orca-agent-e2e-test";
 export const AGENT_IMAGE = "orca-agent-e2e-test";
 export const DUPLICATE_AGENT_CONTAINER = "orca-agent-e2e-duplicate";
 export const HUB_WS_URL = "ws://hub:8080/api/v1/ws";
+
+export const GITEA_MOCK_API_PORT = 3443;
+export const GITEA_MOCK_CONTROL_PORT = 3444;
+export const GITEA_MOCK_CONTROL_URL = `http://127.0.0.1:${GITEA_MOCK_CONTROL_PORT}`;

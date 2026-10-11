@@ -63,6 +63,26 @@ test.describe("protected API routes require authentication", () => {
 	test("GET /api/v1/repositories returns 401", async ({ request }) => {
 		expect((await request.get("/api/v1/repositories")).status()).toBe(401);
 	});
+	test("GET /api/v1/repositories/:id returns 401", async ({ request }) => {
+		expect((await request.get("/api/v1/repositories/some-id")).status()).toBe(401);
+	});
+	test("POST /api/v1/repositories/test-connection returns 401", async ({ request }) => {
+		expect(
+			(
+				await request.post("/api/v1/repositories/test-connection", {
+					data: { url: "https://example.com/org/repo", provider: "gitea", authMethod: "none" },
+					headers: { Origin: APP_URL },
+				})
+			).status(),
+		).toBe(401);
+	});
+	test("DELETE /api/v1/repositories/:id returns 401", async ({ request }) => {
+		expect(
+			(
+				await request.delete("/api/v1/repositories/some-id", { headers: { Origin: APP_URL } })
+			).status(),
+		).toBe(401);
+	});
 	test("POST /api/v1/applications returns 401", async ({ request }) => {
 		expect(
 			(
