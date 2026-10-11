@@ -40,6 +40,8 @@ function composeFile(version: number, image = IMAGE) {
     image: ${image}
     pull_policy: if_not_present
     command: ["sh", "-c", "while true; do sleep 1; done"]
+    # PID 1 ignores SIGTERM, which would make every stop wait for the default 10 seconds
+    stop_grace_period: 1s
     environment:
       APP_VERSION: "${version}"
     healthcheck:
@@ -455,7 +457,10 @@ test.describe("Removal", () => {
 		await page.getByRole("button", { name: "Delete", exact: true }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
 
-		await expect(page.getByText(`Application ${APP_NAME} deleted successfully`)).toBeVisible();
+		// The hub answers after the agent removed the containers
+		await expect(page.getByText(`Application ${APP_NAME} deleted successfully`)).toBeVisible({
+			timeout: 30_000,
+		});
 		await expect(page).toHaveURL("/applications");
 		await expect(page.getByRole("link", { name: APP_NAME })).toHaveCount(0);
 
