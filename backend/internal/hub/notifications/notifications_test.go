@@ -108,13 +108,14 @@ func seedNotificationTestApp(t *testing.T, healthStatus models.HealthStatus) mod
 	return app
 }
 
-func seedNotificationRecord(t *testing.T, name string, enabled, enableByDefault bool, status models.NotificationStatus, appIds ...string) models.Notification {
+func seedNotificationRecord(t *testing.T, name string, enabled, allApplications bool, status models.NotificationStatus, appIds ...string) models.Notification {
 	t.Helper()
 
 	notification := models.Notification{
 		Name:            crypto.EncryptedString(name),
 		Enabled:         enabled,
-		EnableByDefault: enableByDefault,
+		AllApplications: allApplications,
+		Events:          models.NotificationEvents,
 		Status:          status,
 		Type:            models.NotificationTypeDiscord,
 		Config:          crypto.EncryptedString(validDiscordConfig),
@@ -147,8 +148,15 @@ func TestGetNotificationConfig_FiltersByStatusAndAssociation(t *testing.T) {
 	withErrorStatus := seedNotificationRecord(t, "with-error-status", true, true, models.NotificationStatusError)
 	seedNotificationRecord(t, "disabled", false, true, models.NotificationStatusSuccess)
 	seedNotificationRecord(t, "other-app", true, false, models.NotificationStatusSuccess, otherApp.Id)
+	otherEvent := seedNotificationRecord(t, "other-event", true, true, models.NotificationStatusUnknown)
+	if _, err := gorm.G[models.Notification](db.DB).
+		Where("id = ?", otherEvent.Id).
+		Select("events").
+		Updates(t.Context(), models.Notification{Events: []models.NotificationEvent{models.NotificationEventDeploymentSucceeded}}); err != nil {
+		t.Fatalf("failed to update notification events: %v", err)
+	}
 
-	configs, err := getNotificationConfig(context.Background(), app.Id)
+	configs, err := getNotificationConfig(context.Background(), app.Id, models.NotificationEventDeploymentFailed)
 	if err != nil {
 		t.Fatalf("getNotificationConfig() error: %v", err)
 	}

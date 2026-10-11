@@ -1,6 +1,10 @@
 package models
 
-import "github.com/OrcaCD/orca-cd/internal/hub/crypto"
+import (
+	"slices"
+
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
+)
 
 type NotificationStatus string
 
@@ -22,15 +26,44 @@ const (
 	NotificationTypeCustom  NotificationType = "custom"
 )
 
+// NotificationEvent identifies an occurrence a notification can subscribe to.
+type NotificationEvent string
+
+const (
+	NotificationEventDeploymentSucceeded  NotificationEvent = "application.deployment.succeeded"
+	NotificationEventDeploymentFailed     NotificationEvent = "application.deployment.failed"
+	NotificationEventImageUpdateSucceeded NotificationEvent = "application.image_update.succeeded"
+	NotificationEventImageUpdateFailed    NotificationEvent = "application.image_update.failed"
+	NotificationEventSyncFailed           NotificationEvent = "application.sync.failed"
+)
+
+// NotificationEvents lists every supported event in display order.
+var NotificationEvents = []NotificationEvent{
+	NotificationEventDeploymentSucceeded,
+	NotificationEventDeploymentFailed,
+	NotificationEventImageUpdateSucceeded,
+	NotificationEventImageUpdateFailed,
+	NotificationEventSyncFailed,
+}
+
+func (e NotificationEvent) IsValid() bool {
+	return slices.Contains(NotificationEvents, e)
+}
+
 type Notification struct {
 	Base
 	Name            crypto.EncryptedString `gorm:"type:text;not null"`
 	Enabled         bool                   `gorm:"not null"`
-	EnableByDefault bool                   `gorm:"not null"`
+	AllApplications bool                   `gorm:"not null"`
+	Events          []NotificationEvent    `gorm:"type:text;not null;serializer:json"`
 	Status          NotificationStatus     `gorm:"type:text;not null"`
 	Type            NotificationType       `gorm:"type:text;not null"`
 	Config          crypto.EncryptedString `gorm:"type:text;not null"`
 	Applications    []Application          `gorm:"many2many:application_notifications;"`
+}
+
+func (n *Notification) SubscribesTo(event NotificationEvent) bool {
+	return slices.Contains(n.Events, event)
 }
 
 func (Notification) TableName() string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,7 +31,7 @@ var (
 	ErrNotificationDispatch      = errors.New("notification dispatch failed")
 )
 
-func SendNotification(applicationId string, message string, log *zerolog.Logger) {
+func SendForApplication(applicationId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
 	if strings.TrimSpace(message) == "" {
 		return
 	}
@@ -38,7 +39,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 	ctx, cancel := context.WithTimeout(context.Background(), notificationQueryTimeout)
 	defer cancel()
 
-	configs, err := getNotificationConfig(ctx, applicationId)
+	configs, err := getNotificationConfig(ctx, applicationId, event)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Str("applicationId", applicationId).Msg("application not found while sending notifications")
@@ -94,7 +95,7 @@ func SendNotification(applicationId string, message string, log *zerolog.Logger)
 	}
 }
 
-func getNotificationConfig(ctx context.Context, applicationId string) ([]models.Notification, error) {
+func getNotificationConfig(ctx context.Context, applicationId string, event models.NotificationEvent) ([]models.Notification, error) {
 	_, err := gorm.G[models.Application](db.DB).
 		Select("id").
 		Where("id = ?", applicationId).
@@ -109,14 +110,16 @@ func getNotificationConfig(ctx context.Context, applicationId string) ([]models.
 		Select("notifications.*").
 		Joins("LEFT JOIN application_notifications ON application_notifications.notification_id = notifications.id").
 		Where("notifications.enabled = ?", true).
-		Where("(notifications.enable_by_default = ? OR application_notifications.application_id = ?)", true, applicationId).
+		Where("(notifications.all_applications = ? OR application_notifications.application_id = ?)", true, applicationId).
 		Group("notifications.id").
 		Find(&notifications).Error
 	if err != nil {
 		return nil, err
 	}
 
-	return notifications, nil
+	return slices.DeleteFunc(notifications, func(n models.Notification) bool {
+		return !n.SubscribesTo(event)
+	}), nil
 }
 
 func SendTestNotification(notificationType models.NotificationType, rawConfig, message string) error {
