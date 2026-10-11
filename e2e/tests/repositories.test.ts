@@ -217,6 +217,8 @@ test.describe("Repository settings", () => {
 		await expect(page.getByText("Can't connect to repository")).toBeVisible();
 		await expect(page.getByText(/authentication failed or access denied/i)).toBeVisible();
 
+		// The first toast can still be on screen, which would make the assertion below ambiguous
+		await expect(page.getByText("Authentication updated")).toHaveCount(0, { timeout: 10_000 });
 		await page.locator("#authToken").fill("right-token");
 		await page.getByRole("button", { name: "Update Authentication" }).click();
 		await expect(page.getByText("Authentication updated")).toBeVisible();

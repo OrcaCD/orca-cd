@@ -221,7 +221,11 @@ test.describe("Deploy an application", () => {
 		expect(containers[0].state).toBe("running");
 		containerId = containers[0].id;
 		const container = inspectContainer(containerId);
-		expect(container).toMatchObject({ image: IMAGE, health: "healthy" });
+		expect(container.image).toBe(IMAGE);
+		// The hub can report healthy before Docker finished the first healthcheck
+		await expect
+			.poll(() => inspectContainer(containerId).health, { timeout: 30_000 })
+			.toBe("healthy");
 		expect(container.env.APP_VERSION).toBe("1");
 		expect(container.labels["orca-cd.application-id"]).toBe(appId);
 		expect(container.labels["managed_by"]).toBe("orca-cd");
