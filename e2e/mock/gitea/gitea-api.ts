@@ -50,7 +50,9 @@ function handleRepoResource(repo: Repo, rest: string[], url: URL, res: ServerRes
 			return send(res, 200, { sha: branch.sha, tree: treeEntries(branch.files) });
 		}
 		case "contents": {
-			const content = repo.branches.get(param("ref"))?.files.get(path.join("/"));
+			const ref = param("ref");
+			const files = repo.branches.get(ref)?.files ?? repo.snapshots.get(ref);
+			const content = files?.get(path.join("/"));
 			if (content === undefined) {
 				return send(res, 404, { message: "file does not exist" });
 			}

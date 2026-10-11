@@ -18,6 +18,7 @@ export interface Repo {
 	branches: Map<string, Branch>;
 	token?: string;
 	requests: RecordedRequest[];
+	snapshots: Map<string, Map<string, string>>;
 }
 
 export type BranchDefinitions = Record<string, { files?: Record<string, string> }>;
@@ -44,14 +45,16 @@ export function createRepo(
 	key: string,
 	{ branches = DEFAULT_BRANCHES, token }: { branches?: BranchDefinitions; token?: string },
 ) {
-	const repo: Repo = { key, branches: new Map(), token, requests: [] };
+	const repo: Repo = { key, branches: new Map(), token, requests: [], snapshots: new Map() };
 	for (const [name, { files = {} }] of Object.entries(branches)) {
-		repo.branches.set(name, {
+		const branch = {
 			sha: commitSha(repo, name, 1),
 			message: "Initial commit",
 			commits: 1,
 			files: new Map(Object.entries(files)),
-		});
+		};
+		repo.branches.set(name, branch);
+		repo.snapshots.set(branch.sha, new Map(branch.files));
 	}
 	repos.set(key, repo);
 }
@@ -77,6 +80,7 @@ export function commitFiles(
 	branch.commits++;
 	branch.sha = commitSha(repo, branchName, branch.commits);
 	branch.message = message ?? `Commit ${branch.commits}`;
+	repo.snapshots.set(branch.sha, new Map(branch.files));
 	return { sha: branch.sha, message: branch.message };
 }
 
