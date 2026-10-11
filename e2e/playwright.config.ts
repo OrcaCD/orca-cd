@@ -1,6 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 import { GITEA_MOCK_CONTROL_URL } from "./tests/const.ts";
 
+const authenticated = {
+	...devices["Desktop Chrome"],
+	storageState: "playwright/.auth/user.json",
+};
+// These files share the single agent container and restart the hub, so they must not overlap
+// with other tests and run one after another after everything else
+const sharedInfrastructure = /(agent|applications)\.test\.ts$/;
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -20,8 +28,8 @@ export default defineConfig({
 	use: {
 		baseURL: "http://127.0.0.1:8090",
 
-		/* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-		trace: "on-first-retry",
+		/* A first failure has no trace otherwise, which makes flaky failures on CI hard to debug. See https://playwright.dev/docs/trace-viewer */
+		trace: "retain-on-failure",
 	},
 	/* Configure projects for major browsers */
 	projects: [
@@ -30,8 +38,21 @@ export default defineConfig({
 		// Test on Chromium with authenticated state
 		{
 			name: "chromium",
-			use: { ...devices["Desktop Chrome"], storageState: "playwright/.auth/user.json" },
+			testIgnore: sharedInfrastructure,
+			use: authenticated,
 			dependencies: ["setup"],
+		},
+		{
+			name: "agent",
+			testMatch: /agent\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["chromium"],
+		},
+		{
+			name: "applications",
+			testMatch: /applications\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["agent"],
 		},
 	],
 

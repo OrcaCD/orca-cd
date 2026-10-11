@@ -1,21 +1,7 @@
 import { test, expect, request as pwRequest, type Locator, type Page } from "@playwright/test";
 import { APP_URL } from "./const.ts";
+import { api, listRepositories, seedRepository as seedHubRepository } from "./helpers/api.ts";
 import { createRepo, deleteRepo, repoUrl, requests, requireToken } from "./helpers/gitea-mock.ts";
-
-interface ApiRepository {
-	id: string;
-	name: string;
-	url: string;
-	provider: string;
-	authMethod: string;
-	syncType: string;
-	syncStatus: string;
-	pollingIntervalSeconds: number | null;
-	lastSyncedAt: string | null;
-	appCount: number;
-	webhookSecret?: string;
-	webhookUrl?: string;
-}
 
 const MANUAL = "Manual";
 const POLLING = "Polling";
@@ -28,59 +14,19 @@ test.describe.configure({ mode: "serial" });
 
 const createdIds: string[] = [];
 
-async function api(page: Page, method: string, path: string, body?: unknown) {
-	if (!page.url().startsWith(APP_URL)) {
-		await page.goto("/repositories");
-	}
-	return page.evaluate(
-		async ({ method, path, body }) => {
-			const response = await fetch(`/api/v1${path}`, {
-				method,
-				headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-				// oxlint-disable-next-line unicorn/no-invalid-fetch-options
-				body: body === undefined ? undefined : JSON.stringify(body),
-			});
-			const text = await response.text();
-			let json: any = null;
-			try {
-				json = text ? JSON.parse(text) : null;
-			} catch {
-				json = text;
-			}
-			return { status: response.status, body: json };
-		},
-		{ method, path, body },
-	);
-}
-
-async function listRepositories(page: Page) {
-	const { status, body } = await api(page, "GET", "/repositories");
-	expect(status).toBe(200);
-	return body as ApiRepository[];
-}
-
 async function findRepository(page: Page, suffix: string) {
 	return (await listRepositories(page)).find((repo) => repo.name === fullName(suffix));
 }
 
-/** Creates the mock repository and the hub repository for it via the API */
 async function seedRepository(
 	page: Page,
 	suffix: string,
 	extra: Record<string, unknown> = {},
 	mock: Parameters<typeof createRepo>[1] = {},
 ) {
-	await createRepo(fullName(suffix), mock);
-	const { status, body } = await api(page, "POST", "/repositories", {
-		url: repoUrl(fullName(suffix)),
-		provider: "gitea",
-		authMethod: "none",
-		syncType: "manual",
-		...extra,
-	});
-	expect(status).toBe(201);
-	createdIds.push(body.id);
-	return body as ApiRepository;
+	const repo = await seedHubRepository(page, fullName(suffix), extra, mock);
+	createdIds.push(repo.id);
+	return repo;
 }
 
 function repositoryCard(page: Page, suffix: string) {
@@ -271,6 +217,8 @@ test.describe("Repository settings", () => {
 		await expect(page.getByText("Can't connect to repository")).toBeVisible();
 		await expect(page.getByText(/authentication failed or access denied/i)).toBeVisible();
 
+		// The first toast can still be on screen, which would make the assertion below ambiguous
+		await expect(page.getByText("Authentication updated")).toHaveCount(0, { timeout: 10_000 });
 		await page.locator("#authToken").fill("right-token");
 		await page.getByRole("button", { name: "Update Authentication" }).click();
 		await expect(page.getByText("Authentication updated")).toBeVisible();

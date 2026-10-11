@@ -1,5 +1,7 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { APP_URL, HUB_WS_URL } from "./const.ts";
+import { api } from "./helpers/api.ts";
+import { newAuthenticatedContext } from "./helpers/setup.ts";
 import {
 	agentHealthcheck,
 	agentLogs,
@@ -45,14 +47,47 @@ function agentCard(page: Page) {
 	return page.locator("[data-slot='card']", { hasText: AGENT_NAME });
 }
 
-async function expectBadge(page: Page, label: "Online" | "Offline") {
-	await page.goto("/agents");
-	await expect(agentCard(page).getByText(label, { exact: true })).toBeVisible();
+// Reloads and retries instead of waiting once, the page can be rendered before the hub is fully back
+async function openAgentCard(page: Page) {
+	await expect(async () => {
+		await page.goto("/agents");
+		await expect(agentCard(page)).toBeVisible({ timeout: 5_000 });
+	}).toPass({ timeout: 30_000 });
 }
 
-test.afterAll(() => {
+async function expectBadge(page: Page, label: "Online" | "Offline") {
+	await expect(async () => {
+		await page.goto("/agents");
+		await expect(agentCard(page).getByText(label, { exact: true })).toBeVisible({
+			timeout: 5_000,
+		});
+	}).toPass({ timeout: 30_000 });
+}
+
+// A retried serial group starts over with the state of the failed attempt still in place
+async function removeLeftovers(browser: Browser) {
 	removeDuplicateAgent();
 	stopAgent();
+	authToken = "";
+	agentId = "";
+
+	const context = await newAuthenticatedContext(browser);
+	try {
+		const page = await context.newPage();
+		for (const agent of await listAgents(page)) {
+			await api(page, "DELETE", `/agents/${agent.id}`);
+		}
+	} finally {
+		await context.close();
+	}
+}
+
+test.beforeAll(async ({ browser }) => {
+	await removeLeftovers(browser);
+});
+
+test.afterAll(async ({ browser }) => {
+	await removeLeftovers(browser);
 });
 
 test.describe("Agent with invalid configuration", () => {
@@ -133,7 +168,7 @@ test.describe("Agent token rotation", () => {
 	test("rotated token replaces the old one", async ({ page }) => {
 		const oldToken = authToken;
 
-		await page.goto("/agents");
+		await openAgentCard(page);
 		await agentCard(page).getByRole("button", { name: "Card actions" }).click();
 
 		await page.getByRole("menu").getByRole("button", { name: "Rotate token" }).click();
@@ -182,7 +217,8 @@ test.describe("Agent resilience", () => {
 	});
 
 	test("agent stops when it is deleted in the UI", async ({ page }) => {
-		await page.goto("/agents");
+		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("online");
+		await openAgentCard(page);
 		await agentCard(page).getByRole("button", { name: "Card actions" }).click();
 		await page.getByRole("menu").getByRole("button", { name: "Delete" }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();

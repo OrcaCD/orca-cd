@@ -66,7 +66,7 @@ pnpm test       # builds and starts the hub via docker-compose.e2e.yml on :8090;
 pnpm test:ui    # interactive mode
 ```
 
-Git providers are mocked by `e2e/mock/gitea/` (started by Playwright next to the hub).
+Git providers are mocked by `e2e/mock/gitea/` (started by Playwright next to the hub). The agent and application tests need access to the Docker socket.
 
 ### Local dev (Docker)
 
