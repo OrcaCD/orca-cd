@@ -26,28 +26,16 @@ import { Switch } from "@/components/ui/switch";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFetch } from "@/lib/api";
-import type { ApplicationListItem } from "@/lib/applications";
 import {
 	createNotification,
 	isHttpUrl,
-	normalizeNotificationApplicationIds,
+	normalizeNotificationSubscription,
+	notificationEvents,
+	type NotificationSubscription,
 	type NotificationType,
 	notificationTypes,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
-import {
-	Combobox,
-	ComboboxChip,
-	ComboboxChips,
-	ComboboxChipsInput,
-	ComboboxContent,
-	ComboboxEmpty,
-	ComboboxItem,
-	ComboboxList,
-	ComboboxValue,
-	useComboboxAnchor,
-} from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 import {
 	buildDiscordNotificationConfig,
@@ -103,9 +91,12 @@ import {
 	CustomShoutrrrUrlField,
 	isValidShoutrrrUrl,
 } from "./custom-notification-builder";
-import { Item, ItemContent, ItemDescription, ItemTitle } from "../ui/item";
+import {
+	NotificationSubscriptionFields,
+	notificationSubscriptionSchema,
+} from "./notification-subscription-fields";
 
-const { Stepper } = defineStepper([{ id: "config" }, { id: "provider" }]);
+const { Stepper } = defineStepper([{ id: "config" }, { id: "events" }, { id: "provider" }]);
 
 const notificationBaseSchema = z.object({
 	name: z
@@ -137,9 +128,18 @@ const notificationBaseSchema = z.object({
 	webhookHeaders: z.string(),
 	customShoutrrrUrl: z.string().trim(),
 	enabled: z.boolean(),
-	enableByDefault: z.boolean(),
-	applicationIds: z.array(z.string()),
+	subscription: notificationSubscriptionSchema,
 });
+
+const defaultSubscription: NotificationSubscription = {
+	events: [...notificationEvents],
+	allApplications: false,
+	applicationIds: [],
+	allAgents: false,
+	agentIds: [],
+	allRepositories: false,
+	repositoryIds: [],
+};
 
 const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {
 	if (value.type === "discord") {
@@ -472,8 +472,7 @@ function useNotificationForm() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			enableByDefault: false,
-			applicationIds: [] as string[],
+			subscription: defaultSubscription,
 		},
 		validators: { onSubmit: notificationSchema },
 		// oxlint-disable-next-line no-empty-function
@@ -528,14 +527,7 @@ const StepperSeparatorWithStatus = ({
 	);
 };
 
-function NotificationConfigStepContent({
-	form,
-	applications,
-}: {
-	form: NotificationFormApi;
-	applications: ApplicationListItem[] | undefined;
-}) {
-	const anchor = useComboboxAnchor();
+function NotificationConfigStepContent({ form }: { form: NotificationFormApi }) {
 	return (
 		<FieldGroup>
 			<form.Field name="name" validators={{ onSubmit: notificationBaseSchema.shape.name }}>
@@ -597,68 +589,24 @@ function NotificationConfigStepContent({
 					</div>
 				)}
 			</form.Field>
-
-			<form.Field name="enableByDefault">
-				{(field) => (
-					<div className="flex items-center justify-between rounded-md border p-3 gap-4">
-						<div>
-							<p className="text-sm font-medium">{m.enableByDefault()}</p>
-							<p className="text-xs text-muted-foreground">{m.enableByDefaultDescription()}</p>
-						</div>
-						<Switch checked={field.state.value} onCheckedChange={field.handleChange} />
-					</div>
-				)}
-			</form.Field>
-
-			<form.Field name="applicationIds">
-				{(field) => (
-					<Field>
-						<Label>{m.navApplications()}</Label>
-						<Combobox
-							items={applications}
-							multiple
-							autoHighlight
-							value={field.state.value}
-							onValueChange={field.handleChange}
-						>
-							<ComboboxChips ref={anchor}>
-								<ComboboxValue>
-									{(values) => (
-										<>
-											{values.map((value: string) => (
-												<ComboboxChip key={value}>
-													{applications?.find((app) => app.id === value)?.name ?? value}
-												</ComboboxChip>
-											))}
-											<ComboboxChipsInput
-												placeholder={field.state.value.length === 0 ? m.selectApplications() : ""}
-											/>
-										</>
-									)}
-								</ComboboxValue>
-							</ComboboxChips>
-							<ComboboxContent anchor={anchor}>
-								<ComboboxEmpty>{m.noApplicationsAvailable()}</ComboboxEmpty>
-								<ComboboxList>
-									{(item) => (
-										<ComboboxItem key={item.id} value={item.id}>
-											<Item className="p-0">
-												<ItemContent>
-													<ItemTitle className="whitespace-nowrap">{item.name}</ItemTitle>
-													<ItemDescription>
-														{item.repositoryName} / {item.agentName}
-													</ItemDescription>
-												</ItemContent>
-											</Item>
-										</ComboboxItem>
-									)}
-								</ComboboxList>
-							</ComboboxContent>
-						</Combobox>
-					</Field>
-				)}
-			</form.Field>
 		</FieldGroup>
+	);
+}
+
+function NotificationEventsStepContent({ form }: { form: NotificationFormApi }) {
+	return (
+		<form.Field
+			name="subscription"
+			validators={{ onSubmit: notificationBaseSchema.shape.subscription }}
+		>
+			{(field) => (
+				<NotificationSubscriptionFields
+					value={field.state.value}
+					onChange={field.handleChange}
+					errors={field.state.meta.errors}
+				/>
+			)}
+		</form.Field>
 	);
 }
 
@@ -879,8 +827,6 @@ export default function CreateNotificationDialog() {
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
-
 	const form = useForm({
 		defaultValues: {
 			name: "",
@@ -908,8 +854,7 @@ export default function CreateNotificationDialog() {
 			webhookHeaders: "",
 			customShoutrrrUrl: "",
 			enabled: true,
-			enableByDefault: false,
-			applicationIds: [] as string[],
+			subscription: defaultSubscription,
 		},
 		validators: {
 			onSubmit: notificationSchema,
@@ -922,8 +867,7 @@ export default function CreateNotificationDialog() {
 					type: value.type,
 					config: buildNotificationConfig(value),
 					enabled: value.enabled,
-					enableByDefault: value.enableByDefault,
-					applicationIds: normalizeNotificationApplicationIds(value.applicationIds),
+					...normalizeNotificationSubscription(value.subscription),
 				};
 
 				await createNotification(payload);
@@ -945,12 +889,13 @@ export default function CreateNotificationDialog() {
 	};
 
 	async function handleNext(advance: () => void) {
-		const [nameErrors, typeErrors] = await Promise.all([
+		const [nameErrors, typeErrors, subscriptionErrors] = await Promise.all([
 			form.validateField("name", "submit"),
 			form.validateField("type", "submit"),
+			form.validateField("subscription", "submit"),
 		]);
 
-		if (nameErrors?.length || typeErrors?.length) {
+		if (nameErrors?.length || typeErrors?.length || subscriptionErrors?.length) {
 			return;
 		}
 
@@ -1025,10 +970,17 @@ export default function CreateNotificationDialog() {
 												step="config"
 												render={(props) => (
 													<div {...props} className={cn("space-y-4", props.className)}>
-														<NotificationConfigStepContent
-															form={form}
-															applications={applications}
-														/>
+														<NotificationConfigStepContent form={form} />
+													</div>
+												)}
+											/>
+										),
+										events: () => (
+											<Stepper.Content
+												step="events"
+												render={(props) => (
+													<div {...props} className={cn("space-y-4", props.className)}>
+														<NotificationEventsStepContent form={form} />
 													</div>
 												)}
 											/>

@@ -19,6 +19,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
@@ -204,6 +205,9 @@ func Run(cfg Config) error {
 		Log.Info().Str("signal", sig.String()).Msg("shutting down hub")
 	}
 
+	if websocket.DefaultHub != nil {
+		websocket.DefaultHub.Shutdown()
+	}
 	sse.DefaultBroker.Shutdown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

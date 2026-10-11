@@ -2,15 +2,20 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -65,6 +70,8 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"applications",
 		"notifications",
 		"application_notifications",
+		"agent_notifications",
+		"repository_notifications",
 		"application_events",
 	}
 	for _, table := range tables {
@@ -264,7 +271,7 @@ func TestRunMigrations_NotificationsTableSchema(t *testing.T) {
 	cols := columnNames(t, sqlDB, "notifications")
 
 	required := []string{
-		"id", "name", "enabled", "enable_by_default",
+		"id", "name", "enabled", "all_applications", "all_agents", "all_repositories", "events",
 		"status", "type", "config",
 		"created_at", "updated_at",
 	}
@@ -272,6 +279,119 @@ func TestRunMigrations_NotificationsTableSchema(t *testing.T) {
 		if !cols[col] {
 			t.Errorf("notifications table missing column %q", col)
 		}
+	}
+}
+
+func TestRunMigrations_NotificationEventsBackfill(t *testing.T) {
+	gormDB := openTestDB(t)
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatalf("failed to create migrate driver: %v", err)
+	}
+	src, err := iofs.New(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatalf("failed to open migration source: %v", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	if err != nil {
+		t.Fatalf("failed to create migrator: %v", err)
+	}
+	if err := m.Migrate(28); err != nil {
+		t.Fatalf("failed to migrate to version 28: %v", err)
+	}
+
+	seed := []string{
+		`INSERT INTO agents (id, name, key_id) VALUES ('agent', 'a', 'k')`,
+		`INSERT INTO repositories (id, name, url, provider, auth_method, sync_type, created_by)
+			VALUES ('repo', 'r', 'https://example.com/r.git', 'generic', 'none', 'manual', 'user')`,
+		`INSERT INTO applications (id, name, repository_id, agent_id, sync_status, health_status, branch, "commit", commit_message, path)
+			VALUES ('app-1', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p'),
+				('app-2', 'a', 'repo', 'agent', 'unknown', 'unknown', 'main', 'c', 'm', 'p')`,
+		`INSERT INTO notifications (id, name, enabled, enable_by_default, status, type, config)
+			VALUES ('covering', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('partial', 'n', 1, 1, 'unknown', 'discord', '{}'),
+				('assigned', 'n', 1, 0, 'unknown', 'discord', '{}')`,
+		`INSERT INTO application_notifications (application_id, notification_id)
+			VALUES ('app-1', 'covering'), ('app-2', 'covering'), ('app-1', 'partial'), ('app-2', 'assigned')`,
+	}
+	for _, stmt := range seed {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("failed to seed data: %v", err)
+		}
+	}
+
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	// Raw query: the seeded names are not encrypted, so loading the model would fail.
+	rows, err := sqlDB.Query(`SELECT id, all_applications, events FROM notifications WHERE all_agents = 0 AND all_repositories = 0`)
+	if err != nil {
+		t.Fatalf("failed to query notifications: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Only a default notification already attached to every application becomes all_applications.
+	wantAllApplications := map[string]bool{"covering": true, "partial": false, "assigned": false}
+	// Existing notifications keep the application events they received before
+	// events became selectable; events added later are not backfilled.
+	wantEvents, err := json.Marshal([]models.NotificationEvent{
+		models.NotificationEventDeploymentSucceeded,
+		models.NotificationEventDeploymentFailed,
+		models.NotificationEventImageUpdateSucceeded,
+		models.NotificationEventImageUpdateFailed,
+		models.NotificationEventSyncFailed,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal events: %v", err)
+	}
+	count := 0
+	for rows.Next() {
+		var id, events string
+		var allApplications bool
+		if err := rows.Scan(&id, &allApplications, &events); err != nil {
+			t.Fatalf("failed to scan notification: %v", err)
+		}
+		count++
+		if allApplications != wantAllApplications[id] {
+			t.Errorf("notification %q: expected all_applications=%v, got %v", id, wantAllApplications[id], allApplications)
+		}
+		if events != string(wantEvents) {
+			t.Errorf("notification %q: expected events %s, got %s", id, wantEvents, events)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("failed to iterate notifications: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 notifications, got %d", count)
+	}
+
+	assocRows, err := sqlDB.Query(`SELECT application_id || ':' || notification_id FROM application_notifications ORDER BY 1`)
+	if err != nil {
+		t.Fatalf("failed to query application_notifications: %v", err)
+	}
+	defer func() { _ = assocRows.Close() }()
+
+	var associations []string
+	for assocRows.Next() {
+		var association string
+		if err := assocRows.Scan(&association); err != nil {
+			t.Fatalf("failed to scan association: %v", err)
+		}
+		associations = append(associations, association)
+	}
+	if err := assocRows.Err(); err != nil {
+		t.Fatalf("failed to iterate associations: %v", err)
+	}
+	wantAssociations := []string{"app-1:partial", "app-2:assigned"}
+	if !slices.Equal(associations, wantAssociations) {
+		t.Fatalf("expected associations %v, got %v", wantAssociations, associations)
 	}
 }
 
@@ -292,6 +412,138 @@ func TestRunMigrations_ApplicationNotificationsTableSchema(t *testing.T) {
 		if !cols[col] {
 			t.Errorf("application_notifications table missing column %q", col)
 		}
+	}
+}
+
+func TestRunMigrations_AgentAndRepositoryNotificationsTableSchema(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	for table, required := range map[string][]string{
+		"agent_notifications":      {"agent_id", "notification_id"},
+		"repository_notifications": {"repository_id", "notification_id"},
+	} {
+		cols := columnNames(t, sqlDB, table)
+		for _, col := range required {
+			if !cols[col] {
+				t.Errorf("%s table missing column %q", table, col)
+			}
+		}
+	}
+}
+
+func TestRunMigrations_AgentAndRepositoryNotificationsCascade(t *testing.T) {
+	// Cascades need foreign keys enabled, like the production DSN does.
+	gormDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")+"?_foreign_keys=ON"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := gormDB.DB()
+		_ = sqlDB.Close()
+	})
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	statements := []string{
+		`INSERT INTO agents (id, name, key_id) VALUES ('agent', 'a', 'k')`,
+		`INSERT INTO repositories (id, name, url, provider, auth_method, sync_type, sync_status, created_by)
+			VALUES ('repo', 'r', 'https://example.com/r', 'github', 'none', 'manual', 'unknown', 'u')`,
+		`INSERT INTO notifications (id, name, status, type, config) VALUES ('n1', 'n', 'unknown', 'discord', '{}'), ('n2', 'n', 'unknown', 'discord', '{}')`,
+		`INSERT INTO agent_notifications (agent_id, notification_id) VALUES ('agent', 'n1'), ('agent', 'n2')`,
+		`INSERT INTO repository_notifications (repository_id, notification_id) VALUES ('repo', 'n1'), ('repo', 'n2')`,
+		`DELETE FROM notifications WHERE id = 'n1'`,
+	}
+	for _, stmt := range statements {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("failed to execute %q: %v", stmt, err)
+		}
+	}
+
+	assertRowCount := func(query string, want int) {
+		t.Helper()
+		var got int
+		if err := sqlDB.QueryRow(query).Scan(&got); err != nil {
+			t.Fatalf("failed to query %q: %v", query, err)
+		}
+		if got != want {
+			t.Errorf("%q: expected %d rows, got %d", query, want, got)
+		}
+	}
+	assertRowCount(`SELECT COUNT(*) FROM agent_notifications`, 1)
+	assertRowCount(`SELECT COUNT(*) FROM repository_notifications`, 1)
+
+	if _, err := sqlDB.Exec(`DELETE FROM agents WHERE id = 'agent'`); err != nil {
+		t.Fatalf("failed to delete agent: %v", err)
+	}
+	if _, err := sqlDB.Exec(`DELETE FROM repositories WHERE id = 'repo'`); err != nil {
+		t.Fatalf("failed to delete repository: %v", err)
+	}
+	assertRowCount(`SELECT COUNT(*) FROM agent_notifications`, 0)
+	assertRowCount(`SELECT COUNT(*) FROM repository_notifications`, 0)
+}
+
+func TestRunMigrations_AgentAndRepositoryNotificationsDown(t *testing.T) {
+	gormDB := openTestDB(t)
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatalf("failed to create migrate driver: %v", err)
+	}
+	src, err := iofs.New(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatalf("failed to open migration source: %v", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	if err != nil {
+		t.Fatalf("failed to create migrator: %v", err)
+	}
+	if err := m.Migrate(30); err != nil {
+		t.Fatalf("failed to migrate to version 30: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(`INSERT INTO notifications (id, name, status, type, config, events)
+		VALUES ('n', 'n', 'unknown', 'discord', '{}', '["application.deployment.failed","agent.offline","repository.sync.failed","application.health.unhealthy"]')`); err != nil {
+		t.Fatalf("failed to seed notification: %v", err)
+	}
+
+	if err := m.Migrate(29); err != nil {
+		t.Fatalf("failed to migrate down to version 29: %v", err)
+	}
+
+	for _, table := range []string{"agent_notifications", "repository_notifications"} {
+		if gormDB.Migrator().HasTable(table) {
+			t.Errorf("expected table %q to be dropped", table)
+		}
+	}
+	cols := columnNames(t, sqlDB, "notifications")
+	if cols["all_agents"] || cols["all_repositories"] {
+		t.Errorf("expected all_agents and all_repositories to be dropped, got %v", cols)
+	}
+
+	var events string
+	if err := sqlDB.QueryRow(`SELECT events FROM notifications WHERE id = 'n'`).Scan(&events); err != nil {
+		t.Fatalf("failed to query events: %v", err)
+	}
+	if events != `["application.deployment.failed"]` {
+		t.Errorf("expected events added in version 30 to be removed, got %s", events)
 	}
 }
 

@@ -183,7 +183,8 @@ func seedKeyRotateFixture(t *testing.T) keyRotateFixture {
 	notification := models.Notification{
 		Name:            crypto.EncryptedString("notification-name"),
 		Enabled:         true,
-		EnableByDefault: true,
+		AllApplications: true,
+		Events:          models.NotificationEvents,
 		Status:          models.NotificationStatusUnknown,
 		Type:            models.NotificationTypeDiscord,
 		Config:          crypto.EncryptedString(`{"url":"https://example.com/webhook"}`),

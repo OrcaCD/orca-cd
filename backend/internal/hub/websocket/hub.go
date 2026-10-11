@@ -42,6 +42,8 @@ type Hub struct {
 
 	deleteMu       sync.Mutex
 	pendingDeletes map[string]chan *messages.DeleteResult
+
+	presence *agentPresenceNotifier
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
@@ -49,7 +51,16 @@ func NewHub(log *zerolog.Logger) *Hub {
 		clients:        make(map[string]*Client),
 		log:            log,
 		pendingDeletes: make(map[string]chan *messages.DeleteResult),
+		presence: newAgentPresenceNotifier(agentOfflineGracePeriod, func(agentId string, event models.NotificationEvent) {
+			notifyAgentPresence(agentId, event, log)
+		}),
 	}
+}
+
+// Shutdown prepares the hub for process exit. Connections dropping during
+// shutdown are not agent outages, so no offline notifications are sent for them.
+func (h *Hub) Shutdown() {
+	h.presence.Stop()
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
