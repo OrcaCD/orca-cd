@@ -35,6 +35,14 @@ const (
 	NotificationEventImageUpdateSucceeded NotificationEvent = "application.image_update.succeeded"
 	NotificationEventImageUpdateFailed    NotificationEvent = "application.image_update.failed"
 	NotificationEventSyncFailed           NotificationEvent = "application.sync.failed"
+	NotificationEventHealthUnhealthy      NotificationEvent = "application.health.unhealthy"
+	NotificationEventHealthRecovered      NotificationEvent = "application.health.recovered"
+
+	NotificationEventAgentOffline NotificationEvent = "agent.offline"
+	NotificationEventAgentOnline  NotificationEvent = "agent.online"
+
+	NotificationEventRepositorySyncFailed    NotificationEvent = "repository.sync.failed"
+	NotificationEventRepositorySyncRecovered NotificationEvent = "repository.sync.recovered"
 )
 
 // NotificationEvents lists every supported event in display order.
@@ -44,6 +52,12 @@ var NotificationEvents = []NotificationEvent{
 	NotificationEventImageUpdateSucceeded,
 	NotificationEventImageUpdateFailed,
 	NotificationEventSyncFailed,
+	NotificationEventHealthUnhealthy,
+	NotificationEventHealthRecovered,
+	NotificationEventAgentOffline,
+	NotificationEventAgentOnline,
+	NotificationEventRepositorySyncFailed,
+	NotificationEventRepositorySyncRecovered,
 }
 
 func (e NotificationEvent) IsValid() bool {
@@ -55,11 +69,15 @@ type Notification struct {
 	Name            crypto.EncryptedString `gorm:"type:text;not null"`
 	Enabled         bool                   `gorm:"not null"`
 	AllApplications bool                   `gorm:"not null"`
+	AllAgents       bool                   `gorm:"not null"`
+	AllRepositories bool                   `gorm:"not null"`
 	Events          []NotificationEvent    `gorm:"type:text;not null;serializer:json"`
 	Status          NotificationStatus     `gorm:"type:text;not null"`
 	Type            NotificationType       `gorm:"type:text;not null"`
 	Config          crypto.EncryptedString `gorm:"type:text;not null"`
 	Applications    []Application          `gorm:"many2many:application_notifications;"`
+	Agents          []Agent                `gorm:"many2many:agent_notifications;"`
+	Repositories    []Repository           `gorm:"many2many:repository_notifications;"`
 }
 
 func (n *Notification) SubscribesTo(event NotificationEvent) bool {

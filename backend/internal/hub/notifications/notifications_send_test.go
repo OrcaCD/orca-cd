@@ -148,7 +148,7 @@ func assertNotificationStatus(t *testing.T, notificationId string, want models.N
 func TestGetNotificationConfigApplicationNotFound(t *testing.T) {
 	setupNotificationsTestDB(t)
 
-	_, err := getNotificationConfig(context.Background(), "missing-application", models.NotificationEventDeploymentFailed)
+	_, err := getNotificationConfig(context.Background(), applicationScope, "missing-application", models.NotificationEventDeploymentFailed)
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected gorm.ErrRecordNotFound, got %v", err)
 	}
@@ -235,14 +235,58 @@ func TestSendForApplicationSkipsUnsubscribedEvent(t *testing.T) {
 	app := seedNotificationTestApp(t, models.Healthy)
 	notification := seedNotificationRecord(t, "failures-only", true, false, models.NotificationStatusUnknown, app.Id)
 	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
-	if _, err := gorm.G[models.Notification](db.DB).
-		Where("id = ?", notification.Id).
-		Select("events").
-		Updates(t.Context(), models.Notification{Events: []models.NotificationEvent{models.NotificationEventDeploymentFailed}}); err != nil {
-		t.Fatalf("failed to update notification events: %v", err)
-	}
+	setNotificationEvents(t, notification.Id, models.NotificationEventDeploymentFailed)
 
 	SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "deploy done", newNotificationLogger())
+
+	assertNoNotificationRequestReceived(t, requests)
+	assertNotificationStatus(t, notification.Id, models.NotificationStatusUnknown)
+}
+
+func TestSendForAgentPostsToHTTPWebhook(t *testing.T) {
+	setupNotificationsTestDB(t)
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	notification := seedNotificationRecord(t, "agent-webhook", true, false, models.NotificationStatusUnknown)
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
+	associateNotification[models.Agent](t, &notification, "Agents", app.AgentId)
+
+	SendForAgent(app.AgentId, models.NotificationEventAgentOffline, "agent offline", newNotificationLogger())
+
+	assertCapturedNotificationRequest(t, requests, "agent offline")
+	assertNotificationStatus(t, notification.Id, models.NotificationStatusSuccess)
+}
+
+func TestSendForRepositoryPostsToHTTPWebhook(t *testing.T) {
+	setupNotificationsTestDB(t)
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	notification := seedNotificationRecord(t, "repository-webhook", true, false, models.NotificationStatusUnknown)
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
+	if _, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).Update(t.Context(), "all_repositories", true); err != nil {
+		t.Fatalf("failed to set all_repositories: %v", err)
+	}
+
+	SendForRepository(app.RepositoryId, models.NotificationEventRepositorySyncFailed, "sync failed", newNotificationLogger())
+
+	assertCapturedNotificationRequest(t, requests, "sync failed")
+	assertNotificationStatus(t, notification.Id, models.NotificationStatusSuccess)
+}
+
+func TestSendForAgentDoesNotUseApplicationAssignments(t *testing.T) {
+	setupNotificationsTestDB(t)
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	app := seedNotificationTestApp(t, models.Healthy)
+	notification := seedNotificationRecord(t, "applications-only", true, true, models.NotificationStatusUnknown, app.Id)
+	setHTTPNotificationConfig(t, notification.Id, genericNotificationURL(t, server.URL))
+
+	SendForAgent(app.AgentId, models.NotificationEventAgentOffline, "agent offline", newNotificationLogger())
 
 	assertNoNotificationRequestReceived(t, requests)
 	assertNotificationStatus(t, notification.Id, models.NotificationStatusUnknown)

@@ -31,7 +31,58 @@ var (
 	ErrNotificationDispatch      = errors.New("notification dispatch failed")
 )
 
+// notificationScope describes how notifications are assigned to one resource
+// type: explicitly through a join table or implicitly through an "all" flag.
+type notificationScope struct {
+	logKey     string
+	allColumn  string
+	joinTable  string
+	foreignKey string
+	exists     func(ctx context.Context, id string) error
+}
+
+var (
+	applicationScope = notificationScope{
+		logKey:     "applicationId",
+		allColumn:  "all_applications",
+		joinTable:  "application_notifications",
+		foreignKey: "application_id",
+		exists:     resourceExists[models.Application],
+	}
+	agentScope = notificationScope{
+		logKey:     "agentId",
+		allColumn:  "all_agents",
+		joinTable:  "agent_notifications",
+		foreignKey: "agent_id",
+		exists:     resourceExists[models.Agent],
+	}
+	repositoryScope = notificationScope{
+		logKey:     "repositoryId",
+		allColumn:  "all_repositories",
+		joinTable:  "repository_notifications",
+		foreignKey: "repository_id",
+		exists:     resourceExists[models.Repository],
+	}
+)
+
+func resourceExists[T any](ctx context.Context, id string) error {
+	_, err := gorm.G[T](db.DB).Select("id").Where("id = ?", id).First(ctx)
+	return err
+}
+
 func SendForApplication(applicationId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
+	notify(applicationScope, applicationId, event, message, log)
+}
+
+func SendForAgent(agentId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
+	notify(agentScope, agentId, event, message, log)
+}
+
+func SendForRepository(repositoryId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
+	notify(repositoryScope, repositoryId, event, message, log)
+}
+
+func notify(scope notificationScope, resourceId string, event models.NotificationEvent, message string, log *zerolog.Logger) {
 	if strings.TrimSpace(message) == "" {
 		return
 	}
@@ -39,80 +90,60 @@ func SendForApplication(applicationId string, event models.NotificationEvent, me
 	ctx, cancel := context.WithTimeout(context.Background(), notificationQueryTimeout)
 	defer cancel()
 
-	configs, err := getNotificationConfig(ctx, applicationId, event)
+	configs, err := getNotificationConfig(ctx, scope, resourceId, event)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Str("applicationId", applicationId).Msg("application not found while sending notifications")
+			log.Warn().Str(scope.logKey, resourceId).Msg("resource not found while sending notifications")
 			return
 		}
-		log.Error().Err(err).Str("applicationId", applicationId).Msg("failed to load notification config")
+		log.Error().Err(err).Str(scope.logKey, resourceId).Msg("failed to load notification config")
 		return
 	}
 
 	for i := range configs {
-		targets, parseErr := provider.BuildShoutrrrUrls(configs[i].Type, configs[i].Config.String())
-		if parseErr != nil {
+		status := models.NotificationStatusSuccess
+		if err := dispatch(&configs[i], message); err != nil {
 			log.Error().
-				Err(parseErr).
-				Str("applicationId", applicationId).
+				Err(err).
+				Str(scope.logKey, resourceId).
 				Str("notificationId", configs[i].Id).
-				Msg("failed to parse notification config")
-			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
-			continue
-		}
-
-		sender, createErr := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
-		if createErr != nil {
-			log.Error().
-				Err(createErr).
-				Str("applicationId", applicationId).
-				Str("notificationId", configs[i].Id).
-				Msg("failed to create notification sender")
-			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
-			continue
-		}
-
-		sendErrs := sender.Send(message, nil)
-		hasSendError := false
-		for _, sendErr := range sendErrs {
-			if sendErr == nil {
-				continue
-			}
-			hasSendError = true
-			log.Error().
-				Err(sendErr).
-				Str("applicationId", applicationId).
-				Str("notificationId", configs[i].Id).
+				Str("event", string(event)).
 				Msg("failed to send notification")
+			status = models.NotificationStatusError
 		}
-
-		if hasSendError {
-			setNotificationStatus(configs[i].Id, models.NotificationStatusError, log)
-			continue
-		}
-
-		setNotificationStatus(configs[i].Id, models.NotificationStatusSuccess, log)
+		setNotificationStatus(configs[i].Id, status, log)
 	}
 }
 
-func getNotificationConfig(ctx context.Context, applicationId string, event models.NotificationEvent) ([]models.Notification, error) {
-	_, err := gorm.G[models.Application](db.DB).
-		Select("id").
-		Where("id = ?", applicationId).
-		First(ctx)
+func dispatch(notification *models.Notification, message string) error {
+	targets, err := provider.BuildShoutrrrUrls(notification.Type, notification.Config.String())
 	if err != nil {
+		return fmt.Errorf("parse notification config: %w", err)
+	}
+
+	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
+	if err != nil {
+		return fmt.Errorf("create notification sender: %w", err)
+	}
+
+	return errors.Join(sender.Send(message, nil)...)
+}
+
+// getNotificationConfig returns the enabled notifications that cover the
+// resource, either explicitly or through the scope's "all" flag, and subscribe
+// to the event.
+func getNotificationConfig(ctx context.Context, scope notificationScope, resourceId string, event models.NotificationEvent) ([]models.Notification, error) {
+	if err := scope.exists(ctx, resourceId); err != nil {
 		return nil, err
 	}
 
-	var notifications []models.Notification
-	err = db.DB.WithContext(ctx).
-		Table("notifications").
-		Select("notifications.*").
-		Joins("LEFT JOIN application_notifications ON application_notifications.notification_id = notifications.id").
-		Where("notifications.enabled = ?", true).
-		Where("(notifications.all_applications = ? OR application_notifications.application_id = ?)", true, applicationId).
-		Group("notifications.id").
-		Find(&notifications).Error
+	notifications, err := gorm.G[models.Notification](db.DB).
+		Where("enabled = ?", true).
+		Where(
+			"("+scope.allColumn+" = ? OR id IN (SELECT notification_id FROM "+scope.joinTable+" WHERE "+scope.foreignKey+" = ?))",
+			true, resourceId,
+		).
+		Find(ctx)
 	if err != nil {
 		return nil, err
 	}
