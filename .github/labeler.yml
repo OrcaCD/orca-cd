@@ -29,3 +29,8 @@ ci:
   - changed-files:
     - any-glob-to-any-file:
       - ".github/**"
+
+e2e:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".e2e/**"
