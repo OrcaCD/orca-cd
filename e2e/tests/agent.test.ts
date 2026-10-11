@@ -1,0 +1,198 @@
+import { test, expect, type Page } from "@playwright/test";
+import { APP_URL, HUB_WS_URL } from "./const.ts";
+import {
+	agentHealthcheck,
+	agentLogs,
+	agentState,
+	duplicateAgentLogs,
+	removeDuplicateAgent,
+	restartHub,
+	startAgent,
+	startDuplicateAgent,
+	stopAgent,
+} from "./helpers/agent-container.ts";
+
+interface ApiAgent {
+	id: string;
+	name: string;
+	status: string;
+}
+
+const AGENT_NAME = "E2E Agent";
+
+test.describe.configure({ mode: "serial" });
+
+let authToken = "";
+let agentId = "";
+
+async function listAgents(page: Page) {
+	if (!page.url().startsWith(APP_URL)) {
+		await page.goto("/agents");
+	}
+	const { ok, body } = await page.evaluate(async () => {
+		const response = await fetch("/api/v1/agents");
+		return { ok: response.ok, body: await response.json() };
+	});
+	expect(ok).toBeTruthy();
+	return body as ApiAgent[];
+}
+
+async function agentStatus(page: Page) {
+	return (await listAgents(page)).find((agent) => agent.id === agentId)?.status;
+}
+
+function agentCard(page: Page) {
+	return page.locator("[data-slot='card']", { hasText: AGENT_NAME });
+}
+
+async function expectBadge(page: Page, label: "Online" | "Offline") {
+	await page.goto("/agents");
+	await expect(agentCard(page).getByText(label, { exact: true })).toBeVisible();
+}
+
+test.afterAll(() => {
+	removeDuplicateAgent();
+	stopAgent();
+});
+
+test.describe("Agent with invalid configuration", () => {
+	test("missing HUB_URL and AUTH_TOKEN", async ({ page }) => {
+		startAgent({});
+
+		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("HUB_URL is not set");
+		// Fatal config errors keep the container alive so the error stays visible
+		expect(agentState().status).toBe("running");
+		expect(agentHealthcheck()).toBe(false);
+		expect(await listAgents(page)).toHaveLength(0);
+	});
+
+	test("malformed AUTH_TOKEN", async ({ page }) => {
+		startAgent({ hubUrl: HUB_WS_URL, authToken: "not-a-valid-token" });
+
+		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("AUTH_TOKEN:");
+		expect(agentState().status).toBe("running");
+		expect(await listAgents(page)).toHaveLength(0);
+	});
+
+	test("unsupported HUB_URL scheme", async () => {
+		startAgent({ hubUrl: "ftp://hub:8080", authToken: "not-a-valid-token" });
+
+		await expect.poll(() => agentState().status, { timeout: 30_000 }).toBe("exited");
+		expect(agentState().exitCode).toBe(1);
+	});
+});
+
+test.describe("Agent setup", () => {
+	test("add agent in the UI", async ({ page }) => {
+		await page.goto("/agents");
+
+		await page.getByRole("button", { name: "Add Agent" }).click();
+		const dialog = page.getByRole("dialog");
+		await dialog.getByRole("textbox", { name: "Name" }).fill(AGENT_NAME);
+		await dialog.getByRole("button", { name: "Add Agent" }).click();
+
+		const token = page.locator("#agent-auth-token");
+		await expect(token).toBeVisible();
+		authToken = await token.inputValue();
+		expect(authToken).not.toBe("");
+		await page.getByRole("button", { name: "Done" }).click();
+
+		const agents = await listAgents(page);
+		expect(agents).toHaveLength(1);
+		agentId = agents[0].id;
+
+		await expect(agentCard(page)).toBeVisible();
+		await expectBadge(page, "Offline");
+	});
+
+	test("stays offline when the hub is unreachable", async ({ page }) => {
+		startAgent({ hubUrl: "ws://does-not-exist:8080/api/v1/ws", authToken });
+
+		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("connection failed, retrying");
+		expect(await agentStatus(page)).toBe("offline");
+	});
+
+	test("connects with the correct configuration", async ({ page }) => {
+		startAgent({ hubUrl: HUB_WS_URL, authToken });
+
+		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("online");
+		expect(agentLogs()).toContain("connected to hub");
+		await expect.poll(agentHealthcheck, { timeout: 30_000 }).toBe(true);
+		await expectBadge(page, "Online");
+	});
+
+	test("goes offline when the agent stops", async ({ page }) => {
+		stopAgent();
+
+		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("offline");
+		await expectBadge(page, "Offline");
+	});
+});
+
+test.describe("Agent token rotation", () => {
+	test("rotated token replaces the old one", async ({ page }) => {
+		const oldToken = authToken;
+
+		await page.goto("/agents");
+		await agentCard(page).getByRole("button", { name: "Card actions" }).click();
+
+		await page.getByRole("menu").getByRole("button", { name: "Rotate token" }).click();
+		await page.getByRole("dialog").getByRole("button", { name: "Rotate token" }).click();
+
+		const token = page.locator(`#agent-auth-token-${agentId}`);
+		await expect(token).toBeVisible();
+		authToken = await token.inputValue();
+		expect(authToken).not.toBe(oldToken);
+		await page.getByRole("button", { name: "Done" }).click();
+
+		// The hub rejects the old token and the agent aborts
+		startAgent({ hubUrl: HUB_WS_URL, authToken: oldToken });
+		await expect.poll(() => agentState().status, { timeout: 30_000 }).toBe("exited");
+		expect(agentState().exitCode).toBe(1);
+		expect(agentLogs()).toContain("unauthorized");
+		expect(await agentStatus(page)).toBe("offline");
+
+		startAgent({ hubUrl: HUB_WS_URL, authToken });
+		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("online");
+	});
+});
+
+// The agent is online with the rotated token from here on
+test.describe("Agent resilience", () => {
+	test("reconnects after the hub restarts", async ({ page }) => {
+		await restartHub();
+
+		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("reconnecting");
+		await expect.poll(() => agentStatus(page), { timeout: 60_000 }).toBe("online");
+		await expectBadge(page, "Online");
+		await expect.poll(agentHealthcheck, { timeout: 30_000 }).toBe(true);
+	});
+
+	test("a second connection with the same token is rejected", async ({ page }) => {
+		startDuplicateAgent({ hubUrl: HUB_WS_URL, authToken });
+
+		await expect.poll(duplicateAgentLogs, { timeout: 30_000 }).toContain("connection failed");
+		expect(duplicateAgentLogs()).toContain("bad handshake");
+		// The duplicate keeps retrying, the original connection is not affected
+		expect(await agentStatus(page)).toBe("online");
+		expect(agentState().status).toBe("running");
+
+		removeDuplicateAgent();
+		expect(await agentStatus(page)).toBe("online");
+	});
+
+	test("agent stops when it is deleted in the UI", async ({ page }) => {
+		await page.goto("/agents");
+		await agentCard(page).getByRole("button", { name: "Card actions" }).click();
+		await page.getByRole("menu").getByRole("button", { name: "Delete" }).click();
+		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
+
+		await expect(agentCard(page)).toHaveCount(0);
+		expect(await listAgents(page)).toHaveLength(0);
+
+		// The hub drops the connection, the reconnect is rejected as the token is no longer valid
+		await expect.poll(() => agentState().status, { timeout: 60_000 }).toBe("exited");
+		expect(agentState().exitCode).toBe(1);
+		expect(agentLogs()).toContain("unauthorized");
+	});
+});
