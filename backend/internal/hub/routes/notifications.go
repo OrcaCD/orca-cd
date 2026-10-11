@@ -76,9 +76,9 @@ type notificationResponse struct {
 
 func ListNotificationsHandler(c *gin.Context) {
 	items, err := gorm.G[models.Notification](db.DB).
-		Preload("Applications", nil).
-		Preload("Agents", nil).
-		Preload("Repositories", nil).
+		Preload("Applications", selectNotificationResourceId).
+		Preload("Agents", selectNotificationResourceId).
+		Preload("Repositories", selectNotificationResourceId).
 		Order("created_at ASC").
 		Find(c.Request.Context())
 	if err != nil {
@@ -350,11 +350,16 @@ func updateNotificationStatus(ctx context.Context, id string, status models.Noti
 
 func getNotificationById(ctx context.Context, id string) (models.Notification, error) {
 	return gorm.G[models.Notification](db.DB).
-		Preload("Applications", nil).
-		Preload("Agents", nil).
-		Preload("Repositories", nil).
+		Preload("Applications", selectNotificationResourceId).
+		Preload("Agents", selectNotificationResourceId).
+		Preload("Repositories", selectNotificationResourceId).
 		Where("id = ?", id).
 		First(ctx)
+}
+
+func selectNotificationResourceId(db gorm.PreloadBuilder) error {
+	db.Select("id")
+	return nil
 }
 
 func toNotificationResponse(notification *models.Notification) notificationResponse {

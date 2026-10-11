@@ -155,7 +155,10 @@ func markRepositoryFailed(ctx context.Context, repo *models.Repository, errMsg s
 // useless for that, since markRepositorySyncing overwrites it before every
 // sync, but last_sync_error survives until the next successful sync. The
 // transition is claimed with a conditional update first, so repeated results
-// (e.g. every polling interval) and concurrent syncs notify at most once.
+// (e.g. every polling interval) and concurrent syncs notify at most once. Only
+// if that matches nothing is the result stored unconditionally. A single update
+// cannot do both: its affected rows do not reveal the previous state, and
+// SQLite's RETURNING only sees the new values.
 func updateRepositorySyncResult(id, transition string, update func(gorm.ChainInterface[models.Repository]) (int, error)) (bool, error) {
 	rowsAffected, err := update(gorm.G[models.Repository](db.DB).Where("id = ?", id).Where(transition))
 	if err != nil {

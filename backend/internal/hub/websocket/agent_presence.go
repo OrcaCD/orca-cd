@@ -129,9 +129,9 @@ func notifyAgentPresence(agentId string, event models.NotificationEvent, log *ze
 			return
 		}
 
-		message := "Success: agent " + agent.Name.String() + " is back online"
+		message := "Agent " + agent.Name.String() + " is back online"
 		if event == models.NotificationEventAgentOffline {
-			message = "Error: agent " + agent.Name.String() + " is offline"
+			message = "Agent " + agent.Name.String() + " is offline"
 		}
 		notifications.SendForAgent(agentId, event, message, log)
 	}()

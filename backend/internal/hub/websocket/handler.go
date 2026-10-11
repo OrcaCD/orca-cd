@@ -412,9 +412,9 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 		return
 	}
 
-	message := "Success: application " + app.Name.String() + " is healthy again"
+	message := "Application " + app.Name.String() + " is healthy again"
 	if event == models.NotificationEventHealthUnhealthy {
-		message = "Error: application " + app.Name.String() + " is unhealthy"
+		message = "Application " + app.Name.String() + " is unhealthy"
 	}
 	go notifications.SendForApplication(applicationId, event, message, log)
 }
