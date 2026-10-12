@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -43,6 +44,9 @@ type Config struct {
 	DeploymentsDir                string
 	AllowedPrivilegedApps         map[string]struct{}
 	RestrictBindMountsToDeployDir bool
+	// RootCAs is nil unless CA_CERT_FILE is set, in which case it holds the
+	// system roots plus the configured certificates.
+	RootCAs *x509.CertPool
 }
 
 func DefaultConfig() (Config, error) {
@@ -99,6 +103,14 @@ func DefaultConfig() (Config, error) {
 
 	restrictBindMountsToDeployDir := strings.EqualFold(os.Getenv("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR"), "true")
 
+	var rootCAs *x509.CertPool
+	if caCertFile := os.Getenv("CA_CERT_FILE"); caCertFile != "" {
+		rootCAs, err = loadCACertPool(caCertFile)
+		if err != nil {
+			return Config{}, &FatalConfigError{fmt.Sprintf("CA_CERT_FILE: %s", err)}
+		}
+	}
+
 	return Config{
 		LogLevel:                      logLevel,
 		LogJSON:                       logJSON,
@@ -111,7 +123,27 @@ func DefaultConfig() (Config, error) {
 		DeploymentsDir:                deploymentsDir,
 		AllowedPrivilegedApps:         allowedPrivilegedApps,
 		RestrictBindMountsToDeployDir: restrictBindMountsToDeployDir,
+		RootCAs:                       rootCAs,
 	}, nil
+}
+
+// loadCACertPool returns the system cert pool extended with the PEM encoded
+// certificates from path, so a hub with a publicly trusted certificate keeps
+// working after a custom CA has been configured.
+func loadCACertPool(path string) (*x509.CertPool, error) {
+	pemData, err := os.ReadFile(path) //nolint:gosec // path is operator-provided configuration
+	if err != nil {
+		return nil, fmt.Errorf("could not read file: %w", err)
+	}
+
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("no valid PEM encoded certificates found in %s", path)
+	}
+	return pool, nil
 }
 
 type agentTokenClaims struct {
