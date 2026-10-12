@@ -74,7 +74,7 @@
 	"deleteAgentCardTitle": "Delete agent card?",
 	"deleteAgentCardDescription": "This will permanently delete \"{name}\". This action cannot be undone.",
 	"deleteRepositoryTitle": "Delete repository?",
-	"deleteRepositoryDescription": "This will permanently delete \"{name}\". This action cannot be undone.",
+	"deleteRepositoryDescription": "This will permanently delete \"{name}\" and all of its applications. The applications will be undeployed from their agents first, so those agents must be online. This action cannot be undone.",
 	"deleteNotificationTitle": "Delete notification?",
 	"deleteNotificationDescription": "This will permanently delete \"{name}\". This action cannot be undone.",
 	"statusOnline": "Online",

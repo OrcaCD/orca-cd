@@ -1176,6 +1176,94 @@ func TestDeleteRepositoryHandler_Success(t *testing.T) {
 	}
 }
 
+func countRows(t *testing.T, model any, id string) int64 {
+	t.Helper()
+	var count int64
+	if err := db.DB.Model(model).Where("id = ?", id).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count rows: %v", err)
+	}
+	return count
+}
+
+func TestDeleteRepositoryHandler_UndeploysApplications(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-delete-undeploy")
+	agent := seedTestAgent(t, "agent-repo-delete")
+	app1 := seedTestApplication(t, repo.Id, agent.Id, "App One")
+	app2 := seedTestApplication(t, repo.Id, agent.Id, "App Two")
+	received := withDeletingAgent(t, agent.Id, true, "")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := received.Load(); got != 2 {
+		t.Errorf("expected agent to receive 2 delete requests, got %d", got)
+	}
+	if countRows(t, &models.Repository{}, repo.Id) != 0 {
+		t.Error("expected repository to be deleted")
+	}
+	if countRows(t, &models.Application{}, app1.Id) != 0 || countRows(t, &models.Application{}, app2.Id) != 0 {
+		t.Error("expected applications to be deleted")
+	}
+}
+
+func TestDeleteRepositoryHandler_AgentOffline_KeepsRepositoryAndApps(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-delete-offline")
+	agent := seedTestAgent(t, "agent-repo-delete-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Offline App")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	if countRows(t, &models.Repository{}, repo.Id) != 1 {
+		t.Error("expected repository to remain when agent is offline")
+	}
+	if countRows(t, &models.Application{}, app.Id) != 1 {
+		t.Error("expected application to remain when agent is offline")
+	}
+}
+
+func TestDeleteRepositoryHandler_AgentFailure_KeepsRepositoryAndApps(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-delete-fail")
+	agent := seedTestAgent(t, "agent-repo-delete-fail")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Failing App")
+	withDeletingAgent(t, agent.Id, false, "compose down: boom")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/repositories/"+repo.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	DeleteRepositoryHandler(c)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	if countRows(t, &models.Repository{}, repo.Id) != 1 {
+		t.Error("expected repository to remain when agent removal fails")
+	}
+	if countRows(t, &models.Application{}, app.Id) != 1 {
+		t.Error("expected application to remain when agent removal fails")
+	}
+}
+
 func TestTestConnectionHandler_InvalidRequest(t *testing.T) {
 	setupTestDBWithRepos(t)
 

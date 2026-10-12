@@ -1,6 +1,6 @@
 import { test, expect, request as pwRequest, type Locator, type Page } from "@playwright/test";
-import { APP_URL } from "./const.ts";
-import { stopAgent } from "./helpers/agent-container.ts";
+import { APP_URL, HUB_WS_URL } from "./const.ts";
+import { startAgent, stopAgent } from "./helpers/agent-container.ts";
 import { api, listRepositories, seedRepository, type ApiRepository } from "./helpers/api.ts";
 import {
 	appContainers,
@@ -30,8 +30,10 @@ const UNPULLABLE_IMAGE = "127.0.0.1:1/e2e/missing:1";
 const AGENT_NAME = "E2E Deploy Agent";
 const REPO = "e2e/deploy-main";
 const CASCADE_REPO = "e2e/deploy-cascade";
+const OFFLINE_REPO = "e2e/deploy-offline";
 const APP_NAME = "E2E Deploy App";
 const CASCADE_APP_NAME = "E2E Cascade App";
+const OFFLINE_APP_NAME = "E2E Offline App";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
 function composeFile(version: number, image = IMAGE) {
@@ -57,6 +59,7 @@ let agent: ApiAgent;
 let repo: ApiRepository;
 let appId = "";
 let cascadeAppId = "";
+let offlineAppId = "";
 // The compose project the agent derived from the application name, read from its containers
 let project = "";
 let containerId = "";
@@ -99,7 +102,7 @@ test.afterAll(async ({ browser }) => {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -111,6 +114,7 @@ test.afterAll(async ({ browser }) => {
 		stopAgent();
 		removeApplicationContainers(appId);
 		removeApplicationContainers(cascadeAppId);
+		removeApplicationContainers(offlineAppId);
 	}
 });
 
@@ -180,6 +184,47 @@ async function expectEvent(page: Page, source: string, sha: string, status: stri
 			timeout: 30_000,
 		})
 		.toBe(status);
+}
+
+async function getAgent(page: Page) {
+	const { body } = await api(page, "GET", `/agents/${agent.id}`);
+	return body as ApiAgent;
+}
+
+/** Creates a repository with its own application and waits until it runs healthy. */
+async function deployInSeparateRepository(page: Page, repoName: string, name: string) {
+	const separateRepo = await seedRepository(
+		page,
+		repoName,
+		{},
+		{ branches: { main: { files: { "compose.yaml": composeFile(1) } } } },
+	);
+	const created = await api(page, "POST", "/applications", {
+		name,
+		repositoryId: separateRepo.id,
+		agentId: agent.id,
+		branch: "main",
+		path: "compose.yaml",
+	});
+	expect(created.status).toBe(201);
+	const id = created.body.id as string;
+	await waitForApplication(
+		page,
+		id,
+		(app) => app.syncStatus === "synced" && app.healthStatus === "healthy",
+	);
+	expect(appContainers(id)).toHaveLength(1);
+	return { repo: separateRepo, appId: id };
+}
+
+async function deleteRepositoryInUi(page: Page, repoName: string) {
+	await page.goto("/repositories");
+	await page
+		.locator("[data-slot='card']", { hasText: repoName })
+		.getByRole("button", { name: "Card actions" })
+		.click();
+	await page.getByRole("menu").getByRole("button", { name: "Delete" }).click();
+	await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
 }
 
 async function updateRepository(page: Page, body: Record<string, unknown>) {
@@ -470,44 +515,60 @@ test.describe("Removal", () => {
 		expect(deploymentDirExists(project)).toBe(false);
 	});
 
-	test("deleting the repository deletes its applications", async ({ page }) => {
-		const cascadeRepo = await seedRepository(
+	test("deleting the repository is blocked while the agent is offline", async ({ page }) => {
+		const { repo: offlineRepo, appId: id } = await deployInSeparateRepository(
 			page,
-			CASCADE_REPO,
-			{},
-			{ branches: { main: { files: { "compose.yaml": composeFile(1) } } } },
+			OFFLINE_REPO,
+			OFFLINE_APP_NAME,
 		);
-		const created = await api(page, "POST", "/applications", {
-			name: CASCADE_APP_NAME,
-			repositoryId: cascadeRepo.id,
-			agentId: agent.id,
-			branch: "main",
-			path: "compose.yaml",
+		offlineAppId = id;
+
+		stopAgent();
+		await expect
+			.poll(async () => (await getAgent(page)).status, { timeout: 30_000 })
+			.toBe("offline");
+		try {
+			await deleteRepositoryInUi(page, OFFLINE_REPO);
+			await expect(page.getByText(/agent is offline/)).toBeVisible();
+
+			expect((await api(page, "GET", `/repositories/${offlineRepo.id}`)).status).toBe(200);
+			expect((await api(page, "GET", `/applications/${offlineAppId}`)).status).toBe(200);
+			expect(appContainers(offlineAppId)).toHaveLength(1);
+		} finally {
+			startAgent({ hubUrl: HUB_WS_URL, authToken: agent.authToken });
+		}
+		await expect
+			.poll(async () => (await getAgent(page)).status, { timeout: 60_000 })
+			.toBe("online");
+
+		// Once the agent is back, the same delete goes through and cleans up
+		await deleteRepositoryInUi(page, OFFLINE_REPO);
+		await expect(page.getByText(`Repository ${OFFLINE_REPO} deleted successfully`)).toBeVisible({
+			timeout: 30_000,
 		});
-		expect(created.status).toBe(201);
-		cascadeAppId = created.body.id;
-		await waitForApplication(
-			page,
-			cascadeAppId,
-			(app) => app.syncStatus === "synced" && app.healthStatus === "healthy",
-		);
-		expect(appContainers(cascadeAppId)).toHaveLength(1);
+		expect((await api(page, "GET", `/applications/${offlineAppId}`)).status).toBe(404);
+		expect(appContainers(offlineAppId)).toHaveLength(0);
+	});
+
+	test("deleting the repository deletes its applications", async ({ page }) => {
+		const { appId: id } = await deployInSeparateRepository(page, CASCADE_REPO, CASCADE_APP_NAME);
+		cascadeAppId = id;
+		const cascadeProject = composeProject(cascadeAppId)!;
+		expect(deploymentDirExists(cascadeProject)).toBe(true);
 
 		await page.goto("/applications");
 		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toBeVisible();
-		await page.goto("/repositories");
-		await page
-			.locator("[data-slot='card']", { hasText: CASCADE_REPO })
-			.getByRole("button", { name: "Card actions" })
-			.click();
-		await page.getByRole("menu").getByRole("button", { name: "Delete" }).click();
-		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
-		await expect(page.getByText(`Repository ${CASCADE_REPO} deleted successfully`)).toBeVisible();
+		await deleteRepositoryInUi(page, CASCADE_REPO);
+		// The hub answers after the agent removed the containers
+		await expect(page.getByText(`Repository ${CASCADE_REPO} deleted successfully`)).toBeVisible({
+			timeout: 30_000,
+		});
 
 		expect((await api(page, "GET", `/applications/${cascadeAppId}`)).status).toBe(404);
 		await page.goto("/applications");
 		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toHaveCount(0);
 
-		removeApplicationContainers(cascadeAppId);
+		expect(appContainers(cascadeAppId)).toHaveLength(0);
+		expect(deploymentDirExists(cascadeProject)).toBe(false);
 	});
 });
