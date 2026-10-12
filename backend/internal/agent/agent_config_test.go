@@ -4,8 +4,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -101,6 +107,7 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "")
 	t.Setenv("LOG_JSON", "")
 	t.Setenv("DEPLOYMENTS_DIR", "")
+	t.Setenv("CA_CERT_FILE", "")
 
 	cfg, err := DefaultConfig()
 	if err != nil {
@@ -115,6 +122,73 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 	if cfg.DeploymentsDir != "/deployments" {
 		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/deployments")
+	}
+	if cfg.RootCAs != nil {
+		t.Error("RootCAs should be nil when CA_CERT_FILE is not set")
+	}
+}
+
+// writeCertPEM writes cert as a PEM file into a temp dir and returns its path.
+func writeCertPEM(t *testing.T, cert *x509.Certificate) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	data := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write cert file: %v", err)
+	}
+	return path
+}
+
+func TestDefaultConfig_CACertFile(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+
+	token, _, _ := makeTestAuthToken(t)
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", token)
+	t.Setenv("CA_CERT_FILE", writeCertPEM(t, srv.Certificate()))
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.RootCAs == nil {
+		t.Fatal("RootCAs should be set when CA_CERT_FILE is configured")
+	}
+	if _, err := srv.Certificate().Verify(x509.VerifyOptions{Roots: cfg.RootCAs}); err != nil {
+		t.Errorf("configured CA should be trusted: %v", err)
+	}
+}
+
+func TestDefaultConfig_CACertFileErrors(t *testing.T) {
+	invalidPEM := filepath.Join(t.TempDir(), "invalid.pem")
+	if err := os.WriteFile(invalidPEM, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"missing file", filepath.Join(t.TempDir(), "missing.pem")},
+		{"no PEM certificates", invalidPEM},
+	}
+
+	token, _, _ := makeTestAuthToken(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HUB_URL", "https://hub.example.com")
+			t.Setenv("AUTH_TOKEN", token)
+			t.Setenv("CA_CERT_FILE", tt.path)
+
+			_, err := DefaultConfig()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if _, ok := errors.AsType[*FatalConfigError](err); !ok {
+				t.Errorf("expected *FatalConfigError, got %T: %v", err, err)
+			}
+		})
 	}
 }
 

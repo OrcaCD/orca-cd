@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"errors"
 	"net"
 	"net/http"
@@ -276,7 +277,7 @@ func TestConnectWithRetry_Success(t *testing.T) {
 	})
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), websocket.DefaultDialer, u, "Bearer test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -302,7 +303,7 @@ func TestConnectWithRetry_AuthHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, err := connectWithRetry(context.Background(), u, token)
+	conn, err := connectWithRetry(context.Background(), websocket.DefaultDialer, u, token)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -316,6 +317,51 @@ func TestConnectWithRetry_AuthHeader(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("server never received a request")
 	}
+}
+
+func newTLSWebSocketServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close() //nolint:errcheck
+		time.Sleep(200 * time.Millisecond)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestNewDialer_RejectsUntrustedCertificate(t *testing.T) {
+	srv := newTLSWebSocketServer(t)
+
+	u := "wss" + strings.TrimPrefix(srv.URL, "https")
+	conn, resp, err := newDialer(nil).Dial(u, nil)
+	if resp != nil {
+		resp.Body.Close() //nolint:errcheck,gosec
+	}
+	if err == nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatal("expected certificate verification error, got nil")
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok {
+		t.Errorf("expected x509.UnknownAuthorityError, got %T: %v", err, err)
+	}
+}
+
+func TestConnectWithRetry_CustomCA(t *testing.T) {
+	srv := newTLSWebSocketServer(t)
+
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+
+	u := "wss" + strings.TrimPrefix(srv.URL, "https")
+	conn, err := connectWithRetry(context.Background(), newDialer(pool), u, "Bearer test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	conn.Close() //nolint:errcheck,gosec
 }
 
 func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
@@ -343,7 +389,7 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	u := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, err := connectWithRetry(context.Background(), u, "Bearer test-token")
+	conn, err := connectWithRetry(context.Background(), websocket.DefaultDialer, u, "Bearer test-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -370,7 +416,7 @@ func TestConnectWithRetry_ContextCancelled(t *testing.T) {
 	go func() {
 		defer close(done)
 		u := "ws" + strings.TrimPrefix(srv.URL, "http")
-		conn, err := connectWithRetry(ctx, u, "Bearer test-token")
+		conn, err := connectWithRetry(ctx, websocket.DefaultDialer, u, "Bearer test-token")
 		if err == nil {
 			conn.Close() //nolint:errcheck,gosec
 			t.Errorf("expected error on context cancellation, got nil")
@@ -392,7 +438,7 @@ func TestConnectWithRetry_PreCancelledContext(t *testing.T) {
 	t.Cleanup(cancel)
 	cancel()
 
-	conn, err := connectWithRetry(ctx, "ws://localhost:1", "Bearer test-token")
+	conn, err := connectWithRetry(ctx, websocket.DefaultDialer, "ws://localhost:1", "Bearer test-token")
 	if err == nil {
 		conn.Close() //nolint:errcheck,gosec
 		t.Fatal("expected error for pre-cancelled context, got nil")
