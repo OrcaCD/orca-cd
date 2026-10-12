@@ -205,6 +205,8 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 										</>
 									}
 									onConfirm={async () => await handleDelete()}
+									title={m.deleteRepositoryTitle()}
+									description={m.deleteRepositoryDescription({ name: row.original.name })}
 									asDropdownItem
 								/>
 							</DropdownMenuGroup>

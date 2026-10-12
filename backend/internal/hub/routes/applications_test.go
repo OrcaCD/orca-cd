@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1027,9 +1028,10 @@ func TestUpdateApplicationHandler_DBError(t *testing.T) {
 
 // withDeletingAgent installs a hub with a fake connected agent that auto-replies to
 // the DeleteRequest with the given outcome, so DeleteApplicationHandler can run its
-// confirm-before-delete flow without a real agent.
-func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string) {
+// confirm-before-delete flow without a real agent. Returns the received request count.
+func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string) *atomic.Int32 {
 	t.Helper()
+	received := &atomic.Int32{}
 	nop := zerolog.Nop()
 	hub := websocket.NewHub(&nop)
 	websocket.DefaultHub = hub
@@ -1040,21 +1042,21 @@ func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string
 		t.Fatalf("failed to register fake agent: %v", err)
 	}
 	go func() {
-		msg, ok := <-client.Send
-		if !ok {
-			return
+		for msg := range client.Send {
+			req := msg.GetDeleteRequest()
+			if req == nil {
+				continue
+			}
+			received.Add(1)
+			hub.ResolveDeleteResult(&messages.DeleteResult{
+				RequestId:     req.RequestId,
+				ApplicationId: req.ApplicationId,
+				Success:       success,
+				ErrorMessage:  errMsg,
+			})
 		}
-		req := msg.GetDeleteRequest()
-		if req == nil {
-			return
-		}
-		hub.ResolveDeleteResult(&messages.DeleteResult{
-			RequestId:     req.RequestId,
-			ApplicationId: req.ApplicationId,
-			Success:       success,
-			ErrorMessage:  errMsg,
-		})
 	}()
+	return received
 }
 
 // withOfflineHub installs a hub with no connected agents.

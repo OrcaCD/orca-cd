@@ -486,6 +486,40 @@ func ListRepositoryTreeHandler(c *gin.Context) {
 func DeleteRepositoryHandler(c *gin.Context) {
 	id := c.Param("id")
 
+	// Applications cascade with the repository, so undeploy them first. Rows are
+	// dropped one by one after agent confirmation to stay in sync on partial failure.
+	apps, err := gorm.G[models.Application](db.DB).Where("repository_id = ?", id).Find(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	agentIDs := map[string]struct{}{}
+	removedApps := false
+	defer func() {
+		if !removedApps {
+			return
+		}
+		sse.PublishUpdate(ApplicationsPath)
+		for agentID := range agentIDs {
+			sendAgentSettings(c, agentID)
+		}
+	}()
+
+	for i := range apps {
+		if status, msg := undeployApplication(c.Request.Context(), &apps[i]); status != 0 {
+			c.JSON(status, gin.H{"error": fmt.Sprintf("failed to remove application %q: %s", apps[i].Name.String(), msg)})
+			return
+		}
+		if _, err := gorm.G[models.Application](db.DB).Where("id = ?", apps[i].Id).Delete(c.Request.Context()); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		removedApps = true
+		agentIDs[apps[i].AgentId] = struct{}{}
+		utils.RecordAuditLog(c, "deleted", "application", apps[i].Id)
+	}
+
 	result := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&models.Repository{})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

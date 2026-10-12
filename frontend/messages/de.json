@@ -74,7 +74,7 @@
 	"deleteAgentCardTitle": "Agentenkarte löschen?",
 	"deleteAgentCardDescription": "Dadurch wird \"{name}\" dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
 	"deleteRepositoryTitle": "Repository löschen?",
-	"deleteRepositoryDescription": "Dadurch wird \"{name}\" dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+	"deleteRepositoryDescription": "Dadurch wird \"{name}\" mit allen zugehörigen Anwendungen dauerhaft gelöscht. Die Anwendungen werden zuerst von ihren Agenten entfernt, daher müssen diese online sein. Diese Aktion kann nicht rückgängig gemacht werden.",
 	"deleteNotificationTitle": "Benachrichtigung löschen?",
 	"deleteNotificationDescription": "Dadurch wird \"{name}\" dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
 	"statusOnline": "Online",
