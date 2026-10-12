@@ -367,16 +367,16 @@ func TestNew_ServerVersion(t *testing.T) {
 	}
 }
 
-func TestPingDaemon_CallsReadyHandlerOnRecovery(t *testing.T) {
+func TestPingDaemon_CallsStateHandlerOnRecovery(t *testing.T) {
 	c := newTestClient(t)
 	var calls int
-	c.SetDaemonReadyHandler(func() { calls++ })
+	c.SetDaemonStateHandler(func() { calls++ })
 
 	if !c.pingDaemon() {
 		t.Fatal("pingDaemon() returned false with Docker available")
 	}
 	if calls != 0 {
-		t.Errorf("expected no ready handler call while already ready, got %d", calls)
+		t.Errorf("expected no state handler call while already ready, got %d", calls)
 	}
 
 	c.mu.Lock()
@@ -388,7 +388,7 @@ func TestPingDaemon_CallsReadyHandlerOnRecovery(t *testing.T) {
 		t.Fatal("pingDaemon() returned false with Docker available")
 	}
 	if calls != 1 {
-		t.Errorf("expected ready handler to be called once, got %d", calls)
+		t.Errorf("expected state handler to be called once, got %d", calls)
 	}
 	if c.ServerVersion() == "" {
 		t.Error("expected ServerVersion() to be refreshed after recovery")
@@ -407,6 +407,25 @@ func TestNew_DaemonUnreachable(t *testing.T) {
 	}
 	if v := c.ServerVersion(); v != "" {
 		t.Errorf("expected empty ServerVersion() with unreachable Docker host, got %q", v)
+	}
+}
+
+func TestMarkUnreachable_CallsStateHandlerOnTransition(t *testing.T) {
+	c := newTestClient(t)
+	var calls int
+	c.SetDaemonStateHandler(func() { calls++ })
+
+	c.markUnreachable(errors.New("daemon gone"))
+	if c.Ready() {
+		t.Error("expected Ready() == false after daemon became unreachable")
+	}
+	if calls != 1 {
+		t.Errorf("expected state handler to be called once, got %d", calls)
+	}
+
+	c.markUnreachable(errors.New("still gone"))
+	if calls != 1 {
+		t.Errorf("expected no state handler call while already unreachable, got %d", calls)
 	}
 }
 

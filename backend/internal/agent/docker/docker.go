@@ -24,7 +24,7 @@ const (
 )
 
 type Client struct {
-	mu                        sync.RWMutex // protects ready, serverVersion, onDaemonReady and host deployments directory state
+	mu                        sync.RWMutex // protects ready, serverVersion, onDaemonStateChange and host deployments directory state
 	log                       zerolog.Logger
 	cli                       command.Cli
 	compose                   api.Compose
@@ -37,7 +37,7 @@ type Client struct {
 	restrictMountsToDeployDir bool
 	ready                     bool
 	serverVersion             string
-	onDaemonReady             func()
+	onDaemonStateChange       func()
 	healthWatcher             *healthWatcher
 	healthResyncMu            sync.Mutex
 	ctx                       context.Context
@@ -117,12 +117,30 @@ func (c *Client) ServerVersion() string {
 	return c.serverVersion
 }
 
-// SetDaemonReadyHandler registers fn to be called whenever the Docker daemon
-// becomes reachable after being unreachable, e.g. after a daemon restart.
-func (c *Client) SetDaemonReadyHandler(fn func()) {
+// SetDaemonStateHandler registers fn to be called whenever the Docker daemon
+// becomes reachable or unreachable, e.g. around a daemon restart.
+func (c *Client) SetDaemonStateHandler(fn func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.onDaemonReady = fn
+	c.onDaemonStateChange = fn
+}
+
+// markUnreachable records that the daemon went away and notifies the state
+// handler on the transition from reachable to unreachable.
+func (c *Client) markUnreachable(err error) {
+	c.mu.Lock()
+	wasReady := c.ready
+	c.ready = false
+	onDaemonStateChange := c.onDaemonStateChange
+	c.mu.Unlock()
+
+	if !wasReady {
+		return
+	}
+	c.log.Error().Err(err).Msg("Docker daemon unreachable")
+	if onDaemonStateChange != nil {
+		onDaemonStateChange()
+	}
 }
 
 func (c *Client) fetchServerVersion() string {
@@ -238,14 +256,7 @@ func (c *Client) pingDaemon() bool {
 
 	ping, err := c.cli.Client().Ping(ctx, client.PingOptions{NegotiateAPIVersion: true})
 	if err != nil {
-		c.mu.Lock()
-		wasReady := c.ready
-		c.ready = false
-		c.mu.Unlock()
-
-		if wasReady {
-			c.log.Error().Err(err).Msg("Docker daemon unreachable")
-		}
+		c.markUnreachable(err)
 		return false
 	}
 	if err := c.resolveHostDeploymentsDir(c.ctx); err != nil {
@@ -262,15 +273,15 @@ func (c *Client) pingDaemon() bool {
 		serverVersion := c.fetchServerVersion()
 		c.mu.Lock()
 		c.serverVersion = serverVersion
-		onDaemonReady := c.onDaemonReady
+		onDaemonStateChange := c.onDaemonStateChange
 		c.mu.Unlock()
 
 		c.log.Info().
 			Str("api_version", ping.APIVersion).
 			Str("docker_version", serverVersion).
 			Msg("Docker daemon is reachable")
-		if onDaemonReady != nil {
-			onDaemonReady()
+		if onDaemonStateChange != nil {
+			onDaemonStateChange()
 		}
 	}
 	return true
@@ -294,10 +305,7 @@ func (c *Client) startEventLoop() {
 			if !ok {
 				return
 			}
-			c.mu.Lock()
-			c.ready = false
-			c.mu.Unlock()
-			c.log.Error().Err(err).Msg("Docker daemon unreachable")
+			c.markUnreachable(err)
 			go c.waitForDaemon()
 			return
 		}

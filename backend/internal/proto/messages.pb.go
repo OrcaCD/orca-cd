@@ -1305,11 +1305,12 @@ func (x *ApplicationStatusReport) GetStatuses() []*ApplicationStatus {
 }
 
 type AgentInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
-	DockerVersion string                 `protobuf:"bytes,2,opt,name=docker_version,json=dockerVersion,proto3" json:"docker_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Version           string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	DockerVersion     string                 `protobuf:"bytes,2,opt,name=docker_version,json=dockerVersion,proto3" json:"docker_version,omitempty"`
+	DockerUnreachable bool                   `protobuf:"varint,3,opt,name=docker_unreachable,json=dockerUnreachable,proto3" json:"docker_unreachable,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AgentInfo) Reset() {
@@ -1354,6 +1355,13 @@ func (x *AgentInfo) GetDockerVersion() string {
 		return x.DockerVersion
 	}
 	return ""
+}
+
+func (x *AgentInfo) GetDockerUnreachable() bool {
+	if x != nil {
+		return x.DockerUnreachable
+	}
+	return false
 }
 
 var File_messages_proto protoreflect.FileDescriptor
@@ -1447,10 +1455,11 @@ const file_messages_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12.\n" +
 	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"R\n" +
 	"\x17ApplicationStatusReport\x127\n" +
-	"\bstatuses\x18\x01 \x03(\v2\x1b.messages.ApplicationStatusR\bstatuses\"L\n" +
+	"\bstatuses\x18\x01 \x03(\v2\x1b.messages.ApplicationStatusR\bstatuses\"{\n" +
 	"\tAgentInfo\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
-	"\x0edocker_version\x18\x02 \x01(\tR\rdockerVersion*e\n" +
+	"\x0edocker_version\x18\x02 \x01(\tR\rdockerVersion\x12-\n" +
+	"\x12docker_unreachable\x18\x03 \x01(\bR\x11dockerUnreachable*e\n" +
 	"\fHealthStatus\x12\x1d\n" +
 	"\x19HEALTH_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15HEALTH_STATUS_HEALTHY\x10\x01\x12\x1b\n" +
