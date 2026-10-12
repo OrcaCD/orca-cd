@@ -142,6 +142,11 @@ async function fillApplicationWizard(page: Page, name: string) {
 	return dialog;
 }
 
+/** The application's card in the list, not the overview's last deployment link. */
+function applicationListEntry(page: Page, name: string) {
+	return page.getByRole("link", { name }).filter({ has: page.locator("[data-slot='card']") });
+}
+
 function repositoryCard(page: Page) {
 	return page.locator("[data-slot='card']", { hasText: REPO });
 }
@@ -249,7 +254,7 @@ test.describe("Deploy an application", () => {
 			path: COMPOSE_PATH,
 			commit: initialCommit.sha,
 		});
-		await expect(page.getByRole("link", { name: APP_NAME })).toBeVisible();
+		await expect(applicationListEntry(page, APP_NAME)).toBeVisible();
 	});
 
 	test("the agent deploys it to Docker", async ({ page }) => {
@@ -507,7 +512,7 @@ test.describe("Removal", () => {
 			timeout: 30_000,
 		});
 		await expect(page).toHaveURL("/applications");
-		await expect(page.getByRole("link", { name: APP_NAME })).toHaveCount(0);
+		await expect(applicationListEntry(page, APP_NAME)).toHaveCount(0);
 
 		expect((await listApplications(page)).find((item) => item.id === appId)).toBeUndefined();
 		expect((await api(page, "GET", `/applications/${appId}`)).status).toBe(404);
@@ -557,7 +562,7 @@ test.describe("Removal", () => {
 		expect(deploymentDirExists(cascadeProject)).toBe(true);
 
 		await page.goto("/applications");
-		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toBeVisible();
+		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toBeVisible();
 		await deleteRepositoryInUi(page, CASCADE_REPO);
 		// The hub answers after the agent removed the containers
 		await expect(page.getByText(`Repository ${CASCADE_REPO} deleted successfully`)).toBeVisible({
@@ -566,7 +571,7 @@ test.describe("Removal", () => {
 
 		expect((await api(page, "GET", `/applications/${cascadeAppId}`)).status).toBe(404);
 		await page.goto("/applications");
-		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toHaveCount(0);
+		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toHaveCount(0);
 
 		expect(appContainers(cascadeAppId)).toHaveLength(0);
 		expect(deploymentDirExists(cascadeProject)).toBe(false);
