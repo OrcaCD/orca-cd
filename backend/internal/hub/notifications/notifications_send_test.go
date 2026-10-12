@@ -334,6 +334,74 @@ func TestSendTestNotificationInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestSendTestNotificationRedactsCredentialsFromErrors(t *testing.T) {
+	registerTestHTTPNotificationProvider(t)
+	server, requests := newNotificationCaptureServer(t, http.StatusNoContent)
+
+	// The production client blocks the loopback test server, so the send fails
+	// with an error that embeds the request URL.
+	previousClient := notificationHTTPClient
+	notificationHTTPClient = httpclient.Default
+	t.Cleanup(func() {
+		notificationHTTPClient = previousClient
+	})
+
+	target := strings.Replace(genericNotificationURL(t, server.URL), "?", "/secret-token?", 1)
+	err := SendTestNotification(testHTTPNotificationType, target, "ping")
+	if !errors.Is(err, ErrNotificationDispatch) {
+		t.Fatalf("expected ErrNotificationDispatch, got %v", err)
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("expected credentials to be redacted, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "SSRF detected") {
+		t.Fatalf("expected the failure reason to be kept, got %q", err.Error())
+	}
+
+	assertNoNotificationRequestReceived(t, requests)
+}
+
+func TestRedactError(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "quoted request URL",
+			in:   `sending HTTP request: Post "https://hooks.example.com/services/T0/B0/secret?token=abc": no such host`,
+			want: `sending HTTP request: Post "https://hooks.example.com/[redacted]": no such host`,
+		},
+		{
+			name: "service URL list",
+			in:   "creating sender for URLs [discord://token@123456789?splitlines=no gotify://gotify.example.com/AbCdEf]: invalid",
+			want: "creating sender for URLs [discord://123456789/[redacted] gotify://gotify.example.com/[redacted]]: invalid",
+		},
+		{
+			name: "host only",
+			in:   "dial https://example.com failed",
+			want: "dial https://example.com failed",
+		},
+		{
+			name: "no URL",
+			in:   "unexpected response status code: 401 Unauthorized",
+			want: "unexpected response status code: 401 Unauthorized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := redactError(errors.New(tt.in)).Error(); got != tt.want {
+				t.Fatalf("redactError() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	if redactError(nil) != nil {
+		t.Fatal("expected nil error to stay nil")
+	}
+}
+
 func TestSetNotificationStatus(t *testing.T) {
 	setupNotificationsTestDB(t)
 
