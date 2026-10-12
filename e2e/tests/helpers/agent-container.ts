@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
 import {
@@ -33,6 +33,19 @@ export function startAgent({
 
 export function stopAgent() {
 	docker([...composeArgs, "rm", "-sf", "agent"]);
+}
+
+export function stopAgentInBackground() {
+	return new Promise<void>((resolve, reject) => {
+		const child = spawn("docker", [...composeArgs, "rm", "-sf", "agent"], {
+			cwd: e2eDir,
+			stdio: "ignore",
+		});
+		child.once("error", reject);
+		child.once("exit", (code) =>
+			code === 0 ? resolve() : reject(new Error(`docker compose rm exited with code ${code}`)),
+		);
+	});
 }
 
 export function agentLogs() {

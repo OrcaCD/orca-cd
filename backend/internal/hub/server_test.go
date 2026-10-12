@@ -375,6 +375,14 @@ func TestRecoverInterruptedState(t *testing.T) {
 		t.Errorf("expected repo SyncStatus %q, got %q", models.SyncStatusUnknown, recoveredRepo.SyncStatus)
 	}
 
+	var recoveredAgent models.Agent
+	if err := db.DB.First(&recoveredAgent, "id = ?", agent.Id).Error; err != nil {
+		t.Fatalf("failed to load agent: %v", err)
+	}
+	if recoveredAgent.Status != models.AgentStatusOffline {
+		t.Errorf("expected agent status %d, got %d", models.AgentStatusOffline, recoveredAgent.Status)
+	}
+
 	var recoveredApp models.Application
 	if err := db.DB.First(&recoveredApp, "id = ?", app.Id).Error; err != nil {
 		t.Fatalf("failed to load application: %v", err)

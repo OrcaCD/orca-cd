@@ -24,6 +24,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
+	"gorm.io/gorm"
 )
 
 type Config struct {
@@ -222,7 +223,7 @@ func Run(cfg Config) error {
 	return nil
 }
 
-// recoverInterruptedState resets repositories, applications, and history events
+// recoverInterruptedState resets agents, repositories, applications, and history events
 // left mid-operation by a previous crash or restart. Failures are logged and do
 // not block startup. No SSE update is published: clients are not connected yet.
 func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
@@ -243,6 +244,13 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		Update("sync_status", models.OutOfSync)
 	if resetAppSyncStatus.Error != nil {
 		log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
+	}
+
+	// No agent is connected yet, mark all agents as offline
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("status <> ?", models.AgentStatusOffline).
+		Update(ctx, "status", models.AgentStatusOffline); err != nil {
+		log.Warn().Err(err).Msg("failed to reset agent status")
 	}
 
 	recovered, err := applicationevents.RecoverRunning(ctx, "hub restarted before the operation result was received")

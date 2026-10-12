@@ -12,6 +12,7 @@ import {
 	startAgent,
 	startDuplicateAgent,
 	stopAgent,
+	stopAgentInBackground,
 } from "./helpers/agent-container.ts";
 
 interface ApiAgent {
@@ -156,10 +157,20 @@ test.describe("Agent setup", () => {
 		await expectBadge(page, "Online");
 	});
 
-	test("goes offline when the agent stops", async ({ page }) => {
-		stopAgent();
+	test("goes offline right away when the agent stops", async ({ page }) => {
+		await openAgentCard(page);
+		await expect(agentCard(page).getByText("Online", { exact: true })).toBeVisible();
 
-		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("offline");
+		const stopped = stopAgentInBackground();
+
+		// No reload: the badge flips through the SSE update. A closed socket is noticed
+		// immediately, the hub's 90s read deadline would be far outside this timeout.
+		await expect(agentCard(page).getByText("Offline", { exact: true })).toBeVisible({
+			timeout: 10_000,
+		});
+		await stopped;
+
+		expect(await agentStatus(page)).toBe("offline");
 		await expectBadge(page, "Offline");
 	});
 });
