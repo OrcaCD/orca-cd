@@ -1,0 +1,182 @@
+package routes
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"gorm.io/gorm"
+)
+
+func seedActivityEvent(t *testing.T, appID string, status models.ApplicationEventStatus, createdAt time.Time) models.ApplicationEvent {
+	t.Helper()
+	commit := "abcdef1234567"
+	event := models.ApplicationEvent{
+		ApplicationId: appID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+		Status:        status,
+		CommitHash:    &commit,
+	}
+	if err := gorm.G[models.ApplicationEvent](db.DB).Create(t.Context(), &event); err != nil {
+		t.Fatalf("seed application event: %v", err)
+	}
+	if _, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("id = ?", event.Id).
+		Update(t.Context(), "created_at", createdAt); err != nil {
+		t.Fatalf("set application event timestamp: %v", err)
+	}
+	return event
+}
+
+func invokeApplicationActivityHandler(t *testing.T, query string) (*httptest.ResponseRecorder, applicationActivityResponse) {
+	t.Helper()
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/activity"+query, nil)
+	ApplicationActivityHandler(c)
+
+	var response applicationActivityResponse
+	if w.Code == http.StatusOK {
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+	}
+	return w, response
+}
+
+func TestApplicationActivityHandlerEmpty(t *testing.T) {
+	setupApplicationEventsRouteTest(t)
+
+	w, response := invokeApplicationActivityHandler(t, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(response.Days) != applicationActivityDays {
+		t.Fatalf("expected %d days, got %d", applicationActivityDays, len(response.Days))
+	}
+	today := time.Now().UTC().Format(time.DateOnly)
+	if last := response.Days[len(response.Days)-1].Date; last != today {
+		t.Fatalf("expected last day %s, got %s", today, last)
+	}
+	for _, day := range response.Days {
+		if day.Succeeded != 0 || day.Failed != 0 {
+			t.Fatalf("expected empty day, got %+v", day)
+		}
+	}
+	if response.LastDeployment != nil {
+		t.Fatalf("expected no last deployment, got %+v", response.LastDeployment)
+	}
+	if !containsJSONNull(t, w.Body.String(), "lastDeployment") {
+		t.Fatalf("expected lastDeployment to be null, got %s", w.Body.String())
+	}
+}
+
+func containsJSONNull(t *testing.T, body, key string) bool {
+	t.Helper()
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("decode raw response: %v", err)
+	}
+	value, ok := raw[key]
+	return ok && string(value) == "null"
+}
+
+func TestApplicationActivityHandlerCountsCompletedDeploymentsPerDay(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	now := time.Now()
+
+	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.Add(-time.Minute))
+	seedActivityEvent(t, app.Id, models.ApplicationEventFailed, now.Add(-2*time.Minute))
+	seedActivityEvent(t, app.Id, models.ApplicationEventNoChange, now.Add(-3*time.Minute))
+	seedActivityEvent(t, app.Id, models.ApplicationEventRunning, now.Add(-4*time.Minute))
+	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.AddDate(0, 0, -2))
+	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.AddDate(0, 0, -10))
+
+	w, response := invokeApplicationActivityHandler(t, "?utcOffset=0")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	counts := map[string]applicationActivityDay{}
+	totalSucceeded, totalFailed := 0, 0
+	for _, day := range response.Days {
+		counts[day.Date] = day
+		totalSucceeded += day.Succeeded
+		totalFailed += day.Failed
+	}
+	if totalSucceeded != 2 || totalFailed != 1 {
+		t.Fatalf("expected 2 succeeded and 1 failed, got %d and %d: %+v", totalSucceeded, totalFailed, response.Days)
+	}
+	twoDaysAgo := counts[now.UTC().AddDate(0, 0, -2).Format(time.DateOnly)]
+	if twoDaysAgo.Succeeded != 1 {
+		t.Fatalf("expected one success two days ago, got %+v", response.Days)
+	}
+}
+
+func TestApplicationActivityHandlerBucketsByUTCOffset(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	// 23:30 UTC yesterday is already today at UTC+01:00.
+	todayUTC := time.Now().UTC().Truncate(24 * time.Hour)
+	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, todayUTC.Add(-30*time.Minute))
+
+	_, utcResponse := invokeApplicationActivityHandler(t, "?utcOffset=0")
+	if day := utcResponse.Days[len(utcResponse.Days)-2]; day.Succeeded != 1 {
+		t.Fatalf("expected event yesterday in UTC, got %+v", utcResponse.Days)
+	}
+
+	_, shiftedResponse := invokeApplicationActivityHandler(t, "?utcOffset=60")
+	last := shiftedResponse.Days[len(shiftedResponse.Days)-1]
+	if last.Succeeded != 1 {
+		t.Fatalf("expected event today at UTC+01:00, got %+v", shiftedResponse.Days)
+	}
+}
+
+func TestApplicationActivityHandlerReturnsLatestDeployment(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	now := time.Now()
+	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.Add(-time.Hour))
+	latest := seedActivityEvent(t, app.Id, models.ApplicationEventFailed, now.Add(-time.Minute))
+	seedActivityEvent(t, app.Id, models.ApplicationEventNoChange, now)
+
+	w, response := invokeApplicationActivityHandler(t, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	deployment := response.LastDeployment
+	if deployment == nil {
+		t.Fatal("expected a last deployment")
+	}
+	if deployment.Id != latest.Id || deployment.Status != string(models.ApplicationEventFailed) {
+		t.Fatalf("expected latest failed event %s, got %+v", latest.Id, deployment)
+	}
+	if deployment.ApplicationId != app.Id || deployment.ApplicationName != "Event App" || deployment.ApplicationIcon != "box" {
+		t.Fatalf("unexpected application fields: %+v", deployment)
+	}
+	if deployment.CommitHash == nil || *deployment.CommitHash != "abcdef1234567" {
+		t.Fatalf("expected commit hash, got %+v", deployment.CommitHash)
+	}
+}
+
+func TestApplicationActivityHandlerRejectsInvalidOffset(t *testing.T) {
+	setupApplicationEventsRouteTest(t)
+	for _, query := range []string{"?utcOffset=abc", "?utcOffset=841", "?utcOffset=-841"} {
+		w, _ := invokeApplicationActivityHandler(t, query)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("query %s: expected 400, got %d", query, w.Code)
+		}
+	}
+}
+
+func TestApplicationActivityHandlerDBError(t *testing.T) {
+	setupApplicationEventsRouteTest(t)
+	closeDBForErrorPath(t)
+
+	w, _ := invokeApplicationActivityHandler(t, "")
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}

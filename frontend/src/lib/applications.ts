@@ -1,4 +1,5 @@
 import { fetcher } from "./api";
+import type { ApplicationEvent } from "./application-events";
 
 export interface Application {
 	id: string;
@@ -35,11 +36,30 @@ export interface ApplicationListItem {
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
 	repositoryName: string;
+	agentId: string;
 	agentName: string;
 	branch: string;
 	commit: string;
 	lastSyncedAt?: string;
+	lastSyncError?: string;
 	path: string;
+}
+
+export interface ApplicationActivityDay {
+	date: string;
+	succeeded: number;
+	failed: number;
+}
+
+export interface ApplicationActivityDeployment extends ApplicationEvent {
+	applicationId: string;
+	applicationName: string;
+	applicationIcon: string;
+}
+
+export interface ApplicationActivity {
+	days: ApplicationActivityDay[];
+	lastDeployment: ApplicationActivityDeployment | null;
 }
 
 export enum SyncStatus {
