@@ -173,6 +173,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if err != nil {
 				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
 			}
+			sse.PublishUpdate("/api/v1/agents")
 			_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(ctx, "health_status", models.UnknownHealth)
 			if applicationErr != nil {
 				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
@@ -189,13 +190,16 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			h.presence.Disconnected(claims.Subject)
 		}()
 
-		_, err = gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "status", models.AgentStatusOnline)
+		connectedAt := time.Now()
+		_, err = gorm.G[models.Agent](db.DB).
+			Where("id = ?", claims.Subject).
+			Select("Status", "LastSeen").
+			Updates(c.Request.Context(), models.Agent{Status: models.AgentStatusOnline, LastSeen: &connectedAt})
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
 		h.presence.Connected(claims.Subject)
-		// Application health is reported by the agent (see handleApplicationStatusReport)
-		// once it has inspected its containers — the hub no longer assumes Healthy on connect.
+		sse.PublishUpdate("/api/v1/agents")
 
 		go h.WritePump(client, log)
 
@@ -264,8 +268,7 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		log.Debug().Str("client", client.Id).Msgf("Pong received, timestamp: %d", p.Pong.Timestamp)
 		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		lastSeen := time.UnixMilli(p.Pong.Timestamp)
-		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(requestCtx, "last_seen", lastSeen)
+		_, err := gorm.G[models.Agent](db.DB).Where("id = ?", client.Id).Update(requestCtx, "last_seen", time.Now())
 		if err != nil {
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}

@@ -1,7 +1,9 @@
 package websocket
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -199,7 +201,8 @@ const writeWait = 10 * time.Second
 // Must be run in a goroutine. Exits when the client's Send channel is closed.
 func (h *Hub) WritePump(c *Client, log *zerolog.Logger) {
 	defer func() {
-		if closeErr := c.conn.Close(); closeErr != nil {
+		// BeginDisconnect usually closed the socket already.
+		if closeErr := c.conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
 			log.Error().Err(closeErr).Msg("failed to close WebSocket connection")
 		}
 	}()
