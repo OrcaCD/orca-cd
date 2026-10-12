@@ -37,6 +37,7 @@ import {
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
+import ErrorAlert from "../alerts/error-alert";
 import {
 	buildDiscordNotificationConfig,
 	DiscordAvatarUrlField,
@@ -610,7 +611,23 @@ function NotificationEventsStepContent({ form }: { form: NotificationFormApi }) 
 	);
 }
 
-function NotificationProviderStepContent({ form }: { form: NotificationFormApi }) {
+function NotificationProviderStepContent({
+	form,
+	error,
+}: {
+	form: NotificationFormApi;
+	error: string | undefined;
+}) {
+	return (
+		<>
+			<NotificationProviderFields form={form} />
+			<p className="text-sm text-muted-foreground">{m.notificationTestBeforeSaveNote()}</p>
+			{error && <ErrorAlert title={m.failedSaveNotification()} description={error} />}
+		</>
+	);
+}
+
+function NotificationProviderFields({ form }: { form: NotificationFormApi }) {
 	return (
 		<form.Subscribe selector={(state) => state.values.type}>
 			{(type) => {
@@ -826,6 +843,7 @@ function StepperNavigation({
 export default function CreateNotificationDialog() {
 	const [open, setOpen] = useState(false);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [error, setError] = useState<string | undefined>();
 
 	const form = useForm({
 		defaultValues: {
@@ -861,6 +879,7 @@ export default function CreateNotificationDialog() {
 		},
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
+			setError(undefined);
 			try {
 				const payload = {
 					name: value.name,
@@ -876,7 +895,7 @@ export default function CreateNotificationDialog() {
 				setOpen(false);
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveNotification());
+				setError(err instanceof Error ? err.message : m.failedSaveNotification());
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -885,6 +904,7 @@ export default function CreateNotificationDialog() {
 
 	const handleClose = () => {
 		setOpen(false);
+		setError(undefined);
 		form.reset();
 	};
 
@@ -990,7 +1010,7 @@ export default function CreateNotificationDialog() {
 												step="provider"
 												render={(props) => (
 													<div {...props} className={cn("space-y-4", props.className)}>
-														<NotificationProviderStepContent form={form} />
+														<NotificationProviderStepContent form={form} error={error} />
 													</div>
 												)}
 											/>
