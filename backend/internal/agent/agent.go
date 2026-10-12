@@ -138,6 +138,7 @@ func loadCACertPool(path string) (*x509.CertPool, error) {
 
 	pool, err := x509.SystemCertPool()
 	if err != nil {
+		Log.Warn().Err(err).Msg("could not load system certificate pool, only certificates from CA_CERT_FILE will be trusted")
 		pool = x509.NewCertPool()
 	}
 	if !pool.AppendCertsFromPEM(pemData) {
