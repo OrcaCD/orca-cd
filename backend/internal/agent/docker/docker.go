@@ -38,6 +38,7 @@ type Client struct {
 	ready                     bool
 	serverVersion             string
 	onDaemonStateChange       func()
+	daemonStateChanged        chan struct{}
 	healthWatcher             *healthWatcher
 	healthResyncMu            sync.Mutex
 	ctx                       context.Context
@@ -72,10 +73,12 @@ func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[st
 		},
 		allowedPrivilegedApps:     allowedPrivilegedApps,
 		restrictMountsToDeployDir: restrictMountsToDeployDir,
+		daemonStateChanged:        make(chan struct{}, 1),
 		ctx:                       ctx,
 		cancel:                    cancel,
 	}
 	c.healthWatcher = newHealthWatcher(c)
+	go c.runDaemonStateNotifier()
 
 	if c.pingDaemon() {
 		go c.startEventLoop()
@@ -118,11 +121,38 @@ func (c *Client) ServerVersion() string {
 }
 
 // SetDaemonStateHandler registers fn to be called whenever the Docker daemon
-// becomes reachable or unreachable, e.g. around a daemon restart.
+// becomes reachable or unreachable, e.g. around a daemon restart. fn runs on a
+// dedicated goroutine, so it may block without delaying daemon monitoring.
+// Changes that happen while fn is running are coalesced into a single further
+// call, so fn should read the current state via Ready instead of assuming one.
 func (c *Client) SetDaemonStateHandler(fn func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.onDaemonStateChange = fn
+}
+
+func (c *Client) notifyDaemonStateChange() {
+	select {
+	case c.daemonStateChanged <- struct{}{}:
+	default:
+		// A notification is already pending; it will observe the latest state.
+	}
+}
+
+func (c *Client) runDaemonStateNotifier() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.daemonStateChanged:
+			c.mu.RLock()
+			onDaemonStateChange := c.onDaemonStateChange
+			c.mu.RUnlock()
+			if onDaemonStateChange != nil {
+				onDaemonStateChange()
+			}
+		}
+	}
 }
 
 // markUnreachable records that the daemon went away and notifies the state
@@ -131,16 +161,15 @@ func (c *Client) markUnreachable(err error) {
 	c.mu.Lock()
 	wasReady := c.ready
 	c.ready = false
-	onDaemonStateChange := c.onDaemonStateChange
 	c.mu.Unlock()
 
-	if !wasReady {
+	// Requests fail with context.Canceled once the client is closed; that is a
+	// shutdown, not an unreachable daemon.
+	if !wasReady || c.ctx.Err() != nil {
 		return
 	}
 	c.log.Error().Err(err).Msg("Docker daemon unreachable")
-	if onDaemonStateChange != nil {
-		onDaemonStateChange()
-	}
+	c.notifyDaemonStateChange()
 }
 
 func (c *Client) fetchServerVersion() string {
@@ -273,16 +302,13 @@ func (c *Client) pingDaemon() bool {
 		serverVersion := c.fetchServerVersion()
 		c.mu.Lock()
 		c.serverVersion = serverVersion
-		onDaemonStateChange := c.onDaemonStateChange
 		c.mu.Unlock()
 
 		c.log.Info().
 			Str("api_version", ping.APIVersion).
 			Str("docker_version", serverVersion).
 			Msg("Docker daemon is reachable")
-		if onDaemonStateChange != nil {
-			onDaemonStateChange()
-		}
+		c.notifyDaemonStateChange()
 	}
 	return true
 }

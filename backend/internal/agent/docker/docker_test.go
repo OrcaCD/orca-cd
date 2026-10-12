@@ -367,17 +367,40 @@ func TestNew_ServerVersion(t *testing.T) {
 	}
 }
 
+// recordStateHandlerCalls registers a daemon state handler that reports each
+// call on the returned channel.
+func recordStateHandlerCalls(c *Client) <-chan struct{} {
+	calls := make(chan struct{}, 10)
+	c.SetDaemonStateHandler(func() { calls <- struct{}{} })
+	return calls
+}
+
+func expectStateHandlerCall(t *testing.T, calls <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-calls:
+	case <-time.After(time.Second):
+		t.Fatal("expected state handler to be called")
+	}
+}
+
+func expectNoStateHandlerCall(t *testing.T, calls <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-calls:
+		t.Fatal("expected no state handler call")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestPingDaemon_CallsStateHandlerOnRecovery(t *testing.T) {
 	c := newTestClient(t)
-	var calls int
-	c.SetDaemonStateHandler(func() { calls++ })
+	calls := recordStateHandlerCalls(c)
 
 	if !c.pingDaemon() {
 		t.Fatal("pingDaemon() returned false with Docker available")
 	}
-	if calls != 0 {
-		t.Errorf("expected no state handler call while already ready, got %d", calls)
-	}
+	expectNoStateHandlerCall(t, calls)
 
 	c.mu.Lock()
 	c.ready = false
@@ -387,9 +410,7 @@ func TestPingDaemon_CallsStateHandlerOnRecovery(t *testing.T) {
 	if !c.pingDaemon() {
 		t.Fatal("pingDaemon() returned false with Docker available")
 	}
-	if calls != 1 {
-		t.Errorf("expected state handler to be called once, got %d", calls)
-	}
+	expectStateHandlerCall(t, calls)
 	if c.ServerVersion() == "" {
 		t.Error("expected ServerVersion() to be refreshed after recovery")
 	}
@@ -412,20 +433,51 @@ func TestNew_DaemonUnreachable(t *testing.T) {
 
 func TestMarkUnreachable_CallsStateHandlerOnTransition(t *testing.T) {
 	c := newTestClient(t)
-	var calls int
-	c.SetDaemonStateHandler(func() { calls++ })
+	calls := recordStateHandlerCalls(c)
 
 	c.markUnreachable(errors.New("daemon gone"))
 	if c.Ready() {
 		t.Error("expected Ready() == false after daemon became unreachable")
 	}
-	if calls != 1 {
-		t.Errorf("expected state handler to be called once, got %d", calls)
-	}
+	expectStateHandlerCall(t, calls)
 
 	c.markUnreachable(errors.New("still gone"))
-	if calls != 1 {
-		t.Errorf("expected no state handler call while already unreachable, got %d", calls)
+	expectNoStateHandlerCall(t, calls)
+}
+
+func TestMarkUnreachable_DoesNotWaitForStateHandler(t *testing.T) {
+	c := newTestClient(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	c.SetDaemonStateHandler(func() { <-release })
+
+	done := make(chan struct{})
+	go func() {
+		c.markUnreachable(errors.New("daemon gone"))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("markUnreachable blocked on the state handler")
+	}
+}
+
+func TestMarkUnreachable_IgnoresShutdown(t *testing.T) {
+	c := newTestClient(t)
+	calls := recordStateHandlerCalls(c)
+
+	c.cancel()
+	c.markUnreachable(context.Canceled)
+
+	if c.Ready() {
+		t.Error("expected Ready() == false after shutdown")
+	}
+	expectNoStateHandlerCall(t, calls)
+	// The notifier exits on shutdown, so also check nothing was queued for it.
+	if len(c.daemonStateChanged) != 0 {
+		t.Error("expected no state change to be queued during shutdown")
 	}
 }
 
