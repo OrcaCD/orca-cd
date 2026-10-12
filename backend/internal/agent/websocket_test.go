@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -223,6 +224,49 @@ func TestHandleServerMessage_UnknownPayload(t *testing.T) {
 		t.Error("expected no response for unknown message, but server received one")
 	case <-time.After(400 * time.Millisecond):
 		// expected: nothing written
+	}
+}
+
+func TestReadHubMessage_TimesOutWhenHubIsSilent(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	srv := newTestServer(t, func(*websocket.Conn) { <-release })
+	conn := dialServer(t, srv)
+
+	start := time.Now()
+	_, err := readHubMessage(conn, 100*time.Millisecond)
+	if err == nil {
+		t.Fatal("expected a timeout error, got nil")
+	}
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("expected a timeout error, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("read blocked for %s despite the deadline", elapsed)
+	}
+}
+
+func TestReadHubMessage_RenewsDeadlineOnEachRead(t *testing.T) {
+	srv := newTestServer(t, func(c *websocket.Conn) {
+		// Each message arrives within the timeout, but the total exceeds it.
+		for range 3 {
+			time.Sleep(100 * time.Millisecond)
+			if err := c.WriteMessage(websocket.BinaryMessage, []byte("ok")); err != nil {
+				return
+			}
+		}
+	})
+	conn := dialServer(t, srv)
+
+	for i := range 3 {
+		data, err := readHubMessage(conn, 250*time.Millisecond)
+		if err != nil {
+			t.Fatalf("read %d failed: %v", i, err)
+		}
+		if string(data) != "ok" {
+			t.Fatalf("read %d: unexpected data %q", i, data)
+		}
 	}
 }
 

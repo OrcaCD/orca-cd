@@ -239,7 +239,7 @@ func Run(cfg Config) error {
 	sendAgentInfo(sender, dockerClient)
 
 	for {
-		_, data, readErr := conn.ReadMessage()
+		data, readErr := readHubMessage(conn, hubReadTimeout)
 		if readErr != nil {
 			wsConnected.Store(false)
 			if ctx.Err() != nil {

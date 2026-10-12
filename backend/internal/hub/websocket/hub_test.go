@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -434,6 +435,38 @@ func TestHub_WritePump(t *testing.T) {
 
 	// Close the send channel to stop WritePump
 	client.Close()
+}
+
+func TestHub_WritePump_NoErrorWhenConnAlreadyClosed(t *testing.T) {
+	var logs bytes.Buffer
+	log := zerolog.New(&logs)
+	h := NewHub(&log)
+
+	serverConn, clientConn := newWSPair(t)
+	defer clientConn.Close() //nolint:errcheck
+
+	client, err := h.Register("agent-closed", serverConn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.WritePump(client, &log)
+	}()
+
+	// BeginDisconnect closes the socket before the pump exits.
+	h.BeginDisconnect(client)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("WritePump did not exit")
+	}
+	if strings.Contains(logs.String(), "failed to close WebSocket connection") {
+		t.Errorf("unexpected close error logged: %s", logs.String())
+	}
 }
 
 func TestHub_WritePump_DropsMessageWithNilSession(t *testing.T) {

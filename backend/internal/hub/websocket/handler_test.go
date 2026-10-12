@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -487,11 +488,33 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
+	// last_seen is already set on connect. Wait for that write, then reset it to
+	// an old value so only the pong can bring it up to date.
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var dbAgent models.Agent
+		if err := db.DB.First(&dbAgent, "id = ?", agent.Id).Error; err != nil {
+			conn.Close() //nolint:errcheck,gosec
+			t.Fatalf("failed to query agent: %v", err)
+		}
+		if dbAgent.Status == models.AgentStatusOnline && dbAgent.LastSeen != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	staleTime := time.Now().Add(-time.Hour)
+	if err := db.DB.Model(&models.Agent{}).Where("id = ?", agent.Id).Update("last_seen", staleTime).Error; err != nil {
+		conn.Close() //nolint:errcheck,gosec
+		t.Fatalf("failed to reset last_seen: %v", err)
+	}
+
+	// The agent-reported timestamp is far in the past; the hub must ignore it.
 	pongMsg := &messages.ClientMessage{
 		Payload: &messages.ClientMessage_Pong{
-			Pong: &messages.PongResponse{Timestamp: time.Now().Unix()},
+			Pong: &messages.PongResponse{Timestamp: time.Now().Add(-24 * time.Hour).UnixMilli()},
 		},
 	}
+	sentAt := time.Now()
 	data, err := proto.Marshal(pongMsg)
 	if err != nil {
 		conn.Close() //nolint:errcheck,gosec
@@ -511,7 +534,7 @@ func TestWsHandler_HandlesPong(t *testing.T) {
 			conn.Close() //nolint:errcheck,gosec
 			t.Fatalf("failed to query agent: %v", err)
 		}
-		if dbAgent.LastSeen != nil {
+		if dbAgent.LastSeen != nil && !dbAgent.LastSeen.Before(sentAt) {
 			lastSeen = dbAgent.LastSeen
 			break
 		}
@@ -653,6 +676,73 @@ func TestWsHandler_AgentMarkedOfflineOnDisconnect(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Error("expected agent status to be Offline after disconnect")
+}
+
+func TestWsHandler_PublishesAgentUpdatesOnConnectAndDisconnect(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+
+	broker := sse.NewBroker(&log)
+	previousBroker := sse.DefaultBroker
+	sse.DefaultBroker = broker
+	t.Cleanup(func() { sse.DefaultBroker = previousBroker })
+	connID, events := broker.Subscribe()
+	t.Cleanup(func() { broker.Unsubscribe(connID) })
+
+	waitForAgentsUpdate := func(what string) {
+		t.Helper()
+		timeout := time.After(2 * time.Second)
+		for {
+			select {
+			case event := <-events:
+				if event.URL == "/api/v1/agents" {
+					return
+				}
+			case <-timeout:
+				t.Fatalf("timed out waiting for agents SSE update after %s", what)
+			}
+		}
+	}
+	loadAgent := func(id string) models.Agent {
+		t.Helper()
+		var dbAgent models.Agent
+		if err := db.DB.First(&dbAgent, "id = ?", id).Error; err != nil {
+			t.Fatalf("failed to query agent: %v", err)
+		}
+		return dbAgent
+	}
+
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "key-id-sse")
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
+
+	beforeConnect := time.Now().Add(-time.Second)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	doHandshake(t, conn, agent.Id, signingPriv)
+
+	waitForAgentsUpdate("connect")
+	connected := loadAgent(agent.Id)
+	if connected.Status != models.AgentStatusOnline {
+		t.Errorf("expected agent status Online after connect, got %d", connected.Status)
+	}
+	if connected.LastSeen == nil || connected.LastSeen.Before(beforeConnect) {
+		t.Errorf("expected last_seen to be set on connect, got %v", connected.LastSeen)
+	}
+
+	conn.Close() //nolint:errcheck,gosec
+
+	waitForAgentsUpdate("disconnect")
+	if status := loadAgent(agent.Id).Status; status != models.AgentStatusOffline {
+		t.Errorf("expected agent status Offline when disconnect update is published, got %d", status)
+	}
 }
 
 func TestWsHandler_ServerDisconnectFinishesRegistration(t *testing.T) {

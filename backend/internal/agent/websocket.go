@@ -21,6 +21,7 @@ import (
 const handshakeTimeout = 15 * time.Second
 const deploymentTimeout = 5 * time.Minute
 const writeWait = 10 * time.Second
+const hubReadTimeout = 150 * time.Second
 
 type outboundSender interface {
 	SendMessage(msg *messages.ClientMessage) error
@@ -125,6 +126,14 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 
 	Log.Debug().Str("agent_id", agentID).Msg("WS handshake complete")
 	return wscrypto.NewSession(sessionKey)
+}
+
+func readHubMessage(conn *websocket.Conn, timeout time.Duration) ([]byte, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+	_, data, err := conn.ReadMessage()
+	return data, err
 }
 
 // TODO: We should make this async by adding it to a goroutine
