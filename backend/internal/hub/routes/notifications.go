@@ -18,6 +18,7 @@ import (
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
@@ -56,6 +57,8 @@ type testNotificationRequest struct {
 }
 
 var sendTestNotification = hubnotifications.SendTestNotification
+
+var notificationsLog = logger.New("notifications", false)
 
 type notificationResponse struct {
 	Id              string                     `json:"id"`
@@ -151,6 +154,14 @@ func CreateNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	// Reject configs that can't deliver before saving them, so new
+	// notifications never start in an unknown state.
+	if err := sendTestNotification(req.Type, normalizedConfig, ""); err != nil {
+		notificationsLog.Warn().Err(err).Str("type", string(req.Type)).Msg("test notification failed while creating notification")
+		respondTestNotificationError(c, err)
+		return
+	}
+
 	notification := models.Notification{
 		Name:            crypto.EncryptedString(normalizedName),
 		Enabled:         enabled,
@@ -158,7 +169,7 @@ func CreateNotificationHandler(c *gin.Context) {
 		AllAgents:       allAgents,
 		AllRepositories: allRepositories,
 		Events:          events,
-		Status:          models.NotificationStatusUnknown,
+		Status:          models.NotificationStatusSuccess,
 		Type:            req.Type,
 		Config:          crypto.EncryptedString(normalizedConfig),
 	}
@@ -305,6 +316,7 @@ func TestNotificationHandler(c *gin.Context) {
 	sendErr := sendTestNotification(notification.Type, notification.Config.String(), req.Message)
 	status := models.NotificationStatusSuccess
 	if sendErr != nil {
+		notificationsLog.Warn().Err(sendErr).Str("notificationId", notification.Id).Msg("test notification failed")
 		status = models.NotificationStatusError
 	}
 
@@ -320,18 +332,24 @@ func TestNotificationHandler(c *gin.Context) {
 	sse.PublishUpdate(NotificationsPath)
 
 	if sendErr != nil {
-		switch {
-		case errors.Is(sendErr, hubnotifications.ErrInvalidNotificationConfig):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config: " + sendErr.Error()})
-		case errors.Is(sendErr, hubnotifications.ErrNotificationDispatch):
-			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to send test notification"})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		}
+		respondTestNotificationError(c, sendErr)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "test notification sent"})
+}
+
+// respondTestNotificationError exposes the failure reason so users can fix
+// their config. The errors are already stripped of credentials.
+func respondTestNotificationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, hubnotifications.ErrInvalidNotificationConfig):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, hubnotifications.ErrNotificationDispatch):
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	}
 }
 
 func updateNotificationStatus(ctx context.Context, id string, status models.NotificationStatus) error {

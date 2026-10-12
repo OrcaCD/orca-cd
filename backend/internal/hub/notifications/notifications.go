@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -118,15 +120,15 @@ func notify(scope notificationScope, resourceId string, event models.Notificatio
 func dispatch(notification *models.Notification, message string) error {
 	targets, err := provider.BuildShoutrrrUrls(notification.Type, notification.Config.String())
 	if err != nil {
-		return fmt.Errorf("parse notification config: %w", err)
+		return fmt.Errorf("parse notification config: %w", redactError(err))
 	}
 
 	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
 	if err != nil {
-		return fmt.Errorf("create notification sender: %w", err)
+		return fmt.Errorf("create notification sender: %w", redactError(err))
 	}
 
-	return errors.Join(sender.Send(message, nil)...)
+	return redactError(errors.Join(sender.Send(message, nil)...))
 }
 
 // getNotificationConfig returns the enabled notifications that cover the
@@ -156,12 +158,12 @@ func getNotificationConfig(ctx context.Context, scope notificationScope, resourc
 func SendTestNotification(notificationType models.NotificationType, rawConfig, message string) error {
 	targets, err := provider.BuildShoutrrrUrls(notificationType, rawConfig)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
+		return fmt.Errorf("%w: %w", ErrInvalidNotificationConfig, redactError(err))
 	}
 
 	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidNotificationConfig, err)
+		return fmt.Errorf("%w: %w", ErrInvalidNotificationConfig, redactError(err))
 	}
 
 	msg := strings.TrimSpace(message)
@@ -178,10 +180,37 @@ func SendTestNotification(notificationType models.NotificationType, rawConfig, m
 	}
 
 	if len(errList) > 0 {
-		return fmt.Errorf("%w: %w", ErrNotificationDispatch, errors.Join(errList...))
+		return fmt.Errorf("%w: %w", ErrNotificationDispatch, redactError(errors.Join(errList...)))
 	}
 
 	return nil
+}
+
+var urlPattern = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"'\[\]]+`)
+
+// redactError strips credentials from shoutrrr errors, which embed the target
+// URLs (including webhook tokens, passwords and API keys) in their messages.
+// Only the scheme and host of each URL are kept.
+func redactError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return errors.New(urlPattern.ReplaceAllStringFunc(err.Error(), redactURL))
+}
+
+func redactURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return "[redacted]"
+	}
+
+	redacted := parsed.Scheme + "://" + parsed.Host
+	if redacted != rawURL {
+		redacted += "/[redacted]"
+	}
+
+	return redacted
 }
 
 func setNotificationStatus(notificationId string, status models.NotificationStatus, log *zerolog.Logger) {
