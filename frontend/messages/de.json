@@ -287,6 +287,7 @@
 	"notificationCreated": "Benachrichtigung erstellt",
 	"notificationUpdated": "Benachrichtigung aktualisiert",
 	"failedSaveNotification": "Benachrichtigung konnte nicht gespeichert werden",
+	"notificationTestBeforeSaveNote": "Vor dem Speichern wird eine Testbenachrichtigung gesendet, um die Konfiguration zu prüfen.",
 	"validationApplicationNameRequired": "Name ist erforderlich",
 	"validationApplicationNameMaxLength": "Name darf maximal 128 Zeichen lang sein",
 	"validationApplicationIconMaxLegth": "Icon darf maximal 128 Zeichen lang sein",

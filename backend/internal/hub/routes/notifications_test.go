@@ -29,6 +29,15 @@ func setupTestDBWithNotifications(t *testing.T) {
 	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Agent{}, &models.Application{}, &models.Notification{}); err != nil {
 		t.Fatalf("failed to migrate Notification/Repository/Agent/Application: %v", err)
 	}
+
+	// Creating a notification sends a test notification; never reach real services.
+	originalSend := sendTestNotification
+	t.Cleanup(func() {
+		sendTestNotification = originalSend
+	})
+	sendTestNotification = func(models.NotificationType, string, string) error {
+		return nil
+	}
 }
 
 func seedNotificationRepository(t *testing.T) models.Repository {
@@ -214,8 +223,8 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	if body.Name != "Deploy Alerts" {
 		t.Fatalf("expected name %q, got %q", "Deploy Alerts", body.Name)
 	}
-	if body.Status != string(models.NotificationStatusUnknown) {
-		t.Fatalf("expected status %q, got %q", models.NotificationStatusUnknown, body.Status)
+	if body.Status != string(models.NotificationStatusSuccess) {
+		t.Fatalf("expected status %q, got %q", models.NotificationStatusSuccess, body.Status)
 	}
 	if body.Type != "discord" {
 		t.Fatalf("expected type %q, got %q", "discord", body.Type)
@@ -246,6 +255,117 @@ func TestCreateNotificationHandler_Success(t *testing.T) {
 	}
 	if !slices.Equal(stored.Events, wantEvents) {
 		t.Fatalf("expected stored events %v, got %v", wantEvents, stored.Events)
+	}
+}
+
+func TestCreateNotificationHandler_SendsTestNotificationBeforeSaving(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	called := false
+	sendTestNotification = func(notificationType models.NotificationType, rawConfig, message string) error {
+		called = true
+		if notificationType != models.NotificationTypeDiscord {
+			t.Fatalf("expected discord notification type, got %q", notificationType)
+		}
+		if rawConfig != validDiscordConfig {
+			t.Fatalf("expected config %q, got %q", validDiscordConfig, rawConfig)
+		}
+		if message != "" {
+			t.Fatalf("expected default message, got %q", message)
+		}
+
+		count, err := gorm.G[models.Notification](db.DB).Count(t.Context(), "*")
+		if err != nil {
+			t.Fatalf("failed to count notifications: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("expected notification to be saved after the test send, found %d", count)
+		}
+		return nil
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":   "Tested",
+		"type":   "discord",
+		"config": validDiscordConfig,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateNotificationHandler(c)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if !called {
+		t.Fatal("expected test notification sender to be called")
+	}
+}
+
+func TestCreateNotificationHandler_TestNotificationFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "dispatch",
+			err:      fmt.Errorf("%w: discord: unexpected response status code: 404 Not Found", hubnotifications.ErrNotificationDispatch),
+			wantCode: http.StatusBadGateway,
+			wantBody: "404 Not Found",
+		},
+		{
+			name:     "invalid config",
+			err:      fmt.Errorf("%w: token missing", hubnotifications.ErrInvalidNotificationConfig),
+			wantCode: http.StatusBadRequest,
+			wantBody: "token missing",
+		},
+		{
+			name:     "unexpected",
+			err:      errors.New("boom"),
+			wantCode: http.StatusInternalServerError,
+			wantBody: "internal server error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDBWithNotifications(t)
+
+			sendTestNotification = func(models.NotificationType, string, string) error {
+				return tt.err
+			}
+
+			reqBody, _ := json.Marshal(map[string]any{
+				"name":   "Broken",
+				"type":   "discord",
+				"config": validDiscordConfig,
+			})
+
+			c, w := makeAuthContext(t, "user-1")
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/notifications", bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			CreateNotificationHandler(c)
+
+			if w.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tt.wantCode, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tt.wantBody) {
+				t.Fatalf("expected body to contain %q, got %s", tt.wantBody, w.Body.String())
+			}
+
+			count, err := gorm.G[models.Notification](db.DB).Count(t.Context(), "*")
+			if err != nil {
+				t.Fatalf("failed to count notifications: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("expected no notification to be saved, found %d", count)
+			}
+		})
 	}
 }
 
@@ -1023,7 +1143,7 @@ func TestTestNotificationHandler_DispatchFailure(t *testing.T) {
 		sendTestNotification = originalSend
 	})
 	sendTestNotification = func(models.NotificationType, string, string) error {
-		return hubnotifications.ErrNotificationDispatch
+		return fmt.Errorf("%w: discord: unexpected response status code: 401 Unauthorized", hubnotifications.ErrNotificationDispatch)
 	}
 
 	router := gin.New()
@@ -1035,6 +1155,14 @@ func TestTestNotificationHandler_DispatchFailure(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !strings.Contains(body["error"], "401 Unauthorized") {
+		t.Fatalf("expected error to contain the failure reason, got %q", body["error"])
 	}
 
 	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
