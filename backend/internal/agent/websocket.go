@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -412,7 +414,7 @@ func sendDeployResult(sender outboundSender, result *messages.DeployResult) {
 }
 
 func connectAndHandshake(ctx context.Context, cfg Config, tracker *connTracker) (*websocket.Conn, *wscrypto.Session, error) {
-	conn, err := connectWithRetry(ctx, cfg.HubUrl, cfg.AuthToken)
+	conn, err := connectWithRetry(ctx, newDialer(cfg.RootCAs), cfg.HubUrl, cfg.AuthToken)
 	if err != nil || tracker.setAndCancelled(ctx, conn) {
 		return nil, nil, nil
 	}
@@ -425,7 +427,20 @@ func connectAndHandshake(ctx context.Context, cfg Config, tracker *connTracker) 
 	return conn, session, nil
 }
 
-func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Conn, error) {
+// newDialer returns a dialer that verifies the hub certificate against rootCAs,
+// or against the system roots when rootCAs is nil.
+func newDialer(rootCAs *x509.CertPool) *websocket.Dialer {
+	dialer := *websocket.DefaultDialer
+	if rootCAs != nil {
+		dialer.TLSClientConfig = &tls.Config{
+			RootCAs:    rootCAs,
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+	return &dialer
+}
+
+func connectWithRetry(ctx context.Context, dialer *websocket.Dialer, url, authToken string) (*websocket.Conn, error) {
 	const (
 		initialDelay = 1 * time.Second
 		maxDelay     = 30 * time.Second
@@ -439,7 +454,7 @@ func connectWithRetry(ctx context.Context, url, authToken string) (*websocket.Co
 	for {
 		header := make(http.Header)
 		header.Set("Authorization", authToken)
-		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, url, header)
+		conn, resp, err := dialer.DialContext(ctx, url, header)
 
 		if err == nil {
 			Log.Info().Str("url", url).Msg("connected to hub")
