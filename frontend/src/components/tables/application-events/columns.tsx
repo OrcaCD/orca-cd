@@ -30,7 +30,7 @@ function typeLabel(type: ApplicationEventType): string {
 	return typeLabels[type]?.() ?? type;
 }
 
-export function sourceLabel(source: ApplicationEventSource): string {
+function sourceLabel(source: ApplicationEventSource): string {
 	return sourceLabels[source]?.() ?? source;
 }
 
