@@ -1,4 +1,5 @@
 import { fetcher } from "./api";
+import type { RepositorySyncType } from "./repositories";
 
 export interface Application {
 	id: string;
@@ -9,6 +10,7 @@ export interface Application {
 	repositoryId: string;
 	repositoryName: string;
 	repositoryUrl: string;
+	repositorySyncType: RepositorySyncType;
 	branch: string;
 	commit: string;
 	commitMessage: string;

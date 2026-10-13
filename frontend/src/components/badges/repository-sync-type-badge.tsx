@@ -15,7 +15,7 @@ function getSyncTypeIcon(syncType: RepositorySyncType) {
 	}
 }
 
-function getSyncTypeLabel(syncType: RepositorySyncType): string {
+export function getSyncTypeLabel(syncType: RepositorySyncType): string {
 	switch (syncType) {
 		case "webhook":
 			return m.webhook();

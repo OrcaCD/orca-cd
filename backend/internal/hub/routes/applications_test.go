@@ -317,6 +317,9 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	if body.RepositoryName != repo.Name {
 		t.Errorf("expected repositoryName %q, got %q", repo.Name, body.RepositoryName)
 	}
+	if body.RepositorySyncType != string(repo.SyncType) {
+		t.Errorf("expected repositorySyncType %q, got %q", repo.SyncType, body.RepositorySyncType)
+	}
 	if body.AgentName != "agent-detail" {
 		t.Errorf("expected agentName %q, got %q", "agent-detail", body.AgentName)
 	}
