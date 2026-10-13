@@ -67,12 +67,14 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		now := time.Now()
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
+		source := job.Origin.Source
 		if err := updateApplicationStatus(context.Background(), job.Application.Id, models.Application{
-			SyncStatus:    models.Synced,
-			Commit:        job.Commit,
-			CommitMessage: job.CommitMessage,
-			LastSyncedAt:  &now,
-			LastSyncError: &cleared,
+			SyncStatus:     models.Synced,
+			Commit:         job.Commit,
+			CommitMessage:  job.CommitMessage,
+			LastSyncedAt:   &now,
+			LastSyncError:  &cleared,
+			LastSyncSource: &source,
 		}, log); err != nil {
 			completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, "failed to persist application sync status: "+err.Error(), log)
 			return

@@ -2,6 +2,7 @@ package applicationevents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -131,6 +132,25 @@ func Complete(
 
 	sse.PublishUpdate(Path(applicationID))
 	return true, nil
+}
+
+// SourceForRequest returns the source of the event recorded for requestID, or
+// false when no such event exists (e.g. unsolicited Agent results).
+func SourceForRequest(ctx context.Context, requestID string, applicationID string) (models.ApplicationEventSource, bool, error) {
+	if requestID == "" {
+		return "", false, nil
+	}
+	event, err := gorm.G[models.ApplicationEvent](db.DB).
+		Select("source").
+		Where("request_id = ? AND application_id = ?", requestID, applicationID).
+		First(ctx)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return event.Source, true, nil
 }
 
 func RecoverRunning(ctx context.Context, message string) (int64, error) {

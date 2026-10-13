@@ -123,6 +123,7 @@
 	"applicationInfoSyncGit": "Git: {type}",
 	"applicationInfoSyncImages": "Images: {type}",
 	"applicationInfoSyncImagePolling": "Polling alle {seconds} s",
+	"applicationInfoLastSyncSource": "über {source}",
 	"pageRepositories": "Repositories",
 	"repositoriesPageDescription": "Verbundene Git-Repositories verwalten",
 	"loadingRepositories": "Repositories werden geladen...",

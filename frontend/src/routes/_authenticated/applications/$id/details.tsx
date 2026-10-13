@@ -17,6 +17,7 @@ import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
+import { sourceLabel } from "@/components/tables/application-events/columns";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -241,7 +242,12 @@ function ApplicationDetailsPage() {
 					icon={<Clock className="h-4 w-4" />}
 					label={m.applicationInfoLastSync()}
 					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : m.never()}
-					subValue={getSyncTriggers(data)}
+					subValue={[
+						data?.lastSyncSource
+							? m.applicationInfoLastSyncSource({ source: sourceLabel(data.lastSyncSource) })
+							: "",
+						...getSyncTriggers(data),
+					]}
 				/>
 			</div>
 

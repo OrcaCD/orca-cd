@@ -103,6 +103,14 @@ func TestProcessSyncJobPollingNewCommitUnchangedComposeRecordsNoChange(t *testin
 	if event.CompletedAt == nil {
 		t.Error("expected no_change event to be completed")
 	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.LastSyncSource == nil || *updated.LastSyncSource != models.ApplicationEventSourceRepositoryPolling {
+		t.Errorf("expected LastSyncSource %q, got %v", models.ApplicationEventSourceRepositoryPolling, updated.LastSyncSource)
+	}
 }
 
 func TestProcessSyncJobUnchangedComposeStatusUpdateFailureRecordsFailedEvent(t *testing.T) {
