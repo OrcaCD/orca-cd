@@ -139,7 +139,7 @@
 	"applicationInfoLatestCommit": "Latest Commit",
 	"applicationInfoTargetHost": "Target Host",
 	"applicationInfoLastSync": "Last Sync",
-	"applicationInfoAutoSyncEnabled": "Auto-sync enabled",
+	"applicationInfoLastSyncSource": "via {source}",
 	"pageRepositories": "Repositories",
 	"repositoriesPageDescription": "Manage connected Git repositories",
 	"loadingRepositories": "Loading repositories...",

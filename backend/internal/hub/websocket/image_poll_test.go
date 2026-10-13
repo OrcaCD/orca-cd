@@ -77,6 +77,9 @@ func TestHandlePullImagesResult_Success(t *testing.T) {
 	if updated.LastSyncedAt.Before(before) {
 		t.Errorf("LastSyncedAt %v is before test start %v", updated.LastSyncedAt, before)
 	}
+	if updated.LastSyncSource == nil || *updated.LastSyncSource != models.ApplicationEventSourceImagePolling {
+		t.Errorf("expected LastSyncSource %q, got %v", models.ApplicationEventSourceImagePolling, updated.LastSyncSource)
+	}
 }
 
 func TestHandlePullImagesResult_WrongAgent(t *testing.T) {
@@ -152,6 +155,14 @@ func TestHandlePullImagesResult_ExplicitRequestImagesUpdated_CompletesSucceeded(
 	}
 	if events[0].Status != models.ApplicationEventSucceeded || events[0].CompletedAt == nil {
 		t.Fatalf("expected succeeded completed event, got %+v", events[0])
+	}
+
+	var updated models.Application
+	if err := db.DB.First(&updated, "id = ?", app.Id).Error; err != nil {
+		t.Fatalf("failed to query application: %v", err)
+	}
+	if updated.LastSyncSource == nil || *updated.LastSyncSource != models.ApplicationEventSourceImageWebhook {
+		t.Errorf("expected LastSyncSource %q, got %v", models.ApplicationEventSourceImageWebhook, updated.LastSyncSource)
 	}
 }
 

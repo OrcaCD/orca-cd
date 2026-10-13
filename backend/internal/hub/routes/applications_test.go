@@ -364,6 +364,38 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	if body.UpdatedAt == "" {
 		t.Error("expected updatedAt to be set")
 	}
+	if body.LastSyncSource != nil {
+		t.Errorf("expected lastSyncSource to be omitted, got %q", *body.LastSyncSource)
+	}
+}
+
+func TestGetApplicationHandler_IncludesLastSyncSource(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-sync-source")
+	agent := seedTestAgent(t, "agent-sync-source")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Sync Source")
+	source := models.ApplicationEventSourceRepositoryWebhook
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Updates(t.Context(), models.Application{LastSyncSource: &source}); err != nil {
+		t.Fatalf("failed to set last sync source: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.LastSyncSource == nil || *body.LastSyncSource != string(source) {
+		t.Errorf("expected lastSyncSource %q, got %v", source, body.LastSyncSource)
+	}
 }
 
 func TestCreateApplicationHandler_InvalidRequest(t *testing.T) {

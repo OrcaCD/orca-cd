@@ -1,5 +1,5 @@
 import { fetcher } from "./api";
-import type { ApplicationEvent } from "./application-events";
+import type { ApplicationEvent, ApplicationEventSource } from "./application-events";
 
 export interface Application {
 	id: string;
@@ -15,6 +15,7 @@ export interface Application {
 	commitMessage: string;
 	lastSyncedAt?: string;
 	lastSyncError?: string;
+	lastSyncSource?: ApplicationEventSource;
 	path: string;
 	agentId: string;
 	agentName: string;
