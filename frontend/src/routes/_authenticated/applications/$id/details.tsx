@@ -16,6 +16,7 @@ import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/t
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
+import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -39,10 +40,12 @@ function InfoCard({
 	icon: React.ReactNode;
 	label: string;
 	value: string;
-	subValue?: string;
+	subValue?: string | string[];
 	link?: string;
 	isMonoValue?: boolean;
 }) {
+	const subValues = [subValue ?? []].flat().filter(Boolean);
+
 	return (
 		<Card>
 			<CardHeader>
@@ -68,10 +71,37 @@ function InfoCard({
 						<span className={isMonoValue ? "font-mono" : ""}>{value}</span>
 					)}
 				</div>
-				{subValue && <p className="text-sm text-muted-foreground mt-1 truncate">{subValue}</p>}
+				{subValues.map((line) => (
+					<p key={line} className="text-sm text-muted-foreground mt-1 truncate">
+						{line}
+					</p>
+				))}
 			</CardContent>
 		</Card>
 	);
+}
+
+function getSyncTriggers(app?: Application): string[] {
+	if (!app) {
+		return [];
+	}
+
+	const triggers = [m.applicationInfoSyncGit({ type: getSyncTypeLabel(app.repositorySyncType) })];
+
+	const imageTriggers: string[] = [];
+	if (app.imagePollEnabled) {
+		imageTriggers.push(
+			m.applicationInfoSyncImagePolling({ seconds: app.imagePollIntervalSeconds }),
+		);
+	}
+	if (app.imageWebhookEnabled) {
+		imageTriggers.push(m.webhook());
+	}
+	if (imageTriggers.length > 0) {
+		triggers.push(m.applicationInfoSyncImages({ type: imageTriggers.join(", ") }));
+	}
+
+	return triggers;
 }
 
 function withDiffMarker(line: string, marker: "++" | "--"): string {
@@ -211,7 +241,7 @@ function ApplicationDetailsPage() {
 					icon={<Clock className="h-4 w-4" />}
 					label={m.applicationInfoLastSync()}
 					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : m.never()}
-					subValue={m.applicationInfoAutoSyncEnabled()}
+					subValue={getSyncTriggers(data)}
 				/>
 			</div>
 

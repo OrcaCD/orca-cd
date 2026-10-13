@@ -75,6 +75,7 @@ type applicationResponse struct {
 	RepositoryId             string  `json:"repositoryId"`
 	RepositoryName           string  `json:"repositoryName"`
 	RepositoryUrl            string  `json:"repositoryUrl"`
+	RepositorySyncType       string  `json:"repositorySyncType"`
 	AgentId                  string  `json:"agentId"`
 	AgentName                string  `json:"agentName"`
 	SyncStatus               string  `json:"syncStatus"`
@@ -472,6 +473,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		RepositoryId:             app.RepositoryId,
 		RepositoryName:           app.Repository.Name,
 		RepositoryUrl:            app.Repository.Url,
+		RepositorySyncType:       string(app.Repository.SyncType),
 		AgentId:                  app.AgentId,
 		AgentName:                app.Agent.Name.String(),
 		SyncStatus:               string(app.SyncStatus),
