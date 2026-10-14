@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,16 +16,17 @@ import (
 func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.Context, appID string) HealthState) *healthWatcher {
 	t.Helper()
 	w := &healthWatcher{
-		ctx:          t.Context(),
-		log:          zerolog.Nop(),
-		debounce:     time.Millisecond,
-		maxDelay:     10 * time.Millisecond,
-		checkHealth:  check,
-		sender:       sender,
-		pending:      make(map[string]*pendingHealthEvaluation),
-		evaluating:   make(map[string]*healthEvaluation),
-		epochs:       make(map[string]uint64),
-		lastReported: make(map[string]HealthState),
+		ctx:             t.Context(),
+		log:             zerolog.Nop(),
+		debounce:        time.Millisecond,
+		maxDelay:        10 * time.Millisecond,
+		snapshotTimeout: healthEvaluateTimeout,
+		checkHealth:     check,
+		sender:          sender,
+		pending:         make(map[string]*pendingHealthEvaluation),
+		evaluating:      make(map[string]*healthEvaluation),
+		epochs:          make(map[string]uint64),
+		lastReported:    make(map[string]HealthState),
 	}
 	t.Cleanup(w.stop)
 	return w
@@ -637,5 +640,205 @@ func TestReconcileApplicationHealth_RetriesAfterSendFailure(t *testing.T) {
 
 	if _, known := w.knownApps()["missing-app"]; !known {
 		t.Error("expected missing app to remain eligible for the next resync")
+	}
+}
+
+func (s *stubMessageSender) setErr(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.err = err
+}
+
+func TestHealthWatcher_ResendsAfterFailedSend(t *testing.T) {
+	sender := &stubMessageSender{err: errors.New("connection closed")}
+	w := newTestWatcher(t, sender, staticHealth(HealthHealthy))
+
+	w.schedule("app-1")
+	awaitReports(t, sender, 1)
+
+	sender.setErr(nil)
+	w.schedule("app-1")
+
+	msgs := awaitReports(t, sender, 2)
+	status := msgs[1].GetApplicationStatusReport().Statuses[0]
+	if status.Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("health = %v, want healthy", status.Health)
+	}
+	if _, known := w.knownApps()["app-1"]; !known {
+		t.Error("expected app to stay known after a failed send")
+	}
+}
+
+func TestReportApplicationStatus_FailedSendAllowsResend(t *testing.T) {
+	sender := &stubMessageSender{err: errors.New("connection closed")}
+	w := newTestWatcher(t, sender, staticHealth(HealthHealthy))
+	w.lastReported["app-1"] = HealthHealthy
+
+	w.reportApplicationStatus(t.Context(), sender, []string{"app-1"})
+	if got := w.lastReported["app-1"]; got == HealthHealthy {
+		t.Fatal("a snapshot the hub never received must not count as reported")
+	}
+
+	sender.setErr(nil)
+	w.schedule("app-1")
+
+	msgs := awaitReports(t, sender, 2)
+	status := msgs[1].GetApplicationStatusReport().Statuses[0]
+	if status.Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("health = %v, want healthy", status.Health)
+	}
+}
+
+func TestReportApplicationStatus_TimeoutReportsUncheckedAppsAsUnknown(t *testing.T) {
+	sender := &stubMessageSender{}
+	var mu sync.Mutex
+	calls := make(map[string]int)
+	// The first check of app-2 hangs until the snapshot budget is spent; every
+	// later check, such as the follow-up evaluation, answers immediately.
+	w := newTestWatcher(t, sender, func(ctx context.Context, appID string) HealthState {
+		mu.Lock()
+		calls[appID]++
+		first := calls[appID] == 1
+		mu.Unlock()
+		if appID == "app-2" && first {
+			<-ctx.Done()
+			return HealthUnknown
+		}
+		return HealthHealthy
+	})
+	w.snapshotTimeout = 100 * time.Millisecond
+
+	w.reportApplicationStatus(t.Context(), sender, []string{"app-1", "app-2", "app-3"})
+
+	msgs := awaitReports(t, sender, 1)
+	got := make(map[string]messages.HealthStatus)
+	for _, status := range msgs[0].GetApplicationStatusReport().Statuses {
+		got[status.ApplicationId] = status.Health
+	}
+	want := map[string]messages.HealthStatus{
+		"app-1": messages.HealthStatus_HEALTH_STATUS_HEALTHY,
+		"app-2": messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED,
+		"app-3": messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("snapshot statuses = %v, want %v", got, want)
+	}
+	for appID, health := range want {
+		if got[appID] != health {
+			t.Errorf("snapshot health of %s = %v, want %v", appID, got[appID], health)
+		}
+	}
+
+	// The apps that could not be checked in time are re-evaluated and reported.
+	msgs = awaitReports(t, sender, 3)
+	followUps := make(map[string]messages.HealthStatus)
+	for _, msg := range msgs[1:] {
+		for _, status := range msg.GetApplicationStatusReport().Statuses {
+			followUps[status.ApplicationId] = status.Health
+		}
+	}
+	for _, appID := range []string{"app-2", "app-3"} {
+		if followUps[appID] != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+			t.Errorf("follow-up health of %s = %v, want healthy", appID, followUps[appID])
+		}
+	}
+}
+
+func TestReportApplicationStatus_CancelledContextSendsNothing(t *testing.T) {
+	sender := &stubMessageSender{}
+	ctx, cancel := context.WithCancel(t.Context())
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+		// The agent is shutting down while the snapshot is being collected.
+		cancel()
+		return HealthUnknown
+	})
+
+	w.reportApplicationStatus(ctx, sender, []string{"app-1", "app-2"})
+	time.Sleep(50 * time.Millisecond)
+
+	if msgs := sender.received(); len(msgs) != 0 {
+		t.Errorf("expected no snapshot on shutdown, got %d messages", len(msgs))
+	}
+	w.mu.Lock()
+	pending := len(w.pending)
+	w.mu.Unlock()
+	if pending != 0 {
+		t.Errorf("expected no follow-up evaluations on shutdown, got %d pending", pending)
+	}
+}
+
+func TestClientDeploy_ReportsHealthAfterFailure(t *testing.T) {
+	c := newTestClient(t)
+	sender := &stubMessageSender{}
+	c.healthWatcher.sender = sender
+	c.healthWatcher.debounce = time.Millisecond
+	c.healthWatcher.checkHealth = staticHealth(HealthHealthy)
+	// The previous containers still run, so the agent believes the hub already
+	// knows the app is healthy; the hub reset it to unknown on dispatch though.
+	c.healthWatcher.lastReported["app-1"] = HealthHealthy
+
+	err := c.Deploy(t.Context(), DeployRequest{ApplicationID: "app-1", ApplicationName: "app"})
+	if err == nil {
+		t.Fatal("expected deploy without a compose file to fail")
+	}
+
+	msgs := awaitReports(t, sender, 1)
+	status := msgs[0].GetApplicationStatusReport().Statuses[0]
+	if status.ApplicationId != "app-1" || status.Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("unexpected status after failed deploy: %v", status)
+	}
+}
+
+func TestImagePoller_ExplicitPullWithoutUpdateReportsHealth(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"nothing stale", nil},
+		{"pull failed", errors.New("registry unreachable")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkAndPullImages = func(context.Context, *Client, string, string, bool) (bool, error) {
+				return false, tt.err
+			}
+			p := newTestPoller(t, noopSender{})
+			sender := &stubMessageSender{}
+			w := p.client.healthWatcher
+			w.sender = sender
+			w.debounce = time.Millisecond
+			w.checkHealth = staticHealth(HealthHealthy)
+			w.lastReported["app-1"] = HealthHealthy
+
+			p.runOnce("app-1", "app", "req-1", false)
+
+			awaitReports(t, sender, 1)
+		})
+	}
+}
+
+func TestImagePoller_PeriodicPullWithoutUpdateDoesNotReportHealth(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+	checkAndPullImages = func(context.Context, *Client, string, string, bool) (bool, error) {
+		return false, nil
+	}
+
+	p := newTestPoller(t, noopSender{})
+	sender := &stubMessageSender{}
+	w := p.client.healthWatcher
+	w.sender = sender
+	w.debounce = time.Millisecond
+	w.checkHealth = staticHealth(HealthHealthy)
+	w.lastReported["app-1"] = HealthHealthy
+
+	p.runOnce("app-1", "app", "", false)
+	time.Sleep(50 * time.Millisecond)
+
+	if msgs := sender.received(); len(msgs) != 0 {
+		t.Errorf("expected no health report for a silent periodic tick, got %d", len(msgs))
 	}
 }

@@ -314,8 +314,10 @@ func (c *Client) pingDaemon() bool {
 }
 
 // startEventLoop opens an event stream from the Docker daemon and dispatches
-// incoming events. When the stream errors out (daemon went away), it hands off
-// to waitForDaemon to poll for recovery.
+// incoming events. When the stream errors out (daemon went away) or is closed
+// without an error, it hands off to waitForDaemon, which restarts the stream
+// and resyncs health once the daemon answers again. Returning silently would
+// leave health updating only on the periodic resync.
 func (c *Client) startEventLoop() {
 	result := c.cli.Client().Events(c.ctx, client.EventsListOptions{})
 	for {
@@ -324,18 +326,31 @@ func (c *Client) startEventLoop() {
 			return
 		case msg, ok := <-result.Messages:
 			if !ok {
+				c.restartEventLoop(nil)
 				return
 			}
 			c.handleEvent(msg)
 		case err, ok := <-result.Err:
 			if !ok {
+				c.restartEventLoop(nil)
 				return
 			}
-			c.markUnreachable(err)
-			go c.waitForDaemon()
+			c.restartEventLoop(err)
 			return
 		}
 	}
+}
+
+func (c *Client) restartEventLoop(err error) {
+	if c.ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		c.markUnreachable(err)
+	} else {
+		c.log.Warn().Msg("Docker event stream closed unexpectedly, reconnecting")
+	}
+	go c.waitForDaemon()
 }
 
 func (c *Client) handleEvent(msg events.Message) {

@@ -40,33 +40,35 @@ type healthEvaluation struct {
 // application's aggregate health; the hub is notified when the settled state
 // differs from what was last reported.
 type healthWatcher struct {
-	mu           sync.Mutex
-	reportMu     sync.Mutex
-	ctx          context.Context
-	log          zerolog.Logger
-	debounce     time.Duration
-	maxDelay     time.Duration
-	checkHealth  func(ctx context.Context, appID string) HealthState
-	sender       MessageSender
-	pending      map[string]*pendingHealthEvaluation
-	evaluating   map[string]*healthEvaluation
-	epochs       map[string]uint64
-	lastReported map[string]HealthState
-	nextEpoch    uint64
-	stopped      bool
+	mu              sync.Mutex
+	reportMu        sync.Mutex
+	ctx             context.Context
+	log             zerolog.Logger
+	debounce        time.Duration
+	maxDelay        time.Duration
+	snapshotTimeout time.Duration
+	checkHealth     func(ctx context.Context, appID string) HealthState
+	sender          MessageSender
+	pending         map[string]*pendingHealthEvaluation
+	evaluating      map[string]*healthEvaluation
+	epochs          map[string]uint64
+	lastReported    map[string]HealthState
+	nextEpoch       uint64
+	stopped         bool
 }
 
 func newHealthWatcher(c *Client) *healthWatcher {
 	return &healthWatcher{
-		ctx:          c.ctx,
-		log:          c.log,
-		debounce:     healthEvaluateDebounce,
-		maxDelay:     healthEvaluateMaxDelay,
-		checkHealth:  c.ApplicationHealth,
-		pending:      make(map[string]*pendingHealthEvaluation),
-		evaluating:   make(map[string]*healthEvaluation),
-		epochs:       make(map[string]uint64),
-		lastReported: make(map[string]HealthState),
+		ctx:             c.ctx,
+		log:             c.log,
+		debounce:        healthEvaluateDebounce,
+		maxDelay:        healthEvaluateMaxDelay,
+		snapshotTimeout: healthEvaluateTimeout,
+		checkHealth:     c.ApplicationHealth,
+		pending:         make(map[string]*pendingHealthEvaluation),
+		evaluating:      make(map[string]*healthEvaluation),
+		epochs:          make(map[string]uint64),
+		lastReported:    make(map[string]HealthState),
 	}
 }
 
@@ -352,6 +354,17 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 		},
 	}); err != nil {
 		w.log.Error().Err(err).Str("application_id", appID).Msg("failed to send health report")
+		w.markUnsent(appID)
+	}
+}
+
+// markUnsent records that the hub's value for appID is uncertain after a failed
+// send. The next settled evaluation will be sent even if the state did not change.
+func (w *healthWatcher) markUnsent(appID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.stopped {
+		w.lastReported[appID] = HealthUnknown
 	}
 }
 
@@ -369,19 +382,30 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 		return
 	}
 
-	snapshotCtx, cancel := context.WithTimeout(ctx, healthEvaluateTimeout)
+	snapshotCtx, cancel := context.WithTimeout(ctx, w.snapshotTimeout)
 	defer cancel()
 	statuses := make([]*messages.ApplicationStatus, 0, len(appIDs))
 	reported := make(map[string]HealthState, len(appIDs))
+	var unchecked []string
 	for _, appID := range appIDs {
-		health := w.checkHealth(snapshotCtx, appID)
+		health := HealthUnknown
+		if snapshotCtx.Err() == nil {
+			health = w.checkHealth(snapshotCtx, appID)
+		}
+		if snapshotCtx.Err() != nil {
+			health = HealthUnknown
+			unchecked = append(unchecked, appID)
+		}
 		statuses = append(statuses, &messages.ApplicationStatus{ApplicationId: appID, Health: health.Proto()})
 		reported[appID] = health
+	}
+	if ctx.Err() != nil {
+		return
 	}
 	w.mu.Lock()
 	stopped = w.stopped
 	w.mu.Unlock()
-	if stopped || snapshotCtx.Err() != nil {
+	if stopped {
 		return
 	}
 
@@ -391,6 +415,15 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 		},
 	}); err != nil {
 		w.log.Error().Err(err).Msg("failed to send application status snapshot")
+		w.mu.Lock()
+		if !w.stopped {
+			for appID, health := range reported {
+				if health != HealthUnknown {
+					w.lastReported[appID] = HealthUnknown
+				}
+			}
+		}
+		w.mu.Unlock()
 		return
 	}
 
@@ -405,6 +438,10 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 		}
 	}
 	w.mu.Unlock()
+
+	for _, appID := range unchecked {
+		w.schedule(appID)
+	}
 }
 
 // reconcileMissingApplication rechecks an application that was absent from a

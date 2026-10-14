@@ -57,7 +57,6 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
-		HealthStatus:  models.Unhealthy,
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
