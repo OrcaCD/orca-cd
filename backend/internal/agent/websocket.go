@@ -43,6 +43,10 @@ type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
 }
 
+type imageStatusProvider interface {
+	ImageStatus(ctx context.Context, appID, appName string, checkLatest bool) ([]docker.ServiceImageStatus, error)
+}
+
 type dockerStateProvider interface {
 	Ready() bool
 	ServerVersion() string
@@ -224,6 +228,9 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		}
 	case *messages.ServerMessage_PullImagesRequest:
 		go executePullImages(poller, p.PullImagesRequest)
+	case *messages.ServerMessage_ImageStatusRequest:
+		provider, _ := deployer.(imageStatusProvider)
+		go executeImageStatus(ctx, sender, provider, p.ImageStatusRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
@@ -287,6 +294,51 @@ func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
 		return
 	}
 	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId, req.DeleteOldImages)
+}
+
+// imageStatusTimeout bounds the registry lookups of an image status request.
+// The hub gives up waiting before this, so a slower answer would be discarded.
+const imageStatusTimeout = time.Minute
+
+func executeImageStatus(ctx context.Context, sender outboundSender, provider imageStatusProvider, req *messages.ImageStatusRequest) {
+	result := &messages.ImageStatusResult{
+		RequestId:     req.RequestId,
+		ApplicationId: req.ApplicationId,
+	}
+	defer func() {
+		if err := sender.SendMessage(&messages.ClientMessage{
+			Payload: &messages.ClientMessage_ImageStatusResult{ImageStatusResult: result},
+		}); err != nil {
+			Log.Error().Err(err).Str("application_id", req.ApplicationId).Msg("failed to send image status result")
+		}
+	}()
+
+	if provider == nil {
+		result.ErrorMessage = "image status is not supported by this agent"
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, imageStatusTimeout)
+	defer cancel()
+
+	statuses, err := provider.ImageStatus(ctx, req.ApplicationId, req.ApplicationName, req.CheckLatest)
+	if err != nil {
+		Log.Error().Err(err).Str("application_id", req.ApplicationId).Msg("failed to get image status")
+		result.ErrorMessage = err.Error()
+		return
+	}
+	result.Images = make([]*messages.ServiceImageStatus, 0, len(statuses))
+	for _, s := range statuses {
+		result.Images = append(result.Images, &messages.ServiceImageStatus{
+			Service:         s.Service,
+			Image:           s.Image,
+			CurrentDigest:   s.CurrentDigest,
+			CurrentVersion:  s.CurrentVersion,
+			LatestDigest:    s.LatestDigest,
+			UpdateAvailable: s.UpdateAvailable,
+			ErrorMessage:    s.Error,
+		})
+	}
 }
 
 // appExecLocks serializes Deploy/Remove calls per application ID. The hub has

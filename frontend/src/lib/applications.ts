@@ -113,6 +113,28 @@ export function deployApplication(id: string): Promise<DeployApplicationResponse
 	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
 }
 
+export interface ApplicationImage {
+	service: string;
+	image: string;
+	currentDigest?: string;
+	currentVersion?: string;
+	latestDigest?: string;
+	updateAvailable: boolean;
+	error?: string;
+}
+
+export interface ApplicationImagesResponse {
+	images: ApplicationImage[];
+}
+
+export function getLatestApplicationImages(id: string): Promise<ApplicationImagesResponse> {
+	return fetcher<ApplicationImagesResponse>(`/applications/${id}/images?latest=true`);
+}
+
+export function pullApplicationImages(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/pull-images`, "POST");
+}
+
 export interface GenerateImageWebhookResponse {
 	secret: string;
 	webhookUrl: string;

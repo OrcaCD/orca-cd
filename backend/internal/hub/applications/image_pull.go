@@ -15,17 +15,29 @@ import (
 // Returns false if the hub is not initialized, the agent is not connected, or the send buffer is full.
 // Triggers that may arrive in bursts should go through ScheduleImagePull instead.
 func TriggerImagePull(app *models.Application, source models.ApplicationEventSource) bool {
+	return triggerImagePull(app, applicationevents.Params{Source: source})
+}
+
+// TriggerManualImagePull is TriggerImagePull for a pull a user started, recording
+// them as the actor of the image_update history event.
+func TriggerManualImagePull(app *models.Application, actorUserID, actorName *string) bool {
+	return triggerImagePull(app, applicationevents.Params{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
+}
+
+func triggerImagePull(app *models.Application, event applicationevents.Params) bool {
 	// This pull supersedes a debounced one queued for the same application.
 	DefaultImagePullDebouncer.Cancel(app.Id)
 
 	ctx := context.Background()
 	requestID := uuid.NewString()
-	if _, err := applicationevents.Start(ctx, applicationevents.Params{
-		ApplicationID: app.Id,
-		RequestID:     &requestID,
-		Type:          models.ApplicationEventImageUpdate,
-		Source:        source,
-	}); err != nil {
+	event.ApplicationID = app.Id
+	event.RequestID = &requestID
+	event.Type = models.ApplicationEventImageUpdate
+	if _, err := applicationevents.Start(ctx, event); err != nil {
 		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record image update event")
 	}
 

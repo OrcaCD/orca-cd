@@ -53,20 +53,16 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 	return false
 }
 
-// CheckAndPullImages checks whether any service image in the deployed compose
-// project for appName is stale compared to its registry. If any are stale, it
-// pulls all images and redeploys. Returns true if at least one image
-// was updated.
-func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, deleteOldImages bool) (bool, error) {
-
+// loadDeployedProject loads the compose project the agent last deployed for appName.
+func (c *Client) loadDeployedProject(ctx context.Context, appName string) (*composetypes.Project, error) {
 	projectName, err := normalizeProjectName(appName)
 	if err != nil {
-		return false, fmt.Errorf("invalid application name: %w", err)
+		return nil, fmt.Errorf("invalid application name: %w", err)
 	}
 
 	composePath := filepath.Join(c.deploymentsDir, projectName, composeFileName)
 	if _, err := os.Stat(composePath); errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
+		return nil, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
@@ -75,7 +71,19 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		WorkingDir:  filepath.Dir(composePath),
 	})
 	if err != nil {
-		return false, fmt.Errorf("load compose project: %w", err)
+		return nil, fmt.Errorf("load compose project: %w", err)
+	}
+	return project, nil
+}
+
+// CheckAndPullImages checks whether any service image in the deployed compose
+// project for appName is stale compared to its registry. If any are stale, it
+// pulls all images and redeploys. Returns true if at least one image
+// was updated.
+func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, deleteOldImages bool) (bool, error) {
+	project, err := c.loadDeployedProject(ctx, appName)
+	if err != nil {
+		return false, err
 	}
 	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
 		return false, fmt.Errorf("resolve host deployments directory: %w", err)

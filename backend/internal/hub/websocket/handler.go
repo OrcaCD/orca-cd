@@ -278,6 +278,10 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
+	case *messages.ClientMessage_ImageStatusResult:
+		if DefaultHub == nil || !DefaultHub.ResolveImageStatusResult(client.Id, p.ImageStatusResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.ImageStatusResult.RequestId).Msg("received image status result for unknown request")
+		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:

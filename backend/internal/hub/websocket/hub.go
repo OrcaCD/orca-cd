@@ -45,14 +45,18 @@ type Hub struct {
 	deleteMu       sync.Mutex
 	pendingDeletes map[string]chan *messages.DeleteResult
 
+	imageStatusMu      sync.Mutex
+	pendingImageStatus map[string]pendingImageStatus
+
 	presence *agentPresenceNotifier
 }
 
 func NewHub(log *zerolog.Logger) *Hub {
 	return &Hub{
-		clients:        make(map[string]*Client),
-		log:            log,
-		pendingDeletes: make(map[string]chan *messages.DeleteResult),
+		clients:            make(map[string]*Client),
+		log:                log,
+		pendingDeletes:     make(map[string]chan *messages.DeleteResult),
+		pendingImageStatus: make(map[string]pendingImageStatus),
 		presence: newAgentPresenceNotifier(agentOfflineGracePeriod, func(agentId string, event models.NotificationEvent) {
 			notifyAgentPresence(agentId, event, log)
 		}),

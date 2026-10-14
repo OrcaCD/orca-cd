@@ -14,6 +14,7 @@ message ClientMessage {
     DeleteResult delete_result = 6;
     ApplicationStatusReport application_status_report = 7;
     AgentInfo agent_info = 8;
+    ImageStatusResult image_status_result = 9;
   }
 }
 
@@ -26,6 +27,7 @@ message ServerMessage {
     AgentSettings agent_settings = 5;
     PullImagesRequest pull_images_request = 6;
     DeleteRequest delete_request = 7;
+    ImageStatusRequest image_status_request = 8;
   }
 }
 
@@ -107,6 +109,33 @@ message PullImagesResult {
   bool success = 3;
   bool images_updated = 4;
   string error_message = 5;
+}
+
+// ImageStatusRequest asks the agent which image versions an application's
+// services currently run and, if check_latest is set, which versions the
+// registry would serve on the next pull.
+message ImageStatusRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  bool check_latest = 4;
+}
+
+message ImageStatusResult {
+  string request_id = 1;
+  string application_id = 2;
+  repeated ServiceImageStatus images = 3;
+  string error_message = 4;
+}
+
+message ServiceImageStatus {
+  string service = 1;
+  string image = 2;
+  string current_digest = 3;
+  string current_version = 4;
+  string latest_digest = 5;
+  bool update_available = 6;
+  string error_message = 7;
 }
 
 enum HealthStatus {

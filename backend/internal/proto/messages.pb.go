@@ -82,6 +82,7 @@ type ClientMessage struct {
 	//	*ClientMessage_DeleteResult
 	//	*ClientMessage_ApplicationStatusReport
 	//	*ClientMessage_AgentInfo
+	//	*ClientMessage_ImageStatusResult
 	Payload       isClientMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -196,6 +197,15 @@ func (x *ClientMessage) GetAgentInfo() *AgentInfo {
 	return nil
 }
 
+func (x *ClientMessage) GetImageStatusResult() *ImageStatusResult {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_ImageStatusResult); ok {
+			return x.ImageStatusResult
+		}
+	}
+	return nil
+}
+
 type isClientMessage_Payload interface {
 	isClientMessage_Payload()
 }
@@ -232,6 +242,10 @@ type ClientMessage_AgentInfo struct {
 	AgentInfo *AgentInfo `protobuf:"bytes,8,opt,name=agent_info,json=agentInfo,proto3,oneof"`
 }
 
+type ClientMessage_ImageStatusResult struct {
+	ImageStatusResult *ImageStatusResult `protobuf:"bytes,9,opt,name=image_status_result,json=imageStatusResult,proto3,oneof"`
+}
+
 func (*ClientMessage_Pong) isClientMessage_Payload() {}
 
 func (*ClientMessage_KeyExchangeResponse) isClientMessage_Payload() {}
@@ -248,6 +262,8 @@ func (*ClientMessage_ApplicationStatusReport) isClientMessage_Payload() {}
 
 func (*ClientMessage_AgentInfo) isClientMessage_Payload() {}
 
+func (*ClientMessage_ImageStatusResult) isClientMessage_Payload() {}
+
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -259,6 +275,7 @@ type ServerMessage struct {
 	//	*ServerMessage_AgentSettings
 	//	*ServerMessage_PullImagesRequest
 	//	*ServerMessage_DeleteRequest
+	//	*ServerMessage_ImageStatusRequest
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -364,6 +381,15 @@ func (x *ServerMessage) GetDeleteRequest() *DeleteRequest {
 	return nil
 }
 
+func (x *ServerMessage) GetImageStatusRequest() *ImageStatusRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_ImageStatusRequest); ok {
+			return x.ImageStatusRequest
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -396,6 +422,10 @@ type ServerMessage_DeleteRequest struct {
 	DeleteRequest *DeleteRequest `protobuf:"bytes,7,opt,name=delete_request,json=deleteRequest,proto3,oneof"`
 }
 
+type ServerMessage_ImageStatusRequest struct {
+	ImageStatusRequest *ImageStatusRequest `protobuf:"bytes,8,opt,name=image_status_request,json=imageStatusRequest,proto3,oneof"`
+}
+
 func (*ServerMessage_Ping) isServerMessage_Payload() {}
 
 func (*ServerMessage_KeyExchangeInit) isServerMessage_Payload() {}
@@ -409,6 +439,8 @@ func (*ServerMessage_AgentSettings) isServerMessage_Payload() {}
 func (*ServerMessage_PullImagesRequest) isServerMessage_Payload() {}
 
 func (*ServerMessage_DeleteRequest) isServerMessage_Payload() {}
+
+func (*ServerMessage_ImageStatusRequest) isServerMessage_Payload() {}
 
 type PingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1206,6 +1238,237 @@ func (x *PullImagesResult) GetErrorMessage() string {
 	return ""
 }
 
+// ImageStatusRequest asks the agent which image versions an application's
+// services currently run and, if check_latest is set, which versions the
+// registry would serve on the next pull.
+type ImageStatusRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	CheckLatest     bool                   `protobuf:"varint,4,opt,name=check_latest,json=checkLatest,proto3" json:"check_latest,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ImageStatusRequest) Reset() {
+	*x = ImageStatusRequest{}
+	mi := &file_messages_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageStatusRequest) ProtoMessage() {}
+
+func (x *ImageStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageStatusRequest.ProtoReflect.Descriptor instead.
+func (*ImageStatusRequest) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ImageStatusRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImageStatusRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *ImageStatusRequest) GetApplicationName() string {
+	if x != nil {
+		return x.ApplicationName
+	}
+	return ""
+}
+
+func (x *ImageStatusRequest) GetCheckLatest() bool {
+	if x != nil {
+		return x.CheckLatest
+	}
+	return false
+}
+
+type ImageStatusResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Images        []*ServiceImageStatus  `protobuf:"bytes,3,rep,name=images,proto3" json:"images,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImageStatusResult) Reset() {
+	*x = ImageStatusResult{}
+	mi := &file_messages_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageStatusResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageStatusResult) ProtoMessage() {}
+
+func (x *ImageStatusResult) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageStatusResult.ProtoReflect.Descriptor instead.
+func (*ImageStatusResult) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ImageStatusResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ImageStatusResult) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *ImageStatusResult) GetImages() []*ServiceImageStatus {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+func (x *ImageStatusResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+type ServiceImageStatus struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Service         string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Image           string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	CurrentDigest   string                 `protobuf:"bytes,3,opt,name=current_digest,json=currentDigest,proto3" json:"current_digest,omitempty"`
+	CurrentVersion  string                 `protobuf:"bytes,4,opt,name=current_version,json=currentVersion,proto3" json:"current_version,omitempty"`
+	LatestDigest    string                 `protobuf:"bytes,5,opt,name=latest_digest,json=latestDigest,proto3" json:"latest_digest,omitempty"`
+	UpdateAvailable bool                   `protobuf:"varint,6,opt,name=update_available,json=updateAvailable,proto3" json:"update_available,omitempty"`
+	ErrorMessage    string                 `protobuf:"bytes,7,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ServiceImageStatus) Reset() {
+	*x = ServiceImageStatus{}
+	mi := &file_messages_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceImageStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceImageStatus) ProtoMessage() {}
+
+func (x *ServiceImageStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceImageStatus.ProtoReflect.Descriptor instead.
+func (*ServiceImageStatus) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ServiceImageStatus) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ServiceImageStatus) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ServiceImageStatus) GetCurrentDigest() string {
+	if x != nil {
+		return x.CurrentDigest
+	}
+	return ""
+}
+
+func (x *ServiceImageStatus) GetCurrentVersion() string {
+	if x != nil {
+		return x.CurrentVersion
+	}
+	return ""
+}
+
+func (x *ServiceImageStatus) GetLatestDigest() string {
+	if x != nil {
+		return x.LatestDigest
+	}
+	return ""
+}
+
+func (x *ServiceImageStatus) GetUpdateAvailable() bool {
+	if x != nil {
+		return x.UpdateAvailable
+	}
+	return false
+}
+
+func (x *ServiceImageStatus) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 type ApplicationStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
@@ -1216,7 +1479,7 @@ type ApplicationStatus struct {
 
 func (x *ApplicationStatus) Reset() {
 	*x = ApplicationStatus{}
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1228,7 +1491,7 @@ func (x *ApplicationStatus) String() string {
 func (*ApplicationStatus) ProtoMessage() {}
 
 func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1241,7 +1504,7 @@ func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatus.ProtoReflect.Descriptor instead.
 func (*ApplicationStatus) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{15}
+	return file_messages_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ApplicationStatus) GetApplicationId() string {
@@ -1269,7 +1532,7 @@ type ApplicationStatusReport struct {
 
 func (x *ApplicationStatusReport) Reset() {
 	*x = ApplicationStatusReport{}
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1281,7 +1544,7 @@ func (x *ApplicationStatusReport) String() string {
 func (*ApplicationStatusReport) ProtoMessage() {}
 
 func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1294,7 +1557,7 @@ func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatusReport.ProtoReflect.Descriptor instead.
 func (*ApplicationStatusReport) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{16}
+	return file_messages_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ApplicationStatusReport) GetStatuses() []*ApplicationStatus {
@@ -1315,7 +1578,7 @@ type AgentInfo struct {
 
 func (x *AgentInfo) Reset() {
 	*x = AgentInfo{}
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1327,7 +1590,7 @@ func (x *AgentInfo) String() string {
 func (*AgentInfo) ProtoMessage() {}
 
 func (x *AgentInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1340,7 +1603,7 @@ func (x *AgentInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfo.ProtoReflect.Descriptor instead.
 func (*AgentInfo) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{17}
+	return file_messages_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentInfo) GetVersion() string {
@@ -1368,7 +1631,7 @@ var File_messages_proto protoreflect.FileDescriptor
 
 const file_messages_proto_rawDesc = "" +
 	"\n" +
-	"\x0emessages.proto\x12\bmessages\"\xc9\x04\n" +
+	"\x0emessages.proto\x12\bmessages\"\x98\x05\n" +
 	"\rClientMessage\x12,\n" +
 	"\x04pong\x18\x01 \x01(\v2\x16.messages.PongResponseH\x00R\x04pong\x12S\n" +
 	"\x15key_exchange_response\x18\x02 \x01(\v2\x1d.messages.KeyExchangeResponseH\x00R\x13keyExchangeResponse\x12I\n" +
@@ -1378,8 +1641,9 @@ const file_messages_proto_rawDesc = "" +
 	"\rdelete_result\x18\x06 \x01(\v2\x16.messages.DeleteResultH\x00R\fdeleteResult\x12_\n" +
 	"\x19application_status_report\x18\a \x01(\v2!.messages.ApplicationStatusReportH\x00R\x17applicationStatusReport\x124\n" +
 	"\n" +
-	"agent_info\x18\b \x01(\v2\x13.messages.AgentInfoH\x00R\tagentInfoB\t\n" +
-	"\apayload\"\xf0\x03\n" +
+	"agent_info\x18\b \x01(\v2\x13.messages.AgentInfoH\x00R\tagentInfo\x12M\n" +
+	"\x13image_status_result\x18\t \x01(\v2\x1b.messages.ImageStatusResultH\x00R\x11imageStatusResultB\t\n" +
+	"\apayload\"\xc2\x04\n" +
 	"\rServerMessage\x12+\n" +
 	"\x04ping\x18\x01 \x01(\v2\x15.messages.PingRequestH\x00R\x04ping\x12G\n" +
 	"\x11key_exchange_init\x18\x02 \x01(\v2\x19.messages.KeyExchangeInitH\x00R\x0fkeyExchangeInit\x12I\n" +
@@ -1387,7 +1651,8 @@ const file_messages_proto_rawDesc = "" +
 	"\x0edeploy_request\x18\x04 \x01(\v2\x17.messages.DeployRequestH\x00R\rdeployRequest\x12@\n" +
 	"\x0eagent_settings\x18\x05 \x01(\v2\x17.messages.AgentSettingsH\x00R\ragentSettings\x12M\n" +
 	"\x13pull_images_request\x18\x06 \x01(\v2\x1b.messages.PullImagesRequestH\x00R\x11pullImagesRequest\x12@\n" +
-	"\x0edelete_request\x18\a \x01(\v2\x17.messages.DeleteRequestH\x00R\rdeleteRequestB\t\n" +
+	"\x0edelete_request\x18\a \x01(\v2\x17.messages.DeleteRequestH\x00R\rdeleteRequest\x12P\n" +
+	"\x14image_status_request\x18\b \x01(\v2\x1c.messages.ImageStatusRequestH\x00R\x12imageStatusRequestB\t\n" +
 	"\apayload\"+\n" +
 	"\vPingRequest\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\",\n" +
@@ -1450,7 +1715,27 @@ const file_messages_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12%\n" +
 	"\x0eimages_updated\x18\x04 \x01(\bR\rimagesUpdated\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"j\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"\xa8\x01\n" +
+	"\x12ImageStatusRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
+	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12!\n" +
+	"\fcheck_latest\x18\x04 \x01(\bR\vcheckLatest\"\xb4\x01\n" +
+	"\x11ImageStatusResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x124\n" +
+	"\x06images\x18\x03 \x03(\v2\x1c.messages.ServiceImageStatusR\x06images\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x89\x02\n" +
+	"\x12ServiceImageStatus\x12\x18\n" +
+	"\aservice\x18\x01 \x01(\tR\aservice\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12%\n" +
+	"\x0ecurrent_digest\x18\x03 \x01(\tR\rcurrentDigest\x12'\n" +
+	"\x0fcurrent_version\x18\x04 \x01(\tR\x0ecurrentVersion\x12#\n" +
+	"\rlatest_digest\x18\x05 \x01(\tR\flatestDigest\x12)\n" +
+	"\x10update_available\x18\x06 \x01(\bR\x0fupdateAvailable\x12#\n" +
+	"\rerror_message\x18\a \x01(\tR\ferrorMessage\"j\n" +
 	"\x11ApplicationStatus\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12.\n" +
 	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"R\n" +
@@ -1479,7 +1764,7 @@ func file_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_messages_proto_goTypes = []any{
 	(HealthStatus)(0),               // 0: messages.HealthStatus
 	(*ClientMessage)(nil),           // 1: messages.ClientMessage
@@ -1497,9 +1782,12 @@ var file_messages_proto_goTypes = []any{
 	(*ImagePollSettings)(nil),       // 13: messages.ImagePollSettings
 	(*PullImagesRequest)(nil),       // 14: messages.PullImagesRequest
 	(*PullImagesResult)(nil),        // 15: messages.PullImagesResult
-	(*ApplicationStatus)(nil),       // 16: messages.ApplicationStatus
-	(*ApplicationStatusReport)(nil), // 17: messages.ApplicationStatusReport
-	(*AgentInfo)(nil),               // 18: messages.AgentInfo
+	(*ImageStatusRequest)(nil),      // 16: messages.ImageStatusRequest
+	(*ImageStatusResult)(nil),       // 17: messages.ImageStatusResult
+	(*ServiceImageStatus)(nil),      // 18: messages.ServiceImageStatus
+	(*ApplicationStatus)(nil),       // 19: messages.ApplicationStatus
+	(*ApplicationStatusReport)(nil), // 20: messages.ApplicationStatusReport
+	(*AgentInfo)(nil),               // 21: messages.AgentInfo
 }
 var file_messages_proto_depIdxs = []int32{
 	4,  // 0: messages.ClientMessage.pong:type_name -> messages.PongResponse
@@ -1508,23 +1796,26 @@ var file_messages_proto_depIdxs = []int32{
 	11, // 3: messages.ClientMessage.deploy_result:type_name -> messages.DeployResult
 	15, // 4: messages.ClientMessage.pull_images_result:type_name -> messages.PullImagesResult
 	10, // 5: messages.ClientMessage.delete_result:type_name -> messages.DeleteResult
-	17, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
-	18, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
-	3,  // 8: messages.ServerMessage.ping:type_name -> messages.PingRequest
-	5,  // 9: messages.ServerMessage.key_exchange_init:type_name -> messages.KeyExchangeInit
-	7,  // 10: messages.ServerMessage.encrypted_payload:type_name -> messages.EncryptedPayload
-	8,  // 11: messages.ServerMessage.deploy_request:type_name -> messages.DeployRequest
-	12, // 12: messages.ServerMessage.agent_settings:type_name -> messages.AgentSettings
-	14, // 13: messages.ServerMessage.pull_images_request:type_name -> messages.PullImagesRequest
-	9,  // 14: messages.ServerMessage.delete_request:type_name -> messages.DeleteRequest
-	13, // 15: messages.AgentSettings.image_poll_settings:type_name -> messages.ImagePollSettings
-	0,  // 16: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
-	16, // 17: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	20, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
+	21, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
+	17, // 8: messages.ClientMessage.image_status_result:type_name -> messages.ImageStatusResult
+	3,  // 9: messages.ServerMessage.ping:type_name -> messages.PingRequest
+	5,  // 10: messages.ServerMessage.key_exchange_init:type_name -> messages.KeyExchangeInit
+	7,  // 11: messages.ServerMessage.encrypted_payload:type_name -> messages.EncryptedPayload
+	8,  // 12: messages.ServerMessage.deploy_request:type_name -> messages.DeployRequest
+	12, // 13: messages.ServerMessage.agent_settings:type_name -> messages.AgentSettings
+	14, // 14: messages.ServerMessage.pull_images_request:type_name -> messages.PullImagesRequest
+	9,  // 15: messages.ServerMessage.delete_request:type_name -> messages.DeleteRequest
+	16, // 16: messages.ServerMessage.image_status_request:type_name -> messages.ImageStatusRequest
+	13, // 17: messages.AgentSettings.image_poll_settings:type_name -> messages.ImagePollSettings
+	18, // 18: messages.ImageStatusResult.images:type_name -> messages.ServiceImageStatus
+	0,  // 19: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
+	19, // 20: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -1541,6 +1832,7 @@ func file_messages_proto_init() {
 		(*ClientMessage_DeleteResult)(nil),
 		(*ClientMessage_ApplicationStatusReport)(nil),
 		(*ClientMessage_AgentInfo)(nil),
+		(*ClientMessage_ImageStatusResult)(nil),
 	}
 	file_messages_proto_msgTypes[1].OneofWrappers = []any{
 		(*ServerMessage_Ping)(nil),
@@ -1550,6 +1842,7 @@ func file_messages_proto_init() {
 		(*ServerMessage_AgentSettings)(nil),
 		(*ServerMessage_PullImagesRequest)(nil),
 		(*ServerMessage_DeleteRequest)(nil),
+		(*ServerMessage_ImageStatusRequest)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1557,7 +1850,7 @@ func file_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   18,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

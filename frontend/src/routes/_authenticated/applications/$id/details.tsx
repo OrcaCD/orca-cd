@@ -1,8 +1,20 @@
-import { deployApplication, HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import {
+	deployApplication,
+	getLatestApplicationImages,
+	HealthStatus,
+	pullApplicationImages,
+	SyncStatus,
+	type Application,
+	type ApplicationImage,
+	type ApplicationImagesResponse,
+} from "@/lib/applications";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+	ArrowRight,
 	ChevronDown,
 	Clock,
+	Container,
+	Download,
 	ExternalLink,
 	GitBranch,
 	GitCommit,
@@ -11,6 +23,7 @@ import {
 	Server,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import {
@@ -21,7 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,6 +147,138 @@ function getImageSyncTriggers(app?: Application): string | undefined {
 	return m.applicationInfoSyncImages({ type: imageTriggers.join(", ") });
 }
 
+type LatestImagesState =
+	| { status: "loading" }
+	| { status: "error" }
+	| { status: "loaded"; images: ApplicationImage[] };
+
+function shortDigest(digest: string): string {
+	return digest.replace(/^sha256:/, "").slice(0, 12);
+}
+
+// imageTag returns the tag of an image reference, or undefined when the image
+// is pinned by digest only. A colon only starts a tag after the last slash,
+// since registries may carry a port.
+function imageTag(image: string): string | undefined {
+	const [ref, digest] = image.split("@");
+	const tagStart = ref.lastIndexOf(":");
+	if (tagStart > ref.lastIndexOf("/")) {
+		return ref.slice(tagStart + 1);
+	}
+	return digest ? undefined : "latest";
+}
+
+function LatestImageVersions({ state }: { state?: LatestImagesState }) {
+	if (!state) {
+		return null;
+	}
+	if (state.status === "loading") {
+		return <span className="text-xs text-muted-foreground">{m.checkingImageVersions()}</span>;
+	}
+
+	const updates =
+		state.status === "loaded"
+			? state.images.filter((image) => image.updateAvailable && image.latestDigest)
+			: [];
+	if (updates.length === 0) {
+		const failed =
+			state.status === "error" ||
+			(state.status === "loaded" && state.images.some((image) => image.error));
+		return (
+			<span className="text-xs text-muted-foreground">
+				{failed ? m.failedCheckImageVersions() : m.imagesUpToDate()}
+			</span>
+		);
+	}
+
+	return (
+		<ul className="mt-1 space-y-1">
+			{updates.map((image) => (
+				<li key={image.service} className="flex flex-wrap items-center gap-x-1.5 text-xs">
+					<span className="font-medium">{image.service}</span>
+					<span className="flex items-center gap-1 font-mono text-muted-foreground">
+						{image.currentDigest ? shortDigest(image.currentDigest) : "-"}
+						<ArrowRight className="h-3 w-3" />
+						<span className="text-foreground">{shortDigest(image.latestDigest ?? "")}</span>
+					</span>
+				</li>
+			))}
+		</ul>
+	);
+}
+
+function ImagesCard({
+	images,
+	error,
+	latest,
+}: {
+	images?: ApplicationImage[];
+	error?: Error;
+	latest?: LatestImagesState;
+}) {
+	if (images?.length === 0) {
+		return null;
+	}
+
+	const latestByService = new Map(
+		latest?.status === "loaded" ? latest.images.map((image) => [image.service, image]) : [],
+	);
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>
+					<div className="flex items-center gap-2 text-muted-foreground">
+						<Container className="h-4 w-4" />
+						<span className="text-sm">{m.applicationInfoImages()}</span>
+					</div>
+				</CardTitle>
+			</CardHeader>
+			<CardContent>
+				{!images ? (
+					<p className="text-sm text-muted-foreground">{error?.message ?? m.loadingDots()}</p>
+				) : (
+					<ul className="divide-y divide-border">
+						{images.map((image) => {
+							const version = image.currentVersion ?? imageTag(image.image);
+							const newer = latestByService.get(image.service);
+							// Only trust the update check while it describes the running image.
+							const updateAvailable =
+								newer?.updateAvailable && newer.currentDigest === image.currentDigest;
+
+							return (
+								<li
+									key={image.service}
+									className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+								>
+									<div className="min-w-0">
+										<p className="font-medium truncate">{image.service}</p>
+										<p className="text-sm font-mono text-muted-foreground truncate">
+											{image.image}
+										</p>
+									</div>
+									<div className="flex shrink-0 flex-wrap items-center gap-2">
+										{updateAvailable && <Badge>{m.applicationInfoImageUpdateAvailable()}</Badge>}
+										{version && <Badge variant="secondary">{version}</Badge>}
+										<span
+											className="text-sm font-mono text-muted-foreground"
+											title={image.currentDigest}
+										>
+											{image.currentDigest
+												? shortDigest(image.currentDigest)
+												: m.applicationInfoImageNotFound()}
+										</span>
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</CardContent>
+		</Card>
+	);
+}
+
 function withDiffMarker(line: string, marker: "++" | "--"): string {
 	if (line.length === 0) {
 		return line;
@@ -183,6 +328,10 @@ function ApplicationDetailsPage() {
 	const { theme } = useTheme();
 
 	const { data } = useFetch<Application>("/applications/" + id);
+	const { data: imagesData, error: imagesError } = useFetch<ApplicationImagesResponse>(
+		"/applications/" + id + "/images",
+		{ shouldRetryOnError: false },
+	);
 
 	const [deploying, setDeploying] = useState(false);
 
@@ -221,8 +370,45 @@ function ApplicationDetailsPage() {
 		}
 	};
 
+	const [pullingImages, setPullingImages] = useState(false);
+
+	const handlePullImages = async () => {
+		setPullingImages(true);
+		try {
+			await pullApplicationImages(id);
+			toast.add({ type: "success", title: m.pullImagesStarted() });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedPullImages(),
+			});
+		} finally {
+			setPullingImages(false);
+		}
+	};
+
+	const [latestImages, setLatestImages] = useState<LatestImagesState>();
+	const latestImagesRequest = useRef(0);
+
+	// Asks the registries for newer images each time the menu opens, so the
+	// pull option shows which versions it would fetch.
+	const checkLatestImages = async () => {
+		const request = ++latestImagesRequest.current;
+		setLatestImages({ status: "loading" });
+		try {
+			const { images } = await getLatestApplicationImages(id);
+			if (request === latestImagesRequest.current) {
+				setLatestImages({ status: "loaded", images });
+			}
+		} catch {
+			if (request === latestImagesRequest.current) {
+				setLatestImages({ status: "error" });
+			}
+		}
+	};
+
 	const deploymentInProgress =
-		deploying || syncingRepository || data?.syncStatus === SyncStatus.Syncing;
+		deploying || syncingRepository || pullingImages || data?.syncStatus === SyncStatus.Syncing;
 
 	const manifestHtml = useMemo(() => {
 		return highlighter.codeToHtml(data?.composeFile ?? "", {
@@ -276,7 +462,13 @@ function ApplicationDetailsPage() {
 						/>
 						<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
 					</Tooltip>
-					<DropdownMenu>
+					<DropdownMenu
+						onOpenChange={(open) => {
+							if (open) {
+								void checkLatestImages();
+							}
+						}}
+					>
 						<DropdownMenuTrigger
 							render={
 								<Button
@@ -289,7 +481,7 @@ function ApplicationDetailsPage() {
 						>
 							<ChevronDown className="h-4 w-4" />
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-72">
+						<DropdownMenuContent align="end" className="w-80">
 							<DropdownMenuItem
 								onClick={handleSyncRepository}
 								className="items-start cursor-pointer"
@@ -300,6 +492,14 @@ function ApplicationDetailsPage() {
 									<span className="text-xs text-muted-foreground">
 										{m.syncRepositoryDescription()}
 									</span>
+								</div>
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={handlePullImages} className="items-start cursor-pointer">
+								<Download className="mt-0.5 h-4 w-4" />
+								<div className="flex min-w-0 flex-col gap-0.5">
+									<span>{m.pullImages()}</span>
+									<span className="text-xs text-muted-foreground">{m.pullImagesDescription()}</span>
+									<LatestImageVersions state={latestImages} />
 								</div>
 							</DropdownMenuItem>
 						</DropdownMenuContent>
@@ -343,6 +543,8 @@ function ApplicationDetailsPage() {
 					]}
 				/>
 			</div>
+
+			<ImagesCard images={imagesData?.images} error={imagesError} latest={latestImages} />
 
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">

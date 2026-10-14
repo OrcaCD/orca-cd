@@ -377,6 +377,35 @@ test.describe("Redeploy on change", () => {
 		expect(appContainers(appId).map((container) => container.id)).toEqual([containerId]);
 	});
 
+	test("pull latest images from the application details", async ({ page }) => {
+		const before = new Set((await applicationEvents(page, appId)).map((event) => event.id));
+
+		await page.goto(`/applications/${appId}/details`);
+		const imageRow = page.getByRole("listitem").filter({ hasText: IMAGE });
+		await expect(imageRow.getByText("app", { exact: true })).toBeVisible();
+		await expect(imageRow.getByText("1.38", { exact: true })).toBeVisible();
+
+		await page.getByRole("button", { name: "More deploy options" }).click();
+		const pullImages = page.getByRole("menuitem", { name: /Pull latest images/ });
+		await expect(pullImages.getByText("All images are up to date")).toBeVisible({
+			timeout: 30_000,
+		});
+		await pullImages.click();
+		await expect(page.getByText("Image pull started")).toBeVisible();
+
+		await expect
+			.poll(
+				async () =>
+					(await applicationEvents(page, appId)).find(
+						(event) =>
+							!before.has(event.id) && event.type === "image_update" && event.source === "manual",
+					)?.status,
+				{ timeout: 30_000 },
+			)
+			.toBe("no_change");
+		expect(appContainers(appId).map((container) => container.id)).toEqual([containerId]);
+	});
+
 	test("repository webhook", async ({ page }) => {
 		const { webhookSecret } = await updateRepository(page, { syncType: "webhook" });
 		expect(webhookSecret).toBeTruthy();
