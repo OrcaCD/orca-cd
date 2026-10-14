@@ -13,6 +13,7 @@ import {
 	removeApplicationContainers,
 } from "./helpers/docker.ts";
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
+import { gotoApp } from "./helpers/navigation.ts";
 import {
 	applicationEvents,
 	createOnlineAgent,
@@ -124,7 +125,7 @@ async function selectOption(page: Page, trigger: Locator, label: string) {
 }
 
 async function fillApplicationWizard(page: Page, name: string) {
-	await page.goto("/applications");
+	await gotoApp(page, "/applications");
 	await page.getByRole("button", { name: "New Application" }).click();
 	const dialog = page.getByRole("dialog");
 
@@ -152,7 +153,7 @@ function repositoryCard(page: Page) {
 }
 
 async function syncRepositoryInUi(page: Page) {
-	await page.goto("/repositories");
+	await gotoApp(page, "/repositories");
 	await repositoryCard(page).getByRole("button", { name: "Card actions" }).click();
 	await page.getByRole("menuitem", { name: "Sync" }).click();
 	await expect(page.getByText("Sync triggered")).toBeVisible();
@@ -223,7 +224,7 @@ async function deployInSeparateRepository(page: Page, repoName: string, name: st
 }
 
 async function deleteRepositoryInUi(page: Page, repoName: string) {
-	await page.goto("/repositories");
+	await gotoApp(page, "/repositories");
 	await page
 		.locator("[data-slot='card']", { hasText: repoName })
 		.getByRole("button", { name: "Card actions" })
@@ -286,7 +287,7 @@ test.describe("Deploy an application", () => {
 		expect(project).toBe("e2e-deploy-app");
 		expect(deployedComposeFile(project)).toBe(composeFile(1));
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Synced", { exact: true })).toBeVisible();
 		await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
 		await expect(page.getByText(initialCommit.sha.slice(0, 7))).toBeVisible();
@@ -299,7 +300,7 @@ test.describe("Deploy an application", () => {
 			source: "application_created",
 			status: "succeeded",
 		});
-		await page.goto(`/applications/${appId}/history`);
+		await gotoApp(page, `/applications/${appId}/history`);
 		const row = page.getByRole("row").filter({ hasText: "Application created" });
 		await expect(row).toHaveCount(1);
 		await expect(row).toContainText("Deployment");
@@ -307,7 +308,7 @@ test.describe("Deploy an application", () => {
 	});
 
 	test("deploy it again manually", async ({ page }) => {
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await page.getByRole("button", { name: "Deploy", exact: true }).click();
 		await expect(page.getByText("Deployment started")).toBeVisible();
 
@@ -357,10 +358,10 @@ test.describe("Redeploy on change", () => {
 		expect(deployedComposeFile(project)).toBe(composeFile(2));
 		await expectEvent(page, "manual", sha, "succeeded");
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText(sha.slice(0, 7))).toBeVisible();
 		await expect(page.getByText(message)).toBeVisible();
-		await page.goto("/repositories");
+		await gotoApp(page, "/repositories");
 		await expect(repositoryCard(page).getByText("Success", { exact: true })).toBeVisible();
 	});
 
@@ -435,11 +436,11 @@ test.describe("Redeploy on change", () => {
 		expect(appContainers(appId).map((container) => container.id)).toEqual(idsBefore);
 		expect(runningVersion()).toBe(versionBefore);
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Sync failed")).toBeVisible();
 		await expect(page.getByText("Out of Sync", { exact: true })).toBeVisible();
 		await expect(page.getByText(broken.sha.slice(0, 7))).toBeVisible();
-		await page.goto(`/applications/${appId}/history`);
+		await gotoApp(page, `/applications/${appId}/history`);
 		const row = page.getByRole("row").filter({ hasText: broken.sha.slice(0, 7) });
 		await expect(row).toContainText("Failed");
 
@@ -452,7 +453,7 @@ test.describe("Redeploy on change", () => {
 		await expectRedeployed(page, 6, fixed.sha);
 		expect((await getApplication(page, appId)).lastSyncError).toBeUndefined();
 		await expectEvent(page, "manual", fixed.sha, "succeeded");
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Sync failed")).toHaveCount(0);
 		await expect(page.getByText("Synced", { exact: true })).toBeVisible();
 		await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
@@ -503,7 +504,7 @@ test.describe("Redeploy on change", () => {
 
 test.describe("Removal", () => {
 	test("delete the application in the UI", async ({ page }) => {
-		await page.goto(`/applications/${appId}/settings/general`);
+		await gotoApp(page, `/applications/${appId}/settings/general`);
 		await page.getByRole("button", { name: "Delete", exact: true }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
 
@@ -561,7 +562,7 @@ test.describe("Removal", () => {
 		const cascadeProject = composeProject(cascadeAppId)!;
 		expect(deploymentDirExists(cascadeProject)).toBe(true);
 
-		await page.goto("/applications");
+		await gotoApp(page, "/applications");
 		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toBeVisible();
 		await deleteRepositoryInUi(page, CASCADE_REPO);
 		// The hub answers after the agent removed the containers
@@ -570,7 +571,7 @@ test.describe("Removal", () => {
 		});
 
 		expect((await api(page, "GET", `/applications/${cascadeAppId}`)).status).toBe(404);
-		await page.goto("/applications");
+		await gotoApp(page, "/applications");
 		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toHaveCount(0);
 
 		expect(appContainers(cascadeAppId)).toHaveLength(0);
