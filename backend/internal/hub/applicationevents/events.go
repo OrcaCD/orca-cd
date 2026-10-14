@@ -25,10 +25,6 @@ type Params struct {
 	CommitMessage *string
 }
 
-func Path(applicationID string) string {
-	return "/api/v1/applications/" + applicationID + "/events"
-}
-
 func Start(ctx context.Context, p Params) (*models.ApplicationEvent, error) {
 	return create(ctx, p, models.ApplicationEventRunning, nil)
 }
@@ -86,7 +82,7 @@ func create(
 		return nil, err
 	}
 
-	sse.PublishUpdate(Path(p.ApplicationID))
+	sse.PublishUpdate(sse.TopicApplicationEvents(p.ApplicationID))
 	return &event, nil
 }
 
@@ -130,7 +126,7 @@ func Complete(
 		return false, nil
 	}
 
-	sse.PublishUpdate(Path(applicationID))
+	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID))
 	return true, nil
 }
 

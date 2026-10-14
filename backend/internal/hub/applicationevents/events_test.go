@@ -428,10 +428,3 @@ func TestSourceForRequestReturnsDatabaseError(t *testing.T) {
 		t.Fatalf("SourceForRequest() = (%q, %v), want (\"\", false) on error", source, found)
 	}
 }
-
-func TestPath(t *testing.T) {
-	const applicationID = "application-1"
-	if got, want := Path(applicationID), "/api/v1/applications/application-1/events"; got != want {
-		t.Fatalf("Path() = %q, want %q", got, want)
-	}
-}

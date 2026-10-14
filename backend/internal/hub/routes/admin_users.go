@@ -16,8 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const AdminUsersPath = "/api/v1/admin/users"
-
 type adminUserResponse struct {
 	Id                     string   `json:"id"`
 	Name                   string   `json:"name"`
@@ -161,7 +159,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "user", user.Id)
 
 	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
-	sse.PublishUpdate(AdminUsersPath)
+	sse.PublishUpdate(sse.TopicAdminUsers)
 }
 
 func AdminUpdateUserHandler(c *gin.Context) {
@@ -242,7 +240,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "user", id)
 
 	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
-	sse.PublishUpdate(AdminUsersPath)
+	sse.PublishUpdate(sse.TopicAdminUsers)
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
@@ -278,7 +276,7 @@ func AdminDeleteUserHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
-	sse.PublishUpdate(AdminUsersPath)
+	sse.PublishUpdate(sse.TopicAdminUsers)
 }
 
 func countAdminUsers(c *gin.Context) (int64, error) {

@@ -173,7 +173,6 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if err != nil {
 				log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to offline")
 			}
-			sse.PublishUpdate("/api/v1/agents")
 			_, applicationErr := gorm.G[models.Application](db.DB).Where("agent_id = ?", claims.Subject).Update(ctx, "health_status", models.UnknownHealth)
 			if applicationErr != nil {
 				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
@@ -188,6 +187,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			}
 			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
 			h.presence.Disconnected(claims.Subject)
+			sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
 		}()
 
 		connectedAt := time.Now()
@@ -199,7 +199,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
 		h.presence.Connected(claims.Subject)
-		sse.PublishUpdate("/api/v1/agents")
+		sse.PublishUpdate(sse.TopicAgents)
 
 		go h.WritePump(client, log)
 
@@ -317,7 +317,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		}
 	}
 
-	sse.PublishUpdate("/api/v1/applications")
+	sse.PublishUpdate(sse.TopicApplications)
 }
 
 // maxReportedVersionLength bounds agent-reported version strings before they
@@ -369,7 +369,7 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 		agentLog.Warn().Msg("Agent cannot reach its Docker daemon")
 	}
 
-	sse.PublishUpdate("/api/v1/agents")
+	sse.PublishUpdate(sse.TopicAgents)
 }
 
 func sanitizeReportedVersion(v string) string {

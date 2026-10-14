@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1759,8 +1760,8 @@ func TestCreateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if !slices.Equal(event.URLs, []string{sse.TopicRepositories.URL()}) {
+			t.Errorf("expected URLs %v, got %v", []string{sse.TopicRepositories.URL()}, event.URLs)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -1808,8 +1809,8 @@ func TestUpdateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if !slices.Equal(event.URLs, []string{sse.TopicRepositories.URL()}) {
+			t.Errorf("expected URLs %v, got %v", []string{sse.TopicRepositories.URL()}, event.URLs)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -1850,8 +1851,8 @@ func TestDeleteRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if !slices.Equal(event.URLs, []string{sse.TopicRepositories.URL()}) {
+			t.Errorf("expected URLs %v, got %v", []string{sse.TopicRepositories.URL()}, event.URLs)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")

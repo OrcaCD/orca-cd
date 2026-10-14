@@ -62,7 +62,7 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		return
 	}
 
-	sse.PublishUpdate("/api/v1/applications")
+	sse.PublishUpdate(sse.TopicApplications)
 
 	if r.Success {
 		go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)

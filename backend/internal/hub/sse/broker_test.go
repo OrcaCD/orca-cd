@@ -2,6 +2,7 @@ package sse
 
 import (
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -51,15 +52,15 @@ func TestBrokerPublish_DeliveredToSubscriber(t *testing.T) {
 	connID, ch := b.Subscribe()
 	defer b.Unsubscribe(connID)
 
-	b.Publish(Event{Type: EventTypeUpdate, URL: "http://example.com"})
+	b.Publish(Event{Type: EventTypeUpdate, URLs: []string{"http://example.com"}})
 
 	select {
 	case received := <-ch:
 		if received.Type != EventTypeUpdate {
 			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
 		}
-		if received.URL != "http://example.com" {
-			t.Errorf("expected URL %q, got %q", "http://example.com", received.URL)
+		if !slices.Equal(received.URLs, []string{"http://example.com"}) {
+			t.Errorf("expected URLs %v, got %v", []string{"http://example.com"}, received.URLs)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -96,7 +97,7 @@ func TestBrokerPublish_DeliveredToAllSubscribers(t *testing.T) {
 
 func TestPublishUpdate_NilBroker(t *testing.T) {
 	DefaultBroker = nil
-	PublishUpdate("/api/v1/repositories") // must not panic
+	PublishUpdate(TopicRepositories) // must not panic
 }
 
 func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
@@ -107,18 +108,79 @@ func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
 	connID, ch := b.Subscribe()
 	defer b.Unsubscribe(connID)
 
-	PublishUpdate("/api/v1/repositories")
+	PublishUpdate(TopicRepositories)
 
 	select {
 	case received := <-ch:
 		if received.Type != EventTypeUpdate {
 			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
 		}
-		if received.URL != "/api/v1/repositories" {
-			t.Errorf("expected URL %q, got %q", "/api/v1/repositories", received.URL)
+		if !slices.Equal(received.URLs, []string{"/api/v1/repositories"}) {
+			t.Errorf("expected URLs %v, got %v", []string{"/api/v1/repositories"}, received.URLs)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestPublishUpdate_NilBrokerMultipleTopics(t *testing.T) {
+	DefaultBroker = nil
+	PublishUpdate(TopicAgents, TopicApplications) // must not panic
+}
+
+func TestTopicApplicationEvents_URL(t *testing.T) {
+	if got, want := TopicApplicationEvents("application-1").URL(), "/api/v1/applications/application-1/events"; got != want {
+		t.Fatalf("URL() = %q, want %q", got, want)
+	}
+}
+
+func TestPublishUpdate_SendsSingleEventWithDistinctTopics(t *testing.T) {
+	b := NewBroker(newTestLogger())
+	DefaultBroker = b
+	t.Cleanup(func() { DefaultBroker = nil })
+
+	connID, ch := b.Subscribe()
+	defer b.Unsubscribe(connID)
+
+	PublishUpdate(
+		TopicApplications,
+		TopicApplicationEvents("app-1"),
+		TopicApplications,
+		Topic{},
+	)
+
+	want := []string{"/api/v1/applications", "/api/v1/applications/app-1/events"}
+	select {
+	case received := <-ch:
+		if received.Type != EventTypeUpdate {
+			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
+		}
+		if !slices.Equal(received.URLs, want) {
+			t.Errorf("expected URLs %v, got %v", want, received.URLs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+
+	select {
+	case received := <-ch:
+		t.Fatalf("unexpected extra event: %+v", received)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestPublishUpdate_NoTopicsSendsNothing(t *testing.T) {
+	b := NewBroker(newTestLogger())
+	connID, ch := b.Subscribe()
+	defer b.Unsubscribe(connID)
+
+	b.PublishUpdate()
+	b.PublishUpdate(Topic{})
+
+	select {
+	case received := <-ch:
+		t.Fatalf("unexpected event: %+v", received)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
