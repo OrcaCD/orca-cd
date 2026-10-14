@@ -210,9 +210,12 @@ function ApplicationDetailsPage() {
 		setSyncingRepository(true);
 		try {
 			await syncRepository(data.repositoryId);
-			toast.success(m.syncTriggered());
+			toast.add({ type: "success", title: m.syncTriggered() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedTriggerSync());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedTriggerSync(),
+			});
 		} finally {
 			setSyncingRepository(false);
 		}
