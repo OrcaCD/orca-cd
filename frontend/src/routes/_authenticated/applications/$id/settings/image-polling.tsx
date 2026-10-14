@@ -14,7 +14,7 @@ import {
 } from "@/lib/applications";
 import { useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -90,10 +90,13 @@ function ImagePollingPage() {
 			setIsSubmitting(true);
 			try {
 				await updateApplication(application!.id, value);
-				toast.success(m.applicationUpdated());
+				toast.add({ type: "success", title: m.applicationUpdated() });
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveApplication(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -108,16 +111,22 @@ function ImagePollingPage() {
 			setWebhookSecret(result.secret);
 			setWebhookSecretOpen(true);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedGenerateWebhook());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedGenerateWebhook(),
+			});
 		}
 	}
 
 	async function handleRevokeWebhook() {
 		try {
 			await revokeImageWebhook(id);
-			toast.success(m.webhookRevoked());
+			toast.add({ type: "success", title: m.webhookRevoked() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedRevokeWebhook());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedRevokeWebhook(),
+			});
 		}
 	}
 

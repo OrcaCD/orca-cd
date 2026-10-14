@@ -1,6 +1,6 @@
 // oxlint-disable react/no-children-prop
 import { createFileRoute } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { EllipsisVertical, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import {
 	Card,
@@ -45,9 +45,12 @@ function OIDCProvidersPage() {
 	async function handleDelete(provider: OIDCProviderDetail) {
 		try {
 			await deleteOIDCProvider(provider.id);
-			toast.success(m.providerDeleted());
+			toast.add({ type: "success", title: m.providerDeleted() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeleteProvider());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteProvider(),
+			});
 		}
 	}
 

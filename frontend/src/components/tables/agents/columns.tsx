@@ -14,7 +14,7 @@ import { m } from "@/lib/paraglide/messages";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
 import { AgentVersionBadge } from "@/components/badges/agent-version-badge";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
@@ -123,9 +123,12 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 				try {
 					await deleteAgent(agent.id);
 					const agentIdentifier = agent?.name?.trim() || agent.id;
-					toast.success(m.agentDeleted({ name: agentIdentifier }));
+					toast.add({ type: "success", title: m.agentDeleted({ name: agentIdentifier }) });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedDeleteAgent());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedDeleteAgent(),
+					});
 				}
 			}
 			return (

@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import { toSearchableText } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { AgentsDataTable } from "@/components/tables/agents/data-table";
 import { columns } from "@/components/tables/agents/columns";
 import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
@@ -49,9 +49,12 @@ function RouteComponent() {
 		try {
 			await deleteAgent(agent.id);
 			const agentIdentifier = agent?.name?.trim() || agent.id;
-			toast.success(m.agentDeleted({ name: agentIdentifier }));
+			toast.add({ type: "success", title: m.agentDeleted({ name: agentIdentifier }) });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeleteAgent());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteAgent(),
+			});
 		}
 	}
 

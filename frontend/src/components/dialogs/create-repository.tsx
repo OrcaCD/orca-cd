@@ -19,7 +19,7 @@ import {
 } from "@/lib/repositories";
 import React, { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import {
 	Field,
@@ -394,7 +394,7 @@ export default function CreateRepositoryDialog({
 
 				void stepperRef.current?.next();
 			} catch (err: any) {
-				toast.error(err?.message || m.unexpectedError());
+				toast.add({ type: "error", title: err?.message || m.unexpectedError() });
 			} finally {
 				setIsLoading(false);
 			}

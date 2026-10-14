@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import z from "zod";
 import { createApplication, updateApplication, type Application } from "@/lib/applications";
 import { Fragment, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
 import { defineStepper } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
@@ -342,15 +342,18 @@ export default function UpsertApplicationDialog({
 			try {
 				if (isEditing && application) {
 					await updateApplication(application.id, value);
-					toast.success(m.applicationUpdated());
+					toast.add({ type: "success", title: m.applicationUpdated() });
 				} else {
 					await createApplication(value);
-					toast.success(m.applicationCreated());
+					toast.add({ type: "success", title: m.applicationCreated() });
 				}
 				setOpen(false);
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveApplication(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

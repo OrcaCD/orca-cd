@@ -13,7 +13,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createOIDCProvider, updateOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
@@ -80,7 +80,7 @@ export default function UpsertOIDCProviderDialog({
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
 					});
-					toast.success(m.providerUpdated());
+					toast.add({ type: "success", title: m.providerUpdated() });
 				} else {
 					await createOIDCProvider({
 						name: value.name,
@@ -92,11 +92,14 @@ export default function UpsertOIDCProviderDialog({
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
 					});
-					toast.success(m.providerCreated());
+					toast.add({ type: "success", title: m.providerCreated() });
 				}
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveProvider());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveProvider(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

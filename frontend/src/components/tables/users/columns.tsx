@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { deleteUser, type UserDetail } from "@/lib/users";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/badge";
@@ -88,9 +88,12 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 			async function handleDelete() {
 				try {
 					await deleteUser(row.original.id);
-					toast.success(m.userDeleted());
+					toast.add({ type: "success", title: m.userDeleted() });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedDeleteUser());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedDeleteUser(),
+					});
 				}
 			}
 
