@@ -362,6 +362,24 @@ test.describe("Redeploy on change", () => {
 		await expect(repositoryCard(page).getByText("Success", { exact: true })).toBeVisible();
 	});
 
+	test("repository sync from the application details", async ({ page }) => {
+		const { sha, message } = await commit(REPO, {
+			files: { "README.md": "# Demo\n" },
+			message: "Add readme",
+		});
+
+		await page.goto(`/applications/${appId}/details`);
+		await page.getByRole("button", { name: "More deploy options" }).click();
+		await page.getByRole("menuitem", { name: /Sync repository/ }).click();
+		await expect(page.getByText("Sync triggered")).toBeVisible();
+
+		await expectEvent(page, "manual", sha, "no_change");
+		await waitForApplication(page, appId, (app) => app.commit === sha);
+		await expect(page.getByText(sha.slice(0, 7))).toBeVisible();
+		await expect(page.getByText(message)).toBeVisible();
+		expect(appContainers(appId).map((container) => container.id)).toEqual([containerId]);
+	});
+
 	test("repository webhook", async ({ page }) => {
 		const { webhookSecret } = await updateRepository(page, { syncType: "webhook" });
 		expect(webhookSecret).toBeTruthy();
