@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
@@ -154,18 +154,24 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 			async function handleDelete() {
 				try {
 					await deleteRepository(row.original.id);
-					toast.success(m.repositoryDeleted({ name: row.original.name }));
+					toast.add({ type: "success", title: m.repositoryDeleted({ name: row.original.name }) });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedDeleteRepository());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedDeleteRepository(),
+					});
 				}
 			}
 
 			async function handleSyncRepo(repository: Repository) {
 				try {
 					await syncRepository(repository.id);
-					toast.success(m.syncTriggered());
+					toast.add({ type: "success", title: m.syncTriggered() });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedTriggerSync());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedTriggerSync(),
+					});
 				}
 			}
 

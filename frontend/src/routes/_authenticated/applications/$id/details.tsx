@@ -10,7 +10,7 @@ import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
 import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
@@ -172,9 +172,12 @@ function ApplicationDetailsPage() {
 		setDeploying(true);
 		try {
 			await deployApplication(id);
-			toast.success(m.deploymentStarted());
+			toast.add({ type: "success", title: m.deploymentStarted() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeployApplication());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeployApplication(),
+			});
 		} finally {
 			setDeploying(false);
 		}

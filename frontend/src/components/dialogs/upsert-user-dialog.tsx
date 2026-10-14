@@ -13,7 +13,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createUser, updateUser, type UserDetail } from "@/lib/users";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel, FieldTitle } from "../ui/field";
 import { Label } from "../ui/label";
@@ -68,7 +68,10 @@ export default function UpsertUserDialog({
 						resetPassword: value.resetPassword,
 					});
 					generated = response.generatedPassword ?? null;
-					toast.success(value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated());
+					toast.add({
+						type: "success",
+						title: value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated(),
+					});
 				} else {
 					const response = await createUser({
 						name: value.name,
@@ -76,7 +79,7 @@ export default function UpsertUserDialog({
 						role: value.role,
 					});
 					generated = response.generatedPassword;
-					toast.success(m.userCreated());
+					toast.add({ type: "success", title: m.userCreated() });
 				}
 
 				if (generated) {
@@ -86,7 +89,10 @@ export default function UpsertUserDialog({
 
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveUser());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveUser(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

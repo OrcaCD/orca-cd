@@ -2,7 +2,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
@@ -56,9 +56,12 @@ function ProfileSettingsPage() {
 			try {
 				await updateProfile(value);
 				await refreshAuth();
-				toast.success(m.profileUpdated());
+				toast.add({ type: "success", title: m.profileUpdated() });
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedUpdateProfile());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedUpdateProfile(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -89,7 +92,10 @@ function ProfileSettingsPage() {
 		try {
 			await setAppLocale(nextLocale, { reload: true });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedUpdateLanguage());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedUpdateLanguage(),
+			});
 		}
 
 		setIsChangingLanguage(false);

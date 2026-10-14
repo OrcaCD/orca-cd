@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { deleteApplication, updateApplication, type Application } from "@/lib/applications";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
@@ -80,10 +80,13 @@ function GeneralSettingsPage() {
 			setIsSubmitting(true);
 			try {
 				await updateApplication(application!.id, value);
-				toast.success(m.applicationUpdated());
+				toast.add({ type: "success", title: m.applicationUpdated() });
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveApplication());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveApplication(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}
@@ -108,10 +111,16 @@ function GeneralSettingsPage() {
 	async function deleteApp() {
 		try {
 			await deleteApplication(id);
-			toast.success(m.toastApplicationDeleted({ name: application?.name ?? "" }));
+			toast.add({
+				type: "success",
+				title: m.toastApplicationDeleted({ name: application?.name ?? "" }),
+			});
 			await navigate({ to: "/applications" });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.toastDeleteApplicationFailed());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.toastDeleteApplicationFailed(),
+			});
 		}
 	}
 

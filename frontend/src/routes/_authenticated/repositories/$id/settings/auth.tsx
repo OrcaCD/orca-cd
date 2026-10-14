@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
@@ -55,10 +55,10 @@ function RepositoryAuthPage() {
 					return;
 				}
 				await updateRepository(id, { authMethod, authToken });
-				toast.success(m.repositoryAuthUpdated());
+				toast.add({ type: "success", title: m.repositoryAuthUpdated() });
 				form.reset();
 			} catch {
-				toast.error(m.failedUpdateRepository());
+				toast.add({ type: "error", title: m.failedUpdateRepository() });
 			} finally {
 				setIsLoading(false);
 			}
