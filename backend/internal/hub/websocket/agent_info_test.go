@@ -65,6 +65,35 @@ func TestHandleAgentInfo_ClearsMissingDockerVersion(t *testing.T) {
 	}
 }
 
+func TestHandleAgentInfo_SetsStatusFromDockerReachability(t *testing.T) {
+	setupHandlerTestEnv(t)
+	agent := createTestAgent(t, "key-1")
+	nop := zerolog.Nop()
+	client := &Client{Id: agent.Id}
+
+	handleAgentInfo(t.Context(), client, &messages.AgentInfo{Version: "v0.5.0", DockerUnreachable: true}, &nop)
+	if got := loadAgent(t, agent.Id); got.Status != models.AgentStatusError {
+		t.Errorf("expected status %d while Docker is unreachable, got %d", models.AgentStatusError, got.Status)
+	}
+
+	handleAgentInfo(t.Context(), client, &messages.AgentInfo{Version: "v0.5.0", DockerVersion: "28.1.1"}, &nop)
+	if got := loadAgent(t, agent.Id); got.Status != models.AgentStatusOnline {
+		t.Errorf("expected status %d once Docker is reachable again, got %d", models.AgentStatusOnline, got.Status)
+	}
+}
+
+func TestHandleAgentInfo_AgentWithoutDockerReachabilityStaysOnline(t *testing.T) {
+	setupHandlerTestEnv(t)
+	agent := createTestAgent(t, "key-1")
+	nop := zerolog.Nop()
+
+	// Agents that predate the docker_unreachable field never set it.
+	handleAgentInfo(t.Context(), &Client{Id: agent.Id}, &messages.AgentInfo{Version: "v0.4.0", DockerVersion: "28.1.1"}, &nop)
+	if got := loadAgent(t, agent.Id); got.Status != models.AgentStatusOnline {
+		t.Errorf("expected status %d for an agent that does not report Docker reachability, got %d", models.AgentStatusOnline, got.Status)
+	}
+}
+
 func TestHandleAgentInfo_TruncatesLongVersions(t *testing.T) {
 	setupHandlerTestEnv(t)
 	agent := createTestAgent(t, "key-1")

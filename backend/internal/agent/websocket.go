@@ -43,7 +43,8 @@ type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
 }
 
-type dockerVersionProvider interface {
+type dockerStateProvider interface {
+	Ready() bool
 	ServerVersion() string
 }
 
@@ -228,12 +229,14 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 	}
 }
 
-// sendAgentInfo reports the agent and Docker versions to the hub so it can
-// display them and warn about outdated agents.
-func sendAgentInfo(sender outboundSender, dockerVersion dockerVersionProvider) {
+// sendAgentInfo reports the agent and Docker versions and whether the Docker
+// daemon is reachable to the hub so it can display them and warn about
+// outdated or broken agents.
+func sendAgentInfo(sender outboundSender, dockerState dockerStateProvider) {
 	info := &messages.AgentInfo{Version: version.Version}
-	if dockerVersion != nil {
-		info.DockerVersion = dockerVersion.ServerVersion()
+	if dockerState != nil {
+		info.DockerVersion = dockerState.ServerVersion()
+		info.DockerUnreachable = !dockerState.Ready()
 	}
 
 	if err := sender.SendMessage(&messages.ClientMessage{

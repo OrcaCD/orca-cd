@@ -80,6 +80,7 @@
 	"statusOnline": "Online",
 	"statusOffline": "Offline",
 	"statusError": "Fehler",
+	"agentStatusErrorDescription": "Der Agent kann seinen Docker-Daemon nicht erreichen. Deployments schlagen fehl, bis er wieder erreichbar ist.",
 	"statusSynced": "Synchronisiert",
 	"statusOutOfSync": "Nicht synchron",
 	"statusSyncing": "Synchronisiere",
