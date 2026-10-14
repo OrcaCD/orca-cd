@@ -189,7 +189,7 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
 	}
-	sse.PublishUpdate("/api/v1/applications")
+	sse.PublishUpdate(sse.TopicApplications)
 	return err
 }
 

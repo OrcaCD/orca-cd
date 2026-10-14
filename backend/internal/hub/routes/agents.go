@@ -18,7 +18,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const AgentsPath = "/api/v1/agents"
 const defaultAgentIcon = "server"
 
 func defaultString(value, fallback string) string {
@@ -243,7 +242,7 @@ func CreateAgentHandler(c *gin.Context) {
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
 	})
-	sse.PublishUpdate(AgentsPath)
+	sse.PublishUpdate(sse.TopicAgents)
 }
 
 func UpdateAgentHandler(c *gin.Context) {
@@ -290,7 +289,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-	sse.PublishUpdate(AgentsPath)
+	sse.PublishUpdate(sse.TopicAgents)
 }
 
 func RotateAgentTokenHandler(c *gin.Context) {
@@ -344,7 +343,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
 	})
-	sse.PublishUpdate(AgentsPath)
+	sse.PublishUpdate(sse.TopicAgents)
 }
 
 func DeleteAgentHandler(c *gin.Context) {
@@ -368,5 +367,5 @@ func DeleteAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "agent", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
-	sse.PublishUpdate(AgentsPath)
+	sse.PublishUpdate(sse.TopicAgents)
 }

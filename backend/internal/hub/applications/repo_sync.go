@@ -14,8 +14,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const repositoriesSSEPath = "/api/v1/repositories"
-
 var sendForRepository = notifications.SendForRepository
 
 type CommitResolver func(ctx context.Context, branch string) (hash, message string, err error)
@@ -105,7 +103,7 @@ func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) 
 		Updates(ctx, models.Repository{SyncStatus: models.SyncStatusSyncing}); err != nil {
 		log.Error().Err(err).Str("repositoryId", id).Msg("failed to mark repository as syncing")
 	}
-	sse.PublishUpdate(repositoriesSSEPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 }
 
 func markRepositorySuccess(ctx context.Context, repo *models.Repository, now *time.Time, log *zerolog.Logger) {
@@ -123,7 +121,7 @@ func markRepositorySuccess(ctx context.Context, repo *models.Repository, now *ti
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as success")
 	}
-	sse.PublishUpdate(repositoriesSSEPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 
 	if recovered {
 		sendForRepository(repo.Id, models.NotificationEventRepositorySyncRecovered,
@@ -142,7 +140,7 @@ func markRepositoryFailed(ctx context.Context, repo *models.Repository, errMsg s
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as failed")
 	}
-	sse.PublishUpdate(repositoriesSSEPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 
 	if failed {
 		sendForRepository(repo.Id, models.NotificationEventRepositorySyncFailed,

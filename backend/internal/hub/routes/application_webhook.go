@@ -52,7 +52,7 @@ func GenerateImagePullWebhookHandler(c *gin.Context) {
 		Secret:     secret,
 		WebhookUrl: webhookUrl,
 	})
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 }
 
 func RevokeImagePullWebhookHandler(c *gin.Context) {
@@ -77,5 +77,5 @@ func RevokeImagePullWebhookHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "disabled-image-webhook", "application", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "webhook revoked"})
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 }

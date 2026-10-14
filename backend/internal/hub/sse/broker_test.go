@@ -96,7 +96,7 @@ func TestBrokerPublish_DeliveredToAllSubscribers(t *testing.T) {
 
 func TestPublishUpdate_NilBroker(t *testing.T) {
 	DefaultBroker = nil
-	PublishUpdate("/api/v1/repositories") // must not panic
+	PublishUpdate(TopicRepositories) // must not panic
 }
 
 func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
@@ -107,7 +107,7 @@ func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
 	connID, ch := b.Subscribe()
 	defer b.Unsubscribe(connID)
 
-	PublishUpdate("/api/v1/repositories")
+	PublishUpdate(TopicRepositories)
 
 	select {
 	case received := <-ch:
@@ -119,6 +119,54 @@ func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestPublishUpdate_NilBrokerMultipleTopics(t *testing.T) {
+	DefaultBroker = nil
+	PublishUpdate(TopicAgents, TopicApplications) // must not panic
+}
+
+func TestTopicApplicationEvents_URL(t *testing.T) {
+	if got, want := TopicApplicationEvents("application-1").URL(), "/api/v1/applications/application-1/events"; got != want {
+		t.Fatalf("URL() = %q, want %q", got, want)
+	}
+}
+
+func TestPublishUpdate_SendsOneEventPerDistinctTopic(t *testing.T) {
+	b := NewBroker(newTestLogger())
+	DefaultBroker = b
+	t.Cleanup(func() { DefaultBroker = nil })
+
+	connID, ch := b.Subscribe()
+	defer b.Unsubscribe(connID)
+
+	PublishUpdate(
+		TopicApplications,
+		TopicApplicationEvents("app-1"),
+		TopicApplications,
+		Topic{},
+	)
+
+	want := []string{"/api/v1/applications", "/api/v1/applications/app-1/events"}
+	for _, url := range want {
+		select {
+		case received := <-ch:
+			if received.Type != EventTypeUpdate {
+				t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
+			}
+			if received.URL != url {
+				t.Errorf("expected URL %q, got %q", url, received.URL)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for event %q", url)
+		}
+	}
+
+	select {
+	case received := <-ch:
+		t.Fatalf("unexpected extra event: %+v", received)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
