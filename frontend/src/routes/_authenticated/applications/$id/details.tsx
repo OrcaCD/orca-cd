@@ -17,6 +17,7 @@ import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
+import { ApplicationEventSource } from "@/lib/application-events";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -81,12 +82,23 @@ function InfoCard({
 	);
 }
 
-function getSyncTriggers(app?: Application): string[] {
-	if (!app) {
-		return [];
-	}
+const lastSyncSourceLabels: Record<ApplicationEventSource, () => string> = {
+	[ApplicationEventSource.Manual]: () => m.applicationInfoLastSyncSourceManual(),
+	[ApplicationEventSource.ApplicationCreated]: () =>
+		m.applicationInfoLastSyncSourceApplicationCreated(),
+	[ApplicationEventSource.RepositoryPolling]: () =>
+		m.applicationInfoLastSyncSourceRepositoryPolling(),
+	[ApplicationEventSource.RepositoryWebhook]: () =>
+		m.applicationInfoLastSyncSourceRepositoryWebhook(),
+	[ApplicationEventSource.GitHubActions]: () => m.applicationInfoLastSyncSourceGitHubActions(),
+	[ApplicationEventSource.ImagePolling]: () => m.applicationInfoLastSyncSourceImagePolling(),
+	[ApplicationEventSource.ImageWebhook]: () => m.applicationInfoLastSyncSourceImageWebhook(),
+};
 
-	const triggers = [m.applicationInfoSyncGit({ type: getSyncTypeLabel(app.repositorySyncType) })];
+function getImageSyncTriggers(app?: Application): string | undefined {
+	if (!app) {
+		return undefined;
+	}
 
 	const imageTriggers: string[] = [];
 	if (app.imagePollEnabled) {
@@ -97,11 +109,11 @@ function getSyncTriggers(app?: Application): string[] {
 	if (app.imageWebhookEnabled) {
 		imageTriggers.push(m.webhook());
 	}
-	if (imageTriggers.length > 0) {
-		triggers.push(m.applicationInfoSyncImages({ type: imageTriggers.join(", ") }));
+	if (imageTriggers.length === 0) {
+		return undefined;
 	}
 
-	return triggers;
+	return m.applicationInfoSyncImages({ type: imageTriggers.join(", ") });
 }
 
 function withDiffMarker(line: string, marker: "++" | "--"): string {
@@ -221,7 +233,12 @@ function ApplicationDetailsPage() {
 					icon={<GitBranch className="h-4 w-4" />}
 					label={m.applicationInfoRepository()}
 					value={data?.repositoryName ?? ""}
-					subValue={data?.branch}
+					subValue={[
+						data?.branch ?? "",
+						data
+							? m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })
+							: "",
+					]}
 					link={data?.repositoryUrl}
 				/>
 				<InfoCard
@@ -241,7 +258,10 @@ function ApplicationDetailsPage() {
 					icon={<Clock className="h-4 w-4" />}
 					label={m.applicationInfoLastSync()}
 					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : m.never()}
-					subValue={getSyncTriggers(data)}
+					subValue={[
+						data?.lastSyncSource ? (lastSyncSourceLabels[data.lastSyncSource]?.() ?? "") : "",
+						getImageSyncTriggers(data) ?? "",
+					]}
 				/>
 			</div>
 

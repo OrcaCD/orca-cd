@@ -36,10 +36,12 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 		// health stays "unknown" here until that report arrives.
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
+		source := eventSource(ctx, result.RequestId, result.ApplicationId, "", log)
 		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
-			SyncStatus:    models.Synced,
-			LastSyncedAt:  &now,
-			LastSyncError: &cleared,
+			SyncStatus:     models.Synced,
+			LastSyncedAt:   &now,
+			LastSyncError:  &cleared,
+			LastSyncSource: &source,
 		}, log)
 		if err != nil {
 			return
@@ -71,6 +73,20 @@ func completeDeployEvent(ctx context.Context, result *messages.DeployResult, sta
 	} else if !matched && result.RequestId != "" {
 		log.Warn().Str("applicationId", result.ApplicationId).Str("requestId", result.RequestId).Msg("deployment result did not match a running event")
 	}
+}
+
+// eventSource resolves what triggered the request so the application can record
+// where its last sync came from, falling back when the request has no event.
+// An empty fallback clears the stored source (GORM skips only nil pointers).
+func eventSource(ctx context.Context, requestID string, applicationID string, fallback models.ApplicationEventSource, log *zerolog.Logger) models.ApplicationEventSource {
+	source, found, err := applicationevents.SourceForRequest(ctx, requestID, applicationID)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to look up event source")
+	}
+	if !found {
+		return fallback
+	}
+	return source
 }
 
 func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {
