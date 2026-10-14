@@ -1,8 +1,24 @@
 import { deployApplication, HealthStatus, SyncStatus, type Application } from "@/lib/applications";
 import { createFileRoute } from "@tanstack/react-router";
-import { Clock, ExternalLink, GitBranch, GitCommit, RefreshCw, Server } from "lucide-react";
+import {
+	ChevronDown,
+	Clock,
+	ExternalLink,
+	GitBranch,
+	GitCommit,
+	GitPullRequestArrow,
+	Rocket,
+	Server,
+} from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMemo, useState } from "react";
@@ -18,6 +34,8 @@ import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
+import { syncRepository } from "@/lib/repositories";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -183,7 +201,28 @@ function ApplicationDetailsPage() {
 		}
 	};
 
-	const deploymentInProgress = deploying || data?.syncStatus === SyncStatus.Syncing;
+	const [syncingRepository, setSyncingRepository] = useState(false);
+
+	const handleSyncRepository = async () => {
+		if (!data) {
+			return;
+		}
+		setSyncingRepository(true);
+		try {
+			await syncRepository(data.repositoryId);
+			toast.add({ type: "success", title: m.syncTriggered() });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedTriggerSync(),
+			});
+		} finally {
+			setSyncingRepository(false);
+		}
+	};
+
+	const deploymentInProgress =
+		deploying || syncingRepository || data?.syncStatus === SyncStatus.Syncing;
 
 	const manifestHtml = useMemo(() => {
 		return highlighter.codeToHtml(data?.composeFile ?? "", {
@@ -223,12 +262,49 @@ function ApplicationDetailsPage() {
 						</div>
 					</div>
 				</div>
-				<div className="flex items-center gap-2">
-					<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
-						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
-						{deploymentInProgress ? m.deploying() : m.deploy()}
-					</Button>
-				</div>
+				<ButtonGroup>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
+									<Rocket
+										className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`}
+									/>
+									{deploymentInProgress ? m.deploying() : m.deploy()}
+								</Button>
+							}
+						/>
+						<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
+					</Tooltip>
+					<DropdownMenu>
+						<DropdownMenuTrigger
+							render={
+								<Button
+									variant="outline"
+									size="icon"
+									aria-label={m.deployOptions()}
+									disabled={deploymentInProgress || !data}
+								/>
+							}
+						>
+							<ChevronDown className="h-4 w-4" />
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="w-72">
+							<DropdownMenuItem
+								onClick={handleSyncRepository}
+								className="items-start cursor-pointer"
+							>
+								<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
+								<div className="flex flex-col gap-0.5">
+									<span>{m.syncRepository()}</span>
+									<span className="text-xs text-muted-foreground">
+										{m.syncRepositoryDescription()}
+									</span>
+								</div>
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</ButtonGroup>
 			</div>
 
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
