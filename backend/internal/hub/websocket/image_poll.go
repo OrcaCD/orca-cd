@@ -32,7 +32,9 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	updates := models.Application{}
 	if r.Success {
 		now := time.Now()
+		source := eventSource(ctx, r.RequestId, r.ApplicationId, models.ApplicationEventSourceImagePolling, log)
 		updates.LastSyncedAt = &now
+		updates.LastSyncSource = &source
 		updates.SyncStatus = models.Synced
 	} else {
 		log.Error().

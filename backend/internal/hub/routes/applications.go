@@ -77,6 +77,7 @@ type applicationResponse struct {
 	RepositoryId             string  `json:"repositoryId"`
 	RepositoryName           string  `json:"repositoryName"`
 	RepositoryUrl            string  `json:"repositoryUrl"`
+	RepositorySyncType       string  `json:"repositorySyncType"`
 	AgentId                  string  `json:"agentId"`
 	AgentName                string  `json:"agentName"`
 	SyncStatus               string  `json:"syncStatus"`
@@ -86,6 +87,7 @@ type applicationResponse struct {
 	CommitMessage            string  `json:"commitMessage"`
 	LastSyncedAt             *string `json:"lastSyncedAt"`
 	LastSyncError            *string `json:"lastSyncError,omitempty"`
+	LastSyncSource           *string `json:"lastSyncSource,omitempty"`
 	Path                     string  `json:"path"`
 	CreatedAt                string  `json:"createdAt"`
 	UpdatedAt                string  `json:"updatedAt"`
@@ -468,6 +470,16 @@ func normalizeSyncError(e *string) *string {
 	return e
 }
 
+// normalizeSyncSource returns nil for a missing or empty source so the JSON field
+// is omitted (syncs with an unknown trigger store "").
+func normalizeSyncSource(source *models.ApplicationEventSource) *string {
+	if source == nil || *source == "" {
+		return nil
+	}
+	s := string(*source)
+	return &s
+}
+
 func toApplicationResponse(app *models.Application) applicationResponse {
 	resp := applicationResponse{
 		Id:                       app.Id,
@@ -476,6 +488,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		RepositoryId:             app.RepositoryId,
 		RepositoryName:           app.Repository.Name,
 		RepositoryUrl:            app.Repository.Url,
+		RepositorySyncType:       string(app.Repository.SyncType),
 		AgentId:                  app.AgentId,
 		AgentName:                app.Agent.Name.String(),
 		SyncStatus:               string(app.SyncStatus),
@@ -485,6 +498,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		CommitMessage:            app.CommitMessage,
 		LastSyncedAt:             formatTimestamp(app.LastSyncedAt),
 		LastSyncError:            normalizeSyncError(app.LastSyncError),
+		LastSyncSource:           normalizeSyncSource(app.LastSyncSource),
 		Path:                     app.Path,
 		CreatedAt:                app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:                app.UpdatedAt.Format(time.RFC3339),

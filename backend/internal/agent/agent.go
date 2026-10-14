@@ -244,9 +244,9 @@ func Run(cfg Config) error {
 
 	sRef := &senderRef{}
 	dockerClient.SetHealthReporter(sRef)
-	// Re-report the Docker version when the daemon comes (back) up after the
-	// agent already connected; without a connection this is a no-op.
-	dockerClient.SetDaemonReadyHandler(func() { sendAgentInfo(sRef, dockerClient) })
+	// Re-report the Docker state when the daemon goes away or comes (back) up
+	// after the agent already connected; without a connection this is a no-op.
+	dockerClient.SetDaemonStateHandler(func() { sendAgentInfo(sRef, dockerClient) })
 	poller := docker.NewImagePoller(dockerClient, sRef, Log)
 	defer poller.StopAll()
 

@@ -1,6 +1,7 @@
 package applicationevents
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -335,6 +336,96 @@ func TestCompleteRejectsRunningStatus(t *testing.T) {
 	}
 	if matched {
 		t.Fatal("Complete with running status matched an event")
+	}
+}
+
+func TestSourceForRequest(t *testing.T) {
+	app, otherApp := setupEventTestDB(t)
+	runningRequestID := "source-running"
+	completedRequestID := "source-completed"
+	if _, err := Start(t.Context(), Params{
+		ApplicationID: app.Id,
+		RequestID:     &runningRequestID,
+		Type:          models.ApplicationEventCommitSync,
+		Source:        models.ApplicationEventSourceRepositoryWebhook,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := RecordCompleted(t.Context(), Params{
+		ApplicationID: app.Id,
+		RequestID:     &completedRequestID,
+		Type:          models.ApplicationEventImageUpdate,
+		Source:        models.ApplicationEventSourceImageWebhook,
+	}, models.ApplicationEventSucceeded, nil); err != nil {
+		t.Fatalf("RecordCompleted: %v", err)
+	}
+	// Events without a request ID must not match an empty request ID.
+	if _, err := RecordCompleted(t.Context(), Params{
+		ApplicationID: app.Id,
+		Type:          models.ApplicationEventImageUpdate,
+		Source:        models.ApplicationEventSourceImagePolling,
+	}, models.ApplicationEventSucceeded, nil); err != nil {
+		t.Fatalf("RecordCompleted without request ID: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		requestID     string
+		applicationID string
+		wantSource    models.ApplicationEventSource
+		wantFound     bool
+	}{
+		{"running event", runningRequestID, app.Id, models.ApplicationEventSourceRepositoryWebhook, true},
+		{"completed event", completedRequestID, app.Id, models.ApplicationEventSourceImageWebhook, true},
+		{"other application", runningRequestID, otherApp.Id, "", false},
+		{"unknown request", "unknown-request", app.Id, "", false},
+		{"empty request ID", "", app.Id, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source, found, err := SourceForRequest(t.Context(), tt.requestID, tt.applicationID)
+			if err != nil {
+				t.Fatalf("SourceForRequest: %v", err)
+			}
+			if found != tt.wantFound || source != tt.wantSource {
+				t.Fatalf("SourceForRequest() = (%q, %v), want (%q, %v)", source, found, tt.wantSource, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestSourceForRequestStaysCorrectAfterCompletion(t *testing.T) {
+	app, _ := setupEventTestDB(t)
+	requestID := "source-complete-later"
+	if _, err := Start(t.Context(), Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if matched, err := Complete(t.Context(), requestID, app.Id, models.ApplicationEventFailed, nil); err != nil || !matched {
+		t.Fatalf("Complete matched=%v err=%v", matched, err)
+	}
+
+	source, found, err := SourceForRequest(t.Context(), requestID, app.Id)
+	if err != nil || !found || source != models.ApplicationEventSourceManual {
+		t.Fatalf("SourceForRequest() = (%q, %v, %v), want (%q, true, nil)", source, found, err, models.ApplicationEventSourceManual)
+	}
+}
+
+func TestSourceForRequestReturnsDatabaseError(t *testing.T) {
+	app, _ := setupEventTestDB(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	source, found, err := SourceForRequest(ctx, "request-db-error", app.Id)
+	if err == nil {
+		t.Fatal("SourceForRequest with canceled context returned no error")
+	}
+	if found || source != "" {
+		t.Fatalf("SourceForRequest() = (%q, %v), want (\"\", false) on error", source, found)
 	}
 }
 

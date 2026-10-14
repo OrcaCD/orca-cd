@@ -325,7 +325,8 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 // "v0.10.0-rc.1-123-gabcdef1-dirty" and distro Docker versions.
 const maxReportedVersionLength = 64
 
-// handleAgentInfo stores the agent and Docker versions reported by the agent.
+// handleAgentInfo stores the agent and Docker versions reported by the agent
+// and flags the agent as erroneous while it cannot reach its Docker daemon.
 func handleAgentInfo(parent context.Context, client *Client, info *messages.AgentInfo, log *zerolog.Logger) {
 	if info == nil {
 		return
@@ -336,11 +337,15 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 
 	agentVersion := sanitizeReportedVersion(info.Version)
 	dockerVersion := sanitizeReportedVersion(info.DockerVersion)
+	status := models.AgentStatusOnline
+	if info.DockerUnreachable {
+		status = models.AgentStatusError
+	}
 
 	if _, err := gorm.G[models.Agent](db.DB).
 		Where("id = ?", client.Id).
-		Select("Version", "DockerVersion").
-		Updates(ctx, models.Agent{Version: agentVersion, DockerVersion: dockerVersion}); err != nil {
+		Select("Version", "DockerVersion", "Status").
+		Updates(ctx, models.Agent{Version: agentVersion, DockerVersion: dockerVersion, Status: status}); err != nil {
 		log.Error().Err(err).Str("agent_id", client.Id).Msg("Failed to store agent info")
 		return
 	}
@@ -359,6 +364,9 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 		agentLog.Info().Msg("Agent is outdated, please update the agent")
 	default:
 		agentLog.Debug().Msg("Agent info received")
+	}
+	if info.DockerUnreachable {
+		agentLog.Warn().Msg("Agent cannot reach its Docker daemon")
 	}
 
 	sse.PublishUpdate("/api/v1/agents")

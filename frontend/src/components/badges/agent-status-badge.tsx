@@ -1,5 +1,6 @@
 import { AgentStatus } from "@/lib/agents";
 import { Badge } from "../ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { m } from "@/lib/paraglide/messages";
 
 export function AgentStatusBadge({ status }: { status: AgentStatus }) {
@@ -8,13 +9,28 @@ export function AgentStatusBadge({ status }: { status: AgentStatus }) {
 	const badgeVariant = isOnline ? "success" : isError ? "destructive" : "secondary";
 	const statusLabel = isOnline ? m.statusOnline() : isError ? m.statusError() : m.statusOffline();
 	const statusDotClass = isOnline ? "bg-emerald-500" : isError ? "bg-red-500" : "bg-zinc-400";
+	const statusDot = (
+		<span className={`h-2 w-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
+	);
 
 	return (
 		<div className="flex items-center gap-2">
-			<Badge variant={badgeVariant}>
-				<span className={`h-2 w-2 rounded-full ${statusDotClass}`} aria-hidden="true" />
-				{statusLabel}
-			</Badge>
+			{isError ? (
+				<Tooltip>
+					<TooltipTrigger
+						render={<Badge tabIndex={0} variant={badgeVariant} className="cursor-help" />}
+					>
+						{statusDot}
+						{statusLabel}
+					</TooltipTrigger>
+					<TooltipContent>{m.agentStatusErrorDescription()}</TooltipContent>
+				</Tooltip>
+			) : (
+				<Badge variant={badgeVariant}>
+					{statusDot}
+					{statusLabel}
+				</Badge>
+			)}
 		</div>
 	);
 }
