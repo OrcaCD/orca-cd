@@ -6,8 +6,10 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -240,5 +242,69 @@ func TestAdminListAuditLogsHandler_InvalidLimit(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAdminListAuditLogsHandler_Search(t *testing.T) {
+	setupRoutesTestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	user := models.User{Id: "user-search", Name: "Jane Admin", Email: "jane@example.com"}
+	if err := db.DB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	logs := []models.AuditLog{
+		{Id: "log-user", CreatedAt: base, UserId: &user.Id, EventType: "created", TargetType: "application", TargetId: ptr("app-123")},
+		{Id: "log-token", CreatedAt: base.Add(time.Minute), EventType: "rotated-token", TargetType: "agent", TargetId: ptr("agent-456")},
+		{Id: "log-oidc", CreatedAt: base.Add(2 * time.Minute), EventType: "deleted", TargetType: "oidc-provider"},
+	}
+	for i := range logs {
+		if err := db.DB.Create(&logs[i]).Error; err != nil {
+			t.Fatalf("failed to create log: %v", err)
+		}
+	}
+
+	router := gin.New()
+	router.GET("/api/v1/admin/audit-logs", AdminListAuditLogsHandler)
+
+	tests := []struct {
+		search string
+		want   []string
+	}{
+		{search: "jane admin", want: []string{"log-user"}},
+		{search: "EXAMPLE.COM", want: []string{"log-user"}},
+		{search: "app-123", want: []string{"log-user"}},
+		{search: "rotated token", want: []string{"log-token"}},
+		{search: "oidc-provider", want: []string{"log-oidc"}},
+		{search: "%", want: []string{}},
+		{search: "", want: []string{"log-oidc", "log-token", "log-user"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.search, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?search="+url.QueryEscape(tt.search), nil)
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
+			}
+
+			var response struct {
+				Items []auditLogResponse `json:"items"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("invalid json: %v", err)
+			}
+
+			got := make([]string, 0, len(response.Items))
+			for _, item := range response.Items {
+				got = append(got, item.Id)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("ids=%v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,13 @@ const (
 )
 
 var applicationEventsLog = logger.New("application-events", false)
+
+var applicationEventSearchCondition = fmt.Sprintf(
+	`(%s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\'`+
+		` OR actor_name LIKE @text ESCAPE '\' OR commit_hash LIKE @text ESCAPE '\'`+
+		` OR commit_message LIKE @text ESCAPE '\' OR error_message LIKE @text ESCAPE '\')`,
+	enumSearchColumn("type"), enumSearchColumn("source"), enumSearchColumn("status"),
+)
 
 type applicationEventResponse struct {
 	Id            string  `json:"id"`
@@ -58,8 +66,12 @@ func ListApplicationEventsHandler(c *gin.Context) {
 		return
 	}
 
-	events, err := gorm.G[models.ApplicationEvent](db.DB).
-		Where("application_id = ?", applicationID).
+	query := gorm.G[models.ApplicationEvent](db.DB).Where("application_id = ?", applicationID)
+	if search, ok := searchQuery(c); ok {
+		query = query.Where(applicationEventSearchCondition, map[string]any{"text": search.Text, "enum": search.Enum})
+	}
+
+	events, err := query.
 		Order("created_at DESC, id DESC").
 		Offset(offset).
 		Limit(limit + 1).

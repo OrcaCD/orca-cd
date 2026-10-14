@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,12 @@ import (
 )
 
 const defaultAuditLogLimit = 20
+
+var auditLogSearchCondition = fmt.Sprintf(
+	`(%s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\' OR target_id LIKE @text ESCAPE '\'`+
+		` OR user_id IN (SELECT id FROM users WHERE name LIKE @text ESCAPE '\' OR email LIKE @text ESCAPE '\'))`,
+	enumSearchColumn("event_type"), enumSearchColumn("target_type"),
+)
 
 type auditLogResponse struct {
 	Id         string             `json:"id"`
@@ -39,8 +46,12 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		}
 	}
 
-	query := gorm.G[models.AuditLog](db.DB).
-		Order("created_at DESC").
+	query := gorm.G[models.AuditLog](db.DB).Order("created_at DESC")
+	if search, ok := searchQuery(c); ok {
+		query = query.Where(auditLogSearchCondition, map[string]any{"text": search.Text, "enum": search.Enum})
+	}
+
+	query = query.
 		Offset(offset).
 		Limit(limit+1).
 		Preload("User", func(db gorm.PreloadBuilder) error {

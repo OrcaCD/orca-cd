@@ -17,9 +17,14 @@ import { applicationEventsTableFeatures } from "./table-features";
 interface ApplicationEventsDataTableProps {
 	columns: ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[];
 	data: ApplicationEvent[];
+	emptyMessage?: string;
 }
 
-export function ApplicationEventsDataTable({ columns, data }: ApplicationEventsDataTableProps) {
+export function ApplicationEventsDataTable({
+	columns,
+	data,
+	emptyMessage = m.applicationHistoryEmpty(),
+}: ApplicationEventsDataTableProps) {
 	const table = useTable({
 		features: applicationEventsTableFeatures,
 		data,
@@ -69,7 +74,7 @@ export function ApplicationEventsDataTable({ columns, data }: ApplicationEventsD
 					) : (
 						<TableRow>
 							<TableCell colSpan={columns.length} className="h-24 text-center">
-								{m.applicationHistoryEmpty()}
+								{emptyMessage}
 							</TableCell>
 						</TableRow>
 					)}

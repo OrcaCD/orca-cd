@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +111,70 @@ func TestListApplicationEventsHandlerReturnsNotFound(t *testing.T) {
 	w := invokeApplicationEventsHandler(t, "missing", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestListApplicationEventsHandlerFiltersBySearch(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	events := []models.ApplicationEvent{
+		{
+			Id:            "event-deploy",
+			ApplicationId: app.Id,
+			Type:          models.ApplicationEventDeployment,
+			Source:        models.ApplicationEventSourceManual,
+			Status:        models.ApplicationEventSucceeded,
+			ActorName:     new("Alice"),
+			CommitHash:    new("abc1234def"),
+			CommitMessage: new("Bump nginx to 100%"),
+		},
+		{
+			Id:            "event-sync",
+			ApplicationId: app.Id,
+			Type:          models.ApplicationEventCommitSync,
+			Source:        models.ApplicationEventSourceRepositoryWebhook,
+			Status:        models.ApplicationEventFailed,
+			ErrorMessage:  new("compose file not found"),
+		},
+	}
+	for i := range events {
+		if err := gorm.G[models.ApplicationEvent](db.DB).Create(t.Context(), &events[i]); err != nil {
+			t.Fatalf("seed application event: %v", err)
+		}
+	}
+
+	tests := []struct {
+		search string
+		want   []string
+	}{
+		{search: "alice", want: []string{"event-deploy"}},
+		{search: "abc123", want: []string{"event-deploy"}},
+		{search: "100%", want: []string{"event-deploy"}},
+		{search: "commit sync", want: []string{"event-sync"}},
+		{search: "repository_webhook", want: []string{"event-sync"}},
+		{search: "not found", want: []string{"event-sync"}},
+		{search: "%", want: []string{"event-deploy"}},
+		{search: "  ", want: []string{"event-sync", "event-deploy"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.search, func(t *testing.T) {
+			w := invokeApplicationEventsHandler(t, app.Id, "?search="+url.QueryEscape(tt.search))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+			}
+			var response struct {
+				Items []applicationEventResponse `json:"items"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			got := make([]string, 0, len(response.Items))
+			for _, item := range response.Items {
+				got = append(got, item.Id)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("ids=%v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
