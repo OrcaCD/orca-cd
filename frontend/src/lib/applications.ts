@@ -1,4 +1,6 @@
 import { fetcher } from "./api";
+import type { RepositorySyncType } from "./repositories";
+import type { ApplicationEventSource } from "./application-events";
 
 export interface Application {
 	id: string;
@@ -9,11 +11,13 @@ export interface Application {
 	repositoryId: string;
 	repositoryName: string;
 	repositoryUrl: string;
+	repositorySyncType: RepositorySyncType;
 	branch: string;
 	commit: string;
 	commitMessage: string;
 	lastSyncedAt?: string;
 	lastSyncError?: string;
+	lastSyncSource?: ApplicationEventSource;
 	path: string;
 	agentId: string;
 	agentName: string;
