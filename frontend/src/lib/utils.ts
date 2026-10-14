@@ -1,11 +1,7 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
 import type { RefinementCtx } from "zod";
 import { getLocale } from "@/lib/paraglide/runtime";
 
-export function cn(...inputs: ClassValue[]) {
-	return twMerge(clsx(inputs));
-}
+export { cn } from "cn";
 
 export function getInitials(name: string) {
 	const parts = name.split(" ");

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 
 import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -49,18 +49,24 @@ function NotificationsPage() {
 		try {
 			await deleteNotification(item.id);
 			const identifier = item.name.trim() || item.id;
-			toast.success(m.notificationDeleted({ name: identifier }));
+			toast.add({ type: "success", title: m.notificationDeleted({ name: identifier }) });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeleteNotification());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteNotification(),
+			});
 		}
 	}
 
 	async function handleTest(item: Notification) {
 		try {
 			await testNotification(item.id);
-			toast.success(m.testNotificationSent());
+			toast.add({ type: "success", title: m.testNotificationSent() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedSendTestNotification());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedSendTestNotification(),
+			});
 		}
 	}
 

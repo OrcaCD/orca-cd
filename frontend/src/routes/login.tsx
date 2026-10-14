@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { z } from "zod";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { Eye, EyeOff, FileTextIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useState, type ComponentProps } from "react";
@@ -192,10 +192,13 @@ function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null 
 			try {
 				await register(value.name, value.email, value.password);
 				await refreshAuth();
-				toast.success(m.toastAccountCreated());
+				toast.add({ type: "success", title: m.toastAccountCreated() });
 				await navigate({ to: "/" });
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.toastRegistrationFailed());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.toastRegistrationFailed(),
+				});
 			} finally {
 				setIsLoading(false);
 			}
@@ -357,7 +360,10 @@ function LoginForm({
 				await refreshAuth();
 				await navigate({ to: "/" });
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.toastLoginFailed());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.toastLoginFailed(),
+				});
 			} finally {
 				setIsLoading(false);
 			}
