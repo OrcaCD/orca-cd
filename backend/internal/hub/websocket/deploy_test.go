@@ -125,6 +125,9 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	if updated.LastSyncedAt == nil {
 		t.Error("expected LastSyncedAt to be set")
 	}
+	if updated.LastSyncSource == nil || *updated.LastSyncSource != "" {
+		t.Errorf("expected empty LastSyncSource for a result without an event, got %v", updated.LastSyncSource)
+	}
 }
 
 func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
@@ -145,6 +148,13 @@ func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventSucceeded {
 		t.Fatalf("event=%+v err=%v", event, err)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.LastSyncSource == nil || *updated.LastSyncSource != models.ApplicationEventSourceManual {
+		t.Errorf("expected LastSyncSource %q, got %v", models.ApplicationEventSourceManual, updated.LastSyncSource)
 	}
 }
 

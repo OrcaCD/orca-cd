@@ -129,4 +129,5 @@ message ApplicationStatusReport {
 message AgentInfo {
   string version = 1;
   string docker_version = 2;
+  bool docker_unreachable = 3;
 }
