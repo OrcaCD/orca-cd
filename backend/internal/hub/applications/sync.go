@@ -189,14 +189,13 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
 	}
-	sse.PublishUpdate("/api/v1/applications")
+	sse.PublishUpdate(sse.TopicApplications)
 	return err
 }
 
 func failSyncJob(application models.Application, log *zerolog.Logger) {
 	_ = updateApplicationStatus(context.Background(), application.Id, models.Application{
-		SyncStatus:   models.OutOfSync,
-		HealthStatus: models.Unhealthy,
+		SyncStatus: models.OutOfSync,
 	}, log)
 	notifications.SendForApplication(application.Id, models.NotificationEventSyncFailed, "Error: sync failed for "+application.Name.String(), log)
 }

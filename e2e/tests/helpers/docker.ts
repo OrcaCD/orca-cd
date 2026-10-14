@@ -42,6 +42,13 @@ export function appContainers(applicationId: string): ProjectContainer[] {
 		});
 }
 
+export function execInContainer(id: string, command: string[]) {
+	const result = docker(["exec", id, ...command]);
+	if (!result.ok) {
+		throw new Error(`docker exec ${id} ${command.join(" ")} failed: ${result.stderr}`);
+	}
+}
+
 export function inspectContainer(id: string) {
 	const { ok, stdout } = docker(["inspect", id]);
 	if (!ok) {

@@ -22,7 +22,6 @@ import (
 )
 
 const (
-	RepositoriesPath                    = "/api/v1/repositories"
 	DefaultPollingIntervalSeconds int64 = 60
 	MinPollingIntervalSeconds     int64 = 30
 
@@ -369,7 +368,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "repository", repo.Id)
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
-	sse.PublishUpdate(RepositoriesPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 }
 
 type testConnectionRequest struct {
@@ -500,7 +499,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		if !removedApps {
 			return
 		}
-		sse.PublishUpdate(ApplicationsPath)
+		sse.PublishUpdate(sse.TopicApplications)
 		for agentID := range agentIDs {
 			sendAgentSettings(c, agentID)
 		}
@@ -533,7 +532,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "repository", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
-	sse.PublishUpdate(RepositoriesPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 }
 
 type updateRepositoryRequest struct {
@@ -696,7 +695,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
-	sse.PublishUpdate(RepositoriesPath)
+	sse.PublishUpdate(sse.TopicRepositories)
 }
 
 func SyncRepositoryHandler(c *gin.Context) {

@@ -85,6 +85,8 @@ func normalizeProjectName(name string) (string, error) {
 }
 
 func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
+	defer c.observeApplicationHealth(req.ApplicationID)
+
 	if c.compose == nil {
 		return errors.New("docker compose service is not initialized")
 	}
@@ -186,10 +188,6 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		Str("application_name", req.ApplicationName).
 		Str("compose_path", composePath).
 		Msg("deployment completed")
-
-	// The hub reset the application to unknown health when it started the
-	// deployment, so always report the settled state even if it didn't change.
-	c.observeApplicationHealth(req.ApplicationID)
 
 	return nil
 }

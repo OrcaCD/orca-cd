@@ -22,7 +22,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ApplicationsPath = "/api/v1/applications"
 const defaultApplicationIcon = "box"
 
 // agentDeleteTimeout matches the agent's compose-down timeout (deploymentTimeout)
@@ -218,7 +217,7 @@ func CreateApplicationHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "application", application.Id)
 
 	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 
 	sendAgentSettings(c, req.AgentId)
 
@@ -302,7 +301,10 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages
 
-	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
+		Select("*").
+		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource").
+		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
 			return
@@ -328,7 +330,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "application", id)
 
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 	sendAgentSettings(c, req.AgentId)
 	if oldAgentId != req.AgentId {
 		sendAgentSettings(c, oldAgentId)
@@ -390,7 +392,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "application", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 	sendAgentSettings(c, application.AgentId)
 }
 
@@ -440,7 +442,7 @@ func DeployApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
-	sse.PublishUpdate(ApplicationsPath)
+	sse.PublishUpdate(sse.TopicApplications)
 }
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {

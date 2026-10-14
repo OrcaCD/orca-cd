@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"fmt"
+	"slices"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/moby/moby/api/types/container"
@@ -50,7 +52,38 @@ func (c *Client) ApplicationHealth(ctx context.Context, appID string) HealthStat
 		return HealthUnknown
 	}
 
-	return aggregateHealth(result.Items)
+	items, err := withInspectedHealth(ctx, c.cli.Client(), result.Items)
+	if err != nil {
+		c.log.Error().Err(err).Str("application_id", appID).Msg("failed to inspect containers for health check")
+		return HealthUnknown
+	}
+
+	return aggregateHealth(items)
+}
+
+// withInspectedHealth fills in the healthcheck summary of running containers
+// that the container list left empty. Daemons older than Docker 28.4 don't
+// return it in the list, so without the inspect a failing healthcheck would
+// look like a container without one.
+func withInspectedHealth(ctx context.Context, inspector containerInspector, items []container.Summary) ([]container.Summary, error) {
+	resolved := slices.Clone(items)
+	for i, item := range resolved {
+		if item.State != container.StateRunning || item.Health != nil {
+			continue
+		}
+
+		result, err := inspector.ContainerInspect(ctx, item.ID, client.ContainerInspectOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("inspect container %q: %w", item.ID, err)
+		}
+		if state := result.Container.State; state != nil && state.Health != nil {
+			resolved[i].Health = &container.HealthSummary{
+				Status:        state.Health.Status,
+				FailingStreak: state.Health.FailingStreak,
+			}
+		}
+	}
+	return resolved, nil
 }
 
 // aggregateHealth derives an application's health from the state of its

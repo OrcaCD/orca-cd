@@ -57,7 +57,6 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 
 	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
-		HealthStatus:  models.Unhealthy,
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
@@ -96,7 +95,7 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
 	}
-	sse.PublishUpdate("/api/v1/applications")
+	sse.PublishUpdate(sse.TopicApplications)
 	return err
 }
 

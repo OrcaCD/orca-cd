@@ -25,14 +25,6 @@ type Params struct {
 	CommitMessage *string
 }
 
-// ActivityPath is the cross-application deployment summary, which changes with
-// every recorded or completed event.
-const ActivityPath = "/api/v1/applications/activity"
-
-func Path(applicationID string) string {
-	return "/api/v1/applications/" + applicationID + "/events"
-}
-
 func Start(ctx context.Context, p Params) (*models.ApplicationEvent, error) {
 	return create(ctx, p, models.ApplicationEventRunning, nil)
 }
@@ -90,8 +82,7 @@ func create(
 		return nil, err
 	}
 
-	sse.PublishUpdate(Path(p.ApplicationID))
-	sse.PublishUpdate(ActivityPath)
+	sse.PublishUpdate(sse.TopicApplicationEvents(p.ApplicationID), sse.TopicApplicationActivity)
 	return &event, nil
 }
 
@@ -135,8 +126,7 @@ func Complete(
 		return false, nil
 	}
 
-	sse.PublishUpdate(Path(applicationID))
-	sse.PublishUpdate(ActivityPath)
+	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity)
 	return true, nil
 }
 

@@ -153,6 +153,13 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 
 	updated, err := checkAndPullImages(ctx, p.client, appID, appName, deleteOld)
 
+	// The hub resets health to unknown when it dispatches an explicit pull. A
+	// successful update already re-reports it in CheckAndPullImages; without an
+	// update (nothing stale, or the pull failed) nothing else would.
+	if requestID != "" && !updated && p.client != nil {
+		p.client.observeApplicationHealth(appID)
+	}
+
 	// Unsolicited periodic ticks stay silent when nothing changed, to avoid
 	// spamming history/notifications. Explicitly triggered requests (webhook,
 	// manual, GitHub Actions) always report back, even with no change, so the

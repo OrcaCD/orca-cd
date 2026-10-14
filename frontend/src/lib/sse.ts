@@ -11,8 +11,8 @@ export function connect(onUnauthorized?: () => void): void {
 	es = new EventSource(`${API_BASE}/events`);
 
 	es.addEventListener("update", async (e) => {
-		const event = JSON.parse(e.data) as { url: string };
-		await mutate((key) => typeof key === "string" && key.startsWith(event.url));
+		const event = JSON.parse(e.data) as { urls: string[] };
+		await mutate((key) => typeof key === "string" && event.urls.some((url) => key.startsWith(url)));
 	});
 
 	es.addEventListener("unauthorized", () => {

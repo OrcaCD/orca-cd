@@ -25,8 +25,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const NotificationsPath = "/api/v1/notifications"
-
 type createNotificationRequest struct {
 	Name            string                     `json:"name" binding:"required,min=1,max=128"`
 	Enabled         *bool                      `json:"enabled"`
@@ -193,7 +191,7 @@ func CreateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toNotificationResponse(&createdNotification))
-	sse.PublishUpdate(NotificationsPath)
+	sse.PublishUpdate(sse.TopicNotifications)
 }
 
 func UpdateNotificationHandler(c *gin.Context) {
@@ -273,7 +271,7 @@ func UpdateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toNotificationResponse(&updatedNotification))
-	sse.PublishUpdate(NotificationsPath)
+	sse.PublishUpdate(sse.TopicNotifications)
 }
 
 func DeleteNotificationHandler(c *gin.Context) {
@@ -290,7 +288,7 @@ func DeleteNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
-	sse.PublishUpdate(NotificationsPath)
+	sse.PublishUpdate(sse.TopicNotifications)
 }
 
 func TestNotificationHandler(c *gin.Context) {
@@ -329,7 +327,7 @@ func TestNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	sse.PublishUpdate(NotificationsPath)
+	sse.PublishUpdate(sse.TopicNotifications)
 
 	if sendErr != nil {
 		respondTestNotificationError(c, sendErr)

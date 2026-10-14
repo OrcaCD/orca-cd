@@ -8,6 +8,7 @@ import {
 	composeProject,
 	deployedComposeFile,
 	deploymentDirExists,
+	execInContainer,
 	inspectContainer,
 	pullImage,
 	removeApplicationContainers,
@@ -27,6 +28,8 @@ import {
 const IMAGE = BUSYBOX_IMAGE;
 // Refused immediately by the daemon, so the failing deployment doesn't depend on the network
 const UNPULLABLE_IMAGE = "127.0.0.1:1/e2e/missing:1";
+// The healthcheck passes while this file exists, so tests can fail it with docker exec
+const HEALTHY_FILE = "/tmp/healthy";
 
 const AGENT_NAME = "E2E Deploy Agent";
 const REPO = "e2e/deploy-main";
@@ -42,13 +45,13 @@ function composeFile(version: number, image = IMAGE) {
   app:
     image: ${image}
     pull_policy: if_not_present
-    command: ["sh", "-c", "while true; do sleep 1; done"]
+    command: ["sh", "-c", "touch ${HEALTHY_FILE}; while true; do sleep 1; done"]
     # PID 1 ignores SIGTERM, which would make every stop wait for the default 10 seconds
     stop_grace_period: 1s
     environment:
       APP_VERSION: "${version}"
     healthcheck:
-      test: ["CMD", "true"]
+      test: ["CMD", "test", "-f", "${HEALTHY_FILE}"]
       interval: 2s
       retries: 1
 `;
@@ -365,6 +368,24 @@ test.describe("Redeploy on change", () => {
 		await expect(repositoryCard(page).getByText("Success", { exact: true })).toBeVisible();
 	});
 
+	test("repository sync from the application details", async ({ page }) => {
+		const { sha, message } = await commit(REPO, {
+			files: { "README.md": "# Demo\n" },
+			message: "Add readme",
+		});
+
+		await page.goto(`/applications/${appId}/details`);
+		await page.getByRole("button", { name: "More deploy options" }).click();
+		await page.getByRole("menuitem", { name: /Sync repository/ }).click();
+		await expect(page.getByText("Sync triggered")).toBeVisible();
+
+		await expectEvent(page, "manual", sha, "no_change");
+		await waitForApplication(page, appId, (app) => app.commit === sha);
+		await expect(page.getByText(sha.slice(0, 7))).toBeVisible();
+		await expect(page.getByText(message)).toBeVisible();
+		expect(appContainers(appId).map((container) => container.id)).toEqual([containerId]);
+	});
+
 	test("repository webhook", async ({ page }) => {
 		const { webhookSecret } = await updateRepository(page, { syncType: "webhook" });
 		expect(webhookSecret).toBeTruthy();
@@ -428,7 +449,9 @@ test.describe("Redeploy on change", () => {
 			appId,
 			(app) => app.commit === broken.sha && app.syncStatus === "out_of_sync" && !!app.lastSyncError,
 		);
-		expect(failed.healthStatus).toBe("unhealthy");
+		expect(failed.syncStatus).toBe("out_of_sync");
+		// Health follows the containers, and the previous version keeps running
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
 		await expectEvent(page, "manual", broken.sha, "failed");
 		const event = eventFor(await applicationEvents(page, appId), "manual", broken.sha);
 		expect(event?.errorMessage).toBeTruthy();
@@ -499,6 +522,67 @@ test.describe("Redeploy on change", () => {
 		await expect.poll(countNoChange, { timeout: 30_000 }).toBe(before + 1);
 		expect(appContainers(appId).map((container) => container.id)).toEqual(idsBefore);
 		expect(runningVersion()).toBe("6");
+	});
+});
+
+test.describe("Runtime health", () => {
+	const healthBadge = (page: Page, label: string) => page.getByText(label, { exact: true });
+
+	test("a failing healthcheck marks the application unhealthy", async ({ page }) => {
+		const [container] = appContainers(appId);
+		expect(container.state).toBe("running");
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+
+		// The page stays open, so the status change has to arrive through live updates
+		await page.goto(`/applications/${appId}/details`);
+		await expect(healthBadge(page, "Healthy")).toBeVisible();
+
+		execInContainer(container.id, ["rm", HEALTHY_FILE]);
+		try {
+			await expect
+				.poll(() => inspectContainer(container.id).health, { timeout: 30_000 })
+				.toBe("unhealthy");
+
+			await expect(healthBadge(page, "Unhealthy")).toBeVisible({ timeout: 30_000 });
+			await expect(healthBadge(page, "Healthy")).toHaveCount(0);
+			const unhealthy = await getApplication(page, appId);
+			expect(unhealthy.healthStatus).toBe("unhealthy");
+			// A runtime health change must not touch the sync state
+			expect(unhealthy.syncStatus).toBe("synced");
+			expect(unhealthy.lastSyncError).toBeUndefined();
+
+			await page.goto("/applications");
+			await expect(
+				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
+			).toBeVisible();
+		} finally {
+			execInContainer(container.id, ["touch", HEALTHY_FILE]);
+		}
+	});
+
+	test("the application recovers once the healthcheck passes again", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await page.goto(`/applications/${appId}/details`);
+		// The previous test restored the file, but the hub may not have processed it yet
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+		await expect(healthBadge(page, "Healthy")).toBeVisible();
+
+		execInContainer(container.id, ["rm", HEALTHY_FILE]);
+		try {
+			await expect(healthBadge(page, "Unhealthy")).toBeVisible({ timeout: 30_000 });
+		} finally {
+			execInContainer(container.id, ["touch", HEALTHY_FILE]);
+		}
+
+		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
+		await expect(healthBadge(page, "Unhealthy")).toHaveCount(0);
+		const recovered = await waitForApplication(
+			page,
+			appId,
+			(app) => app.healthStatus === "healthy",
+		);
+		expect(recovered.syncStatus).toBe("synced");
+		expect(appContainers(appId).map((item) => item.id)).toEqual([container.id]);
 	});
 });
 
