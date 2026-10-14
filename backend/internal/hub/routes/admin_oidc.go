@@ -16,8 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const AdminOIDCProvidersPath = "/api/v1/admin/oidc-providers"
-
 type createOIDCProviderRequest struct {
 	Name                 string `json:"name" binding:"required,min=1,max=100"`
 	IssuerURL            string `json:"issuerUrl" binding:"required,http_url"`
@@ -146,7 +144,7 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "oidc-provider", provider.Id)
 
 	c.JSON(http.StatusCreated, toOIDCProviderResponse(&provider))
-	sse.PublishUpdate(AdminOIDCProvidersPath)
+	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
 }
 
 func AdminUpdateOIDCProviderHandler(c *gin.Context) {
@@ -199,7 +197,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "oidc-provider", id)
 
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
-	sse.PublishUpdate(AdminOIDCProvidersPath)
+	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
 }
 
 func AdminDeleteOIDCProviderHandler(c *gin.Context) {
@@ -218,5 +216,5 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "oidc-provider", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
-	sse.PublishUpdate(AdminOIDCProvidersPath)
+	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
 }

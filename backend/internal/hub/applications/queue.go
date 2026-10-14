@@ -72,6 +72,6 @@ func (q *Queue) Enqueue(repo *models.Repository, provider repositories.Provider,
 	}
 
 	if len(apps) > 0 {
-		sse.PublishUpdate("/api/v1/applications")
+		sse.PublishUpdate(sse.TopicApplications)
 	}
 }

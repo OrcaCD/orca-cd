@@ -1759,8 +1759,8 @@ func TestCreateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if event.URL != sse.TopicRepositories.URL() {
+			t.Errorf("expected URL %q, got %q", sse.TopicRepositories.URL(), event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -1808,8 +1808,8 @@ func TestUpdateRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if event.URL != sse.TopicRepositories.URL() {
+			t.Errorf("expected URL %q, got %q", sse.TopicRepositories.URL(), event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")
@@ -1850,8 +1850,8 @@ func TestDeleteRepositoryHandler_PublishesSSEEvent(t *testing.T) {
 		if event.Type != sse.EventTypeUpdate {
 			t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, event.Type)
 		}
-		if event.URL != RepositoriesPath {
-			t.Errorf("expected URL %q, got %q", RepositoriesPath, event.URL)
+		if event.URL != sse.TopicRepositories.URL() {
+			t.Errorf("expected URL %q, got %q", sse.TopicRepositories.URL(), event.URL)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for SSE event")

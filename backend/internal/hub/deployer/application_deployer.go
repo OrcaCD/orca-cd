@@ -20,10 +20,6 @@ type messageSender interface {
 	Send(agentID string, msg *messages.ServerMessage) bool
 }
 
-const (
-	applicationsSSEPath = "/api/v1/applications"
-)
-
 // ApplicationDeploymentManager dispatches a deploy to an agent. It is an interface
 // so route handlers can be tested with a stub.
 type ApplicationDeploymentManager interface {
@@ -97,7 +93,7 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
 	}
-	sse.PublishUpdate(applicationsSSEPath)
+	sse.PublishUpdate(sse.TopicApplications)
 	return err
 }
 

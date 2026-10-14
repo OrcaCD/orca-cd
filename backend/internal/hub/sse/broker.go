@@ -3,6 +3,7 @@ package sse
 // SSE are used to push real-time updates to the frontend
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -65,13 +66,20 @@ func (b *Broker) Unsubscribe(connID string) {
 	}
 }
 
-// PublishUpdate sends an update event to all connected SSE clients.
-// It is a no-op if the DefaultBroker has not been initialized.
-func PublishUpdate(url string) {
+func PublishUpdate(topics ...Topic) {
 	if DefaultBroker == nil {
 		return
 	}
-	DefaultBroker.Publish(Event{Type: EventTypeUpdate, URL: url})
+	DefaultBroker.PublishUpdate(topics...)
+}
+
+func (b *Broker) PublishUpdate(topics ...Topic) {
+	for i, topic := range topics {
+		if topic.url == "" || slices.Contains(topics[:i], topic) {
+			continue
+		}
+		b.Publish(Event{Type: EventTypeUpdate, URL: topic.url})
+	}
 }
 
 // Shutdown closes all client channels, causing their SSE handlers to return.
