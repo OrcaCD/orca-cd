@@ -1,9 +1,13 @@
 package docker
 
 import (
+	"context"
+	"errors"
+	"slices"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/rs/zerolog"
 )
 
@@ -83,5 +87,67 @@ func TestAggregateHealth(t *testing.T) {
 				t.Errorf("aggregateHealth() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+type fakeInspector struct {
+	states map[string]*container.State
+	err    error
+	calls  []string
+}
+
+func (f *fakeInspector) ContainerInspect(_ context.Context, id string, _ client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+	f.calls = append(f.calls, id)
+	if f.err != nil {
+		return client.ContainerInspectResult{}, f.err
+	}
+	return client.ContainerInspectResult{Container: container.InspectResponse{ID: id, State: f.states[id]}}, nil
+}
+
+func TestWithInspectedHealth(t *testing.T) {
+	inspector := &fakeInspector{states: map[string]*container.State{
+		"failing":        {Health: &container.Health{Status: container.Unhealthy, FailingStreak: 3}},
+		"passing":        {Health: &container.Health{Status: container.Healthy}},
+		"no-healthcheck": {},
+	}}
+	items := []container.Summary{
+		{ID: "failing", State: container.StateRunning},
+		{ID: "passing", State: container.StateRunning},
+		{ID: "no-healthcheck", State: container.StateRunning},
+		{ID: "listed", State: container.StateRunning, Health: &container.HealthSummary{Status: container.Healthy}},
+		{ID: "stopped", State: container.StateExited},
+	}
+
+	got, err := withInspectedHealth(t.Context(), inspector, items)
+	if err != nil {
+		t.Fatalf("withInspectedHealth: %v", err)
+	}
+
+	if got[0].Health == nil || got[0].Health.Status != container.Unhealthy || got[0].Health.FailingStreak != 3 {
+		t.Errorf("failing container health = %+v, want unhealthy with streak 3", got[0].Health)
+	}
+	if got[1].Health == nil || got[1].Health.Status != container.Healthy {
+		t.Errorf("passing container health = %+v, want healthy", got[1].Health)
+	}
+	if got[2].Health != nil {
+		t.Errorf("container without healthcheck got health %+v", got[2].Health)
+	}
+	if want := []string{"failing", "passing", "no-healthcheck"}; !slices.Equal(inspector.calls, want) {
+		t.Errorf("inspected %v, want %v (listed and stopped containers must be skipped)", inspector.calls, want)
+	}
+	if items[0].Health != nil {
+		t.Error("input items were modified")
+	}
+	if aggregateHealth(got) != HealthUnhealthy {
+		t.Error("an unhealthy healthcheck only visible through inspect must make the application unhealthy")
+	}
+}
+
+func TestWithInspectedHealth_InspectErrorIsReturned(t *testing.T) {
+	inspector := &fakeInspector{err: errors.New("boom")}
+
+	_, err := withInspectedHealth(t.Context(), inspector, []container.Summary{{ID: "a", State: container.StateRunning}})
+	if err == nil {
+		t.Fatal("expected an error when inspecting fails")
 	}
 }
