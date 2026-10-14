@@ -7,7 +7,6 @@ import {
 	GitBranch,
 	GitCommit,
 	GitPullRequestArrow,
-	RefreshCw,
 	Rocket,
 	Server,
 } from "lucide-react";
@@ -36,6 +35,7 @@ import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
 import { syncRepository } from "@/lib/repositories";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -263,10 +263,19 @@ function ApplicationDetailsPage() {
 					</div>
 				</div>
 				<ButtonGroup>
-					<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
-						<RefreshCw className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`} />
-						{deploymentInProgress ? m.deploying() : m.deploy()}
-					</Button>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
+									<Rocket
+										className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`}
+									/>
+									{deploymentInProgress ? m.deploying() : m.deploy()}
+								</Button>
+							}
+						/>
+						<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
+					</Tooltip>
 					<DropdownMenu>
 						<DropdownMenuTrigger
 							render={
@@ -281,16 +290,10 @@ function ApplicationDetailsPage() {
 							<ChevronDown className="h-4 w-4" />
 						</DropdownMenuTrigger>
 						<DropdownMenuContent align="end" className="w-72">
-							<DropdownMenuItem onClick={handleDeploy} className="items-start">
-								<Rocket className="mt-0.5 h-4 w-4" />
-								<div className="flex flex-col gap-0.5">
-									<span>{m.deploy()}</span>
-									<span className="text-xs text-muted-foreground">
-										{m.deployCurrentVersionDescription()}
-									</span>
-								</div>
-							</DropdownMenuItem>
-							<DropdownMenuItem onClick={handleSyncRepository} className="items-start">
+							<DropdownMenuItem
+								onClick={handleSyncRepository}
+								className="items-start cursor-pointer"
+							>
 								<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
 								<div className="flex flex-col gap-0.5">
 									<span>{m.syncRepository()}</span>
