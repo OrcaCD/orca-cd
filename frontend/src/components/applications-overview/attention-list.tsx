@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, RotateCw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,9 +59,15 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 		setDeploying(true);
 		try {
 			await deployApplication(app.id);
-			toast.success(m.deploymentStarted());
+			toast.add({
+				type: "success",
+				title: m.deploymentStarted(),
+			});
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeployApplication());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeployApplication(),
+			});
 		} finally {
 			setDeploying(false);
 		}
