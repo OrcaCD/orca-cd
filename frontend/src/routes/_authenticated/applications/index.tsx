@@ -1,7 +1,7 @@
 import type { ApplicationListItem } from "@/lib/applications";
-import type { Agent } from "@/lib/agents";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { ArrowRight, GitBranch, GitCommit, Search, Server } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
@@ -15,11 +15,31 @@ import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
-import { ApplicationsOverview } from "@/components/applications-overview/applications-overview";
-import { getFleetCategory, type FleetCategory } from "@/components/applications-overview/fleet";
+import {
+	fleetCategories,
+	fleetCategoryConfig,
+	getFleetCategory,
+	type FleetCategory,
+} from "@/components/applications-overview/fleet";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+const applicationsSearchSchema = z.object({
+	status: z.enum(fleetCategories).optional(),
+});
+
+const allStatuses = "all";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
+	// An unknown status (e.g. from an old bookmark) shows the unfiltered list.
+	validateSearch: (search) => applicationsSearchSchema.safeParse(search).data ?? {},
 	head: () => ({
 		meta: [
 			{
@@ -32,22 +52,23 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
-	const [categoryFilter, setCategoryFilter] = useState<FleetCategory | null>(null);
+	const { status } = Route.useSearch();
+	const navigate = Route.useNavigate();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
-	const { data: agents } = useFetch<Agent[]>("/agents");
 
-	// Drop a filter whose category emptied out (e.g. after a fix), otherwise the
-	// list would stay empty with no chip left to clear it.
-	const activeFilter =
-		categoryFilter && data?.some((app) => getFleetCategory(app) === categoryFilter)
-			? categoryFilter
-			: null;
+	const statusItems: { value: FleetCategory | typeof allStatuses; label: string }[] = [
+		{ value: allStatuses, label: m.applicationsFilterAllStatuses() },
+		...fleetCategories.map((category) => ({
+			value: category,
+			label: fleetCategoryConfig[category].label(),
+		})),
+	];
 
 	const query = searchQuery.toLowerCase();
 	const filteredApps =
 		data?.filter((app) => {
-			if (activeFilter && getFleetCategory(app) !== activeFilter) {
+			if (status && getFleetCategory(app) !== status) {
 				return false;
 			}
 			return (
@@ -69,14 +90,6 @@ function ApplicationsPage() {
 				</div>
 				<UpsertApplicationDialog application={null} />
 			</div>
-			{data && data.length > 0 ? (
-				<ApplicationsOverview
-					apps={data}
-					agents={agents}
-					filter={activeFilter}
-					onFilterChange={setCategoryFilter}
-				/>
-			) : null}
 			<div>
 				<div className="flex flex-col sm:flex-row gap-4">
 					<div className="relative flex-1">
@@ -90,6 +103,37 @@ function ApplicationsPage() {
 					</div>
 
 					<div className="flex gap-2">
+						<Select
+							value={status ?? allStatuses}
+							onValueChange={(value) => {
+								void navigate({
+									search: {
+										status: fleetCategories.find((category) => category === value),
+									},
+									replace: true,
+								});
+							}}
+							items={statusItems}
+						>
+							<SelectTrigger className="w-44" aria-label={m.applicationsFilterStatus()}>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent alignItemWithTrigger={false}>
+								{statusItems.map((item) => (
+									<SelectItem key={item.value} value={item.value}>
+										{item.value !== allStatuses ? (
+											<span
+												className={cn(
+													"size-1.5 shrink-0 self-center rounded-full",
+													fleetCategoryConfig[item.value].dotClass,
+												)}
+											/>
+										) : null}
+										{item.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>
@@ -97,7 +141,7 @@ function ApplicationsPage() {
 			<div>
 				{viewMode === "grid" ? (
 					<>
-						{data && data.length === 0 && !isLoading ? (
+						{data && filteredApps.length === 0 && !isLoading ? (
 							<div className="rounded-xl border border-dashed p-10 text-center">
 								<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
 								<p className="mt-1 text-sm text-muted-foreground">

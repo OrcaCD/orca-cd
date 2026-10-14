@@ -1,23 +1,13 @@
+import { Link } from "@tanstack/react-router";
 import { CircleCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
-import {
-	countFleetCategories,
-	fleetCategories,
-	fleetCategoryConfig,
-	type FleetCategory,
-} from "./fleet";
+import { countFleetCategories, fleetCategories, fleetCategoryConfig } from "./fleet";
 
-interface FleetStatusCardProps {
-	apps: ApplicationListItem[];
-	filter: FleetCategory | null;
-	onFilterChange: (filter: FleetCategory | null) => void;
-}
-
-export function FleetStatusCard({ apps, filter, onFilterChange }: FleetStatusCardProps) {
+export function FleetStatusCard({ apps }: { apps: ApplicationListItem[] }) {
 	const counts = countFleetCategories(apps);
 	const total = apps.length;
 	const allOk = counts.ok === total;
@@ -45,9 +35,8 @@ export function FleetStatusCard({ apps, filter, onFilterChange }: FleetStatusCar
 						<div
 							key={category}
 							className={cn(
-								"h-full transition-[flex-grow,opacity]",
+								"h-full transition-[flex-grow]",
 								fleetCategoryConfig[category].barClass,
-								filter && filter !== category && "opacity-30",
 							)}
 							style={{ flexGrow: counts[category] }}
 						/>
@@ -59,20 +48,13 @@ export function FleetStatusCard({ apps, filter, onFilterChange }: FleetStatusCar
 				) : (
 					<div className="flex flex-wrap gap-1.5">
 						{visibleCategories.map((category) => {
-							const active = filter === category;
 							const config = fleetCategoryConfig[category];
 							return (
 								<Badge
 									key={category}
-									variant={active ? "secondary" : "outline"}
-									className={cn("h-6 cursor-pointer px-2.5", active && "ring-1 ring-foreground/30")}
-									render={
-										<button
-											type="button"
-											aria-pressed={active}
-											onClick={() => onFilterChange(active ? null : category)}
-										/>
-									}
+									variant="outline"
+									className="h-6 px-2.5"
+									render={<Link to="/applications" search={{ status: category }} />}
 								>
 									<span className={cn("size-1.5 rounded-full", config.dotClass)} />
 									{counts[category]} {config.label()}

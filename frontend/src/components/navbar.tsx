@@ -3,6 +3,7 @@ import {
 	Bell,
 	FileText,
 	GitBranch,
+	LayoutDashboard,
 	LayoutGrid,
 	LogOut,
 	Menu,
@@ -36,9 +37,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
 
-type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
+type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
 
 const navItems = [
+	{ key: "overview" as NavKey, href: "/", icon: LayoutDashboard },
 	{ key: "applications" as NavKey, href: "/applications", icon: LayoutGrid },
 	{ key: "agents" as NavKey, href: "/agents", icon: Server },
 	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
@@ -49,6 +51,8 @@ const adminNavItems = [{ key: "admin" as NavKey, href: "/admin", icon: Settings 
 
 function getNavLabel(key: NavKey): string {
 	switch (key) {
+		case "overview":
+			return m.navOverview();
 		case "applications":
 			return m.navApplications();
 		case "agents":
@@ -62,6 +66,10 @@ function getNavLabel(key: NavKey): string {
 		default:
 			return "";
 	}
+}
+
+function isNavItemActive(pathname: string, href: string): boolean {
+	return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
 export default function Navbar() {
@@ -107,7 +115,7 @@ export default function Navbar() {
 															to={item.href}
 															className={cn(
 																"h-8",
-																location.pathname.startsWith(item.href) &&
+																isNavItemActive(location.pathname, item.href) &&
 																	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 															)}
 														>
@@ -224,7 +232,7 @@ export default function Navbar() {
 												to={item.href}
 												className={cn(
 													"h-8 w-full",
-													location.pathname.startsWith(item.href) &&
+													isNavItemActive(location.pathname, item.href) &&
 														"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
 												)}
 												onClick={() => setMobileMenuOpen(false)}

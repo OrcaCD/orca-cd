@@ -374,7 +374,7 @@ test.describe("Redeploy on change", () => {
 			message: "Add readme",
 		});
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await page.getByRole("button", { name: "More deploy options" }).click();
 		await page.getByRole("menuitem", { name: /Sync repository/ }).click();
 		await expect(page.getByText("Sync triggered")).toBeVisible();
@@ -534,7 +534,7 @@ test.describe("Runtime health", () => {
 		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
 
 		// The page stays open, so the status change has to arrive through live updates
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(healthBadge(page, "Healthy")).toBeVisible();
 
 		execInContainer(container.id, ["rm", HEALTHY_FILE]);
@@ -551,7 +551,7 @@ test.describe("Runtime health", () => {
 			expect(unhealthy.syncStatus).toBe("synced");
 			expect(unhealthy.lastSyncError).toBeUndefined();
 
-			await page.goto("/applications");
+			await gotoApp(page, "/applications");
 			await expect(
 				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
 			).toBeVisible();
@@ -562,7 +562,7 @@ test.describe("Runtime health", () => {
 
 	test("the application recovers once the healthcheck passes again", async ({ page }) => {
 		const [container] = appContainers(appId);
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		// The previous test restored the file, but the hub may not have processed it yet
 		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
 		await expect(healthBadge(page, "Healthy")).toBeVisible();
