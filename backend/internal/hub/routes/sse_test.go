@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -143,7 +144,7 @@ func TestSSEHandler_ReceivesEvent(t *testing.T) {
 
 	waitForInitialComment(t, scanner)
 
-	broker.Publish(sse.Event{Type: sse.EventTypeUpdate, URL: "http://example.com"})
+	broker.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
 
 	var eventType, eventData string
 	for scanner.Scan() {
@@ -165,7 +166,8 @@ func TestSSEHandler_ReceivesEvent(t *testing.T) {
 	if err := json.Unmarshal([]byte(eventData), &event); err != nil {
 		t.Fatalf("failed to unmarshal SSE event data: %v", err)
 	}
-	if event.URL != "http://example.com" {
-		t.Errorf("expected URL %q, got %q", "http://example.com", event.URL)
+	wantURLs := []string{sse.TopicAgents.URL(), sse.TopicApplications.URL()}
+	if !slices.Equal(event.URLs, wantURLs) {
+		t.Errorf("expected URLs %v, got %v", wantURLs, event.URLs)
 	}
 }
