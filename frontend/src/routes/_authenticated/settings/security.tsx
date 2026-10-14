@@ -2,7 +2,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { useState, type ComponentProps } from "react";
 import { AlertTriangleIcon, Eye, EyeOff } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,10 +95,13 @@ function SecuritySettingsPage() {
 			setIsSubmitting(true);
 			try {
 				await updatePassword(value.currentPassword, value.newPassword);
-				toast.success(m.passwordUpdatedSuccessfully());
+				toast.add({ type: "success", title: m.passwordUpdatedSuccessfully() });
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedUpdatePassword());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedUpdatePassword(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

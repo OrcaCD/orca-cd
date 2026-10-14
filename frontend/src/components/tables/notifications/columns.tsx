@@ -1,6 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Send, Trash2, WebhookIcon } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpdateNotificationDialog from "@/components/dialogs/update-notification";
@@ -105,18 +105,24 @@ export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 				try {
 					await deleteNotification(item.id);
 					const identifier = item.name.trim() || item.id;
-					toast.success(m.notificationDeleted({ name: identifier }));
+					toast.add({ type: "success", title: m.notificationDeleted({ name: identifier }) });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedDeleteNotification());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedDeleteNotification(),
+					});
 				}
 			}
 
 			async function handleTest(item: Notification) {
 				try {
 					await testNotification(item.id);
-					toast.success(m.testNotificationSent());
+					toast.add({ type: "success", title: m.testNotificationSent() });
 				} catch (err) {
-					toast.error(err instanceof Error ? err.message : m.failedSendTestNotification());
+					toast.add({
+						type: "error",
+						title: err instanceof Error ? err.message : m.failedSendTestNotification(),
+					});
 				}
 			}
 

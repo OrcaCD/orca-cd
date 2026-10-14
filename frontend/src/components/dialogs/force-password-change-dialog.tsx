@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -65,9 +65,12 @@ export default function ForcePasswordChangeDialog() {
 				});
 				await refreshAuth();
 				form.reset();
-				toast.success(m.passwordUpdated());
+				toast.add({ type: "success", title: m.passwordUpdated() });
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedUpdatePassword());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedUpdatePassword(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

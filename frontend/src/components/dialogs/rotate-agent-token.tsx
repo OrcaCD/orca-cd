@@ -1,6 +1,6 @@
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { rotateAgentToken, type Agent } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import ConfirmationDialog from "./confirm-dialog";
@@ -16,7 +16,10 @@ export default function RotateAgentTokenDialog({ agent }: { agent: Agent }) {
 			setAuthToken(response.authToken);
 			setIsAuthTokenOpen(true);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedRotateAgentToken());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedRotateAgentToken(),
+			});
 		}
 	}
 

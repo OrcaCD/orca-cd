@@ -27,7 +27,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { toSearchableText } from "@/lib/utils";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
@@ -55,18 +55,24 @@ function RepositoriesPage() {
 		try {
 			await deleteRepository(repository.id);
 			const repoIdentifier = repository?.name?.trim() || repository.id;
-			toast.success(m.repositoryDeleted({ name: repoIdentifier }));
+			toast.add({ type: "success", title: m.repositoryDeleted({ name: repoIdentifier }) });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedDeleteRepository());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteRepository(),
+			});
 		}
 	}
 
 	async function handleSyncRepo(repository: Repository) {
 		try {
 			await syncRepository(repository.id);
-			toast.success(m.syncTriggered());
+			toast.add({ type: "success", title: m.syncTriggered() });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : m.failedTriggerSync());
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedTriggerSync(),
+			});
 		}
 	}
 

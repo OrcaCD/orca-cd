@@ -12,7 +12,7 @@ import {
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "../ui/field";
 import { Label } from "../ui/label";
@@ -62,7 +62,7 @@ export default function UpsertAgentDialog({
 						name: value.name,
 						icon: value.icon,
 					});
-					toast.success(m.agentUpdated());
+					toast.add({ type: "success", title: m.agentUpdated() });
 				} else {
 					const response = await createAgent({
 						name: value.name,
@@ -72,12 +72,15 @@ export default function UpsertAgentDialog({
 						setAuthToken(response.authToken);
 						setIsAuthTokenOpen(true);
 					}
-					toast.success(m.agentConnected());
+					toast.add({ type: "success", title: m.agentConnected() });
 				}
 				setOpen(false);
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveAgent());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveAgent(),
+				});
 			} finally {
 				setIsSubmitting(false);
 			}

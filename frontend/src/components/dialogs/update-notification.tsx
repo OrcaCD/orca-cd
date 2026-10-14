@@ -2,7 +2,7 @@
 import { useForm } from "@tanstack/react-form";
 import { Pencil } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
@@ -63,11 +63,14 @@ export default function UpdateNotificationDialog({
 					enabled: value.enabled,
 					...normalizeNotificationSubscription(value.subscription),
 				});
-				toast.success(m.notificationUpdated());
+				toast.add({ type: "success", title: m.notificationUpdated() });
 				setOpen(false);
 				form.reset();
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : m.failedSaveNotification());
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveNotification(),
+				});
 			} finally {
 				setIsLoading(false);
 			}

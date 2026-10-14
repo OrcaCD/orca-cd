@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { defineStepper } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
 import { Button } from "@/components/ui/button";
@@ -890,7 +890,7 @@ export default function CreateNotificationDialog() {
 				};
 
 				await createNotification(payload);
-				toast.success(m.notificationCreated());
+				toast.add({ type: "success", title: m.notificationCreated() });
 
 				setOpen(false);
 				form.reset();
