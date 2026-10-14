@@ -18,7 +18,7 @@ const (
 
 type Event struct {
 	Type EventType `json:"type"`
-	URL  string    `json:"url,omitempty"`
+	URLs []string  `json:"urls,omitempty"`
 }
 
 type Broker struct {
@@ -74,12 +74,17 @@ func PublishUpdate(topics ...Topic) {
 }
 
 func (b *Broker) PublishUpdate(topics ...Topic) {
+	urls := make([]string, 0, len(topics))
 	for i, topic := range topics {
 		if topic.url == "" || slices.Contains(topics[:i], topic) {
 			continue
 		}
-		b.Publish(Event{Type: EventTypeUpdate, URL: topic.url})
+		urls = append(urls, topic.url)
 	}
+	if len(urls) == 0 {
+		return
+	}
+	b.Publish(Event{Type: EventTypeUpdate, URLs: urls})
 }
 
 // Shutdown closes all client channels, causing their SSE handlers to return.

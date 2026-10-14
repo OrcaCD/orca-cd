@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -695,7 +696,7 @@ func TestWsHandler_PublishesAgentUpdatesOnConnectAndDisconnect(t *testing.T) {
 		for {
 			select {
 			case event := <-events:
-				if event.URL == "/api/v1/agents" {
+				if slices.Contains(event.URLs, sse.TopicAgents.URL()) {
 					return
 				}
 			case <-timeout:
