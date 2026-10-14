@@ -195,8 +195,7 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 
 func failSyncJob(application models.Application, log *zerolog.Logger) {
 	_ = updateApplicationStatus(context.Background(), application.Id, models.Application{
-		SyncStatus:   models.OutOfSync,
-		HealthStatus: models.Unhealthy,
+		SyncStatus: models.OutOfSync,
 	}, log)
 	notifications.SendForApplication(application.Id, models.NotificationEventSyncFailed, "Error: sync failed for "+application.Name.String(), log)
 }

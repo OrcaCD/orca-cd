@@ -241,8 +241,8 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	if updated.SyncStatus != models.OutOfSync {
 		t.Errorf("expected SyncStatus %q, got %q", models.OutOfSync, updated.SyncStatus)
 	}
-	if updated.HealthStatus != models.Unhealthy {
-		t.Errorf("expected HealthStatus %q, got %q", models.Unhealthy, updated.HealthStatus)
+	if updated.HealthStatus != models.UnknownHealth {
+		t.Errorf("expected HealthStatus to stay %q, got %q", models.UnknownHealth, updated.HealthStatus)
 	}
 	if updated.LastSyncedAt != nil {
 		t.Error("expected LastSyncedAt to remain nil on failure")

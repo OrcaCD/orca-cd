@@ -848,6 +848,65 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateApplicationHandler_SavesDisabledFlagsAndKeepsRuntimeColumns(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-flags")
+	agent := seedTestAgent(t, "agent-update-flags")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Flags")
+
+	secret := crypto.EncryptedString("webhook-secret")
+	syncError := "previous failure"
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Updates(t.Context(), models.Application{
+		ImagePollEnabled:   true,
+		DeleteOldImages:    true,
+		ImageWebhookSecret: &secret,
+		LastSyncError:      &syncError,
+		SyncStatus:         models.OutOfSync,
+		HealthStatus:       models.Healthy,
+	}); err != nil {
+		t.Fatalf("failed to prepare application: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":             "Flags",
+		"repositoryId":     repo.Id,
+		"agentId":          agent.Id,
+		"branch":           "main",
+		"path":             "deployments/prod.yml",
+		"imagePollEnabled": false,
+		"deleteOldImages":  false,
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated application: %v", err)
+	}
+	if updated.ImagePollEnabled || updated.DeleteOldImages {
+		t.Errorf("expected disabled flags to be saved, got imagePollEnabled=%v deleteOldImages=%v", updated.ImagePollEnabled, updated.DeleteOldImages)
+	}
+	if updated.ImageWebhookSecret == nil || updated.ImageWebhookSecret.String() != "webhook-secret" {
+		t.Error("expected the image webhook secret to be kept")
+	}
+	if updated.LastSyncError == nil || *updated.LastSyncError != syncError {
+		t.Errorf("expected lastSyncError %q to be kept", syncError)
+	}
+	if updated.SyncStatus != models.OutOfSync || updated.HealthStatus != models.Healthy {
+		t.Errorf("expected sync and health status to be kept, got %q / %q", updated.SyncStatus, updated.HealthStatus)
+	}
+}
+
 func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 

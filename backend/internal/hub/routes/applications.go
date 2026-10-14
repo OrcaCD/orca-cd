@@ -299,7 +299,10 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages
 
-	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Select("*").Updates(c.Request.Context(), application); err != nil {
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
+		Select("*").
+		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource").
+		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
 			return
