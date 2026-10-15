@@ -1,6 +1,8 @@
-import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
+import type { ApplicationListItem } from "@/lib/applications";
+import type { Agent } from "@/lib/agents";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { ArrowRight, GitBranch, GitCommit, Search, Server } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
@@ -14,9 +16,32 @@ import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
+import {
+	fleetCategories,
+	fleetCategoryConfig,
+	getFleetCategory,
+	type FleetCategory,
+} from "@/lib/fleet";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+const applicationsSearchSchema = z.object({
+	status: z.enum(fleetCategories).optional(),
+	agent: z.string().optional(),
+});
+
+const allStatuses = "all";
+const allAgents = "all";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
+	validateSearch: (search) => applicationsSearchSchema.safeParse(search).data ?? {},
 	head: () => ({
 		meta: [
 			{
@@ -29,33 +54,43 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
+	const { status, agent } = Route.useSearch();
+	const navigate = Route.useNavigate();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
+	const { data: agents } = useFetch<Agent[]>("/agents");
 
+	const statusItems: { value: FleetCategory | typeof allStatuses; label: string }[] = [
+		{ value: allStatuses, label: m.applicationsFilterAllStatuses() },
+		...fleetCategories.map((category) => ({
+			value: category,
+			label: fleetCategoryConfig[category].label(),
+		})),
+	];
+	const agentItems = [
+		{ value: allAgents, label: m.applicationsFilterAllAgents() },
+		...(agents ?? []).map((item) => ({ value: item.id, label: item.name })),
+	];
+
+	const query = searchQuery.toLowerCase();
 	const filteredApps =
 		data?.filter((app) => {
+			if (status && getFleetCategory(app) !== status) {
+				return false;
+			}
+			if (agent && app.agentId !== agent) {
+				return false;
+			}
 			return (
-				app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				app.repositoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				app.branch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				app.path.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				app.agentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				app.commit.toLowerCase().includes(searchQuery.toLowerCase())
+				app.name.toLowerCase().includes(query) ||
+				app.repositoryName.toLowerCase().includes(query) ||
+				app.branch.toLowerCase().includes(query) ||
+				app.path.toLowerCase().includes(query) ||
+				app.agentName.toLowerCase().includes(query) ||
+				app.commit.toLowerCase().includes(query)
 			);
 		}) ?? [];
 
-	const stats = {
-		total: data?.length ?? 0,
-		synced: data?.filter((a) => a.syncStatus === SyncStatus.Synced).length ?? 0,
-		outOfSync: data?.filter((a) => a.syncStatus === SyncStatus.OutOfSync).length ?? 0,
-		healthy: data?.filter((a) => a.healthStatus === HealthStatus.Healthy).length ?? 0,
-	};
-	const statItems = [
-		{ label: m.applicationsStatTotalApps(), value: stats.total },
-		{ label: m.applicationsStatSynced(), value: stats.synced, color: "text-emerald-400" },
-		{ label: m.applicationsStatOutOfSync(), value: stats.outOfSync, color: "text-amber-400" },
-		{ label: m.applicationsStatHealthy(), value: stats.healthy, color: "text-emerald-400" },
-	];
 	return (
 		<div className="p-6 space-y-6">
 			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -64,20 +99,6 @@ function ApplicationsPage() {
 					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
 				</div>
 				<UpsertApplicationDialog application={null} />
-			</div>
-			<div>
-				<div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-					{statItems.map((item) => (
-						<Card key={item.label}>
-							<CardHeader>
-								<CardTitle>{item.label}</CardTitle>
-								<CardContent className={`text-2xl font-bold mt-1 ${item.color ?? ""}`}>
-									{item.value}
-								</CardContent>
-							</CardHeader>
-						</Card>
-					))}
-				</div>
 			</div>
 			<div>
 				<div className="flex flex-col sm:flex-row gap-4">
@@ -92,6 +113,64 @@ function ApplicationsPage() {
 					</div>
 
 					<div className="flex gap-2">
+						<Select
+							value={status ?? allStatuses}
+							onValueChange={(value) => {
+								void navigate({
+									search: (prev) => ({
+										...prev,
+										status: fleetCategories.find((category) => category === value),
+									}),
+									replace: true,
+								});
+							}}
+							items={statusItems}
+						>
+							<SelectTrigger className="w-44" aria-label={m.applicationsFilterStatus()}>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent alignItemWithTrigger={false}>
+								{statusItems.map((item) => (
+									<SelectItem key={item.value} value={item.value}>
+										{item.value !== allStatuses ? (
+											<span
+												className={cn(
+													"size-1.5 shrink-0 self-center rounded-full",
+													fleetCategoryConfig[item.value].dotClass,
+												)}
+											/>
+										) : null}
+										{item.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						{agents && (agents.length > 1 || agent) ? (
+							<Select
+								value={agent ?? allAgents}
+								onValueChange={(value) => {
+									void navigate({
+										search: (prev) => ({
+											...prev,
+											agent: value === allAgents ? undefined : (value ?? undefined),
+										}),
+										replace: true,
+									});
+								}}
+								items={agentItems}
+							>
+								<SelectTrigger className="w-44" aria-label={m.applicationsFilterAgent()}>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent alignItemWithTrigger={false}>
+									{agentItems.map((item) => (
+										<SelectItem key={item.value} value={item.value}>
+											{item.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : null}
 						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>
@@ -99,7 +178,7 @@ function ApplicationsPage() {
 			<div>
 				{viewMode === "grid" ? (
 					<>
-						{data && data.length === 0 && !isLoading ? (
+						{data && filteredApps.length === 0 && !isLoading ? (
 							<div className="rounded-xl border border-dashed p-10 text-center">
 								<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
 								<p className="mt-1 text-sm text-muted-foreground">

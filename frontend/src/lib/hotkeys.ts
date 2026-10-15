@@ -15,6 +15,7 @@ const HOTKEY_OPTIONS = {
 } as const;
 
 export const HOTKEY_SEQUENCES = {
+	navigateOverview: ["G", "O"] as HotkeySequence,
 	navigateApplications: ["G", "A"] as HotkeySequence,
 	navigateAgents: ["G", "N"] as HotkeySequence,
 	navigateRepositories: ["G", "R"] as HotkeySequence,
@@ -49,6 +50,11 @@ export function useApplicationHotkeys() {
 	}, [theme, setTheme, startTransition]);
 
 	const enabled = auth.isAuthenticated;
+
+	useHotkeySequence(HOTKEY_SEQUENCES.navigateOverview, () => navigateTo("/"), {
+		...HOTKEY_OPTIONS,
+		enabled,
+	});
 
 	useHotkeySequence(HOTKEY_SEQUENCES.navigateApplications, () => navigateTo("/applications"), {
 		...HOTKEY_OPTIONS,
