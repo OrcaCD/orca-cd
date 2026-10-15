@@ -62,7 +62,7 @@ export interface ApplicationActivityDeployment extends ApplicationEvent {
 
 export interface ApplicationActivity {
 	days: ApplicationActivityDay[];
-	lastDeployment: ApplicationActivityDeployment | null;
+	recentDeployments: ApplicationActivityDeployment[];
 }
 
 export enum SyncStatus {

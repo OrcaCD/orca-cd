@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ApplicationsOverview } from "@/components/applications-overview/applications-overview";
-import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
+import { OnboardingChecklist } from "@/components/applications-overview/onboarding-checklist";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
@@ -35,15 +35,7 @@ function OverviewPage() {
 					<Skeleton className="h-44" />
 				</div>
 			) : apps.length === 0 ? (
-				<div className="flex flex-col items-center gap-4 rounded-xl border border-dashed p-10 text-center">
-					<div>
-						<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
-						<p className="mt-1 text-sm text-muted-foreground">
-							{m.overviewNoApplicationsDescription()}
-						</p>
-					</div>
-					<UpsertApplicationDialog application={null} />
-				</div>
+				<OnboardingChecklist agents={agents} />
 			) : (
 				<ApplicationsOverview apps={apps} agents={agents} />
 			)}

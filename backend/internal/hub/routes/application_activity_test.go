@@ -67,22 +67,21 @@ func TestApplicationActivityHandlerEmpty(t *testing.T) {
 			t.Fatalf("expected empty day, got %+v", day)
 		}
 	}
-	if response.LastDeployment != nil {
-		t.Fatalf("expected no last deployment, got %+v", response.LastDeployment)
+	if len(response.RecentDeployments) != 0 {
+		t.Fatalf("expected no recent deployments, got %+v", response.RecentDeployments)
 	}
-	if !containsJSONNull(t, w.Body.String(), "lastDeployment") {
-		t.Fatalf("expected lastDeployment to be null, got %s", w.Body.String())
+	if value := rawJSONField(t, w.Body.String(), "recentDeployments"); value != "[]" {
+		t.Fatalf("expected recentDeployments to be an empty array, got %s", value)
 	}
 }
 
-func containsJSONNull(t *testing.T, body, key string) bool {
+func rawJSONField(t *testing.T, body, key string) string {
 	t.Helper()
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(body), &raw); err != nil {
 		t.Fatalf("decode raw response: %v", err)
 	}
-	value, ok := raw[key]
-	return ok && string(value) == "null"
+	return string(raw[key])
 }
 
 func TestApplicationActivityHandlerCountsCompletedDeploymentsPerDay(t *testing.T) {
@@ -135,10 +134,10 @@ func TestApplicationActivityHandlerBucketsByUTCOffset(t *testing.T) {
 	}
 }
 
-func TestApplicationActivityHandlerReturnsLatestDeployment(t *testing.T) {
+func TestApplicationActivityHandlerReturnsRecentDeployments(t *testing.T) {
 	app := setupApplicationEventsRouteTest(t)
 	now := time.Now()
-	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.Add(-time.Hour))
+	older := seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.Add(-time.Hour))
 	latest := seedActivityEvent(t, app.Id, models.ApplicationEventFailed, now.Add(-time.Minute))
 	seedActivityEvent(t, app.Id, models.ApplicationEventNoChange, now)
 
@@ -146,18 +145,34 @@ func TestApplicationActivityHandlerReturnsLatestDeployment(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
-	deployment := response.LastDeployment
-	if deployment == nil {
-		t.Fatal("expected a last deployment")
+	if len(response.RecentDeployments) != 2 {
+		t.Fatalf("expected 2 recent deployments without the no-change event, got %+v", response.RecentDeployments)
 	}
+	if response.RecentDeployments[1].Id != older.Id {
+		t.Fatalf("expected older event %s last, got %+v", older.Id, response.RecentDeployments[1])
+	}
+	deployment := response.RecentDeployments[0]
 	if deployment.Id != latest.Id || deployment.Status != string(models.ApplicationEventFailed) {
-		t.Fatalf("expected latest failed event %s, got %+v", latest.Id, deployment)
+		t.Fatalf("expected latest failed event %s first, got %+v", latest.Id, deployment)
 	}
 	if deployment.ApplicationId != app.Id || deployment.ApplicationName != "Event App" || deployment.ApplicationIcon != "box" {
 		t.Fatalf("unexpected application fields: %+v", deployment)
 	}
 	if deployment.CommitHash == nil || *deployment.CommitHash != "abcdef1234567" {
 		t.Fatalf("expected commit hash, got %+v", deployment.CommitHash)
+	}
+}
+
+func TestApplicationActivityHandlerLimitsRecentDeployments(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	now := time.Now()
+	for i := range applicationActivityRecentDeployments + 2 {
+		seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, now.Add(-time.Duration(i)*time.Minute))
+	}
+
+	_, response := invokeApplicationActivityHandler(t, "")
+	if len(response.RecentDeployments) != applicationActivityRecentDeployments {
+		t.Fatalf("expected %d recent deployments, got %d", applicationActivityRecentDeployments, len(response.RecentDeployments))
 	}
 }
 

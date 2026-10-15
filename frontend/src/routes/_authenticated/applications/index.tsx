@@ -1,4 +1,5 @@
 import type { ApplicationListItem } from "@/lib/applications";
+import type { Agent } from "@/lib/agents";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
@@ -32,13 +33,15 @@ import { cn } from "@/lib/utils";
 
 const applicationsSearchSchema = z.object({
 	status: z.enum(fleetCategories).optional(),
+	agent: z.string().optional(),
 });
 
 const allStatuses = "all";
+const allAgents = "all";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
-	// An unknown status (e.g. from an old bookmark) shows the unfiltered list.
+	// An invalid filter (e.g. from an old bookmark) shows the unfiltered list.
 	validateSearch: (search) => applicationsSearchSchema.safeParse(search).data ?? {},
 	head: () => ({
 		meta: [
@@ -52,10 +55,11 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
-	const { status } = Route.useSearch();
+	const { status, agent } = Route.useSearch();
 	const navigate = Route.useNavigate();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
+	const { data: agents } = useFetch<Agent[]>("/agents");
 
 	const statusItems: { value: FleetCategory | typeof allStatuses; label: string }[] = [
 		{ value: allStatuses, label: m.applicationsFilterAllStatuses() },
@@ -64,11 +68,18 @@ function ApplicationsPage() {
 			label: fleetCategoryConfig[category].label(),
 		})),
 	];
+	const agentItems = [
+		{ value: allAgents, label: m.applicationsFilterAllAgents() },
+		...(agents ?? []).map((item) => ({ value: item.id, label: item.name })),
+	];
 
 	const query = searchQuery.toLowerCase();
 	const filteredApps =
 		data?.filter((app) => {
 			if (status && getFleetCategory(app) !== status) {
+				return false;
+			}
+			if (agent && app.agentId !== agent) {
 				return false;
 			}
 			return (
@@ -107,9 +118,10 @@ function ApplicationsPage() {
 							value={status ?? allStatuses}
 							onValueChange={(value) => {
 								void navigate({
-									search: {
+									search: (prev) => ({
+										...prev,
 										status: fleetCategories.find((category) => category === value),
-									},
+									}),
 									replace: true,
 								});
 							}}
@@ -134,6 +146,32 @@ function ApplicationsPage() {
 								))}
 							</SelectContent>
 						</Select>
+						{agents && (agents.length > 1 || agent) ? (
+							<Select
+								value={agent ?? allAgents}
+								onValueChange={(value) => {
+									void navigate({
+										search: (prev) => ({
+											...prev,
+											agent: value === allAgents ? undefined : (value ?? undefined),
+										}),
+										replace: true,
+									});
+								}}
+								items={agentItems}
+							>
+								<SelectTrigger className="w-44" aria-label={m.applicationsFilterAgent()}>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent alignItemWithTrigger={false}>
+									{agentItems.map((item) => (
+										<SelectItem key={item.value} value={item.value}>
+											{item.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : null}
 						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
 					</div>
 				</div>

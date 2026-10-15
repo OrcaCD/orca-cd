@@ -2,7 +2,6 @@ package routes
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,7 +13,8 @@ import (
 )
 
 const (
-	applicationActivityDays = 7
+	applicationActivityDays              = 7
+	applicationActivityRecentDeployments = 8
 	// UTC offsets range from -12:00 to +14:00.
 	maxUTCOffsetMinutes = 14 * 60
 )
@@ -33,8 +33,8 @@ type applicationActivityDeployment struct {
 }
 
 type applicationActivityResponse struct {
-	Days           []applicationActivityDay       `json:"days"`
-	LastDeployment *applicationActivityDeployment `json:"lastDeployment"`
+	Days              []applicationActivityDay        `json:"days"`
+	RecentDeployments []applicationActivityDeployment `json:"recentDeployments"`
 }
 
 // ApplicationActivityHandler summarizes deployments across all applications.
@@ -85,18 +85,20 @@ func ApplicationActivityHandler(c *gin.Context) {
 		}
 	}
 
-	lastDeployment, err := latestDeployment(ctx)
+	recentDeployments, err := recentDeployments(ctx)
 	if err != nil {
-		applicationEventsLog.Error().Err(err).Msg("failed to load latest deployment")
+		applicationEventsLog.Error().Err(err).Msg("failed to load recent deployments")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, applicationActivityResponse{Days: days, LastDeployment: lastDeployment})
+	c.JSON(http.StatusOK, applicationActivityResponse{Days: days, RecentDeployments: recentDeployments})
 }
 
-func latestDeployment(ctx context.Context) (*applicationActivityDeployment, error) {
-	event, err := gorm.G[models.ApplicationEvent](db.DB).
+// recentDeployments returns the newest events across all applications. Events
+// without changes are left out, since polling would otherwise flood the feed.
+func recentDeployments(ctx context.Context) ([]applicationActivityDeployment, error) {
+	events, err := gorm.G[models.ApplicationEvent](db.DB).
 		Preload("Application", nil).
 		Where("status IN ?", []models.ApplicationEventStatus{
 			models.ApplicationEventRunning,
@@ -104,19 +106,22 @@ func latestDeployment(ctx context.Context) (*applicationActivityDeployment, erro
 			models.ApplicationEventFailed,
 		}).
 		Order("created_at DESC, id DESC").
-		First(ctx)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+		Limit(applicationActivityRecentDeployments).
+		Find(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &applicationActivityDeployment{
-		applicationEventResponse: toApplicationEventResponse(&event),
-		ApplicationId:            event.ApplicationId,
-		ApplicationName:          event.Application.Name.String(),
-		ApplicationIcon:          event.Application.Icon,
-	}, nil
+
+	deployments := make([]applicationActivityDeployment, 0, len(events))
+	for i := range events {
+		deployments = append(deployments, applicationActivityDeployment{
+			applicationEventResponse: toApplicationEventResponse(&events[i]),
+			ApplicationId:            events[i].ApplicationId,
+			ApplicationName:          events[i].Application.Name.String(),
+			ApplicationIcon:          events[i].Application.Icon,
+		})
+	}
+	return deployments, nil
 }
 
 func parseUTCOffset(raw string) (int, bool) {

@@ -1,20 +1,13 @@
-import { Link } from "@tanstack/react-router";
-import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useFetch } from "@/lib/api";
-import { ApplicationEventStatus } from "@/lib/application-events";
-import type { ApplicationActivity, ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
-import { cn, formatRelativeTime } from "@/lib/utils";
-
-// Sent so the backend buckets deployments into the user's calendar days.
-const utcOffset = -new Date().getTimezoneOffset();
+import { cn } from "@/lib/utils";
+import { useApplicationActivity } from "./activity";
 
 export function DeploymentActivityCard() {
-	const { data } = useFetch<ApplicationActivity>(`/applications/activity?utcOffset=${utcOffset}`);
+	const { data } = useApplicationActivity();
 
 	const succeeded = data?.days.reduce((sum, day) => sum + day.succeeded, 0) ?? 0;
 	const failed = data?.days.reduce((sum, day) => sum + day.failed, 0) ?? 0;
@@ -86,55 +79,14 @@ export function DeploymentActivityCard() {
 								);
 							})}
 						</div>
-						<LastDeployment deployment={data.lastDeployment} />
 					</>
 				) : (
 					<>
 						<Skeleton className="h-8 w-20" />
 						<Skeleton className="h-10 w-full" />
-						<Skeleton className="h-4 w-3/4" />
 					</>
 				)}
 			</CardContent>
 		</Card>
-	);
-}
-
-const lastDeploymentStatusClass: Partial<Record<ApplicationEventStatus, string>> = {
-	[ApplicationEventStatus.Running]: "bg-blue-400 animate-pulse",
-	[ApplicationEventStatus.Succeeded]: "bg-emerald-400",
-	[ApplicationEventStatus.Failed]: "bg-red-400",
-};
-
-function LastDeployment({ deployment }: { deployment: ApplicationActivityDeployment | null }) {
-	if (!deployment) {
-		return <p className="text-xs text-muted-foreground">{m.applicationsActivityNoDeployments()}</p>;
-	}
-
-	const details = [
-		formatRelativeTime(deployment.createdAt),
-		deployment.commitHash?.slice(0, 7),
-		deployment.actorName,
-	].filter(Boolean);
-
-	return (
-		<Link
-			to="/applications/$id"
-			params={{ id: deployment.applicationId }}
-			className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-		>
-			<span
-				className={cn(
-					"size-1.5 shrink-0 rounded-full",
-					lastDeploymentStatusClass[deployment.status] ?? "bg-zinc-400",
-				)}
-			/>
-			<StaticLucideIcon name={deployment.applicationIcon} className="size-3.5 shrink-0" />
-			<span className="truncate">
-				<span className="font-medium text-foreground">{deployment.applicationName}</span>
-				{" · "}
-				{details.join(" · ")}
-			</span>
-		</Link>
 	);
 }

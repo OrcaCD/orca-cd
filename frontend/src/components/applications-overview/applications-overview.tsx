@@ -5,6 +5,8 @@ import { AttentionList } from "./attention-list";
 import { DeploymentActivityCard } from "./deployment-activity-card";
 import { getAttentionItems } from "./fleet";
 import { FleetStatusCard } from "./fleet-status-card";
+import { RecentDeploymentsCard } from "./recent-deployments-card";
+import { RepositoriesCard } from "./repositories-card";
 
 interface ApplicationsOverviewProps {
 	apps: ApplicationListItem[];
@@ -20,6 +22,10 @@ export function ApplicationsOverview({ apps, agents }: ApplicationsOverviewProps
 				<AgentsStatusCard agents={agents} />
 			</div>
 			<AttentionList items={getAttentionItems(apps, agents)} />
+			<div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
+				<RecentDeploymentsCard />
+				<RepositoriesCard />
+			</div>
 		</div>
 	);
 }
