@@ -233,12 +233,152 @@ func TestCheckDeployPolicy_RejectsDeviceMappings(t *testing.T) {
 }
 
 func TestCheckDeployPolicy_RejectsUnsafeSecurityOpt(t *testing.T) {
-	tests := []string{"seccomp:unconfined", "apparmor:unconfined", "apparmor=unconfined", "Seccomp:Unconfined"}
+	tests := []string{
+		"seccomp:unconfined", "apparmor:unconfined", "apparmor=unconfined", "Seccomp:Unconfined",
+		"label=disable", "label:disable", "systempaths=unconfined", "seccomp=/tmp/profile.json",
+		"apparmor=custom", "label=type:spc_t",
+	}
 	for _, opt := range tests {
 		t.Run(opt, func(t *testing.T) {
 			svc := composetypes.ServiceConfig{SecurityOpt: []string{opt}}
 			if err := checkDeployPolicy(projectWithService(svc), ""); err == nil {
 				t.Fatalf("expected security_opt %q to be rejected", opt)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_AllowsNoNewPrivileges(t *testing.T) {
+	for _, opt := range []string{"no-new-privileges", "no-new-privileges:true", "no-new-privileges=true"} {
+		t.Run(opt, func(t *testing.T) {
+			svc := composetypes.ServiceConfig{SecurityOpt: []string{opt}}
+			if err := checkDeployPolicy(projectWithService(svc), ""); err != nil {
+				t.Fatalf("expected security_opt %q to be allowed, got: %v", opt, err)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_RejectsVolumesFrom(t *testing.T) {
+	svc := composetypes.ServiceConfig{VolumesFrom: []string{"container:orca-agent"}}
+	if err := checkDeployPolicy(projectWithService(svc), ""); err == nil {
+		t.Fatal("expected volumes_from to be rejected")
+	}
+}
+
+func TestCheckDeployPolicy_RejectsDeviceCgroupRules(t *testing.T) {
+	svc := composetypes.ServiceConfig{DeviceCgroupRules: []string{"c 1:3 mr"}}
+	if err := checkDeployPolicy(projectWithService(svc), ""); err == nil {
+		t.Fatal("expected device_cgroup_rules to be rejected")
+	}
+}
+
+func envFileProject(path string) *composetypes.Project {
+	return projectWithService(composetypes.ServiceConfig{
+		EnvFiles: []composetypes.EnvFile{{Path: path, Required: true}},
+	})
+}
+
+func TestCheckEnvFiles_DenyListRejectsSensitivePaths(t *testing.T) {
+	tests := []string{"/proc/self/environ", "/etc/shadow", "/root/.env", "/home/alice/.ssh/id_rsa", "/var/lib/docker/x.env"}
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			if err := checkDeployPolicy(envFileProject(path), ""); err == nil {
+				t.Fatalf("expected env_file %q to be rejected", path)
+			}
+		})
+	}
+}
+
+func TestCheckEnvFiles_DenyListAllowsOtherPaths(t *testing.T) {
+	for _, path := range []string{"/deployments/app/.env", "/srv/app/.env.prod", "/data/app.env"} {
+		t.Run(path, func(t *testing.T) {
+			if err := checkDeployPolicy(envFileProject(path), ""); err != nil {
+				t.Fatalf("expected env_file %q to be allowed, got: %v", path, err)
+			}
+		})
+	}
+}
+
+func TestCheckEnvFiles_RestrictDirOnlyAllowsInside(t *testing.T) {
+	for _, path := range []string{"/deployments/app/.env", "/deployments/.env"} {
+		if err := checkDeployPolicy(envFileProject(path), "/deployments"); err != nil {
+			t.Fatalf("expected env_file %q to be allowed, got: %v", path, err)
+		}
+	}
+	for _, path := range []string{"/data/app.env", "/proc/self/environ", "/deploymentsbutnotquite/.env"} {
+		if err := checkDeployPolicy(envFileProject(path), "/deployments"); err == nil {
+			t.Fatalf("expected env_file %q to be rejected", path)
+		}
+	}
+}
+
+func TestCheckEnvFiles_ResolvesLoadedComposePaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("path resolution is OS-native; only meaningful on a Unix-like runner matching production")
+	}
+	tests := map[string]struct {
+		envFile    string
+		wantReject bool
+	}{
+		"string":          {"env_file: .env.app", false},
+		"list":            {"env_file:\n      - .env.app", false},
+		"optional":        {"env_file:\n      - path: missing.env\n        required: false", false},
+		"traversal":       {"env_file: ../../other/.env", true},
+		"absolute":        {"env_file: /proc/self/environ", true},
+		"absolute option": {"env_file:\n      - path: /etc/shadow\n        required: false", true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			yaml := "name: demo\nservices:\n  app:\n    image: img:1\n    " + tt.envFile + "\n"
+			project := loadComposeProject(t, "/deployments/demo", yaml)
+			err := checkDeployPolicy(project, "/deployments")
+			if tt.wantReject && err == nil {
+				t.Fatal("expected env_file to be rejected")
+			}
+			if !tt.wantReject && err != nil {
+				t.Fatalf("expected env_file to be allowed, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_RejectsVolumeDriverOpts(t *testing.T) {
+	project := &composetypes.Project{
+		Services: composetypes.Services{"app": composetypes.ServiceConfig{}},
+		Volumes: composetypes.Volumes{
+			"host": composetypes.VolumeConfig{
+				Driver:     "local",
+				DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/"},
+			},
+		},
+	}
+	if err := checkDeployPolicy(project, ""); err == nil {
+		t.Fatal("expected volume driver_opts to be rejected")
+	}
+}
+
+func TestCheckDeployPolicy_AllowsVolumeWithoutDriverOpts(t *testing.T) {
+	project := &composetypes.Project{
+		Services: composetypes.Services{"app": composetypes.ServiceConfig{}},
+		Volumes:  composetypes.Volumes{"data": composetypes.VolumeConfig{}},
+	}
+	if err := checkDeployPolicy(project, ""); err != nil {
+		t.Fatalf("expected plain named volume to be allowed, got: %v", err)
+	}
+}
+
+func TestCheckDeployPolicy_RejectsDockerDataDirs(t *testing.T) {
+	tests := []string{"/var/lib/docker", "/var/lib/docker/volumes", "/var/lib/containerd"}
+	for _, source := range tests {
+		t.Run(source, func(t *testing.T) {
+			svc := composetypes.ServiceConfig{
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{Type: composetypes.VolumeTypeBind, Source: source, Target: "/mnt"},
+				},
+			}
+			if err := checkDeployPolicy(projectWithService(svc), ""); err == nil {
+				t.Fatalf("expected bind mount of %q to be rejected", source)
 			}
 		})
 	}

@@ -44,12 +44,14 @@ var sensitiveHostPaths = []string{
 	"/run",
 	"/var/run/docker.sock",
 	"/run/docker.sock",
+	"/var/lib/docker",
+	"/var/lib/containerd",
 }
 
-// dangerous security_opt values
-var unsafeSecurityOpts = map[string]struct{}{
-	"seccomp:unconfined":  {},
-	"apparmor:unconfined": {},
+// security_opt keys that are harmless to set. Every other key (seccomp, apparmor,
+// label, systempaths, ...) can weaken container isolation and is rejected.
+var allowedSecurityOptKeys = map[string]struct{}{
+	"no-new-privileges": {},
 }
 
 // Top-level directories under which sensitivePathComponents is checked.
@@ -91,6 +93,7 @@ func checkDeployPolicy(project *composetypes.Project, restrictMountsDir string) 
 	for name, svc := range project.Services {
 		violations = append(violations, checkServicePolicy(name, svc, restrictMountsDir)...)
 	}
+	violations = append(violations, checkVolumeDefinitions(project)...)
 	if len(violations) == 0 {
 		return nil
 	}
@@ -106,7 +109,38 @@ func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rest
 	violations = append(violations, checkBindMounts(serviceName, svc, restrictMountsDir)...)
 	violations = append(violations, checkDevices(serviceName, svc)...)
 	violations = append(violations, checkSecurityOpt(serviceName, svc)...)
+	violations = append(violations, checkVolumesFrom(serviceName, svc)...)
+	violations = append(violations, checkDeviceCgroupRules(serviceName, svc)...)
+	violations = append(violations, checkEnvFile(serviceName, svc, restrictMountsDir)...)
 	return violations
+}
+
+// Top-level volumes with driver_opts (e.g. type=none, o=bind, device=/) are a
+// bind mount in disguise and bypass the bind mount checks.
+func checkVolumeDefinitions(project *composetypes.Project) []error {
+	var violations []error
+	for name, vol := range project.Volumes {
+		if len(vol.DriverOpts) > 0 {
+			violations = append(violations, fmt.Errorf("volume %q: driver_opts are not allowed", name))
+		}
+	}
+	return violations
+}
+
+// volumes_from can inherit the mounts of any container on the host, including
+// the agent's Docker socket.
+func checkVolumesFrom(serviceName string, svc composetypes.ServiceConfig) []error {
+	if len(svc.VolumesFrom) > 0 {
+		return []error{fmt.Errorf("service %q: volumes_from is not allowed", serviceName)}
+	}
+	return nil
+}
+
+func checkDeviceCgroupRules(serviceName string, svc composetypes.ServiceConfig) []error {
+	if len(svc.DeviceCgroupRules) > 0 {
+		return []error{fmt.Errorf("service %q: device_cgroup_rules are not allowed", serviceName)}
+	}
+	return nil
 }
 
 func checkPrivileged(serviceName string, svc composetypes.ServiceConfig) []error {
@@ -174,17 +208,42 @@ func checkBindMounts(serviceName string, svc composetypes.ServiceConfig, restric
 			}
 			continue
 		}
-		if underSensitiveComponentRoot(vol.Source) {
-			if component, sensitive := checkForSensitivePathComponent(vol.Source); sensitive {
-				violations = append(violations, fmt.Errorf("service %q: bind mount source %q contains sensitive path component %q", serviceName, vol.Source, component))
-				continue
-			}
+		if reason := sensitivePathReason(vol.Source); reason != "" {
+			violations = append(violations, fmt.Errorf("service %q: bind mount source %q %s", serviceName, vol.Source, reason))
 		}
-		for _, denied := range sensitiveHostPaths {
-			if vol.Source == denied || strings.HasPrefix(vol.Source, denied+"/") {
-				violations = append(violations, fmt.Errorf("service %q: bind mount of sensitive host path %q is not allowed", serviceName, vol.Source))
-				break
+	}
+	return violations
+}
+
+// sensitivePathReason returns why a path is on the deny-list, or "" if it is not.
+func sensitivePathReason(source string) string {
+	if underSensitiveComponentRoot(source) {
+		if component, sensitive := checkForSensitivePathComponent(source); sensitive {
+			return fmt.Sprintf("contains sensitive path component %q", component)
+		}
+	}
+	for _, denied := range sensitiveHostPaths {
+		if source == denied || strings.HasPrefix(source, denied+"/") {
+			return fmt.Sprintf("is under sensitive host path %q, which is not allowed", denied)
+		}
+	}
+	return ""
+}
+
+// checkEnvFile applies the same rules as checkBindMounts to env_file, since it
+// is read from the agent's filesystem (e.g. /proc/self/environ holds the
+// agent's token).
+func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
+	var violations []error
+	for _, envFile := range svc.EnvFiles {
+		if restrictMountsDir != "" {
+			if err := utils.IsPathWithinBase(restrictMountsDir, envFile.Path); err != nil {
+				violations = append(violations, fmt.Errorf("service %q: env_file %q is not inside the agent's deployment directory %q", serviceName, envFile.Path, restrictMountsDir))
 			}
+			continue
+		}
+		if reason := sensitivePathReason(envFile.Path); reason != "" {
+			violations = append(violations, fmt.Errorf("service %q: env_file %q %s", serviceName, envFile.Path, reason))
 		}
 	}
 	return violations
@@ -221,9 +280,9 @@ func checkDevices(serviceName string, svc composetypes.ServiceConfig) []error {
 func checkSecurityOpt(serviceName string, svc composetypes.ServiceConfig) []error {
 	var violations []error
 	for _, opt := range svc.SecurityOpt {
-		normalized := strings.ToLower(strings.TrimSpace(opt))
-		normalized = strings.Replace(normalized, "=", ":", 1)
-		if _, unsafe := unsafeSecurityOpts[normalized]; unsafe {
+		key, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(opt)), "=")
+		key, _, _ = strings.Cut(key, ":")
+		if _, allowed := allowedSecurityOptKeys[key]; !allowed {
 			violations = append(violations, fmt.Errorf("service %q: security_opt %q is not allowed", serviceName, opt))
 		}
 	}
