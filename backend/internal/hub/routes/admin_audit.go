@@ -1,9 +1,10 @@
 package routes
 
 import (
-	"fmt"
+	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -14,11 +15,8 @@ import (
 
 const defaultAuditLogLimit = 20
 
-var auditLogSearchCondition = fmt.Sprintf(
-	`(%s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\' OR target_id LIKE @text ESCAPE '\'`+
-		` OR user_id IN (SELECT id FROM users WHERE name LIKE @text ESCAPE '\' OR email LIKE @text ESCAPE '\'))`,
-	enumSearchColumn("event_type"), enumSearchColumn("target_type"),
-)
+const auditLogSearchCondition = "(event_type LIKE @search OR target_type LIKE @search OR target_id LIKE @search" +
+	" OR user_id IN (SELECT id FROM users WHERE name LIKE @search OR email LIKE @search))"
 
 type auditLogResponse struct {
 	Id         string             `json:"id"`
@@ -47,8 +45,8 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 	}
 
 	query := gorm.G[models.AuditLog](db.DB).Order("created_at DESC")
-	if search, ok := searchQuery(c); ok {
-		query = query.Where(auditLogSearchCondition, map[string]any{"text": search.Text, "enum": search.Enum})
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		query = query.Where(auditLogSearchCondition, sql.Named("search", "%"+search+"%"))
 	}
 
 	query = query.

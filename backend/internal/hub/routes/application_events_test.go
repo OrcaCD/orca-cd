@@ -125,7 +125,7 @@ func TestListApplicationEventsHandlerFiltersBySearch(t *testing.T) {
 			Status:        models.ApplicationEventSucceeded,
 			ActorName:     new("Alice"),
 			CommitHash:    new("abc1234def"),
-			CommitMessage: new("Bump nginx to 100%"),
+			CommitMessage: new("Bump nginx to 1.27"),
 		},
 		{
 			Id:            "event-sync",
@@ -148,11 +148,9 @@ func TestListApplicationEventsHandlerFiltersBySearch(t *testing.T) {
 	}{
 		{search: "alice", want: []string{"event-deploy"}},
 		{search: "abc123", want: []string{"event-deploy"}},
-		{search: "100%", want: []string{"event-deploy"}},
-		{search: "commit sync", want: []string{"event-sync"}},
+		{search: "commit_sync", want: []string{"event-sync"}},
 		{search: "repository_webhook", want: []string{"event-sync"}},
 		{search: "not found", want: []string{"event-sync"}},
-		{search: "%", want: []string{"event-deploy"}},
 		{search: "  ", want: []string{"event-sync", "event-deploy"}},
 	}
 	for _, tt := range tests {

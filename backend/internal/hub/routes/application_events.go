@@ -1,10 +1,11 @@
 package routes
 
 import (
+	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -22,12 +23,8 @@ const (
 
 var applicationEventsLog = logger.New("application-events", false)
 
-var applicationEventSearchCondition = fmt.Sprintf(
-	`(%s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\' OR %s LIKE @enum ESCAPE '\'`+
-		` OR actor_name LIKE @text ESCAPE '\' OR commit_hash LIKE @text ESCAPE '\'`+
-		` OR commit_message LIKE @text ESCAPE '\' OR error_message LIKE @text ESCAPE '\')`,
-	enumSearchColumn("type"), enumSearchColumn("source"), enumSearchColumn("status"),
-)
+const applicationEventSearchCondition = "(type LIKE @search OR source LIKE @search OR status LIKE @search" +
+	" OR actor_name LIKE @search OR commit_hash LIKE @search OR commit_message LIKE @search OR error_message LIKE @search)"
 
 type applicationEventResponse struct {
 	Id            string  `json:"id"`
@@ -67,8 +64,8 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	}
 
 	query := gorm.G[models.ApplicationEvent](db.DB).Where("application_id = ?", applicationID)
-	if search, ok := searchQuery(c); ok {
-		query = query.Where(applicationEventSearchCondition, map[string]any{"text": search.Text, "enum": search.Enum})
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		query = query.Where(applicationEventSearchCondition, sql.Named("search", "%"+search+"%"))
 	}
 
 	events, err := query.

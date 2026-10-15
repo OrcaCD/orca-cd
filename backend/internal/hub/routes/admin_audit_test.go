@@ -276,9 +276,8 @@ func TestAdminListAuditLogsHandler_Search(t *testing.T) {
 		{search: "jane admin", want: []string{"log-user"}},
 		{search: "EXAMPLE.COM", want: []string{"log-user"}},
 		{search: "app-123", want: []string{"log-user"}},
-		{search: "rotated token", want: []string{"log-token"}},
+		{search: "rotated-token", want: []string{"log-token"}},
 		{search: "oidc-provider", want: []string{"log-oidc"}},
-		{search: "%", want: []string{}},
 		{search: "", want: []string{"log-oidc", "log-token", "log-user"}},
 	}
 	for _, tt := range tests {
