@@ -36,9 +36,14 @@ const AGENT_NAME = "E2E Deploy Agent";
 const REPO = "e2e/deploy-main";
 const CASCADE_REPO = "e2e/deploy-cascade";
 const OFFLINE_REPO = "e2e/deploy-offline";
+const MOVE_REPO = "e2e/deploy-move";
 const APP_NAME = "E2E Deploy App";
 const CASCADE_APP_NAME = "E2E Cascade App";
 const OFFLINE_APP_NAME = "E2E Offline App";
+const MOVE_APP_NAME = "E2E Move App";
+const RENAMED_APP_NAME = "E2E Moved App";
+const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
+const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
 function composeFile(version: number, image = IMAGE) {
@@ -65,6 +70,8 @@ let repo: ApiRepository;
 let appId = "";
 let cascadeAppId = "";
 let offlineAppId = "";
+let moveAppId = "";
+let moveTargetAgent: ApiAgent | undefined;
 // The compose project the agent derived from the application name, read from its containers
 let project = "";
 let containerId = "";
@@ -102,12 +109,16 @@ test.afterAll(async ({ browser }) => {
 	const context = await newAuthenticatedContext(browser);
 	try {
 		const page = await context.newPage();
+		// Never connected, so it can't undeploy, deleting it removes its applications
+		if (moveTargetAgent) {
+			await api(page, "DELETE", `/agents/${moveTargetAgent.id}`);
+		}
 		// Deleting through the hub lets the agent clean up, the rest is the fallback
 		for (const application of await listApplications(page)) {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO, OFFLINE_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -120,6 +131,7 @@ test.afterAll(async ({ browser }) => {
 		removeApplicationContainers(appId);
 		removeApplicationContainers(cascadeAppId);
 		removeApplicationContainers(offlineAppId);
+		removeApplicationContainers(moveAppId);
 	}
 });
 
@@ -600,6 +612,81 @@ test.describe("Runtime health", () => {
 
 		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
 		await expect(healthBadge(page, "Stopped")).toHaveCount(0);
+	});
+});
+
+test.describe("Move and rename", () => {
+	const deployPrompt = (page: Page) =>
+		page.locator("[data-slot='toast']", { hasText: DEPLOY_PROMPT });
+
+	async function openGeneralSettings(page: Page, name: string) {
+		await page.goto(`/applications/${moveAppId}/settings/general`);
+		// The form is filled once the application has loaded
+		await expect(page.locator("#name")).toHaveValue(name);
+	}
+
+	test("renaming the application removes the old compose project", async ({ page }) => {
+		({ appId: moveAppId } = await deployInSeparateRepository(page, MOVE_REPO, MOVE_APP_NAME));
+		const oldProject = composeProject(moveAppId)!;
+		expect(oldProject).toBe("e2e-move-app");
+		expect(deploymentDirExists(oldProject)).toBe(true);
+
+		await openGeneralSettings(page, MOVE_APP_NAME);
+		await page.locator("#name").fill(RENAMED_APP_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+
+		// The hub answers after the agent removed the old project
+		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
+		expect(appContainers(moveAppId)).toHaveLength(0);
+		expect(deploymentDirExists(oldProject)).toBe(false);
+
+		await deployPrompt(page).getByRole("button", { name: "Deploy" }).click();
+		await expect(page.getByText("Deployment started")).toBeVisible();
+		await waitForApplication(
+			page,
+			moveAppId,
+			(app) =>
+				app.name === RENAMED_APP_NAME &&
+				app.syncStatus === "synced" &&
+				app.healthStatus === "healthy",
+		);
+		await expect.poll(() => appContainers(moveAppId).length, { timeout: 30_000 }).toBe(1);
+		const newProject = composeProject(moveAppId)!;
+		expect(newProject).toBe("e2e-moved-app");
+		expect(deploymentDirExists(newProject)).toBe(true);
+		expect(deploymentDirExists(oldProject)).toBe(false);
+	});
+
+	test("moving the application to another agent removes it from the old one", async ({ page }) => {
+		const created = await api(page, "POST", "/agents", { name: MOVE_TARGET_AGENT_NAME });
+		expect(created.status).toBe(201);
+		moveTargetAgent = created.body as ApiAgent;
+		const project = composeProject(moveAppId)!;
+
+		await openGeneralSettings(page, RENAMED_APP_NAME);
+		await selectOption(page, page.locator("#agent-select"), MOVE_TARGET_AGENT_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+
+		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
+		expect((await getApplication(page, moveAppId)).agentId).toBe(moveTargetAgent.id);
+		expect(appContainers(moveAppId)).toHaveLength(0);
+		expect(deploymentDirExists(project)).toBe(false);
+
+		// The target agent never connected, so it can't undeploy and moving back is blocked
+		await openGeneralSettings(page, RENAMED_APP_NAME);
+		await selectOption(page, page.locator("#agent-select"), AGENT_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+		await expect(page.getByText(/agent is offline; cannot move or rename application/)).toBeVisible(
+			{
+				timeout: 30_000,
+			},
+		);
+		expect((await getApplication(page, moveAppId)).agentId).toBe(moveTargetAgent.id);
+
+		// Deleting the agent removes its applications
+		expect((await api(page, "DELETE", `/agents/${moveTargetAgent.id}`)).status).toBe(200);
+		moveTargetAgent = undefined;
+		expect((await api(page, "GET", `/applications/${moveAppId}`)).status).toBe(404);
 	});
 });
 

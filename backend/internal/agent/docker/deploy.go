@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -62,28 +61,6 @@ type DeleteRequest struct {
 }
 
 // converts an application name to a valid Docker Compose project name
-func normalizeProjectName(name string) (string, error) {
-	var b strings.Builder
-	for _, r := range strings.ToLower(name) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
-			b.WriteRune(r)
-		} else {
-			b.WriteRune('-')
-		}
-	}
-	result := b.String()
-	for strings.Contains(result, "--") {
-		result = strings.ReplaceAll(result, "--", "-")
-	}
-	result = strings.Trim(result, "-")
-	// Docker project names must start with a letter or digit, not an underscore.
-	result = strings.TrimLeft(result, "_")
-	if result == "" {
-		return "", fmt.Errorf("application name %q cannot be normalized to a valid project name", name)
-	}
-	return result, nil
-}
-
 func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	defer c.observeApplicationHealth(req.ApplicationID)
 
@@ -109,7 +86,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("invalid application name: %w", err)
 	}
 
-	projectName, err := normalizeProjectName(req.ApplicationName)
+	projectName, err := utils.NormalizeProjectName(req.ApplicationName)
 	if err != nil {
 		return err
 	}
@@ -209,7 +186,7 @@ func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
 		return fmt.Errorf("invalid application name: %w", err)
 	}
 
-	projectName, err := normalizeProjectName(req.ApplicationName)
+	projectName, err := utils.NormalizeProjectName(req.ApplicationName)
 	if err != nil {
 		return err
 	}
