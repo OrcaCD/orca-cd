@@ -264,6 +264,38 @@ func TestListApplicationsHandler_ReturnsSummaryFields(t *testing.T) {
 	if item["agentName"] != "agent-summary" {
 		t.Errorf("expected agentName %q, got %v", "agent-summary", item["agentName"])
 	}
+	if item["agentId"] != agent.Id {
+		t.Errorf("expected agentId %q, got %v", agent.Id, item["agentId"])
+	}
+	if _, ok := item["lastSyncError"]; ok {
+		t.Errorf("expected lastSyncError to be omitted, got %v", item["lastSyncError"])
+	}
+}
+
+func TestListApplicationsHandler_IncludesLastSyncError(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-sync-error")
+	agent := seedTestAgent(t, "agent-sync-error")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Failing App")
+	if _, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", app.Id).
+		Update(t.Context(), "last_sync_error", "pull access denied"); err != nil {
+		t.Fatalf("set last sync error: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications", nil)
+
+	ListApplicationsHandler(c)
+
+	var body []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body) != 1 || body[0]["lastSyncError"] != "pull access denied" {
+		t.Fatalf("expected lastSyncError in list response, got %v", body)
+	}
 }
 
 func TestGetApplicationHandler_NotFound(t *testing.T) {

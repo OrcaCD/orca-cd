@@ -1,38 +1,10 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-	ApplicationEventSource,
-	ApplicationEventType,
-	type ApplicationEvent,
-} from "@/lib/application-events";
+import { eventSourceLabel, eventTypeLabel, type ApplicationEvent } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { applicationEventsTableFeatures } from "./table-features";
-
-const typeLabels: Record<ApplicationEventType, () => string> = {
-	[ApplicationEventType.Deployment]: () => m.eventTypeDeployment(),
-	[ApplicationEventType.CommitSync]: () => m.eventTypeCommitSync(),
-	[ApplicationEventType.ImageUpdate]: () => m.eventTypeImageUpdate(),
-};
-
-const sourceLabels: Record<ApplicationEventSource, () => string> = {
-	[ApplicationEventSource.Manual]: () => m.eventSourceManual(),
-	[ApplicationEventSource.ApplicationCreated]: () => m.eventSourceApplicationCreated(),
-	[ApplicationEventSource.RepositoryPolling]: () => m.eventSourceRepositoryPolling(),
-	[ApplicationEventSource.RepositoryWebhook]: () => m.eventSourceRepositoryWebhook(),
-	[ApplicationEventSource.GitHubActions]: () => m.eventSourceGitHubActions(),
-	[ApplicationEventSource.ImagePolling]: () => m.eventSourceImagePolling(),
-	[ApplicationEventSource.ImageWebhook]: () => m.eventSourceImageWebhook(),
-};
-
-function typeLabel(type: ApplicationEventType): string {
-	return typeLabels[type]?.() ?? type;
-}
-
-function sourceLabel(source: ApplicationEventSource): string {
-	return sourceLabels[source]?.() ?? source;
-}
 
 export const columns: ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[] = [
 	{
@@ -51,8 +23,10 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 		header: () => m.applicationHistoryTrigger(),
 		cell: ({ row }) => (
 			<div>
-				<div className="font-medium">{typeLabel(row.original.type)}</div>
-				<span className="text-xs text-muted-foreground">{sourceLabel(row.original.source)}</span>
+				<div className="font-medium">{eventTypeLabel(row.original.type)}</div>
+				<span className="text-xs text-muted-foreground">
+					{eventSourceLabel(row.original.source)}
+				</span>
 			</div>
 		),
 	},
@@ -64,7 +38,7 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 			if (actorName) {
 				return <span>{actorName}</span>;
 			}
-			return <span className="text-muted-foreground">{sourceLabel(source)}</span>;
+			return <span className="text-muted-foreground">{eventSourceLabel(source)}</span>;
 		},
 	},
 	{

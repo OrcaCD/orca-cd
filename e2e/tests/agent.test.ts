@@ -1,6 +1,7 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { APP_URL, HUB_WS_URL } from "./const.ts";
 import { api } from "./helpers/api.ts";
+import { gotoApp } from "./helpers/navigation.ts";
 import { newAuthenticatedContext } from "./helpers/setup.ts";
 import {
 	agentHealthcheck,
@@ -120,7 +121,7 @@ test.describe("Agent with invalid configuration", () => {
 
 test.describe("Agent setup", () => {
 	test("add agent in the UI", async ({ page }) => {
-		await page.goto("/agents");
+		await gotoApp(page, "/agents");
 
 		await page.getByRole("button", { name: "Add Agent" }).click();
 		const dialog = page.getByRole("dialog");

@@ -82,8 +82,18 @@ func create(
 		return nil, err
 	}
 
-	sse.PublishUpdate(sse.TopicApplicationEvents(p.ApplicationID))
+	publishUpdate(p.ApplicationID, status)
 	return &event, nil
+}
+
+// publishUpdate skips the activity topic for no_change events, as the
+// activity endpoint never includes them.
+func publishUpdate(applicationID string, status models.ApplicationEventStatus) {
+	if status == models.ApplicationEventNoChange {
+		sse.PublishUpdate(sse.TopicApplicationEvents(applicationID))
+		return
+	}
+	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity)
 }
 
 func deleteEventsOverLimit(tx *gorm.DB, applicationID string) error {
@@ -126,7 +136,7 @@ func Complete(
 		return false, nil
 	}
 
-	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID))
+	publishUpdate(applicationID, status)
 	return true, nil
 }
 
