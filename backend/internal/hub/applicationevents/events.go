@@ -82,14 +82,14 @@ func create(
 		return nil, err
 	}
 
-	publishUpdate(p.ApplicationID, status)
+	// The activity endpoint never includes no_change events, so recording one
+	// does not change it.
+	publishUpdate(p.ApplicationID, status != models.ApplicationEventNoChange)
 	return &event, nil
 }
 
-// publishUpdate skips the activity topic for no_change events, as the
-// activity endpoint never includes them.
-func publishUpdate(applicationID string, status models.ApplicationEventStatus) {
-	if status == models.ApplicationEventNoChange {
+func publishUpdate(applicationID string, includeActivity bool) {
+	if !includeActivity {
 		sse.PublishUpdate(sse.TopicApplicationEvents(applicationID))
 		return
 	}
@@ -136,7 +136,9 @@ func Complete(
 		return false, nil
 	}
 
-	publishUpdate(applicationID, status)
+	// Always refresh activity here, even for no_change: the running event was
+	// listed there and has to disappear.
+	publishUpdate(applicationID, true)
 	return true, nil
 }
 
