@@ -37,7 +37,7 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 
 | Tool                           | Version       | Purpose         |
 | ------------------------------ | ------------- | --------------- |
-| [Node.js](https://nodejs.org/) | 24.x or 25.x  | Runtime         |
+| [Node.js](https://nodejs.org/) | 26.x          | Runtime         |
 | [pnpm](https://pnpm.io/)       | 11.x or newer | Package manager |
 
 ### Setting up the development environment
