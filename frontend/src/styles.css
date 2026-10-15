@@ -133,6 +133,7 @@
 }
 
 .shiki {
+  @apply w-max min-w-full;
   counter-reset: step;
   counter-increment: step 0;
   .tab,
@@ -157,7 +158,7 @@
     }
     &.highlighted,
     &.diff {
-      @apply -mr-5 -ml-4 inline-block w-[calc(100%+(--spacing(5)+(--spacing(4))))] pr-5 pl-4;
+      @apply -mx-4 inline-block w-[calc(100%+(--spacing(8)))] px-4;
     }
     &.highlighted {
       @apply border-neutral-500 bg-neutral-800;
