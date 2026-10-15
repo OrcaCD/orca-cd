@@ -132,7 +132,7 @@ func loadComposeProject(t *testing.T, workingDir, yaml string) *composetypes.Pro
 		ConfigFiles: []composetypes.ConfigFile{
 			{Filename: "compose.yaml", Content: []byte(yaml)},
 		},
-	})
+	}, func(o *loader.Options) { o.SkipResolveEnvironment = true })
 	if err != nil {
 		t.Fatalf("failed to load compose project: %v", err)
 	}
