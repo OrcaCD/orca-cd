@@ -15,6 +15,7 @@ import {
 	ItemTitle,
 } from "@/components/ui/item";
 import { deployApplication } from "@/lib/applications";
+import { AgentStatus } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
 import { fleetCategoryConfig, type AttentionItem } from "@/lib/fleet";
@@ -51,7 +52,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
 }
 
 function AttentionRow({ item }: { item: AttentionItem }) {
-	const { app, category, reason, agentOnline } = item;
+	const { app, category, reason, agentStatus } = item;
 	const [deploying, setDeploying] = useState(false);
 	const config = fleetCategoryConfig[category];
 
@@ -91,7 +92,7 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 				</ItemDescription>
 			</ItemContent>
 			<ItemActions>
-				{app.lastSyncError && agentOnline ? (
+				{app.lastSyncError && agentStatus === AgentStatus.Online ? (
 					<Button variant="outline" size="sm" disabled={deploying} onClick={handleRetry}>
 						<RotateCw className={cn(deploying && "animate-spin")} />
 						{m.applicationsAttentionRetry()}

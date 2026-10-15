@@ -11,7 +11,7 @@ var (
 	TopicAgents       = Topic{apiPrefix + "/agents"}
 	TopicApplications = Topic{apiPrefix + "/applications"}
 	// TopicApplicationActivity is the cross-application deployment summary, which
-	// changes with every recorded or completed application event.
+	// changes with every recorded or completed application event except no_change.
 	TopicApplicationActivity = Topic{apiPrefix + "/applications/activity"}
 	TopicRepositories        = Topic{apiPrefix + "/repositories"}
 	TopicNotifications       = Topic{apiPrefix + "/notifications"}

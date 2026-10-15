@@ -122,16 +122,30 @@ func TestApplicationActivityHandlerBucketsByUTCOffset(t *testing.T) {
 	todayUTC := time.Now().UTC().Truncate(24 * time.Hour)
 	seedActivityEvent(t, app.Id, models.ApplicationEventSucceeded, todayUTC.Add(-30*time.Minute))
 
+	// Compare by date instead of position, since "today" at UTC+01:00 is
+	// already the next day between 23:00 and 24:00 UTC.
 	_, utcResponse := invokeApplicationActivityHandler(t, "?utcOffset=0")
-	if day := utcResponse.Days[len(utcResponse.Days)-2]; day.Succeeded != 1 {
-		t.Fatalf("expected event yesterday in UTC, got %+v", utcResponse.Days)
+	yesterday := todayUTC.AddDate(0, 0, -1).Format(time.DateOnly)
+	if day := findActivityDay(t, utcResponse.Days, yesterday); day.Succeeded != 1 {
+		t.Fatalf("expected event on %s in UTC, got %+v", yesterday, utcResponse.Days)
 	}
 
 	_, shiftedResponse := invokeApplicationActivityHandler(t, "?utcOffset=60")
-	last := shiftedResponse.Days[len(shiftedResponse.Days)-1]
-	if last.Succeeded != 1 {
-		t.Fatalf("expected event today at UTC+01:00, got %+v", shiftedResponse.Days)
+	today := todayUTC.Format(time.DateOnly)
+	if day := findActivityDay(t, shiftedResponse.Days, today); day.Succeeded != 1 {
+		t.Fatalf("expected event on %s at UTC+01:00, got %+v", today, shiftedResponse.Days)
 	}
+}
+
+func findActivityDay(t *testing.T, days []applicationActivityDay, date string) applicationActivityDay {
+	t.Helper()
+	for _, day := range days {
+		if day.Date == date {
+			return day
+		}
+	}
+	t.Fatalf("expected %s in activity days, got %+v", date, days)
+	return applicationActivityDay{}
 }
 
 func TestApplicationActivityHandlerReturnsRecentDeployments(t *testing.T) {

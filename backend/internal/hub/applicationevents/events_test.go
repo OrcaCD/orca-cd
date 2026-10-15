@@ -5,12 +5,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -149,6 +152,38 @@ func TestStartAndCompleteCorrelatesRequestAndApplication(t *testing.T) {
 	}
 	if got.Status != models.ApplicationEventSucceeded || got.CompletedAt == nil {
 		t.Fatalf("event not completed: %+v", got)
+	}
+}
+
+func TestNoChangeEventsSkipActivityTopic(t *testing.T) {
+	app, _ := setupEventTestDB(t)
+	logger := zerolog.Nop()
+	previousBroker := sse.DefaultBroker
+	sse.DefaultBroker = sse.NewBroker(&logger)
+	t.Cleanup(func() { sse.DefaultBroker = previousBroker })
+	connID, updates := sse.DefaultBroker.Subscribe()
+	t.Cleanup(func() { sse.DefaultBroker.Unsubscribe(connID) })
+
+	params := Params{
+		ApplicationID: app.Id,
+		Type:          models.ApplicationEventCommitSync,
+		Source:        models.ApplicationEventSourceRepositoryPolling,
+	}
+	eventsURL := sse.TopicApplicationEvents(app.Id).URL()
+	activityURL := sse.TopicApplicationActivity.URL()
+	for _, tc := range []struct {
+		status models.ApplicationEventStatus
+		want   []string
+	}{
+		{models.ApplicationEventNoChange, []string{eventsURL}},
+		{models.ApplicationEventSucceeded, []string{eventsURL, activityURL}},
+	} {
+		if _, err := RecordCompleted(t.Context(), params, tc.status, nil); err != nil {
+			t.Fatalf("RecordCompleted(%s): %v", tc.status, err)
+		}
+		if got := (<-updates).URLs; !slices.Equal(got, tc.want) {
+			t.Fatalf("%s published %v, want %v", tc.status, got, tc.want)
+		}
 	}
 }
 

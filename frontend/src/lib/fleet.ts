@@ -79,7 +79,7 @@ export interface AttentionItem {
 	app: ApplicationListItem;
 	category: FleetCategory;
 	reason: string;
-	agentOnline: boolean;
+	agentStatus: AgentStatus;
 }
 
 export function getAttentionItems(
@@ -88,29 +88,34 @@ export function getAttentionItems(
 ): AttentionItem[] {
 	// Until agents are loaded, treat them as online so apps are not flagged
 	// as unreachable for a moment.
-	const offlineAgentIds = new Set(
-		agents?.filter((agent) => agent.status !== AgentStatus.Online).map((agent) => agent.id),
-	);
+	const agentStatuses = new Map(agents?.map((agent) => [agent.id, agent.status]));
 
 	const items: AttentionItem[] = [];
 	for (const app of apps) {
 		const category = getFleetCategory(app);
-		const agentOnline = !offlineAgentIds.has(app.agentId);
-		if (category !== "unhealthy" && category !== "outOfSync" && !app.lastSyncError && agentOnline) {
+		const agentStatus = agentStatuses.get(app.agentId) ?? AgentStatus.Online;
+		if (
+			category !== "unhealthy" &&
+			category !== "outOfSync" &&
+			!app.lastSyncError &&
+			agentStatus === AgentStatus.Online
+		) {
 			continue;
 		}
 
 		let reason: string;
 		if (app.lastSyncError) {
 			reason = app.lastSyncError;
-		} else if (!agentOnline) {
+		} else if (agentStatus === AgentStatus.Offline) {
 			reason = m.applicationsAttentionAgentOffline({ agent: app.agentName });
+		} else if (agentStatus === AgentStatus.Error) {
+			reason = m.applicationsAttentionAgentError({ agent: app.agentName });
 		} else if (category === "unhealthy") {
 			reason = m.applicationsAttentionUnhealthy();
 		} else {
 			reason = m.applicationsAttentionOutOfSync();
 		}
-		items.push({ app, category, reason, agentOnline });
+		items.push({ app, category, reason, agentStatus });
 	}
 
 	return items.sort(

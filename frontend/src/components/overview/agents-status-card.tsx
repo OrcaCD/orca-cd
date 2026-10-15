@@ -6,12 +6,13 @@ import { AgentStatus, type Agent } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
-const maxListedOfflineAgents = 2;
+const maxListedUnavailableAgents = 2;
 
 export function AgentsStatusCard({ agents }: { agents: Agent[] | undefined }) {
 	const online = agents?.filter((agent) => agent.status === AgentStatus.Online).length ?? 0;
 	const total = agents?.length ?? 0;
-	const offlineAgents = agents?.filter((agent) => agent.status !== AgentStatus.Online) ?? [];
+	// Offline agents and agents that cannot reach Docker both block deployments.
+	const unavailableAgents = agents?.filter((agent) => agent.status !== AgentStatus.Online) ?? [];
 
 	return (
 		<Card>
@@ -26,7 +27,8 @@ export function AgentsStatusCard({ agents }: { agents: Agent[] | undefined }) {
 							<span
 								className={cn(
 									"text-2xl font-bold",
-									offlineAgents.length > 0 && (online === 0 ? "text-red-400" : "text-amber-400"),
+									unavailableAgents.length > 0 &&
+										(online === 0 ? "text-red-400" : "text-amber-400"),
 								)}
 							>
 								{online}
@@ -35,31 +37,35 @@ export function AgentsStatusCard({ agents }: { agents: Agent[] | undefined }) {
 								{m.applicationsAgentsOnline({ total })}
 							</span>
 						</div>
-						{offlineAgents.length === 0 ? (
+						{unavailableAgents.length === 0 ? (
 							<p className="flex items-center gap-1.5 text-xs text-emerald-400">
 								<CircleCheck className="size-3.5" />
 								{m.applicationsAgentsAllConnected()}
 							</p>
 						) : (
 							<ul className="space-y-1 text-xs text-muted-foreground">
-								{offlineAgents.slice(0, maxListedOfflineAgents).map((agent) => (
+								{unavailableAgents.slice(0, maxListedUnavailableAgents).map((agent) => (
 									<li key={agent.id}>
 										<Link to="/agents" className="block truncate hover:text-foreground">
 											<span className="font-medium text-foreground">{agent.name}</span>
 											{" · "}
-											{agent.lastSeen
-												? m.applicationsAgentsLastSeen({ time: formatRelativeTime(agent.lastSeen) })
-												: m.applicationsAgentsNeverSeen()}
+											{agent.status === AgentStatus.Error
+												? m.applicationsAgentsDockerUnreachable()
+												: agent.lastSeen
+													? m.applicationsAgentsLastSeen({
+															time: formatRelativeTime(agent.lastSeen),
+														})
+													: m.applicationsAgentsNeverSeen()}
 											{agent.appsCount
 												? ` · ${m.applicationsAgentsAffectedApps({ count: agent.appsCount })}`
 												: null}
 										</Link>
 									</li>
 								))}
-								{offlineAgents.length > maxListedOfflineAgents ? (
+								{unavailableAgents.length > maxListedUnavailableAgents ? (
 									<li>
-										{m.applicationsAgentsMoreOffline({
-											count: offlineAgents.length - maxListedOfflineAgents,
+										{m.applicationsAttentionMore({
+											count: unavailableAgents.length - maxListedUnavailableAgents,
 										})}
 									</li>
 								) : null}
