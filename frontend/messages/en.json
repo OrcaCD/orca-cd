@@ -157,6 +157,7 @@
 	"applicationsAttentionAgentOffline": "Agent {agent} is offline",
 	"applicationsAttentionAgentError": "Agent {agent} cannot reach Docker",
 	"applicationsAttentionUnhealthy": "Containers report an unhealthy state",
+	"applicationsAttentionStopped": "All containers are stopped",
 	"applicationsAttentionOutOfSync": "Not deployed at the latest commit",
 	"applicationsAttentionRetry": "Retry",
 	"manifest": "Manifest",

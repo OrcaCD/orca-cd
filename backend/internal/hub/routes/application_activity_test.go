@@ -36,7 +36,7 @@ func seedActivityEvent(t *testing.T, appID string, status models.ApplicationEven
 func invokeApplicationActivityHandler(t *testing.T, query string) (*httptest.ResponseRecorder, applicationActivityResponse) {
 	t.Helper()
 	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/activity"+query, nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/activity"+query, nil)
 	ApplicationActivityHandler(c)
 
 	var response applicationActivityResponse

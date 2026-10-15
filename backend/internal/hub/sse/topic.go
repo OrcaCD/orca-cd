@@ -10,9 +10,10 @@ const apiPrefix = "/api/v1"
 var (
 	TopicAgents       = Topic{apiPrefix + "/agents"}
 	TopicApplications = Topic{apiPrefix + "/applications"}
-	// TopicApplicationActivity is the cross-application deployment summary, which
-	// changes with every recorded or completed application event except no_change.
-	TopicApplicationActivity = Topic{apiPrefix + "/applications/activity"}
+	// TopicApplicationActivity is the cross-application deployment summary. It
+	// lives outside /applications, because the frontend matches topics by prefix
+	// and every application status report would otherwise refetch it.
+	TopicApplicationActivity = Topic{apiPrefix + "/activity"}
 	TopicRepositories        = Topic{apiPrefix + "/repositories"}
 	TopicNotifications       = Topic{apiPrefix + "/notifications"}
 	TopicAdminUsers          = Topic{apiPrefix + "/admin/users"}

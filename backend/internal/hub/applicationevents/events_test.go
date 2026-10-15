@@ -155,7 +155,7 @@ func TestStartAndCompleteCorrelatesRequestAndApplication(t *testing.T) {
 	}
 }
 
-func TestNoChangeEventsSkipActivityTopic(t *testing.T) {
+func TestActivityTopicSkipsRecordedNoChangeEvents(t *testing.T) {
 	app, _ := setupEventTestDB(t)
 	logger := zerolog.Nop()
 	previousBroker := sse.DefaultBroker
@@ -169,22 +169,38 @@ func TestNoChangeEventsSkipActivityTopic(t *testing.T) {
 		Type:          models.ApplicationEventCommitSync,
 		Source:        models.ApplicationEventSourceRepositoryPolling,
 	}
-	eventsURL := sse.TopicApplicationEvents(app.Id).URL()
-	activityURL := sse.TopicApplicationActivity.URL()
-	for _, tc := range []struct {
-		status models.ApplicationEventStatus
-		want   []string
-	}{
-		{models.ApplicationEventNoChange, []string{eventsURL}},
-		{models.ApplicationEventSucceeded, []string{eventsURL, activityURL}},
-	} {
-		if _, err := RecordCompleted(t.Context(), params, tc.status, nil); err != nil {
-			t.Fatalf("RecordCompleted(%s): %v", tc.status, err)
-		}
-		if got := (<-updates).URLs; !slices.Equal(got, tc.want) {
-			t.Fatalf("%s published %v, want %v", tc.status, got, tc.want)
+	eventsOnly := []string{sse.TopicApplicationEvents(app.Id).URL()}
+	withActivity := []string{sse.TopicApplicationEvents(app.Id).URL(), sse.TopicApplicationActivity.URL()}
+	expectUpdate := func(step string, want []string) {
+		t.Helper()
+		if got := (<-updates).URLs; !slices.Equal(got, want) {
+			t.Fatalf("%s published %v, want %v", step, got, want)
 		}
 	}
+
+	if _, err := RecordCompleted(t.Context(), params, models.ApplicationEventNoChange, nil); err != nil {
+		t.Fatalf("RecordCompleted no_change: %v", err)
+	}
+	expectUpdate("recorded no_change", eventsOnly)
+
+	if _, err := RecordCompleted(t.Context(), params, models.ApplicationEventSucceeded, nil); err != nil {
+		t.Fatalf("RecordCompleted succeeded: %v", err)
+	}
+	expectUpdate("recorded succeeded", withActivity)
+
+	// A running event is part of the activity, so completing it as no_change
+	// still has to refresh it.
+	requestID := "request-no-change"
+	params.RequestID = &requestID
+	if _, err := Start(t.Context(), params); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	expectUpdate("started", withActivity)
+	matched, err := Complete(t.Context(), requestID, app.Id, models.ApplicationEventNoChange, nil)
+	if err != nil || !matched {
+		t.Fatalf("Complete matched=%v err=%v", matched, err)
+	}
+	expectUpdate("completed as no_change", withActivity)
 }
 
 func TestCompleteRejectsWrongApplicationAndDuplicateResult(t *testing.T) {
