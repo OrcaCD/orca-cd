@@ -43,6 +43,7 @@ func TestHandleApplicationStatusReport_UpdatesOnlyReportingAgentApps(t *testing.
 
 	appA := seedAppForAgent(t, "agent-1")
 	appB := seedAppForAgent(t, "agent-1")
+	appC := seedAppForAgent(t, "agent-1")
 	other := seedAppForAgent(t, "agent-2")
 
 	nop := zerolog.Nop()
@@ -52,6 +53,7 @@ func TestHandleApplicationStatusReport_UpdatesOnlyReportingAgentApps(t *testing.
 		Statuses: []*messages.ApplicationStatus{
 			{ApplicationId: appA.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
 			{ApplicationId: appB.Id, Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY},
+			{ApplicationId: appC.Id, Health: messages.HealthStatus_HEALTH_STATUS_STOPPED},
 			// Spoofed: belongs to a different agent — must be ignored.
 			{ApplicationId: other.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
 		},
@@ -62,6 +64,9 @@ func TestHandleApplicationStatusReport_UpdatesOnlyReportingAgentApps(t *testing.
 	}
 	if got := healthOf(t, appB.Id); got != models.Unhealthy {
 		t.Errorf("appB: expected unhealthy, got %q", got)
+	}
+	if got := healthOf(t, appC.Id); got != models.Stopped {
+		t.Errorf("appC: expected stopped, got %q", got)
 	}
 	if got := healthOf(t, other.Id); got != models.UnknownHealth {
 		t.Errorf("other agent's app must be untouched, got %q", got)
@@ -94,6 +99,12 @@ func TestApplyReportedHealth_Transitions(t *testing.T) {
 		{"unknown to healthy", models.UnknownHealth, models.Synced, models.Healthy, "", models.Healthy},
 		{"still healthy", models.Healthy, models.Synced, models.Healthy, "", models.Healthy},
 		{"healthy to unknown", models.Healthy, models.Synced, models.UnknownHealth, "", models.UnknownHealth},
+		{"healthy to stopped", models.Healthy, models.Synced, models.Stopped, models.NotificationEventHealthUnhealthy, models.Stopped},
+		{"healthy to stopped while deploying", models.Healthy, models.Syncing, models.Stopped, "", models.Stopped},
+		{"unknown to stopped after reconnect", models.UnknownHealth, models.Synced, models.Stopped, "", models.Stopped},
+		{"unhealthy to stopped", models.Unhealthy, models.Synced, models.Stopped, "", models.Stopped},
+		{"stopped to unhealthy", models.Stopped, models.Synced, models.Unhealthy, "", models.Unhealthy},
+		{"stopped to healthy", models.Stopped, models.Synced, models.Healthy, models.NotificationEventHealthRecovered, models.Healthy},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

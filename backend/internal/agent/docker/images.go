@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
@@ -59,7 +60,7 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 // was updated.
 func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, deleteOldImages bool) (bool, error) {
 
-	projectName, err := normalizeProjectName(appName)
+	projectName, err := utils.NormalizeProjectName(appName)
 	if err != nil {
 		return false, fmt.Errorf("invalid application name: %w", err)
 	}

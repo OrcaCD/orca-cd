@@ -1,6 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { deleteApplication, updateApplication, type Application } from "@/lib/applications";
+import {
+	deleteApplication,
+	deployApplication,
+	updateApplication,
+	type Application,
+} from "@/lib/applications";
 import { useMemo, useState } from "react";
 import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -49,6 +54,27 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 	}),
 });
 
+// Moving or renaming an application removes it from its agent, so it has to be deployed again
+function affectsDeployment(previous: Application, updated: Application): boolean {
+	return (
+		previous.composeFile !== updated.composeFile ||
+		previous.agentId !== updated.agentId ||
+		previous.name !== updated.name
+	);
+}
+
+async function deploy(id: string) {
+	try {
+		await deployApplication(id);
+		toast.add({ type: "success", title: m.deploymentStarted() });
+	} catch (err) {
+		toast.add({
+			type: "error",
+			title: err instanceof Error ? err.message : m.failedDeployApplication(),
+		});
+	}
+}
+
 function GeneralSettingsPage() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
@@ -77,10 +103,27 @@ function GeneralSettingsPage() {
 			onSubmit: applicationSchema,
 		},
 		onSubmit: async ({ value }) => {
+			const previous = application!;
 			setIsSubmitting(true);
 			try {
-				await updateApplication(application!.id, value);
-				toast.add({ type: "success", title: m.applicationUpdated() });
+				const updated = await updateApplication(previous.id, value);
+				if (affectsDeployment(previous, updated)) {
+					const toastId = toast.add({
+						type: "success",
+						title: m.applicationUpdated(),
+						description: m.applicationUpdatedDeployPrompt(),
+						timeout: 0,
+						actionProps: {
+							children: m.deploy(),
+							onClick: async () => {
+								toast.close(toastId);
+								await deploy(updated.id);
+							},
+						},
+					});
+				} else {
+					toast.add({ type: "success", title: m.applicationUpdated() });
+				}
 				setOpen(false);
 			} catch (err) {
 				toast.add({

@@ -1,3 +1,5 @@
+import { m } from "@/lib/paraglide/messages";
+
 export enum ApplicationEventType {
 	Deployment = "deployment",
 	CommitSync = "commit_sync",
@@ -37,4 +39,28 @@ export interface ApplicationEvent {
 export interface ApplicationEventsPage {
 	items: ApplicationEvent[];
 	hasMore: boolean;
+}
+
+const typeLabels: Record<ApplicationEventType, () => string> = {
+	[ApplicationEventType.Deployment]: () => m.eventTypeDeployment(),
+	[ApplicationEventType.CommitSync]: () => m.eventTypeCommitSync(),
+	[ApplicationEventType.ImageUpdate]: () => m.eventTypeImageUpdate(),
+};
+
+const sourceLabels: Record<ApplicationEventSource, () => string> = {
+	[ApplicationEventSource.Manual]: () => m.eventSourceManual(),
+	[ApplicationEventSource.ApplicationCreated]: () => m.eventSourceApplicationCreated(),
+	[ApplicationEventSource.RepositoryPolling]: () => m.eventSourceRepositoryPolling(),
+	[ApplicationEventSource.RepositoryWebhook]: () => m.eventSourceRepositoryWebhook(),
+	[ApplicationEventSource.GitHubActions]: () => m.eventSourceGitHubActions(),
+	[ApplicationEventSource.ImagePolling]: () => m.eventSourceImagePolling(),
+	[ApplicationEventSource.ImageWebhook]: () => m.eventSourceImageWebhook(),
+};
+
+export function eventTypeLabel(type: ApplicationEventType): string {
+	return typeLabels[type]?.() ?? type;
+}
+
+export function eventSourceLabel(source: ApplicationEventSource): string {
+	return sourceLabels[source]?.() ?? source;
 }

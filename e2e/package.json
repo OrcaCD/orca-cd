@@ -5,11 +5,18 @@
 	"scripts": {
 		"test": "playwright test",
 		"test:ui": "playwright test --headed --ui",
-		"install:browsers": "playwright install"
+		"install:browsers": "playwright install",
+		"typecheck": "tsc --noEmit",
+		"lint": "oxlint --type-aware --deny-warnings",
+		"format": "oxfmt --write",
+		"format:check": "oxfmt --check"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.63.0",
 		"@types/node": "^26.6.4",
+		"oxfmt": "^0.72.0",
+		"oxlint": "^1.87.0",
+		"oxlint-tsgolint": "^7.0.2003",
 		"typescript": "^7.0.2"
 	},
 	"engines": {

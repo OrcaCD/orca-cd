@@ -1,6 +1,6 @@
 import { fetcher } from "./api";
 import type { RepositorySyncType } from "./repositories";
-import type { ApplicationEventSource } from "./application-events";
+import type { ApplicationEventSource, ApplicationEvent } from "./application-events";
 
 export interface Application {
 	id: string;
@@ -39,11 +39,30 @@ export interface ApplicationListItem {
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
 	repositoryName: string;
+	agentId: string;
 	agentName: string;
 	branch: string;
 	commit: string;
 	lastSyncedAt?: string;
+	lastSyncError?: string;
 	path: string;
+}
+
+export interface ApplicationActivityDay {
+	date: string;
+	succeeded: number;
+	failed: number;
+}
+
+export interface ApplicationActivityDeployment extends ApplicationEvent {
+	applicationId: string;
+	applicationName: string;
+	applicationIcon: string;
+}
+
+export interface ApplicationActivity {
+	days: ApplicationActivityDay[];
+	recentDeployments: ApplicationActivityDeployment[];
 }
 
 export enum SyncStatus {
@@ -56,6 +75,7 @@ export enum SyncStatus {
 export enum HealthStatus {
 	Healthy = "healthy",
 	Unhealthy = "unhealthy",
+	Stopped = "stopped",
 	Unknown = "unknown",
 }
 
@@ -111,6 +131,10 @@ export function deleteApplication(id: string): Promise<void> {
 
 export function deployApplication(id: string): Promise<DeployApplicationResponse> {
 	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
+}
+
+export function pullApplicationImages(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/pull-images`, "POST");
 }
 
 export interface GenerateImageWebhookResponse {

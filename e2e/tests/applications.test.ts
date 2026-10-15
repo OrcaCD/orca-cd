@@ -12,8 +12,11 @@ import {
 	inspectContainer,
 	pullImage,
 	removeApplicationContainers,
+	startContainer,
+	stopContainer,
 } from "./helpers/docker.ts";
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
+import { gotoApp } from "./helpers/navigation.ts";
 import {
 	applicationEvents,
 	createOnlineAgent,
@@ -34,9 +37,14 @@ const AGENT_NAME = "E2E Deploy Agent";
 const REPO = "e2e/deploy-main";
 const CASCADE_REPO = "e2e/deploy-cascade";
 const OFFLINE_REPO = "e2e/deploy-offline";
+const MOVE_REPO = "e2e/deploy-move";
 const APP_NAME = "E2E Deploy App";
 const CASCADE_APP_NAME = "E2E Cascade App";
 const OFFLINE_APP_NAME = "E2E Offline App";
+const MOVE_APP_NAME = "E2E Move App";
+const RENAMED_APP_NAME = "E2E Moved App";
+const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
+const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
 function composeFile(version: number, image = IMAGE) {
@@ -63,6 +71,8 @@ let repo: ApiRepository;
 let appId = "";
 let cascadeAppId = "";
 let offlineAppId = "";
+let moveAppId = "";
+let moveTargetAgent: ApiAgent | undefined;
 // The compose project the agent derived from the application name, read from its containers
 let project = "";
 let containerId = "";
@@ -100,12 +110,16 @@ test.afterAll(async ({ browser }) => {
 	const context = await newAuthenticatedContext(browser);
 	try {
 		const page = await context.newPage();
+		// Never connected, so it can't undeploy, deleting it removes its applications
+		if (moveTargetAgent) {
+			await api(page, "DELETE", `/agents/${moveTargetAgent.id}`);
+		}
 		// Deleting through the hub lets the agent clean up, the rest is the fallback
 		for (const application of await listApplications(page)) {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO, OFFLINE_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -118,6 +132,7 @@ test.afterAll(async ({ browser }) => {
 		removeApplicationContainers(appId);
 		removeApplicationContainers(cascadeAppId);
 		removeApplicationContainers(offlineAppId);
+		removeApplicationContainers(moveAppId);
 	}
 });
 
@@ -127,7 +142,7 @@ async function selectOption(page: Page, trigger: Locator, label: string) {
 }
 
 async function fillApplicationWizard(page: Page, name: string) {
-	await page.goto("/applications");
+	await gotoApp(page, "/applications");
 	await page.getByRole("button", { name: "New Application" }).click();
 	const dialog = page.getByRole("dialog");
 
@@ -145,12 +160,17 @@ async function fillApplicationWizard(page: Page, name: string) {
 	return dialog;
 }
 
+/** The application's card in the list, not the overview's last deployment link. */
+function applicationListEntry(page: Page, name: string) {
+	return page.getByRole("link", { name }).filter({ has: page.locator("[data-slot='card']") });
+}
+
 function repositoryCard(page: Page) {
 	return page.locator("[data-slot='card']", { hasText: REPO });
 }
 
 async function syncRepositoryInUi(page: Page) {
-	await page.goto("/repositories");
+	await gotoApp(page, "/repositories");
 	await repositoryCard(page).getByRole("button", { name: "Card actions" }).click();
 	await page.getByRole("menuitem", { name: "Sync" }).click();
 	await expect(page.getByText("Sync triggered")).toBeVisible();
@@ -221,7 +241,7 @@ async function deployInSeparateRepository(page: Page, repoName: string, name: st
 }
 
 async function deleteRepositoryInUi(page: Page, repoName: string) {
-	await page.goto("/repositories");
+	await gotoApp(page, "/repositories");
 	await page
 		.locator("[data-slot='card']", { hasText: repoName })
 		.getByRole("button", { name: "Card actions" })
@@ -252,7 +272,7 @@ test.describe("Deploy an application", () => {
 			path: COMPOSE_PATH,
 			commit: initialCommit.sha,
 		});
-		await expect(page.getByRole("link", { name: APP_NAME })).toBeVisible();
+		await expect(applicationListEntry(page, APP_NAME)).toBeVisible();
 	});
 
 	test("the agent deploys it to Docker", async ({ page }) => {
@@ -284,7 +304,7 @@ test.describe("Deploy an application", () => {
 		expect(project).toBe("e2e-deploy-app");
 		expect(deployedComposeFile(project)).toBe(composeFile(1));
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Synced", { exact: true })).toBeVisible();
 		await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
 		await expect(page.getByText(initialCommit.sha.slice(0, 7))).toBeVisible();
@@ -297,7 +317,7 @@ test.describe("Deploy an application", () => {
 			source: "application_created",
 			status: "succeeded",
 		});
-		await page.goto(`/applications/${appId}/history`);
+		await gotoApp(page, `/applications/${appId}/history`);
 		const row = page.getByRole("row").filter({ hasText: "Application created" });
 		await expect(row).toHaveCount(1);
 		await expect(row).toContainText("Deployment");
@@ -305,7 +325,7 @@ test.describe("Deploy an application", () => {
 	});
 
 	test("deploy it again manually", async ({ page }) => {
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await page.getByRole("button", { name: "Deploy", exact: true }).click();
 		await expect(page.getByText("Deployment started")).toBeVisible();
 
@@ -325,6 +345,29 @@ test.describe("Deploy an application", () => {
 		);
 		expect(appContainers(appId)).toHaveLength(1);
 		expect(runningVersion()).toBe("1");
+	});
+
+	test("pull images from the application details", async ({ page }) => {
+		await page.goto(`/applications/${appId}/details`);
+		await page.getByRole("button", { name: "More deploy options" }).click();
+		await page.getByRole("menuitem", { name: /Pull images/ }).click();
+		await expect(page.getByText("Image pull started")).toBeVisible();
+
+		// The image is already up to date, so the pull finishes without a redeploy.
+		await expect
+			.poll(
+				async () =>
+					(await applicationEvents(page, appId)).find(
+						(event) => event.type === "image_update" && event.source === "manual",
+					)?.status,
+				{ timeout: 30_000 },
+			)
+			.toBe("no_change");
+		await waitForApplication(
+			page,
+			appId,
+			(app) => app.syncStatus === "synced" && app.healthStatus === "healthy",
+		);
 	});
 
 	test("rejects a duplicate name", async ({ page }) => {
@@ -355,10 +398,10 @@ test.describe("Redeploy on change", () => {
 		expect(deployedComposeFile(project)).toBe(composeFile(2));
 		await expectEvent(page, "manual", sha, "succeeded");
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText(sha.slice(0, 7))).toBeVisible();
 		await expect(page.getByText(message)).toBeVisible();
-		await page.goto("/repositories");
+		await gotoApp(page, "/repositories");
 		await expect(repositoryCard(page).getByText("Success", { exact: true })).toBeVisible();
 	});
 
@@ -368,7 +411,7 @@ test.describe("Redeploy on change", () => {
 			message: "Add readme",
 		});
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await page.getByRole("button", { name: "More deploy options" }).click();
 		await page.getByRole("menuitem", { name: /Sync repository/ }).click();
 		await expect(page.getByText("Sync triggered")).toBeVisible();
@@ -453,11 +496,11 @@ test.describe("Redeploy on change", () => {
 		expect(appContainers(appId).map((container) => container.id)).toEqual(idsBefore);
 		expect(runningVersion()).toBe(versionBefore);
 
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Sync failed")).toBeVisible();
 		await expect(page.getByText("Out of Sync", { exact: true })).toBeVisible();
 		await expect(page.getByText(broken.sha.slice(0, 7))).toBeVisible();
-		await page.goto(`/applications/${appId}/history`);
+		await gotoApp(page, `/applications/${appId}/history`);
 		const row = page.getByRole("row").filter({ hasText: broken.sha.slice(0, 7) });
 		await expect(row).toContainText("Failed");
 
@@ -470,7 +513,7 @@ test.describe("Redeploy on change", () => {
 		await expectRedeployed(page, 6, fixed.sha);
 		expect((await getApplication(page, appId)).lastSyncError).toBeUndefined();
 		await expectEvent(page, "manual", fixed.sha, "succeeded");
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText("Sync failed")).toHaveCount(0);
 		await expect(page.getByText("Synced", { exact: true })).toBeVisible();
 		await expect(page.getByText("Healthy", { exact: true })).toBeVisible();
@@ -528,7 +571,7 @@ test.describe("Runtime health", () => {
 		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
 
 		// The page stays open, so the status change has to arrive through live updates
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(healthBadge(page, "Healthy")).toBeVisible();
 
 		execInContainer(container.id, ["rm", HEALTHY_FILE]);
@@ -545,7 +588,7 @@ test.describe("Runtime health", () => {
 			expect(unhealthy.syncStatus).toBe("synced");
 			expect(unhealthy.lastSyncError).toBeUndefined();
 
-			await page.goto("/applications");
+			await gotoApp(page, "/applications");
 			await expect(
 				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
 			).toBeVisible();
@@ -556,7 +599,7 @@ test.describe("Runtime health", () => {
 
 	test("the application recovers once the healthcheck passes again", async ({ page }) => {
 		const [container] = appContainers(appId);
-		await page.goto(`/applications/${appId}/details`);
+		await gotoApp(page, `/applications/${appId}/details`);
 		// The previous test restored the file, but the hub may not have processed it yet
 		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
 		await expect(healthBadge(page, "Healthy")).toBeVisible();
@@ -578,11 +621,107 @@ test.describe("Runtime health", () => {
 		expect(recovered.syncStatus).toBe("synced");
 		expect(appContainers(appId).map((item) => item.id)).toEqual([container.id]);
 	});
+
+	test("a stopped container marks the application stopped", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await page.goto(`/applications/${appId}/details`);
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+		await expect(healthBadge(page, "Healthy")).toBeVisible();
+
+		stopContainer(container.id);
+		try {
+			await expect(healthBadge(page, "Stopped")).toBeVisible({ timeout: 30_000 });
+			await expect(healthBadge(page, "Healthy")).toHaveCount(0);
+			const stopped = await getApplication(page, appId);
+			expect(stopped.healthStatus).toBe("stopped");
+			expect(stopped.syncStatus).toBe("synced");
+		} finally {
+			startContainer(container.id);
+		}
+
+		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
+		await expect(healthBadge(page, "Stopped")).toHaveCount(0);
+	});
+});
+
+test.describe("Move and rename", () => {
+	const deployPrompt = (page: Page) =>
+		page.locator("[data-slot='toast']", { hasText: DEPLOY_PROMPT });
+
+	async function openGeneralSettings(page: Page, name: string) {
+		await page.goto(`/applications/${moveAppId}/settings/general`);
+		// The form is filled once the application has loaded
+		await expect(page.locator("#name")).toHaveValue(name);
+	}
+
+	test("renaming the application removes the old compose project", async ({ page }) => {
+		({ appId: moveAppId } = await deployInSeparateRepository(page, MOVE_REPO, MOVE_APP_NAME));
+		const oldProject = composeProject(moveAppId)!;
+		expect(oldProject).toBe("e2e-move-app");
+		expect(deploymentDirExists(oldProject)).toBe(true);
+
+		await openGeneralSettings(page, MOVE_APP_NAME);
+		await page.locator("#name").fill(RENAMED_APP_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+
+		// The hub answers after the agent removed the old project
+		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
+		expect(appContainers(moveAppId)).toHaveLength(0);
+		expect(deploymentDirExists(oldProject)).toBe(false);
+
+		await deployPrompt(page).getByRole("button", { name: "Deploy" }).click();
+		await expect(page.getByText("Deployment started")).toBeVisible();
+		await waitForApplication(
+			page,
+			moveAppId,
+			(app) =>
+				app.name === RENAMED_APP_NAME &&
+				app.syncStatus === "synced" &&
+				app.healthStatus === "healthy",
+		);
+		await expect.poll(() => appContainers(moveAppId).length, { timeout: 30_000 }).toBe(1);
+		const newProject = composeProject(moveAppId)!;
+		expect(newProject).toBe("e2e-moved-app");
+		expect(deploymentDirExists(newProject)).toBe(true);
+		expect(deploymentDirExists(oldProject)).toBe(false);
+	});
+
+	test("moving the application to another agent removes it from the old one", async ({ page }) => {
+		const created = await api(page, "POST", "/agents", { name: MOVE_TARGET_AGENT_NAME });
+		expect(created.status).toBe(201);
+		moveTargetAgent = created.body as ApiAgent;
+		const project = composeProject(moveAppId)!;
+
+		await openGeneralSettings(page, RENAMED_APP_NAME);
+		await selectOption(page, page.locator("#agent-select"), MOVE_TARGET_AGENT_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+
+		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
+		expect((await getApplication(page, moveAppId)).agentId).toBe(moveTargetAgent.id);
+		expect(appContainers(moveAppId)).toHaveLength(0);
+		expect(deploymentDirExists(project)).toBe(false);
+
+		// The target agent never connected, so it can't undeploy and moving back is blocked
+		await openGeneralSettings(page, RENAMED_APP_NAME);
+		await selectOption(page, page.locator("#agent-select"), AGENT_NAME);
+		await page.getByRole("button", { name: "Update Application" }).click();
+		await expect(page.getByText(/agent is offline; cannot move or rename application/)).toBeVisible(
+			{
+				timeout: 30_000,
+			},
+		);
+		expect((await getApplication(page, moveAppId)).agentId).toBe(moveTargetAgent.id);
+
+		// Deleting the agent removes its applications
+		expect((await api(page, "DELETE", `/agents/${moveTargetAgent.id}`)).status).toBe(200);
+		moveTargetAgent = undefined;
+		expect((await api(page, "GET", `/applications/${moveAppId}`)).status).toBe(404);
+	});
 });
 
 test.describe("Removal", () => {
 	test("delete the application in the UI", async ({ page }) => {
-		await page.goto(`/applications/${appId}/settings/general`);
+		await gotoApp(page, `/applications/${appId}/settings/general`);
 		await page.getByRole("button", { name: "Delete", exact: true }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
 
@@ -591,7 +730,7 @@ test.describe("Removal", () => {
 			timeout: 30_000,
 		});
 		await expect(page).toHaveURL("/applications");
-		await expect(page.getByRole("link", { name: APP_NAME })).toHaveCount(0);
+		await expect(applicationListEntry(page, APP_NAME)).toHaveCount(0);
 
 		expect((await listApplications(page)).find((item) => item.id === appId)).toBeUndefined();
 		expect((await api(page, "GET", `/applications/${appId}`)).status).toBe(404);
@@ -640,8 +779,8 @@ test.describe("Removal", () => {
 		const cascadeProject = composeProject(cascadeAppId)!;
 		expect(deploymentDirExists(cascadeProject)).toBe(true);
 
-		await page.goto("/applications");
-		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toBeVisible();
+		await gotoApp(page, "/applications");
+		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toBeVisible();
 		await deleteRepositoryInUi(page, CASCADE_REPO);
 		// The hub answers after the agent removed the containers
 		await expect(page.getByText(`Repository ${CASCADE_REPO} deleted successfully`)).toBeVisible({
@@ -649,8 +788,8 @@ test.describe("Removal", () => {
 		});
 
 		expect((await api(page, "GET", `/applications/${cascadeAppId}`)).status).toBe(404);
-		await page.goto("/applications");
-		await expect(page.getByRole("link", { name: CASCADE_APP_NAME })).toHaveCount(0);
+		await gotoApp(page, "/applications");
+		await expect(applicationListEntry(page, CASCADE_APP_NAME)).toHaveCount(0);
 
 		expect(appContainers(cascadeAppId)).toHaveLength(0);
 		expect(deploymentDirExists(cascadeProject)).toBe(false);

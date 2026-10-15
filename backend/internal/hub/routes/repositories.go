@@ -506,7 +506,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}()
 
 	for i := range apps {
-		if status, msg := undeployApplication(c.Request.Context(), &apps[i]); status != 0 {
+		if status, msg := undeployApplication(c.Request.Context(), &apps[i], "delete"); status != 0 {
 			c.JSON(status, gin.H{"error": fmt.Sprintf("failed to remove application %q: %s", apps[i].Name.String(), msg)})
 			return
 		}
