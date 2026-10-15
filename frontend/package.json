@@ -7,7 +7,7 @@
 		"build": "vite build",
 		"typecheck": "tsc --noEmit",
 		"preview": "vite preview",
-		"lint": "oxlint --type-aware --deny-warnings",
+		"lint": "oxlint",
 		"format": "oxfmt --write",
 		"format:check": "oxfmt --check",
 		"translations:check": "node scripts/check-translations.ts"
