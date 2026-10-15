@@ -1339,7 +1339,7 @@ func withDeletingAgent(t *testing.T, agentID string, success bool, errMsg string
 				continue
 			}
 			received.Add(1)
-			hub.ResolveDeleteResult(&messages.DeleteResult{
+			hub.ResolveDeleteResult(agentID, &messages.DeleteResult{
 				RequestId:     req.RequestId,
 				ApplicationId: req.ApplicationId,
 				Success:       success,

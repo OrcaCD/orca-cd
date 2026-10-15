@@ -108,7 +108,7 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
 
-	handleDeployResult(t.Context(), &messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
 
 	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
 	if err != nil {
@@ -144,7 +144,7 @@ func TestHandleDeployResultCompletesMatchingEvent(t *testing.T) {
 	}
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
-	handleDeployResult(t.Context(), &messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: true}, &nop)
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventSucceeded {
 		t.Fatalf("event=%+v err=%v", event, err)
@@ -172,7 +172,7 @@ func TestHandleDeployResultDoesNotCompleteMismatchedEvent(t *testing.T) {
 	}
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
-	handleDeployResult(t.Context(), &messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: "other-request", ApplicationId: app.Id, Success: true}, &nop)
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventRunning {
 		t.Fatalf("event=%+v err=%v", event, err)
@@ -228,7 +228,7 @@ func TestHandleDeployResult_Failure_SetsOutOfSync(t *testing.T) {
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
 
-	handleDeployResult(t.Context(), &messages.DeployResult{
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
 		ApplicationId: app.Id,
 		Success:       false,
 		ErrorMessage:  "boom",
@@ -254,7 +254,7 @@ func TestUpdateApplicationStatus_AppliesUpdate(t *testing.T) {
 	app := seedDeployApp(t, models.UnknownSync)
 	nop := zerolog.Nop()
 
-	err := updateApplicationStatus(context.Background(), app.Id, models.Application{
+	err := updateApplicationStatus(context.Background(), app.AgentId, app.Id, models.Application{
 		SyncStatus: models.Synced,
 	}, &nop)
 	if err != nil {
@@ -275,10 +275,41 @@ func TestUpdateApplicationStatus_UnknownApp_NoError(t *testing.T) {
 	nop := zerolog.Nop()
 
 	// Updating a non-existent id affects zero rows but is not an error.
-	err := updateApplicationStatus(context.Background(), "does-not-exist", models.Application{
+	err := updateApplicationStatus(context.Background(), "agent-1", "does-not-exist", models.Application{
 		SyncStatus: models.Synced,
 	}, &nop)
 	if err != nil {
 		t.Fatalf("expected no error for unknown app, got %v", err)
+	}
+}
+
+func TestHandleDeployResult_OtherAgentsApplicationIsIgnored(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	requestID := "foreign-request"
+	if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventDeployment,
+		Source:        models.ApplicationEventSourceManual,
+	}); err != nil {
+		t.Fatalf("start event: %v", err)
+	}
+	nop := zerolog.Nop()
+
+	for _, success := range []bool{true, false} {
+		handleDeployResult(t.Context(), "agent-2", &messages.DeployResult{RequestId: requestID, ApplicationId: app.Id, Success: success, ErrorMessage: "boom"}, &nop)
+	}
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.SyncStatus != models.Syncing {
+		t.Errorf("expected SyncStatus %q, got %q", models.Syncing, updated.SyncStatus)
+	}
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
+	if err != nil || event.Status != models.ApplicationEventRunning {
+		t.Fatalf("event=%+v err=%v", event, err)
 	}
 }

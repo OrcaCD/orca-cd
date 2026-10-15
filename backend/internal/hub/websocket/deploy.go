@@ -14,12 +14,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func handleDeployResult(parent context.Context, result *messages.DeployResult, log *zerolog.Logger) {
+func handleDeployResult(parent context.Context, agentID string, result *messages.DeployResult, log *zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	now := time.Now()
 
-	app, err := getApplicationByID(ctx, result.ApplicationId, log)
+	app, err := getApplicationByID(ctx, agentID, result.ApplicationId, log)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to retrieve application")
 		return
@@ -37,7 +37,7 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
 		source := eventSource(ctx, result.RequestId, result.ApplicationId, "", log)
-		err := updateApplicationStatus(ctx, result.ApplicationId, models.Application{
+		err := updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 			SyncStatus:     models.Synced,
 			LastSyncedAt:   &now,
 			LastSyncError:  &cleared,
@@ -55,7 +55,7 @@ func handleDeployResult(parent context.Context, result *messages.DeployResult, l
 		errMsg = "deployment failed"
 	}
 
-	_ = updateApplicationStatus(ctx, result.ApplicationId, models.Application{
+	_ = updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
 		LastSyncError: &errMsg,
 	}, log)
@@ -88,9 +88,9 @@ func eventSource(ctx context.Context, requestID string, applicationID string, fa
 	return source
 }
 
-func updateApplicationStatus(ctx context.Context, applicationID string, updates models.Application, log *zerolog.Logger) error {
+func updateApplicationStatus(ctx context.Context, agentID string, applicationID string, updates models.Application, log *zerolog.Logger) error {
 	_, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", applicationID).
+		Where("id = ? AND agent_id = ?", applicationID, agentID).
 		Updates(ctx, updates)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to update application status")
@@ -99,9 +99,9 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 	return err
 }
 
-func getApplicationByID(ctx context.Context, applicationID string, log *zerolog.Logger) (*models.Application, error) {
+func getApplicationByID(ctx context.Context, agentID string, applicationID string, log *zerolog.Logger) (*models.Application, error) {
 	app, err := gorm.G[models.Application](db.DB).
-		Where("id = ?", applicationID).
+		Where("id = ? AND agent_id = ?", applicationID, agentID).
 		First(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to retrieve application")
