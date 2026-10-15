@@ -115,7 +115,7 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 
-	requireVerifiedEmail := false
+	requireVerifiedEmail := true
 	if req.RequireVerifiedEmail != nil {
 		requireVerifiedEmail = *req.RequireVerifiedEmail
 	}

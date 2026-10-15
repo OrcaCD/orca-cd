@@ -273,9 +273,9 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 			log.Error().Err(err).Str("client", client.Id).Msg("Failed to update last_seen")
 		}
 	case *messages.ClientMessage_DeployResult:
-		handleDeployResult(ctx, p.DeployResult, log)
+		handleDeployResult(ctx, client.Id, p.DeployResult, log)
 	case *messages.ClientMessage_DeleteResult:
-		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(p.DeleteResult) {
+		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(client.Id, p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
 	case *messages.ClientMessage_PullImagesResult:

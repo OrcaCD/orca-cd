@@ -326,6 +326,8 @@ func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]s
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(c.Close)
+	// Tests must not depend on the containers of the host's Docker daemon.
+	stubProjectContainers(t, nil, nil)
 	return c
 }
 

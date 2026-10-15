@@ -55,7 +55,7 @@ export default function UpsertOIDCProviderDialog({
 			clientSecret: "",
 			scopes: provider?.scopes ?? "",
 			enabled: provider?.enabled ?? true,
-			requireVerifiedEmail: provider?.requireVerifiedEmail ?? false,
+			requireVerifiedEmail: provider?.requireVerifiedEmail ?? true,
 			autoSignup: provider?.autoSignup ?? true,
 		},
 		validators: {

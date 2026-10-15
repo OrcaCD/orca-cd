@@ -12,6 +12,12 @@ import (
 // agent is not connected.
 var ErrAgentOffline = errors.New("agent is not connected")
 
+type pendingDelete struct {
+	agentID       string
+	applicationID string
+	ch            chan *messages.DeleteResult
+}
+
 // RemoveApplication asks the agent to tear down an application and blocks until the
 // agent reports the result or ctx is cancelled. The caller (e.g. the delete handler)
 // uses the result to decide whether it is safe to drop its own record, so the hub
@@ -21,7 +27,7 @@ func (h *Hub) RemoveApplication(ctx context.Context, agentID, applicationID, app
 	ch := make(chan *messages.DeleteResult, 1)
 
 	h.deleteMu.Lock()
-	h.pendingDeletes[requestID] = ch
+	h.pendingDeletes[requestID] = pendingDelete{agentID: agentID, applicationID: applicationID, ch: ch}
 	h.deleteMu.Unlock()
 
 	defer func() {
@@ -54,17 +60,19 @@ func (h *Hub) RemoveApplication(ctx context.Context, agentID, applicationID, app
 
 // ResolveDeleteResult delivers an agent's DeleteResult to the waiting
 // RemoveApplication call. Returns false if no caller is waiting for it.
-func (h *Hub) ResolveDeleteResult(result *messages.DeleteResult) bool {
+func (h *Hub) ResolveDeleteResult(agentID string, result *messages.DeleteResult) bool {
 	h.deleteMu.Lock()
-	ch, ok := h.pendingDeletes[result.RequestId]
-	if ok {
+	pending, ok := h.pendingDeletes[result.RequestId]
+	if ok && pending.agentID == agentID && pending.applicationID == result.ApplicationId {
 		delete(h.pendingDeletes, result.RequestId)
+	} else {
+		ok = false
 	}
 	h.deleteMu.Unlock()
 
 	if !ok {
 		return false
 	}
-	ch <- result
+	pending.ch <- result
 	return true
 }

@@ -11,17 +11,20 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 const (
 	composeFileName    = "compose.yaml"
 	labelManagedBy     = "managed_by"
 	labelApplicationID = "orca-cd.application-id"
+	managedByValue     = "orca-cd"
 )
 
 func orcaLabels(appID string) map[string]string {
 	return map[string]string{
-		labelManagedBy:     "orca-cd",
+		labelManagedBy:     managedByValue,
 		labelApplicationID: appID,
 	}
 }
@@ -53,6 +56,33 @@ var upProject = func(ctx context.Context, composeService api.Compose, project *c
 
 var downProject = func(ctx context.Context, composeService api.Compose, projectName string, options api.DownOptions) error {
 	return composeService.Down(ctx, projectName, options)
+}
+
+var listProjectContainers = func(ctx context.Context, cli client.APIClient, projectName string) ([]container.Summary, error) {
+	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", api.ProjectLabel+"="+projectName),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Items, nil
+}
+
+// ensureProjectManaged refuses to touch a compose project that already exists on
+// the host but was not created by OrcaCD, so an application named like a foreign
+// project can neither take it over nor tear it down.
+func (c *Client) ensureProjectManaged(ctx context.Context, projectName string) error {
+	containers, err := listProjectContainers(ctx, c.cli.Client(), projectName)
+	if err != nil {
+		return fmt.Errorf("list containers of project %q: %w", projectName, err)
+	}
+	for _, item := range containers {
+		if item.Labels[labelManagedBy] != managedByValue {
+			return fmt.Errorf("compose project %q already exists and is not managed by OrcaCD", projectName)
+		}
+	}
+	return nil
 }
 
 type DeleteRequest struct {
@@ -99,6 +129,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("invalid compose file path: %w", err)
 	}
 
+	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(applicationDir, 0o750); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
@@ -114,22 +148,21 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if err != nil {
 		return fmt.Errorf("load compose project: %w", err)
 	}
-	hostDeploymentsDir := c.hostDeploymentsBase()
-	if err := translateBindMountSources(project, c.deploymentsDir, hostDeploymentsDir); err != nil {
-		return fmt.Errorf("translate bind mount sources: %w", err)
-	}
 
+	// The policy runs on agent-side paths, before bind mounts are translated to
+	// host paths, so mounts and env_file are checked against the same directory.
 	if _, allowed := c.allowedPrivilegedApps[req.ApplicationID]; !allowed {
 		restrictMountsDir := ""
 		if c.restrictMountsToDeployDir {
 			restrictMountsDir = c.deploymentsDir
-			if hostDeploymentsDir != "" {
-				restrictMountsDir = hostDeploymentsDir
-			}
 		}
 		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
 			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, req.ApplicationID)
 		}
+	}
+
+	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
+		return fmt.Errorf("translate bind mount sources: %w", err)
 	}
 
 	applyOrcaLabels(project, req.ApplicationID)
@@ -194,6 +227,10 @@ func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
 	applicationDir := filepath.Join(c.deploymentsDir, projectName)
 	if err := utils.IsPathWithinBase(c.deploymentsDir, applicationDir); err != nil {
 		return fmt.Errorf("invalid deployment directory: %w", err)
+	}
+
+	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
+		return err
 	}
 
 	if err := downProject(ctx, c.compose, projectName, api.DownOptions{RemoveOrphans: true}); err != nil {

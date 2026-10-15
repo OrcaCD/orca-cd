@@ -703,6 +703,24 @@ func TestRegisterStatic_HandlerBehaviors(t *testing.T) {
 			wantStatus:   http.StatusFound,
 			wantLocation: "/some/path",
 		},
+		{
+			name:         "trailing slash redirect keeps query string",
+			path:         "/some/path/?a=1&b=2",
+			wantStatus:   http.StatusFound,
+			wantLocation: "/some/path?a=1&b=2",
+		},
+		{
+			name:         "protocol-relative path does not redirect off-site",
+			path:         "//evil.example/",
+			wantStatus:   http.StatusFound,
+			wantLocation: "/evil.example",
+		},
+		{
+			name:         "multiple leading slashes do not redirect off-site",
+			path:         "///evil.example/x/",
+			wantStatus:   http.StatusFound,
+			wantLocation: "/evil.example/x",
+		},
 	}
 
 	for _, tt := range tests {

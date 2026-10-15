@@ -46,7 +46,7 @@ func TestRemoveApplication_RoundTrip(t *testing.T) {
 		t.Fatal("timed out waiting for delete request")
 	}
 
-	if !h.ResolveDeleteResult(&messages.DeleteResult{RequestId: requestID, Success: true}) {
+	if !h.ResolveDeleteResult("agent-1", &messages.DeleteResult{RequestId: requestID, ApplicationId: "app-1", Success: true}) {
 		t.Fatal("expected ResolveDeleteResult to find the waiting caller")
 	}
 
@@ -121,7 +121,46 @@ func TestResolveDeleteResult_UnknownRequest(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)
 
-	if h.ResolveDeleteResult(&messages.DeleteResult{RequestId: "nope"}) {
+	if h.ResolveDeleteResult("agent-1", &messages.DeleteResult{RequestId: "nope"}) {
 		t.Error("expected false for an unknown request id")
+	}
+}
+
+func TestResolveDeleteResult_RejectsMismatchedSender(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.RemoveApplication(t.Context(), "agent-1", "app-1", "billing")
+		done <- err
+	}()
+
+	var requestID string
+	select {
+	case msg := <-client.Send:
+		requestID = msg.GetDeleteRequest().RequestId
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delete request")
+	}
+
+	if h.ResolveDeleteResult("agent-2", &messages.DeleteResult{RequestId: requestID, ApplicationId: "app-1", Success: true}) {
+		t.Error("expected result from a different agent to be rejected")
+	}
+	if h.ResolveDeleteResult("agent-1", &messages.DeleteResult{RequestId: requestID, ApplicationId: "app-2", Success: true}) {
+		t.Error("expected result for a different application to be rejected")
+	}
+	if !h.ResolveDeleteResult("agent-1", &messages.DeleteResult{RequestId: requestID, ApplicationId: "app-1", Success: true}) {
+		t.Error("expected the legitimate result to still resolve the request")
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("RemoveApplication: %v", err)
 	}
 }
