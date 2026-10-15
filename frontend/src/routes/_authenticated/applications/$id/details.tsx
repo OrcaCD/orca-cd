@@ -291,9 +291,11 @@ function ApplicationDetailsPage() {
 						<TooltipTrigger
 							render={
 								<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
-									<Rocket
-										className={`mr-2 h-4 w-4 ${deploymentInProgress ? "animate-spin" : ""}`}
-									/>
+									<span className="mr-2 inline-flex overflow-hidden">
+										<Rocket
+											className={`h-4 w-4 ${deploymentInProgress ? "motion-safe:animate-rocket-launch" : ""}`}
+										/>
+									</span>
 									{deploymentInProgress ? m.deploying() : m.deploy()}
 								</Button>
 							}
