@@ -467,8 +467,8 @@ func TestAdminCreateOIDCProviderHandler_DefaultEnabled(t *testing.T) {
 	if !body.Enabled {
 		t.Error("expected enabled to default to true when omitted")
 	}
-	if body.RequireVerifiedEmail {
-		t.Error("expected requireVerifiedEmail to default to false when omitted")
+	if !body.RequireVerifiedEmail {
+		t.Error("expected requireVerifiedEmail to default to true when omitted")
 	}
 	if !body.AutoSignup {
 		t.Error("expected autoSignup to default to true when omitted")
