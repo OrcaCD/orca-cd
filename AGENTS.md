@@ -64,6 +64,9 @@ node --run translations:check   # verify all locales have the same message keys
 pnpm i --frozen-lockfile && pnpm run install:browsers
 pnpm test       # builds and starts the hub via docker-compose.e2e.yml on :8090; agent tests start the agent container themselves (needs Docker socket access)
 pnpm test:ui    # interactive mode
+node --run typecheck    # TypeScript type check
+node --run lint         # oxlint (type-aware, warnings are errors)
+node --run format       # oxfmt (format:check to only verify)
 ```
 
 Git providers are mocked by `e2e/mock/gitea/` (started by Playwright next to the hub). The agent and application tests need access to the Docker socket.

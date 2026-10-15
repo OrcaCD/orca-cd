@@ -146,7 +146,7 @@ func TestScheduleImagePull_ImmediateTriggerSupersedesQueuedPull(t *testing.T) {
 	debouncer := setupDebouncer(t, time.Hour, time.Hour)
 
 	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
-	if !TriggerImagePull(app, models.ApplicationEventSourceGitHubActions) {
+	if !TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
 		t.Fatal("expected TriggerImagePull to return true for connected agent")
 	}
 

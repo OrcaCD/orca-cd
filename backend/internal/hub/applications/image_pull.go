@@ -14,7 +14,7 @@ import (
 // and records a correlated image_update history event for the explicit trigger.
 // Returns false if the hub is not initialized, the agent is not connected, or the send buffer is full.
 // Triggers that may arrive in bursts should go through ScheduleImagePull instead.
-func TriggerImagePull(app *models.Application, source models.ApplicationEventSource) bool {
+func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// This pull supersedes a debounced one queued for the same application.
 	DefaultImagePullDebouncer.Cancel(app.Id)
 
@@ -24,7 +24,9 @@ func TriggerImagePull(app *models.Application, source models.ApplicationEventSou
 		ApplicationID: app.Id,
 		RequestID:     &requestID,
 		Type:          models.ApplicationEventImageUpdate,
-		Source:        source,
+		Source:        origin.Source,
+		ActorUserID:   origin.ActorUserID,
+		ActorName:     origin.ActorName,
 	}); err != nil {
 		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record image update event")
 	}

@@ -1,4 +1,10 @@
-import { deployApplication, HealthStatus, SyncStatus, type Application } from "@/lib/applications";
+import {
+	deployApplication,
+	HealthStatus,
+	pullApplicationImages,
+	SyncStatus,
+	type Application,
+} from "@/lib/applications";
 import { createFileRoute } from "@tanstack/react-router";
 import {
 	ChevronDown,
@@ -7,6 +13,7 @@ import {
 	GitBranch,
 	GitCommit,
 	GitPullRequestArrow,
+	ImageDown,
 	Rocket,
 	Server,
 } from "lucide-react";
@@ -221,8 +228,25 @@ function ApplicationDetailsPage() {
 		}
 	};
 
+	const [pullingImages, setPullingImages] = useState(false);
+
+	const handlePullImages = async () => {
+		setPullingImages(true);
+		try {
+			await pullApplicationImages(id);
+			toast.add({ type: "success", title: m.imagePullStarted() });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedPullImages(),
+			});
+		} finally {
+			setPullingImages(false);
+		}
+	};
+
 	const deploymentInProgress =
-		deploying || syncingRepository || data?.syncStatus === SyncStatus.Syncing;
+		deploying || syncingRepository || pullingImages || data?.syncStatus === SyncStatus.Syncing;
 
 	const manifestHtml = useMemo(() => {
 		return highlighter.codeToHtml(data?.composeFile ?? "", {
@@ -300,6 +324,13 @@ function ApplicationDetailsPage() {
 									<span className="text-xs text-muted-foreground">
 										{m.syncRepositoryDescription()}
 									</span>
+								</div>
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={handlePullImages} className="items-start cursor-pointer">
+								<ImageDown className="mt-0.5 h-4 w-4" />
+								<div className="flex flex-col gap-0.5">
+									<span>{m.pullImages()}</span>
+									<span className="text-xs text-muted-foreground">{m.pullImagesDescription()}</span>
 								</div>
 							</DropdownMenuItem>
 						</DropdownMenuContent>
