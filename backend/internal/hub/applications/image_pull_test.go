@@ -37,7 +37,7 @@ func TestTriggerImagePull_AgentConnected_SendsRequest(t *testing.T) {
 	app.Name = crypto.EncryptedString("my-app")
 	app.DeleteOldImages = true
 
-	if !TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
+	if !TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceImageWebhook}) {
 		t.Error("expected TriggerImagePull to return true for connected agent")
 	}
 
@@ -89,7 +89,7 @@ func TestTriggerImagePull_AgentConnected_MarksApplicationSyncing(t *testing.T) {
 		t.Fatalf("failed to register agent: %v", err)
 	}
 
-	if !TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
+	if !TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceImageWebhook}) {
 		t.Fatal("expected TriggerImagePull to return true for connected agent")
 	}
 
@@ -114,7 +114,7 @@ func TestTriggerImagePull_AgentNotConnected_ReturnsFalseAndFailsEvent(t *testing
 	agent := seedAgent(t)
 	app := seedImagePullApp(t, agent.Id)
 
-	if TriggerImagePull(app, models.ApplicationEventSourceGitHubActions) {
+	if TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
 		t.Error("expected TriggerImagePull to return false for disconnected agent")
 	}
 
@@ -142,7 +142,7 @@ func TestTriggerImagePull_HubNil_ReturnsFalseAndFailsEvent(t *testing.T) {
 	agent := seedAgent(t)
 	app := seedImagePullApp(t, agent.Id)
 
-	if TriggerImagePull(app, models.ApplicationEventSourceImageWebhook) {
+	if TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceImageWebhook}) {
 		t.Error("expected TriggerImagePull to return false when hub is nil")
 	}
 

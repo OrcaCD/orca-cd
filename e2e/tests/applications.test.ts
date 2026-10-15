@@ -347,6 +347,29 @@ test.describe("Deploy an application", () => {
 		expect(runningVersion()).toBe("1");
 	});
 
+	test("pull images from the application details", async ({ page }) => {
+		await page.goto(`/applications/${appId}/details`);
+		await page.getByRole("button", { name: "More deploy options" }).click();
+		await page.getByRole("menuitem", { name: /Pull images/ }).click();
+		await expect(page.getByText("Image pull started")).toBeVisible();
+
+		// The image is already up to date, so the pull finishes without a redeploy.
+		await expect
+			.poll(
+				async () =>
+					(await applicationEvents(page, appId)).find(
+						(event) => event.type === "image_update" && event.source === "manual",
+					)?.status,
+				{ timeout: 30_000 },
+			)
+			.toBe("no_change");
+		await waitForApplication(
+			page,
+			appId,
+			(app) => app.syncStatus === "synced" && app.healthStatus === "healthy",
+		);
+	});
+
 	test("rejects a duplicate name", async ({ page }) => {
 		// Names are compared case-insensitively
 		const dialog = await fillApplicationWizard(page, APP_NAME.toLowerCase());
