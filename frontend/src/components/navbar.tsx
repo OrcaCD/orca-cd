@@ -1,10 +1,9 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
 	Bell,
+	Container,
 	FileText,
 	GitBranch,
-	LayoutDashboard,
-	LayoutGrid,
 	LogOut,
 	Menu,
 	Server,
@@ -37,22 +36,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
 
-type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
+type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
 
 const navItems = [
-	{ key: "overview" as NavKey, href: "/", icon: LayoutDashboard },
-	{ key: "applications" as NavKey, href: "/applications", icon: LayoutGrid },
+	{ key: "applications" as NavKey, href: "/applications", icon: Container },
 	{ key: "agents" as NavKey, href: "/agents", icon: Server },
 	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
 	{ key: "notifications" as NavKey, href: "/notifications", icon: Bell },
 ];
 
-const adminNavItems = [{ key: "admin" as NavKey, href: "/admin", icon: Settings }];
+const activeNavItemClass =
+	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!";
 
 function getNavLabel(key: NavKey): string {
 	switch (key) {
-		case "overview":
-			return m.navOverview();
 		case "applications":
 			return m.navApplications();
 		case "agents":
@@ -68,8 +65,21 @@ function getNavLabel(key: NavKey): string {
 	}
 }
 
-function isNavItemActive(pathname: string, href: string): boolean {
-	return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function NavHotkeys({ navKey }: { navKey: NavKey | "overview" }) {
+	const sequence =
+		HOTKEY_SEQUENCES[
+			("navigate" +
+				navKey.charAt(0).toUpperCase() +
+				navKey.slice(1)) as keyof typeof HOTKEY_SEQUENCES
+		];
+
+	return (
+		<KbdGroup>
+			{sequence.map((kbd, key) => (
+				<Kbd key={key}>{kbd}</Kbd>
+			))}
+		</KbdGroup>
+	);
 }
 
 export default function Navbar() {
@@ -90,20 +100,28 @@ export default function Navbar() {
 	const location = useLocation();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-	const allNavItems = auth.isAdmin ? [...navItems, ...adminNavItems] : navItems;
-
 	return (
 		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
 			<div className="flex h-14 items-center justify-between px-4">
 				<div className="flex items-center gap-6">
-					<Link to="/" className="flex items-center gap-3">
-						<img src="/assets/logo-dark.svg" alt={m.appLogoAlt()} className="h-9 w-9" />
-						<span className="font-semibold text-lg hidden sm:inline">OrcaCD</span>
-					</Link>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Link to="/" className="flex items-center gap-3">
+									<img src="/assets/logo-dark.svg" alt={m.appLogoAlt()} className="h-8 w-8" />
+									<span className="font-semibold text-md hidden sm:inline">OrcaCD</span>
+								</Link>
+							}
+						></TooltipTrigger>
+						<TooltipContent>
+							{m.pageOverview()}
+							<NavHotkeys navKey="overview" />
+						</TooltipContent>
+					</Tooltip>
 
 					<NavigationMenu className="hidden md:flex">
 						<NavigationMenuList className="gap-2">
-							{allNavItems.map((item) => (
+							{navItems.map((item) => (
 								<Tooltip key={item.key}>
 									<TooltipTrigger
 										render={
@@ -115,8 +133,7 @@ export default function Navbar() {
 															to={item.href}
 															className={cn(
 																"h-8",
-																isNavItemActive(location.pathname, item.href) &&
-																	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+																location.pathname.startsWith(item.href) && activeNavItemClass,
 															)}
 														>
 															<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
@@ -128,16 +145,7 @@ export default function Navbar() {
 									></TooltipTrigger>
 									<TooltipContent>
 										{getNavLabel(item.key)}
-
-										<KbdGroup>
-											{HOTKEY_SEQUENCES[
-												("navigate" +
-													item.key.charAt(0).toUpperCase() +
-													item.key.slice(1)) as keyof typeof HOTKEY_SEQUENCES
-											].map((kbd, key) => (
-												<Kbd key={key}>{kbd}</Kbd>
-											))}
-										</KbdGroup>
+										<NavHotkeys navKey={item.key} />
 									</TooltipContent>
 								</Tooltip>
 							))}
@@ -146,6 +154,29 @@ export default function Navbar() {
 				</div>
 
 				<div className="flex items-center gap-3">
+					{auth.isAdmin ? (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										variant="ghost"
+										size="icon"
+										aria-label={m.navAdmin()}
+										className={cn(location.pathname.startsWith("/admin") && activeNavItemClass)}
+										nativeButton={false}
+										render={<Link to="/admin" />}
+									>
+										<Settings className="h-5 w-5" />
+									</Button>
+								}
+							></TooltipTrigger>
+							<TooltipContent>
+								{m.navAdmin()}
+								<NavHotkeys navKey="admin" />
+							</TooltipContent>
+						</Tooltip>
+					) : null}
+
 					<Button
 						variant="ghost"
 						size="icon"
@@ -223,7 +254,7 @@ export default function Navbar() {
 				<div className="overflow-hidden">
 					<NavigationMenu className="border-t border-border p-4 max-w-full w-full [&>div]:w-full">
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
-							{allNavItems.map((item) => (
+							{navItems.map((item) => (
 								<NavigationMenuItem key={item.key} className="w-full">
 									<NavigationMenuLink
 										render={
@@ -232,8 +263,7 @@ export default function Navbar() {
 												to={item.href}
 												className={cn(
 													"h-8 w-full",
-													isNavItemActive(location.pathname, item.href) &&
-														"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!",
+													location.pathname.startsWith(item.href) && activeNavItemClass,
 												)}
 												onClick={() => setMobileMenuOpen(false)}
 											>
