@@ -51,9 +51,14 @@ func RegisterStatic(router *gin.Engine) error {
 	handler := func(c *gin.Context) {
 		reqPath := strings.TrimPrefix(c.Request.URL.Path, "/")
 
-		// Remove trailing slashes
+		// Remove trailing slashes. Leading slashes are collapsed too, otherwise a path
+		// like "//evil.example/" would produce a protocol-relative (off-site) Location.
 		if strings.HasSuffix(reqPath, "/") {
-			c.Redirect(http.StatusFound, strings.TrimRight(c.Request.URL.String(), "/"))
+			target := "/" + strings.Trim(c.Request.URL.EscapedPath(), "/")
+			if c.Request.URL.RawQuery != "" {
+				target += "?" + c.Request.URL.RawQuery
+			}
+			c.Redirect(http.StatusFound, target)
 			return
 		}
 
