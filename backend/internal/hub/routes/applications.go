@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	sharedutils "github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -283,9 +284,33 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	nameHash := crypto.BlindIndex(models.NormalizeName(req.Name))
 	oldAgentId := application.AgentId
+	// Moving to another agent or renaming to a different compose project would
+	// leave the old containers running, so tear down the old deployment first.
+	if oldAgentId != req.AgentId || composeProjectChanged(application.Name.String(), req.Name) {
+		// Check the name is free on the target agent before tearing down the old
+		// deployment, so a conflict doesn't leave the application undeployed.
+		conflicts, err := gorm.G[models.Application](db.DB).
+			Where("agent_id = ? AND name_hash = ? AND id <> ?", req.AgentId, nameHash, id).
+			Count(c.Request.Context(), "*")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		if conflicts > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
+			return
+		}
+
+		if status, msg := undeployApplication(c.Request.Context(), &application, "move or rename"); status != 0 {
+			c.JSON(status, gin.H{"error": msg})
+			return
+		}
+	}
+
 	application.Name = crypto.EncryptedString(req.Name)
-	application.NameHash = crypto.BlindIndex(models.NormalizeName(req.Name))
+	application.NameHash = nameHash
 	if req.Icon != "" {
 		application.Icon = req.Icon
 	}
@@ -337,9 +362,21 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 }
 
+// composeProjectChanged reports whether renaming an application changes the
+// compose project name the agent deploys it under.
+func composeProjectChanged(oldName, newName string) bool {
+	oldProject, err := sharedutils.NormalizeProjectName(oldName)
+	if err != nil {
+		// The agent could never have deployed under the old name.
+		return false
+	}
+	newProject, _ := sharedutils.NormalizeProjectName(newName)
+	return oldProject != newProject
+}
+
 // undeployApplication removes the application from its agent and waits for
 // confirmation. Returns a zero status on success, else the HTTP status and message.
-func undeployApplication(ctx context.Context, application *models.Application) (int, string) {
+func undeployApplication(ctx context.Context, application *models.Application, action string) (int, string) {
 	if websocket.DefaultHub == nil {
 		return http.StatusInternalServerError, "hub not initialized"
 	}
@@ -350,7 +387,7 @@ func undeployApplication(ctx context.Context, application *models.Application) (
 	result, err := websocket.DefaultHub.RemoveApplication(ctx, application.AgentId, application.Id, application.Name.String())
 	if err != nil {
 		if errors.Is(err, websocket.ErrAgentOffline) {
-			return http.StatusConflict, "agent is offline; cannot delete application while its containers may still be running"
+			return http.StatusConflict, "agent is offline; cannot " + action + " application while its containers may still be running"
 		}
 		return http.StatusGatewayTimeout, "agent did not respond to the delete request"
 	}
@@ -374,7 +411,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	if status, msg := undeployApplication(c.Request.Context(), &application); status != 0 {
+	if status, msg := undeployApplication(c.Request.Context(), &application, "delete"); status != 0 {
 		c.JSON(status, gin.H{"error": msg})
 		return
 	}

@@ -802,6 +802,7 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	newRepo := seedTestRepository(t, "https://github.com/owner/repo-update-2")
 	newAgent := seedTestAgent(t, "agent-update-2")
+	deletes := withDeletingAgent(t, agent.Id, true, "")
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":         "New Name",
@@ -878,6 +879,170 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	if updated.PreviousComposeFile.String() != seedComposeFileContent {
 		t.Errorf("expected previous compose file to be set to the pre-update content")
 	}
+	if got := deletes.Load(); got != 1 {
+		t.Errorf("expected old agent to receive 1 delete request, got %d", got)
+	}
+}
+
+func updateApplicationAgent(t *testing.T, app models.Application, agentID, name string) *httptest.ResponseRecorder {
+	t.Helper()
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         name,
+		"repositoryId": app.RepositoryId,
+		"agentId":      agentID,
+		"branch":       "main",
+		"path":         "docker-compose.yml",
+	})
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+	return w
+}
+
+func assertApplicationAgent(t *testing.T, appID, agentID string) {
+	t.Helper()
+	app, err := gorm.G[models.Application](db.DB).Where("id = ?", appID).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if app.AgentId != agentID {
+		t.Errorf("expected agentId %q, got %q", agentID, app.AgentId)
+	}
+}
+
+func TestUpdateApplicationHandler_SameComposeProject_DoesNotUndeploy(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-same-agent")
+	agent := seedTestAgent(t, "agent-update-same")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Same Agent")
+	deletes := withDeletingAgent(t, agent.Id, true, "")
+
+	// "same agent" normalizes to the same compose project as "Same Agent".
+	w := updateApplicationAgent(t, app, agent.Id, "same agent")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := deletes.Load(); got != 0 {
+		t.Errorf("expected no delete request, got %d", got)
+	}
+}
+
+func TestUpdateApplicationHandler_Rename_UndeploysOldProject(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-rename")
+	agent := seedTestAgent(t, "agent-rename")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Old Name")
+	deletes := withDeletingAgent(t, agent.Id, true, "")
+
+	w := updateApplicationAgent(t, app, agent.Id, "New Name")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := deletes.Load(); got != 1 {
+		t.Errorf("expected 1 delete request, got %d", got)
+	}
+}
+
+func TestUpdateApplicationHandler_Rename_AgentOffline_KeepsName(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-rename-offline")
+	agent := seedTestAgent(t, "agent-rename-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Old Name")
+
+	w := updateApplicationAgent(t, app, agent.Id, "New Name")
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.Name.String() != "Old Name" {
+		t.Errorf("expected name %q, got %q", "Old Name", updated.Name.String())
+	}
+}
+
+func TestComposeProjectChanged(t *testing.T) {
+	tests := []struct {
+		oldName, newName string
+		want             bool
+	}{
+		{"Billing", "billing", false},
+		{"My App", "my-app", false},
+		{"Billing", "Payments", true},
+		{"---", "Payments", false},
+	}
+	for _, tt := range tests {
+		if got := composeProjectChanged(tt.oldName, tt.newName); got != tt.want {
+			t.Errorf("composeProjectChanged(%q, %q) = %v, want %v", tt.oldName, tt.newName, got, tt.want)
+		}
+	}
+}
+
+func TestUpdateApplicationHandler_ChangeAgent_OldAgentOffline_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-move-offline")
+	oldAgent := seedTestAgent(t, "agent-move-offline-old")
+	newAgent := seedTestAgent(t, "agent-move-offline-new")
+	app := seedTestApplication(t, repo.Id, oldAgent.Id, "Move Offline")
+
+	w := updateApplicationAgent(t, app, newAgent.Id, "Move Offline")
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	assertApplicationAgent(t, app.Id, oldAgent.Id)
+}
+
+func TestUpdateApplicationHandler_ChangeAgent_OldAgentFailure_KeepsApp(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-move-fail")
+	oldAgent := seedTestAgent(t, "agent-move-fail-old")
+	newAgent := seedTestAgent(t, "agent-move-fail-new")
+	app := seedTestApplication(t, repo.Id, oldAgent.Id, "Move Fail")
+	withDeletingAgent(t, oldAgent.Id, false, "compose down: boom")
+
+	w := updateApplicationAgent(t, app, newAgent.Id, "Move Fail")
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+	assertApplicationAgent(t, app.Id, oldAgent.Id)
+}
+
+func TestUpdateApplicationHandler_ChangeAgent_NameConflict_DoesNotUndeploy(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-move-conflict")
+	oldAgent := seedTestAgent(t, "agent-move-conflict-old")
+	newAgent := seedTestAgent(t, "agent-move-conflict-new")
+	app := seedTestApplication(t, repo.Id, oldAgent.Id, "Billing Service")
+	seedTestApplication(t, repo.Id, newAgent.Id, "billing service")
+	deletes := withDeletingAgent(t, oldAgent.Id, true, "")
+
+	w := updateApplicationAgent(t, app, newAgent.Id, "Billing Service")
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := deletes.Load(); got != 0 {
+		t.Errorf("expected no delete request, got %d", got)
+	}
+	assertApplicationAgent(t, app.Id, oldAgent.Id)
 }
 
 func TestUpdateApplicationHandler_SavesDisabledFlagsAndKeepsRuntimeColumns(t *testing.T) {
@@ -1006,7 +1171,7 @@ func TestUpdateApplicationHandler_IgnoresHealthStatusInput(t *testing.T) {
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-health")
 	agent := seedTestAgent(t, "agent-update-invalid-health")
-	app := seedTestApplication(t, repo.Id, agent.Id, "Health App")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Billing Service")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
 	req["healthStatus"] = invalidStatus
 
@@ -1037,7 +1202,7 @@ func TestUpdateApplicationHandler_IgnoresLastSyncedAtInput(t *testing.T) {
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-synced-at")
 	agent := seedTestAgent(t, "agent-update-invalid-synced-at")
-	app := seedTestApplication(t, repo.Id, agent.Id, "Synced App")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Billing Service")
 	req := validApplicationRequestBody(repo.Id, agent.Id)
 	req["lastSyncedAt"] = notRfc3339
 

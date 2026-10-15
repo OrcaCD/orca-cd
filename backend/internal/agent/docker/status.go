@@ -18,6 +18,7 @@ const (
 	HealthUnknown HealthState = iota
 	HealthHealthy
 	HealthUnhealthy
+	HealthStopped
 )
 
 // Proto converts the health state to its protobuf representation.
@@ -27,6 +28,8 @@ func (s HealthState) Proto() messages.HealthStatus {
 		return messages.HealthStatus_HEALTH_STATUS_HEALTHY
 	case HealthUnhealthy:
 		return messages.HealthStatus_HEALTH_STATUS_UNHEALTHY
+	case HealthStopped:
+		return messages.HealthStatus_HEALTH_STATUS_STOPPED
 	default:
 		return messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED
 	}
@@ -36,8 +39,7 @@ func (s HealthState) Proto() messages.HealthStatus {
 // an application, identified by the orca-cd.application-id label applied at
 // deploy time. It returns HealthUnknown when the daemon is unreachable, no
 // containers exist (nothing deployed yet), or a healthcheck is still starting.
-// Any container that is not running, or whose healthcheck reports unhealthy,
-// makes the whole application unhealthy.
+// HealthStopped is returned when none of its containers run.
 func (c *Client) ApplicationHealth(ctx context.Context, appID string) HealthState {
 	if !c.Ready() {
 		return HealthUnknown
@@ -87,13 +89,16 @@ func withInspectedHealth(ctx context.Context, inspector containerInspector, item
 }
 
 // aggregateHealth derives an application's health from the state of its
-// containers. No containers → Unknown (nothing deployed). Any container not
-// running, or whose healthcheck is unhealthy, makes the application unhealthy.
-// A healthcheck still starting keeps the application at Unknown until it
-// settles.
+// containers. No containers → Unknown (nothing deployed). All containers
+// stopped → Stopped. Any other container not running, or whose healthcheck is
+// unhealthy, makes the application unhealthy. A healthcheck still starting
+// keeps the application at Unknown until it settles.
 func aggregateHealth(items []container.Summary) HealthState {
 	if len(items) == 0 {
 		return HealthUnknown
+	}
+	if allStopped(items) {
+		return HealthStopped
 	}
 
 	settling := false
@@ -118,4 +123,18 @@ func aggregateHealth(items []container.Summary) HealthState {
 		return HealthUnknown
 	}
 	return HealthHealthy
+}
+
+// allStopped reports whether none of the containers run, as after
+// `docker compose stop` or `docker compose pause`. Restarting (crash loop),
+// dead and removing containers are not considered stopped.
+func allStopped(items []container.Summary) bool {
+	for _, item := range items {
+		switch item.State {
+		case container.StateCreated, container.StateExited, container.StatePaused:
+		default:
+			return false
+		}
+	}
+	return true
 }

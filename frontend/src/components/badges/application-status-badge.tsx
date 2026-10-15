@@ -45,6 +45,11 @@ const healthConfig: Record<
 		className: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 		dotClass: "bg-amber-400",
 	},
+	stopped: {
+		label: () => m.statusStopped(),
+		className: "bg-red-500/20 text-red-400 border-red-500/30",
+		dotClass: "bg-red-400",
+	},
 	unknown: {
 		label: () => m.unknown(),
 		className: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",

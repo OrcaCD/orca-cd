@@ -75,6 +75,7 @@ export enum SyncStatus {
 export enum HealthStatus {
 	Healthy = "healthy",
 	Unhealthy = "unhealthy",
+	Stopped = "stopped",
 	Unknown = "unknown",
 }
 
