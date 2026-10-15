@@ -64,6 +64,8 @@ type applicationListResponse struct {
 	Commit         string  `json:"commit"`
 	LastSyncedAt   *string `json:"lastSyncedAt"`
 	Path           string  `json:"path"`
+	LastSyncError  *string `json:"lastSyncError,omitempty"`
+	AgentId        string  `json:"agentId"`
 	AgentName      string  `json:"agentName"`
 	RepositoryName string  `json:"repositoryName"`
 }
@@ -518,8 +520,10 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 		Branch:         app.Branch,
 		Commit:         app.Commit,
 		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
+		LastSyncError:  normalizeSyncError(app.LastSyncError),
 		Path:           app.Path,
 		RepositoryName: app.Repository.Name,
+		AgentId:        app.AgentId,
 		AgentName:      app.Agent.Name.String(),
 	}
 }

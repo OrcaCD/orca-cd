@@ -8,12 +8,15 @@ type Topic struct {
 const apiPrefix = "/api/v1"
 
 var (
-	TopicAgents            = Topic{apiPrefix + "/agents"}
-	TopicApplications      = Topic{apiPrefix + "/applications"}
-	TopicRepositories      = Topic{apiPrefix + "/repositories"}
-	TopicNotifications     = Topic{apiPrefix + "/notifications"}
-	TopicAdminUsers        = Topic{apiPrefix + "/admin/users"}
-	TopicAdminOIDCProvider = Topic{apiPrefix + "/admin/oidc-providers"}
+	TopicAgents       = Topic{apiPrefix + "/agents"}
+	TopicApplications = Topic{apiPrefix + "/applications"}
+	// TopicApplicationActivity is the cross-application deployment summary, which
+	// changes with every recorded or completed application event except no_change.
+	TopicApplicationActivity = Topic{apiPrefix + "/applications/activity"}
+	TopicRepositories        = Topic{apiPrefix + "/repositories"}
+	TopicNotifications       = Topic{apiPrefix + "/notifications"}
+	TopicAdminUsers          = Topic{apiPrefix + "/admin/users"}
+	TopicAdminOIDCProvider   = Topic{apiPrefix + "/admin/oidc-providers"}
 )
 
 func TopicApplicationEvents(applicationID string) Topic {
