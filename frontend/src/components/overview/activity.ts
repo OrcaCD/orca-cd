@@ -5,5 +5,5 @@ import type { ApplicationActivity } from "@/lib/applications";
 const utcOffset = -new Date().getTimezoneOffset();
 
 export function useApplicationActivity() {
-	return useFetch<ApplicationActivity>(`/applications/activity?utcOffset=${utcOffset}`);
+	return useFetch<ApplicationActivity>(`/activity?utcOffset=${utcOffset}`);
 }
