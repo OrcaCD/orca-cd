@@ -12,6 +12,8 @@ import {
 	inspectContainer,
 	pullImage,
 	removeApplicationContainers,
+	startContainer,
+	stopContainer,
 } from "./helpers/docker.ts";
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
 import {
@@ -589,6 +591,27 @@ test.describe("Runtime health", () => {
 		);
 		expect(recovered.syncStatus).toBe("synced");
 		expect(appContainers(appId).map((item) => item.id)).toEqual([container.id]);
+	});
+
+	test("a stopped container marks the application stopped", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await page.goto(`/applications/${appId}/details`);
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+		await expect(healthBadge(page, "Healthy")).toBeVisible();
+
+		stopContainer(container.id);
+		try {
+			await expect(healthBadge(page, "Stopped")).toBeVisible({ timeout: 30_000 });
+			await expect(healthBadge(page, "Healthy")).toHaveCount(0);
+			const stopped = await getApplication(page, appId);
+			expect(stopped.healthStatus).toBe("stopped");
+			expect(stopped.syncStatus).toBe("synced");
+		} finally {
+			startContainer(container.id);
+		}
+
+		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
+		await expect(healthBadge(page, "Stopped")).toHaveCount(0);
 	});
 });
 

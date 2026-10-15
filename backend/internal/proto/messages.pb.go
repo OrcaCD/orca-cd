@@ -27,6 +27,7 @@ const (
 	HealthStatus_HEALTH_STATUS_UNSPECIFIED HealthStatus = 0
 	HealthStatus_HEALTH_STATUS_HEALTHY     HealthStatus = 1
 	HealthStatus_HEALTH_STATUS_UNHEALTHY   HealthStatus = 2
+	HealthStatus_HEALTH_STATUS_STOPPED     HealthStatus = 3
 )
 
 // Enum value maps for HealthStatus.
@@ -35,11 +36,13 @@ var (
 		0: "HEALTH_STATUS_UNSPECIFIED",
 		1: "HEALTH_STATUS_HEALTHY",
 		2: "HEALTH_STATUS_UNHEALTHY",
+		3: "HEALTH_STATUS_STOPPED",
 	}
 	HealthStatus_value = map[string]int32{
 		"HEALTH_STATUS_UNSPECIFIED": 0,
 		"HEALTH_STATUS_HEALTHY":     1,
 		"HEALTH_STATUS_UNHEALTHY":   2,
+		"HEALTH_STATUS_STOPPED":     3,
 	}
 )
 
@@ -1459,11 +1462,12 @@ const file_messages_proto_rawDesc = "" +
 	"\tAgentInfo\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0edocker_version\x18\x02 \x01(\tR\rdockerVersion\x12-\n" +
-	"\x12docker_unreachable\x18\x03 \x01(\bR\x11dockerUnreachable*e\n" +
+	"\x12docker_unreachable\x18\x03 \x01(\bR\x11dockerUnreachable*\x80\x01\n" +
 	"\fHealthStatus\x12\x1d\n" +
 	"\x19HEALTH_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15HEALTH_STATUS_HEALTHY\x10\x01\x12\x1b\n" +
-	"\x17HEALTH_STATUS_UNHEALTHY\x10\x02B\fZ\n" +
+	"\x17HEALTH_STATUS_UNHEALTHY\x10\x02\x12\x19\n" +
+	"\x15HEALTH_STATUS_STOPPED\x10\x03B\fZ\n" +
 	"./messagesb\x06proto3"
 
 var (

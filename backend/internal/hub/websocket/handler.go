@@ -304,7 +304,8 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
-		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, protoHealthToModel(status.Health))
+		health := protoHealthToModel(status.Health)
+		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
@@ -313,7 +314,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 			continue
 		}
 		if event != "" {
-			notifyHealthChange(ctx, status.ApplicationId, event, log)
+			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
 	}
 
@@ -384,20 +385,21 @@ func sanitizeReportedVersion(v string) string {
 // the change triggers, if any. Transitions are detected with conditional
 // updates so concurrent reports cannot notify twice.
 //
-// Only Healthy→Unhealthy and Unhealthy→Healthy notify. Unknown→Unhealthy is
-// deliberately silent: health is reset to Unknown on every disconnect, so it
+// Only Healthy→Unhealthy/Stopped and Unhealthy/Stopped→Healthy notify; a
+// stopped application counts as unhealthy for notifications. Unknown→Unhealthy
+// is deliberately silent: health is reset to Unknown on every disconnect, so it
 // would re-announce unhealthy apps after each agent reconnect. Apps that are
 // currently deploying are skipped, as the deployment reports its own outcome.
 func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, error) {
 	var event models.NotificationEvent
 	transition := gorm.G[models.Application](db.DB).Where("id = ? AND agent_id = ?", applicationId, agentId)
 	switch health {
-	case models.Unhealthy:
+	case models.Unhealthy, models.Stopped:
 		event = models.NotificationEventHealthUnhealthy
 		transition = transition.Where("health_status = ? AND sync_status <> ?", models.Healthy, models.Syncing)
 	case models.Healthy:
 		event = models.NotificationEventHealthRecovered
-		transition = transition.Where("health_status = ?", models.Unhealthy)
+		transition = transition.Where("health_status IN ?", []models.HealthStatus{models.Unhealthy, models.Stopped})
 	}
 
 	if event != "" {
@@ -416,7 +418,7 @@ func applyReportedHealth(ctx context.Context, agentId, applicationId string, hea
 	return "", err
 }
 
-func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, log *zerolog.Logger) {
+func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, health models.HealthStatus, log *zerolog.Logger) {
 	app, err := gorm.G[models.Application](db.DB).Select("id", "name").Where("id = ?", applicationId).First(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationId).Msg("failed to load application for health notification")
@@ -424,8 +426,11 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 	}
 
 	message := "Application " + app.Name.String() + " is healthy again"
-	if event == models.NotificationEventHealthUnhealthy {
+	switch health {
+	case models.Unhealthy:
 		message = "Application " + app.Name.String() + " is unhealthy"
+	case models.Stopped:
+		message = "Application " + app.Name.String() + " is stopped"
 	}
 	go notifications.SendForApplication(applicationId, event, message, log)
 }
@@ -436,6 +441,8 @@ func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
 		return models.Healthy
 	case messages.HealthStatus_HEALTH_STATUS_UNHEALTHY:
 		return models.Unhealthy
+	case messages.HealthStatus_HEALTH_STATUS_STOPPED:
+		return models.Stopped
 	default:
 		return models.UnknownHealth
 	}
