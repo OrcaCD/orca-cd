@@ -282,7 +282,7 @@
 	"notificationEventImageUpdateSucceeded": "Image-Update erfolgreich",
 	"notificationEventImageUpdateFailed": "Image-Update fehlgeschlagen",
 	"notificationEventSyncFailed": "Synchronisierung fehlgeschlagen",
-	"notificationEventHealthUnhealthy": "Wird ungesund oder gestoppt",
+	"notificationEventHealthUnhealthy": "Wurde ungesund oder gestoppt",
 	"notificationEventHealthRecovered": "Wieder gesund",
 	"notificationEventAgentOffline": "Offline (nach 1 Minute)",
 	"notificationEventAgentOnline": "Wieder online",
