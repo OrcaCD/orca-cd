@@ -116,6 +116,31 @@
     --radius-4xl: calc(var(--radius) + 16px);
 }
 
+@theme {
+    --animate-rocket-launch: rocket-launch 1.4s infinite;
+
+    /*
+     * Lucide's rocket points to the top right: it accelerates out of its (clipped) box towards the
+     * top right, re-enters from the bottom left and rests briefly before the next launch.
+     */
+    @keyframes rocket-launch {
+        0% {
+            transform: translate(0, 0);
+            animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.4);
+        }
+        40% {
+            transform: translate(110%, -110%);
+        }
+        40.01% {
+            transform: translate(-110%, 110%);
+            animation-timing-function: cubic-bezier(0.1, 0.6, 0.3, 1);
+        }
+        70%, 100% {
+            transform: translate(0, 0);
+        }
+    }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
