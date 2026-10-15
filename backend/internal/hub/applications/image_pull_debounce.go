@@ -58,7 +58,7 @@ func NewImagePullDebouncer(log *zerolog.Logger) *ImagePullDebouncer {
 // right away when no debouncer is initialized.
 func ScheduleImagePull(app *models.Application, source models.ApplicationEventSource) {
 	if DefaultImagePullDebouncer == nil {
-		TriggerImagePull(app, source)
+		TriggerImagePull(app, SyncOrigin{Source: source})
 		return
 	}
 	DefaultImagePullDebouncer.Schedule(app.Id, source)
@@ -150,5 +150,5 @@ func (d *ImagePullDebouncer) dispatch(appID string, pending *pendingImagePull) {
 		}
 		return
 	}
-	TriggerImagePull(&app, pending.source)
+	TriggerImagePull(&app, SyncOrigin{Source: pending.source})
 }

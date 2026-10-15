@@ -443,6 +443,34 @@ func DeployApplicationHandler(c *gin.Context) {
 	sse.PublishUpdate(sse.TopicApplications)
 }
 
+// PullApplicationImagesHandler asks the agent to pull newer images for the
+// application and redeploy it when any image changed.
+func PullApplicationImagesHandler(c *gin.Context) {
+	id := c.Param("id")
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	actorUserID, actorName := eventActor(c)
+	accepted := hubApplications.TriggerImagePull(&application, hubApplications.SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
+	if !accepted {
+		c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot pull images"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{"message": "image pull started"})
+}
+
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
 		Id:             app.Id,

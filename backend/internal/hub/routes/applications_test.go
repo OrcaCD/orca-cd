@@ -1359,6 +1359,87 @@ func TestDeployApplicationHandler_AgentUnavailable(t *testing.T) {
 	}
 }
 
+func TestPullApplicationImagesHandler_Success(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-pull")
+	agent := seedTestAgent(t, "agent-pull")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Pull Me")
+
+	nop := zerolog.Nop()
+	hub := websocket.NewHub(&nop)
+	websocket.DefaultHub = hub
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+	client, err := hub.Register(agent.Id, nil)
+	if err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/pull-images", nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	PullApplicationImagesHandler(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var req *messages.PullImagesRequest
+	select {
+	case msg := <-client.Send:
+		req = msg.GetPullImagesRequest()
+	default:
+	}
+	if req == nil || req.ApplicationId != app.Id {
+		t.Fatalf("expected PullImagesRequest for app %q, got %+v", app.Id, req)
+	}
+
+	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", req.RequestId).First(t.Context())
+	if err != nil {
+		t.Fatalf("load image update event: %v", err)
+	}
+	if event.Type != models.ApplicationEventImageUpdate ||
+		event.Source != models.ApplicationEventSourceManual ||
+		event.Status != models.ApplicationEventRunning ||
+		event.ActorName == nil || *event.ActorName != "Test User" {
+		t.Fatalf("unexpected manual image update event: %+v", event)
+	}
+}
+
+func TestPullApplicationImagesHandler_NotFound(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/nonexistent-id/pull-images", nil)
+	c.Params = gin.Params{{Key: "id", Value: "nonexistent-id"}}
+
+	PullApplicationImagesHandler(c)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPullApplicationImagesHandler_AgentUnavailable(t *testing.T) {
+	setupTestDBWithApplications(t)
+	withOfflineHub(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-pull-offline")
+	agent := seedTestAgent(t, "agent-pull-offline")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Pull Me")
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications/"+app.Id+"/pull-images", nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	PullApplicationImagesHandler(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestParseRFC3339Timestamp(t *testing.T) {
 	t.Run("nil value", func(t *testing.T) {
 		parsed, ok := parseRFC3339Timestamp(nil)
