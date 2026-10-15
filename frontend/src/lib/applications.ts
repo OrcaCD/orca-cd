@@ -113,6 +113,10 @@ export function deployApplication(id: string): Promise<DeployApplicationResponse
 	return fetcher<DeployApplicationResponse>(`/applications/${id}/deploy`, "POST");
 }
 
+export function pullApplicationImages(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/pull-images`, "POST");
+}
+
 export interface GenerateImageWebhookResponse {
 	secret: string;
 	webhookUrl: string;
