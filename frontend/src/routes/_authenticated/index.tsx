@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ApplicationsOverview } from "@/components/applications-overview/applications-overview";
-import { OnboardingChecklist } from "@/components/applications-overview/onboarding-checklist";
+import { OverviewDashboard } from "@/components/overview/overview-dashboard";
+import { OnboardingChecklist } from "@/components/overview/onboarding-checklist";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
@@ -37,7 +37,7 @@ function OverviewPage() {
 			) : apps.length === 0 ? (
 				<OnboardingChecklist agents={agents} />
 			) : (
-				<ApplicationsOverview apps={apps} agents={agents} />
+				<OverviewDashboard apps={apps} agents={agents} />
 			)}
 		</div>
 	);

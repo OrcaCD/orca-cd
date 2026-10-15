@@ -17,7 +17,7 @@ import {
 import { deployApplication } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
-import { fleetCategoryConfig, type AttentionItem } from "./fleet";
+import { fleetCategoryConfig, type AttentionItem } from "@/lib/fleet";
 
 const maxVisibleItems = 5;
 

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
-import { countFleetCategories, fleetCategories, fleetCategoryConfig } from "./fleet";
+import { countFleetCategories, fleetCategories, fleetCategoryConfig } from "@/lib/fleet";
 
 export function FleetStatusCard({ apps }: { apps: ApplicationListItem[] }) {
 	const counts = countFleetCategories(apps);

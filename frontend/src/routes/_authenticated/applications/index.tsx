@@ -21,7 +21,7 @@ import {
 	fleetCategoryConfig,
 	getFleetCategory,
 	type FleetCategory,
-} from "@/components/applications-overview/fleet";
+} from "@/lib/fleet";
 import {
 	Select,
 	SelectContent,
