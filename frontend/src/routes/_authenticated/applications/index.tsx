@@ -41,7 +41,6 @@ const allAgents = "all";
 
 export const Route = createFileRoute("/_authenticated/applications/")({
 	component: ApplicationsPage,
-	// An invalid filter (e.g. from an old bookmark) shows the unfiltered list.
 	validateSearch: (search) => applicationsSearchSchema.safeParse(search).data ?? {},
 	head: () => ({
 		meta: [

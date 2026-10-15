@@ -87,7 +87,7 @@
 	"agentStatusErrorDescription": "Der Agent kann seinen Docker-Daemon nicht erreichen. Deployments schlagen fehl, bis er wieder erreichbar ist.",
 	"statusSynced": "Synchronisiert",
 	"statusOutOfSync": "Nicht synchron",
-	"statusSyncing": "Synchronisiere",
+	"statusSyncing": "Synchronisierende",
 	"statusHealthy": "Gesund",
 	"statusUnhealthy": "Ungesund",
 	"userSettings": "Benutzereinstellungen",
