@@ -9,6 +9,8 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
@@ -576,5 +578,85 @@ func TestDeploy_DeleteOldImages_SkipsWhenImagesUnchanged(t *testing.T) {
 	}
 	if len(*removed) != 0 {
 		t.Errorf("expected no images to be removed, got %v", *removed)
+	}
+}
+
+func stubProjectContainers(t *testing.T, items []container.Summary, err error) {
+	t.Helper()
+	orig := listProjectContainers
+	t.Cleanup(func() { listProjectContainers = orig })
+	listProjectContainers = func(_ context.Context, _ client.APIClient, _ string) ([]container.Summary, error) {
+		return items, err
+	}
+}
+
+func TestEnsureProjectManaged(t *testing.T) {
+	managed := container.Summary{Labels: map[string]string{labelManagedBy: managedByValue}}
+	foreign := container.Summary{Labels: map[string]string{"com.docker.compose.project": "billing"}}
+
+	tests := []struct {
+		name    string
+		items   []container.Summary
+		listErr error
+		wantErr bool
+	}{
+		{name: "project does not exist"},
+		{name: "all containers managed", items: []container.Summary{managed, managed}},
+		{name: "foreign project", items: []container.Summary{foreign}, wantErr: true},
+		{name: "mixed project", items: []container.Summary{managed, foreign}, wantErr: true},
+		{name: "list error", listErr: errors.New("daemon unavailable"), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t)
+			stubProjectContainers(t, tt.items, tt.listErr)
+
+			err := c.ensureProjectManaged(t.Context(), "billing")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ensureProjectManaged() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDeploy_RejectsForeignProject(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	stubProjectContainers(t, []container.Summary{{Labels: map[string]string{}}}, nil)
+
+	origUp := upProject
+	t.Cleanup(func() { upProject = origUp })
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		t.Fatal("compose up must not run for a foreign project")
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy to reject a project not managed by OrcaCD")
+	}
+	if _, statErr := os.Stat(filepath.Join(c.deploymentsDir, "billing")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no deployment directory to be created, stat err = %v", statErr)
+	}
+}
+
+func TestRemove_RejectsForeignProject(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	stubProjectContainers(t, []container.Summary{{Labels: map[string]string{}}}, nil)
+
+	origDown := downProject
+	t.Cleanup(func() { downProject = origDown })
+	downProject = func(_ context.Context, _ api.Compose, _ string, _ api.DownOptions) error {
+		t.Fatal("compose down must not run for a foreign project")
+		return nil
+	}
+
+	if err := c.Remove(t.Context(), DeleteRequest{ApplicationID: "app-1", ApplicationName: "billing"}); err == nil {
+		t.Fatal("expected remove to reject a project not managed by OrcaCD")
 	}
 }

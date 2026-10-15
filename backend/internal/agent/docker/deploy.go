@@ -11,17 +11,20 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 const (
 	composeFileName    = "compose.yaml"
 	labelManagedBy     = "managed_by"
 	labelApplicationID = "orca-cd.application-id"
+	managedByValue     = "orca-cd"
 )
 
 func orcaLabels(appID string) map[string]string {
 	return map[string]string{
-		labelManagedBy:     "orca-cd",
+		labelManagedBy:     managedByValue,
 		labelApplicationID: appID,
 	}
 }
@@ -53,6 +56,33 @@ var upProject = func(ctx context.Context, composeService api.Compose, project *c
 
 var downProject = func(ctx context.Context, composeService api.Compose, projectName string, options api.DownOptions) error {
 	return composeService.Down(ctx, projectName, options)
+}
+
+var listProjectContainers = func(ctx context.Context, cli client.APIClient, projectName string) ([]container.Summary, error) {
+	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", api.ProjectLabel+"="+projectName),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Items, nil
+}
+
+// ensureProjectManaged refuses to touch a compose project that already exists on
+// the host but was not created by OrcaCD, so an application named like a foreign
+// project can neither take it over nor tear it down.
+func (c *Client) ensureProjectManaged(ctx context.Context, projectName string) error {
+	containers, err := listProjectContainers(ctx, c.cli.Client(), projectName)
+	if err != nil {
+		return fmt.Errorf("list containers of project %q: %w", projectName, err)
+	}
+	for _, item := range containers {
+		if item.Labels[labelManagedBy] != managedByValue {
+			return fmt.Errorf("compose project %q already exists and is not managed by OrcaCD", projectName)
+		}
+	}
+	return nil
 }
 
 type DeleteRequest struct {
@@ -97,6 +127,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	// Verify the final path stays within the deployments directory
 	if err := utils.IsPathWithinBase(c.deploymentsDir, composePath); err != nil {
 		return fmt.Errorf("invalid compose file path: %w", err)
+	}
+
+	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(applicationDir, 0o750); err != nil {
@@ -193,6 +227,10 @@ func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
 	applicationDir := filepath.Join(c.deploymentsDir, projectName)
 	if err := utils.IsPathWithinBase(c.deploymentsDir, applicationDir); err != nil {
 		return fmt.Errorf("invalid deployment directory: %w", err)
+	}
+
+	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
+		return err
 	}
 
 	if err := downProject(ctx, c.compose, projectName, api.DownOptions{RemoveOrphans: true}); err != nil {

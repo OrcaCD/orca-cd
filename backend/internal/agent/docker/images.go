@@ -65,6 +65,10 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("invalid application name: %w", err)
 	}
 
+	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
+		return false, err
+	}
+
 	composePath := filepath.Join(c.deploymentsDir, projectName, composeFileName)
 	if _, err := os.Stat(composePath); errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
