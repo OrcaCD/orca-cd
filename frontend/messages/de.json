@@ -290,6 +290,7 @@
 	"noFilesFoundInBranch": "In diesem Branch wurden keine Dateien gefunden.",
 	"selectedFilePath": "Ausgewählter Dateipfad",
 	"applicationUpdated": "Anwendung aktualisiert",
+	"applicationUpdatedDeployPrompt": "Diese Änderungen betreffen das Deployment. Jetzt deployen, um sie anzuwenden.",
 	"applicationCreated": "Anwendung erstellt",
 	"failedSaveApplication": "Anwendung konnte nicht gespeichert werden",
 	"updateApplication": "Anwendung aktualisieren",

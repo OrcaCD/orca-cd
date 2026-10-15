@@ -290,6 +290,7 @@
 	"noFilesFoundInBranch": "No files found in this branch.",
 	"selectedFilePath": "Selected file path",
 	"applicationUpdated": "Application updated",
+	"applicationUpdatedDeployPrompt": "These changes affect the deployment. Deploy now to apply them.",
 	"applicationCreated": "Application created",
 	"failedSaveApplication": "Failed to save application",
 	"updateApplication": "Update Application",
