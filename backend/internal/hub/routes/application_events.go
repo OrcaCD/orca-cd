@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -20,6 +22,9 @@ const (
 )
 
 var applicationEventsLog = logger.New("application-events", false)
+
+const applicationEventSearchCondition = "(type LIKE @search OR source LIKE @search OR status LIKE @search" +
+	" OR actor_name LIKE @search OR commit_hash LIKE @search OR commit_message LIKE @search OR error_message LIKE @search)"
 
 type applicationEventResponse struct {
 	Id            string  `json:"id"`
@@ -58,8 +63,12 @@ func ListApplicationEventsHandler(c *gin.Context) {
 		return
 	}
 
-	events, err := gorm.G[models.ApplicationEvent](db.DB).
-		Where("application_id = ?", applicationID).
+	query := gorm.G[models.ApplicationEvent](db.DB).Where("application_id = ?", applicationID)
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		query = query.Where(applicationEventSearchCondition, sql.Named("search", "%"+search+"%"))
+	}
+
+	events, err := query.
 		Order("created_at DESC, id DESC").
 		Offset(offset).
 		Limit(limit + 1).

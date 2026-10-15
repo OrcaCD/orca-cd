@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -12,6 +14,9 @@ import (
 )
 
 const defaultAuditLogLimit = 20
+
+const auditLogSearchCondition = "(event_type LIKE @search OR target_type LIKE @search OR target_id LIKE @search" +
+	" OR user_id IN (SELECT id FROM users WHERE name LIKE @search OR email LIKE @search))"
 
 type auditLogResponse struct {
 	Id         string             `json:"id"`
@@ -39,8 +44,12 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		}
 	}
 
-	query := gorm.G[models.AuditLog](db.DB).
-		Order("created_at DESC").
+	query := gorm.G[models.AuditLog](db.DB).Order("created_at DESC")
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		query = query.Where(auditLogSearchCondition, sql.Named("search", "%"+search+"%"))
+	}
+
+	query = query.
 		Offset(offset).
 		Limit(limit+1).
 		Preload("User", func(db gorm.PreloadBuilder) error {

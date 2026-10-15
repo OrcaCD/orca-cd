@@ -62,6 +62,8 @@
 	"searchApplications": "Anwendungen suchen...",
 	"searchAgents": "Agenten suchen...",
 	"searchNotifications": "Benachrichtigungen suchen...",
+	"searchApplicationHistory": "Verlauf durchsuchen...",
+	"searchAuditLog": "Änderungsprotokoll durchsuchen...",
 	"noResults": "Keine Ergebnisse.",
 	"noData": "Keine Einträge gefunden.",
 	"noApplicationsFound": "Keine Anwendungen gefunden",

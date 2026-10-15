@@ -62,6 +62,8 @@
 	"searchApplications": "Search applications...",
 	"searchAgents": "Search agents...",
 	"searchNotifications": "Search notifications...",
+	"searchApplicationHistory": "Search history...",
+	"searchAuditLog": "Search audit log...",
 	"noResults": "No results.",
 	"noData": "No data found.",
 	"noApplicationsFound": "No applications found",
