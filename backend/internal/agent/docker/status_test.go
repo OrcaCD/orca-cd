@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/rs/zerolog"
@@ -57,8 +58,28 @@ func TestAggregateHealth(t *testing.T) {
 			want:  HealthHealthy,
 		},
 		{
-			name:  "exited container is unhealthy",
+			name:  "partially stopped is unhealthy",
 			items: []container.Summary{{State: container.StateRunning}, {State: container.StateExited}},
+			want:  HealthUnhealthy,
+		},
+		{
+			name:  "all stopped is stopped",
+			items: []container.Summary{{State: container.StateExited}, {State: container.StateExited}},
+			want:  HealthStopped,
+		},
+		{
+			name:  "created and paused containers are stopped",
+			items: []container.Summary{{State: container.StateCreated}, {State: container.StatePaused}},
+			want:  HealthStopped,
+		},
+		{
+			name:  "restarting container is unhealthy",
+			items: []container.Summary{{State: container.StateExited}, {State: container.StateRestarting}},
+			want:  HealthUnhealthy,
+		},
+		{
+			name:  "dead container is unhealthy",
+			items: []container.Summary{{State: container.StateDead}},
 			want:  HealthUnhealthy,
 		},
 		{
@@ -149,5 +170,19 @@ func TestWithInspectedHealth_InspectErrorIsReturned(t *testing.T) {
 	_, err := withInspectedHealth(t.Context(), inspector, []container.Summary{{ID: "a", State: container.StateRunning}})
 	if err == nil {
 		t.Fatal("expected an error when inspecting fails")
+	}
+}
+
+func TestHealthStateProto(t *testing.T) {
+	tests := map[HealthState]messages.HealthStatus{
+		HealthUnknown:   messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED,
+		HealthHealthy:   messages.HealthStatus_HEALTH_STATUS_HEALTHY,
+		HealthUnhealthy: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
+		HealthStopped:   messages.HealthStatus_HEALTH_STATUS_STOPPED,
+	}
+	for state, want := range tests {
+		if got := state.Proto(); got != want {
+			t.Errorf("HealthState(%d).Proto() = %v, want %v", state, got, want)
+		}
 	}
 }

@@ -49,6 +49,20 @@ export function execInContainer(id: string, command: string[]) {
 	}
 }
 
+export function stopContainer(id: string) {
+	const result = docker(["stop", id]);
+	if (!result.ok) {
+		throw new Error(`docker stop ${id} failed: ${result.stderr}`);
+	}
+}
+
+export function startContainer(id: string) {
+	const result = docker(["start", id]);
+	if (!result.ok) {
+		throw new Error(`docker start ${id} failed: ${result.stderr}`);
+	}
+}
+
 export function inspectContainer(id: string) {
 	const { ok, stdout } = docker(["inspect", id]);
 	if (!ok) {

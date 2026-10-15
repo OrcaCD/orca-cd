@@ -390,8 +390,8 @@ function ApplicationDetailsPage() {
 				</TabsContent>
 
 				<TabsContent value="diff" className="space-y-4">
-					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
-						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
+					<div className="dark:bg-[#121212] border border-border rounded-lg">
+						<div className="text-sm font-mono text-muted-foreground overflow-x-auto p-4">
 							<div dangerouslySetInnerHTML={{ __html: diffHtml }} />
 						</div>
 					</div>

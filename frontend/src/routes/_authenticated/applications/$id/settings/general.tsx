@@ -54,8 +54,13 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 	}),
 });
 
+// Moving or renaming an application removes it from its agent, so it has to be deployed again
 function affectsDeployment(previous: Application, updated: Application): boolean {
-	return previous.composeFile !== updated.composeFile || previous.agentId !== updated.agentId;
+	return (
+		previous.composeFile !== updated.composeFile ||
+		previous.agentId !== updated.agentId ||
+		previous.name !== updated.name
+	);
 }
 
 async function deploy(id: string) {
