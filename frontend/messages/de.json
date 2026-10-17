@@ -141,7 +141,7 @@
 	"overviewOnboardingApplicationDescription": "Wähle eine Compose-Datei und den Agent, der sie deployt.",
 	"overviewOnboardingNotificationTitle": "Benachrichtigungen einrichten",
 	"overviewOnboardingNotificationDescription": "Optional: Werde benachrichtigt, wenn ein Deployment fehlschlägt oder ein Agent offline geht.",
-	"applicationsFleetTitle": "Status",
+	"applicationsFleetTitle": "Anwendungen: {count}",
 	"applicationsFleetCount": "Anwendungen: {count}",
 	"applicationsFleetHealthyCount": "{healthy} / {total} synchron & gesund",
 	"applicationsFleetNothingToDo": "Alles läuft wie erwartet",
