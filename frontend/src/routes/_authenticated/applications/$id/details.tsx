@@ -10,12 +10,19 @@ import {
 	ChevronDown,
 	Clock,
 	ExternalLink,
+	FileCode,
+	FolderGit2,
 	GitBranch,
 	GitCommit,
 	GitPullRequestArrow,
 	ImageDown,
+	MousePointerClick,
+	RefreshCw,
 	Rocket,
 	Server,
+	Sparkles,
+	Webhook,
+	Workflow,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
@@ -31,7 +38,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMemo, useState } from "react";
 import { useTheme } from "@/components/theme-provider";
 import { highlighter } from "@/lib/highlighter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import CopyButton from "@/components/copy-btn";
+import { cn, formatRelativeTime } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
@@ -39,7 +49,7 @@ import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/t
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
-import { getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
+import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
 import { syncRepository } from "@/lib/repositories";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -58,54 +68,79 @@ export const Route = createFileRoute("/_authenticated/applications/$id/details")
 function InfoCard({
 	icon,
 	label,
-	value,
-	subValue,
-	link,
-	isMonoValue,
+	action,
+	loading,
+	children,
 }: {
 	icon: React.ReactNode;
 	label: string;
-	value: string;
-	subValue?: string | string[];
-	link?: string;
-	isMonoValue?: boolean;
+	action?: React.ReactNode;
+	loading?: boolean;
+	children: React.ReactNode;
 }) {
-	const subValues = [subValue ?? []].flat().filter(Boolean);
-
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>
-					<div className="flex items-center gap-2 text-muted-foreground mb-2">
-						{icon}
-						<span className="text-sm">{label}</span>
-					</div>
+		<Card className="gap-3">
+			<CardHeader className="min-h-7 items-center">
+				<CardTitle className="flex items-center gap-2 text-sm font-normal text-muted-foreground">
+					{icon}
+					{label}
 				</CardTitle>
+				{action && !loading ? <CardAction className="row-span-1 -my-1">{action}</CardAction> : null}
 			</CardHeader>
-			<CardContent>
-				<div className="font-medium truncate">
-					{link ? (
-						<a
-							href={link}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="hover:text-primary flex items-center gap-1"
-						>
-							{value} <ExternalLink className="h-3 w-3" />
-						</a>
-					) : (
-						<span className={isMonoValue ? "font-mono" : ""}>{value}</span>
-					)}
-				</div>
-				{subValues.map((line) => (
-					<p key={line} className="text-sm text-muted-foreground mt-1 truncate">
-						{line}
-					</p>
-				))}
+			<CardContent className="min-w-0 space-y-2">
+				{loading ? (
+					<>
+						<Skeleton className="h-6 w-3/4" />
+						<Skeleton className="h-4 w-1/2" />
+						<Skeleton className="h-4 w-2/3" />
+					</>
+				) : (
+					children
+				)}
 			</CardContent>
 		</Card>
 	);
 }
+
+function InfoValue({ className, ...props }: React.ComponentProps<"div">) {
+	return <div className={cn("truncate text-base font-semibold", className)} {...props} />;
+}
+
+function InfoMeta({
+	icon,
+	title,
+	children,
+	truncateStart,
+}: {
+	icon: React.ReactNode;
+	title?: string;
+	children: React.ReactNode;
+	// Ellipsize the beginning instead of the end, e.g. to keep the file name of a long path visible.
+	truncateStart?: boolean;
+}) {
+	return (
+		<div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={title}>
+			<span className="shrink-0 [&_svg]:size-3.5">{icon}</span>
+			{truncateStart ? (
+				<span dir="rtl" className="truncate text-left">
+					<bdi>{children}</bdi>
+				</span>
+			) : (
+				<span className="truncate">{children}</span>
+			)}
+		</div>
+	);
+}
+
+const lastSyncSourceIcons: Record<ApplicationEventSource, React.ReactNode> = {
+	[ApplicationEventSource.Manual]: <MousePointerClick />,
+	[ApplicationEventSource.ApplicationCreated]: <Sparkles />,
+	[ApplicationEventSource.RepositoryPolling]: <RefreshCw />,
+	[ApplicationEventSource.RepositoryWebhook]: <Webhook />,
+	[ApplicationEventSource.GitHubActions]: <Workflow />,
+	[ApplicationEventSource.ImagePolling]: <RefreshCw />,
+	[ApplicationEventSource.ImageWebhook]: <Webhook />,
+};
 
 const lastSyncSourceLabels: Record<ApplicationEventSource, () => string> = {
 	[ApplicationEventSource.Manual]: () => m.applicationInfoLastSyncSourceManual(),
@@ -245,6 +280,8 @@ function ApplicationDetailsPage() {
 		}
 	};
 
+	const imageSyncTriggers = getImageSyncTriggers(data);
+
 	const deploymentInProgress =
 		deploying || syncingRepository || pullingImages || data?.syncStatus === SyncStatus.Syncing;
 
@@ -342,39 +379,89 @@ function ApplicationDetailsPage() {
 
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 				<InfoCard
-					icon={<GitBranch className="h-4 w-4" />}
+					icon={<FolderGit2 className="h-4 w-4" />}
 					label={m.applicationInfoRepository()}
-					value={data?.repositoryName ?? ""}
-					subValue={[
-						data?.branch ?? "",
-						data
-							? m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })
-							: "",
-					]}
-					link={data?.repositoryUrl}
-				/>
+					loading={!data}
+					action={
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							className="text-muted-foreground hover:text-foreground"
+							aria-label={m.openRepository()}
+							title={m.openRepository()}
+							nativeButton={false}
+							render={<a href={data?.repositoryUrl} target="_blank" rel="noopener noreferrer" />}
+						>
+							<ExternalLink />
+						</Button>
+					}
+				>
+					<InfoValue title={data?.repositoryName}>
+						<a
+							href={data?.repositoryUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="hover:text-primary"
+						>
+							{data?.repositoryName}
+						</a>
+					</InfoValue>
+					<InfoMeta icon={<GitBranch />} title={data?.branch}>
+						<span className="font-mono">{data?.branch}</span>
+					</InfoMeta>
+					{data ? (
+						<InfoMeta icon={getSyncTypeIcon(data.repositorySyncType, "")}>
+							{m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })}
+						</InfoMeta>
+					) : null}
+					{imageSyncTriggers ? <InfoMeta icon={<ImageDown />}>{imageSyncTriggers}</InfoMeta> : null}
+				</InfoCard>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
 					label={m.applicationInfoLatestCommit()}
-					value={data?.commit?.slice(0, 7) ?? ""}
-					subValue={data?.commitMessage}
-					isMonoValue
-				/>
+					loading={!data}
+					action={data?.commit ? <CopyButton text={data.commit} /> : null}
+				>
+					<InfoValue className="font-mono" title={data?.commit}>
+						{data?.commit?.slice(0, 7) || "—"}
+					</InfoValue>
+					{data?.commitMessage ? (
+						<p className="line-clamp-2 text-sm text-muted-foreground" title={data.commitMessage}>
+							{data.commitMessage}
+						</p>
+					) : null}
+				</InfoCard>
 				<InfoCard
 					icon={<Server className="h-4 w-4" />}
 					label={m.applicationInfoTargetHost()}
-					value={data?.agentName ?? ""}
-					subValue={data?.path}
-				/>
+					loading={!data}
+				>
+					<InfoValue title={data?.agentName}>{data?.agentName}</InfoValue>
+					<InfoMeta icon={<FileCode />} title={data?.path} truncateStart>
+						<span className="font-mono">{data?.path}</span>
+					</InfoMeta>
+				</InfoCard>
 				<InfoCard
 					icon={<Clock className="h-4 w-4" />}
 					label={m.applicationInfoLastSync()}
-					value={data?.lastSyncedAt ? new Date(data.lastSyncedAt).toLocaleString() : m.never()}
-					subValue={[
-						data?.lastSyncSource ? (lastSyncSourceLabels[data.lastSyncSource]?.() ?? "") : "",
-						getImageSyncTriggers(data) ?? "",
-					]}
-				/>
+					loading={!data}
+				>
+					{data?.lastSyncedAt ? (
+						<Tooltip>
+							<TooltipTrigger render={<InfoValue className="w-fit max-w-full" />}>
+								{formatRelativeTime(data.lastSyncedAt)}
+							</TooltipTrigger>
+							<TooltipContent>{new Date(data.lastSyncedAt).toLocaleString()}</TooltipContent>
+						</Tooltip>
+					) : (
+						<InfoValue>{m.never()}</InfoValue>
+					)}
+					{data?.lastSyncSource ? (
+						<InfoMeta icon={lastSyncSourceIcons[data.lastSyncSource]}>
+							{lastSyncSourceLabels[data.lastSyncSource]?.()}
+						</InfoMeta>
+					) : null}
+				</InfoCard>
 			</div>
 
 			<Tabs defaultValue="manifest" className="space-y-4">
