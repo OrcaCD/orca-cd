@@ -125,7 +125,7 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 										onBlur={field.handleBlur}
 										onChange={(e) => field.handleChange(e.target.value)}
 										type="text"
-										placeholder={m.setupCodePlaceholder()}
+										placeholder="XXXX-XXXX-XXXX-XXXX"
 										className="font-mono uppercase"
 										required
 										autoComplete="off"

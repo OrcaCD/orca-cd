@@ -577,7 +577,6 @@
 	"enterSetupCode": "Setup-Code eingeben",
 	"enterSetupCodeDescription": "Den Setup-Code findest du in den Startup-Logs deines OrcaCD-Hubs",
 	"setupCode": "Setup-Code",
-	"setupCodePlaceholder": "XXXX-XXXX-XXXX-XXXX",
 	"verifyingSetupCode": "Wird überprüft...",
 	"validationSetupCodeRequired": "Setup-Code ist erforderlich",
 	"toastSetupCodeVerificationFailed": "Überprüfung des Setup-Codes fehlgeschlagen",
