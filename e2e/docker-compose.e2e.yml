@@ -1,5 +1,6 @@
 services:
   hub:
+    image: orca-hub-e2e-test
     build:
       context: ..
       dockerfile: hub.Dockerfile
