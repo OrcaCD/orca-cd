@@ -38,6 +38,7 @@
 	"disabled": "Deaktiviert",
 	"more": "Mehr",
 	"openMenu": "Menü öffnen",
+	"openRepository": "Repository öffnen",
 	"toggleSidebar": "Seitenleiste umschalten",
 	"sidebar": "Seitenleiste",
 	"mobileSidebarDescription": "Zeigt die mobile Seitenleiste an.",
@@ -663,6 +664,8 @@
 	"applicationHistoryEnd": "Keine weiteren Ereignisse.",
 	"applicationHistoryLoadingMore": "Wird geladen...",
 	"applicationHistoryLoadFailed": "Verlauf konnte nicht geladen werden",
+	"applicationHistoryViewTimeline": "Zeitleistenansicht",
+	"applicationHistoryViewTable": "Tabellenansicht",
 	"eventTypeDeployment": "Deployment",
 	"eventTypeCommitSync": "Commit-Synchronisierung",
 	"eventTypeImageUpdate": "Image-Aktualisierung",
@@ -689,5 +692,14 @@
 	"outdatedAgentsAlertTitle": "Veraltete Agenten",
 	"outdatedAgentsAlertDescription": "Einige Agenten laufen mit einer älteren Version als der Hub. Aktualisiere sie, um die neuesten Funktionen und Fehlerbehebungen zu erhalten.",
 	"unsupportedAgentsAlertTitle": "Nicht unterstützte Agenten",
-	"unsupportedAgentsAlertDescription": "Einige Agenten laufen mit einer Version, die vom Hub nicht mehr unterstützt wird. Aktualisiere sie, damit Deployments weiterhin funktionieren."
+	"unsupportedAgentsAlertDescription": "Einige Agenten laufen mit einer Version, die vom Hub nicht mehr unterstützt wird. Aktualisiere sie, damit Deployments weiterhin funktionieren.",
+	"applicationSettingsApplication": "Anwendung",
+	"applicationSettingsApplicationDescription": "Wie die Anwendung heißt und welcher Agent sie ausführt.",
+	"applicationSettingsSource": "Quelle",
+	"applicationSettingsSourceDescription": "Das Repository, der Branch und die Compose-Datei, die bereitgestellt werden.",
+	"applicationSettingsDeployment": "Deployment",
+	"applicationSettingsDeploymentDescription": "Optionen, die bei jedem Deployment dieser Anwendung gelten.",
+	"noComposeFileSelected": "Keine Compose-Datei ausgewählt",
+	"dangerZone": "Gefahrenbereich",
+	"deleteApplicationHint": "Diese Anwendung dauerhaft löschen und ihre Container vom Agenten entfernen."
 }

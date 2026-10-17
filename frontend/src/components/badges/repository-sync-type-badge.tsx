@@ -2,14 +2,14 @@ import { m } from "@/lib/paraglide/messages";
 import type { RepositorySyncType } from "@/lib/repositories";
 import { MousePointerClickIcon, RefreshCw, WebhookIcon } from "lucide-react";
 
-function getSyncTypeIcon(syncType: RepositorySyncType) {
+export function getSyncTypeIcon(syncType: RepositorySyncType, className = "h-4 w-4") {
 	switch (syncType) {
 		case "webhook":
-			return <WebhookIcon className="h-4 w-4" />;
+			return <WebhookIcon className={className} />;
 		case "polling":
-			return <RefreshCw className="h-4 w-4" />;
+			return <RefreshCw className={className} />;
 		case "manual":
-			return <MousePointerClickIcon className="h-4 w-4" />;
+			return <MousePointerClickIcon className={className} />;
 		default:
 			return null;
 	}

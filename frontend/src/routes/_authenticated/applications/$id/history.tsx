@@ -6,11 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import ErrorAlert from "@/components/alerts/error-alert";
+import { HistoryLayoutToggle } from "@/components/applications/history-layout-toggle";
+import { HistoryTimeline } from "@/components/applications/history-timeline";
 import { columns } from "@/components/tables/application-events/columns";
 import { ApplicationEventsDataTable } from "@/components/tables/application-events/data-table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { API_BASE, fetcher } from "@/lib/api";
 import type { ApplicationEventsPage } from "@/lib/application-events";
+import { useHistoryLayout } from "@/lib/history-layout-preference";
 import { m } from "@/lib/paraglide/messages";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/history")({
@@ -43,6 +46,7 @@ function ApplicationHistoryPage() {
 	const { id } = Route.useParams();
 	const [search, setSearch] = useState("");
 	const debouncedSearch = useDebouncedValue(search.trim());
+	const { historyLayout, setHistoryLayout } = useHistoryLayout();
 	const { data, error, isLoading, isValidating, size, setSize } =
 		useSWRInfinite<ApplicationEventsPage>(
 			getKey(id, debouncedSearch),
@@ -57,14 +61,17 @@ function ApplicationHistoryPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<h1 className="text-2xl font-bold">{m.applicationHistory()}</h1>
-			<div className="relative w-md max-w-full">
-				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-				<Input
-					placeholder={m.searchApplicationHistory()}
-					className="pl-9 bg-muted border-border"
-					value={search}
-					onChange={(event) => setSearch(event.target.value)}
-				/>
+			<div className="flex items-center justify-between gap-4">
+				<div className="relative w-md max-w-full">
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+					<Input
+						placeholder={m.searchApplicationHistory()}
+						className="pl-9 bg-muted border-border"
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+					/>
+				</div>
+				<HistoryLayoutToggle layout={historyLayout} setLayout={setHistoryLayout} />
 			</div>
 
 			{isLoading && !data ? (
@@ -80,11 +87,19 @@ function ApplicationHistoryPage() {
 				/>
 			) : (
 				<>
-					<ApplicationEventsDataTable
-						columns={columns}
-						data={events}
-						emptyMessage={debouncedSearch ? m.noResults() : undefined}
-					/>
+					{historyLayout === "table" ? (
+						<ApplicationEventsDataTable
+							columns={columns}
+							data={events}
+							emptyMessage={debouncedSearch ? m.noResults() : undefined}
+						/>
+					) : events.length > 0 ? (
+						<HistoryTimeline events={events} />
+					) : (
+						<div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+							{debouncedSearch ? m.noResults() : m.applicationHistoryEmpty()}
+						</div>
+					)}
 
 					{hasMore ? (
 						<Button variant="outline" disabled={loadingMore} onClick={() => setSize(size + 1)}>
