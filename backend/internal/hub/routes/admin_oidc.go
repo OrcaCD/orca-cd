@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -50,6 +51,19 @@ type oidcProviderResponse struct {
 	CallbackURL          string `json:"callbackUrl"`
 	CreatedAt            string `json:"createdAt"`
 	UpdatedAt            string `json:"updatedAt"`
+}
+
+// oidcDiscoveryClient is the HTTP client used to validate issuer URLs.
+// Replaced with an unrestricted client in tests.
+var oidcDiscoveryClient = httpclient.Default
+
+// validateOIDCIssuer attempts OIDC discovery using the SSRF-safe HTTP client.
+func validateOIDCIssuer(ctx context.Context, issuerURL string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ctx = gooidc.ClientContext(ctx, oidcDiscoveryClient)
+	_, err := gooidc.NewProvider(ctx, issuerURL)
+	return err
 }
 
 func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
@@ -103,9 +117,7 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 	}
 
 	// Validate issuer by attempting OIDC discovery
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-	defer cancel()
-	if _, err := gooidc.NewProvider(ctx, req.IssuerURL); err != nil {
+	if err := validateOIDCIssuer(c.Request.Context(), req.IssuerURL); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to discover OIDC provider at the given issuer URL"})
 		return
 	}
@@ -164,9 +176,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 
 	// Validate issuer if it changed
 	if req.IssuerURL != existing.IssuerURL {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
-		defer cancel()
-		if _, err := gooidc.NewProvider(ctx, req.IssuerURL); err != nil {
+		if err := validateOIDCIssuer(c.Request.Context(), req.IssuerURL); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to discover OIDC provider at the given issuer URL"})
 			return
 		}

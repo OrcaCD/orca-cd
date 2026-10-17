@@ -647,9 +647,18 @@ func TestSendMessage_AllowedUnencrypted(t *testing.T) {
 	}
 }
 
+func newHubTestSession(t *testing.T) *wscrypto.Session {
+	t.Helper()
+	session, err := wscrypto.NewSession(make([]byte, 32), wscrypto.RoleHub)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return session
+}
+
 func TestSendMessage_Encrypted(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -736,7 +745,7 @@ func TestSendMessage_DeadlineErrorClosesConnection(t *testing.T) {
 
 func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -765,7 +774,7 @@ func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 	pingMsg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_Ping{Ping: &messages.PingRequest{Timestamp: time.Now().UnixMilli()}},
 	}
-	env, err := session.Encrypt(pingMsg)
+	env, err := newHubTestSession(t).Encrypt(pingMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -788,7 +797,7 @@ func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 
 func TestHandleServerMessage_DeployRequest(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -807,7 +816,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 			},
 		},
 	}
-	env, err := session.Encrypt(deployMsg)
+	env, err := newHubTestSession(t).Encrypt(deployMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -852,7 +861,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 
 func TestHandleServerMessage_EncryptedDecryptError(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -870,7 +879,7 @@ func TestHandleServerMessage_EncryptedDecryptError(t *testing.T) {
 
 func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -880,7 +889,7 @@ func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
 			EncryptedPayload: &messages.EncryptedPayload{Nonce: make([]byte, 32), Ciphertext: []byte{0x01}},
 		},
 	}
-	env, err := session.Encrypt(innerMsg)
+	env, err := newHubTestSession(t).Encrypt(innerMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -938,7 +947,7 @@ func (p *stubPoller) lastSnapshot() []agentdocker.AppPollConfig {
 
 func TestHandleServerMessage_AgentSettings(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -965,7 +974,7 @@ func TestHandleServerMessage_AgentSettings(t *testing.T) {
 			},
 		},
 	}
-	env, err := session.Encrypt(settingsMsg)
+	env, err := newHubTestSession(t).Encrypt(settingsMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -1022,7 +1031,7 @@ func TestHandleServerMessage_AgentSettings(t *testing.T) {
 
 func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -1039,7 +1048,7 @@ func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 			},
 		},
 	}
-	env, err := session.Encrypt(pullMsg)
+	env, err := newHubTestSession(t).Encrypt(pullMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}

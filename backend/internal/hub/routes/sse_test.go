@@ -135,6 +135,43 @@ func TestSSEHandler_InitialComment(t *testing.T) {
 	waitForInitialComment(t, scanner)
 }
 
+func TestSSEHandler_PerUserConnectionLimit(t *testing.T) {
+	newTestSSEBroker(t)
+	server := newSSETestServer(t)
+
+	cancels := make([]context.CancelFunc, 0, maxSSEConnectionsPerUser)
+	for range maxSSEConnectionsPerUser {
+		scanner, cancel := connectSSE(t, server)
+		cancels = append(cancels, cancel)
+		waitForInitialComment(t, scanner)
+	}
+
+	resp, err := http.Get(server.URL + "/api/v1/events")
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected status %d, got %d", http.StatusTooManyRequests, resp.StatusCode)
+	}
+
+	cancels[0]()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(server.URL + "/api/v1/events")
+		if err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+		status := resp.StatusCode
+		_ = resp.Body.Close()
+		if status == http.StatusOK {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("slot was not released after closing a connection")
+}
+
 func TestSSEHandler_ReceivesEvent(t *testing.T) {
 	broker := newTestSSEBroker(t)
 	server := newSSETestServer(t)

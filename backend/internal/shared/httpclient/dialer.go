@@ -21,3 +21,5 @@ var dialer = &net.Dialer{
 		return nil
 	},
 }
+
+var DialContext = dialer.DialContext

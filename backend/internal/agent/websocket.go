@@ -128,7 +128,7 @@ func performHandshake(conn *websocket.Conn, agentID string, hubPubKey ed25519.Pu
 	}
 
 	Log.Debug().Str("agent_id", agentID).Msg("WS handshake complete")
-	return wscrypto.NewSession(sessionKey)
+	return wscrypto.NewSession(sessionKey, wscrypto.RoleAgent)
 }
 
 func readHubMessage(conn *websocket.Conn, timeout time.Duration) ([]byte, error) {

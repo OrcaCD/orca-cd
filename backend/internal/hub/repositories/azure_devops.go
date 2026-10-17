@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -247,7 +246,11 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 	branches := make([]string, 0)
 	continuationToken := ""
 
-	for {
+	for pages := 0; ; pages++ {
+		if pages >= maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		query := url.Values{}
 		query.Set("$top", strconv.Itoa(providerPageSize))
 		query.Set("filter", "heads/")
@@ -273,7 +276,7 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var parsed azureDevOpsRefsResponse
-			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			if err := decodeJSON(resp.Body, &parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
 					fmt.Printf("warning: failed to close azure devops response body: %v\n", closeErr)
@@ -368,7 +371,7 @@ func (azureDevOpsProvider) ListTree(ctx context.Context, repo *models.Repository
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed azureDevOpsItemsResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to decode azure devops tree response: %w", err)
 		}
 
@@ -451,7 +454,7 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed azureDevOpsFileResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return "", fmt.Errorf("failed to decode azure devops file response: %w", err)
 		}
 
@@ -509,7 +512,7 @@ func (azureDevOpsProvider) GetLatestCommit(ctx context.Context, repo *models.Rep
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed azureDevOpsCommitsResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return CommitInfo{}, fmt.Errorf("failed to decode azure devops commit response: %w", err)
 		}
 

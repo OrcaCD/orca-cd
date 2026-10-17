@@ -2,6 +2,7 @@ package routes
 
 import (
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -58,8 +59,8 @@ func ProfilePictureHandler(c *gin.Context) {
 		return
 	}
 
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+	contentType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || !strings.HasPrefix(contentType, "image/") {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "profile picture provider did not return an image"})
 		return
 	}
@@ -81,6 +82,10 @@ func ProfilePictureHandler(c *gin.Context) {
 		return
 	}
 
+	// The picture may be an SVG. <img> ignores these headers, but they stop it
+	// from being rendered as a document on the app origin if opened directly.
+	c.Header("Content-Disposition", "attachment; filename=\"profile-picture\"")
+	c.Header("Content-Security-Policy", "default-src 'none'; sandbox")
 	c.Header("Cache-Control", "private, max-age=900")
 	c.Data(http.StatusOK, contentType, data)
 }

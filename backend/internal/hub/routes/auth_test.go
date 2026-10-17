@@ -2,12 +2,16 @@ package routes
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -481,6 +485,136 @@ func TestLoginHandler_UserNotFound(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLoginHandler_RejectsOverlongPassword(t *testing.T) {
+	setupTestDB(t)
+
+	//nolint:gosec
+	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: strings.Repeat("a", 129)})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	LoginHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuthHandlers_ReturnServiceUnavailableWhenHashingBusy(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "sso@example.com", Name: "SSO"})
+
+	tests := []struct {
+		name    string
+		path    string
+		handler gin.HandlerFunc
+		body    any
+	}{
+		{"login with known user", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "test@example.com", Password: "password123"}},
+		{"login with unknown user", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "nobody@example.com", Password: "password123"}},
+		{"login with user without password", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "sso@example.com", Password: "password123"}},
+		{"register", "/api/v1/auth/register", RegisterHandler, registerRequest{Name: "Test", Email: "new@example.com", Password: "Password123!"}},
+	}
+
+	release := auth.SaturateHashSlotsForTest(10 * time.Millisecond)
+	defer release()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			//nolint:gosec
+			reqBody, _ := json.Marshal(tt.body)
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			tt.handler(c)
+
+			if w.Code != http.StatusServiceUnavailable {
+				t.Errorf("expected 503, got %d: %s", w.Code, w.Body.String())
+			}
+			if got := w.Header().Get("Retry-After"); got != "5" {
+				t.Errorf("Retry-After = %q, want %q", got, "5")
+			}
+			if hasAuthCookie(w) {
+				t.Error("must not set an auth cookie when hashing was skipped")
+			}
+		})
+	}
+}
+
+func TestLoginHandler_RecoversAfterHashingBusy(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+
+	login := func() *httptest.ResponseRecorder {
+		//nolint:gosec
+		reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+		LoginHandler(c)
+		return w
+	}
+
+	release := auth.SaturateHashSlotsForTest(10 * time.Millisecond)
+	if w := login(); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 while busy, got %d: %s", w.Code, w.Body.String())
+	}
+	release()
+
+	if w := login(); w.Code != http.StatusOK {
+		t.Errorf("expected 200 after slots were freed, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAbortPasswordOp(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantRetry  string
+	}{
+		{"busy", auth.ErrBusy, http.StatusServiceUnavailable, "5"},
+		{"wrapped busy", fmt.Errorf("wrapped: %w", auth.ErrBusy), http.StatusServiceUnavailable, "5"},
+		{"canceled", context.Canceled, http.StatusOK, ""},
+		{"other", errors.New("boom"), http.StatusInternalServerError, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+			abortPasswordOp(c, tt.err)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
+			}
+			if got := w.Header().Get("Retry-After"); got != tt.wantRetry {
+				t.Errorf("Retry-After = %q, want %q", got, tt.wantRetry)
+			}
+			if tt.err == context.Canceled {
+				if !c.IsAborted() {
+					t.Error("expected context to be aborted")
+				}
+				if w.Body.Len() != 0 {
+					t.Errorf("expected empty body, got %q", w.Body.String())
+				}
+			}
+		})
 	}
 }
 

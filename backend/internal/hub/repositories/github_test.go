@@ -307,6 +307,37 @@ func TestGitHubListBranchesPagination(t *testing.T) {
 	}
 }
 
+func fullPageJSON(itemJSON string) string {
+	items := make([]string, providerPageSize)
+	for i := range items {
+		items[i] = itemJSON
+	}
+	return "[" + strings.Join(items, ",") + "]"
+}
+
+func TestGitHubListBranchesPageLimit(t *testing.T) {
+	p := githubProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		return jsonResponseWithBody(http.StatusOK, fullPageJSON(`{"name":"main"}`)), nil
+	})
+
+	repo := &models.Repository{Url: testRepoURL, AuthMethod: models.AuthMethodNone}
+	_, err := p.ListBranches(context.Background(), repo)
+	if !errors.Is(err, errProviderPageLimit) {
+		t.Fatalf("expected page limit error, got %v", err)
+	}
+	if requestCount != maxProviderPages {
+		t.Fatalf("expected %d requests, got %d", maxProviderPages, requestCount)
+	}
+}
+
 func TestGitHubListBranchesErrors(t *testing.T) {
 	p := githubProvider{}
 	originalClient := httpclient.Default

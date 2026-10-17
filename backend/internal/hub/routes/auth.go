@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -26,7 +27,7 @@ type registerRequest struct {
 
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Password string `json:"password" binding:"required,max=128"`
 }
 
 type updateOwnProfileRequest struct {
@@ -170,6 +171,19 @@ func SetupHandler(c *gin.Context) {
 	})
 }
 
+func abortPasswordOp(c *gin.Context, err error) {
+	if errors.Is(err, auth.ErrBusy) {
+		c.Header("Retry-After", "5")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "server is busy, please try again later"})
+		return
+	}
+	if errors.Is(err, context.Canceled) {
+		c.Abort()
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+}
+
 func RegisterHandler(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -183,9 +197,9 @@ func RegisterHandler(c *gin.Context) {
 		return
 	}
 
-	hash, err := auth.HashPassword(req.Password)
+	hash, err := auth.HashPasswordContext(c.Request.Context(), req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		abortPasswordOp(c, err)
 		return
 	}
 
@@ -244,7 +258,10 @@ func LoginHandler(c *gin.Context) {
 	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			auth.CompareWithDummy(req.Password)
+			if err := auth.CompareWithDummyContext(c.Request.Context(), req.Password); err != nil {
+				abortPasswordOp(c, err)
+				return
+			}
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
@@ -253,12 +270,20 @@ func LoginHandler(c *gin.Context) {
 	}
 
 	if user.PasswordHash == nil {
-		auth.CompareWithDummy(req.Password)
+		if err := auth.CompareWithDummyContext(c.Request.Context(), req.Password); err != nil {
+			abortPasswordOp(c, err)
+			return
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
 
-	if !auth.CheckPassword(req.Password, *user.PasswordHash) {
+	match, err := auth.CheckPasswordContext(c.Request.Context(), req.Password, *user.PasswordHash)
+	if err != nil {
+		abortPasswordOp(c, err)
+		return
+	}
+	if !match {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -306,19 +331,29 @@ func ChangePasswordHandler(c *gin.Context) {
 		return
 	}
 
-	if !auth.CheckPassword(req.CurrentPassword, *user.PasswordHash) {
+	match, err := auth.CheckPasswordContext(c.Request.Context(), req.CurrentPassword, *user.PasswordHash)
+	if err != nil {
+		abortPasswordOp(c, err)
+		return
+	}
+	if !match {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
 		return
 	}
 
-	if auth.CheckPassword(req.NewPassword, *user.PasswordHash) {
+	same, err := auth.CheckPasswordContext(c.Request.Context(), req.NewPassword, *user.PasswordHash)
+	if err != nil {
+		abortPasswordOp(c, err)
+		return
+	}
+	if same {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must be different from current password"})
 		return
 	}
 
-	hash, err := auth.HashPassword(req.NewPassword)
+	hash, err := auth.HashPasswordContext(c.Request.Context(), req.NewPassword)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		abortPasswordOp(c, err)
 		return
 	}
 

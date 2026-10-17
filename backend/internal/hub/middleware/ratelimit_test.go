@@ -59,6 +59,38 @@ func TestRateLimit_BlocksAfterBurst(t *testing.T) {
 	}
 }
 
+func TestLimiterKey(t *testing.T) {
+	tests := []struct {
+		ip   string
+		want string
+	}{
+		{"192.0.2.10", "192.0.2.10"},
+		{"::ffff:192.0.2.10", "192.0.2.10"},
+		{"2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::/64"},
+		{"2001:db8:1:2:1111:2222:3333:4444", "2001:db8:1:2::/64"},
+		{"not-an-ip", "not-an-ip"},
+	}
+	for _, tt := range tests {
+		if got := limiterKey(tt.ip); got != tt.want {
+			t.Errorf("limiterKey(%q) = %q, want %q", tt.ip, got, tt.want)
+		}
+	}
+}
+
+func TestRateLimit_SharesIPv6Prefix(t *testing.T) {
+	rl := newRateLimiter(rate.Every(time.Hour), 1)
+
+	if !rl.get("2001:db8:1:2::1").Allow() {
+		t.Fatal("first request should be allowed")
+	}
+	if rl.get("2001:db8:1:2::2").Allow() {
+		t.Error("address in the same /64 should share the bucket")
+	}
+	if !rl.get("2001:db8:1:3::1").Allow() {
+		t.Error("address in a different /64 should have its own bucket")
+	}
+}
+
 func TestRateLimit_IsolatesIPs(t *testing.T) {
 	rl := newRateLimiter(rate.Every(time.Hour), 1)
 

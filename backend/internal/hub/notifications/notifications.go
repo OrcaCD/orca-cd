@@ -28,6 +28,15 @@ const DefaultTestNotificationMessage = "This is a test notification from OrcaCD.
 // notification requests.
 var notificationHTTPClient = httpclient.Default
 
+var notificationDialContext = httpclient.DialContext
+
+func senderOptions() types.SenderOptions {
+	return types.SenderOptions{
+		HTTPClient:  notificationHTTPClient,
+		DialContext: notificationDialContext,
+	}
+}
+
 var (
 	ErrInvalidNotificationConfig = errors.New("invalid notification config")
 	ErrNotificationDispatch      = errors.New("notification dispatch failed")
@@ -123,7 +132,7 @@ func dispatch(notification *models.Notification, message string) error {
 		return fmt.Errorf("parse notification config: %w", redactError(err))
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
+	sender, err := shoutrrr.CreateSenderWithOptions(senderOptions(), targets...)
 	if err != nil {
 		return fmt.Errorf("create notification sender: %w", redactError(err))
 	}
@@ -161,7 +170,7 @@ func SendTestNotification(notificationType models.NotificationType, rawConfig, m
 		return fmt.Errorf("%w: %w", ErrInvalidNotificationConfig, redactError(err))
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(types.SenderOptions{HTTPClient: notificationHTTPClient}, targets...)
+	sender, err := shoutrrr.CreateSenderWithOptions(senderOptions(), targets...)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidNotificationConfig, redactError(err))
 	}

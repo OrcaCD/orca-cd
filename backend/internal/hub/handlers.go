@@ -37,9 +37,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.GET("/health", routes.HealthHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
 
-		// OIDC auth flow (public)
-		api.GET("/auth/oidc/:id/authorize", routes.OIDCAuthorizeHandler)
-		api.GET("/auth/oidc/:id/callback", routes.OIDCCallbackHandler)
+		// OIDC auth flow (public): 10 req/min per IP, burst of 5
+		oidcRateLimit := middleware.RateLimit(6*time.Second, 5)
+		api.GET("/auth/oidc/:id/authorize", oidcRateLimit, routes.OIDCAuthorizeHandler)
+		api.GET("/auth/oidc/:id/callback", oidcRateLimit, routes.OIDCCallbackHandler)
 
 		// Webhook endpoints: 1 req/s per IP, burst of 10
 		webhookRateLimit := middleware.RateLimit(time.Second, 10)

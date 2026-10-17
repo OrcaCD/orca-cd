@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -143,6 +142,10 @@ func (githubProvider) ListBranches(ctx context.Context, repo *models.Repository)
 	branches := make([]string, 0)
 
 	for page := 1; ; page++ {
+		if page > maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		apiURL := fmt.Sprintf(
 			"%s/repos/%s/%s/branches?per_page=%d&page=%d",
 			githubAPIBase,
@@ -165,7 +168,7 @@ func (githubProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var parsed []githubBranch
-			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			if err := decodeJSON(resp.Body, &parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
 					fmt.Printf("warning: failed to close GitHub response body: %v\n", closeErr)
@@ -252,7 +255,7 @@ func (githubProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed githubTreeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to decode GitHub tree response: %w", err)
 		}
 
@@ -333,7 +336,7 @@ func (githubProvider) GetFileContent(ctx context.Context, repo *models.Repositor
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed githubFileResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return "", fmt.Errorf("failed to decode GitHub file response: %w", err)
 		}
 
@@ -399,7 +402,7 @@ func (githubProvider) GetLatestCommit(ctx context.Context, repo *models.Reposito
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed githubCommitResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return CommitInfo{}, fmt.Errorf("failed to decode GitHub commit response: %w", err)
 		}
 
@@ -460,7 +463,7 @@ func (githubProvider) GetBranchesForCommit(ctx context.Context, repo *models.Rep
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed []githubBranch
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to decode GitHub branches-where-head response: %w", err)
 		}
 		branches := make([]string, 0, len(parsed))
