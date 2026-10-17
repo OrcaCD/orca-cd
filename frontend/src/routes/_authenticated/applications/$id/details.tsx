@@ -20,9 +20,11 @@ import {
 	RefreshCw,
 	Rocket,
 	Server,
+	Space,
 	Sparkles,
 	Webhook,
 	Workflow,
+	WrapText,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
@@ -36,8 +38,6 @@ import {
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMemo, useState } from "react";
-import { useTheme } from "@/components/theme-provider";
-import { highlighter } from "@/lib/highlighter";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import CopyButton from "@/components/copy-btn";
@@ -45,7 +45,6 @@ import { cn, formatRelativeTime } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
-import { transformerNotationDiff, transformerRenderWhitespace } from "@shikijs/transformers";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
@@ -53,6 +52,16 @@ import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repositor
 import { ApplicationEventSource } from "@/lib/application-events";
 import { syncRepository } from "@/lib/repositories";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+	CodeBlock,
+	CodeBlockActions,
+	CodeBlockContent,
+	CodeBlockCopyButton,
+	CodeBlockHeader,
+	CodeBlockLine,
+	CodeBlockTitle,
+} from "@/components/ui/code-block";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -133,19 +142,55 @@ const lastSyncSourceIcons: Record<ApplicationEventSource, React.ReactNode> = {
 	[ApplicationEventSource.ImageWebhook]: <Webhook />,
 };
 
-function ComposeFileView({ path, html }: { path?: string; html: string }) {
+function ComposeFileView({
+	path,
+	copyValue,
+	children,
+}: {
+	path?: string;
+	copyValue?: string;
+	children: React.ReactNode;
+}) {
+	const [wrap, setWrap] = useState(false);
+	const [showWhitespace, setShowWhitespace] = useState(false);
+
 	return (
-		<div className="dark:bg-[#121212] border border-border rounded-lg overflow-hidden">
-			{path && (
-				<div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-sm font-mono text-muted-foreground">
-					<FileCode className="h-4 w-4 shrink-0" />
-					<span className="truncate">{path}</span>
-				</div>
-			)}
-			<div className="text-sm font-mono text-muted-foreground overflow-x-auto p-4">
-				<div dangerouslySetInnerHTML={{ __html: html }} />
-			</div>
-		</div>
+		<CodeBlock data-show-whitespace={showWhitespace || undefined}>
+			<CodeBlockHeader>
+				{path && (
+					<CodeBlockTitle>
+						<FileCode />
+						{path}
+					</CodeBlockTitle>
+				)}
+				<CodeBlockActions>
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						aria-label={m.showWhitespace()}
+						aria-pressed={showWhitespace}
+						className="aria-pressed:bg-muted aria-pressed:text-foreground"
+						onClick={() => setShowWhitespace(!showWhitespace)}
+					>
+						<Space />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						aria-label={m.wrapLines()}
+						aria-pressed={wrap}
+						className="aria-pressed:bg-muted aria-pressed:text-foreground"
+						onClick={() => setWrap(!wrap)}
+					>
+						<WrapText />
+					</Button>
+					{copyValue && <CodeBlockCopyButton value={copyValue} />}
+				</CodeBlockActions>
+			</CodeBlockHeader>
+			<CodeBlockContent lineNumbers wrap={wrap}>
+				{children}
+			</CodeBlockContent>
+		</CodeBlock>
 	);
 }
 
@@ -183,14 +228,6 @@ function getImageSyncTriggers(app?: Application): string | undefined {
 	return m.applicationInfoSyncImages({ type: imageTriggers.join(", ") });
 }
 
-function withDiffMarker(line: string, marker: "++" | "--"): string {
-	if (line.length === 0) {
-		return line;
-	}
-
-	return `${line} # [!code ${marker}]`;
-}
-
 function splitComposeLines(composeFile: string): string[] {
 	if (composeFile.length === 0) {
 		return [];
@@ -204,39 +241,45 @@ function splitComposeLines(composeFile: string): string[] {
 	return lines;
 }
 
+interface ComposeDiffLine {
+	variant: "default" | "added" | "removed";
+	// Index into the previous lines for removed lines, into the current lines otherwise.
+	index: number;
+}
+
 function buildComposeDiff(
 	previousComposeFile: string,
 	composeFile: string,
-): { code: string; additions: number; deletions: number } {
-	const previousLines = splitComposeLines(previousComposeFile);
-	const currentLines = splitComposeLines(composeFile);
+): { lines: ComposeDiffLine[]; additions: number; deletions: number } {
+	const lines: ComposeDiffLine[] = [];
+	let previousIndex = 0;
+	let currentIndex = 0;
 
-	const lines: string[] = [];
-	let additions = 0;
-	let deletions = 0;
-
-	for (const change of diffArrays(previousLines, currentLines)) {
-		if (change.added) {
-			additions += change.value.length;
-			lines.push(...change.value.map((line) => withDiffMarker(line, "++")));
-			continue;
+	for (const change of diffArrays(
+		splitComposeLines(previousComposeFile),
+		splitComposeLines(composeFile),
+	)) {
+		for (let i = 0; i < change.value.length; i++) {
+			if (change.removed) {
+				lines.push({ variant: "removed", index: previousIndex++ });
+			} else {
+				lines.push({ variant: change.added ? "added" : "default", index: currentIndex++ });
+				if (!change.added) {
+					previousIndex++;
+				}
+			}
 		}
-
-		if (change.removed) {
-			deletions += change.value.length;
-			lines.push(...change.value.map((line) => withDiffMarker(line, "--")));
-			continue;
-		}
-
-		lines.push(...change.value);
 	}
 
-	return { code: lines.join("\n"), additions, deletions };
+	return {
+		lines,
+		additions: lines.filter((line) => line.variant === "added").length,
+		deletions: lines.filter((line) => line.variant === "removed").length,
+	};
 }
 
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
-	const { theme } = useTheme();
 
 	const { data } = useFetch<Application>("/applications/" + id);
 
@@ -299,26 +342,15 @@ function ApplicationDetailsPage() {
 	const deploymentInProgress =
 		deploying || syncingRepository || pullingImages || data?.syncStatus === SyncStatus.Syncing;
 
-	const manifestHtml = useMemo(() => {
-		return highlighter.codeToHtml(data?.composeFile ?? "", {
-			lang: "yaml",
-			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-			transformers: [transformerRenderWhitespace()],
-		});
-	}, [data?.composeFile, theme]);
+	const composeFile = data?.composeFile ?? "";
+	const previousComposeFile = data?.previousComposeFile ?? "";
+	const composeLines = useHighlightedCode(composeFile, "yaml");
+	const previousComposeLines = useHighlightedCode(previousComposeFile, "yaml");
 
 	const composeDiff = useMemo(
-		() => buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? ""),
-		[data?.previousComposeFile, data?.composeFile],
+		() => buildComposeDiff(previousComposeFile, composeFile),
+		[previousComposeFile, composeFile],
 	);
-
-	const diffHtml = useMemo(() => {
-		return highlighter.codeToHtml(composeDiff.code, {
-			lang: "yaml",
-			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
-			transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
-		});
-	}, [composeDiff.code, theme]);
 
 	return (
 		<div className="space-y-6">
@@ -494,11 +526,29 @@ function ApplicationDetailsPage() {
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
-					<ComposeFileView path={data?.path} html={manifestHtml} />
+					<ComposeFileView path={data?.path} copyValue={composeFile}>
+						{composeLines.map((line, index) => (
+							<CodeBlockLine key={index}>{line}</CodeBlockLine>
+						))}
+					</ComposeFileView>
 				</TabsContent>
 
 				<TabsContent value="diff" className="space-y-4">
-					<ComposeFileView path={data?.path} html={diffHtml} />
+					<ComposeFileView path={data?.path}>
+						{composeDiff.lines.map(({ variant, index }, i) => (
+							<CodeBlockLine
+								key={i}
+								variant={variant}
+								className={
+									variant === "added"
+										? "bg-green-500/15 after:text-green-600 dark:after:text-green-400"
+										: undefined
+								}
+							>
+								{variant === "removed" ? previousComposeLines[index] : composeLines[index]}
+							</CodeBlockLine>
+						))}
+					</ComposeFileView>
 				</TabsContent>
 			</Tabs>
 		</div>
