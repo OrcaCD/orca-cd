@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -480,4 +481,41 @@ func TestRun_PortInUse(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when port is already in use, got nil")
 	}
+}
+
+func TestInitSetupCode(t *testing.T) {
+	t.Cleanup(setupcode.Clear)
+
+	t.Run("arms the code without users", func(t *testing.T) {
+		setupRecoveryTestDB(t)
+		if err := db.DB.AutoMigrate(&models.User{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+		setupcode.Clear()
+
+		if err := initSetupCode(t.Context(), "http://localhost"); err != nil {
+			t.Fatalf("initSetupCode() error: %v", err)
+		}
+		if setupcode.Code() == "" {
+			t.Error("expected a setup code to be generated")
+		}
+	})
+
+	t.Run("stays disarmed when users exist", func(t *testing.T) {
+		setupRecoveryTestDB(t)
+		if err := db.DB.AutoMigrate(&models.User{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+		if err := db.DB.Create(&models.User{Email: "admin@example.com", Name: "Admin"}).Error; err != nil {
+			t.Fatalf("failed to create user: %v", err)
+		}
+		setupcode.Clear()
+
+		if err := initSetupCode(t.Context(), "http://localhost"); err != nil {
+			t.Fatalf("initSetupCode() error: %v", err)
+		}
+		if setupcode.Code() != "" {
+			t.Error("expected no setup code when users exist")
+		}
+	})
 }

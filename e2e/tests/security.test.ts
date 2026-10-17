@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { APP_URL } from "./const.ts";
+import { readSetupCode } from "./helpers/setup-code.ts";
 
 // Run all tests in this file without authentication
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -21,7 +22,23 @@ test.describe("registration is disabled after initial setup", () => {
 		});
 		expect(response.status()).toBe(403);
 		const body = await response.json();
-		expect(body.error).toBe("registration is disabled");
+		expect(body.error).toBe("invalid setup code");
+	});
+
+	test("registration is blocked even with the initial setup code", async ({ request }) => {
+		const setupCode = await readSetupCode();
+		const response = await request.post("/api/v1/auth/register", {
+			data: {
+				email: "attacker@example.com",
+				password: "Password123456!",
+				name: "Attacker",
+				setupCode,
+			},
+			headers: {
+				Origin: APP_URL,
+			},
+		});
+		expect(response.status()).toBe(403);
 	});
 });
 
