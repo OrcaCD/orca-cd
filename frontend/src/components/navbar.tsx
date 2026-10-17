@@ -12,6 +12,7 @@ import {
 	XIcon,
 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { Blobatar } from "@blobatar/react";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -20,7 +21,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn, getInitials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +36,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
+import "blobatar/motion.css";
 
 type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
 
@@ -200,12 +202,15 @@ export default function Navbar() {
 						<DropdownMenuTrigger
 							render={
 								<Button variant="ghost" className="relative h-10 w-10 rounded-full">
-									<Avatar className="h-10 w-10">
-										<AvatarImage
-											src={auth.profile?.picture || undefined}
-											alt={auth.profile?.name}
-										/>
-										<AvatarFallback>{getInitials(auth.profile?.name || "")}</AvatarFallback>
+									<Avatar className="h-10 w-10 after:pointer-events-none">
+										<AvatarImage src={undefined} alt={auth.profile?.name} />
+										<AvatarFallback>
+											<Blobatar
+												name={auth.profile?.id || "User"}
+												animate="hover"
+												className="pointer-events-auto! size-10"
+											/>
+										</AvatarFallback>
 									</Avatar>
 								</Button>
 							}
