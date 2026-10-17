@@ -1,18 +1,28 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/alexedwards/argon2id"
 )
 
-var ErrEmptyPassword = errors.New("password must not be empty")
+const maxHashSlots = 4
+
+var (
+	ErrEmptyPassword = errors.New("password must not be empty")
+	ErrBusy          = errors.New("too many concurrent password operations")
+
+	slotWaitTimeout = 5 * time.Second
+)
 
 func ValidatePasswordStrength(password string) bool {
 	if utf8.RuneCountInString(password) < 12 {
@@ -45,6 +55,10 @@ var (
 
 	dummyHash   string
 	dummyHashMu sync.Mutex
+
+	// hashSlots bounds concurrent argon2 operations (128 MiB each) across all
+	// clients, so peak memory doesn't depend on how many IPs hit the login.
+	hashSlots = make(chan struct{}, min(max(runtime.NumCPU(), 1), maxHashSlots))
 )
 
 func initPassword() error {
@@ -54,7 +68,7 @@ func initPassword() error {
 		return nil
 	}
 
-	h, err := argon2id.CreateHash("orca-cd-dummy-timing-password", params)
+	h, err := hashPassword("orca-cd-dummy-timing-password")
 	if err != nil {
 		return fmt.Errorf("failed to create dummy password hash: %w", err)
 	}
@@ -62,18 +76,36 @@ func initPassword() error {
 	return nil
 }
 
-func HashPassword(password string) (string, error) {
+func withSlot[T any](ctx context.Context, wait time.Duration, fn func() T) (T, error) {
+	var zero T
+
+	var timeout <-chan time.Time
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		timeout = timer.C
+	}
+
+	select {
+	case hashSlots <- struct{}{}:
+	case <-timeout:
+		return zero, ErrBusy
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	}
+	defer func() { <-hashSlots }()
+
+	return fn(), nil
+}
+
+func hashPassword(password string) (string, error) {
 	if password == "" {
 		return "", ErrEmptyPassword
 	}
-	hash, err := argon2id.CreateHash(password, params)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
+	return argon2id.CreateHash(password, params)
 }
 
-func CheckPassword(password, hash string) bool {
+func checkPassword(password, hash string) bool {
 	if password == "" || hash == "" {
 		return false
 	}
@@ -84,11 +116,63 @@ func CheckPassword(password, hash string) bool {
 	return match
 }
 
+type hashResult struct {
+	hash string
+	err  error
+}
+
+func hashWithSlot(ctx context.Context, wait time.Duration, password string) (string, error) {
+	if password == "" {
+		return "", ErrEmptyPassword
+	}
+	res, err := withSlot(ctx, wait, func() hashResult {
+		h, err := hashPassword(password)
+		return hashResult{h, err}
+	})
+	if err != nil {
+		return "", err
+	}
+	return res.hash, res.err
+}
+
+// HashPasswordContext is like HashPassword but gives up with ErrBusy if no
+// hashing slot frees up within slotWaitTimeout, or with ctx.Err() on cancellation.
+func HashPasswordContext(ctx context.Context, password string) (string, error) {
+	return hashWithSlot(ctx, slotWaitTimeout, password)
+}
+
+// CheckPasswordContext is like CheckPassword but gives up with ErrBusy if no
+// hashing slot frees up within slotWaitTimeout, or with ctx.Err() on cancellation.
+func CheckPasswordContext(ctx context.Context, password, hash string) (bool, error) {
+	if password == "" || hash == "" {
+		return false, nil
+	}
+	return withSlot(ctx, slotWaitTimeout, func() bool { return checkPassword(password, hash) })
+}
+
+// CompareWithDummyContext runs an argon2id comparison against a pre-computed
+// dummy hash so that unknown users cost the same as known ones.
+func CompareWithDummyContext(ctx context.Context, password string) error {
+	_, err := CheckPasswordContext(ctx, password, dummyHash)
+	return err
+}
+
+// HashPassword blocks until a hashing slot is available.
+func HashPassword(password string) (string, error) {
+	return hashWithSlot(context.Background(), 0, password)
+}
+
+// CheckPassword blocks until a hashing slot is available.
+func CheckPassword(password, hash string) bool {
+	match, err := withSlot(context.Background(), 0, func() bool { return checkPassword(password, hash) })
+	return err == nil && match
+}
+
 // CompareWithDummy runs an argon2id comparison against a pre-computed dummy
 // hash. The result is always false. This prevents timing attacks that could reveal
 // whether a user exists based on how long the password check takes.
 func CompareWithDummy(password string) {
-	CheckPassword(password, dummyHash) //nolint:errcheck
+	CheckPassword(password, dummyHash)
 }
 
 func GenerateRandomPassword() (string, error) {
