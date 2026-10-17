@@ -3,12 +3,6 @@ import { getLocale } from "@/lib/paraglide/runtime";
 
 export { cn } from "cn";
 
-export function getInitials(name: string) {
-	const parts = name.split(" ");
-	const initials = parts.slice(0, 3).map((part) => part.charAt(0).toUpperCase());
-	return initials.join("");
-}
-
 export function passwordStrengthRefine(messages: {
 	uppercase: string;
 	lowercase: string;
