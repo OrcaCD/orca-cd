@@ -48,8 +48,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.POST("/webhooks/images/:id", webhookRateLimit, routes.ImagePullWebhookHandler)
 		api.POST("/github-actions", webhookRateLimit, routes.GitHubActionsDeployHandler)
 
-		// Rate-limited auth endpoints: 10 req/min per IP, burst of 5
-		authRateLimit := middleware.RateLimit(6*time.Second, 5)
+		// Rate-limited auth endpoints: 10 req/min per IP, burst of 10
+		authRateLimit := middleware.RateLimit(6*time.Second, 10)
+		api.POST("/auth/setup/verify", authRateLimit, routes.VerifySetupCodeHandler)
 		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
 		api.POST("/auth/login", authRateLimit, routes.LoginHandler)
 

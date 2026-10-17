@@ -25,3 +25,10 @@ test("Login", async ({ page }) => {
 
 	await page.waitForURL("/");
 });
+
+test("Register page redirects to login after the initial setup", async ({ page }) => {
+	await page.goto("/register");
+
+	await page.waitForURL("/login");
+	await expect(page).toHaveTitle(/Login/);
+});
