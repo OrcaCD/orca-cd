@@ -22,7 +22,7 @@ export function OverviewDashboard({ apps, agents }: OverviewDashboardProps) {
 				<AgentsStatusCard agents={agents} />
 			</div>
 			<AttentionList items={getAttentionItems(apps, agents)} />
-			<div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
+			<div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
 				<RecentDeploymentsCard />
 				<RepositoriesCard />
 			</div>

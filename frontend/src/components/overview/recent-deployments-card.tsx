@@ -37,7 +37,7 @@ export function RecentDeploymentsCard() {
 				) : data.recentDeployments.length === 0 ? (
 					<p className="text-sm text-muted-foreground">{m.applicationsActivityNoDeployments()}</p>
 				) : (
-					<ItemGroup className="gap-1">
+					<ItemGroup className="gap-0">
 						{data.recentDeployments.map((deployment) => (
 							<RecentDeploymentRow key={deployment.id} deployment={deployment} />
 						))}
@@ -58,7 +58,7 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 
 	return (
 		<Item
-			size="sm"
+			size="xs"
 			render={<Link to="/applications/$id/history" params={{ id: deployment.applicationId }} />}
 		>
 			<ItemMedia className="size-8 rounded-md bg-primary/10">
@@ -77,11 +77,11 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 					</ItemDescription>
 				) : null}
 			</ItemContent>
-			<ItemActions className="flex-col items-end gap-1">
-				<ApplicationEventStatusBadge status={deployment.status} />
+			<ItemActions className="gap-3">
 				<span className="text-xs whitespace-nowrap text-muted-foreground">
 					{formatRelativeTime(deployment.createdAt)}
 				</span>
+				<ApplicationEventStatusBadge status={deployment.status} />
 			</ItemActions>
 		</Item>
 	);
