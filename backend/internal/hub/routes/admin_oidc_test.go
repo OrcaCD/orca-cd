@@ -19,6 +19,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v) //nolint:errcheck,gosec
 }
 
+func useUnrestrictedOIDCDiscoveryClient(t *testing.T) {
+	t.Helper()
+	original := oidcDiscoveryClient
+	oidcDiscoveryClient = http.DefaultClient
+	t.Cleanup(func() { oidcDiscoveryClient = original })
+}
+
 func newTestOIDCDiscoveryServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -339,8 +346,32 @@ func TestAdminDeleteOIDCProviderHandler_NotFound(t *testing.T) {
 	}
 }
 
+func TestAdminCreateOIDCProviderHandler_BlocksPrivateIssuer(t *testing.T) {
+	setupTestDB(t)
+	srv := newTestOIDCDiscoveryServer(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":         "Loopback IDP",
+		"issuerUrl":    srv.URL,
+		"clientId":     "c",
+		"clientSecret": "s",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/oidc-providers", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	AdminCreateOIDCProviderHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for loopback issuer, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	setupTestDB(t)
+	useUnrestrictedOIDCDiscoveryClient(t)
 	srv := newTestOIDCDiscoveryServer(t)
 	OIDCAppURL = "https://app.example.com"
 	t.Cleanup(func() {
@@ -439,6 +470,7 @@ func TestAdminCreateOIDCProviderHandler_InvalidIssuer(t *testing.T) {
 
 func TestAdminCreateOIDCProviderHandler_DefaultEnabled(t *testing.T) {
 	setupTestDB(t)
+	useUnrestrictedOIDCDiscoveryClient(t)
 	srv := newTestOIDCDiscoveryServer(t)
 
 	// Omit "enabled" — should default to true
@@ -478,6 +510,7 @@ func TestAdminCreateOIDCProviderHandler_DefaultEnabled(t *testing.T) {
 func TestAdminUpdateOIDCProviderHandler_ChangedIssuer(t *testing.T) {
 	setupTestDB(t)
 	p := createTestProvider(t, "Original", true)
+	useUnrestrictedOIDCDiscoveryClient(t)
 
 	newSrv := newTestOIDCDiscoveryServer(t)
 
