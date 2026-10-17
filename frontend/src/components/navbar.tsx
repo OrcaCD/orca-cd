@@ -203,7 +203,7 @@ export default function Navbar() {
 							render={
 								<Button variant="ghost" className="relative h-10 w-10 rounded-full">
 									<Avatar className="h-10 w-10 after:pointer-events-none">
-										<AvatarImage src={undefined} alt={auth.profile?.name} />
+										<AvatarImage src={auth.profile?.picture} alt={auth.profile?.name} />
 										<AvatarFallback>
 											<Blobatar
 												name={auth.profile?.id || "User"}
