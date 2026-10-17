@@ -513,7 +513,7 @@ func TestHub_WritePump_EncryptsNonPingMessages(t *testing.T) {
 	defer clientConn.Close() //nolint:errcheck
 
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleHub)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}

@@ -562,10 +562,19 @@ func TestHandleClientMessage_DropsUnencryptedNonPong(t *testing.T) {
 	handleClientMessage(t.Context(), client, msg, &log) // must not panic or block
 }
 
+func newAgentTestSession(t *testing.T) *wscrypto.Session {
+	t.Helper()
+	session, err := wscrypto.NewSession(make([]byte, 32), wscrypto.RoleAgent)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return session
+}
+
 func TestHandleClientMessage_DecryptError(t *testing.T) {
 	log := testLogger()
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleHub)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -584,7 +593,7 @@ func TestHandleClientMessage_DecryptError(t *testing.T) {
 func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 	log := testLogger()
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleHub)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -596,7 +605,7 @@ func TestHandleClientMessage_DoublyEncrypted(t *testing.T) {
 			EncryptedPayload: &messages.EncryptedPayload{Nonce: make([]byte, 32), Ciphertext: []byte{0x01}},
 		},
 	}
-	env, err := session.Encrypt(innerMsg)
+	env, err := newAgentTestSession(t).Encrypt(innerMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
@@ -610,7 +619,7 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
 	sessionKey := make([]byte, 32)
-	session, err := wscrypto.NewSession(sessionKey)
+	session, err := wscrypto.NewSession(sessionKey, wscrypto.RoleHub)
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -622,7 +631,7 @@ func TestHandleClientMessage_EncryptedUnknownPayload(t *testing.T) {
 			KeyExchangeResponse: &messages.KeyExchangeResponse{},
 		},
 	}
-	env, err := session.Encrypt(innerMsg)
+	env, err := newAgentTestSession(t).Encrypt(innerMsg)
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}

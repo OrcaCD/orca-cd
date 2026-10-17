@@ -536,5 +536,5 @@ func performHandshake(conn WSConn, agentID string, agentSigningPubKey ed25519.Pu
 	}
 
 	log.Debug().Str("agent_id", agentID).Msg("WS handshake complete")
-	return wscrypto.NewSession(sessionKey)
+	return wscrypto.NewSession(sessionKey, wscrypto.RoleHub)
 }
