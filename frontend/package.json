@@ -42,7 +42,6 @@
 		"@inlang/paraglide-js": "^2.27.0",
 		"@inlang/plugin-m-function-matcher": "^2.3.3",
 		"@inlang/plugin-message-format": "^4.5.3",
-		"@shikijs/transformers": "^4.5.0",
 		"@tanstack/devtools-vite": "^0.8.5",
 		"@types/node": "^26.6.5",
 		"@types/react": "^19.3.0",
