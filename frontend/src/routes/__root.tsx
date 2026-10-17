@@ -20,7 +20,7 @@ export interface RouterContext {
 
 function RootComponent() {
 	const { location } = useRouterState();
-	const showNavbar = location.pathname !== "/login";
+	const showNavbar = location.pathname !== "/login" && location.pathname !== "/register";
 
 	return (
 		<>

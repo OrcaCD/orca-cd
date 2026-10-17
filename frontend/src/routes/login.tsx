@@ -6,15 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { z } from "zod";
 import { useForm } from "@tanstack/react-form";
-import { toast } from "@/components/ui/toast";
-import { Eye, EyeOff, FileTextIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import { useState, type ComponentProps } from "react";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
 import { API_BASE, fetcher } from "@/lib/api";
+import { getSetupStatus } from "@/lib/setup";
 import { m } from "@/lib/paraglide/messages";
-import { passwordStrengthRefine } from "@/lib/utils";
+import { AuthErrorBanner, AuthLayout } from "@/components/auth/auth-layout";
+import { PasswordInput } from "@/components/auth/password-input";
 
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
@@ -58,17 +58,12 @@ export const Route = createFileRoute("/login")({
 		}
 	},
 	loader: async () => {
-		const data = await fetcher<{
-			needsSetup: boolean;
-			providers?: AuthProviderInfo[];
-			localAuthEnabled?: boolean;
-		}>("/auth/setup", "GET");
+		const { needsSetup, providers, localAuthEnabled } = await getSetupStatus();
+		if (needsSetup) {
+			throw redirect({ to: "/register" });
+		}
 
-		return {
-			needsSetup: data.needsSetup,
-			providers: data.providers ?? [],
-			localAuthEnabled: data.localAuthEnabled ?? true,
-		};
+		return { providers, localAuthEnabled };
 	},
 	component: LoginComponent,
 	head: () => ({
@@ -81,246 +76,18 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginComponent() {
-	const { needsSetup, providers, localAuthEnabled } = Route.useLoaderData();
+	const { providers, localAuthEnabled } = Route.useLoaderData();
 	const { error } = Route.useSearch();
 	const loginErrorMessage = getLoginErrorMessage(error);
 
 	return (
-		<div className="grid min-h-svh lg:grid-cols-2">
-			<div className="flex flex-col gap-4 p-6 md:p-10">
-				<div className="flex justify-center gap-2 md:justify-start">
-					<div className="flex items-center gap-3 font-medium text-xl">
-						<div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-							<img src="/assets/logo-dark.svg" alt="OrcaCD Logo" />
-						</div>
-						OrcaCD
-					</div>
-				</div>
-				<div className="flex flex-1 items-center justify-center">
-					<div className="w-full max-w-xs">
-						{needsSetup ? (
-							<RegisterForm loginErrorMessage={loginErrorMessage} />
-						) : (
-							<LoginForm
-								providers={providers}
-								localAuthEnabled={localAuthEnabled}
-								loginErrorMessage={loginErrorMessage}
-							/>
-						)}
-					</div>
-				</div>
-				<div className="flex items-center gap-1">
-					<a
-						href="https://github.com/OrcaCD/orca-cd"
-						target="_blank"
-						rel="noopener noreferrer nofollow"
-					>
-						<Button variant="ghost" size="icon-lg">
-							<img
-								src="/assets/icons/repositories/github.svg"
-								alt={m.githubLogoAlt()}
-								className="size-6 dark:invert"
-							/>
-						</Button>
-					</a>
-					<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer nofollow">
-						<Button variant="ghost" size="icon-lg">
-							<FileTextIcon className="size-6" />
-						</Button>
-					</a>
-				</div>
-			</div>
-			<div className="relative hidden bg-muted lg:block">
-				<img
-					src="/assets/wallpaper/lachlan-gowen-lleHA3cpZXo-unsplash.jpg"
-					alt={m.loginWallpaperAlt()}
-					title={m.loginWallpaperAlt()}
-					className="absolute inset-0 h-full w-full object-cover"
-				/>
-			</div>
-		</div>
-	);
-}
-
-function RegisterForm({ loginErrorMessage }: { loginErrorMessage: string | null }) {
-	const navigate = useNavigate();
-	const { refreshAuth } = useAuth();
-	const [showPassword, setShowPassword] = useState(false);
-	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-	const [isLoading, setIsLoading] = useState(false);
-
-	const registerSchema = z
-		.object({
-			name: z
-				.string()
-				.trim()
-				.min(3, m.validationNameMinLength())
-				.max(64, m.validationNameMaxLength()),
-			email: z.email(m.validationInvalidEmail()).trim(),
-			password: z
-				.string()
-				.min(12, m.validationPasswordMinLength())
-				.max(128, m.validationPasswordMaxLength())
-				.superRefine(
-					passwordStrengthRefine({
-						uppercase: m.validationPasswordMissingUppercase(),
-						lowercase: m.validationPasswordMissingLowercase(),
-						number: m.validationPasswordMissingNumber(),
-						special: m.validationPasswordMissingSpecial(),
-					}),
-				),
-			confirmPassword: z.string().min(1, m.validationConfirmPasswordRequired()),
-		})
-		.refine((data) => data.password === data.confirmPassword, {
-			message: m.validationPasswordsMustMatch(),
-			path: ["confirmPassword"],
-		});
-
-	async function register(name: string, email: string, password: string): Promise<void> {
-		await fetcher("/auth/register", "POST", {
-			name,
-			email,
-			password,
-		});
-	}
-
-	const form = useForm({
-		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
-		validators: { onSubmit: registerSchema },
-		onSubmit: async ({ value }) => {
-			setIsLoading(true);
-			try {
-				await register(value.name, value.email, value.password);
-				await refreshAuth();
-				toast.add({ type: "success", title: m.toastAccountCreated() });
-				await navigate({ to: "/" });
-			} catch (err) {
-				toast.add({
-					type: "error",
-					title: err instanceof Error ? err.message : m.toastRegistrationFailed(),
-				});
-			} finally {
-				setIsLoading(false);
-			}
-		},
-	});
-
-	return (
-		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.createYourAccount()}</h1>
-				<p className="text-sm text-balance text-muted-foreground">
-					{m.createAdminAccountDescription()}
-				</p>
-			</div>
-
-			{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
-			<form
-				onSubmit={async (e) => {
-					e.preventDefault();
-					await form.handleSubmit();
-				}}
-			>
-				<FieldGroup>
-					<form.Field
-						name="name"
-						children={(field) => {
-							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-							return (
-								<Field data-invalid={isInvalid}>
-									<Label htmlFor={field.name}>{m.name()}</Label>
-									<Input
-										id={field.name}
-										name={field.name}
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(e) => field.handleChange(e.target.value)}
-										type="text"
-										placeholder={m.adminNamePlaceholder()}
-										required
-										autoComplete="name"
-										autoFocus
-									/>
-									{isInvalid && <FieldError errors={field.state.meta.errors} />}
-								</Field>
-							);
-						}}
-					/>
-					<form.Field
-						name="email"
-						children={(field) => {
-							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-							return (
-								<Field data-invalid={isInvalid}>
-									<Label htmlFor={field.name}>{m.email()}</Label>
-									<Input
-										id={field.name}
-										name={field.name}
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(e) => field.handleChange(e.target.value)}
-										type="email"
-										placeholder={m.emailPlaceholder()}
-										required
-										autoComplete="email"
-									/>
-									{isInvalid && <FieldError errors={field.state.meta.errors} />}
-								</Field>
-							);
-						}}
-					/>
-					<form.Field
-						name="password"
-						children={(field) => {
-							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-							return (
-								<Field data-invalid={isInvalid}>
-									<Label htmlFor={field.name}>{m.password()}</Label>
-									<PasswordInput
-										id={field.name}
-										name={field.name}
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(e) => field.handleChange(e.target.value)}
-										showPassword={showPassword}
-										onToggle={() => setShowPassword(!showPassword)}
-										autoComplete="new-password"
-									/>
-									{isInvalid && <FieldError errors={field.state.meta.errors} />}
-								</Field>
-							);
-						}}
-					/>
-					<form.Field
-						name="confirmPassword"
-						children={(field) => {
-							const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-							return (
-								<Field data-invalid={isInvalid}>
-									<Label htmlFor={field.name}>{m.confirmPassword()}</Label>
-									<PasswordInput
-										id={field.name}
-										name={field.name}
-										value={field.state.value}
-										onBlur={field.handleBlur}
-										onChange={(e) => field.handleChange(e.target.value)}
-										showPassword={showConfirmPassword}
-										onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
-										autoComplete="new-password"
-									/>
-									{isInvalid && <FieldError errors={field.state.meta.errors} />}
-								</Field>
-							);
-						}}
-					/>
-					<Field>
-						<Button type="submit" className="w-full" disabled={isLoading}>
-							{isLoading ? m.creatingAccount() : m.createAccount()}
-						</Button>
-					</Field>
-				</FieldGroup>
-			</form>
-		</div>
+		<AuthLayout>
+			<LoginForm
+				providers={providers}
+				localAuthEnabled={localAuthEnabled}
+				loginErrorMessage={loginErrorMessage}
+			/>
+		</AuthLayout>
 	);
 }
 
@@ -337,6 +104,7 @@ function LoginForm({
 	const { refreshAuth } = useAuth();
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	const loginSchema = z.object({
 		email: z.email(m.validationInvalidEmail()).trim(),
@@ -355,15 +123,13 @@ function LoginForm({
 		validators: { onSubmit: loginSchema },
 		onSubmit: async ({ value }) => {
 			setIsLoading(true);
+			setSubmitError(null);
 			try {
 				await login(value.email, value.password);
 				await refreshAuth();
 				await navigate({ to: "/" });
 			} catch (err) {
-				toast.add({
-					type: "error",
-					title: err instanceof Error ? err.message : m.toastLoginFailed(),
-				});
+				setSubmitError(err instanceof Error ? err.message : m.toastLoginFailed());
 			} finally {
 				setIsLoading(false);
 			}
@@ -379,7 +145,7 @@ function LoginForm({
 				<p className="text-sm text-balance text-muted-foreground">{m.chooseAuthMethod()}</p>
 			</div>
 
-			{loginErrorMessage && <LoginErrorBanner message={loginErrorMessage} />}
+			{loginErrorMessage && <AuthErrorBanner message={loginErrorMessage} />}
 
 			{localAuthEnabled && (
 				<form
@@ -444,6 +210,7 @@ function LoginForm({
 					</FieldGroup>
 				</form>
 			)}
+			{localAuthEnabled && submitError && <AuthErrorBanner message={submitError} />}
 			{hasProviders && localAuthEnabled && (
 				<div className="flex items-center gap-4">
 					<Separator className="flex-1" />
@@ -471,47 +238,6 @@ function LoginForm({
 			{!localAuthEnabled && !hasProviders && (
 				<p className="text-center text-sm text-muted-foreground">{m.noLoginMethodsAvailable()}</p>
 			)}
-		</div>
-	);
-}
-
-function LoginErrorBanner({ message }: { message: string }) {
-	return (
-		<div
-			role="alert"
-			className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-		>
-			{message}
-		</div>
-	);
-}
-
-function PasswordInput({
-	showPassword,
-	onToggle,
-	...props
-}: ComponentProps<typeof Input> & {
-	showPassword: boolean;
-	onToggle: () => void;
-}) {
-	return (
-		<div className="relative">
-			<Input {...props} type={showPassword ? "text" : "password"} required />
-			<Button
-				className="absolute top-0 right-0 h-full px-3 hover:bg-transparent"
-				onClick={onToggle}
-				size="icon"
-				type="button"
-				variant="ghost"
-				aria-label={showPassword ? m.hidePassword() : m.showPassword()}
-				aria-pressed={showPassword}
-			>
-				{showPassword ? (
-					<EyeOff className="h-4 w-4 text-muted-foreground" />
-				) : (
-					<Eye className="h-4 w-4 text-muted-foreground" />
-				)}
-			</Button>
 		</div>
 	);
 }

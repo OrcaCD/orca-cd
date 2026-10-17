@@ -10,19 +10,27 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 var errRegistrationDisabled = errors.New("registration disabled")
 
+const errInvalidSetupCode = "invalid setup code"
+
 // LocalAuthDisabled is set by the server config to gate local auth endpoints.
 var LocalAuthDisabled bool
 
 type registerRequest struct {
-	Name     string `json:"name" binding:"required,min=3,max=64"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,max=128"`
+	Name      string `json:"name" binding:"required,min=3,max=64"`
+	Email     string `json:"email" binding:"required,email"`
+	Password  string `json:"password" binding:"required,max=128"`
+	SetupCode string `json:"setupCode" binding:"max=128"`
+}
+
+type verifySetupCodeRequest struct {
+	SetupCode string `json:"setupCode" binding:"max=128"`
 }
 
 type loginRequest struct {
@@ -192,6 +200,11 @@ func RegisterHandler(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
+	if !setupcode.Verify(req.SetupCode) {
+		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
+		return
+	}
+
 	if !auth.ValidatePasswordStrength(req.Password) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
 		return
@@ -238,8 +251,25 @@ func RegisterHandler(c *gin.Context) {
 		return
 	}
 
+	setupcode.Clear()
+
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
+}
+
+func VerifySetupCodeHandler(c *gin.Context) {
+	var req verifySetupCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	if !setupcode.Verify(req.SetupCode) {
+		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "setup code accepted"})
 }
 
 func LoginHandler(c *gin.Context) {
