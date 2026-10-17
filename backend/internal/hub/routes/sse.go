@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -11,12 +12,45 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const maxSSEConnectionsPerUser = 10
+
+var (
+	sseConnsMu sync.Mutex
+	sseConns   = make(map[string]int)
+)
+
+func acquireSSESlot(userID string) bool {
+	sseConnsMu.Lock()
+	defer sseConnsMu.Unlock()
+	if sseConns[userID] >= maxSSEConnectionsPerUser {
+		return false
+	}
+	sseConns[userID]++
+	return true
+}
+
+func releaseSSESlot(userID string) {
+	sseConnsMu.Lock()
+	defer sseConnsMu.Unlock()
+	if sseConns[userID] <= 1 {
+		delete(sseConns, userID)
+		return
+	}
+	sseConns[userID]--
+}
+
 func SSEHandler(c *gin.Context) {
 	claims, ok := auth.GetClaims(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 		return
 	}
+
+	if !acquireSSESlot(claims.Subject) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many open event streams"})
+		return
+	}
+	defer releaseSSESlot(claims.Subject)
 
 	// Clear the write deadline so the server's WriteTimeout doesn't kill long-lived SSE connections.
 	// Ignore errors: some ResponseWriter implementations (e.g. httptest.ResponseRecorder) don't support deadlines.
