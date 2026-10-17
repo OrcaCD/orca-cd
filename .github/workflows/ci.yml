@@ -83,7 +83,7 @@ jobs:
             ~/.cache/go-build
           key: backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}
           restore-keys: |
-            backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}-
+            backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}
             backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-
 
       - name: Install Buf CLI
