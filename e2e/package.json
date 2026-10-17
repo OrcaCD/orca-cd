@@ -12,10 +12,10 @@
 		"format:check": "oxfmt --check"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.63.0",
-		"@types/node": "^26.6.4",
-		"oxfmt": "^0.72.0",
-		"oxlint": "^1.87.0",
+		"@playwright/test": "^1.64.0",
+		"@types/node": "^26.6.5",
+		"oxfmt": "^0.73.0",
+		"oxlint": "^1.88.0",
 		"oxlint-tsgolint": "^7.0.2003",
 		"typescript": "^7.0.2"
 	},
