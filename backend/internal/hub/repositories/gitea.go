@@ -165,6 +165,10 @@ func (giteaProvider) ListBranches(ctx context.Context, repo *models.Repository) 
 	branches := make([]string, 0)
 
 	for page := 1; ; page++ {
+		if page > maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		apiURL := fmt.Sprintf(
 			"%s/api/v1/repos/%s/%s/branches?page=%d&limit=%d",
 			parsedRepoURL.baseURL,

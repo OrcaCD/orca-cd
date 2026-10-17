@@ -318,6 +318,29 @@ func TestGiteaListBranchesPagination(t *testing.T) {
 	}
 }
 
+func TestGiteaListBranchesPageLimit(t *testing.T) {
+	p := giteaProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		return jsonResponseWithBody(http.StatusOK, fullPageJSON(`{"name":"main"}`)), nil
+	})
+
+	repo := &models.Repository{Url: testGiteaRepoURL, AuthMethod: models.AuthMethodNone}
+	_, err := p.ListBranches(context.Background(), repo)
+	if !errors.Is(err, errProviderPageLimit) {
+		t.Fatalf("expected page limit error, got %v", err)
+	}
+	if requestCount != maxProviderPages {
+		t.Fatalf("expected %d requests, got %d", maxProviderPages, requestCount)
+	}
+}
+
 func TestGiteaListBranchesErrors(t *testing.T) {
 	p := giteaProvider{}
 	originalClient := httpclient.Default

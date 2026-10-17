@@ -169,7 +169,11 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 	branches := make([]string, 0)
 	page := 1
 
-	for {
+	for requests := 0; ; requests++ {
+		if requests >= maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		apiURL := fmt.Sprintf(
 			"%s/api/v4/projects/%s/repository/branches?per_page=%d&page=%d",
 			parsedRepoURL.baseURL,
@@ -280,7 +284,11 @@ func (gitlabProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 	entries := make([]TreeEntry, 0)
 	page := 1
 
-	for {
+	for requests := 0; ; requests++ {
+		if requests >= maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		apiURL := fmt.Sprintf(
 			"%s/api/v4/projects/%s/repository/tree?ref=%s&recursive=true&per_page=%d&page=%d",
 			parsedRepoURL.baseURL,

@@ -246,7 +246,11 @@ func (azureDevOpsProvider) ListBranches(ctx context.Context, repo *models.Reposi
 	branches := make([]string, 0)
 	continuationToken := ""
 
-	for {
+	for pages := 0; ; pages++ {
+		if pages >= maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		query := url.Values{}
 		query.Set("$top", strconv.Itoa(providerPageSize))
 		query.Set("filter", "heads/")

@@ -142,6 +142,10 @@ func (githubProvider) ListBranches(ctx context.Context, repo *models.Repository)
 	branches := make([]string, 0)
 
 	for page := 1; ; page++ {
+		if page > maxProviderPages {
+			return nil, errProviderPageLimit
+		}
+
 		apiURL := fmt.Sprintf(
 			"%s/repos/%s/%s/branches?per_page=%d&page=%d",
 			githubAPIBase,

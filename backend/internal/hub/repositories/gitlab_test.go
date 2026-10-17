@@ -351,6 +351,56 @@ func TestGitLabListBranchesPagination(t *testing.T) {
 	}
 }
 
+func TestGitLabListBranchesPageLimit(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		resp := jsonResponseWithBody(http.StatusOK, `[{"name":"main"}]`)
+		resp.Header.Set("X-Next-Page", "1")
+		return resp, nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL}
+	_, err := p.ListBranches(context.Background(), repo)
+	if !errors.Is(err, errProviderPageLimit) {
+		t.Fatalf("expected page limit error, got %v", err)
+	}
+	if requestCount != maxProviderPages {
+		t.Fatalf("expected %d requests, got %d", maxProviderPages, requestCount)
+	}
+}
+
+func TestGitLabListTreePageLimit(t *testing.T) {
+	p := gitlabProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		resp := jsonResponseWithBody(http.StatusOK, `[{"path":"app.yaml","type":"blob"}]`)
+		resp.Header.Set("X-Next-Page", "1")
+		return resp, nil
+	})
+
+	repo := &models.Repository{Url: testGitLabRepoURL}
+	_, err := p.ListTree(context.Background(), repo, "main")
+	if !errors.Is(err, errProviderPageLimit) {
+		t.Fatalf("expected page limit error, got %v", err)
+	}
+	if requestCount != maxProviderPages {
+		t.Fatalf("expected %d requests, got %d", maxProviderPages, requestCount)
+	}
+}
+
 func TestGitLabListBranchesErrors(t *testing.T) {
 	p := gitlabProvider{}
 	originalClient := httpclient.Default

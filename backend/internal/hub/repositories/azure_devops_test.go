@@ -231,6 +231,31 @@ func TestAzureDevOpsListBranchesPagination(t *testing.T) {
 	}
 }
 
+func TestAzureDevOpsListBranchesPageLimit(t *testing.T) {
+	p := azureDevOpsProvider{}
+	originalClient := httpclient.Default
+	t.Cleanup(func() {
+		httpclient.Default = originalClient
+	})
+
+	requestCount := 0
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		resp := jsonResponseWithBody(http.StatusOK, `{"value":[{"name":"refs/heads/main"}]}`)
+		resp.Header.Set("x-ms-continuationtoken", "again")
+		return resp, nil
+	})
+
+	repo := &models.Repository{Url: testAzureDevOpsRepoURL, AuthMethod: models.AuthMethodNone}
+	_, err := p.ListBranches(context.Background(), repo)
+	if !errors.Is(err, errProviderPageLimit) {
+		t.Fatalf("expected page limit error, got %v", err)
+	}
+	if requestCount != maxProviderPages {
+		t.Fatalf("expected %d requests, got %d", maxProviderPages, requestCount)
+	}
+}
+
 func TestAzureDevOpsListBranchesErrors(t *testing.T) {
 	p := azureDevOpsProvider{}
 	originalClient := httpclient.Default

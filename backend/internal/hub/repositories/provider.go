@@ -31,6 +31,11 @@ type Provider interface {
 
 const maxProviderResponseBytes = 32 << 20 // 32 MiB
 
+// maxProviderPages bounds paginated listings so a hostile server cannot keep returning "next page" forever.
+const maxProviderPages = 500
+
+var errProviderPageLimit = fmt.Errorf("provider returned more than %d pages of results", maxProviderPages)
+
 // decodeJSON decodes a provider response body, rejecting bodies larger than maxProviderResponseBytes.
 func decodeJSON(body io.Reader, v any) error {
 	data, err := io.ReadAll(io.LimitReader(body, maxProviderResponseBytes+1))
