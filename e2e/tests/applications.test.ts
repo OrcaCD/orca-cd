@@ -668,7 +668,7 @@ test.describe("Move and rename", () => {
 
 		await openGeneralSettings(page, MOVE_APP_NAME);
 		await page.locator("#name").fill(RENAMED_APP_NAME);
-		await page.getByRole("button", { name: "Update Application" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
 
 		// The hub answers after the agent removed the old project
 		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
@@ -700,7 +700,7 @@ test.describe("Move and rename", () => {
 
 		await openGeneralSettings(page, RENAMED_APP_NAME);
 		await selectOption(page, page.locator("#agent-select"), MOVE_TARGET_AGENT_NAME);
-		await page.getByRole("button", { name: "Update Application" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
 
 		await expect(deployPrompt(page)).toBeVisible({ timeout: 30_000 });
 		expect((await getApplication(page, moveAppId)).agentId).toBe(moveTargetAgent.id);
@@ -710,7 +710,7 @@ test.describe("Move and rename", () => {
 		// The target agent never connected, so it can't undeploy and moving back is blocked
 		await openGeneralSettings(page, RENAMED_APP_NAME);
 		await selectOption(page, page.locator("#agent-select"), AGENT_NAME);
-		await page.getByRole("button", { name: "Update Application" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
 		await expect(page.getByText(/agent is offline; cannot move or rename application/)).toBeVisible(
 			{
 				timeout: 30_000,

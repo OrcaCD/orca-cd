@@ -38,6 +38,7 @@
 	"disabled": "Disabled",
 	"more": "More",
 	"openMenu": "Open menu",
+	"openRepository": "Open repository",
 	"toggleSidebar": "Toggle Sidebar",
 	"sidebar": "Sidebar",
 	"mobileSidebarDescription": "Displays the mobile sidebar.",
@@ -689,5 +690,14 @@
 	"outdatedAgentsAlertTitle": "Outdated agents",
 	"outdatedAgentsAlertDescription": "Some agents are running an older version than the hub. Update them to get the latest features and fixes.",
 	"unsupportedAgentsAlertTitle": "Unsupported agents",
-	"unsupportedAgentsAlertDescription": "Some agents are running a version that is no longer supported by the hub. Update them to keep deployments working."
+	"unsupportedAgentsAlertDescription": "Some agents are running a version that is no longer supported by the hub. Update them to keep deployments working.",
+	"applicationSettingsApplication": "Application",
+	"applicationSettingsApplicationDescription": "How the application is named and which agent runs it.",
+	"applicationSettingsSource": "Source",
+	"applicationSettingsSourceDescription": "The repository, branch and Compose file that get deployed.",
+	"applicationSettingsDeployment": "Deployment",
+	"applicationSettingsDeploymentDescription": "Options applied to every deployment of this application.",
+	"noComposeFileSelected": "No Compose file selected",
+	"dangerZone": "Danger zone",
+	"deleteApplicationHint": "Permanently delete this application and remove its containers from the agent."
 }

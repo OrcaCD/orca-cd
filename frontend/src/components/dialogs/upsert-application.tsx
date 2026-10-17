@@ -160,14 +160,14 @@ export function TreeNodeList({
 			{nodes.map((node) => {
 				if (node.type === "dir") {
 					return (
-						<Collapsible key={node.path}>
+						<Collapsible key={node.path} defaultOpen={selectedPath.startsWith(`${node.path}/`)}>
 							<CollapsibleTrigger
 								render={
 									<Button
 										type="button"
 										variant="ghost"
 										size="sm"
-										className="group w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+										className="group w-full justify-start transition-none aria-expanded:not-hover:bg-transparent hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
 									>
 										<ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />
 										<FolderIcon />
@@ -194,10 +194,15 @@ export function TreeNodeList({
 					<Button
 						key={node.path}
 						type="button"
-						variant="link"
+						variant="ghost"
 						size="sm"
+						aria-pressed={isSelected}
 						onClick={() => onSelectPath(node.path)}
-						className={cn("text-foreground mr-auto", isSelected ? "font-medium" : "")}
+						className={cn(
+							"w-full justify-start pl-7 transition-none hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+							isSelected &&
+								"bg-primary/10 font-medium text-primary hover:bg-primary/15 hover:text-primary dark:hover:bg-primary/15",
+						)}
 						disabled={!node.name.endsWith(".yml") && !node.name.endsWith(".yaml")}
 					>
 						<FileText className="h-4 w-4" />
