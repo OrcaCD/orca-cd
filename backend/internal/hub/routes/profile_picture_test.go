@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -91,6 +92,37 @@ func TestProfilePictureHandler_Success(t *testing.T) {
 	}
 	if w.Body.String() != string(imageData) {
 		t.Errorf("expected image body to be passed through, got %q", w.Body.String())
+	}
+}
+
+func TestProfilePictureHandler_SVGIsNeutralized(t *testing.T) {
+	setupTestDB(t)
+	useUnrestrictedPictureClient(t)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "Image/SVG+XML; charset=utf-8")
+		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile-picture", nil)
+	setUserClaimsWithPicture(t, c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"}, upstream.URL+"/avatar.svg")
+
+	ProfilePictureHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Errorf("expected normalized Content-Type image/svg+xml, got %q", got)
+	}
+	if got := w.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment") {
+		t.Errorf("expected attachment Content-Disposition, got %q", got)
+	}
+	if got := w.Header().Get("Content-Security-Policy"); got != "default-src 'none'; sandbox" {
+		t.Errorf("expected sandboxing CSP, got %q", got)
 	}
 }
 
