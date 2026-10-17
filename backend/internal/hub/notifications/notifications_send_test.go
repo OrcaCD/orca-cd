@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -359,6 +360,41 @@ func TestSendTestNotificationRedactsCredentialsFromErrors(t *testing.T) {
 	}
 
 	assertNoNotificationRequestReceived(t, requests)
+}
+
+func TestSendTestNotificationBlocksSSRFForNonHTTPSchemes(t *testing.T) {
+	registerTestHTTPNotificationProvider(t)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	accepted := make(chan struct{}, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+		accepted <- struct{}{}
+	}()
+
+	target := "smtp://" + listener.Addr().String() + "/?fromaddress=a@example.com&toaddresses=b@example.com&usestarttls=No"
+	err = SendTestNotification(testHTTPNotificationType, target, "ping")
+	if !errors.Is(err, ErrNotificationDispatch) {
+		t.Fatalf("expected ErrNotificationDispatch, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "SSRF detected") {
+		t.Fatalf("expected SSRF error, got %q", err.Error())
+	}
+
+	select {
+	case <-accepted:
+		t.Fatal("expected no connection to the loopback listener")
+	default:
+	}
 }
 
 func TestRedactError(t *testing.T) {
