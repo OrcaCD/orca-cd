@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import { GITEA_MOCK_CONTROL_URL } from "./tests/const.ts";
 
+const skipBuild = ["1", "true"].includes(process.env.E2E_SKIP_BUILD ?? "");
+
 const authenticated = {
 	...devices["Desktop Chrome"],
 	storageState: "playwright/.auth/user.json",
@@ -10,8 +12,7 @@ const authenticated = {
 const sharedInfrastructure = /(agent|applications)\.test\.ts$/;
 const compose = "docker compose -f docker-compose.e2e.yml";
 // CI loads cached images before Playwright starts; local runs still build them.
-const buildImages =
-	process.env.E2E_SKIP_BUILD === "1" ? "" : `${compose} --profile agent build && `;
+const buildImages = skipBuild ? "" : `${compose} --profile agent build && `;
 
 /**
  * See https://playwright.dev/docs/test-configuration.

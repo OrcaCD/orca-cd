@@ -62,9 +62,9 @@ jobs:
           load: true
           set: |
             hub.cache-from=type=gha,scope=e2e-hub
-            hub.cache-to=type=gha,scope=e2e-hub,mode=max
+            hub.cache-to=type=gha,scope=e2e-hub
             agent.cache-from=type=gha,scope=e2e-agent
-            agent.cache-to=type=gha,scope=e2e-agent,mode=max
+            agent.cache-to=type=gha,scope=e2e-agent
 
       - name: Run E2E tests
         run: node --run test
