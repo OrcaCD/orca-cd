@@ -28,7 +28,7 @@ import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { History, Info, Settings, RefreshCw } from "lucide-react";
+import { History, Info, Settings, ImageDown } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -69,7 +69,7 @@ const sidebarGroups: SidebarGroup[] = [
 			},
 			{
 				title: () => m.imageUpdatesSectionTitle(),
-				icon: RefreshCw,
+				icon: ImageDown,
 				to: "/applications/$id/settings/image-polling",
 			},
 		],
