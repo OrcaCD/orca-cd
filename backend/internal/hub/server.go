@@ -18,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
@@ -132,6 +133,11 @@ func Run(cfg Config) error {
 		_ = db.Close()
 	}()
 
+	if err := initSetupCode(context.Background(), cfg.AppURL); err != nil {
+		Log.Error().Err(err).Msg("failed to init setup code")
+		return err
+	}
+
 	recoverInterruptedState(context.Background(), &Log)
 
 	applications.DefaultQueue = applications.NewQueue(&Log)
@@ -220,6 +226,29 @@ func Run(cfg Config) error {
 	}
 
 	Log.Info().Msg("hub stopped")
+	return nil
+}
+
+// initSetupCode arms the first-run registration guard and logs the code, but
+// only on an instance without users.
+func initSetupCode(ctx context.Context, appURL string) error {
+	count, err := gorm.G[models.User](db.DB).Count(ctx, "*")
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	if err := setupcode.Generate(); err != nil {
+		return err
+	}
+
+	code := setupcode.Code()
+	Log.Warn().
+		Str("code", code).
+		Str("url", appURL+"/register#setup-code="+code).
+		Msg("first-run setup required: open the url or enter the setup code to create the admin account")
 	return nil
 }
 
