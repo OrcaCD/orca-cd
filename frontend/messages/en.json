@@ -662,6 +662,8 @@
 	"applicationHistoryEnd": "No more events.",
 	"applicationHistoryLoadingMore": "Loading...",
 	"applicationHistoryLoadFailed": "Failed to load history",
+	"applicationHistoryViewTimeline": "Timeline view",
+	"applicationHistoryViewTable": "Table view",
 	"eventTypeDeployment": "Deployment",
 	"eventTypeCommitSync": "Commit sync",
 	"eventTypeImageUpdate": "Image update",

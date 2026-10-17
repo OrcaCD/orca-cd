@@ -662,6 +662,8 @@
 	"applicationHistoryEnd": "Keine weiteren Ereignisse.",
 	"applicationHistoryLoadingMore": "Wird geladen...",
 	"applicationHistoryLoadFailed": "Verlauf konnte nicht geladen werden",
+	"applicationHistoryViewTimeline": "Zeitleistenansicht",
+	"applicationHistoryViewTable": "Tabellenansicht",
 	"eventTypeDeployment": "Deployment",
 	"eventTypeCommitSync": "Commit-Synchronisierung",
 	"eventTypeImageUpdate": "Image-Aktualisierung",
