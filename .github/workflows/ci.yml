@@ -68,10 +68,23 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         name: Set up Go
+        id: go
         with:
           go-version: stable
-          cache: true
-          cache-dependency-path: backend/go.sum
+          cache: false
+
+      # Keep race/coverage builds separate from CodeQL's regular builds. A new
+      # key per commit lets successful runs refresh the otherwise immutable cache.
+      - name: Cache Go modules and build outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}-
+            backend-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-
 
       - name: Install Buf CLI
         uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0

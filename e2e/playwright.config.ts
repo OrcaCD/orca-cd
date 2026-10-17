@@ -8,6 +8,10 @@ const authenticated = {
 // These files share the single agent container and restart the hub, so they must not overlap
 // with other tests and run one after another after everything else
 const sharedInfrastructure = /(agent|applications)\.test\.ts$/;
+const compose = "docker compose -f docker-compose.e2e.yml";
+// CI loads cached images before Playwright starts; local runs still build them.
+const buildImages =
+	process.env.E2E_SKIP_BUILD === "1" ? "" : `${compose} --profile agent build && `;
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -60,8 +64,7 @@ export default defineConfig({
 
 	webServer: [
 		{
-			command:
-				"docker compose -f docker-compose.e2e.yml --profile agent build && docker compose -f docker-compose.e2e.yml up --force-recreate hub",
+			command: `${buildImages}${compose} up --force-recreate --no-build hub`,
 			url: "http://127.0.0.1:8090/api/v1/health",
 			timeout: 6 * 60 * 1000, // 6 minutes
 			reuseExistingServer: false,
