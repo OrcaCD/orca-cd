@@ -49,7 +49,7 @@ import {
 	type RepositoryTreeEntry,
 } from "@/components/dialogs/upsert-application";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import { FileCode, Trash2 } from "lucide-react";
+import { AppWindow, FileCode, GitBranch, Rocket, Trash2, type LucideIcon } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/general")({
 	component: GeneralSettingsPage,
@@ -85,7 +85,9 @@ async function deploy(id: string) {
 
 function GeneralSettingsPage() {
 	const { id } = Route.useParams();
-	const { data: application } = useFetch<Application>(`/applications/${id}`);
+	const { data: application, mutate: mutateApplication } = useFetch<Application>(
+		`/applications/${id}`,
+	);
 
 	const navigate = useNavigate();
 
@@ -114,6 +116,9 @@ function GeneralSettingsPage() {
 			setIsSubmitting(true);
 			try {
 				const updated = await updateApplication(previous.id, value);
+				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
+				await mutateApplication(updated, { revalidate: false });
+				form.reset(value);
 				if (affectsDeployment(previous, updated)) {
 					const toastId = toast.add({
 						type: "success",
@@ -190,6 +195,7 @@ function GeneralSettingsPage() {
 				>
 					<CardContent className="divide-y">
 						<FormSection
+							icon={AppWindow}
 							title={m.applicationSettingsApplication()}
 							description={m.applicationSettingsApplicationDescription()}
 						>
@@ -275,6 +281,7 @@ function GeneralSettingsPage() {
 						</FormSection>
 
 						<FormSection
+							icon={GitBranch}
 							title={m.applicationSettingsSource()}
 							description={m.applicationSettingsSourceDescription()}
 						>
@@ -429,6 +436,7 @@ function GeneralSettingsPage() {
 						</FormSection>
 
 						<FormSection
+							icon={Rocket}
 							title={m.applicationSettingsDeployment()}
 							description={m.applicationSettingsDeploymentDescription()}
 						>
@@ -491,10 +499,12 @@ function GeneralSettingsPage() {
 }
 
 function FormSection({
+	icon: Icon,
 	title,
 	description,
 	children,
 }: {
+	icon: LucideIcon;
 	title: string;
 	description: string;
 	children: React.ReactNode;
@@ -502,7 +512,10 @@ function FormSection({
 	return (
 		<section className="grid gap-x-10 gap-y-4 py-6 first:pt-2 last:pb-2 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
 			<div className="flex flex-col gap-1">
-				<h3 className="font-medium">{title}</h3>
+				<h3 className="flex items-center gap-2 font-medium">
+					<Icon className="size-4 text-muted-foreground" />
+					{title}
+				</h3>
 				<p className="text-muted-foreground">{description}</p>
 			</div>
 			<FieldGroup className="max-w-2xl">{children}</FieldGroup>
