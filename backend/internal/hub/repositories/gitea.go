@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -189,7 +188,7 @@ func (giteaProvider) ListBranches(ctx context.Context, repo *models.Repository) 
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var parsed []giteaBranch
-			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			if err := decodeJSON(resp.Body, &parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
 					fmt.Printf("warning: failed to close Gitea response body: %v\n", closeErr)
@@ -277,7 +276,7 @@ func (giteaProvider) ListTree(ctx context.Context, repo *models.Repository, bran
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed giteaTreeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to decode Gitea tree response: %w", err)
 		}
 
@@ -358,7 +357,7 @@ func (giteaProvider) GetFileContent(ctx context.Context, repo *models.Repository
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed giteaFileResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return "", fmt.Errorf("failed to decode Gitea file response: %w", err)
 		}
 
@@ -424,7 +423,7 @@ func (giteaProvider) GetLatestCommit(ctx context.Context, repo *models.Repositor
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed []giteaCommit
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return CommitInfo{}, fmt.Errorf("failed to decode Gitea commit response: %w", err)
 		}
 

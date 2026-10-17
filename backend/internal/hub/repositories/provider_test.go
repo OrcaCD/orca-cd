@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -158,5 +159,24 @@ func TestSortBranches_PrioritizesCommonBranches(t *testing.T) {
 	expected := []string{"main", "master", "production", "develop", "feature/auth", "release"}
 	if !reflect.DeepEqual(branches, expected) {
 		t.Fatalf("expected %v, got %v", expected, branches)
+	}
+}
+
+func TestDecodeJSON(t *testing.T) {
+	var parsed []string
+	if err := decodeJSON(strings.NewReader(`["a","b"]`), &parsed); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(parsed, []string{"a", "b"}) {
+		t.Fatalf("unexpected result: %v", parsed)
+	}
+
+	oversized := `["` + strings.Repeat("a", maxProviderResponseBytes) + `"]`
+	if err := decodeJSON(strings.NewReader(oversized), &parsed); err == nil {
+		t.Fatal("expected error for oversized body")
+	}
+
+	if err := decodeJSON(strings.NewReader(`not json`), &parsed); err == nil {
+		t.Fatal("expected error for invalid json")
 	}
 }

@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,6 +27,20 @@ type Provider interface {
 	GetFileContent(ctx context.Context, repo *models.Repository, ref string, path string) (string, error)
 	// Returns latest commit metadata for the given branch.
 	GetLatestCommit(ctx context.Context, repo *models.Repository, branch string) (CommitInfo, error)
+}
+
+const maxProviderResponseBytes = 32 << 20 // 32 MiB
+
+// decodeJSON decodes a provider response body, rejecting bodies larger than maxProviderResponseBytes.
+func decodeJSON(body io.Reader, v any) error {
+	data, err := io.ReadAll(io.LimitReader(body, maxProviderResponseBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > maxProviderResponseBytes {
+		return fmt.Errorf("response exceeds %d bytes", maxProviderResponseBytes)
+	}
+	return json.Unmarshal(data, v)
 }
 
 type CommitInfo struct {

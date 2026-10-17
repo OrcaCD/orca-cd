@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -196,7 +195,7 @@ func (gitlabProvider) ListBranches(ctx context.Context, repo *models.Repository)
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var parsed []gitlabBranch
-			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			if err := decodeJSON(resp.Body, &parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
 					fmt.Printf("warning: failed to close GitLab response body: %v\n", closeErr)
@@ -307,7 +306,7 @@ func (gitlabProvider) ListTree(ctx context.Context, repo *models.Repository, bra
 		switch resp.StatusCode {
 		case http.StatusOK:
 			var parsed []gitlabTreeEntry
-			if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+			if err := decodeJSON(resp.Body, &parsed); err != nil {
 				closeErr := resp.Body.Close()
 				if closeErr != nil {
 					fmt.Printf("warning: failed to close GitLab response body: %v\n", closeErr)
@@ -421,7 +420,7 @@ func (gitlabProvider) GetFileContent(ctx context.Context, repo *models.Repositor
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed gitlabFileResponse
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return "", fmt.Errorf("failed to decode GitLab file response: %w", err)
 		}
 
@@ -487,7 +486,7 @@ func (gitlabProvider) GetLatestCommit(ctx context.Context, repo *models.Reposito
 	switch resp.StatusCode {
 	case http.StatusOK:
 		var parsed []gitlabCommit
-		if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return CommitInfo{}, fmt.Errorf("failed to decode GitLab commit response: %w", err)
 		}
 
