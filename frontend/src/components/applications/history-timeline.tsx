@@ -6,7 +6,7 @@ import {
 	type ApplicationEvent,
 } from "@/lib/application-events";
 import { getLocale } from "@/lib/paraglide/runtime";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 
 const dotClasses: Record<ApplicationEventStatus, string> = {
 	[ApplicationEventStatus.Running]: "bg-primary motion-safe:animate-pulse",
@@ -40,18 +40,6 @@ function formatDay(date: Date): string {
 	}).format(date);
 }
 
-function formatDuration(ms: number): string {
-	const seconds = Math.max(0, Math.round(ms / 1000));
-	if (seconds < 60) {
-		return `${seconds}s`;
-	}
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) {
-		return `${minutes}m ${seconds % 60}s`;
-	}
-	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
 function groupByDay(events: ApplicationEvent[]) {
 	const groups: { day: number; date: Date; events: ApplicationEvent[] }[] = [];
 	for (const event of events) {
@@ -71,13 +59,13 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
 
 	return (
-		<div className="space-y-6">
+		<div className="ml-1.5 space-y-6 border-l border-border">
 			{groupByDay(events).map((group) => (
 				<section key={group.day} className="space-y-3">
-					<h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+					<h2 className="pl-6 text-xs font-medium tracking-wide text-muted-foreground uppercase">
 						{formatDay(group.date)}
 					</h2>
-					<ol className="ml-1.5 border-l border-border">
+					<ol>
 						{group.events.map((event) => (
 							<HistoryEvent key={event.id} event={event} timeFormatter={timeFormatter} />
 						))}
@@ -102,13 +90,18 @@ function HistoryEvent({
 
 	return (
 		<li className="relative pb-5 pl-6 last:pb-1">
+			{/* The opaque backing keeps the line from showing through translucent or pulsing dots. */}
 			<span
-				className={cn(
-					"absolute top-1.5 -left-[6.5px] size-3 rounded-full ring-4 ring-background",
-					dotClasses[event.status] ?? "bg-muted-foreground/40",
-				)}
+				className="absolute top-1.5 -left-[6.5px] size-3 rounded-full bg-background ring-4 ring-background"
 				aria-hidden="true"
-			/>
+			>
+				<span
+					className={cn(
+						"block size-full rounded-full",
+						dotClasses[event.status] ?? "bg-muted-foreground/40",
+					)}
+				/>
+			</span>
 			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 				<div className="flex items-center gap-2">
 					<span className="font-medium">{eventTypeLabel(event.type)}</span>
