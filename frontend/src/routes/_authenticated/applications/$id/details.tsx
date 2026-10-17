@@ -110,24 +110,15 @@ function InfoMeta({
 	icon,
 	title,
 	children,
-	truncateStart,
 }: {
 	icon: React.ReactNode;
 	title?: string;
 	children: React.ReactNode;
-	// Ellipsize the beginning instead of the end, e.g. to keep the file name of a long path visible.
-	truncateStart?: boolean;
 }) {
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={title}>
 			<span className="shrink-0 [&_svg]:size-3.5">{icon}</span>
-			{truncateStart ? (
-				<span dir="rtl" className="truncate text-left">
-					<bdi>{children}</bdi>
-				</span>
-			) : (
-				<span className="truncate">{children}</span>
-			)}
+			<span className="truncate">{children}</span>
 		</div>
 	);
 }
@@ -141,6 +132,22 @@ const lastSyncSourceIcons: Record<ApplicationEventSource, React.ReactNode> = {
 	[ApplicationEventSource.ImagePolling]: <RefreshCw />,
 	[ApplicationEventSource.ImageWebhook]: <Webhook />,
 };
+
+function ComposeFileView({ path, html }: { path?: string; html: string }) {
+	return (
+		<div className="dark:bg-[#121212] border border-border rounded-lg overflow-hidden">
+			{path && (
+				<div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2 text-sm font-mono text-muted-foreground">
+					<FileCode className="h-4 w-4 shrink-0" />
+					<span className="truncate">{path}</span>
+				</div>
+			)}
+			<div className="text-sm font-mono text-muted-foreground overflow-x-auto p-4">
+				<div dangerouslySetInnerHTML={{ __html: html }} />
+			</div>
+		</div>
+	);
+}
 
 const lastSyncSourceLabels: Record<ApplicationEventSource, () => string> = {
 	[ApplicationEventSource.Manual]: () => m.applicationInfoLastSyncSourceManual(),
@@ -197,19 +204,26 @@ function splitComposeLines(composeFile: string): string[] {
 	return lines;
 }
 
-function buildComposeDiff(previousComposeFile: string, composeFile: string): string {
+function buildComposeDiff(
+	previousComposeFile: string,
+	composeFile: string,
+): { code: string; additions: number; deletions: number } {
 	const previousLines = splitComposeLines(previousComposeFile);
 	const currentLines = splitComposeLines(composeFile);
 
 	const lines: string[] = [];
+	let additions = 0;
+	let deletions = 0;
 
 	for (const change of diffArrays(previousLines, currentLines)) {
 		if (change.added) {
+			additions += change.value.length;
 			lines.push(...change.value.map((line) => withDiffMarker(line, "++")));
 			continue;
 		}
 
 		if (change.removed) {
+			deletions += change.value.length;
 			lines.push(...change.value.map((line) => withDiffMarker(line, "--")));
 			continue;
 		}
@@ -217,7 +231,7 @@ function buildComposeDiff(previousComposeFile: string, composeFile: string): str
 		lines.push(...change.value);
 	}
 
-	return lines.join("\n");
+	return { code: lines.join("\n"), additions, deletions };
 }
 
 function ApplicationDetailsPage() {
@@ -293,14 +307,18 @@ function ApplicationDetailsPage() {
 		});
 	}, [data?.composeFile, theme]);
 
+	const composeDiff = useMemo(
+		() => buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? ""),
+		[data?.previousComposeFile, data?.composeFile],
+	);
+
 	const diffHtml = useMemo(() => {
-		const composeDiff = buildComposeDiff(data?.previousComposeFile ?? "", data?.composeFile ?? "");
-		return highlighter.codeToHtml(composeDiff, {
+		return highlighter.codeToHtml(composeDiff.code, {
 			lang: "yaml",
 			theme: theme === "dark" ? "vitesse-dark" : "vitesse-light",
 			transformers: [transformerNotationDiff(), transformerRenderWhitespace()],
 		});
-	}, [data?.previousComposeFile, data?.composeFile, theme]);
+	}, [composeDiff.code, theme]);
 
 	return (
 		<div className="space-y-6">
@@ -437,9 +455,6 @@ function ApplicationDetailsPage() {
 					loading={!data}
 				>
 					<InfoValue title={data?.agentName}>{data?.agentName}</InfoValue>
-					<InfoMeta icon={<FileCode />} title={data?.path} truncateStart>
-						<span className="font-mono">{data?.path}</span>
-					</InfoMeta>
 				</InfoCard>
 				<InfoCard
 					icon={<Clock className="h-4 w-4" />}
@@ -467,23 +482,23 @@ function ApplicationDetailsPage() {
 			<Tabs defaultValue="manifest" className="space-y-4">
 				<TabsList className="bg-muted">
 					<TabsTrigger value="manifest">{m.manifest()}</TabsTrigger>
-					<TabsTrigger value="diff">Diff</TabsTrigger>
+					<TabsTrigger value="diff">
+						Diff
+						{(composeDiff.additions > 0 || composeDiff.deletions > 0) && (
+							<span className="font-mono text-xs">
+								<span className="text-green-600 dark:text-green-400">+{composeDiff.additions}</span>{" "}
+								<span className="text-red-600 dark:text-red-400">-{composeDiff.deletions}</span>
+							</span>
+						)}
+					</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="manifest" className="space-y-4">
-					<div className="dark:bg-[#121212] border border-border rounded-lg p-4">
-						<div className="text-sm font-mono text-muted-foreground overflow-x-auto">
-							<div dangerouslySetInnerHTML={{ __html: manifestHtml }} />
-						</div>
-					</div>
+					<ComposeFileView path={data?.path} html={manifestHtml} />
 				</TabsContent>
 
 				<TabsContent value="diff" className="space-y-4">
-					<div className="dark:bg-[#121212] border border-border rounded-lg">
-						<div className="text-sm font-mono text-muted-foreground overflow-x-auto p-4">
-							<div dangerouslySetInnerHTML={{ __html: diffHtml }} />
-						</div>
-					</div>
+					<ComposeFileView path={data?.path} html={diffHtml} />
 				</TabsContent>
 			</Tabs>
 		</div>
