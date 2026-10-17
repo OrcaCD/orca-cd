@@ -318,6 +318,12 @@ test.describe("Deploy an application", () => {
 			status: "succeeded",
 		});
 		await gotoApp(page, `/applications/${appId}/history`);
+		const item = page.getByRole("listitem").filter({ hasText: "Application created" });
+		await expect(item).toHaveCount(1);
+		await expect(item).toContainText("Deployment");
+		await expect(item).toContainText("Succeeded");
+
+		await page.getByRole("button", { name: "Table view" }).click();
 		const row = page.getByRole("row").filter({ hasText: "Application created" });
 		await expect(row).toHaveCount(1);
 		await expect(row).toContainText("Deployment");
@@ -501,8 +507,8 @@ test.describe("Redeploy on change", () => {
 		await expect(page.getByText("Out of Sync", { exact: true })).toBeVisible();
 		await expect(page.getByText(broken.sha.slice(0, 7))).toBeVisible();
 		await gotoApp(page, `/applications/${appId}/history`);
-		const row = page.getByRole("row").filter({ hasText: broken.sha.slice(0, 7) });
-		await expect(row).toContainText("Failed");
+		const item = page.getByRole("listitem").filter({ hasText: broken.sha.slice(0, 7) });
+		await expect(item).toContainText("Failed");
 
 		const fixed = await commit(REPO, {
 			files: { [COMPOSE_PATH]: composeFile(6) },
