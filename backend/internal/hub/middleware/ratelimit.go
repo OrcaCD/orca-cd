@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -38,7 +39,27 @@ func newRateLimiter(r rate.Limit, burst int) *rateLimiter {
 	}
 }
 
+// limiterKey collapses IPv6 addresses to their /64 prefix, since a single
+// subscriber typically controls a whole /64 and could rotate addresses freely.
+func limiterKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap()
+	if !addr.Is6() {
+		return addr.String()
+	}
+	prefix, err := addr.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return prefix.String()
+}
+
 func (rl *rateLimiter) get(ip string) *rate.Limiter {
+	ip = limiterKey(ip)
+
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
