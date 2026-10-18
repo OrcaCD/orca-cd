@@ -46,16 +46,15 @@ func ImagePullWebhookHandler(c *gin.Context) {
 	app, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			rejectWebhook(c)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	// Return 404 rather than 401 when no webhook is configured, to avoid leaking app existence.
 	if app.ImageWebhookSecret == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		rejectWebhook(c)
 		return
 	}
 
@@ -68,7 +67,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 			return
 		}
 		if !validateHMACSHA256(secret, body, strings.TrimPrefix(c.GetHeader("X-Hub-Signature-256"), "sha256=")) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid webhook signature"})
+			rejectWebhook(c)
 			return
 		}
 		if event == "ping" {
@@ -100,7 +99,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		token = c.Query("token")
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		rejectWebhook(c)
 		return
 	}
 

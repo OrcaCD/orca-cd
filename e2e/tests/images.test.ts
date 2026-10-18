@@ -343,8 +343,10 @@ test.describe("Image pull webhook", () => {
 			await deliver(id, { ...tampered, body: JSON.stringify({ ...payload, action: "x" }) }),
 		).toBe(401);
 
-		// A webhook delivery never needs a session, and a session is no replacement for the secret
-		expect(await deliver("00000000-0000-0000-0000-000000000000", { headers: bearer() })).toBe(404);
+		// An unknown application answers like a wrong secret, so existence isn't revealed
+		const unknownId = "00000000-0000-0000-0000-000000000000";
+		expect(await deliver(unknownId, { headers: bearer() })).toBe(401);
+		expect(await deliver(unknownId, github("package", payload))).toBe(401);
 
 		await sleep(DEBOUNCE_SETTLE_MS);
 		expect(await imageEvents(page, id)).toHaveLength(before);
@@ -522,9 +524,9 @@ test.describe("Image pull webhook", () => {
 		expect(await getApplication(page, id)).toMatchObject({ imageWebhookEnabled: false });
 
 		const before = (await imageEvents(page, id)).length;
-		// Without a webhook the application doesn't reveal that it exists
-		expect(await deliver(id, { headers: bearer() })).toBe(404);
-		expect(await deliver(id, github("package", packageEvent({ tag: "latest" })))).toBe(404);
+		// Without a webhook the application answers like a wrong secret
+		expect(await deliver(id, { headers: bearer() })).toBe(401);
+		expect(await deliver(id, github("package", packageEvent({ tag: "latest" })))).toBe(401);
 		await sleep(DEBOUNCE_SETTLE_MS);
 		expect(await imageEvents(page, id)).toHaveLength(before);
 	});

@@ -116,8 +116,8 @@ func TestWebhookHandler_NotFound(t *testing.T) {
 	c, w := makeWebhookRequest("nonexistent-id", `{}`)
 	WebhookHandler(c)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -140,8 +140,8 @@ func TestWebhookHandler_WrongSyncType(t *testing.T) {
 	c, w := makeWebhookRequest(repo.Id, `{}`)
 	WebhookHandler(c)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -488,7 +488,7 @@ func TestValidateSignature_UnknownProvider(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_NilSecret_Returns500(t *testing.T) {
+func TestWebhookHandler_NilSecret_Returns401(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 
 	repo := models.Repository{
@@ -511,8 +511,8 @@ func TestWebhookHandler_NilSecret_Returns500(t *testing.T) {
 	c, w := makeWebhookRequest(repo.Id, `{}`)
 	WebhookHandler(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

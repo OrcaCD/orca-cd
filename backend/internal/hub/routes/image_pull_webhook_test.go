@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -97,8 +98,8 @@ func TestImagePullWebhookHandler_NotFound(t *testing.T) {
 	c, w := makeImagePullWebhookRequest("nonexistent-id", "sometoken")
 	ImagePullWebhookHandler(c)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -109,8 +110,36 @@ func TestImagePullWebhookHandler_WebhookNotConfigured(t *testing.T) {
 	c, w := makeImagePullWebhookRequest(app.Id, "sometoken")
 	ImagePullWebhookHandler(c)
 
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404 when webhook not configured, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when webhook not configured, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestImagePullWebhookHandler_FailedAuthResponsesAreIdentical(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	app := seedAppWithWebhookSecret(t, "mysecret")
+
+	reject := func(appID string) string {
+		t.Helper()
+		c, w := makeImagePullWebhookRequest(appID, "wrong")
+		ImagePullWebhookHandler(c)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+		return w.Body.String()
+	}
+
+	wrongSecret := reject(app.Id)
+	unknown := reject("nonexistent-id")
+
+	_, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Update(context.Background(), "image_webhook_secret", nil)
+	if err != nil {
+		t.Fatalf("failed to revoke the webhook: %v", err)
+	}
+	unconfigured := reject(app.Id)
+
+	if unknown != wrongSecret || unconfigured != wrongSecret {
+		t.Errorf("bodies differ: wrong secret %q, unknown %q, unconfigured %q", wrongSecret, unknown, unconfigured)
 	}
 }
 

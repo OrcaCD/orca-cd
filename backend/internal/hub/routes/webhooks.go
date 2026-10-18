@@ -39,26 +39,25 @@ type pushPayload struct {
 	After string `json:"after"`
 }
 
+func rejectWebhook(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+}
+
 func WebhookHandler(c *gin.Context) {
 	id := c.Param("id")
 
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			rejectWebhook(c)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	if repo.SyncType != models.SyncTypeWebhook {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not configured for webhook sync"})
-		return
-	}
-
-	if repo.WebhookSecret == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	if repo.SyncType != models.SyncTypeWebhook || repo.WebhookSecret == nil {
+		rejectWebhook(c)
 		return
 	}
 
@@ -76,7 +75,7 @@ func WebhookHandler(c *gin.Context) {
 	secret := repo.WebhookSecret.String()
 
 	if !validateSignature(c, repo.Provider, secret, body) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid webhook signature"})
+		rejectWebhook(c)
 		return
 	}
 
@@ -137,7 +136,7 @@ func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 	secret := repo.WebhookSecret.String()
 	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		rejectWebhook(c)
 		return
 	}
 
