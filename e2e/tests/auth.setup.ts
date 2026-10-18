@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { expect, test as setup } from "@playwright/test";
+import { ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD } from "./const.ts";
 import { readSetupCode } from "./helpers/setup-code.ts";
 
 const authFile = join(import.meta.dirname, "../playwright/.auth/user.json");
@@ -26,13 +27,11 @@ setup("Authenticate", async ({ page }) => {
 	await expect(page.getByRole("textbox", { name: "name" })).toBeVisible();
 	expect(new URL(page.url()).hash).toBe("");
 
-	await page.getByRole("textbox", { name: "name" }).fill("Testadmin");
-	await page.getByRole("textbox", { name: "email" }).fill("testadmin@example.com");
+	await page.getByRole("textbox", { name: "name" }).fill(ADMIN_NAME);
+	await page.getByRole("textbox", { name: "email" }).fill(ADMIN_EMAIL);
 
-	await page.getByRole("textbox", { name: "Password", exact: true }).fill("TestPassword123!");
-	await page
-		.getByRole("textbox", { name: "Confirm Password", exact: true })
-		.fill("TestPassword123!");
+	await page.getByRole("textbox", { name: "Password", exact: true }).fill(ADMIN_PASSWORD);
+	await page.getByRole("textbox", { name: "Confirm Password", exact: true }).fill(ADMIN_PASSWORD);
 
 	await page.locator("form button[type='submit']").click();
 

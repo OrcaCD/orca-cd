@@ -1,5 +1,9 @@
 export const APP_URL = "http://127.0.0.1:8090";
 
+export const ADMIN_NAME = "Testadmin";
+export const ADMIN_EMAIL = "testadmin@example.com";
+export const ADMIN_PASSWORD = "TestPassword123!";
+
 export const HUB_CONTAINER = "orca-hub-e2e-test";
 export const AGENT_CONTAINER = "orca-agent-e2e-test";
 export const AGENT_IMAGE = "orca-agent-e2e-test";
