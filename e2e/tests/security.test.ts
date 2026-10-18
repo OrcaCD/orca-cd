@@ -100,6 +100,41 @@ test.describe("protected API routes require authentication", () => {
 			).status(),
 		).toBe(401);
 	});
+	test("GET /api/v1/events (SSE) returns 401", async ({ request }) => {
+		const response = await request.get("/api/v1/events", {
+			headers: { Accept: "text/event-stream" },
+		});
+		expect(response.status()).toBe(401);
+		expect(response.headers()["content-type"]).not.toContain("text/event-stream");
+		expect((await response.json()).error).toBe("missing authentication");
+	});
+	test("GET /api/v1/events (SSE) returns 401 for an invalid token", async ({ browser }) => {
+		const context = await browser.newContext({ baseURL: APP_URL });
+		await context.addCookies([
+			{ name: "orcacd_auth", value: "invalid", domain: "127.0.0.1", path: "/" },
+		]);
+		const response = await context.request.get("/api/v1/events", {
+			headers: { Accept: "text/event-stream" },
+		});
+		expect(response.status()).toBe(401);
+		expect((await response.json()).error).toBe("invalid or expired token");
+		await context.close();
+	});
+	test("the browser EventSource fails without a session", async ({ page }) => {
+		await page.goto("/api/v1/health");
+		const result = await page.evaluate(
+			() =>
+				new Promise<string>((resolve) => {
+					const source = new EventSource("/api/v1/events");
+					source.addEventListener("open", () => resolve("open"));
+					source.addEventListener("error", () => {
+						resolve(source.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
+						source.close();
+					});
+				}),
+		);
+		expect(result).toBe("closed");
+	});
 	test("POST /api/v1/applications returns 401", async ({ request }) => {
 		expect(
 			(

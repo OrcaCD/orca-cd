@@ -6,17 +6,33 @@ import {
 	appContainers,
 	BUSYBOX_IMAGE,
 	composeProject,
+	containerMounts,
 	deployedComposeFile,
 	deploymentDirExists,
 	execInContainer,
 	inspectContainer,
+	projectContainers,
 	pullImage,
 	removeApplicationContainers,
+	removeVolumes,
 	startContainer,
 	stopContainer,
 } from "./helpers/docker.ts";
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
 import { gotoApp } from "./helpers/navigation.ts";
+import {
+	createNotification,
+	deleteNotifications,
+	getNotification,
+	type ApiNotification,
+} from "./helpers/notifications.ts";
+import {
+	clearRequests,
+	hookUrl,
+	receivedRequests,
+	setStatus,
+	waitForMessages,
+} from "./helpers/receiver-mock.ts";
 import {
 	applicationEvents,
 	createOnlineAgent,
@@ -47,6 +63,83 @@ const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
 const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
+const NOTIFY_REPO = "e2e/deploy-notify";
+const NOTIFY_APP_NAME = "E2E Notify Failing App";
+const SUCCESS_HOOK = "deploy-success";
+const FAILURE_HOOK = "deploy-failure";
+const SCOPED_HOOK = "deploy-scoped";
+const DISABLED_HOOK = "deploy-disabled";
+const NOTIFY_HOOKS = [SUCCESS_HOOK, FAILURE_HOOK, SCOPED_HOOK, DISABLED_HOOK];
+const DEPLOYMENT_EVENTS = ["application.deployment.succeeded", "application.deployment.failed"];
+
+const POLICY_REPO = "e2e/deploy-policy";
+const POLICY_ERROR = "deployment rejected by security policy";
+const IDLE = "while true; do sleep 1; done";
+
+function policyComposeFile(serviceConfig: string, extra = "", script = IDLE) {
+	return `services:
+  app:
+    image: ${IMAGE}
+    pull_policy: if_not_present
+    command: ["sh", "-c", "${script}"]
+    stop_grace_period: 1s
+${serviceConfig}${extra}`;
+}
+
+const rejectedCases = [
+	{
+		title: "privileged mode",
+		name: "E2E Policy Privileged",
+		project: "e2e-policy-privileged",
+		compose: policyComposeFile("    privileged: true\n"),
+		violation: 'service "app": privileged mode is not allowed',
+	},
+	{
+		title: "a dangerous capability",
+		name: "E2E Policy Capability",
+		project: "e2e-policy-capability",
+		compose: policyComposeFile("    cap_add:\n      - SYS_ADMIN\n"),
+		violation: 'service "app": cap_add "SYS_ADMIN" is not allowed',
+	},
+	{
+		title: "a Docker socket bind mount",
+		name: "E2E Policy Socket",
+		project: "e2e-policy-socket",
+		compose: policyComposeFile("    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n"),
+		violation: 'bind mount source "/var/run/docker.sock"',
+	},
+	{
+		title: "a sensitive host path bind mount",
+		name: "E2E Policy Host Path",
+		project: "e2e-policy-host-path",
+		compose: policyComposeFile("    volumes:\n      - /etc:/host-etc:ro\n"),
+		violation: 'bind mount source "/etc" is under sensitive host path "/etc"',
+	},
+	{
+		title: "a disallowed security option",
+		name: "E2E Policy Security Opt",
+		project: "e2e-policy-security-opt",
+		compose: policyComposeFile("    security_opt:\n      - seccomp=unconfined\n"),
+		violation: 'service "app": security_opt "seccomp=unconfined" is not allowed',
+	},
+];
+
+const SAFE_NAME = "E2E Policy Safe";
+const SAFE_PROJECT = "e2e-policy-safe";
+const SAFE_VOLUME = `${SAFE_PROJECT}_data`;
+const safeCompose = policyComposeFile(
+	`    volumes:
+      - data:/named
+      - ./bound:/bound
+`,
+	`volumes:
+  data:
+`,
+	`echo named > /named/file; echo bind > /bound/file; ${IDLE}`,
+);
+
+const policyPath = (name: string) => `${name.toLowerCase().replaceAll(" ", "-")}/compose.yaml`;
+
 function composeFile(version: number, image = IMAGE) {
 	return `services:
   app:
@@ -73,6 +166,8 @@ let cascadeAppId = "";
 let offlineAppId = "";
 let moveAppId = "";
 let moveTargetAgent: ApiAgent | undefined;
+let policyRepo: ApiRepository | undefined;
+const policyAppIds = new Map<string, string>();
 // The compose project the agent derived from the application name, read from its containers
 let project = "";
 let containerId = "";
@@ -119,7 +214,7 @@ test.afterAll(async ({ browser }) => {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO, POLICY_REPO, NOTIFY_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -133,6 +228,8 @@ test.afterAll(async ({ browser }) => {
 		removeApplicationContainers(cascadeAppId);
 		removeApplicationContainers(offlineAppId);
 		removeApplicationContainers(moveAppId);
+		policyAppIds.forEach(removeApplicationContainers);
+		removeVolumes(SAFE_VOLUME);
 	}
 });
 
@@ -722,6 +819,306 @@ test.describe("Move and rename", () => {
 		expect((await api(page, "DELETE", `/agents/${moveTargetAgent.id}`)).status).toBe(200);
 		moveTargetAgent = undefined;
 		expect((await api(page, "GET", `/applications/${moveAppId}`)).status).toBe(404);
+	});
+});
+
+test.describe("Compose security policy", () => {
+	test.beforeAll(async ({ browser }) => {
+		const context = await newAuthenticatedContext(browser);
+		try {
+			const page = await context.newPage();
+			const files = Object.fromEntries([
+				...rejectedCases.map(({ name, compose }) => [policyPath(name), compose]),
+				[policyPath(SAFE_NAME), safeCompose],
+			]);
+			policyRepo = await seedRepository(page, POLICY_REPO, {}, { branches: { main: { files } } });
+		} finally {
+			await context.close();
+		}
+	});
+
+	async function createPolicyApplication(page: Page, name: string) {
+		const created = await api(page, "POST", "/applications", {
+			name,
+			repositoryId: policyRepo!.id,
+			agentId: agent.id,
+			branch: "main",
+			path: policyPath(name),
+		});
+		expect(created.status).toBe(201);
+		const id = created.body.id as string;
+		policyAppIds.set(name, id);
+		return id;
+	}
+
+	for (const { title, name, project, violation } of rejectedCases) {
+		test(`rejects ${title}`, async ({ page }) => {
+			const id = await createPolicyApplication(page, name);
+
+			const failed = await waitForApplication(
+				page,
+				id,
+				(app) => app.syncStatus === "out_of_sync" && !!app.lastSyncError,
+			);
+			expect(failed.lastSyncError).toContain(POLICY_ERROR);
+			expect(failed.lastSyncError).toContain(violation);
+			expect(failed.lastSyncedAt).toBeNull();
+
+			await expect
+				.poll(async () => (await applicationEvents(page, id)).map((event) => event.status), {
+					timeout: 30_000,
+				})
+				.toEqual(["failed"]);
+			const [event] = await applicationEvents(page, id);
+			expect(event).toMatchObject({ type: "deployment", source: "application_created" });
+			expect(event.errorMessage).toContain(POLICY_ERROR);
+			expect(event.errorMessage).toContain(violation);
+
+			// The agent labels containers only after the policy ran, so look at the compose project
+			expect(projectContainers(project)).toHaveLength(0);
+			expect(appContainers(id)).toHaveLength(0);
+		});
+	}
+
+	test("shows the rejection on the application", async ({ page }) => {
+		const [{ name, violation }] = rejectedCases;
+		const id = policyAppIds.get(name)!;
+
+		await gotoApp(page, `/applications/${id}/details`);
+		await expect(page.getByText("Sync failed")).toBeVisible();
+		await expect(page.getByText("Out of Sync", { exact: true })).toBeVisible();
+		await expect(page.getByText(violation, { exact: false })).toBeVisible();
+
+		await gotoApp(page, `/applications/${id}/history`);
+		const item = page.getByRole("listitem").filter({ hasText: "Application created" });
+		await expect(item).toHaveCount(1);
+		await expect(item).toContainText("Failed");
+	});
+
+	test("a named volume and a bind mount inside the deployment still deploy", async ({ page }) => {
+		const id = await createPolicyApplication(page, SAFE_NAME);
+
+		// Settling on any result makes a rejection show up as the error instead of a timeout
+		const deployed = await waitForApplication(
+			page,
+			id,
+			(app) => app.syncStatus === "synced" || !!app.lastSyncError,
+		);
+		expect(deployed.lastSyncError).toBeUndefined();
+		expect(deployed.syncStatus).toBe("synced");
+		await expect.poll(() => appContainers(id).length, { timeout: 30_000 }).toBe(1);
+		const [container] = appContainers(id);
+		expect(container.state).toBe("running");
+		expect(composeProject(id)).toBe(SAFE_PROJECT);
+
+		const mounts = containerMounts(container.id);
+		expect(mounts).toHaveLength(2);
+		expect(mounts.find((mount) => mount.Destination === "/named")).toMatchObject({
+			Type: "volume",
+			Name: SAFE_VOLUME,
+		});
+		const bind = mounts.find((mount) => mount.Destination === "/bound");
+		expect(bind?.Type).toBe("bind");
+		// The agent translates the path inside its container to the one on the Docker host
+		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound$`));
+
+		await expect
+			.poll(() => execInContainer(container.id, ["cat", "/named/file"]), { timeout: 15_000 })
+			.toBe("named");
+		expect(execInContainer(container.id, ["cat", "/bound/file"])).toBe("bind");
+
+		const events = await applicationEvents(page, id);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ type: "deployment", status: "succeeded" });
+	});
+});
+
+test.describe("Deployment notifications", () => {
+	let notifications: Record<string, ApiNotification> = {};
+	let failingAppId = "";
+
+	test.beforeAll(async () => {
+		for (const hook of NOTIFY_HOOKS) {
+			await setStatus(hook, 200);
+		}
+	});
+
+	test.afterAll(async ({ browser }) => {
+		const context = await newAuthenticatedContext(browser);
+		try {
+			const page = await context.newPage();
+			await deleteNotifications(
+				page,
+				Object.values(notifications).map((notification) => notification.id),
+			);
+		} catch {
+			// The notifications are only assigned to applications that are removed anyway
+		} finally {
+			await context.close();
+			removeApplicationContainers(failingAppId);
+		}
+	});
+
+	async function deployManually(page: Page) {
+		const succeeded = async () =>
+			(await applicationEvents(page, appId)).filter(
+				(event) => event.source === "manual" && event.status === "succeeded",
+			).length;
+		const before = await succeeded();
+		const response = await api(page, "POST", `/applications/${appId}/deploy`);
+		expect(response.status).toBe(202);
+		await expect.poll(succeeded, { timeout: 60_000 }).toBe(before + 1);
+		await waitForApplication(page, appId, (app) => app.syncStatus === "synced");
+	}
+
+	async function expectNoMessages(...hooks: string[]) {
+		// Notifications are sent one after another, so the others had their chance by now
+		for (const hook of hooks) {
+			expect(await receivedRequests(hook), hook).toHaveLength(0);
+		}
+	}
+
+	test("creates the notifications", async ({ page }) => {
+		const webhook = (name: string, hook: string, extra: Record<string, unknown>) =>
+			createNotification(page, {
+				name,
+				type: "webhook",
+				config: JSON.stringify({ webhookUrl: hookUrl(hook) }),
+				...extra,
+			});
+
+		notifications = {
+			[SUCCESS_HOOK]: await webhook("E2E Deploy Success", SUCCESS_HOOK, {
+				events: ["application.deployment.succeeded"],
+				allApplications: true,
+			}),
+			[FAILURE_HOOK]: await webhook("E2E Deploy Failure", FAILURE_HOOK, {
+				events: ["application.deployment.failed"],
+				allApplications: true,
+			}),
+			[SCOPED_HOOK]: await createNotification(page, {
+				name: "E2E Deploy Scoped",
+				type: "custom",
+				config: `generic://host.docker.internal:${new URL(hookUrl(SCOPED_HOOK)).port}/hooks/${SCOPED_HOOK}?disabletls=yes&template=json`,
+				events: DEPLOYMENT_EVENTS,
+				applicationIds: [appId],
+			}),
+			[DISABLED_HOOK]: await webhook("E2E Deploy Disabled", DISABLED_HOOK, {
+				events: DEPLOYMENT_EVENTS,
+				allApplications: true,
+				enabled: false,
+			}),
+		};
+		expect(notifications[SCOPED_HOOK].applicationIds).toEqual([appId]);
+
+		// Creating verifies the config with a test message, even for a disabled notification
+		for (const hook of NOTIFY_HOOKS) {
+			expect(await receivedRequests(hook), hook).toHaveLength(1);
+			await clearRequests(hook);
+		}
+	});
+
+	test("a successful deployment is sent to the subscribed notifications", async ({ page }) => {
+		await deployManually(page);
+
+		const message = `Success: deployment succeeded for ${APP_NAME}`;
+		expect(await waitForMessages(SUCCESS_HOOK, 1)).toEqual([message]);
+		expect(await waitForMessages(SCOPED_HOOK, 1)).toEqual([message]);
+		const [request] = await receivedRequests(SUCCESS_HOOK);
+		expect(request.method).toBe("POST");
+		expect(request.headers["content-type"]).toContain("application/json");
+
+		// Not subscribed to the event, or disabled
+		await expectNoMessages(FAILURE_HOOK, DISABLED_HOOK);
+		expect((await getNotification(page, "E2E Deploy Success"))!.status).toBe("success");
+	});
+
+	test("a failed deployment is sent to the subscribed notifications", async ({ page }) => {
+		for (const hook of NOTIFY_HOOKS) {
+			await clearRequests(hook);
+		}
+		const notifyRepo = await seedRepository(
+			page,
+			NOTIFY_REPO,
+			{},
+			{ branches: { main: { files: { "compose.yaml": composeFile(1, UNPULLABLE_IMAGE) } } } },
+		);
+		const created = await api(page, "POST", "/applications", {
+			name: NOTIFY_APP_NAME,
+			repositoryId: notifyRepo.id,
+			agentId: agent.id,
+			branch: "main",
+			path: "compose.yaml",
+		});
+		expect(created.status).toBe(201);
+		failingAppId = created.body.id as string;
+		await waitForApplication(
+			page,
+			failingAppId,
+			(app) => app.syncStatus === "out_of_sync" && !!app.lastSyncError,
+		);
+
+		expect(await waitForMessages(FAILURE_HOOK, 1)).toEqual([
+			`Error: deployment failed for ${NOTIFY_APP_NAME}`,
+		]);
+		// The scoped notification only covers the first application
+		await expectNoMessages(SUCCESS_HOOK, SCOPED_HOOK, DISABLED_HOOK);
+	});
+
+	test("editing a notification changes what it receives", async ({ page }) => {
+		// Dropping the event stops the delivery, enabling the disabled notification starts it
+		await clearRequests(SUCCESS_HOOK);
+		await clearRequests(DISABLED_HOOK);
+		const update = (id: string, body: Record<string, unknown>) =>
+			api(page, "PUT", `/notifications/${id}`, {
+				enabled: true,
+				allApplications: true,
+				allAgents: false,
+				allRepositories: false,
+				events: DEPLOYMENT_EVENTS,
+				...body,
+			});
+
+		expect(
+			(await update(notifications[SUCCESS_HOOK].id, { events: ["agent.offline"] })).status,
+		).toBe(200);
+		expect((await update(notifications[DISABLED_HOOK].id, {})).status).toBe(200);
+
+		await deployManually(page);
+
+		const message = `Success: deployment succeeded for ${APP_NAME}`;
+		expect(await waitForMessages(DISABLED_HOOK, 1)).toEqual([message]);
+		await expectNoMessages(SUCCESS_HOOK);
+	});
+
+	test("a failing receiver marks the notification as failed until it recovers", async ({
+		page,
+	}) => {
+		await setStatus(DISABLED_HOOK, 500);
+		try {
+			await deployManually(page);
+			await expect
+				.poll(async () => (await getNotification(page, "E2E Deploy Disabled"))!.status, {
+					timeout: 30_000,
+				})
+				.toBe("error");
+
+			await gotoApp(page, "/notifications");
+			await expect(
+				page.locator("[data-slot='card']", { hasText: "E2E Deploy Disabled" }).getByText("Error", {
+					exact: true,
+				}),
+			).toBeVisible();
+		} finally {
+			await setStatus(DISABLED_HOOK, 200);
+		}
+
+		await deployManually(page);
+		await expect
+			.poll(async () => (await getNotification(page, "E2E Deploy Disabled"))!.status, {
+				timeout: 30_000,
+			})
+			.toBe("success");
 	});
 });
 

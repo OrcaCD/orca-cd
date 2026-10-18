@@ -172,6 +172,9 @@ importers:
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       oxfmt:
         specifier: ^0.73.0
         version: 0.73.0
@@ -589,6 +592,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
+
   oxfmt@0.73.0:
     resolution: {integrity: sha512-Ke4xbpuzqIBP4bkd48q815RhqWNJqOBzxVA9199M4qcF0y0LtpUv7UTg1dJ5ea6jw0RBUDZvX3qOUMNmmxfxbw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -845,6 +851,8 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  jose@6.2.12: {}
 
   oxfmt@0.73.0:
     dependencies:
