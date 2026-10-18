@@ -17,3 +17,7 @@ export const GITEA_MOCK_CONTROL_URL = `http://127.0.0.1:${GITEA_MOCK_CONTROL_POR
 export const RECEIVER_MOCK_API_PORT = 3445;
 export const RECEIVER_MOCK_CONTROL_PORT = 3446;
 export const RECEIVER_MOCK_CONTROL_URL = `http://127.0.0.1:${RECEIVER_MOCK_CONTROL_PORT}`;
+
+export const REGISTRY_CONTAINER = "orca-registry-e2e";
+export const REGISTRY_PORT = 5055;
+export const REGISTRY_HOST = `127.0.0.1:${REGISTRY_PORT}`;

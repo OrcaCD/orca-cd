@@ -9,7 +9,7 @@ const authenticated = {
 };
 // These files share the single agent container and restart the hub, so they must not overlap
 // with other tests and run one after another after everything else
-const sharedInfrastructure = /(agent|applications)\.test\.ts$/;
+const sharedInfrastructure = /(agent|applications|images)\.test\.ts$/;
 const compose = "docker compose -f docker-compose.e2e.yml";
 // CI loads cached images before Playwright starts; local runs still build them.
 const buildImages = skipBuild ? "" : `${compose} --profile agent build && `;
@@ -58,6 +58,12 @@ export default defineConfig({
 			testMatch: /applications\.test\.ts$/,
 			use: authenticated,
 			dependencies: ["agent"],
+		},
+		{
+			name: "images",
+			testMatch: /images\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["applications"],
 		},
 	],
 

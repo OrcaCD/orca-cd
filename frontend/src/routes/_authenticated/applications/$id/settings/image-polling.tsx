@@ -65,7 +65,9 @@ const applicationSchema = z.object({
 
 function ImagePollingPage() {
 	const { id } = Route.useParams();
-	const { data: application } = useFetch<Application>(`/applications/${id}`);
+	const { data: application, mutate: mutateApplication } = useFetch<Application>(
+		`/applications/${id}`,
+	);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [, setOpen] = useState(false);
 	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
@@ -89,7 +91,10 @@ function ImagePollingPage() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				await updateApplication(application!.id, value);
+				const updated = await updateApplication(application!.id, value);
+				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
+				await mutateApplication(updated, { revalidate: false });
+				form.reset(value);
 				toast.add({ type: "success", title: m.applicationUpdated() });
 				setOpen(false);
 			} catch (err) {
