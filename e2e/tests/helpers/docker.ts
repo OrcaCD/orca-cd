@@ -42,11 +42,48 @@ export function appContainers(applicationId: string): ProjectContainer[] {
 		});
 }
 
+/** Every container of a compose project, also those created before the agent labels them. */
+export function projectContainers(project: string): ProjectContainer[] {
+	const { stdout } = docker([
+		"ps",
+		"-a",
+		"--filter",
+		`label=com.docker.compose.project=${project}`,
+		"--format",
+		"{{.ID}}|{{.State}}|{{.Status}}",
+	]);
+	return stdout
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const [id, state, status] = line.split("|");
+			return { id, state, status };
+		});
+}
+
 export function execInContainer(id: string, command: string[]) {
 	const result = docker(["exec", id, ...command]);
 	if (!result.ok) {
 		throw new Error(`docker exec ${id} ${command.join(" ")} failed: ${result.stderr}`);
 	}
+	return result.stdout;
+}
+
+export function containerMounts(id: string) {
+	const { ok, stdout } = docker(["inspect", "-f", "{{json .Mounts}}", id]);
+	if (!ok) {
+		throw new Error(`docker inspect ${id} failed`);
+	}
+	return JSON.parse(stdout) as {
+		Type: string;
+		Name?: string;
+		Source: string;
+		Destination: string;
+	}[];
+}
+
+export function removeVolumes(...names: string[]) {
+	docker(["volume", "rm", "-f", ...names]);
 }
 
 export function stopContainer(id: string) {

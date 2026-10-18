@@ -6,12 +6,15 @@ import {
 	appContainers,
 	BUSYBOX_IMAGE,
 	composeProject,
+	containerMounts,
 	deployedComposeFile,
 	deploymentDirExists,
 	execInContainer,
 	inspectContainer,
+	projectContainers,
 	pullImage,
 	removeApplicationContainers,
+	removeVolumes,
 	startContainer,
 	stopContainer,
 } from "./helpers/docker.ts";
@@ -47,6 +50,74 @@ const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
 const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
+const POLICY_REPO = "e2e/deploy-policy";
+const POLICY_ERROR = "deployment rejected by security policy";
+const IDLE = "while true; do sleep 1; done";
+
+function policyComposeFile(serviceConfig: string, extra = "", script = IDLE) {
+	return `services:
+  app:
+    image: ${IMAGE}
+    pull_policy: if_not_present
+    command: ["sh", "-c", "${script}"]
+    stop_grace_period: 1s
+${serviceConfig}${extra}`;
+}
+
+const rejectedCases = [
+	{
+		title: "privileged mode",
+		name: "E2E Policy Privileged",
+		project: "e2e-policy-privileged",
+		compose: policyComposeFile("    privileged: true\n"),
+		violation: 'service "app": privileged mode is not allowed',
+	},
+	{
+		title: "a dangerous capability",
+		name: "E2E Policy Capability",
+		project: "e2e-policy-capability",
+		compose: policyComposeFile("    cap_add:\n      - SYS_ADMIN\n"),
+		violation: 'service "app": cap_add "SYS_ADMIN" is not allowed',
+	},
+	{
+		title: "a Docker socket bind mount",
+		name: "E2E Policy Socket",
+		project: "e2e-policy-socket",
+		compose: policyComposeFile("    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n"),
+		violation: 'bind mount source "/var/run/docker.sock"',
+	},
+	{
+		title: "a sensitive host path bind mount",
+		name: "E2E Policy Host Path",
+		project: "e2e-policy-host-path",
+		compose: policyComposeFile("    volumes:\n      - /etc:/host-etc:ro\n"),
+		violation: 'bind mount source "/etc" is under sensitive host path "/etc"',
+	},
+	{
+		title: "a disallowed security option",
+		name: "E2E Policy Security Opt",
+		project: "e2e-policy-security-opt",
+		compose: policyComposeFile("    security_opt:\n      - seccomp=unconfined\n"),
+		violation: 'service "app": security_opt "seccomp=unconfined" is not allowed',
+	},
+];
+
+const SAFE_NAME = "E2E Policy Safe";
+const SAFE_PROJECT = "e2e-policy-safe";
+const SAFE_VOLUME = `${SAFE_PROJECT}_data`;
+const safeCompose = policyComposeFile(
+	`    volumes:
+      - data:/named
+      - ./bound:/bound
+`,
+	`volumes:
+  data:
+`,
+	`echo named > /named/file; echo bind > /bound/file; ${IDLE}`,
+);
+
+const policyPath = (name: string) => `${name.toLowerCase().replaceAll(" ", "-")}/compose.yaml`;
+
 function composeFile(version: number, image = IMAGE) {
 	return `services:
   app:
@@ -73,6 +144,8 @@ let cascadeAppId = "";
 let offlineAppId = "";
 let moveAppId = "";
 let moveTargetAgent: ApiAgent | undefined;
+let policyRepo: ApiRepository | undefined;
+const policyAppIds = new Map<string, string>();
 // The compose project the agent derived from the application name, read from its containers
 let project = "";
 let containerId = "";
@@ -119,7 +192,7 @@ test.afterAll(async ({ browser }) => {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO, POLICY_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -133,6 +206,8 @@ test.afterAll(async ({ browser }) => {
 		removeApplicationContainers(cascadeAppId);
 		removeApplicationContainers(offlineAppId);
 		removeApplicationContainers(moveAppId);
+		policyAppIds.forEach(removeApplicationContainers);
+		removeVolumes(SAFE_VOLUME);
 	}
 });
 
@@ -722,6 +797,117 @@ test.describe("Move and rename", () => {
 		expect((await api(page, "DELETE", `/agents/${moveTargetAgent.id}`)).status).toBe(200);
 		moveTargetAgent = undefined;
 		expect((await api(page, "GET", `/applications/${moveAppId}`)).status).toBe(404);
+	});
+});
+
+test.describe("Compose security policy", () => {
+	test.beforeAll(async ({ browser }) => {
+		const context = await newAuthenticatedContext(browser);
+		try {
+			const page = await context.newPage();
+			const files = Object.fromEntries([
+				...rejectedCases.map(({ name, compose }) => [policyPath(name), compose]),
+				[policyPath(SAFE_NAME), safeCompose],
+			]);
+			policyRepo = await seedRepository(page, POLICY_REPO, {}, { branches: { main: { files } } });
+		} finally {
+			await context.close();
+		}
+	});
+
+	async function createPolicyApplication(page: Page, name: string) {
+		const created = await api(page, "POST", "/applications", {
+			name,
+			repositoryId: policyRepo!.id,
+			agentId: agent.id,
+			branch: "main",
+			path: policyPath(name),
+		});
+		expect(created.status).toBe(201);
+		const id = created.body.id as string;
+		policyAppIds.set(name, id);
+		return id;
+	}
+
+	for (const { title, name, project, violation } of rejectedCases) {
+		test(`rejects ${title}`, async ({ page }) => {
+			const id = await createPolicyApplication(page, name);
+
+			const failed = await waitForApplication(
+				page,
+				id,
+				(app) => app.syncStatus === "out_of_sync" && !!app.lastSyncError,
+			);
+			expect(failed.lastSyncError).toContain(POLICY_ERROR);
+			expect(failed.lastSyncError).toContain(violation);
+			expect(failed.lastSyncedAt).toBeNull();
+
+			await expect
+				.poll(async () => (await applicationEvents(page, id)).map((event) => event.status), {
+					timeout: 30_000,
+				})
+				.toEqual(["failed"]);
+			const [event] = await applicationEvents(page, id);
+			expect(event).toMatchObject({ type: "deployment", source: "application_created" });
+			expect(event.errorMessage).toContain(POLICY_ERROR);
+			expect(event.errorMessage).toContain(violation);
+
+			// The agent labels containers only after the policy ran, so look at the compose project
+			expect(projectContainers(project)).toHaveLength(0);
+			expect(appContainers(id)).toHaveLength(0);
+		});
+	}
+
+	test("shows the rejection on the application", async ({ page }) => {
+		const [{ name, violation }] = rejectedCases;
+		const id = policyAppIds.get(name)!;
+
+		await gotoApp(page, `/applications/${id}/details`);
+		await expect(page.getByText("Sync failed")).toBeVisible();
+		await expect(page.getByText("Out of Sync", { exact: true })).toBeVisible();
+		await expect(page.getByText(violation, { exact: false })).toBeVisible();
+
+		await gotoApp(page, `/applications/${id}/history`);
+		const item = page.getByRole("listitem").filter({ hasText: "Application created" });
+		await expect(item).toHaveCount(1);
+		await expect(item).toContainText("Failed");
+	});
+
+	test("a named volume and a bind mount inside the deployment still deploy", async ({ page }) => {
+		const id = await createPolicyApplication(page, SAFE_NAME);
+
+		// Settling on any result makes a rejection show up as the error instead of a timeout
+		const deployed = await waitForApplication(
+			page,
+			id,
+			(app) => app.syncStatus === "synced" || !!app.lastSyncError,
+		);
+		expect(deployed.lastSyncError).toBeUndefined();
+		expect(deployed.syncStatus).toBe("synced");
+		await expect.poll(() => appContainers(id).length, { timeout: 30_000 }).toBe(1);
+		const [container] = appContainers(id);
+		expect(container.state).toBe("running");
+		expect(composeProject(id)).toBe(SAFE_PROJECT);
+
+		const mounts = containerMounts(container.id);
+		expect(mounts).toHaveLength(2);
+		expect(mounts.find((mount) => mount.Destination === "/named")).toMatchObject({
+			Type: "volume",
+			Name: SAFE_VOLUME,
+		});
+		const bind = mounts.find((mount) => mount.Destination === "/bound");
+		expect(bind?.Type).toBe("bind");
+		// The agent translates the path inside its container to the one on the Docker host
+		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound$`));
+
+		await expect
+			.poll(() => execInContainer(container.id, ["cat", "/named/file"]), { timeout: 15_000 })
+			.toBe("named");
+		expect(execInContainer(container.id, ["cat", "/bound/file"])).toBe("bind");
+
+		const events = await applicationEvents(page, id);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ type: "deployment", status: "succeeded" });
 	});
 });
 
