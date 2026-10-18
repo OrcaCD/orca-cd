@@ -21,6 +21,19 @@ import {
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
 import { gotoApp } from "./helpers/navigation.ts";
 import {
+	createNotification,
+	deleteNotifications,
+	getNotification,
+	type ApiNotification,
+} from "./helpers/notifications.ts";
+import {
+	clearRequests,
+	hookUrl,
+	receivedRequests,
+	setStatus,
+	waitForMessages,
+} from "./helpers/receiver-mock.ts";
+import {
 	applicationEvents,
 	createOnlineAgent,
 	getApplication,
@@ -49,6 +62,15 @@ const RENAMED_APP_NAME = "E2E Moved App";
 const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
 const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
+
+const NOTIFY_REPO = "e2e/deploy-notify";
+const NOTIFY_APP_NAME = "E2E Notify Failing App";
+const SUCCESS_HOOK = "deploy-success";
+const FAILURE_HOOK = "deploy-failure";
+const SCOPED_HOOK = "deploy-scoped";
+const DISABLED_HOOK = "deploy-disabled";
+const NOTIFY_HOOKS = [SUCCESS_HOOK, FAILURE_HOOK, SCOPED_HOOK, DISABLED_HOOK];
+const DEPLOYMENT_EVENTS = ["application.deployment.succeeded", "application.deployment.failed"];
 
 const POLICY_REPO = "e2e/deploy-policy";
 const POLICY_ERROR = "deployment rejected by security policy";
@@ -192,7 +214,7 @@ test.afterAll(async ({ browser }) => {
 			await api(page, "DELETE", `/applications/${application.id}`);
 		}
 		for (const { id, name } of await listRepositories(page)) {
-			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO, POLICY_REPO].includes(name)) {
+			if ([REPO, CASCADE_REPO, OFFLINE_REPO, MOVE_REPO, POLICY_REPO, NOTIFY_REPO].includes(name)) {
 				await api(page, "DELETE", `/repositories/${id}`);
 			}
 		}
@@ -908,6 +930,195 @@ test.describe("Compose security policy", () => {
 		const events = await applicationEvents(page, id);
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({ type: "deployment", status: "succeeded" });
+	});
+});
+
+test.describe("Deployment notifications", () => {
+	let notifications: Record<string, ApiNotification> = {};
+	let failingAppId = "";
+
+	test.beforeAll(async () => {
+		for (const hook of NOTIFY_HOOKS) {
+			await setStatus(hook, 200);
+		}
+	});
+
+	test.afterAll(async ({ browser }) => {
+		const context = await newAuthenticatedContext(browser);
+		try {
+			const page = await context.newPage();
+			await deleteNotifications(
+				page,
+				Object.values(notifications).map((notification) => notification.id),
+			);
+		} catch {
+			// The notifications are only assigned to applications that are removed anyway
+		} finally {
+			await context.close();
+			removeApplicationContainers(failingAppId);
+		}
+	});
+
+	async function deployManually(page: Page) {
+		const succeeded = async () =>
+			(await applicationEvents(page, appId)).filter(
+				(event) => event.source === "manual" && event.status === "succeeded",
+			).length;
+		const before = await succeeded();
+		const response = await api(page, "POST", `/applications/${appId}/deploy`);
+		expect(response.status).toBe(202);
+		await expect.poll(succeeded, { timeout: 60_000 }).toBe(before + 1);
+		await waitForApplication(page, appId, (app) => app.syncStatus === "synced");
+	}
+
+	async function expectNoMessages(...hooks: string[]) {
+		// Notifications are sent one after another, so the others had their chance by now
+		for (const hook of hooks) {
+			expect(await receivedRequests(hook), hook).toHaveLength(0);
+		}
+	}
+
+	test("creates the notifications", async ({ page }) => {
+		const webhook = (name: string, hook: string, extra: Record<string, unknown>) =>
+			createNotification(page, {
+				name,
+				type: "webhook",
+				config: JSON.stringify({ webhookUrl: hookUrl(hook) }),
+				...extra,
+			});
+
+		notifications = {
+			[SUCCESS_HOOK]: await webhook("E2E Deploy Success", SUCCESS_HOOK, {
+				events: ["application.deployment.succeeded"],
+				allApplications: true,
+			}),
+			[FAILURE_HOOK]: await webhook("E2E Deploy Failure", FAILURE_HOOK, {
+				events: ["application.deployment.failed"],
+				allApplications: true,
+			}),
+			[SCOPED_HOOK]: await createNotification(page, {
+				name: "E2E Deploy Scoped",
+				type: "custom",
+				config: `generic://host.docker.internal:${new URL(hookUrl(SCOPED_HOOK)).port}/hooks/${SCOPED_HOOK}?disabletls=yes&template=json`,
+				events: DEPLOYMENT_EVENTS,
+				applicationIds: [appId],
+			}),
+			[DISABLED_HOOK]: await webhook("E2E Deploy Disabled", DISABLED_HOOK, {
+				events: DEPLOYMENT_EVENTS,
+				allApplications: true,
+				enabled: false,
+			}),
+		};
+		expect(notifications[SCOPED_HOOK].applicationIds).toEqual([appId]);
+
+		// Creating verifies the config with a test message, even for a disabled notification
+		for (const hook of NOTIFY_HOOKS) {
+			expect(await receivedRequests(hook), hook).toHaveLength(1);
+			await clearRequests(hook);
+		}
+	});
+
+	test("a successful deployment is sent to the subscribed notifications", async ({ page }) => {
+		await deployManually(page);
+
+		const message = `Success: deployment succeeded for ${APP_NAME}`;
+		expect(await waitForMessages(SUCCESS_HOOK, 1)).toEqual([message]);
+		expect(await waitForMessages(SCOPED_HOOK, 1)).toEqual([message]);
+		const [request] = await receivedRequests(SUCCESS_HOOK);
+		expect(request.method).toBe("POST");
+		expect(request.headers["content-type"]).toContain("application/json");
+
+		// Not subscribed to the event, or disabled
+		await expectNoMessages(FAILURE_HOOK, DISABLED_HOOK);
+		expect((await getNotification(page, "E2E Deploy Success"))!.status).toBe("success");
+	});
+
+	test("a failed deployment is sent to the subscribed notifications", async ({ page }) => {
+		for (const hook of NOTIFY_HOOKS) {
+			await clearRequests(hook);
+		}
+		const notifyRepo = await seedRepository(
+			page,
+			NOTIFY_REPO,
+			{},
+			{ branches: { main: { files: { "compose.yaml": composeFile(1, UNPULLABLE_IMAGE) } } } },
+		);
+		const created = await api(page, "POST", "/applications", {
+			name: NOTIFY_APP_NAME,
+			repositoryId: notifyRepo.id,
+			agentId: agent.id,
+			branch: "main",
+			path: "compose.yaml",
+		});
+		expect(created.status).toBe(201);
+		failingAppId = created.body.id as string;
+		await waitForApplication(
+			page,
+			failingAppId,
+			(app) => app.syncStatus === "out_of_sync" && !!app.lastSyncError,
+		);
+
+		expect(await waitForMessages(FAILURE_HOOK, 1)).toEqual([
+			`Error: deployment failed for ${NOTIFY_APP_NAME}`,
+		]);
+		// The scoped notification only covers the first application
+		await expectNoMessages(SUCCESS_HOOK, SCOPED_HOOK, DISABLED_HOOK);
+	});
+
+	test("editing a notification changes what it receives", async ({ page }) => {
+		// Dropping the event stops the delivery, enabling the disabled notification starts it
+		await clearRequests(SUCCESS_HOOK);
+		await clearRequests(DISABLED_HOOK);
+		const update = (id: string, body: Record<string, unknown>) =>
+			api(page, "PUT", `/notifications/${id}`, {
+				enabled: true,
+				allApplications: true,
+				allAgents: false,
+				allRepositories: false,
+				events: DEPLOYMENT_EVENTS,
+				...body,
+			});
+
+		expect(
+			(await update(notifications[SUCCESS_HOOK].id, { events: ["agent.offline"] })).status,
+		).toBe(200);
+		expect((await update(notifications[DISABLED_HOOK].id, {})).status).toBe(200);
+
+		await deployManually(page);
+
+		const message = `Success: deployment succeeded for ${APP_NAME}`;
+		expect(await waitForMessages(DISABLED_HOOK, 1)).toEqual([message]);
+		await expectNoMessages(SUCCESS_HOOK);
+	});
+
+	test("a failing receiver marks the notification as failed until it recovers", async ({
+		page,
+	}) => {
+		await setStatus(DISABLED_HOOK, 500);
+		try {
+			await deployManually(page);
+			await expect
+				.poll(async () => (await getNotification(page, "E2E Deploy Disabled"))!.status, {
+					timeout: 30_000,
+				})
+				.toBe("error");
+
+			await gotoApp(page, "/notifications");
+			await expect(
+				page.locator("[data-slot='card']", { hasText: "E2E Deploy Disabled" }).getByText("Error", {
+					exact: true,
+				}),
+			).toBeVisible();
+		} finally {
+			await setStatus(DISABLED_HOOK, 200);
+		}
+
+		await deployManually(page);
+		await expect
+			.poll(async () => (await getNotification(page, "E2E Deploy Disabled"))!.status, {
+				timeout: 30_000,
+			})
+			.toBe("success");
 	});
 });
 

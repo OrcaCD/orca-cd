@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { GITEA_MOCK_CONTROL_URL } from "./tests/const.ts";
+import { GITEA_MOCK_CONTROL_URL, RECEIVER_MOCK_CONTROL_URL } from "./tests/const.ts";
 
 const skipBuild = ["1", "true"].includes(process.env.E2E_SKIP_BUILD ?? "");
 
@@ -75,6 +75,13 @@ export default defineConfig({
 		{
 			command: "node mock/gitea/app.ts",
 			url: `${GITEA_MOCK_CONTROL_URL}/__control/health`,
+			reuseExistingServer: false,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+		{
+			command: "node mock/receiver/app.ts",
+			url: `${RECEIVER_MOCK_CONTROL_URL}/__control/health`,
 			reuseExistingServer: false,
 			stdout: "pipe",
 			stderr: "pipe",

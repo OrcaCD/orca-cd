@@ -69,7 +69,7 @@ node --run lint         # oxlint (type-aware, warnings are errors)
 node --run format       # oxfmt (format:check to only verify)
 ```
 
-Git providers are mocked by `e2e/mock/gitea/` (started by Playwright next to the hub). The agent and application tests need access to the Docker socket.
+Git providers are mocked by `e2e/mock/gitea/` and notification targets by `e2e/mock/receiver/` (both started by Playwright next to the hub). The agent and application tests need access to the Docker socket.
 
 ### Local dev (Docker)
 

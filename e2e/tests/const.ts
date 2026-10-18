@@ -13,3 +13,7 @@ export const HUB_WS_URL = "ws://hub:8080/api/v1/ws";
 export const GITEA_MOCK_API_PORT = 3443;
 export const GITEA_MOCK_CONTROL_PORT = 3444;
 export const GITEA_MOCK_CONTROL_URL = `http://127.0.0.1:${GITEA_MOCK_CONTROL_PORT}`;
+
+export const RECEIVER_MOCK_API_PORT = 3445;
+export const RECEIVER_MOCK_CONTROL_PORT = 3446;
+export const RECEIVER_MOCK_CONTROL_URL = `http://127.0.0.1:${RECEIVER_MOCK_CONTROL_PORT}`;
