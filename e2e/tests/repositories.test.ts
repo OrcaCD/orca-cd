@@ -482,8 +482,7 @@ test.describe("Repository webhook endpoint", () => {
 		const notConfigured = await anonymous.post(`/api/v1/webhooks/repositories/${manual.id}`, {
 			headers,
 		});
-		expect(notConfigured.status()).toBe(400);
-		expect((await notConfigured.json()).error).toContain("not configured for webhook sync");
+		expect(notConfigured.status()).toBe(401);
 
 		const wrongSecret = await anonymous.post(`/api/v1/webhooks/repositories/${webhook.id}`, {
 			headers: { ...headers, Authorization: "Bearer wrong-secret" },
@@ -498,7 +497,14 @@ test.describe("Repository webhook endpoint", () => {
 		const unknown = await anonymous.post("/api/v1/webhooks/repositories/does-not-exist", {
 			headers,
 		});
-		expect(unknown.status()).toBe(404);
+		expect(unknown.status()).toBe(401);
+
+		const bodies = await Promise.all(
+			[notConfigured, wrongSecret, missingSecret, unknown].map((response) => response.json()),
+		);
+		for (const body of bodies) {
+			expect(body).toEqual(bodies[0]);
+		}
 
 		await anonymous.dispose();
 	});
