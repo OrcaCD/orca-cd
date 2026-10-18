@@ -24,6 +24,11 @@ export interface ApiApplication {
 	lastSyncedAt: string | null;
 	lastSyncError?: string;
 	composeFile: string;
+	imagePollEnabled: boolean;
+	imagePollIntervalSeconds: number;
+	deleteOldImages: boolean;
+	imageWebhookEnabled: boolean;
+	imageWebhookUrl?: string;
 }
 
 export interface ApiApplicationEvent {

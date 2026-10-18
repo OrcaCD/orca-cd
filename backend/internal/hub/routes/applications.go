@@ -30,6 +30,17 @@ const defaultApplicationIcon = "box"
 // leaving its record out of sync with the agent.
 const agentDeleteTimeout = 5 * time.Minute
 
+// minImagePollIntervalSeconds mirrors the agent's behavior, so a shorter interval is
+// rejected instead of being silently raised.
+const minImagePollIntervalSeconds = 60
+
+func validImagePollInterval(enabled bool, seconds int64) bool {
+	if enabled {
+		return seconds >= minImagePollIntervalSeconds
+	}
+	return seconds >= 0
+}
+
 type createApplicationRequest struct {
 	Name                     string `json:"name" binding:"required"`
 	Icon                     string `json:"icon" binding:"omitempty,min=1,max=128"`
@@ -145,6 +156,10 @@ func CreateApplicationHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
 		return
 	}
+	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
+		return
+	}
 
 	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
@@ -245,6 +260,10 @@ func UpdateApplicationHandler(c *gin.Context) {
 	var req updateApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
+		return
+	}
+	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
 		return
 	}
 

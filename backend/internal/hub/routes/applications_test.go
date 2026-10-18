@@ -1104,6 +1104,62 @@ func TestUpdateApplicationHandler_SavesDisabledFlagsAndKeepsRuntimeColumns(t *te
 	}
 }
 
+func TestApplicationHandlers_RejectInvalidImagePollInterval(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-poll-interval")
+	agent := seedTestAgent(t, "agent-poll-interval")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Poll Interval")
+
+	tests := []struct {
+		name     string
+		enabled  bool
+		interval int64
+	}{
+		{name: "enabled below the minimum", enabled: true, interval: 59},
+		{name: "enabled with zero", enabled: true, interval: 0},
+		{name: "enabled negative", enabled: true, interval: -60},
+		{name: "disabled negative", enabled: false, interval: -1},
+	}
+
+	for _, tt := range tests {
+		body, _ := json.Marshal(map[string]any{
+			"name":                     "Poll Interval",
+			"repositoryId":             repo.Id,
+			"agentId":                  agent.Id,
+			"branch":                   "main",
+			"path":                     "deployments/prod.yml",
+			"imagePollEnabled":         tt.enabled,
+			"imagePollIntervalSeconds": tt.interval,
+		})
+
+		t.Run("create "+tt.name, func(t *testing.T) {
+			c, w := makeAuthContext(t, "user-1")
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			CreateApplicationHandler(c)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+
+		t.Run("update "+tt.name, func(t *testing.T) {
+			c, w := makeAuthContext(t, "user-1")
+			c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+			UpdateApplicationHandler(c)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestUpdateApplicationHandler_IgnoresSyncStatusInput(t *testing.T) {
 	setupTestDBWithApplications(t)
 

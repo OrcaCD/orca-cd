@@ -3,7 +3,7 @@ import { AGENT_CONTAINER } from "../const.ts";
 
 export const BUSYBOX_IMAGE = "busybox:1.38";
 
-function docker(args: string[]) {
+export function docker(args: string[]) {
 	const result = spawnSync("docker", args, { encoding: "utf8" });
 	return { ok: result.status === 0, stdout: result.stdout.trim(), stderr: result.stderr.trim() };
 }
