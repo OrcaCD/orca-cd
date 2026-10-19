@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
-import { GITEA_MOCK_CONTROL_URL, RECEIVER_MOCK_CONTROL_URL } from "./tests/const.ts";
+import {
+	GITEA_MOCK_CONTROL_URL,
+	OIDC_MOCK_CONTROL_URL,
+	RECEIVER_MOCK_CONTROL_URL,
+} from "./tests/const.ts";
 
 const skipBuild = ["1", "true"].includes(process.env.E2E_SKIP_BUILD ?? "");
 
@@ -32,6 +36,7 @@ export default defineConfig({
 	/* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
 	use: {
 		baseURL: "http://127.0.0.1:8090",
+		launchOptions: { args: ["--host-resolver-rules=MAP host.docker.internal 127.0.0.1"] },
 
 		/* A first failure has no trace otherwise, which makes flaky failures on CI hard to debug. See https://playwright.dev/docs/trace-viewer */
 		trace: "retain-on-failure",
@@ -88,6 +93,13 @@ export default defineConfig({
 		{
 			command: "node mock/receiver/app.ts",
 			url: `${RECEIVER_MOCK_CONTROL_URL}/__control/health`,
+			reuseExistingServer: false,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+		{
+			command: "node mock/oidc/app.ts",
+			url: `${OIDC_MOCK_CONTROL_URL}/__control/health`,
 			reuseExistingServer: false,
 			stdout: "pipe",
 			stderr: "pipe",

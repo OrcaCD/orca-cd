@@ -12,6 +12,8 @@ services:
       - APP_SECRET=supersecretkey_minimum_32_characters
       # The Gitea mock runs on the host, reached through the Docker host gateway
       - ALLOWED_INTERNAL_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      # Lets the SSO tests use their own client IP for the rate limit of the login endpoints
+      - TRUSTED_PROXIES=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
       # Trust the mock's self-signed certificate
       - SSL_CERT_FILE=/certs/mock.pem
     extra_hosts:

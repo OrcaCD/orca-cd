@@ -21,3 +21,7 @@ export const RECEIVER_MOCK_CONTROL_URL = `http://127.0.0.1:${RECEIVER_MOCK_CONTR
 export const REGISTRY_CONTAINER = "orca-registry-e2e";
 export const REGISTRY_PORT = 5055;
 export const REGISTRY_HOST = `127.0.0.1:${REGISTRY_PORT}`;
+
+export const OIDC_MOCK_API_PORT = 3447;
+export const OIDC_MOCK_CONTROL_PORT = 3448;
+export const OIDC_MOCK_CONTROL_URL = `http://127.0.0.1:${OIDC_MOCK_CONTROL_PORT}`;
