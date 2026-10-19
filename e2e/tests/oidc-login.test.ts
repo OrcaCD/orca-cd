@@ -8,6 +8,7 @@ import {
 	signInAtMock,
 	tamperCallback,
 	type MockUser,
+	type ProfileSource,
 } from "./helpers/oidc-mock.ts";
 import {
 	authorizePath,
@@ -380,6 +381,56 @@ test.describe("Verified email", () => {
 	});
 });
 
+test.describe("Profile claims", () => {
+	const sources: Record<ProfileSource, string> = {
+		id_token: "in the id_token",
+		userinfo: "only at the userinfo endpoint",
+	};
+
+	for (const [source, title] of Object.entries(sources) as [ProfileSource, string][]) {
+		test(`are used when served ${title}`, async ({ page }) => {
+			const provider = await makeProvider({ profileSource: source });
+			const user = await createMockUser({ picture: "https://example.com/avatar.png" });
+
+			await signIn(page, provider, user.sub);
+
+			const profile = await expectSignedIn(page);
+			expect(profile).toMatchObject({ name: user.name, email: user.email, isLocal: false });
+			expect(profile.picture).toBeTruthy();
+		});
+
+		test(`keep an unverified email out when served ${title}`, async ({ page }) => {
+			const provider = await makeProvider({ profileSource: source });
+			const user = await createMockUser({ email_verified: false });
+
+			await signIn(page, provider, user.sub);
+
+			await expectLoginError(page, "email_not_verified");
+			expect(await findUsers(admin, user.email!)).toEqual([]);
+		});
+
+		test(`fail without an email when served ${title}`, async ({ page }) => {
+			const provider = await makeProvider({ profileSource: source });
+			const user = await createMockUser({ email: undefined, email_verified: undefined });
+
+			await signIn(page, provider, user.sub);
+
+			await expectLoginError(page, "authentication_failed");
+		});
+	}
+
+	test("may lack the verified flag at the userinfo endpoint if verification is optional", async ({
+		page,
+	}) => {
+		const provider = await makeProvider({ profileSource: "userinfo", requireVerifiedEmail: false });
+		const user = await createMockUser({ email_verified: undefined });
+
+		await signIn(page, provider, user.sub);
+
+		expect(await expectSignedIn(page)).toMatchObject({ email: user.email });
+	});
+});
+
 test.describe("Failures at the identity provider", () => {
 	test("show a message if the user denies the access", async ({ page }) => {
 		const provider = await makeProvider();
@@ -391,7 +442,7 @@ test.describe("Failures at the identity provider", () => {
 		await expectLoginError(page, "access_denied");
 	});
 
-	test("fail if the id_token has no email", async ({ page }) => {
+	test("fail if the profile has no email", async ({ page }) => {
 		const provider = await makeProvider();
 		const user = await createMockUser({ email: undefined, email_verified: undefined });
 

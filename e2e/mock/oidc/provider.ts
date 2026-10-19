@@ -1,7 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import Provider from "oidc-provider";
 import { OIDC_MOCK_API_PORT } from "../../tests/const.ts";
-import { findTamper, getUser, listUsers, MockAdapter, recordAuthRequest } from "./store.ts";
+import {
+	findTamper,
+	getClient,
+	getUser,
+	listUsers,
+	MockAdapter,
+	recordAuthRequest,
+} from "./store.ts";
 
 // The hub reaches the mock through the Docker host gateway and the browser resolves the same
 // host name to loopback (see launchOptions in playwright.config.ts), so the issuer works for both
@@ -10,7 +17,8 @@ export const OIDC_MOCK_ISSUER = `http://host.docker.internal:${OIDC_MOCK_API_POR
 const provider = new Provider(OIDC_MOCK_ISSUER, {
 	adapter: MockAdapter,
 	cookies: { keys: ["e2e-oidc-mock-cookie-key"] },
-	// The hub reads the profile from the id_token, which is not the default for the code flow
+	// Puts the claims of the requested scopes into the id_token, which is not the default for the
+	// code flow. Clients with the profile source userinfo get a minimal id_token (see findAccount).
 	conformIdTokenClaims: false,
 	scopes: ["openid", "email", "profile", "groups"],
 	claims: {
@@ -24,12 +32,18 @@ const provider = new Provider(OIDC_MOCK_ISSUER, {
 	interactions: {
 		url: (_ctx, interaction) => `/interaction/${interaction.uid}`,
 	},
-	findAccount: (_ctx, sub) => {
+	findAccount: (ctx, sub) => {
 		const user = getUser(sub);
 		if (!user) {
 			return undefined;
 		}
-		return { accountId: sub, claims: () => ({ sub, ...user }) };
+		const clientId = ctx.oidc?.client?.clientId;
+		const userinfoOnly =
+			clientId !== undefined && getClient(clientId)?.profileSource === "userinfo";
+		return {
+			accountId: sub,
+			claims: (use) => (userinfoOnly && use === "id_token" ? { sub } : { sub, ...user }),
+		};
 	},
 });
 

@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { api } from "./api.ts";
-import { OIDC_MOCK_ISSUER, registerMockClient, setMockUser, type MockUser } from "./oidc-mock.ts";
+import {
+	OIDC_MOCK_ISSUER,
+	registerMockClient,
+	setMockUser,
+	type MockUser,
+	type ProfileSource,
+} from "./oidc-mock.ts";
 
 export interface ApiOidcProvider {
 	id: string;
@@ -45,6 +51,7 @@ interface ProviderOptions {
 	autoSignup?: boolean;
 	// The secret the hub is configured with, the identity provider keeps the correct one
 	wrongSecret?: boolean;
+	profileSource?: ProfileSource;
 }
 
 export function uniqueId(prefix: string) {
@@ -66,7 +73,7 @@ export async function createMockUser(overrides: MockUser = {}) {
 export async function createProvider(page: Page, options: ProviderOptions = {}) {
 	const clientId = uniqueId("client");
 	const clientSecret = uniqueId("secret");
-	const { wrongSecret, ...rest } = options;
+	const { wrongSecret, profileSource, ...rest } = options;
 	const { status, body } = await api(page, "POST", "/admin/oidc-providers", {
 		name: uniqueId("E2E SSO"),
 		issuerUrl: OIDC_MOCK_ISSUER,
@@ -76,7 +83,7 @@ export async function createProvider(page: Page, options: ProviderOptions = {}) 
 	});
 	expect(status, JSON.stringify(body)).toBe(201);
 	const provider = body as ApiOidcProvider;
-	await registerMockClient(clientId, clientSecret, [provider.callbackUrl]);
+	await registerMockClient(clientId, clientSecret, [provider.callbackUrl], profileSource);
 	return { ...provider, clientSecret } satisfies TestProvider;
 }
 
