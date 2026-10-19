@@ -11,7 +11,7 @@ type OIDCProvider struct {
 	ClientId             string                 `gorm:"column:client_id;type:text;not null"`
 	ClientSecret         crypto.EncryptedString `gorm:"column:client_secret;type:text;not null"`
 	Scopes               string                 `gorm:"column:scopes;type:text;not null;default:''"`
-	Enabled              bool                   `gorm:"column:enabled;type:integer;not null;default:1"`
+	Enabled              bool                   `gorm:"column:enabled;type:integer;not null"`
 	RequireVerifiedEmail bool                   `gorm:"column:require_verified_email;type:integer;not null"`
 	AutoSignup           bool                   `gorm:"column:auto_signup;type:integer;not null"`
 }
