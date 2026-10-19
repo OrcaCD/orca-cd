@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -618,5 +619,123 @@ func TestHandleCallback_NameFallsBackToEmail(t *testing.T) {
 	}
 	if user.Picture != "" {
 		t.Errorf("Picture should be empty when claim is missing, got: %q", user.Picture)
+	}
+}
+
+// runUserInfoCallback completes a login against a server whose id_token carries idClaims and
+// whose userinfo endpoint answers with userInfo (nil: the provider has no userinfo endpoint).
+func runUserInfoCallback(t *testing.T, requireVerifiedEmail bool, idClaims, userInfo map[string]any) (*OIDCUser, error) {
+	t.Helper()
+	initCrypto(t)
+
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	kid := "userinfo-key"
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		discovery := map[string]any{
+			"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint": srv.URL + "/token", "jwks_uri": srv.URL + "/jwks",
+			"id_token_signing_alg_values_supported": []string{"RS256"},
+		}
+		if userInfo != nil {
+			discovery["userinfo_endpoint"] = srv.URL + "/userinfo"
+		}
+		writeJSON(w, discovery)
+	})
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{
+			"keys": []map[string]any{{
+				"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid,
+				"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+			}},
+		})
+	})
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		claims := jwt.MapClaims{
+			"iss": srv.URL, "aud": "test-client",
+			"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+		}
+		maps.Copy(claims, idClaims)
+		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		idToken.Header["kid"] = kid
+		signed, _ := idToken.SignedString(key)
+		writeJSON(w, map[string]any{"access_token": "userinfo-access-token", "token_type": "Bearer", "id_token": signed})
+	})
+	mux.HandleFunc("GET /userinfo", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer userinfo-access-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, userInfo)
+	})
+
+	provider := &models.OIDCProvider{
+		Id: "prov-userinfo", ClientId: "test-client",
+		ClientSecret: crypto.EncryptedString("s"), IssuerURL: srv.URL,
+		RequireVerifiedEmail: requireVerifiedEmail,
+	}
+	sd := &stateData{State: "s", Verifier: oauth2.GenerateVerifier(), ProviderId: "prov-userinfo", ExpiresAt: time.Now().Add(5 * time.Minute).Unix()}
+	return HandleCallback(context.Background(), provider, "https://app.example.com", "code", "s", makeEncryptedState(t, sd))
+}
+
+func TestHandleCallback_UserInfoFallback(t *testing.T) {
+	user, err := runUserInfoCallback(t, true,
+		map[string]any{"sub": "user-1"},
+		map[string]any{
+			"sub": "user-1", "email": "Info@Example.com", "email_verified": true,
+			"name": "Info User", "picture": "https://cdn.example.com/info.png",
+		})
+	if err != nil {
+		t.Fatalf("HandleCallback() error: %v", err)
+	}
+	if user.Email != "info@example.com" || user.Name != "Info User" || user.Picture != "https://cdn.example.com/info.png" {
+		t.Errorf("claims were not taken from userinfo: %+v", user)
+	}
+}
+
+func TestHandleCallback_UserInfoFallbackNotVerified(t *testing.T) {
+	_, err := runUserInfoCallback(t, true,
+		map[string]any{"sub": "user-1"},
+		map[string]any{"sub": "user-1", "email": "info@example.com", "email_verified": false})
+	if !errors.Is(err, ErrEmailNotVerified) {
+		t.Fatalf("expected ErrEmailNotVerified, got: %v", err)
+	}
+}
+
+func TestHandleCallback_UserInfoSubjectMismatch(t *testing.T) {
+	_, err := runUserInfoCallback(t, false,
+		map[string]any{"sub": "user-1"},
+		map[string]any{"sub": "someone-else", "email": "other@example.com", "email_verified": true})
+	if err == nil || !strings.Contains(err.Error(), "email claim is missing") {
+		t.Fatalf("expected 'email claim is missing' error, got: %v", err)
+	}
+}
+
+func TestHandleCallback_IDTokenClaimsTakePrecedence(t *testing.T) {
+	user, err := runUserInfoCallback(t, true,
+		map[string]any{"sub": "user-1", "email": "id@example.com", "name": "ID Name"},
+		map[string]any{
+			"sub": "user-1", "email": "id@example.com", "email_verified": true,
+			"name": "Info Name", "picture": "https://cdn.example.com/info.png",
+		})
+	if err != nil {
+		t.Fatalf("HandleCallback() error: %v", err)
+	}
+	if user.Email != "id@example.com" || user.Name != "ID Name" {
+		t.Errorf("id_token claims were overwritten: %+v", user)
+	}
+}
+
+func TestHandleCallback_UserInfoDoesNotVerifyOtherEmail(t *testing.T) {
+	_, err := runUserInfoCallback(t, true,
+		map[string]any{"sub": "user-1", "email": "id@example.com"},
+		map[string]any{"sub": "user-1", "email": "info@example.com", "email_verified": true})
+	if !errors.Is(err, ErrEmailNotVerified) {
+		t.Fatalf("expected ErrEmailNotVerified, got: %v", err)
 	}
 }

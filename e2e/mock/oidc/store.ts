@@ -8,9 +8,13 @@ export interface MockUser {
 	groups?: string[];
 }
 
+/** Where the profile claims of a user are served: the id_token or only the userinfo endpoint */
+export type ProfileSource = "id_token" | "userinfo";
+
 export interface MockClient {
 	secret: string;
 	redirectUris: string[];
+	profileSource?: ProfileSource;
 }
 
 export type AuthRequest = Record<string, string>;

@@ -19,8 +19,8 @@ export async function handleControlApi(req: IncomingMessage, res: ServerResponse
 		return send(res, 204);
 	}
 	if (collection === "clients" && !action && req.method === "PUT") {
-		const { secret, redirectUris } = await readJson(req);
-		setClient(id, { secret, redirectUris });
+		const { secret, redirectUris, profileSource } = await readJson(req);
+		setClient(id, { secret, redirectUris, profileSource });
 		return send(res, 204);
 	}
 	if (collection === "clients" && action === "tamper" && req.method === "PUT") {

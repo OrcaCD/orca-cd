@@ -27,8 +27,16 @@ export async function setMockUser(sub: string, user: MockUser) {
 	await control(`users/${sub}`, "PUT", user);
 }
 
-export async function registerMockClient(clientId: string, secret: string, redirectUris: string[]) {
-	await control(`clients/${clientId}`, "PUT", { secret, redirectUris });
+/** Where the identity provider serves the profile claims, "userinfo" leaves them out of the id_token */
+export type ProfileSource = "id_token" | "userinfo";
+
+export async function registerMockClient(
+	clientId: string,
+	secret: string,
+	redirectUris: string[],
+	profileSource: ProfileSource = "id_token",
+) {
+	await control(`clients/${clientId}`, "PUT", { secret, redirectUris, profileSource });
 }
 
 /** Changes the state or the path of the redirect to the hub that ends a login with the client */

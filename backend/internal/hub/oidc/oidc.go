@@ -14,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -24,6 +25,8 @@ const (
 )
 
 var ErrEmailNotVerified = errors.New("email is not verified")
+
+var log = logger.New("oidc", false)
 
 type OIDCUser struct {
 	Subject string
@@ -159,6 +162,50 @@ func StartAuth(ctx context.Context, provider *models.OIDCProvider, appURL string
 	return authURL, encryptedState, nil
 }
 
+type profileClaims struct {
+	Email         string `json:"email"`
+	EmailVerified *bool  `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
+	Nonce         string `json:"nonce"`
+}
+
+// mergeUserInfoClaims fills the claims missing from the id_token with the ones of the userinfo
+// endpoint. Claims of the id_token take precedence and failures are ignored, so providers
+// without a userinfo endpoint behave as before.
+func mergeUserInfoClaims(ctx context.Context, provider *gooidc.Provider, token *oauth2.Token, subject string, claims *profileClaims) {
+	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err != nil {
+		log.Debug().Err(err).Msg("could not fetch userinfo")
+		return
+	}
+
+	// The userinfo response must only be used if it belongs to the user of the id_token
+	if userInfo.Subject != subject {
+		log.Warn().Msg("userinfo subject does not match the id_token subject")
+		return
+	}
+
+	var info profileClaims
+	if err := userInfo.Claims(&info); err != nil {
+		log.Debug().Err(err).Msg("could not parse userinfo claims")
+		return
+	}
+
+	if claims.Email == "" {
+		claims.Email = info.Email
+		claims.EmailVerified = info.EmailVerified
+	} else if claims.EmailVerified == nil && strings.EqualFold(claims.Email, info.Email) {
+		claims.EmailVerified = info.EmailVerified
+	}
+	if claims.Name == "" {
+		claims.Name = info.Name
+	}
+	if claims.Picture == "" {
+		claims.Picture = info.Picture
+	}
+}
+
 func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL string, code string, stateParam string, encryptedState string) (*OIDCUser, error) {
 	ctx = oidcContext(ctx)
 	sd, err := decryptState(encryptedState)
@@ -204,13 +251,7 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("verify id_token: %w", err)
 	}
 
-	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified *bool  `json:"email_verified"`
-		Name          string `json:"name"`
-		Picture       string `json:"picture"`
-		Nonce         string `json:"nonce"`
-	}
+	var claims profileClaims
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("parse claims: %w", err)
 	}
@@ -219,8 +260,13 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("nonce mismatch")
 	}
 
+	// Some providers only put the subject into the id_token and serve the profile at the userinfo endpoint
+	if claims.Email == "" || claims.EmailVerified == nil {
+		mergeUserInfoClaims(ctx, oidcProvider, oauth2Token, idToken.Subject, &claims)
+	}
+
 	if claims.Email == "" {
-		return nil, fmt.Errorf("email claim is missing from id_token")
+		return nil, fmt.Errorf("email claim is missing from id_token and userinfo")
 	}
 
 	if provider.RequireVerifiedEmail && (claims.EmailVerified == nil || !*claims.EmailVerified) {
