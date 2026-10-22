@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog"
+	"gorm.io/gorm"
 )
 
 func newTestSSEBroker(t *testing.T) *sse.Broker {
@@ -203,5 +206,77 @@ func TestSSEHandler_ReceivesEvent(t *testing.T) {
 	wantURLs := []string{sse.TopicAgents.URL(), sse.TopicApplications.URL()}
 	if !slices.Equal(event.URLs, wantURLs) {
 		t.Errorf("expected URLs %v, got %v", wantURLs, event.URLs)
+	}
+}
+
+// setupSSESessionTest creates the user behind injectClaimsMiddleware and shortens the keep-alive
+// interval so session checks run quickly.
+func setupSSESessionTest(t *testing.T) *httptest.Server {
+	t.Helper()
+	setupTestDB(t)
+	newTestSSEBroker(t)
+
+	if err := gorm.G[models.User](db.DB).Create(t.Context(), &models.User{Id: "test-user", Name: "Test User", Email: "test@example.com"}); err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	original := sseKeepAliveInterval
+	sseKeepAliveInterval = 20 * time.Millisecond
+	t.Cleanup(func() { sseKeepAliveInterval = original })
+
+	return newSSETestServer(t)
+}
+
+// waitForLine reads lines until want is seen and reports whether it was found before the stream ended.
+func waitForLine(scanner *bufio.Scanner, want string) bool {
+	for scanner.Scan() {
+		if scanner.Text() == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSSEHandler_KeepsStreamForValidSession(t *testing.T) {
+	server := setupSSESessionTest(t)
+
+	scanner, cancel := connectSSE(t, server)
+	defer cancel()
+	waitForInitialComment(t, scanner)
+
+	if !waitForLine(scanner, ": ping") {
+		t.Fatal("expected keep-alive ping for a valid session")
+	}
+}
+
+func TestSSEHandler_ClosesStreamWhenUserDeleted(t *testing.T) {
+	server := setupSSESessionTest(t)
+
+	scanner, cancel := connectSSE(t, server)
+	defer cancel()
+	waitForInitialComment(t, scanner)
+
+	if _, err := gorm.G[models.User](db.DB).Where("id = ?", "test-user").Delete(t.Context()); err != nil {
+		t.Fatalf("failed to delete user: %v", err)
+	}
+
+	if !waitForLine(scanner, "event: unauthorized") {
+		t.Fatal("expected unauthorized event after the user was deleted")
+	}
+}
+
+func TestSSEHandler_ClosesStreamWhenTokensRevoked(t *testing.T) {
+	server := setupSSESessionTest(t)
+
+	scanner, cancel := connectSSE(t, server)
+	defer cancel()
+	waitForInitialComment(t, scanner)
+
+	if _, err := gorm.G[models.User](db.DB).Where("id = ?", "test-user").Update(t.Context(), "token_version", 1); err != nil {
+		t.Fatalf("failed to bump token version: %v", err)
+	}
+
+	if !waitForLine(scanner, "event: unauthorized") {
+		t.Fatal("expected unauthorized event after the tokens were revoked")
 	}
 }

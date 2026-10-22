@@ -1,18 +1,26 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const maxSSEConnectionsPerUser = 10
+
+// sseKeepAliveInterval also bounds how long a stream outlives a deleted user or revoked token.
+var sseKeepAliveInterval = 30 * time.Second
 
 var (
 	sseConnsMu sync.Mutex
@@ -37,6 +45,26 @@ func releaseSSESlot(userID string) {
 		return
 	}
 	sseConns[userID]--
+}
+
+// sessionRevoked reports whether the user of a stream was deleted or their tokens were revoked.
+// Database errors keep the stream open, the next keep-alive checks again.
+func sessionRevoked(ctx context.Context, claims *auth.UserClaims) bool {
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(ctx)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	return user.TokenVersion != claims.TokenVersion
+}
+
+func writeUnauthorizedEvent(c *gin.Context) {
+	if _, err := fmt.Fprint(c.Writer, "event: unauthorized\ndata: {}\n\n"); err != nil {
+		return
+	}
+	c.Writer.Flush()
 }
 
 func SSEHandler(c *gin.Context) {
@@ -73,16 +101,13 @@ func SSEHandler(c *gin.Context) {
 	timer := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer timer.Stop()
 
-	keepAlive := time.NewTicker(30 * time.Second)
+	keepAlive := time.NewTicker(sseKeepAliveInterval)
 	defer keepAlive.Stop()
 
 	for {
 		select {
 		case <-timer.C:
-			if _, err := fmt.Fprint(c.Writer, "event: unauthorized\ndata: {}\n\n"); err != nil {
-				return
-			}
-			c.Writer.Flush()
+			writeUnauthorizedEvent(c)
 			return
 		case event, open := <-ch:
 			if !open {
@@ -97,6 +122,10 @@ func SSEHandler(c *gin.Context) {
 			}
 			c.Writer.Flush()
 		case <-keepAlive.C:
+			if sessionRevoked(c.Request.Context(), claims) {
+				writeUnauthorizedEvent(c)
+				return
+			}
 			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
 				return
 			}
