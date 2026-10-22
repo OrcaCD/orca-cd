@@ -26,8 +26,8 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 
 | Tool                                                             | Version | Purpose                     |
 | ---------------------------------------------------------------- | ------- | --------------------------- |
-| [Go](https://go.dev/dl/)                                         | 1.26+   | Language runtime            |
-| [golangci-lint](https://golangci-lint.run/welcome/install/)      | v2.11+  | Linting                     |
+| [Go](https://go.dev/dl/)                                         | 1.27+   | Language runtime            |
+| [golangci-lint](https://golangci-lint.run/welcome/install/)      | v2.14+  | Linting                     |
 | [just](https://just.systems/man/en/packages.html)                | latest  | Task runner                 |
 | [buf](https://buf.build/docs/cli/installation/)                  | latest  | Protobuf tooling            |
 | [protoc-gen-go](https://protobuf.dev/reference/go/go-generated/) | latest  | Go protobuf code generation |
@@ -38,7 +38,7 @@ For breaking changes or major new features, open an issue beforehand to discuss 
 | Tool                           | Version       | Purpose         |
 | ------------------------------ | ------------- | --------------- |
 | [Node.js](https://nodejs.org/) | 26.x          | Runtime         |
-| [pnpm](https://pnpm.io/)       | 11.x or newer | Package manager |
+| [pnpm](https://pnpm.io/)       | 12.x or newer | Package manager |
 
 ### Setting up the development environment
 

@@ -14,4 +14,5 @@ type User struct {
 	PasswordHash           *string  `gorm:"type:text;"`
 	PasswordChangeRequired bool     `gorm:"type:integer;not null"`
 	Role                   UserRole `gorm:"type:text;not null;default:'user'"`
+	TokenVersion           int64    `gorm:"type:integer;not null;default:0"`
 }

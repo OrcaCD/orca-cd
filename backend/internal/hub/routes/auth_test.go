@@ -454,6 +454,23 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 	if updated.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=false after password change")
 	}
+	if updated.TokenVersion != user.TokenVersion+1 {
+		t.Fatalf("expected token version %d after password change, got %d", user.TokenVersion+1, updated.TokenVersion)
+	}
+
+	var newToken string
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == "orcacd_auth" {
+			newToken = cookie.Value
+		}
+	}
+	newClaims, err := auth.ValidateUserToken(newToken)
+	if err != nil {
+		t.Fatalf("ValidateUserToken() error: %v", err)
+	}
+	if newClaims.TokenVersion != updated.TokenVersion {
+		t.Fatalf("expected reissued token to carry version %d, got %d", updated.TokenVersion, newClaims.TokenVersion)
+	}
 }
 
 func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {

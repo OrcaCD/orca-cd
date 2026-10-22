@@ -220,6 +220,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		}
 		user.PasswordHash = &hash
 		user.PasswordChangeRequired = true
+		user.TokenVersion++
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {

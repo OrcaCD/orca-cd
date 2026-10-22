@@ -299,6 +299,9 @@ func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 	if !updated.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=true when password is reset")
 	}
+	if updated.TokenVersion != user.TokenVersion+1 {
+		t.Fatalf("expected token version %d after reset, got %d", user.TokenVersion+1, updated.TokenVersion)
+	}
 }
 
 func TestAdminUpdateUserHandler_RejectsDemotingLastAdmin(t *testing.T) {

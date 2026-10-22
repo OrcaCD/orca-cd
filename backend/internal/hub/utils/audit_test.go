@@ -101,7 +101,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	})
 	fatalIfErr(t, err, "failed to open test db")
 
-	fatalIfErr(t, testDB.AutoMigrate(&models.AuditLog{}), "auto migrate failed")
+	fatalIfErr(t, testDB.AutoMigrate(&models.AuditLog{}, &models.User{}), "auto migrate failed")
 
 	old := db.DB
 	db.DB = testDB
@@ -188,6 +188,7 @@ func TestRecordAuditLog(t *testing.T) {
 			Id:   "user-456",
 			Name: "test-admin",
 		}
+		fatalIfErr(t, gorm.G[models.User](testDB).Create(t.Context(), user), "create user failed")
 
 		token, err := auth.GenerateUserToken(user)
 		fatalIfErr(t, err, "token generation failed")

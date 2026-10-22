@@ -135,6 +135,7 @@ func resetUserPassword(ctx context.Context, target resetPasswordTarget) (models.
 	rowsAffected, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Updates(ctx, models.User{
 		PasswordHash:           &hash,
 		PasswordChangeRequired: true,
+		TokenVersion:           user.TokenVersion + 1,
 	})
 	if err != nil {
 		return models.User{}, "", fmt.Errorf("failed to update user password: %w", err)
@@ -145,6 +146,7 @@ func resetUserPassword(ctx context.Context, target resetPasswordTarget) (models.
 
 	user.PasswordHash = &hash
 	user.PasswordChangeRequired = true
+	user.TokenVersion++
 
 	return user, generatedPassword, nil
 }
