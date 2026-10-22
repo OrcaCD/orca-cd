@@ -135,3 +135,11 @@ jobs:
           LOWERCASE_IMAGE_PREFIX=$(echo "$IMAGE_PREFIX" | tr '[:upper:]' '[:lower:]')
           cosign sign --yes \
             "$LOWERCASE_IMAGE_PREFIX/${{ matrix.name }}@$DIGEST"
+
+  trivy:
+    name: Trivy
+    needs: build
+    permissions:
+      contents: read
+      security-events: write
+    uses: $/.github/workflows/trivy.yml

@@ -1,0 +1,49 @@
+name: Trivy
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "18 5 * * 2" # Every Tuesday at 5:18am
+
+permissions: {}
+
+jobs:
+  image:
+    name: Scan ${{ matrix.name }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name:
+          - hub
+          - agent
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve image reference
+        id: image
+        run: echo "ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}:main" >> "$GITHUB_OUTPUT"
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          limit-severities-for-sarif: true
+
+      - name: Upload SARIF report
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-image-${{ matrix.name }}
