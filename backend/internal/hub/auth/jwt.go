@@ -32,6 +32,7 @@ type UserClaims struct {
 	Role                   string `json:"role"`
 	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
 	IsLocal                bool   `json:"isLocal"`
+	TokenVersion           int64  `json:"ver"`
 }
 
 type AgentClaims struct {
@@ -90,6 +91,7 @@ func GenerateUserTokenWithPicture(user *models.User, picture string) (string, er
 		Role:                   string(user.Role),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		IsLocal:                user.PasswordHash != nil,
+		TokenVersion:           user.TokenVersion,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)

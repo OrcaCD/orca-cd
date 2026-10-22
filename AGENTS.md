@@ -13,8 +13,8 @@ The goal of OrcaCD is to be a simple, self-hosted GitOps solution for Docker Com
 
 ## Prerequisites
 
-Backend: Go 1.26+, golangci-lint v2.11+, `just`, `buf`, `protoc-gen-go`, `gotestsum`.
-Frontend: Node.js 26.x, pnpm 11+.
+Backend: Go 1.27+, golangci-lint v2.14+, `just`, `buf`, `protoc-gen-go`, `gotestsum`.
+Frontend: Node.js 26.x, pnpm 12+.
 
 The Justfile loads `backend/.env` (copy from `backend/.env.dev.example`).
 

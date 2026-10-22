@@ -389,6 +389,7 @@ func ChangePasswordHandler(c *gin.Context) {
 
 	user.PasswordHash = &hash
 	user.PasswordChangeRequired = false
+	user.TokenVersion++
 
 	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

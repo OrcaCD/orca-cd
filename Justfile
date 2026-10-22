@@ -12,6 +12,6 @@ run-frontend:
 [parallel]
 dev: run-hub run-frontend
 
-# Run hub and frontend in parallel
+# Run hub, agent and frontend in parallel
 [parallel]
 dev-all: run-hub run-agent run-frontend

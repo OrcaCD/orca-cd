@@ -113,6 +113,10 @@ func TestResetUserPasswordByEmail(t *testing.T) {
 	if !storedUser.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=true after reset")
 	}
+
+	if storedUser.TokenVersion != user.TokenVersion+1 {
+		t.Fatalf("expected token version %d after reset, got %d", user.TokenVersion+1, storedUser.TokenVersion)
+	}
 }
 
 func TestResetUserPasswordRejectsManagedUser(t *testing.T) {
