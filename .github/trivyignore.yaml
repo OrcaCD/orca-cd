@@ -1,0 +1,5 @@
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - agent.Dockerfile
+    statement: The agent needs root to access the Docker socket, which is root-equivalent anyway
