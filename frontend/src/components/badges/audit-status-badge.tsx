@@ -17,6 +17,7 @@ function getBadgeVariant(type: string): Parameters<typeof Badge>[0]["variant"] {
 			return "success";
 		case "deleted":
 		case "rotated-token":
+		case "revoked-sessions":
 		case "disabled-image-webhook":
 			return "destructive";
 		default:

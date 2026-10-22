@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -70,37 +71,36 @@ type profileResponse struct {
 }
 
 func ProfileHandler(c *gin.Context) {
-	claims, ok := auth.GetClaims(c)
+	claims, user, ok := getCurrentUser(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 		return
 	}
 
 	c.JSON(http.StatusOK, profileResponse{
-		Id:                     claims.Subject,
-		Name:                   claims.Name,
-		Email:                  claims.Email,
+		Id:                     user.Id,
+		Name:                   user.Name,
+		Email:                  user.Email,
 		Picture:                profilePictureURL(claims.Picture),
-		Role:                   claims.Role,
-		PasswordChangeRequired: claims.PasswordChangeRequired,
-		IsLocal:                claims.IsLocal,
+		Role:                   string(user.Role),
+		PasswordChangeRequired: user.PasswordChangeRequired,
+		IsLocal:                user.PasswordHash != nil,
 	})
 }
 
-func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
-	claims, ok := auth.GetClaims(c)
-	if !ok {
+// getCurrentUser returns the token claims and the user loaded by the auth middleware.
+func getCurrentUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
+	claims, hasClaims := auth.GetClaims(c)
+	user, hasUser := auth.GetUser(c)
+	if !hasClaims || !hasUser {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 		return nil, nil, false
 	}
+	return claims, user, true
+}
 
-	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
-			return nil, nil, false
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
+	claims, user, ok := getCurrentUser(c)
+	if !ok {
 		return nil, nil, false
 	}
 
@@ -109,7 +109,7 @@ func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) 
 		return nil, nil, false
 	}
 
-	return claims, &user, true
+	return claims, user, true
 }
 
 func UpdateOwnProfileHandler(c *gin.Context) {
@@ -329,9 +329,8 @@ func LoginHandler(c *gin.Context) {
 }
 
 func ChangePasswordHandler(c *gin.Context) {
-	claims, ok := auth.GetClaims(c)
+	claims, user, ok := getCurrentUser(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 		return
 	}
 
@@ -343,16 +342,6 @@ func ChangePasswordHandler(c *gin.Context) {
 
 	if !auth.ValidatePasswordStrength(req.NewPassword) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
-		return
-	}
-
-	user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
@@ -391,12 +380,12 @@ func ChangePasswordHandler(c *gin.Context) {
 	user.PasswordChangeRequired = false
 	user.TokenVersion++
 
-	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
+	if err := db.DB.WithContext(c.Request.Context()).Save(user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	token, err := auth.GenerateUserToken(&user)
+	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -409,4 +398,23 @@ func ChangePasswordHandler(c *gin.Context) {
 func LogoutHandler(c *gin.Context) {
 	auth.ClearAuthCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+}
+
+// LogoutAllHandler invalidates every token issued to the current user, including the current one.
+func LogoutAllHandler(c *gin.Context) {
+	_, user, ok := getCurrentUser(c)
+	if !ok {
+		return
+	}
+
+	rows, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(c.Request.Context(), "token_version", gorm.Expr("token_version + 1"))
+	if err != nil || rows == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	utils.RecordAuditLog(c, "revoked-sessions", "user", user.Id)
+
+	auth.ClearAuthCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out everywhere"})
 }

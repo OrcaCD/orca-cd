@@ -62,6 +62,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
+			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
 
 			protected.GET("/applications", routes.ListApplicationsHandler)
 			protected.GET("/activity", routes.ApplicationActivityHandler)

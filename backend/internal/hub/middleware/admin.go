@@ -4,19 +4,20 @@ import (
 	"net/http"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 )
 
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		claims, ok := auth.GetClaims(c)
+		user, ok := auth.GetUser(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 			c.Abort()
 			return
 		}
 
-		if claims.Role != "admin" {
+		if user.Role != models.UserRoleAdmin {
 			c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 			c.Abort()
 			return

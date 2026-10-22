@@ -173,7 +173,7 @@ func TestRequireAuth_RejectsOutdatedTokenVersion(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_RefreshesClaimsFromDatabase(t *testing.T) {
+func TestRequireAuth_SetsUserFromDatabase(t *testing.T) {
 	user := &models.User{Id: "user-123", Name: "Old Name", Email: "old@example.com", Role: models.UserRoleAdmin}
 	setupAuthTest(t, user)
 	token := generateToken(t, user)
@@ -186,10 +186,10 @@ func TestRequireAuth_RefreshesClaimsFromDatabase(t *testing.T) {
 		t.Fatalf("failed to update user: %v", err)
 	}
 
-	var got *auth.UserClaims
+	var got *models.User
 	router := gin.New()
 	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
-		got, _ = auth.GetClaims(c)
+		got, _ = auth.GetUser(c)
 		c.JSON(http.StatusOK, gin.H{})
 	})
 
@@ -198,8 +198,8 @@ func TestRequireAuth_RefreshesClaimsFromDatabase(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if got.Name != "New Name" || got.Email != "new@example.com" || got.Role != string(models.UserRoleUser) {
-		t.Errorf("expected claims refreshed from database, got name=%q email=%q role=%q", got.Name, got.Email, got.Role)
+	if got == nil || got.Name != "New Name" || got.Email != "new@example.com" || got.Role != models.UserRoleUser {
+		t.Errorf("expected current user from database, got %+v", got)
 	}
 }
 

@@ -37,13 +37,8 @@ func makeAuthContext(t *testing.T, userID string) (*gin.Context, *httptest.Respo
 	t.Helper()
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	claims := &auth.UserClaims{
-		Subject: userID,
-		Name:    "Test User",
-		Email:   "test@example.com",
-		Role:    "admin",
-	}
-	auth.SetClaims(c, claims)
+	auth.SetClaims(c, &auth.UserClaims{Subject: userID})
+	auth.SetUser(c, &models.User{Id: userID, Name: "Test User", Email: "test@example.com", Role: models.UserRoleAdmin})
 	return c, w
 }
 

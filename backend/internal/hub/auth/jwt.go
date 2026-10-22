@@ -24,15 +24,13 @@ var (
 
 const tokenExpiry = 24 * time.Hour
 
+// UserClaims only identify the session. Profile data such as the role is loaded from the
+// database on every request, so it cannot go stale or outlive a change.
 type UserClaims struct {
 	jwt.RegisteredClaims
-	Name                   string `json:"name"`
-	Email                  string `json:"email"`
-	Picture                string `json:"picture,omitempty"`
-	Role                   string `json:"role"`
-	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
-	IsLocal                bool   `json:"isLocal"`
-	TokenVersion           int64  `json:"ver"`
+	// The OIDC profile picture is not persisted, so it is carried in the token
+	Picture      string `json:"picture,omitempty"`
+	TokenVersion int64  `json:"ver"`
 }
 
 type AgentClaims struct {
@@ -79,19 +77,14 @@ func GenerateUserTokenWithPicture(user *models.User, picture string) (string, er
 	now := time.Now()
 
 	claims := UserClaims{
-		Issuer:                 issuer,
-		Subject:                user.Id,
-		IssuedAt:               jwt.NewNumericDate(now),
-		NotBefore:              jwt.NewNumericDate(now),
-		ExpiresAt:              jwt.NewNumericDate(now.Add(tokenExpiry)),
-		Audience:               []string{"user"},
-		Name:                   user.Name,
-		Email:                  user.Email,
-		Picture:                picture,
-		Role:                   string(user.Role),
-		PasswordChangeRequired: user.PasswordChangeRequired,
-		IsLocal:                user.PasswordHash != nil,
-		TokenVersion:           user.TokenVersion,
+		Issuer:       issuer,
+		Subject:      user.Id,
+		IssuedAt:     jwt.NewNumericDate(now),
+		NotBefore:    jwt.NewNumericDate(now),
+		ExpiresAt:    jwt.NewNumericDate(now.Add(tokenExpiry)),
+		Audience:     []string{"user"},
+		Picture:      picture,
+		TokenVersion: user.TokenVersion,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
