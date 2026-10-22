@@ -30,7 +30,7 @@ func RequireAuth() gin.HandlerFunc {
 		}
 
 		// The token alone cannot be revoked, so the user is loaded on every request to reject
-		// deleted users and tokens issued before a password change, and to pick up role changes.
+		// deleted users and tokens issued before their version was bumped.
 		user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -51,26 +51,21 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		claims.Name = user.Name
-		claims.Email = user.Email
-		claims.Role = string(user.Role)
-		claims.PasswordChangeRequired = user.PasswordChangeRequired
-		claims.IsLocal = user.PasswordHash != nil
-
-		if claims.PasswordChangeRequired && !isPasswordChangeAllowedPath(c.Request.URL.Path) {
+		if user.PasswordChangeRequired && !isPasswordChangeAllowedPath(c.Request.URL.Path) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "password change required"})
 			c.Abort()
 			return
 		}
 
 		auth.SetClaims(c, claims)
+		auth.SetUser(c, &user)
 		c.Next()
 	}
 }
 
 func isPasswordChangeAllowedPath(path string) bool {
 	switch path {
-	case "/api/v1/auth/profile", "/api/v1/auth/logout", "/api/v1/auth/change-password":
+	case "/api/v1/auth/profile", "/api/v1/auth/logout", "/api/v1/auth/logout-all", "/api/v1/auth/change-password":
 		return true
 	default:
 		return false

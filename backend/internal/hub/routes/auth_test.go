@@ -108,6 +108,7 @@ func setUserClaims(t *testing.T, c *gin.Context, user *models.User) {
 	}
 
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, user)
 }
 
 func TestSetupHandler_NoUsers(t *testing.T) {
@@ -434,6 +435,7 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, &user)
 
 	ChangePasswordHandler(c)
 
@@ -454,8 +456,8 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 	if updated.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=false after password change")
 	}
-	if updated.TokenVersion != user.TokenVersion+1 {
-		t.Fatalf("expected token version %d after password change, got %d", user.TokenVersion+1, updated.TokenVersion)
+	if updated.TokenVersion != 1 {
+		t.Fatalf("expected token version 1 after password change, got %d", updated.TokenVersion)
 	}
 
 	var newToken string
@@ -501,6 +503,7 @@ func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, &user)
 
 	ChangePasswordHandler(c)
 
@@ -537,6 +540,7 @@ func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, &user)
 
 	ChangePasswordHandler(c)
 
@@ -572,6 +576,7 @@ func TestChangePasswordHandler_RejectsManagedUser(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
 	c.Request.Header.Set("Content-Type", "application/json")
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, &user)
 
 	ChangePasswordHandler(c)
 
@@ -767,6 +772,7 @@ func TestProfileHandler_Success(t *testing.T) {
 		t.Fatalf("ValidateUserToken() error: %v", err)
 	}
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, user)
 
 	ProfileHandler(c)
 
@@ -795,7 +801,7 @@ func TestProfileHandler_Success(t *testing.T) {
 	}
 }
 
-func TestProfileHandler_ReturnsIsLocalFromClaimsWithoutDBUser(t *testing.T) {
+func TestProfileHandler_ReturnsIsLocalForLocalUser(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
@@ -819,6 +825,7 @@ func TestProfileHandler_ReturnsIsLocalFromClaimsWithoutDBUser(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, user)
 
 	ProfileHandler(c)
 
@@ -831,7 +838,7 @@ func TestProfileHandler_ReturnsIsLocalFromClaimsWithoutDBUser(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if !body.IsLocal {
-		t.Error("expected isLocal=true from JWT claims")
+		t.Error("expected isLocal=true for user with password")
 	}
 }
 
@@ -854,6 +861,7 @@ func TestProfileHandler_ReturnsPicture(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, user)
 
 	ProfileHandler(c)
 
@@ -953,6 +961,7 @@ func TestProfileHandler_ReturnsRole(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
 	auth.SetClaims(c, claims)
+	auth.SetUser(c, user)
 
 	ProfileHandler(c)
 
@@ -1115,25 +1124,6 @@ func TestUpdateOwnProfileHandler_NoClaims(t *testing.T) {
 	}
 }
 
-func TestUpdateOwnProfileHandler_UserNotFound(t *testing.T) {
-	setupTestDB(t)
-
-	missingUser := &models.User{Id: "user-local-missing", Email: "missing@example.com", Name: "Missing", Role: models.UserRoleUser}
-
-	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: "new@example.com"}) //nolint:gosec
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	setUserClaims(t, c, missingUser)
-
-	UpdateOwnProfileHandler(c)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T) {
 	setupTestDB(t)
 
@@ -1156,7 +1146,7 @@ func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T)
 	}
 }
 
-func TestUpdateOwnProfileHandler_InternalErrorWhenUserLookupFails(t *testing.T) {
+func TestUpdateOwnProfileHandler_InternalErrorWhenUpdateFails(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
@@ -1229,5 +1219,48 @@ func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 				t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestLogoutAllHandler_InvalidatesAllTokens(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Id: "user-logout-all", Email: "user@example.com", Name: "User", Role: models.UserRoleUser, TokenVersion: 3}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout-all", nil)
+	setUserClaims(t, c, user)
+
+	LogoutAllHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if hasAuthCookie(w) {
+		t.Error("expected auth cookie to be cleared")
+	}
+
+	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load updated user: %v", err)
+	}
+	if updated.TokenVersion != 4 {
+		t.Errorf("expected token version 4, got %d", updated.TokenVersion)
+	}
+}
+
+func TestLogoutAllHandler_NoUser(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout-all", nil)
+
+	LogoutAllHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
 }

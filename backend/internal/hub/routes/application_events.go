@@ -134,11 +134,11 @@ func toApplicationEventResponse(event *models.ApplicationEvent) applicationEvent
 }
 
 func eventActor(c *gin.Context) (*string, *string) {
-	claims, ok := auth.GetClaims(c)
+	user, ok := auth.GetUser(c)
 	if !ok {
 		return nil, nil
 	}
-	userID := claims.Subject
-	userName := claims.Name
+	userID := user.Id
+	userName := user.Name
 	return &userID, &userName
 }

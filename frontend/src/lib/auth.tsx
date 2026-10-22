@@ -15,6 +15,7 @@ export interface AuthState {
 interface AuthContextValue {
 	auth: AuthState;
 	logout: () => Promise<void>;
+	logoutEverywhere: () => Promise<void>;
 	refreshAuth: () => Promise<void>;
 }
 
@@ -101,8 +102,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		await mutate(undefined, false);
 	}, [mutate]);
 
+	const logoutEverywhere = useCallback(async () => {
+		await fetcher(`/auth/logout-all`, "POST");
+		await mutate(undefined, false);
+	}, [mutate]);
+
 	return (
-		<AuthContext.Provider value={{ auth, logout, refreshAuth }}>{children}</AuthContext.Provider>
+		<AuthContext.Provider value={{ auth, logout, logoutEverywhere, refreshAuth }}>
+			{children}
+		</AuthContext.Provider>
 	);
 }
 

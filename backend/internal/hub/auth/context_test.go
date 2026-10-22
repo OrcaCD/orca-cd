@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,7 +24,6 @@ func TestSetClaims_And_GetClaims(t *testing.T) {
 	// Set claims
 	testClaims := &UserClaims{
 		Subject: "user-123",
-		IsLocal: true,
 	}
 	SetClaims(c, testClaims)
 
@@ -37,9 +37,6 @@ func TestSetClaims_And_GetClaims(t *testing.T) {
 	}
 	if retrievedClaims.Subject != "user-123" {
 		t.Errorf("expected Subject %q, got %q", "user-123", retrievedClaims.Subject)
-	}
-	if !retrievedClaims.IsLocal {
-		t.Error("expected IsLocal=true")
 	}
 }
 
@@ -57,5 +54,29 @@ func TestSetClaims_And_GetClaims_InvalidType(t *testing.T) {
 	}
 	if claims != nil {
 		t.Error("expected claims=nil when context has wrong type")
+	}
+}
+
+func TestSetUser_And_GetUser(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	if user, exists := GetUser(c); exists || user != nil {
+		t.Error("expected no user before SetUser")
+	}
+
+	SetUser(c, &models.User{Id: "user-123", Role: models.UserRoleAdmin})
+
+	user, exists := GetUser(c)
+	if !exists || user == nil {
+		t.Fatal("expected user after SetUser")
+	}
+	if user.Id != "user-123" || user.Role != models.UserRoleAdmin {
+		t.Errorf("unexpected user %+v", user)
+	}
+
+	c.Set(userContextKey, "invalid-value")
+	if user, exists := GetUser(c); exists || user != nil {
+		t.Error("expected no user when context has wrong type")
 	}
 }

@@ -52,12 +52,6 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if claims.Subject != "user-123" {
 		t.Errorf("expected Subject %q, got %q", "user-123", claims.Subject)
 	}
-	if claims.Name != "test" {
-		t.Errorf("expected Name %q, got %q", "test", claims.Name)
-	}
-	if claims.Email != "test@example.com" {
-		t.Errorf("expected Email %q, got %q", "test@example.com", claims.Email)
-	}
 	if claims.Picture != "" {
 		t.Errorf("expected Picture to be empty, got %q", claims.Picture)
 	}
@@ -67,26 +61,15 @@ func TestGenerateAndValidateUserToken(t *testing.T) {
 	if len(claims.Audience) != 1 || claims.Audience[0] != "user" {
 		t.Errorf("expected Audience [\"user\"], got %v", claims.Audience)
 	}
-	if claims.PasswordChangeRequired {
-		t.Error("expected PasswordChangeRequired=false by default")
-	}
-	if claims.IsLocal {
-		t.Error("expected IsLocal=false without password hash")
+	if claims.TokenVersion != 0 {
+		t.Errorf("expected TokenVersion 0, got %d", claims.TokenVersion)
 	}
 }
 
-func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
+func TestGenerateAndValidateUserToken_TokenVersion(t *testing.T) {
 	initAll(t)
 
-	hash := "hashed-password"
-
-	user := &models.User{
-		Id:                     "user-123",
-		Name:                   "test",
-		Email:                  "test@example.com",
-		PasswordHash:           &hash,
-		PasswordChangeRequired: true,
-	}
+	user := &models.User{Id: "user-123", Name: "test", Email: "test@example.com", TokenVersion: 7}
 	token, err := GenerateUserToken(user)
 	if err != nil {
 		t.Fatalf("GenerateUserToken() error: %v", err)
@@ -96,11 +79,8 @@ func TestGenerateAndValidateUserToken_PasswordChangeRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateUserToken() error: %v", err)
 	}
-	if !claims.PasswordChangeRequired {
-		t.Error("expected PasswordChangeRequired=true")
-	}
-	if !claims.IsLocal {
-		t.Error("expected IsLocal=true for local user")
+	if claims.TokenVersion != 7 {
+		t.Errorf("expected TokenVersion 7, got %d", claims.TokenVersion)
 	}
 }
 
@@ -140,7 +120,6 @@ func TestValidateUserToken_Expired(t *testing.T) {
 	claims := UserClaims{
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(-1 * time.Hour)),
-		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -164,7 +143,6 @@ func TestValidateUserToken_WrongIssuer(t *testing.T) {
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
-		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -190,7 +168,6 @@ func TestValidateUserToken_MissingSubject(t *testing.T) {
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 			// Subject intentionally omitted
 		},
-		Name: "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(privateKey)
@@ -215,7 +192,6 @@ func TestValidateUserToken_WrongSigningKey(t *testing.T) {
 	claims := UserClaims{
 		IssuedAt:  jwt.NewNumericDate(time.Now()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		Name:      "test",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	tokenStr, err := token.SignedString(wrongKey)

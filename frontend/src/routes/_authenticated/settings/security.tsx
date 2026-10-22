@@ -1,10 +1,10 @@
 // oxlint-disable react/no-children-prop
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { toast } from "@/components/ui/toast";
 import { useState, type ComponentProps } from "react";
-import { AlertTriangleIcon, Eye, EyeOff } from "lucide-react";
+import { AlertTriangleIcon, Eye, EyeOff, LogOut } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { useAuth, updatePassword } from "@/lib/auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { m } from "@/lib/paraglide/messages";
 import { passwordStrengthRefine } from "@/lib/utils";
+import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 
 export const Route = createFileRoute("/_authenticated/settings/security")({
 	component: SecuritySettingsPage,
@@ -210,6 +211,47 @@ function SecuritySettingsPage() {
 					</form>
 				</CardContent>
 			</Card>
+			<SessionsCard />
 		</div>
+	);
+}
+
+function SessionsCard() {
+	const { logoutEverywhere } = useAuth();
+	const navigate = useNavigate();
+
+	async function handleLogoutEverywhere() {
+		try {
+			await logoutEverywhere();
+			await navigate({ to: "/login" });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedSignOutEverywhere(),
+			});
+		}
+	}
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>{m.sessions()}</CardTitle>
+				<CardDescription>{m.sessionsDescription()}</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<ConfirmationDialog
+					onConfirm={handleLogoutEverywhere}
+					description={m.signOutEverywhereConfirmDescription()}
+					confirmText={m.signOutEverywhere()}
+					triggerText={
+						<>
+							<LogOut className="h-4 w-4" />
+							{m.signOutEverywhere()}
+						</>
+					}
+					triggerProps={{ variant: "destructive" }}
+				/>
+			</CardContent>
+		</Card>
 	);
 }

@@ -34,9 +34,6 @@ func injectClaimsMiddleware() gin.HandlerFunc {
 		claims := &auth.UserClaims{
 			Subject:   "test-user",
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-			Name:      "Test User",
-			Email:     "test@example.com",
-			Role:      "admin",
 		}
 		auth.SetClaims(c, claims)
 		c.Next()
