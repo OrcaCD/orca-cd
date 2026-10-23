@@ -78,6 +78,9 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	if gotUpOptions.Create.Recreate != api.RecreateDiverged {
 		t.Fatalf("expected recreate strategy %q, got %q", api.RecreateDiverged, gotUpOptions.Create.Recreate)
 	}
+	if !gotUpOptions.Create.SkipProviders {
+		t.Fatal("expected compose up to skip provider services")
+	}
 }
 
 func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {

@@ -181,6 +181,8 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 			RemoveOrphans:        true,
 			Recreate:             api.RecreateDiverged,
 			RecreateDependencies: api.RecreateDiverged,
+			// Second line of defense next to the policy, which rejects provider services.
+			SkipProviders: !c.isPrivilegedApp(req.ApplicationID),
 		},
 	}); err != nil {
 		return fmt.Errorf("compose up: %w", err)
@@ -204,7 +206,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 // are translated to host paths, so mounts and env_file are checked against the
 // same directory.
 func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project, applicationDir string) error {
-	if _, allowed := c.allowedPrivilegedApps[appID]; allowed {
+	if c.isPrivilegedApp(appID) {
 		return nil
 	}
 	rules := pathRules{deploymentsDir: c.deploymentsDir, applicationDir: applicationDir}
@@ -215,6 +217,13 @@ func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project
 		return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, appID)
 	}
 	return nil
+}
+
+// isPrivilegedApp reports whether appID is listed in ALLOWED_PRIVILEGED_APPS
+// and bypasses the security policy.
+func (c *Client) isPrivilegedApp(appID string) bool {
+	_, allowed := c.allowedPrivilegedApps[appID]
+	return allowed
 }
 
 // restoreComposeFile puts back the compose file of the last deployment, or

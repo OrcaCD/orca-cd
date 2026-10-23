@@ -126,6 +126,7 @@ func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rule
 	violations = append(violations, checkVolumesFrom(serviceName, svc)...)
 	violations = append(violations, checkDeviceCgroupRules(serviceName, svc)...)
 	violations = append(violations, checkEnvFile(serviceName, svc, rules)...)
+	violations = append(violations, checkProvider(serviceName, svc)...)
 	return violations
 }
 
@@ -183,6 +184,15 @@ func checkDeviceCgroupRules(serviceName string, svc composetypes.ServiceConfig) 
 func checkPrivileged(serviceName string, svc composetypes.ServiceConfig) []error {
 	if svc.Privileged {
 		return []error{fmt.Errorf("service %q: privileged mode is not allowed", serviceName)}
+	}
+	return nil
+}
+
+// A provider service makes compose run provider.type as an executable inside the
+// agent, which has access to the Docker API.
+func checkProvider(serviceName string, svc composetypes.ServiceConfig) []error {
+	if svc.Provider != nil {
+		return []error{fmt.Errorf("service %q: provider services are not allowed", serviceName)}
 	}
 	return nil
 }
