@@ -15,4 +15,7 @@ type User struct {
 	PasswordChangeRequired bool     `gorm:"type:integer;not null"`
 	Role                   UserRole `gorm:"type:text;not null;default:'user'"`
 	TokenVersion           int64    `gorm:"type:integer;not null;default:0"`
+	// EmailUnconfirmed is set when users change their own email. Such an email
+	// is not trusted for linking an OIDC login to the account.
+	EmailUnconfirmed bool `gorm:"type:integer;not null;default:0"`
 }

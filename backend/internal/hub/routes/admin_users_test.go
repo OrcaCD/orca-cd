@@ -379,3 +379,43 @@ func TestAdminDeleteUserHandler_RejectsDeletingLastAdmin(t *testing.T) {
 		t.Fatalf("expected admin user to remain, got error: %v", err)
 	}
 }
+
+func TestAdminUpdateUserHandler_EmailConfirmation(t *testing.T) {
+	tests := []struct {
+		name          string
+		email         string
+		wantConfirmed bool
+	}{
+		{"changing the email confirms it", "new@example.com", true},
+		{"keeping the email does not confirm it", "user@example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDB(t)
+
+			user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
+			if err := db.DB.Model(&models.User{}).Where("id = ?", user.Id).Update("email_unconfirmed", true).Error; err != nil {
+				t.Fatalf("failed to mark email unconfirmed: %v", err)
+			}
+
+			reqBody, _ := json.Marshal(map[string]any{"name": "User", "email": tt.email, "role": "admin"})
+			router := gin.New()
+			router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+user.Id, bytes.NewReader(reqBody))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
+			if err != nil {
+				t.Fatalf("failed to load updated user: %v", err)
+			}
+			if updated.EmailUnconfirmed == tt.wantConfirmed {
+				t.Fatalf("expected emailUnconfirmed=%v, got %v", !tt.wantConfirmed, updated.EmailUnconfirmed)
+			}
+		})
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,8 @@ var (
 	errOIDCAccountUpdateFailed   = errors.New("oidc account update failed")
 	errOIDCProviderEmailConflict = errors.New("oidc provider email conflict")
 )
+
+var oidcLog = logger.New("oidc", false)
 
 // OIDCAppURL is set during route registration from the server config.
 var OIDCAppURL string
@@ -124,7 +127,7 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 				return errOIDCProviderEmailConflict
 			}
 
-			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email}).Error; err != nil {
+			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "email": oidcUser.Email, "email_unconfirmed": false}).Error; err != nil {
 				return errOIDCAccountUpdateFailed
 			}
 			user.Name = oidcUser.Name
@@ -156,10 +159,18 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 				return errOIDCAccountCreationFailed
 			}
 		} else {
-			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Update("name", oidcUser.Name).Error; err != nil {
+			// Users can set any unused email on their own account, so linking by
+			// email is only safe if an admin set it.
+			if user.EmailUnconfirmed {
+				oidcLog.Warn().Str("userId", user.Id).Str("providerId", provider.Id).Msg("refusing to link OIDC login to an account whose email was changed by its user")
+				return errOIDCAccountLinkingFailed
+			}
+			// Linking adds a new way to sign in, so existing sessions are revoked.
+			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
 				return errOIDCAccountLinkingFailed
 			}
 			user.Name = oidcUser.Name
+			user.TokenVersion++
 		}
 
 		hasConflict, err := hasProviderEmailConflict(tx, provider.Id, oidcUser.Email, user.Id)

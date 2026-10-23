@@ -125,7 +125,7 @@ func UpdateOwnProfileHandler(c *gin.Context) {
 		return
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email}).Error; err != nil {
+	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email, "email_unconfirmed": user.EmailUnconfirmed || req.Email != user.Email}).Error; err != nil {
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
 			return
