@@ -218,6 +218,9 @@ func checkCapabilities(serviceName string, svc composetypes.ServiceConfig) []err
 	return violations
 }
 
+// checkHostNamespaces rejects sharing a namespace with the host or with another
+// container: joining the agent container's PID namespace exposes its
+// environment and filesystem, including the Docker socket.
 func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []error {
 	var violations []error
 	namespaces := map[string]string{
@@ -229,8 +232,12 @@ func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []e
 		"cgroup":       svc.Cgroup,
 	}
 	for field, value := range namespaces {
-		if value == "host" {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch {
+		case normalized == "host":
 			violations = append(violations, fmt.Errorf("service %q: %s: host is not allowed", serviceName, field))
+		case strings.HasPrefix(normalized, "container:"):
+			violations = append(violations, fmt.Errorf("service %q: %s: joining another container's namespace is not allowed", serviceName, field))
 		}
 	}
 	return violations
