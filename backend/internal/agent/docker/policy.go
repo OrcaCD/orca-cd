@@ -3,6 +3,7 @@ package docker
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
@@ -246,15 +247,29 @@ func hostPathViolation(path, restrictMountsDir string) string {
 }
 
 // sensitivePathReason returns why a path is on the deny-list, or "" if it is not.
+// The path is cleaned first, because compose keeps absolute paths as written
+// while the kernel resolves "." and ".." segments.
 func sensitivePathReason(source string) string {
+	if !filepath.IsAbs(source) {
+		return "is not an absolute path"
+	}
+	source = filepath.Clean(source)
 	if underSensitiveComponentRoot(source) {
 		if component, sensitive := checkForSensitivePathComponent(source); sensitive {
 			return fmt.Sprintf("contains sensitive path component %q", component)
+		}
+		if isComponentRootOrDirectChild(source) {
+			return "is a home directory, which contains sensitive paths"
 		}
 	}
 	for _, denied := range sensitiveHostPaths {
 		if source == denied || strings.HasPrefix(source, denied+"/") {
 			return fmt.Sprintf("is under sensitive host path %q, which is not allowed", denied)
+		}
+		// A parent directory exposes the sensitive path below it. "/" itself is
+		// matched exactly above.
+		if denied != "/" && strings.HasPrefix(denied, source+"/") {
+			return fmt.Sprintf("contains sensitive host path %q, which is not allowed", denied)
 		}
 	}
 	return ""
@@ -276,6 +291,18 @@ func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, restrictMo
 func underSensitiveComponentRoot(source string) bool {
 	for _, root := range sensitiveComponentRoots {
 		if source == root || strings.HasPrefix(source, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// isComponentRootOrDirectChild reports whether source is a root like /home or
+// a directory directly below it like /home/alice, which holds .ssh and the
+// other sensitive components.
+func isComponentRootOrDirectChild(source string) bool {
+	for _, root := range sensitiveComponentRoots {
+		if source == root || filepath.Dir(source) == root {
 			return true
 		}
 	}

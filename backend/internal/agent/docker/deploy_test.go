@@ -850,3 +850,51 @@ func TestDeploy_RejectsSymlinkedApplicationDir(t *testing.T) {
 		t.Fatalf("expected nothing to be written through the symlink, got %v", entries)
 	}
 }
+
+func TestDeploy_RejectsBindMountThroughSymlinkInApplicationDir(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	c.restrictMountsToDeployDir = true
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(appDir, "link")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name: opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{Type: composetypes.VolumeTypeBind, Source: filepath.Join(opts.WorkingDir, "link"), Target: "/data"},
+				},
+			}},
+		}, nil
+	}
+	upCalled := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    volumes:\n      - ./link:/data\n",
+	})
+	if err == nil {
+		t.Fatal("expected a bind mount through a symlink to be rejected")
+	}
+	if upCalled {
+		t.Fatal("expected compose up to never be called for a rejected deploy")
+	}
+}

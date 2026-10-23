@@ -491,3 +491,47 @@ func TestCheckDeployPolicy_AllowsSecretsWithoutFileSource(t *testing.T) {
 		t.Fatalf("expected secrets and configs without a file source to be allowed, got: %v", err)
 	}
 }
+
+func bindMountProject(source string) *composetypes.Project {
+	return projectWithService(composetypes.ServiceConfig{
+		Volumes: []composetypes.ServiceVolumeConfig{
+			{Type: composetypes.VolumeTypeBind, Source: source, Target: "/mnt"},
+		},
+	})
+}
+
+func TestCheckDeployPolicy_CleansPathsBeforeDenyListCheck(t *testing.T) {
+	for _, source := range []string{"/./etc", "//etc", "/srv/../etc", "/var/run/./docker.sock", "/data/../root/.bashrc"} {
+		t.Run(source, func(t *testing.T) {
+			if err := checkDeployPolicy(bindMountProject(source), ""); err == nil {
+				t.Fatalf("expected bind mount of %q to be rejected", source)
+			}
+			if err := checkDeployPolicy(envFileProject(source), ""); err == nil {
+				t.Fatalf("expected env_file %q to be rejected", source)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_RejectsParentsOfSensitivePaths(t *testing.T) {
+	for _, source := range []string{"/var", "/var/lib", "/home", "/home/alice", "/home/alice/"} {
+		t.Run(source, func(t *testing.T) {
+			if err := checkDeployPolicy(bindMountProject(source), ""); err == nil {
+				t.Fatalf("expected bind mount of %q to be rejected", source)
+			}
+		})
+	}
+	for _, source := range []string{"/srv", "/srv/app", "/var/lib/app-data", "/home/alice/app-data", "/opt"} {
+		t.Run(source, func(t *testing.T) {
+			if err := checkDeployPolicy(bindMountProject(source), ""); err != nil {
+				t.Fatalf("expected bind mount of %q to be allowed, got: %v", source, err)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_RejectsRelativePaths(t *testing.T) {
+	if err := checkDeployPolicy(bindMountProject("data"), ""); err == nil {
+		t.Fatal("expected an unresolved relative bind mount source to be rejected")
+	}
+}

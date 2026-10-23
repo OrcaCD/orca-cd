@@ -149,7 +149,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	if err != nil {
 		err = fmt.Errorf("load compose project: %w", err)
 	} else {
-		err = c.enforceDeployPolicy(req.ApplicationID, project)
+		err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir)
 	}
 	if err != nil {
 		// Image pulls redeploy the compose file on disk, so a rejected file must
@@ -203,7 +203,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 // application is allowlisted. It runs on agent-side paths, before bind mounts
 // are translated to host paths, so mounts and env_file are checked against the
 // same directory.
-func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project) error {
+func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project, applicationDir string) error {
 	if _, allowed := c.allowedPrivilegedApps[appID]; allowed {
 		return nil
 	}
@@ -211,7 +211,11 @@ func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project
 	if c.restrictMountsToDeployDir {
 		restrictMountsDir = c.deploymentsDir
 	}
-	if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
+	err := checkDeployPolicy(project, restrictMountsDir)
+	if err == nil {
+		err = checkDeploymentPaths(project, c.deploymentsDir, applicationDir)
+	}
+	if err != nil {
 		return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, appID)
 	}
 	return nil
