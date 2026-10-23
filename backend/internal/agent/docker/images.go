@@ -82,6 +82,11 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	if err != nil {
 		return false, fmt.Errorf("load compose project: %w", err)
 	}
+	// The compose file on disk is writable by containers that mount their
+	// deployment directory, so it is checked again before every redeploy.
+	if err := c.enforceDeployPolicy(appID, project); err != nil {
+		return false, err
+	}
 	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
 		return false, fmt.Errorf("resolve host deployments directory: %w", err)
 	}

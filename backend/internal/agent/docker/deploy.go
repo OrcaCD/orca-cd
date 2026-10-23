@@ -133,10 +133,11 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return err
 	}
 
-	if err := os.MkdirAll(applicationDir, 0o750); err != nil {
+	if err := ensureDeploymentDir(applicationDir); err != nil {
 		return fmt.Errorf("create deployment directory: %w", err)
 	}
-	if err := os.WriteFile(composePath, []byte(req.ComposeFile), 0o600); err != nil {
+	previousComposeFile, hadPreviousComposeFile := readDeploymentFile(applicationDir, composeFileName)
+	if err := writeFileAtomic(composePath, []byte(req.ComposeFile)); err != nil {
 		return fmt.Errorf("write compose file: %w", err)
 	}
 
@@ -146,19 +147,15 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		WorkingDir:  applicationDir,
 	})
 	if err != nil {
-		return fmt.Errorf("load compose project: %w", err)
+		err = fmt.Errorf("load compose project: %w", err)
+	} else {
+		err = c.enforceDeployPolicy(req.ApplicationID, project)
 	}
-
-	// The policy runs on agent-side paths, before bind mounts are translated to
-	// host paths, so mounts and env_file are checked against the same directory.
-	if _, allowed := c.allowedPrivilegedApps[req.ApplicationID]; !allowed {
-		restrictMountsDir := ""
-		if c.restrictMountsToDeployDir {
-			restrictMountsDir = c.deploymentsDir
-		}
-		if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
-			return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, req.ApplicationID)
-		}
+	if err != nil {
+		// Image pulls redeploy the compose file on disk, so a rejected file must
+		// not stay there.
+		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+		return err
 	}
 
 	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
@@ -200,6 +197,38 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		Msg("deployment completed")
 
 	return nil
+}
+
+// enforceDeployPolicy runs the deployment security policy unless the
+// application is allowlisted. It runs on agent-side paths, before bind mounts
+// are translated to host paths, so mounts and env_file are checked against the
+// same directory.
+func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project) error {
+	if _, allowed := c.allowedPrivilegedApps[appID]; allowed {
+		return nil
+	}
+	restrictMountsDir := ""
+	if c.restrictMountsToDeployDir {
+		restrictMountsDir = c.deploymentsDir
+	}
+	if err := checkDeployPolicy(project, restrictMountsDir); err != nil {
+		return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, appID)
+	}
+	return nil
+}
+
+// restoreComposeFile puts back the compose file of the last deployment, or
+// removes the file if there was none.
+func (c *Client) restoreComposeFile(composePath string, previous []byte, hadPrevious bool) {
+	var err error
+	if hadPrevious {
+		err = writeFileAtomic(composePath, previous)
+	} else if err = os.Remove(composePath); errors.Is(err, os.ErrNotExist) {
+		err = nil
+	}
+	if err != nil {
+		c.log.Error().Err(err).Str("compose_path", composePath).Msg("failed to restore previous compose file")
+	}
 }
 
 // Remove tears down an application: compose down (containers + networks) then
