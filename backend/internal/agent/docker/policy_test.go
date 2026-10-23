@@ -434,3 +434,60 @@ func TestCheckDeployPolicy_CollectsMultipleViolationsAcrossServices(t *testing.T
 		}
 	}
 }
+
+func TestCheckDeployPolicy_ChecksSecretAndConfigFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("path resolution is OS-native; only meaningful on a Unix-like runner matching production")
+	}
+	tests := map[string]struct {
+		file              string
+		restrictMountsDir string
+		wantReject        bool
+	}{
+		"docker socket":             {"/var/run/docker.sock", "", true},
+		"sensitive host file":       {"/etc/shadow", "", true},
+		"ssh key under home":        {"/home/alice/.ssh/id_ed25519", "", true},
+		"other host file":           {"/srv/certs/tls.crt", "", false},
+		"relative file":             {"./secret.txt", "", false},
+		"restrict: inside app dir":  {"./secret.txt", "/deployments", false},
+		"restrict: outside":         {"/srv/certs/tls.crt", "/deployments", true},
+		"restrict: traversal":       {"../../etc/shadow", "/deployments", true},
+		"restrict: docker socket":   {"/var/run/docker.sock", "/deployments", true},
+		"restrict: similar prefix":  {"/deploymentsbutnotquite/secret", "/deployments", true},
+		"restrict: deployments dir": {"/deployments/demo/certs/tls.crt", "/deployments", false},
+	}
+	for name, tt := range tests {
+		for _, kind := range []string{"secrets", "configs"} {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				yaml := fmt.Sprintf(`
+name: demo
+services:
+  app:
+    image: ghcr.io/orcacd/app:1.0.0
+    %[1]s: [data]
+%[1]s:
+  data:
+    file: %[2]s
+`, kind, tt.file)
+				project := loadComposeProject(t, "/deployments/demo", yaml)
+				err := checkDeployPolicy(project, tt.restrictMountsDir)
+				if tt.wantReject && err == nil {
+					t.Fatalf("expected %s file %q to be rejected", kind, tt.file)
+				}
+				if !tt.wantReject && err != nil {
+					t.Fatalf("expected %s file %q to be allowed, got: %v", kind, tt.file, err)
+				}
+			})
+		}
+	}
+}
+
+func TestCheckDeployPolicy_AllowsSecretsWithoutFileSource(t *testing.T) {
+	project := &composetypes.Project{
+		Secrets: composetypes.Secrets{"token": {Environment: "TOKEN"}},
+		Configs: composetypes.Configs{"settings": {Content: "debug: false"}},
+	}
+	if err := checkDeployPolicy(project, "/deployments"); err != nil {
+		t.Fatalf("expected secrets and configs without a file source to be allowed, got: %v", err)
+	}
+}
