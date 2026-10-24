@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.14.0 AS install-deps
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.15.0 AS install-deps
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
