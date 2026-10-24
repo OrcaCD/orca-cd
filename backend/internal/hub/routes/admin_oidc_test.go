@@ -604,3 +604,101 @@ func TestAdminUpdateOIDCProviderHandler_UpdatesClientSecret(t *testing.T) {
 		t.Errorf("expected client secret %q, got %q", "brand-new-secret", updated.ClientSecret.String())
 	}
 }
+
+func createLinkedAndUnlinkedUsers(t *testing.T, providerID string) (linked, unlinked models.User) {
+	t.Helper()
+	linked = models.User{Id: "user-linked", Email: "linked@example.com", Name: "Linked", Role: models.UserRoleUser}
+	unlinked = models.User{Id: "user-unlinked", Email: "unlinked@example.com", Name: "Unlinked", Role: models.UserRoleUser}
+	for _, user := range []*models.User{&linked, &unlinked} {
+		if err := db.DB.Create(user).Error; err != nil {
+			t.Fatalf("failed to create user: %v", err)
+		}
+	}
+	identity := models.UserOIDCIdentity{UserId: linked.Id, ProviderId: providerID, Subject: "subject-1"}
+	if err := db.DB.Create(&identity).Error; err != nil {
+		t.Fatalf("failed to create identity: %v", err)
+	}
+	return linked, unlinked
+}
+
+func tokenVersionOf(t *testing.T, userID string) int64 {
+	t.Helper()
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", userID).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load user: %v", err)
+	}
+	return user.TokenVersion
+}
+
+func updateProviderEnabled(t *testing.T, p *models.OIDCProvider, enabled bool) {
+	t.Helper()
+	router := gin.New()
+	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
+	reqBody, _ := json.Marshal(updateOIDCProviderRequest{ //nolint:gosec // test data
+		Name:      p.Name,
+		IssuerURL: p.IssuerURL,
+		ClientId:  p.ClientId,
+		Enabled:   &enabled,
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/oidc-providers/"+p.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUpdateOIDCProviderHandler_DisablingRevokesLinkedSessions(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Test IDP", true)
+	linked, unlinked := createLinkedAndUnlinkedUsers(t, p.Id)
+
+	updateProviderEnabled(t, &p, false)
+
+	if got := tokenVersionOf(t, linked.Id); got != linked.TokenVersion+1 {
+		t.Errorf("expected linked user's token version to be bumped, got %d", got)
+	}
+	if got := tokenVersionOf(t, unlinked.Id); got != unlinked.TokenVersion {
+		t.Errorf("expected unlinked user's token version to stay unchanged, got %d", got)
+	}
+
+	// Saving an already disabled provider again must not sign users out again.
+	updateProviderEnabled(t, &p, false)
+	if got := tokenVersionOf(t, linked.Id); got != linked.TokenVersion+1 {
+		t.Errorf("expected no further bump for an already disabled provider, got %d", got)
+	}
+}
+
+func TestAdminUpdateOIDCProviderHandler_KeepsSessionsWhenStillEnabled(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Test IDP", true)
+	linked, _ := createLinkedAndUnlinkedUsers(t, p.Id)
+
+	updateProviderEnabled(t, &p, true)
+
+	if got := tokenVersionOf(t, linked.Id); got != linked.TokenVersion {
+		t.Errorf("expected token version to stay unchanged, got %d", got)
+	}
+}
+
+func TestAdminDeleteOIDCProviderHandler_RevokesLinkedSessions(t *testing.T) {
+	setupTestDB(t)
+	p := createTestProvider(t, "Delete Me", true)
+	linked, unlinked := createLinkedAndUnlinkedUsers(t, p.Id)
+
+	router := gin.New()
+	router.DELETE("/api/v1/admin/oidc-providers/:id", AdminDeleteOIDCProviderHandler)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/api/v1/admin/oidc-providers/"+p.Id, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if got := tokenVersionOf(t, linked.Id); got != linked.TokenVersion+1 {
+		t.Errorf("expected linked user's token version to be bumped, got %d", got)
+	}
+	if got := tokenVersionOf(t, unlinked.Id); got != unlinked.TokenVersion {
+		t.Errorf("expected unlinked user's token version to stay unchanged, got %d", got)
+	}
+}
