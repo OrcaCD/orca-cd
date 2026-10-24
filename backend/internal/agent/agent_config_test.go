@@ -490,3 +490,18 @@ func TestDefaultConfig_Errors(t *testing.T) {
 		})
 	}
 }
+
+func TestClearSecretEnv(t *testing.T) {
+	t.Setenv("AUTH_TOKEN", "secret")
+	t.Setenv("HUB_URL", "https://hub.example.com")
+
+	if err := clearSecretEnv(); err != nil {
+		t.Fatalf("clearSecretEnv: %v", err)
+	}
+	if _, ok := os.LookupEnv("AUTH_TOKEN"); ok {
+		t.Fatal("expected AUTH_TOKEN to be removed from the environment")
+	}
+	if os.Getenv("HUB_URL") == "" {
+		t.Fatal("expected non-secret settings to stay in the environment")
+	}
+}
