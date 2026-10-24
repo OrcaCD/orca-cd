@@ -186,11 +186,11 @@ func TestResolveOIDCUser_RejectsNewUserWhenSignupDisabled(t *testing.T) {
 	}
 }
 
-func TestResolveOIDCUser_LinksAdminCreatedUserAndRevokesSessions(t *testing.T) {
+func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
 	setupTestDB(t)
 
 	hash := "hash"
-	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash, Role: models.UserRoleAdmin, TokenVersion: 3}
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash, Role: models.UserRoleAdmin}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -210,8 +210,8 @@ func TestResolveOIDCUser_LinksAdminCreatedUserAndRevokesSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to reload user: %v", err)
 	}
-	if reloaded.TokenVersion != existing.TokenVersion+1 || user.TokenVersion != reloaded.TokenVersion {
-		t.Fatalf("expected token version to be bumped to %d, got db=%d returned=%d", existing.TokenVersion+1, reloaded.TokenVersion, user.TokenVersion)
+	if reloaded.Name != claims.Name {
+		t.Fatalf("expected name to be synced to %q, got %q", claims.Name, reloaded.Name)
 	}
 }
 

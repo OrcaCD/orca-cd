@@ -165,12 +165,10 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 				oidcLog.Warn().Str("userId", user.Id).Str("providerId", provider.Id).Msg("refusing to link OIDC login to an account whose email was changed by its user")
 				return errOIDCAccountLinkingFailed
 			}
-			// Linking adds a new way to sign in, so existing sessions are revoked.
-			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": oidcUser.Name, "token_version": gorm.Expr("token_version + 1")}).Error; err != nil {
+			if err := tx.Model(&models.User{}).Where("id = ?", user.Id).Update("name", oidcUser.Name).Error; err != nil {
 				return errOIDCAccountLinkingFailed
 			}
 			user.Name = oidcUser.Name
-			user.TokenVersion++
 		}
 
 		hasConflict, err := hasProviderEmailConflict(tx, provider.Id, oidcUser.Email, user.Id)
