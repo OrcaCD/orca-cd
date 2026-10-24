@@ -843,9 +843,7 @@ func TestDeploy_RejectsSymlinkedApplicationDir(t *testing.T) {
 		ApplicationName: "billing",
 		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
 	})
-	if err == nil {
-		t.Fatal("expected deploy into a symlinked application directory to be rejected")
-	}
+	requireErrorContains(t, err, "is not a directory")
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Fatalf("expected nothing to be written through the symlink, got %v", entries)
 	}
@@ -891,9 +889,7 @@ func TestDeploy_RejectsBindMountThroughSymlinkInApplicationDir(t *testing.T) {
 		ApplicationName: "billing",
 		ComposeFile:     "services:\n  app:\n    image: img:latest\n    volumes:\n      - ./link:/data\n",
 	})
-	if err == nil {
-		t.Fatal("expected a bind mount through a symlink to be rejected")
-	}
+	requireErrorContains(t, err, "traverses symlink \""+filepath.Join(appDir, "link")+"\"")
 	if upCalled {
 		t.Fatal("expected compose up to never be called for a rejected deploy")
 	}

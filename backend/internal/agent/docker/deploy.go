@@ -207,15 +207,11 @@ func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project
 	if _, allowed := c.allowedPrivilegedApps[appID]; allowed {
 		return nil
 	}
-	restrictMountsDir := ""
+	rules := pathRules{deploymentsDir: c.deploymentsDir, applicationDir: applicationDir}
 	if c.restrictMountsToDeployDir {
-		restrictMountsDir = c.deploymentsDir
+		rules.restrictMountsDir = c.deploymentsDir
 	}
-	err := checkDeployPolicy(project, restrictMountsDir)
-	if err == nil {
-		err = checkDeploymentPaths(project, c.deploymentsDir, applicationDir)
-	}
-	if err != nil {
+	if err := checkDeployPolicy(project, rules); err != nil {
 		return fmt.Errorf("deployment rejected by security policy: %w (add application id %q to ALLOWED_PRIVILEGED_APPS to bypass all security policy checks)", err, appID)
 	}
 	return nil

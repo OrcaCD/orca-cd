@@ -3,47 +3,64 @@ package docker
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 )
 
-func setupDeploymentDirs(t *testing.T) (deploymentsDir, applicationDir string) {
+func setupDeploymentDirs(t *testing.T) pathRules {
 	t.Helper()
-	deploymentsDir = t.TempDir()
-	applicationDir = filepath.Join(deploymentsDir, "billing")
+	deploymentsDir := t.TempDir()
+	applicationDir := filepath.Join(deploymentsDir, "billing")
 	if err := os.MkdirAll(filepath.Join(applicationDir, "data"), 0o750); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	return deploymentsDir, applicationDir
+	return pathRules{deploymentsDir: deploymentsDir, applicationDir: applicationDir}
 }
 
-func TestCheckDeploymentPaths_AllowsPathsInsideApplicationDir(t *testing.T) {
-	deploymentsDir, applicationDir := setupDeploymentDirs(t)
+func requireErrorContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected an error containing %q", want)
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("expected an error containing %q, got: %v", want, err)
+	}
+}
 
-	for _, source := range []string{applicationDir, filepath.Join(applicationDir, "data"), filepath.Join(applicationDir, "not-created-yet/sub"), "/srv/shared"} {
-		if err := checkDeploymentPaths(bindMountProject(source), deploymentsDir, applicationDir); err != nil {
+func TestDeploymentPaths_AllowsPathsInsideApplicationDir(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+
+	for _, source := range []string{rules.applicationDir, filepath.Join(rules.applicationDir, "data"), filepath.Join(rules.applicationDir, "not-created-yet/sub"), "/srv/shared"} {
+		if err := checkDeployPolicy(bindMountProject(source), rules); err != nil {
 			t.Fatalf("expected %q to be allowed, got: %v", source, err)
 		}
 	}
 }
 
-func TestCheckDeploymentPaths_RejectsOtherApplicationsAndDeploymentsRoot(t *testing.T) {
-	deploymentsDir, applicationDir := setupDeploymentDirs(t)
+func TestDeploymentPaths_RejectsOtherApplicationsAndDeploymentsRoot(t *testing.T) {
+	rules := setupDeploymentDirs(t)
 
-	for _, source := range []string{deploymentsDir, filepath.Join(deploymentsDir, "other-app"), filepath.Join(applicationDir, "..", "other-app", "data")} {
-		if err := checkDeploymentPaths(bindMountProject(source), deploymentsDir, applicationDir); err == nil {
-			t.Fatalf("expected %q to be rejected", source)
+	for _, source := range []string{rules.deploymentsDir, filepath.Join(rules.deploymentsDir, "other-app"), filepath.Join(rules.applicationDir, "..", "other-app", "data")} {
+		for name, restrictMountsDir := range map[string]string{"deny-list": "", "restrict": rules.deploymentsDir} {
+			t.Run(name+" "+source, func(t *testing.T) {
+				rules := rules
+				rules.restrictMountsDir = restrictMountsDir
+				err := checkDeployPolicy(bindMountProject(source), rules)
+				requireErrorContains(t, err, "outside the application's directory")
+			})
 		}
 	}
 }
 
-func TestCheckDeploymentPaths_RejectsSymlinks(t *testing.T) {
-	deploymentsDir, applicationDir := setupDeploymentDirs(t)
-	if err := os.Symlink(t.TempDir(), filepath.Join(applicationDir, "data", "link")); err != nil {
+func TestDeploymentPaths_RejectsSymlinks(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	link := filepath.Join(rules.applicationDir, "data", "link")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	source := filepath.Join(applicationDir, "data", "link", "sub")
+	source := filepath.Join(link, "sub")
 
 	projects := map[string]*composetypes.Project{
 		"bind mount": bindMountProject(source),
@@ -53,21 +70,20 @@ func TestCheckDeploymentPaths_RejectsSymlinks(t *testing.T) {
 	}
 	for name, project := range projects {
 		t.Run(name, func(t *testing.T) {
-			if err := checkDeploymentPaths(project, deploymentsDir, applicationDir); err == nil {
-				t.Fatalf("expected %s through a symlink to be rejected", name)
-			}
+			err := checkDeployPolicy(project, rules)
+			requireErrorContains(t, err, "traverses symlink \""+link+"\"")
 		})
 	}
 }
 
-func TestCheckDeploymentPaths_RejectsSymlinkedApplicationDir(t *testing.T) {
+func TestDeploymentPaths_RejectsSymlinkedApplicationDir(t *testing.T) {
 	deploymentsDir := t.TempDir()
 	applicationDir := filepath.Join(deploymentsDir, "billing")
 	if err := os.Symlink(t.TempDir(), applicationDir); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	if err := checkDeploymentPaths(bindMountProject(filepath.Join(applicationDir, "data")), deploymentsDir, applicationDir); err == nil {
-		t.Fatal("expected a path through a symlinked application directory to be rejected")
-	}
+	rules := pathRules{deploymentsDir: deploymentsDir, applicationDir: applicationDir}
+	err := checkDeployPolicy(bindMountProject(filepath.Join(applicationDir, "data")), rules)
+	requireErrorContains(t, err, "traverses symlink \""+applicationDir+"\"")
 }

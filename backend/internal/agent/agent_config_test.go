@@ -128,6 +128,27 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_DeploymentsDirIsAbsolute(t *testing.T) {
+	token, _, _ := makeTestAuthToken(t)
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", token)
+	t.Setenv("DEPLOYMENTS_DIR", "deployments/../apps/")
+	t.Chdir(t.TempDir())
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if want := filepath.Join(wd, "apps"); cfg.DeploymentsDir != want {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, want)
+	}
+}
+
 // writeCertPEM writes cert as a PEM file into a temp dir and returns its path.
 func writeCertPEM(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
