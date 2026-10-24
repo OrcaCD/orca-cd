@@ -84,7 +84,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	}
 	// The compose file on disk is writable by containers that mount their
 	// deployment directory, so it is checked again before every redeploy.
-	if err := c.enforceDeployPolicy(appID, project); err != nil {
+	if err := c.enforceDeployPolicy(appID, project, filepath.Dir(composePath)); err != nil {
 		return false, err
 	}
 	if err := c.resolveHostDeploymentsDir(ctx); err != nil {

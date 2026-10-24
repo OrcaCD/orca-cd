@@ -32,7 +32,8 @@ func DoesNotLookLikeFilePath(name string) error {
 }
 
 // IsPathWithinBase ensures that a file path stays within a base directory.
-// This prevents directory traversal attacks even with symlinks and relative paths.
+// It compares cleaned absolute paths and prevents ".." traversal, but does not
+// resolve symlinks: a symlink inside the base can still point outside of it.
 func IsPathWithinBase(basePath, filePath string) error {
 	absBase, err := filepath.Abs(basePath)
 	if err != nil {

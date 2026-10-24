@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +93,11 @@ func DefaultConfig() (Config, error) {
 	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
 	if deploymentsDir == "" {
 		deploymentsDir = "/deployments"
+	}
+	// The deploy policy compares it with the absolute paths compose resolves.
+	deploymentsDir, err = filepath.Abs(deploymentsDir)
+	if err != nil {
+		return Config{}, &FatalConfigError{fmt.Sprintf("DEPLOYMENTS_DIR: %s", err)}
 	}
 
 	allowedPrivilegedApps := make(map[string]struct{})
