@@ -569,7 +569,7 @@ func TestCheckDeployPolicy_RejectsContainerNamespaceModes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := checkDeployPolicy(projectWithService(tt.svc), ""); err == nil {
+			if err := checkDeployPolicy(projectWithService(tt.svc), pathRules{}); err == nil {
 				t.Fatalf("expected %+v to be rejected", tt.svc)
 			}
 		})
@@ -585,7 +585,7 @@ func TestCheckDeployPolicy_AllowsProjectNamespaceModes(t *testing.T) {
 		{Ipc: "private"},
 		{Ipc: "service:db"},
 	} {
-		if err := checkDeployPolicy(projectWithService(svc), ""); err != nil {
+		if err := checkDeployPolicy(projectWithService(svc), pathRules{}); err != nil {
 			t.Fatalf("expected %+v to be allowed, got: %v", svc, err)
 		}
 	}
