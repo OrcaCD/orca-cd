@@ -554,3 +554,39 @@ services:
 		t.Fatal("expected a provider service to be rejected")
 	}
 }
+
+func TestCheckDeployPolicy_RejectsContainerNamespaceModes(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  composetypes.ServiceConfig
+	}{
+		{"network_mode", composetypes.ServiceConfig{NetworkMode: "container:orca-agent"}},
+		{"pid", composetypes.ServiceConfig{Pid: "container:orca-agent"}},
+		{"ipc", composetypes.ServiceConfig{Ipc: "container:orca-agent"}},
+		{"uts", composetypes.ServiceConfig{Uts: "container:orca-agent"}},
+		{"pid uppercase", composetypes.ServiceConfig{Pid: " Container:orca-agent"}},
+		{"network_mode host uppercase", composetypes.ServiceConfig{NetworkMode: "HOST"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := checkDeployPolicy(projectWithService(tt.svc), pathRules{}); err == nil {
+				t.Fatalf("expected %+v to be rejected", tt.svc)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_AllowsProjectNamespaceModes(t *testing.T) {
+	for _, svc := range []composetypes.ServiceConfig{
+		{NetworkMode: "bridge"},
+		{NetworkMode: "none"},
+		{NetworkMode: "service:db"},
+		{Ipc: "shareable"},
+		{Ipc: "private"},
+		{Ipc: "service:db"},
+	} {
+		if err := checkDeployPolicy(projectWithService(svc), pathRules{}); err != nil {
+			t.Fatalf("expected %+v to be allowed, got: %v", svc, err)
+		}
+	}
+}
