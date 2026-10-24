@@ -137,6 +137,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 			RemoveOrphans:        true,
 			Recreate:             api.RecreateForce,
 			RecreateDependencies: api.RecreateForce,
+			SkipProviders:        !c.isPrivilegedApp(appID),
 		},
 	}); err != nil {
 		return false, fmt.Errorf("compose up after pull: %w", err)

@@ -183,7 +183,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 		return []string{"ghcr.io/org/app@sha256:olddigest"}, nil
 	}
 
-	var pullCalled, upCalled bool
+	var pullCalled, upCalled, upSkipProviders bool
 	var upRecreate string
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		pullCalled = true
@@ -192,6 +192,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, opts api.UpOptions) error {
 		upCalled = true
 		upRecreate = opts.Create.Recreate
+		upSkipProviders = opts.Create.SkipProviders
 		return nil
 	}
 
@@ -210,6 +211,9 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	}
 	if upRecreate != api.RecreateForce {
 		t.Errorf("expected recreate=%q, got %q", api.RecreateForce, upRecreate)
+	}
+	if !upSkipProviders {
+		t.Error("expected compose up to skip provider services")
 	}
 }
 

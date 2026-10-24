@@ -535,3 +535,22 @@ func TestCheckDeployPolicy_RejectsRelativePaths(t *testing.T) {
 		t.Fatal("expected an unresolved relative bind mount source to be rejected")
 	}
 }
+
+func TestCheckDeployPolicy_RejectsProviderServices(t *testing.T) {
+	yaml := `
+name: demo
+services:
+  app:
+    provider:
+      type: example
+      options:
+        key: value
+`
+	project := loadComposeProject(t, "/deployments/demo", yaml)
+	if project.Services["app"].Provider == nil {
+		t.Fatal("expected the loader to parse the provider")
+	}
+	if err := checkDeployPolicy(project, pathRules{}); err == nil {
+		t.Fatal("expected a provider service to be rejected")
+	}
+}
