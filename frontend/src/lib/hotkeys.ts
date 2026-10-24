@@ -1,9 +1,4 @@
-import {
-	useHotkey,
-	useHotkeySequence,
-	type HotkeySequence,
-	type RegisterableHotkey,
-} from "@tanstack/react-hotkeys";
+import { useHotkey, type HotkeySequence, type RegisterableHotkey } from "@tanstack/react-hotkeys";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "./auth";
 import { useTheme } from "@/components/theme-provider";
@@ -51,37 +46,37 @@ export function useApplicationHotkeys() {
 
 	const enabled = auth.isAuthenticated;
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateOverview, () => navigateTo("/"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateOverview, () => navigateTo("/"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateApplications, () => navigateTo("/applications"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateApplications, () => navigateTo("/applications"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateAgents, () => navigateTo("/agents"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateAgents, () => navigateTo("/agents"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateRepositories, () => navigateTo("/repositories"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateRepositories, () => navigateTo("/repositories"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateNotifications, () => navigateTo("/notifications"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateNotifications, () => navigateTo("/notifications"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateSettings, () => navigateTo("/settings/profile"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateSettings, () => navigateTo("/settings/profile"), {
 		...HOTKEY_OPTIONS,
 		enabled,
 	});
 
-	useHotkeySequence(HOTKEY_SEQUENCES.navigateAdmin, () => navigateTo("/admin/system-info"), {
+	useHotkey(HOTKEY_SEQUENCES.navigateAdmin, () => navigateTo("/admin/system-info"), {
 		...HOTKEY_OPTIONS,
 		enabled: enabled && auth.isAdmin,
 	});
