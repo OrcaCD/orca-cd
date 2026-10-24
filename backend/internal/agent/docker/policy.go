@@ -94,6 +94,7 @@ func checkDeployPolicy(project *composetypes.Project, restrictMountsDir string) 
 		violations = append(violations, checkServicePolicy(name, svc, restrictMountsDir)...)
 	}
 	violations = append(violations, checkVolumeDefinitions(project)...)
+	violations = append(violations, checkFileObjectDefinitions(project, restrictMountsDir)...)
 	if len(violations) == 0 {
 		return nil
 	}
@@ -122,6 +123,29 @@ func checkVolumeDefinitions(project *composetypes.Project) []error {
 	for name, vol := range project.Volumes {
 		if len(vol.DriverOpts) > 0 {
 			violations = append(violations, fmt.Errorf("volume %q: driver_opts are not allowed", name))
+		}
+	}
+	return violations
+}
+
+// Top-level secrets and configs with a file source are bind-mounted read-only
+// from that host path, so they get the same rules as bind mounts.
+func checkFileObjectDefinitions(project *composetypes.Project, restrictMountsDir string) []error {
+	var violations []error
+	for name, secret := range project.Secrets {
+		if secret.File == "" {
+			continue
+		}
+		if reason := hostPathViolation(secret.File, restrictMountsDir); reason != "" {
+			violations = append(violations, fmt.Errorf("secret %q: file %q %s", name, secret.File, reason))
+		}
+	}
+	for name, config := range project.Configs {
+		if config.File == "" {
+			continue
+		}
+		if reason := hostPathViolation(config.File, restrictMountsDir); reason != "" {
+			violations = append(violations, fmt.Errorf("config %q: file %q %s", name, config.File, reason))
 		}
 	}
 	return violations
@@ -202,17 +226,23 @@ func checkBindMounts(serviceName string, svc composetypes.ServiceConfig, restric
 		if vol.Type != composetypes.VolumeTypeBind {
 			continue
 		}
-		if restrictMountsDir != "" {
-			if err := utils.IsPathWithinBase(restrictMountsDir, vol.Source); err != nil {
-				violations = append(violations, fmt.Errorf("service %q: bind mount source %q is not inside the agent's deployment directory %q", serviceName, vol.Source, restrictMountsDir))
-			}
-			continue
-		}
-		if reason := sensitivePathReason(vol.Source); reason != "" {
+		if reason := hostPathViolation(vol.Source, restrictMountsDir); reason != "" {
 			violations = append(violations, fmt.Errorf("service %q: bind mount source %q %s", serviceName, vol.Source, reason))
 		}
 	}
 	return violations
+}
+
+// hostPathViolation applies the bind mount rules to a path that is read from
+// the host, and returns why it is not allowed, or "" if it is.
+func hostPathViolation(path, restrictMountsDir string) string {
+	if restrictMountsDir != "" {
+		if err := utils.IsPathWithinBase(restrictMountsDir, path); err != nil {
+			return fmt.Sprintf("is not inside the agent's deployment directory %q", restrictMountsDir)
+		}
+		return ""
+	}
+	return sensitivePathReason(path)
 }
 
 // sensitivePathReason returns why a path is on the deny-list, or "" if it is not.
@@ -236,13 +266,7 @@ func sensitivePathReason(source string) string {
 func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
 	var violations []error
 	for _, envFile := range svc.EnvFiles {
-		if restrictMountsDir != "" {
-			if err := utils.IsPathWithinBase(restrictMountsDir, envFile.Path); err != nil {
-				violations = append(violations, fmt.Errorf("service %q: env_file %q is not inside the agent's deployment directory %q", serviceName, envFile.Path, restrictMountsDir))
-			}
-			continue
-		}
-		if reason := sensitivePathReason(envFile.Path); reason != "" {
+		if reason := hostPathViolation(envFile.Path, restrictMountsDir); reason != "" {
 			violations = append(violations, fmt.Errorf("service %q: env_file %q %s", serviceName, envFile.Path, reason))
 		}
 	}

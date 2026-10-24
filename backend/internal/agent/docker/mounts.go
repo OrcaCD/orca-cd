@@ -129,6 +129,9 @@ func hostBindSource(mountPoints []containerapi.MountPoint, target string) (strin
 	return "", fmt.Errorf("agent container has no mount at deployment directory %q", target)
 }
 
+// translateBindMountSources rewrites sources inside the agent's deployments
+// directory to the matching host path, since the Docker daemon resolves bind
+// mounts (including file-based secrets and configs) on the host.
 func translateBindMountSources(project *composetypes.Project, deploymentsDir, hostDeploymentsDir string) error {
 	if hostDeploymentsDir == "" {
 		return nil
@@ -143,27 +146,56 @@ func translateBindMountSources(project *composetypes.Project, deploymentsDir, ho
 	}
 	hostBase := filepath.Clean(hostDeploymentsDir)
 
+	translate := func(source string) (string, error) {
+		absSource := source
+		if !filepath.IsAbs(absSource) {
+			absSource = filepath.Join(agentBase, absSource)
+		}
+		relativeSource, err := filepath.Rel(agentBase, filepath.Clean(absSource))
+		if err != nil {
+			return "", err
+		}
+		if relativeSource == ".." || strings.HasPrefix(relativeSource, ".."+string(filepath.Separator)) {
+			return source, nil
+		}
+		return filepath.Join(hostBase, relativeSource), nil
+	}
+
 	for serviceName, service := range project.Services {
 		for i, volume := range service.Volumes {
 			if volume.Type != composetypes.VolumeTypeBind {
 				continue
 			}
-
-			source := volume.Source
-			if !filepath.IsAbs(source) {
-				source = filepath.Join(agentBase, source)
-			}
-			relativeSource, err := filepath.Rel(agentBase, filepath.Clean(source))
+			source, err := translate(volume.Source)
 			if err != nil {
 				return fmt.Errorf("service %q: resolve bind mount source %q: %w", serviceName, volume.Source, err)
 			}
-			if relativeSource == ".." || strings.HasPrefix(relativeSource, ".."+string(filepath.Separator)) {
-				continue
-			}
-
-			service.Volumes[i].Source = filepath.Join(hostBase, relativeSource)
+			service.Volumes[i].Source = source
 		}
 		project.Services[serviceName] = service
+	}
+
+	for name, secret := range project.Secrets {
+		if secret.File == "" {
+			continue
+		}
+		file, err := translate(secret.File)
+		if err != nil {
+			return fmt.Errorf("secret %q: resolve file %q: %w", name, secret.File, err)
+		}
+		secret.File = file
+		project.Secrets[name] = secret
+	}
+	for name, config := range project.Configs {
+		if config.File == "" {
+			continue
+		}
+		file, err := translate(config.File)
+		if err != nil {
+			return fmt.Errorf("config %q: resolve file %q: %w", name, config.File, err)
+		}
+		config.File = file
+		project.Configs[name] = config
 	}
 
 	return nil
