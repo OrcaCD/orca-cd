@@ -183,7 +183,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 		return []string{"ghcr.io/org/app@sha256:olddigest"}, nil
 	}
 
-	var pullCalled, upCalled bool
+	var pullCalled, upCalled, upSkipProviders bool
 	var upRecreate string
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		pullCalled = true
@@ -192,6 +192,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, opts api.UpOptions) error {
 		upCalled = true
 		upRecreate = opts.Create.Recreate
+		upSkipProviders = opts.Create.SkipProviders
 		return nil
 	}
 
@@ -210,6 +211,9 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 	}
 	if upRecreate != api.RecreateForce {
 		t.Errorf("expected recreate=%q, got %q", api.RecreateForce, upRecreate)
+	}
+	if !upSkipProviders {
+		t.Error("expected compose up to skip provider services")
 	}
 }
 
@@ -638,5 +642,79 @@ func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 	}
 	if remoteCalled {
 		t.Error("expected no remote digest call for build-only services")
+	}
+}
+
+func writeTestComposeFile(t *testing.T, deploymentsDir, appName string) {
+	t.Helper()
+	appDir := filepath.Join(deploymentsDir, appName)
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte("services:\n  app:\n    image: img:latest\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func stubStalePrivilegedProject(t *testing.T) (pullCalled, upCalled *bool) {
+	t.Helper()
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name:     opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{Image: "img:latest", Privileged: true}},
+		}, nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
+		return "sha256:newdigest", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return nil, errors.New("not present locally")
+	}
+	var pulled, upped bool
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		pulled = true
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upped = true
+		return nil
+	}
+	return &pulled, &upped
+}
+
+func TestCheckAndPullImages_RejectsPolicyViolation(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	writeTestComposeFile(t, c.deploymentsDir, "billing")
+	pullCalled, upCalled := stubStalePrivilegedProject(t)
+
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	if err == nil {
+		t.Fatal("expected a compose file violating the security policy to be rejected")
+	}
+	if updated {
+		t.Error("expected updated=false for a rejected project")
+	}
+	if *pullCalled || *upCalled {
+		t.Fatal("expected neither pull nor compose up for a rejected project")
+	}
+}
+
+func TestCheckAndPullImages_AllowlistedApplicationBypassesPolicy(t *testing.T) {
+	const allowedAppID = "019e1ce8-7938-71b8-be55-4b184f307a2d"
+
+	saveRestoreVars(t)
+	c := newTestClientWithAllowlist(t, map[string]struct{}{allowedAppID: {}})
+	c.deploymentsDir = t.TempDir()
+	writeTestComposeFile(t, c.deploymentsDir, "billing")
+	_, upCalled := stubStalePrivilegedProject(t)
+
+	updated, err := c.CheckAndPullImages(t.Context(), allowedAppID, "billing", false)
+	if err != nil {
+		t.Fatalf("expected allowlisted application to be redeployed, got: %v", err)
+	}
+	if !updated || !*upCalled {
+		t.Fatal("expected compose up for an allowlisted application")
 	}
 }

@@ -3,6 +3,7 @@ package docker
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
@@ -86,32 +87,46 @@ var sensitivePathComponents = map[string]struct{}{
 	"networkmanager":  {},
 }
 
+// pathRules configures the checks for paths that are read from the host.
+type pathRules struct {
+	// restrictMountsDir switches to allow-list mode if set: every host path
+	// must be inside it, and the sensitive-path deny-list is skipped since it
+	// becomes redundant.
+	restrictMountsDir string
+	// deploymentsDir and applicationDir confine paths inside the deployments
+	// directory to the application's own directory, see deploymentPathViolation.
+	deploymentsDir string
+	applicationDir string
+}
+
 // inspects every service in the project and returns an
 // aggregated error describing every policy violation found
-func checkDeployPolicy(project *composetypes.Project, restrictMountsDir string) error {
+func checkDeployPolicy(project *composetypes.Project, rules pathRules) error {
 	var violations []error
 	for name, svc := range project.Services {
-		violations = append(violations, checkServicePolicy(name, svc, restrictMountsDir)...)
+		violations = append(violations, checkServicePolicy(name, svc, rules)...)
 	}
 	violations = append(violations, checkVolumeDefinitions(project)...)
+	violations = append(violations, checkFileObjectDefinitions(project, rules)...)
 	if len(violations) == 0 {
 		return nil
 	}
 	return fmt.Errorf("compose project violates deployment security policy: %w", errors.Join(violations...))
 }
 
-func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
+func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
 	var violations []error
 	violations = append(violations, checkPrivileged(serviceName, svc)...)
 	violations = append(violations, checkAPISocket(serviceName, svc)...)
 	violations = append(violations, checkCapabilities(serviceName, svc)...)
 	violations = append(violations, checkHostNamespaces(serviceName, svc)...)
-	violations = append(violations, checkBindMounts(serviceName, svc, restrictMountsDir)...)
+	violations = append(violations, checkBindMounts(serviceName, svc, rules)...)
 	violations = append(violations, checkDevices(serviceName, svc)...)
 	violations = append(violations, checkSecurityOpt(serviceName, svc)...)
 	violations = append(violations, checkVolumesFrom(serviceName, svc)...)
 	violations = append(violations, checkDeviceCgroupRules(serviceName, svc)...)
-	violations = append(violations, checkEnvFile(serviceName, svc, restrictMountsDir)...)
+	violations = append(violations, checkEnvFile(serviceName, svc, rules)...)
+	violations = append(violations, checkProvider(serviceName, svc)...)
 	return violations
 }
 
@@ -122,6 +137,29 @@ func checkVolumeDefinitions(project *composetypes.Project) []error {
 	for name, vol := range project.Volumes {
 		if len(vol.DriverOpts) > 0 {
 			violations = append(violations, fmt.Errorf("volume %q: driver_opts are not allowed", name))
+		}
+	}
+	return violations
+}
+
+// Top-level secrets and configs with a file source are bind-mounted read-only
+// from that host path, so they get the same rules as bind mounts.
+func checkFileObjectDefinitions(project *composetypes.Project, rules pathRules) []error {
+	var violations []error
+	for name, secret := range project.Secrets {
+		if secret.File == "" {
+			continue
+		}
+		if reason := hostPathViolation(secret.File, rules); reason != "" {
+			violations = append(violations, fmt.Errorf("secret %q: file %q %s", name, secret.File, reason))
+		}
+	}
+	for name, config := range project.Configs {
+		if config.File == "" {
+			continue
+		}
+		if reason := hostPathViolation(config.File, rules); reason != "" {
+			violations = append(violations, fmt.Errorf("config %q: file %q %s", name, config.File, reason))
 		}
 	}
 	return violations
@@ -150,6 +188,15 @@ func checkPrivileged(serviceName string, svc composetypes.ServiceConfig) []error
 	return nil
 }
 
+// A provider service makes compose run provider.type as an executable inside the
+// agent, which has access to the Docker API.
+func checkProvider(serviceName string, svc composetypes.ServiceConfig) []error {
+	if svc.Provider != nil {
+		return []error{fmt.Errorf("service %q: provider services are not allowed", serviceName)}
+	}
+	return nil
+}
+
 // use_api_socket bind-mounts the Docker API socket (and its auth) into the
 // container, granting the same host control as mounting docker.sock directly.
 func checkAPISocket(serviceName string, svc composetypes.ServiceConfig) []error {
@@ -171,6 +218,9 @@ func checkCapabilities(serviceName string, svc composetypes.ServiceConfig) []err
 	return violations
 }
 
+// checkHostNamespaces rejects sharing a namespace with the host or with another
+// container: joining the agent container's PID namespace exposes its
+// environment and filesystem, including the Docker socket.
 func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []error {
 	var violations []error
 	namespaces := map[string]string{
@@ -182,8 +232,12 @@ func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []e
 		"cgroup":       svc.Cgroup,
 	}
 	for field, value := range namespaces {
-		if value == "host" {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		switch {
+		case normalized == "host":
 			violations = append(violations, fmt.Errorf("service %q: %s: host is not allowed", serviceName, field))
+		case strings.HasPrefix(normalized, "container:"):
+			violations = append(violations, fmt.Errorf("service %q: %s: joining another container's namespace is not allowed", serviceName, field))
 		}
 	}
 	return violations
@@ -192,39 +246,57 @@ func checkHostNamespaces(serviceName string, svc composetypes.ServiceConfig) []e
 // checkBindMounts rejects bind mounts (not named volumes) whose source is, or
 // is nested under, a sensitive host path.
 // Also checks some paths for sensitive components (like .ssh).
-// If restrictMountsDir is set, this switches to allow-list mode: every bind
-// mount source must resolve inside restrictMountsDir, and the sensitive-path
-// deny-list below is skipped since it becomes redundant.
 // The paths are already resolved by the Docker compose library.
-func checkBindMounts(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
+func checkBindMounts(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
 	var violations []error
 	for _, vol := range svc.Volumes {
 		if vol.Type != composetypes.VolumeTypeBind {
 			continue
 		}
-		if restrictMountsDir != "" {
-			if err := utils.IsPathWithinBase(restrictMountsDir, vol.Source); err != nil {
-				violations = append(violations, fmt.Errorf("service %q: bind mount source %q is not inside the agent's deployment directory %q", serviceName, vol.Source, restrictMountsDir))
-			}
-			continue
-		}
-		if reason := sensitivePathReason(vol.Source); reason != "" {
+		if reason := hostPathViolation(vol.Source, rules); reason != "" {
 			violations = append(violations, fmt.Errorf("service %q: bind mount source %q %s", serviceName, vol.Source, reason))
 		}
 	}
 	return violations
 }
 
+// hostPathViolation applies the bind mount rules to a path that is read from
+// the host, and returns why it is not allowed, or "" if it is.
+func hostPathViolation(path string, rules pathRules) string {
+	if rules.restrictMountsDir != "" {
+		if err := utils.IsPathWithinBase(rules.restrictMountsDir, path); err != nil {
+			return fmt.Sprintf("is not inside the agent's deployment directory %q", rules.restrictMountsDir)
+		}
+	} else if reason := sensitivePathReason(path); reason != "" {
+		return reason
+	}
+	return deploymentPathViolation(path, rules.deploymentsDir, rules.applicationDir)
+}
+
 // sensitivePathReason returns why a path is on the deny-list, or "" if it is not.
+// The path is cleaned first, because compose keeps absolute paths as written
+// while the kernel resolves "." and ".." segments.
 func sensitivePathReason(source string) string {
+	if !filepath.IsAbs(source) {
+		return "is not an absolute path"
+	}
+	source = filepath.Clean(source)
 	if underSensitiveComponentRoot(source) {
 		if component, sensitive := checkForSensitivePathComponent(source); sensitive {
 			return fmt.Sprintf("contains sensitive path component %q", component)
+		}
+		if isComponentRootOrDirectChild(source) {
+			return "is a home directory, which contains sensitive paths"
 		}
 	}
 	for _, denied := range sensitiveHostPaths {
 		if source == denied || strings.HasPrefix(source, denied+"/") {
 			return fmt.Sprintf("is under sensitive host path %q, which is not allowed", denied)
+		}
+		// A parent directory exposes the sensitive path below it. "/" itself is
+		// matched exactly above.
+		if denied != "/" && strings.HasPrefix(denied, source+"/") {
+			return fmt.Sprintf("contains sensitive host path %q, which is not allowed", denied)
 		}
 	}
 	return ""
@@ -233,16 +305,10 @@ func sensitivePathReason(source string) string {
 // checkEnvFile applies the same rules as checkBindMounts to env_file, since it
 // is read from the agent's filesystem (e.g. /proc/self/environ holds the
 // agent's token).
-func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, restrictMountsDir string) []error {
+func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
 	var violations []error
 	for _, envFile := range svc.EnvFiles {
-		if restrictMountsDir != "" {
-			if err := utils.IsPathWithinBase(restrictMountsDir, envFile.Path); err != nil {
-				violations = append(violations, fmt.Errorf("service %q: env_file %q is not inside the agent's deployment directory %q", serviceName, envFile.Path, restrictMountsDir))
-			}
-			continue
-		}
-		if reason := sensitivePathReason(envFile.Path); reason != "" {
+		if reason := hostPathViolation(envFile.Path, rules); reason != "" {
 			violations = append(violations, fmt.Errorf("service %q: env_file %q %s", serviceName, envFile.Path, reason))
 		}
 	}
@@ -252,6 +318,18 @@ func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, restrictMo
 func underSensitiveComponentRoot(source string) bool {
 	for _, root := range sensitiveComponentRoots {
 		if source == root || strings.HasPrefix(source, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// isComponentRootOrDirectChild reports whether source is a root like /home or
+// a directory directly below it like /home/alice, which holds .ssh and the
+// other sensitive components.
+func isComponentRootOrDirectChild(source string) bool {
+	for _, root := range sensitiveComponentRoots {
+		if source == root || filepath.Dir(source) == root {
 			return true
 		}
 	}

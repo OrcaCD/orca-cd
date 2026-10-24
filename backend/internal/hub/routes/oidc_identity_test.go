@@ -185,3 +185,84 @@ func TestResolveOIDCUser_RejectsNewUserWhenSignupDisabled(t *testing.T) {
 		t.Fatalf("expected no users to be created, got %d", userCount)
 	}
 }
+
+func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
+	setupTestDB(t)
+
+	hash := "hash"
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash, Role: models.UserRoleAdmin}
+	if err := db.DB.Create(&existing).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	provider := models.OIDCProvider{Id: "provider-1"}
+	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice SSO"}
+
+	user, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	if redirectError != "" {
+		t.Fatalf("expected no redirect error, got %q", redirectError)
+	}
+	if user.Id != existing.Id {
+		t.Fatalf("expected login to be linked to user %q, got %q", existing.Id, user.Id)
+	}
+
+	reloaded, err := gorm.G[models.User](db.DB).Where("id = ?", existing.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.Name != claims.Name {
+		t.Fatalf("expected name to be synced to %q, got %q", claims.Name, reloaded.Name)
+	}
+}
+
+func TestResolveOIDCUser_RefusesToLinkSelfChangedEmail(t *testing.T) {
+	setupTestDB(t)
+
+	hash := "hash"
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Mallory", PasswordHash: &hash, Role: models.UserRoleUser, EmailUnconfirmed: true}
+	if err := db.DB.Create(&existing).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	provider := models.OIDCProvider{Id: "provider-1", AutoSignup: true}
+	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice"}
+
+	_, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	if redirectError != "account_linking_failed" {
+		t.Fatalf("expected account_linking_failed, got %q", redirectError)
+	}
+	count, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", existing.Id).Count(t.Context(), "*")
+	if err != nil {
+		t.Fatalf("failed to count identities: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no identity to be linked, got %d", count)
+	}
+}
+
+func TestResolveOIDCUser_LinkedLoginConfirmsSyncedEmail(t *testing.T) {
+	setupTestDB(t)
+
+	existing := models.User{Id: "user-1", Email: "old@example.com", Name: "Alice", Role: models.UserRoleUser, EmailUnconfirmed: true}
+	if err := db.DB.Create(&existing).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	identity := models.UserOIDCIdentity{UserId: existing.Id, ProviderId: "provider-1", Subject: "subject-1"}
+	if err := db.DB.Create(&identity).Error; err != nil {
+		t.Fatalf("failed to create identity: %v", err)
+	}
+
+	provider := models.OIDCProvider{Id: "provider-1"}
+	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice"}
+	if _, redirectError := resolveOIDCUser(t.Context(), &provider, claims); redirectError != "" {
+		t.Fatalf("expected no redirect error, got %q", redirectError)
+	}
+
+	reloaded, err := gorm.G[models.User](db.DB).Where("id = ?", existing.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.Email != claims.Email || reloaded.EmailUnconfirmed {
+		t.Fatalf("expected the provider email to be synced and confirmed, got %q (unconfirmed=%v)", reloaded.Email, reloaded.EmailUnconfirmed)
+	}
+}

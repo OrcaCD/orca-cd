@@ -182,6 +182,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		}
 	}
 
+	wasEnabled := existing.Enabled
 	existing.Name = req.Name
 	existing.IssuerURL = req.IssuerURL
 	existing.ClientId = req.ClientId
@@ -199,7 +200,16 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		existing.ClientSecret = crypto.EncryptedString(*req.ClientSecret)
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Save(&existing).Error; err != nil {
+	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&existing).Error; err != nil {
+			return err
+		}
+		if wasEnabled && !existing.Enabled {
+			return revokeOIDCProviderSessions(c.Request.Context(), tx, id)
+		}
+		return nil
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -213,12 +223,20 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 	id := c.Param("id")
 
-	result := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).Delete(&models.OIDCProvider{})
-	if result.Error != nil {
+	var deleted int
+	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := revokeOIDCProviderSessions(c.Request.Context(), tx, id); err != nil {
+			return err
+		}
+		var err error
+		deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context())
+		return err
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	if result.RowsAffected == 0 {
+	if deleted == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		return
 	}
@@ -227,4 +245,12 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
+}
+
+// revokeOIDCProviderSessions signs out every user linked to the provider, so
+// sessions issued through a disabled or deleted provider stop working.
+func revokeOIDCProviderSessions(ctx context.Context, tx *gorm.DB, providerID string) error {
+	linkedUsers := tx.Model(&models.UserOIDCIdentity{}).Select("user_id").Where("provider_id = ?", providerID)
+	_, err := gorm.G[models.User](tx).Where("id IN (?)", linkedUsers).Update(ctx, "token_version", gorm.Expr("token_version + 1"))
+	return err
 }

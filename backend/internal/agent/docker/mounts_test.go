@@ -335,3 +335,37 @@ func projectWithBindMount(source string) *composetypes.Project {
 		}},
 	}}
 }
+
+func TestTranslateBindMountSourcesTranslatesSecretAndConfigFiles(t *testing.T) {
+	project := &composetypes.Project{
+		Secrets: composetypes.Secrets{
+			"inside":  {File: "/deployments/app/secret.txt"},
+			"outside": {File: "/srv/certs/key.pem"},
+			"env":     {Environment: "TOKEN"},
+		},
+		Configs: composetypes.Configs{
+			"inside":  {File: "/deployments/app/config.yaml"},
+			"outside": {File: "/srv/config.yaml"},
+		},
+	}
+
+	if err := translateBindMountSources(project, "/deployments", "/srv/orcacd/deployments"); err != nil {
+		t.Fatalf("translateBindMountSources: %v", err)
+	}
+
+	if got := project.Secrets["inside"].File; got != "/srv/orcacd/deployments/app/secret.txt" {
+		t.Errorf("secret file = %q, want translated", got)
+	}
+	if got := project.Secrets["outside"].File; got != "/srv/certs/key.pem" {
+		t.Errorf("secret file outside deployments = %q, want unchanged", got)
+	}
+	if got := project.Secrets["env"]; got.File != "" || got.Environment != "TOKEN" {
+		t.Errorf("environment secret = %#v, want unchanged", got)
+	}
+	if got := project.Configs["inside"].File; got != "/srv/orcacd/deployments/app/config.yaml" {
+		t.Errorf("config file = %q, want translated", got)
+	}
+	if got := project.Configs["outside"].File; got != "/srv/config.yaml" {
+		t.Errorf("config file outside deployments = %q, want unchanged", got)
+	}
+}

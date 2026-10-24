@@ -359,3 +359,32 @@ func TestCheckRedirect_LimitsRedirects(t *testing.T) {
 		t.Error("expected error after 10 redirects, got nil")
 	}
 }
+
+func TestIsPrivateIP_EmbeddedIPv4(t *testing.T) {
+	private := []string{
+		"64:ff9b::7f00:1",        // NAT64 of 127.0.0.1
+		"64:ff9b::a9fe:a9fe",     // NAT64 of 169.254.169.254
+		"64:ff9b:1::a00:1",       // local-use NAT64 of 10.0.0.1 with a /96 prefix
+		"64:ff9b:1:7f00:0:1::",   // local-use NAT64 of 127.0.0.1 with a /48 prefix
+		"64:ff9b:1::808:808",     // local-use NAT64, blocked whatever the address
+		"2002:7f00:1::1",         // 6to4 of 127.0.0.1
+		"2002:c0a8:101::1",       // 6to4 of 192.168.1.1
+		"2002:a9fe:a9fe::abcd:1", // 6to4 of 169.254.169.254
+	}
+	for _, ip := range private {
+		if !IsPrivateIP(ip) {
+			t.Errorf("expected %q to be private", ip)
+		}
+	}
+
+	public := []string{
+		"64:ff9b::808:808", // NAT64 of 8.8.8.8
+		"2002:808:808::1",  // 6to4 of 8.8.8.8
+		"2001:4860:4860::8888",
+	}
+	for _, ip := range public {
+		if IsPrivateIP(ip) {
+			t.Errorf("expected %q to be public", ip)
+		}
+	}
+}

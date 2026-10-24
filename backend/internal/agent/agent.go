@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +93,11 @@ func DefaultConfig() (Config, error) {
 	deploymentsDir := os.Getenv("DEPLOYMENTS_DIR")
 	if deploymentsDir == "" {
 		deploymentsDir = "/deployments"
+	}
+	// The deploy policy compares it with the absolute paths compose resolves.
+	deploymentsDir, err = filepath.Abs(deploymentsDir)
+	if err != nil {
+		return Config{}, &FatalConfigError{fmt.Sprintf("DEPLOYMENTS_DIR: %s", err)}
 	}
 
 	allowedPrivilegedApps := make(map[string]struct{})
@@ -229,8 +235,27 @@ func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn)
 	return cancelled
 }
 
+// secretEnvVars are removed from the process environment once the config is
+// loaded. Compose builds the project environment from the agent's environment,
+// so a compose file could otherwise copy them into a container through
+// interpolation or a value-less environment entry.
+var secretEnvVars = []string{"AUTH_TOKEN"}
+
+func clearSecretEnv() error {
+	for _, name := range secretEnvVars {
+		if err := os.Unsetenv(name); err != nil {
+			return fmt.Errorf("unset %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func Run(cfg Config) error {
 	Log = logger.New("agent", cfg.LogJSON).Level(cfg.LogLevel)
+
+	if err := clearSecretEnv(); err != nil {
+		return err
+	}
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
 

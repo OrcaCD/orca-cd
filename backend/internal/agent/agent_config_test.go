@@ -128,6 +128,27 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_DeploymentsDirIsAbsolute(t *testing.T) {
+	token, _, _ := makeTestAuthToken(t)
+	t.Setenv("HUB_URL", "https://hub.example.com")
+	t.Setenv("AUTH_TOKEN", token)
+	t.Setenv("DEPLOYMENTS_DIR", "deployments/../apps/")
+	t.Chdir(t.TempDir())
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if want := filepath.Join(wd, "apps"); cfg.DeploymentsDir != want {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, want)
+	}
+}
+
 // writeCertPEM writes cert as a PEM file into a temp dir and returns its path.
 func writeCertPEM(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
@@ -467,5 +488,20 @@ func TestDefaultConfig_Errors(t *testing.T) {
 				t.Errorf("FatalConfigError = %v, want %v", got, tt.fatal)
 			}
 		})
+	}
+}
+
+func TestClearSecretEnv(t *testing.T) {
+	t.Setenv("AUTH_TOKEN", "secret")
+	t.Setenv("HUB_URL", "https://hub.example.com")
+
+	if err := clearSecretEnv(); err != nil {
+		t.Fatalf("clearSecretEnv: %v", err)
+	}
+	if _, ok := os.LookupEnv("AUTH_TOKEN"); ok {
+		t.Fatal("expected AUTH_TOKEN to be removed from the environment")
+	}
+	if os.Getenv("HUB_URL") == "" {
+		t.Fatal("expected non-secret settings to stay in the environment")
 	}
 }
