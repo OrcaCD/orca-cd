@@ -200,6 +200,9 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		}
 	}
 
+	if user.Email != req.Email {
+		user.EmailUnconfirmed = false
+	}
 	user.Name = req.Name
 	user.Email = req.Email
 	user.Role = models.UserRole(req.Role)

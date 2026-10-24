@@ -1030,6 +1030,39 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	if reloaded.Email != updatedEmail {
 		t.Errorf("expected persisted email %q, got %q", updatedEmail, reloaded.Email)
 	}
+	if !reloaded.EmailUnconfirmed {
+		t.Error("expected a self-changed email to be marked as unconfirmed")
+	}
+}
+
+func TestUpdateOwnProfileHandler_NameOnlyKeepsEmailConfirmed(t *testing.T) {
+	setupTestDB(t)
+
+	hash, _ := auth.HashPassword("password123")
+	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
+	if err := db.DB.Create(user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(updateOwnProfileRequest{Name: "Updated Name", Email: user.Email}) //nolint:gosec
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/auth/profile", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setUserClaims(t, c, user)
+
+	UpdateOwnProfileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var reloaded models.User
+	if err := db.DB.Where("id = ?", user.Id).First(&reloaded).Error; err != nil {
+		t.Fatalf("failed to reload user: %v", err)
+	}
+	if reloaded.EmailUnconfirmed {
+		t.Error("expected an unchanged email to stay confirmed")
+	}
 }
 
 func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
