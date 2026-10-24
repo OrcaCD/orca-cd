@@ -2,7 +2,6 @@ package docker
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -30,7 +29,7 @@ func writeComposeOverride(applicationDir string, override *composetypes.Project)
 		return fmt.Errorf("render compose override: %w", err)
 	}
 	content = append([]byte(overrideFileHeader), content...)
-	if err := os.WriteFile(filepath.Join(applicationDir, overrideFileName), content, 0o600); err != nil {
+	if err := writeFileAtomic(filepath.Join(applicationDir, overrideFileName), content); err != nil {
 		return fmt.Errorf("write compose override: %w", err)
 	}
 	return nil

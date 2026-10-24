@@ -660,3 +660,193 @@ func TestRemove_RejectsForeignProject(t *testing.T) {
 		t.Fatal("expected remove to reject a project not managed by OrcaCD")
 	}
 }
+
+func stubPrivilegedProjectLoad(t *testing.T) (upCalled *bool) {
+	t.Helper()
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name:     opts.ProjectName,
+			Services: composetypes.Services{"app": composetypes.ServiceConfig{Privileged: true}},
+		}, nil
+	}
+	called := false
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		called = true
+		return nil
+	}
+	return &called
+}
+
+func TestDeploy_RejectedComposeFileIsNotKept(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	upCalled := stubPrivilegedProjectLoad(t)
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    privileged: true\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy of a privileged service to be rejected")
+	}
+	if *upCalled {
+		t.Fatal("expected compose up to never be called for a rejected deploy")
+	}
+
+	composePath := filepath.Join(c.deploymentsDir, "billing", composeFileName)
+	if _, err := os.Lstat(composePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected the rejected compose file to be removed, got %v", err)
+	}
+}
+
+func TestDeploy_RejectedComposeFileRestoresPreviousDeployment(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	stubPrivilegedProjectLoad(t)
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	const previous = "services:\n  app:\n    image: img:1.0.0\n"
+	composePath := filepath.Join(appDir, composeFileName)
+	if err := os.WriteFile(composePath, []byte(previous), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "019e1ce8-7938-71b8-be55-4b184f307a2d",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n    privileged: true\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy of a privileged service to be rejected")
+	}
+
+	//nolint:gosec // composePath is built from t.TempDir() and a fixed application name
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(content) != previous {
+		t.Fatalf("expected the previous compose file to be restored, got %q", content)
+	}
+}
+
+func TestDeploy_LoadErrorRestoresPreviousDeployment(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	t.Cleanup(func() { loadProject = origLoad })
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return nil, errors.New("load error")
+	}
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	const previous = "services:\n  app:\n    image: img:1.0.0\n"
+	composePath := filepath.Join(appDir, composeFileName)
+	if err := os.WriteFile(composePath, []byte(previous), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "not: [valid",
+	}); err == nil {
+		t.Fatal("expected error when loadProject fails")
+	}
+
+	//nolint:gosec // composePath is built from t.TempDir() and a fixed application name
+	if content, _ := os.ReadFile(composePath); string(content) != previous {
+		t.Fatalf("expected the previous compose file to be restored, got %q", content)
+	}
+}
+
+func TestDeploy_ReplacesSymlinkedComposeFile(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	origLoad := loadProject
+	origUp := upProject
+	t.Cleanup(func() {
+		loadProject = origLoad
+		upProject = origUp
+	})
+	loadProject = func(_ context.Context, _ api.Compose, opts api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{Name: opts.ProjectName}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return nil
+	}
+
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "agent-file")
+	if err := os.WriteFile(outside, []byte("original"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	for _, name := range []string{composeFileName, overrideFileName} {
+		if err := os.Symlink(outside, filepath.Join(appDir, name)); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+	}
+
+	req := DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	}
+	if err := c.Deploy(t.Context(), req); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	//nolint:gosec // path is built from t.TempDir()
+	if content, _ := os.ReadFile(outside); string(content) != "original" {
+		t.Fatalf("expected the symlink target outside the deployment directory to stay unchanged, got %q", content)
+	}
+	for _, name := range []string{composeFileName, overrideFileName} {
+		info, err := os.Lstat(filepath.Join(appDir, name))
+		if err != nil {
+			t.Fatalf("Lstat %s: %v", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			t.Fatalf("expected %s to be replaced by a regular file, got mode %v", name, info.Mode())
+		}
+	}
+}
+
+func TestDeploy_RejectsSymlinkedApplicationDir(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(c.deploymentsDir, "billing")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:latest\n",
+	})
+	if err == nil {
+		t.Fatal("expected deploy into a symlinked application directory to be rejected")
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatalf("expected nothing to be written through the symlink, got %v", entries)
+	}
+}
