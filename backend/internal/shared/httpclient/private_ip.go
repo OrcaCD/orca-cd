@@ -34,6 +34,10 @@ var privateIPRangesStr = []string{
 	"100::/64",      // Discard prefix (RFC 6666)
 	"2001:db8::/32", // Documentation prefix (RFC 3849)
 	"3fff::/20",     // Documentation prefix (RFC 9637)
+	// Local-use NAT64 prefix (RFC 8215). The gateway picks the prefix length,
+	// which decides where the IPv4 address is embedded (RFC 6052), so the
+	// embedded address cannot be checked reliably.
+	"64:ff9b:1::/48",
 }
 
 var privateIPRanges []netip.Prefix
@@ -42,11 +46,8 @@ var privateIPRanges []netip.Prefix
 // relay forwards to. The embedded address is checked instead of blocking the
 // whole prefix, so public IPv4 hosts stay reachable on IPv6-only networks.
 var (
-	nat64Prefixes = []netip.Prefix{
-		netip.MustParsePrefix("64:ff9b::/96"),   // Well-known NAT64 prefix (RFC 6052)
-		netip.MustParsePrefix("64:ff9b:1::/48"), // Local-use NAT64 prefix (RFC 8215)
-	}
-	sixToFourPrefix = netip.MustParsePrefix("2002::/16") // 6to4 (RFC 3056)
+	nat64Prefix     = netip.MustParsePrefix("64:ff9b::/96") // Well-known NAT64 prefix (RFC 6052)
+	sixToFourPrefix = netip.MustParsePrefix("2002::/16")    // 6to4 (RFC 3056)
 )
 
 func init() {
@@ -82,10 +83,8 @@ func IsPrivateIP(ip string) bool {
 // embeddedIPv4 returns the IPv4 address embedded in a NAT64 or 6to4 address.
 func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
 	bytes := ip.As16()
-	for _, prefix := range nat64Prefixes {
-		if prefix.Contains(ip) {
-			return netip.AddrFrom4([4]byte(bytes[12:16])), true
-		}
+	if nat64Prefix.Contains(ip) {
+		return netip.AddrFrom4([4]byte(bytes[12:16])), true
 	}
 	if sixToFourPrefix.Contains(ip) {
 		return netip.AddrFrom4([4]byte(bytes[2:6])), true
