@@ -270,7 +270,7 @@ func Run(cfg Config) error {
 		return err
 	}
 	if len(foundHubSecrets) > 0 {
-		Log.Warn().Strs("variables", foundHubSecrets).Msg("removed hub secrets from the agent environment; pass only the agent's settings to the agent instead of sharing the hub's env file")
+		Log.Warn().Strs("variables", foundHubSecrets).Msg("found the hub's secrets in the agent environment and removed them. Give the agent its own env file instead of sharing the hub's")
 	}
 
 	Log.Info().Str("version", version.Version).Msg("agent started")
