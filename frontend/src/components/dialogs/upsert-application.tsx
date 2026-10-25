@@ -22,7 +22,7 @@ import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { useFetch } from "@/lib/api";
 import type { Agent } from "@/lib/agents";
-import { type Repository } from "@/lib/repositories";
+import type { Repository } from "@/lib/repositories";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { m } from "@/lib/paraglide/messages";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
@@ -31,6 +31,9 @@ import { Switch } from "../ui/switch";
 import { Checkbox } from "../ui/checkbox";
 import { Separator } from "../ui/separator";
 import LucideIconPicker, { type LucideIconName } from "../lucide-icon-picker";
+import CopyButton from "@/components/copy-btn";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
+import { CodeBlock, CodeBlockContent, CodeBlockLine } from "@/components/ui/code-block";
 
 export const applicationSchema = z.object({
 	name: z
@@ -367,7 +370,19 @@ export default function UpsertApplicationDialog({
 
 	const repositoryId = useStore(form.store, (state) => state.values.repositoryId);
 	const branch = useStore(form.store, (state) => state.values.branch);
+	const path = useStore(form.store, (state) => state.values.path);
 	const imagePollEnabled = useStore(form.store, (state) => state.values.imagePollEnabled);
+	const selectedRepository = repos?.find((repo) => repo.id === repositoryId);
+	const previewUrl =
+		repositoryId && branch && path
+			? `/repositories/${repositoryId}/file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`
+			: null;
+	const {
+		data: composePreview,
+		isLoading: isComposePreviewLoading,
+		error: composePreviewError,
+	} = useFetch<{ content: string }>(previewUrl);
+	const composePreviewLines = useHighlightedCode(composePreview?.content ?? "", "yaml");
 
 	const { data: branches, isLoading: isBranchesLoading } = useFetch<string[]>(
 		repositoryId ? `/repositories/${repositoryId}/branches` : null,
@@ -772,6 +787,36 @@ export default function UpsertApplicationDialog({
 																);
 															}}
 														/>
+
+														{path && selectedRepository && branch ? (
+															<div className="space-y-2 rounded-md border p-3">
+																<div className="flex items-center justify-between gap-2">
+																	<p className="text-sm font-medium">{m.composeFilePreview()}</p>
+																	{composePreview?.content !== undefined && (
+																		<CopyButton
+																			text={composePreview.content}
+																			title={m.copyComposeFile()}
+																		/>
+																	)}
+																</div>
+																{isComposePreviewLoading ? (
+																	<p className="text-xs text-muted-foreground">{m.loadingDots()}</p>
+																) : composePreviewError ? (
+																	<div className="text-xs text-destructive" role="alert">
+																		<p>{m.composeFilePreviewFailed()}</p>
+																		<p>{composePreviewError.message}</p>
+																	</div>
+																) : composePreview?.content !== undefined ? (
+																	<CodeBlock>
+																		<CodeBlockContent className="max-h-60" lineNumbers>
+																			{composePreviewLines.map((line, index) => (
+																				<CodeBlockLine key={index}>{line}</CodeBlockLine>
+																			))}
+																		</CodeBlockContent>
+																	</CodeBlock>
+																) : null}
+															</div>
+														) : null}
 													</FieldGroup>
 												)}
 											/>
