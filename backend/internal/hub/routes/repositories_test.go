@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1030,6 +1031,52 @@ func TestListRepositoryTreeHandler_Success(t *testing.T) {
 
 	if len(body) != 2 {
 		t.Fatalf("expected 2 tree entries, got %d", len(body))
+	}
+}
+
+func TestGetRepositoryFileHandler_Success(t *testing.T) {
+	setupTestDBWithRepos(t)
+
+	repo := models.Repository{
+		Name:       "owner/repo",
+		Url:        "https://github.com/owner/repo",
+		Provider:   models.GitHub,
+		AuthMethod: models.AuthMethodNone,
+		SyncType:   models.SyncTypeManual,
+		SyncStatus: models.SyncStatusUnknown,
+		CreatedBy:  "user-1",
+	}
+	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
+		t.Fatalf("failed to seed repo: %v", err)
+	}
+
+	composeFile := "services:\n  web:\n    image: nginx\n"
+	encodedContent := base64.StdEncoding.EncodeToString([]byte(composeFile))
+	restore := mockHTTPClientWithBody(http.StatusOK, `{"content":"`+encodedContent+`","encoding":"base64"}`)
+	t.Cleanup(restore)
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repositories/"+repo.Id+"/file?branch=main&path=docker-compose.yml",
+		nil,
+	)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+
+	GetRepositoryFileHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Content != composeFile {
+		t.Fatalf("expected compose content %q, got %q", composeFile, body.Content)
 	}
 }
 
