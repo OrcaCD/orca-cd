@@ -108,6 +108,7 @@ func checkDeployPolicy(project *composetypes.Project, rules pathRules) error {
 	}
 	violations = append(violations, checkVolumeDefinitions(project)...)
 	violations = append(violations, checkFileObjectDefinitions(project, rules)...)
+	violations = append(violations, checkJobs(project)...)
 	if len(violations) == 0 {
 		return nil
 	}
@@ -115,6 +116,15 @@ func checkDeployPolicy(project *composetypes.Project, rules pathRules) error {
 }
 
 func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
+	violations := checkContainerPolicy(serviceName, svc, rules)
+	violations = append(violations, checkProvider(serviceName, svc)...)
+	violations = append(violations, checkHooks(serviceName, svc, rules)...)
+	return violations
+}
+
+// checkContainerPolicy checks the fields of a container specification, which
+// services and pre_start hooks share.
+func checkContainerPolicy(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
 	var violations []error
 	violations = append(violations, checkPrivileged(serviceName, svc)...)
 	violations = append(violations, checkAPISocket(serviceName, svc)...)
@@ -126,7 +136,39 @@ func checkServicePolicy(serviceName string, svc composetypes.ServiceConfig, rule
 	violations = append(violations, checkVolumesFrom(serviceName, svc)...)
 	violations = append(violations, checkDeviceCgroupRules(serviceName, svc)...)
 	violations = append(violations, checkEnvFile(serviceName, svc, rules)...)
-	violations = append(violations, checkProvider(serviceName, svc)...)
+	return violations
+}
+
+// checkHooks applies the policy to lifecycle hooks. A pre_start hook is a full
+// container specification that compose creates like a service container, so it
+// gets the same checks. post_start and pre_stop hooks run as an exec in the
+// service container, where privileged would grant every capability.
+func checkHooks(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
+	var violations []error
+	for i, hook := range svc.PreStart {
+		hookName := fmt.Sprintf("%s.pre_start[%d]", serviceName, i)
+		violations = append(violations, checkContainerPolicy(hookName, composetypes.ServiceConfig{ContainerSpec: hook.ContainerSpec}, rules)...)
+	}
+	for i, hook := range svc.PostStart {
+		if hook.Privileged {
+			violations = append(violations, fmt.Errorf("service %q: post_start[%d]: privileged hooks are not allowed", serviceName, i))
+		}
+	}
+	for i, hook := range svc.PreStop {
+		if hook.Privileged {
+			violations = append(violations, fmt.Errorf("service %q: pre_stop[%d]: privileged hooks are not allowed", serviceName, i))
+		}
+	}
+	return violations
+}
+
+// Jobs are full container specifications that the agent never runs, so they are
+// rejected instead of being checked. A later compose version could run them.
+func checkJobs(project *composetypes.Project) []error {
+	var violations []error
+	for name := range project.AllJobs() {
+		violations = append(violations, fmt.Errorf("job %q: jobs are not allowed", name))
+	}
 	return violations
 }
 
