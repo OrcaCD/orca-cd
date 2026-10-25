@@ -6,8 +6,8 @@ import {
 	type APIRequestContext,
 	type Page,
 } from "@playwright/test";
-import { APP_URL } from "./const.ts";
-import { stopAgent } from "./helpers/agent-container.ts";
+import { APP_URL, REGISTRY_HOST } from "./const.ts";
+import { agentLogs, stopAgent } from "./helpers/agent-container.ts";
 import { api, listRepositories, seedRepository, type ApiRepository } from "./helpers/api.ts";
 import {
 	appContainers,
@@ -19,11 +19,14 @@ import {
 import { commit } from "./helpers/gitea-mock.ts";
 import { gotoApp } from "./helpers/navigation.ts";
 import {
+	allowAnonymousRegistry,
 	containerImageId,
+	createLocalImage,
 	imageExists,
 	imageRef,
 	pushImage,
 	removeLocalImage,
+	requireRegistryAuth,
 	startRegistry,
 	stopRegistry,
 } from "./helpers/registry.ts";
@@ -45,12 +48,16 @@ const POLL_APP_NAME = "E2E Image Polling App";
 const POLL_IDLE_APP_NAME = "E2E Image Polling Idle App";
 const POLL_OFF_APP_NAME = "E2E Image Polling Off App";
 const CLEANUP_APP_NAME = "E2E Image Cleanup App";
+const LOCAL_ONLY_APP_NAME = "E2E Image Local Only App";
+const PRIVATE_APP_NAME = "E2E Image Private Registry App";
 
 const WEBHOOK_PATH = "webhook/compose.yaml";
 const POLL_PATH = "poll/compose.yaml";
 const POLL_IDLE_PATH = "poll-idle/compose.yaml";
 const POLL_OFF_PATH = "poll-off/compose.yaml";
 const CLEANUP_PATH = "cleanup/compose.yaml";
+const LOCAL_ONLY_PATH = "local-only/compose.yaml";
+const PRIVATE_PATH = "private/compose.yaml";
 
 const WEBHOOK_IMAGE = imageRef("e2e/webhook");
 const POLL_IMAGE = imageRef("e2e/poll");
@@ -58,6 +65,8 @@ const POLL_IDLE_IMAGE = imageRef("e2e/poll-idle");
 const POLL_OFF_IMAGE = imageRef("e2e/poll-off");
 const CLEANUP_IMAGE_V1 = imageRef("e2e/cleanup", "1");
 const CLEANUP_IMAGE_V2 = imageRef("e2e/cleanup", "2");
+const LOCAL_ONLY_IMAGE = imageRef("e2e/local-only");
+const PRIVATE_IMAGE = imageRef("e2e/private");
 const LOCAL_IMAGES = [
 	WEBHOOK_IMAGE,
 	POLL_IMAGE,
@@ -65,6 +74,8 @@ const LOCAL_IMAGES = [
 	POLL_OFF_IMAGE,
 	CLEANUP_IMAGE_V1,
 	CLEANUP_IMAGE_V2,
+	LOCAL_ONLY_IMAGE,
+	PRIVATE_IMAGE,
 ];
 
 // The agent never polls more often than every 60 seconds; the margin covers the check itself
@@ -95,6 +106,9 @@ function composeFile(image: string) {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const waitForTick = (enabledAt: number, tick = 1) =>
+	sleep(Math.max(0, enabledAt + tick * POLL_INTERVAL_MS + POLL_MARGIN_MS - Date.now()));
+
 test.beforeAll(async ({ browser }) => {
 	pullImage(BUSYBOX_IMAGE);
 	await startRegistry();
@@ -104,6 +118,8 @@ test.beforeAll(async ({ browser }) => {
 	pushImage(POLL_OFF_IMAGE, "1");
 	pushImage(CLEANUP_IMAGE_V1, "1");
 	pushImage(CLEANUP_IMAGE_V2, "2");
+	pushImage(PRIVATE_IMAGE, "1");
+	createLocalImage(LOCAL_ONLY_IMAGE);
 
 	const context = await newAuthenticatedContext(browser);
 	try {
@@ -121,6 +137,8 @@ test.beforeAll(async ({ browser }) => {
 							[POLL_IDLE_PATH]: composeFile(POLL_IDLE_IMAGE),
 							[POLL_OFF_PATH]: composeFile(POLL_OFF_IMAGE),
 							[CLEANUP_PATH]: composeFile(CLEANUP_IMAGE_V1),
+							[LOCAL_ONLY_PATH]: composeFile(LOCAL_ONLY_IMAGE),
+							[PRIVATE_PATH]: composeFile(PRIVATE_IMAGE),
 						},
 					},
 				},
@@ -227,6 +245,13 @@ async function updateApplication(page: Page, id: string, patch: Record<string, u
 		deleteOldImages: current.deleteOldImages,
 		...patch,
 	});
+}
+
+async function pullImagesFromUi(page: Page, id: string) {
+	await gotoApp(page, `/applications/${id}/details`);
+	await page.getByRole("button", { name: "More deploy options" }).click();
+	await page.getByRole("menuitem", { name: /Pull images/ }).click();
+	await expect(page.getByText("Image pull started")).toBeVisible();
 }
 
 async function openImageUpdates(page: Page, id: string) {
@@ -540,9 +565,6 @@ test.describe("Image polling", () => {
 	const idle = { id: "", enabledAt: 0, containerIds: [] as string[] };
 	const off = { id: "", enabledAt: 0, containerIds: [] as string[] };
 
-	const waitForTick = (enabledAt: number) =>
-		sleep(Math.max(0, enabledAt + POLL_INTERVAL_MS + POLL_MARGIN_MS - Date.now()));
-
 	test("rejects an interval below 60 seconds", async ({ page }) => {
 		id = await deployApplication(page, "poll", POLL_APP_NAME, POLL_PATH);
 		expect(await getApplication(page, id)).toMatchObject({ imagePollEnabled: false });
@@ -728,10 +750,7 @@ test.describe("Delete old images", () => {
 		// Same tag, new content
 		pushImage(CLEANUP_IMAGE_V1, "1b");
 
-		await gotoApp(page, `/applications/${id}/details`);
-		await page.getByRole("button", { name: "More deploy options" }).click();
-		await page.getByRole("menuitem", { name: /Pull images/ }).click();
-		await expect(page.getByText("Image pull started")).toBeVisible();
+		await pullImagesFromUi(page, id);
 
 		await expectNewPull(page, id, before, { source: "manual", status: "succeeded" });
 		await expect.poll(() => runningVersion(id), { timeout: 60_000 }).toBe("1b");
@@ -765,13 +784,98 @@ test.describe("Delete old images", () => {
 		const currentImageId = containerImageId(container.id);
 		const before = (await imageEvents(page, id)).length;
 
-		await gotoApp(page, `/applications/${id}/details`);
-		await page.getByRole("button", { name: "More deploy options" }).click();
-		await page.getByRole("menuitem", { name: /Pull images/ }).click();
-		await expect(page.getByText("Image pull started")).toBeVisible();
+		await pullImagesFromUi(page, id);
 
 		await expectNewPull(page, id, before, { source: "manual", status: "no_change" });
 		expect(appContainers(id).map((item) => item.id)).toEqual([container.id]);
 		expect(imageExists(currentImageId)).toBe(true);
+	});
+});
+
+test.describe("Local-only images", () => {
+	test("a pull skips an image that was never pushed to a registry", async ({ page }) => {
+		const id = await deployApplication(page, "local-only", LOCAL_ONLY_APP_NAME, LOCAL_ONLY_PATH);
+		const [container] = appContainers(id);
+		const before = (await imageEvents(page, id)).length;
+
+		await pullImagesFromUi(page, id);
+
+		await expectNewPull(page, id, before, { source: "manual", status: "no_change" });
+		const [event] = await imageEvents(page, id);
+		expect(event.errorMessage).toBeNull();
+		expect(appContainers(id).map((item) => item.id)).toEqual([container.id]);
+	});
+});
+
+test.describe("Private registry", () => {
+	const app = { id: "", enabledAt: 0 };
+
+	const failedChecks = () =>
+		agentLogs()
+			.split("\n")
+			.filter((line) => line.includes("failed to check/pull images") && line.includes(app.id))
+			.length;
+
+	test.afterAll(async () => {
+		await allowAnonymousRegistry();
+	});
+
+	test("deploy an application that polls a registry which then requires a login", async ({
+		page,
+	}) => {
+		app.id = await deployApplication(page, "private", PRIVATE_APP_NAME, PRIVATE_PATH, {
+			imagePollEnabled: true,
+			imagePollIntervalSeconds: 60,
+		});
+		app.enabledAt = Date.now();
+
+		await requireRegistryAuth();
+		expect(runningVersion(app.id)).toBe("1");
+	});
+
+	test("the periodic check reports that the registry can't be checked", async ({ page }) => {
+		await expect
+			.poll(async () => (await imageEvents(page, app.id)).length, { timeout: 120_000 })
+			.toBe(1);
+
+		const [event] = await imageEvents(page, app.id);
+		expect(event).toMatchObject({ source: "image_polling", status: "failed" });
+		expect(event.errorMessage).toContain(`image ${PRIVATE_IMAGE}`);
+		expect(event.errorMessage).toContain(`no credentials for ${REGISTRY_HOST} found`);
+		await waitForApplication(page, app.id, (current) => current.syncStatus === "out_of_sync");
+		expect(runningVersion(app.id)).toBe("1");
+	});
+
+	test("a manual pull reports the same failure again", async ({ page }) => {
+		const [previous] = await imageEvents(page, app.id);
+
+		await pullImagesFromUi(page, app.id);
+
+		await expect
+			.poll(async () => (await imageEvents(page, app.id)).length, { timeout: 60_000 })
+			.toBe(2);
+		const [event] = await imageEvents(page, app.id);
+		expect(event).toMatchObject({ source: "manual", status: "failed" });
+		expect(event.errorMessage).toBe(previous.errorMessage);
+	});
+
+	test("repeated periodic failures are not recorded again", async ({ page }) => {
+		const checks = failedChecks();
+
+		await waitForTick(app.enabledAt, 2);
+
+		expect(failedChecks()).toBeGreaterThan(checks);
+		expect(await imageEvents(page, app.id)).toHaveLength(2);
+		expect((await getApplication(page, app.id)).syncStatus).toBe("out_of_sync");
+	});
+
+	test("the application is in sync again once the registry is reachable", async ({ page }) => {
+		await allowAnonymousRegistry();
+
+		await waitForApplication(page, app.id, (current) => current.syncStatus === "synced", {
+			timeout: 90_000,
+		});
+		expect(await imageEvents(page, app.id)).toHaveLength(2);
+		expect(runningVersion(app.id)).toBe("1");
 	});
 });

@@ -5,11 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/pkg/authconfig"
+	imagetypes "github.com/moby/moby/api/types/image"
+	registrytypes "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
 
@@ -17,6 +21,7 @@ func saveRestoreVars(t *testing.T) {
 	t.Helper()
 	origGetRemote := getRemoteDigest
 	origGetLocal := getLocalDigests
+	origIsLocalOnly := isLocalOnlyImage
 	origPull := pullProject
 	origLoad := loadProject
 	origUp := upProject
@@ -25,6 +30,7 @@ func saveRestoreVars(t *testing.T) {
 	t.Cleanup(func() {
 		getRemoteDigest = origGetRemote
 		getLocalDigests = origGetLocal
+		isLocalOnlyImage = origIsLocalOnly
 		pullProject = origPull
 		loadProject = origLoad
 		upProject = origUp
@@ -343,6 +349,9 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
 		return "", errors.New("no such image in registry")
 	}
+	isLocalOnlyImage = func(_ context.Context, _ client.APIClient, _ string) bool {
+		return true
+	}
 
 	var pullCalled bool
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
@@ -359,6 +368,205 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 	}
 	if pullCalled {
 		t.Error("pull should not be called when no services are actionable")
+	}
+}
+
+func TestCheckAndPullImages_DigestLookupFailure(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	writeTestComposeFile(t, c.deploymentsDir, "myapp")
+
+	registryErr := errors.New("unauthorized: authentication required")
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("reg.example.com/x:main"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, _ string) (string, error) {
+		return "", registryErr
+	}
+	// Missing locally or pulled from a registry
+	isLocalOnlyImage = func(_ context.Context, _ client.APIClient, _ string) bool {
+		return false
+	}
+
+	var pullCalled bool
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		pullCalled = true
+		return nil
+	}
+
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	if err == nil {
+		t.Fatal("expected an error for a failed digest lookup")
+	}
+	if !errors.Is(err, registryErr) {
+		t.Errorf("expected the registry error to be wrapped, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "reg.example.com/x:main") {
+		t.Errorf("expected the error to name the image, got %v", err)
+	}
+	if updated {
+		t.Error("expected updated=false when nothing is stale")
+	}
+	if pullCalled {
+		t.Error("pull should not be called when nothing is stale")
+	}
+}
+
+type fakeInspectClient struct {
+	client.APIClient
+	result client.ImageInspectResult
+	err    error
+}
+
+func (f *fakeInspectClient) ImageInspect(context.Context, string, ...client.ImageInspectOption) (client.ImageInspectResult, error) {
+	return f.result, f.err
+}
+
+func TestIsLocalOnlyImage(t *testing.T) {
+	inspected := func(identity *imagetypes.Identity, repoDigests ...string) *fakeInspectClient {
+		var result client.ImageInspectResult
+		result.RepoDigests = repoDigests
+		result.Identity = identity
+		return &fakeInspectClient{result: result}
+	}
+	pulled := &imagetypes.Identity{Pull: []imagetypes.PullIdentity{{Repository: "docker.io/library/app"}}}
+	built := &imagetypes.Identity{Build: []imagetypes.BuildIdentity{{Ref: "abc"}}}
+
+	tests := []struct {
+		name string
+		cli  *fakeInspectClient
+		want bool
+	}{
+		{"missing locally", &fakeInspectClient{err: errors.New("no such image")}, false},
+		{"containerd store, pulled", inspected(pulled, "app@sha256:a"), false},
+		// The containerd store lists a digest for the local tag of a build as well
+		{"containerd store, built", inspected(built, "reg.example.com/app@sha256:a"), true},
+		{"classic store, pulled", inspected(nil, "reg.example.com/app@sha256:a"), false},
+		{"classic store, built", inspected(nil), true},
+		{"identity without origin, pulled", inspected(&imagetypes.Identity{}, "app@sha256:a"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isLocalOnlyImage(t.Context(), tc.cli, "reg.example.com/app:latest"); got != tc.want {
+				t.Errorf("isLocalOnlyImage() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckAndPullImages_DigestFailureAlongsideStaleImage(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	writeTestComposeFile(t, c.deploymentsDir, "myapp")
+
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return makeProject("ghcr.io/org/app:latest", "reg.example.com/x:main"), nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, imageRef string) (string, error) {
+		if imageRef == "reg.example.com/x:main" {
+			return "", errors.New("unauthorized: authentication required")
+		}
+		return "sha256:new", nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
+		return []string{"ghcr.io/org/app@sha256:old"}, nil
+	}
+	isLocalOnlyImage = func(_ context.Context, _ client.APIClient, _ string) bool {
+		return false
+	}
+
+	var pullCalled, upCalled bool
+	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
+		pullCalled = true
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		upCalled = true
+		return nil
+	}
+
+	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	if !updated {
+		t.Error("expected the healthy stale image to be updated")
+	}
+	if !pullCalled || !upCalled {
+		t.Errorf("expected pull and up to run, got pull=%v up=%v", pullCalled, upCalled)
+	}
+	if err == nil || !strings.Contains(err.Error(), "reg.example.com/x:main") {
+		t.Errorf("expected an error naming the unreachable image, got %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "ghcr.io/org/app") {
+		t.Errorf("did not expect the healthy image in the error, got %v", err)
+	}
+}
+
+func TestRegistryHost(t *testing.T) {
+	tests := map[string]string{
+		"reg.example.com/x:main":    "reg.example.com",
+		"127.0.0.1:5055/e2e/x:1":    "127.0.0.1:5055",
+		"localhost/x":               "localhost",
+		"ghcr.io/org/app@sha256:ab": "ghcr.io",
+		"nginx:latest":              "docker.io",
+		"library/nginx":             "docker.io",
+		"org/app:1.0":               "docker.io",
+	}
+	for ref, want := range tests {
+		if got := registryHost(ref); got != want {
+			t.Errorf("registryHost(%q) = %q, want %q", ref, got, want)
+		}
+	}
+}
+
+func TestIsUnauthorized(t *testing.T) {
+	tests := []struct {
+		err  string
+		want bool
+	}{
+		{`Head "http://reg.example.com/v2/x/manifests/1": no basic auth credentials`, true},
+		{"unauthorized: authentication required", true},
+		{"pull access denied for x, repository does not exist or may require authorization", true},
+		{`Get "http://reg.example.com/v2/": dial tcp: connect: connection refused`, false},
+		{"manifest unknown", false},
+	}
+	for _, tc := range tests {
+		if got := isUnauthorized(errors.New(tc.err)); got != tc.want {
+			t.Errorf("isUnauthorized(%q) = %v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
+
+func TestWithCredentialsHint(t *testing.T) {
+	base := errors.New("unauthorized: authentication required")
+	empty, err := authconfig.Encode(registrytypes.AuthConfig{ServerAddress: "reg.example.com"})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	stored, err := authconfig.Encode(registrytypes.AuthConfig{Username: "u", Password: "secret"})
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	got := withCredentialsHint(base, "reg.example.com/x:main", empty, nil)
+	if !errors.Is(got, base) {
+		t.Errorf("expected the original error to be wrapped, got %v", got)
+	}
+	if !strings.Contains(got.Error(), "no credentials for reg.example.com found") {
+		t.Errorf("expected a missing credentials hint, got %q", got)
+	}
+
+	got = withCredentialsHint(base, "reg.example.com/x:main", stored, nil)
+	if got.Error() != base.Error() {
+		t.Errorf("expected no hint when credentials exist, got %q", got)
+	}
+
+	got = withCredentialsHint(base, "reg.example.com/x:main", "", errors.New("helper failed"))
+	if !strings.Contains(got.Error(), "reg.example.com") || !strings.Contains(got.Error(), "helper failed") {
+		t.Errorf("expected the credential lookup failure in the hint, got %q", got)
+	}
+	if strings.Contains(got.Error(), "secret") {
+		t.Errorf("hint must not contain secrets, got %q", got)
 	}
 }
 

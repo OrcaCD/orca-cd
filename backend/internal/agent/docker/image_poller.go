@@ -47,6 +47,7 @@ type ImagePoller struct {
 	log      zerolog.Logger
 	apps     map[string]*appPollState // keyed by applicationID
 	runLocks map[string]*sync.Mutex
+	failing  map[string]struct{} // applications whose last run failed
 	client   *Client
 	sender   MessageSender
 }
@@ -58,6 +59,7 @@ func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger) *ImageP
 		log:      log,
 		apps:     make(map[string]*appPollState),
 		runLocks: make(map[string]*sync.Mutex),
+		failing:  make(map[string]struct{}),
 		client:   c,
 		sender:   sender,
 	}
@@ -167,7 +169,10 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	// syncing status. Otherwise a duplicate webhook delivery whose pull is a
 	// no-op (the first delivery already pulled the image) leaves its event
 	// stuck "running" and the application stuck "Syncing" until hub restart.
-	if requestID == "" && !updated && err == nil {
+	// The first success after a failure is reported too: the hub left the
+	// application out of sync and only a success result restores it.
+	wasFailing := p.markRun(appID, err != nil)
+	if requestID == "" && !updated && err == nil && !wasFailing {
 		return
 	}
 
@@ -192,6 +197,21 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Str("application_id", appID).Msg("image poll: failed to send result")
 	}
+}
+
+// markRun records the outcome of a run and reports whether the previous run
+// of the application had failed.
+func (p *ImagePoller) markRun(appID string, failed bool) (previouslyFailed bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	_, previouslyFailed = p.failing[appID]
+	if failed {
+		p.failing[appID] = struct{}{}
+	} else {
+		delete(p.failing, appID)
+	}
+	return previouslyFailed
 }
 
 func (p *ImagePoller) lockForRun(appID string) *sync.Mutex {

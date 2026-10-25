@@ -29,6 +29,14 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		return
 	}
 
+	if isRepeatedPeriodicFailure(ctx, r, app.SyncStatus) {
+		log.Debug().
+			Str("client", client.Id).
+			Str("application_id", r.ApplicationId).
+			Msg("ignoring repeated periodic image poll failure")
+		return
+	}
+
 	updates := models.Application{}
 	if r.Success {
 		now := time.Now()
@@ -69,6 +77,22 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		return
 	}
 	go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String(), log)
+}
+
+// Prevent reporting a lot of failures for periodic image polling with same error message
+func isRepeatedPeriodicFailure(ctx context.Context, r *messages.PullImagesResult, syncStatus models.SyncStatus) bool {
+	if r.Success || r.RequestId != "" || r.ImagesUpdated || syncStatus != models.OutOfSync {
+		return false
+	}
+	last, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("application_id = ? AND type = ?", r.ApplicationId, models.ApplicationEventImageUpdate).
+		Order("created_at DESC, id DESC").
+		First(ctx)
+	if err != nil {
+		return false
+	}
+	return last.Status == models.ApplicationEventFailed &&
+		last.ErrorMessage != nil && *last.ErrorMessage == r.ErrorMessage
 }
 
 // recordImagePullHistory completes the explicit image_update event matching this

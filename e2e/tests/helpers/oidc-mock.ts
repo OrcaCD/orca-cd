@@ -3,6 +3,10 @@ import { OIDC_MOCK_API_PORT, OIDC_MOCK_CONTROL_URL } from "../const.ts";
 
 export const OIDC_MOCK_ISSUER = `http://host.docker.internal:${OIDC_MOCK_API_PORT}`;
 
+export const OIDC_MOCK_AVATAR_URL = `${OIDC_MOCK_ISSUER}/e2e/avatar.svg`;
+export const OIDC_MOCK_NOT_AN_IMAGE_URL = `${OIDC_MOCK_ISSUER}/e2e/not-an-image`;
+export const OIDC_MOCK_MISSING_IMAGE_URL = `${OIDC_MOCK_ISSUER}/e2e/missing.png`;
+
 export interface MockUser {
 	email?: string;
 	email_verified?: boolean;
