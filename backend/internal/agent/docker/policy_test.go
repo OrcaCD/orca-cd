@@ -3,7 +3,9 @@ package docker
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -587,6 +589,154 @@ func TestCheckDeployPolicy_AllowsProjectNamespaceModes(t *testing.T) {
 	} {
 		if err := checkDeployPolicy(projectWithService(svc), pathRules{}); err != nil {
 			t.Fatalf("expected %+v to be allowed, got: %v", svc, err)
+		}
+	}
+}
+
+func TestCheckDeployPolicy_RejectsUnsafePreStartHooks(t *testing.T) {
+	tests := []struct {
+		name string
+		hook string
+	}{
+		{"privileged", "privileged: true"},
+		{"pid host", "pid: host"},
+		{"network_mode host", "network_mode: host"},
+		{"cap_add", "cap_add: [SYS_ADMIN]"},
+		{"use_api_socket", "use_api_socket: true"},
+		{"devices", "devices: [/dev/sda:/dev/sda]"},
+		{"security_opt", "security_opt: [seccomp=unconfined]"},
+		{"bind mount", "volumes: [/:/host]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			yaml := fmt.Sprintf(`
+name: demo
+services:
+  app:
+    image: alpine
+    pre_start:
+      - command: ["true"]
+        %s
+`, tt.hook)
+			project := loadComposeProject(t, "/deployments/demo", yaml)
+			if len(project.Services["app"].PreStart) != 1 {
+				t.Fatal("expected the loader to parse the pre_start hook")
+			}
+			if err := checkDeployPolicy(project, pathRules{}); err == nil {
+				t.Fatalf("expected a pre_start hook with %q to be rejected", tt.hook)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_RejectsPrivilegedExecHooks(t *testing.T) {
+	for _, hookType := range []string{"post_start", "pre_stop"} {
+		t.Run(hookType, func(t *testing.T) {
+			yaml := fmt.Sprintf(`
+name: demo
+services:
+  app:
+    image: alpine
+    %s:
+      - command: ["true"]
+        privileged: true
+`, hookType)
+			project := loadComposeProject(t, "/deployments/demo", yaml)
+			if err := checkDeployPolicy(project, pathRules{}); err == nil {
+				t.Fatalf("expected a privileged %s hook to be rejected", hookType)
+			}
+		})
+	}
+}
+
+func TestCheckDeployPolicy_AllowsSafeHooks(t *testing.T) {
+	yaml := `
+name: demo
+services:
+  app:
+    image: alpine
+    pre_start:
+      - image: busybox
+        command: ["sh", "-c", "echo migrate"]
+        volumes: [app-data:/data]
+    post_start:
+      - command: ["echo", "started"]
+        user: root
+    pre_stop:
+      - command: ["echo", "stopping"]
+volumes:
+  app-data:
+`
+	project := loadComposeProject(t, "/deployments/demo", yaml)
+	if err := checkDeployPolicy(project, pathRules{}); err != nil {
+		t.Fatalf("expected unprivileged hooks to be allowed, got: %v", err)
+	}
+}
+
+func TestCheckDeployPolicy_RejectsJobs(t *testing.T) {
+	yaml := `
+name: demo
+services:
+  app:
+    image: alpine
+jobs:
+  migrate:
+    image: alpine
+    privileged: true
+    triggers:
+      schedule: ["0 * * * *"]
+`
+	project := loadComposeProject(t, "/deployments/demo", yaml)
+	if len(project.AllJobs()) != 1 {
+		t.Fatal("expected the loader to parse the job")
+	}
+	if err := checkDeployPolicy(project, pathRules{}); err == nil {
+		t.Fatal("expected a job to be rejected")
+	}
+}
+
+// The policy only checks the fields it knows about, so a compose-go update that
+// adds a field can silently add a way around it (pre_start hooks arrived this
+// way). When this test fails, decide whether the new field needs a check in
+// policy.go before adding it to the reviewed list.
+func TestCheckDeployPolicy_ComposeFieldsAreReviewed(t *testing.T) {
+	reviewed := map[reflect.Type][]string{
+		reflect.TypeFor[composetypes.Project](): {
+			"Name", "WorkingDir", "Services", "Jobs", "Networks", "Volumes", "Secrets", "Configs", "Models",
+			"Extensions", "ComposeFiles", "Environment", "DisabledServices", "DisabledJobs", "Profiles",
+		},
+		reflect.TypeFor[composetypes.ServiceConfig](): {
+			"Name", "Profiles", "Deploy", "Develop", "Restart", "Scale", "Attach", "ContainerName", "Provider",
+			"Extends", "ExternalLinks", "Links", "Net", "PreStart", "PostStart", "PreStop", "ContainerSpec",
+			"WorkloadSpec", "Extensions",
+		},
+		reflect.TypeFor[composetypes.ContainerSpec](): {
+			"Annotations", "BlkioConfig", "CapAdd", "CapDrop", "CgroupParent", "Cgroup", "CPUCount", "CPUPercent",
+			"CPUPeriod", "CPUQuota", "CPURTPeriod", "CPURTRuntime", "CPUS", "CPUSet", "CPUShares", "Command",
+			"Configs", "CredentialSpec", "DeviceCgroupRules", "Devices", "DNS", "DNSOpts", "DNSSearch",
+			"DomainName", "Entrypoint", "Environment", "EnvFiles", "ExtraHosts", "GroupAdd", "Gpus", "Hostname",
+			"Image", "Init", "Ipc", "Isolation", "Labels", "LabelFiles", "CustomLabels", "Logging", "LogDriver",
+			"LogOpt", "MemLimit", "MemReservation", "MemSwapLimit", "MemSwappiness", "MacAddress", "Models",
+			"NetworkMode", "Networks", "OomKillDisable", "OomScoreAdj", "Pid", "PidsLimit", "Platform",
+			"Privileged", "PullPolicy", "PullRefreshAfter", "ReadOnly", "Runtime", "Secrets", "SecurityOpt",
+			"ShmSize", "StopGracePeriod", "StopSignal", "StorageOpt", "Sysctls", "Tmpfs", "Ulimits",
+			"UseAPISocket", "User", "UserNSMode", "Uts", "VolumeDriver", "Volumes", "VolumesFrom", "WorkingDir",
+		},
+		reflect.TypeFor[composetypes.WorkloadSpec](): {
+			"Build", "DependsOn", "Dockerfile", "Expose", "HealthCheck", "Ports", "StdinOpen", "Tty",
+		},
+		reflect.TypeFor[composetypes.PreStartHook](): {"ContainerSpec", "PerReplica", "Extensions"},
+		reflect.TypeFor[composetypes.ServiceHook]():  {"Command", "User", "Privileged", "WorkingDir", "Environment", "Extensions"},
+	}
+	for typ, fields := range reviewed {
+		var actual []string
+		for field := range typ.Fields() {
+			actual = append(actual, field.Name)
+		}
+		slices.Sort(actual)
+		slices.Sort(fields)
+		if !slices.Equal(actual, fields) {
+			t.Errorf("compose-go %s fields changed, review them for the deploy policy:\n got: %v\nwant: %v", typ.Name(), actual, fields)
 		}
 	}
 }
