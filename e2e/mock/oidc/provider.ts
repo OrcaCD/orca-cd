@@ -133,8 +133,21 @@ function tamperRedirect(res: ServerResponse) {
 		setHeader(name, name.toLowerCase() === "location" ? tamperLocation(String(value)) : value);
 }
 
+const AVATAR_SVG =
+	'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#2563eb"/></svg>';
+
 export function handleOidcApi(req: IncomingMessage, res: ServerResponse) {
 	const { pathname, searchParams } = new URL(req.url ?? "/", OIDC_MOCK_ISSUER);
+
+	// Profile pictures, which the hub fetches on behalf of the browser
+	if (pathname === "/e2e/avatar.svg") {
+		res.writeHead(200, { "Content-Type": "image/svg+xml" }).end(AVATAR_SVG);
+		return;
+	}
+	if (pathname === "/e2e/not-an-image") {
+		res.writeHead(200, { "Content-Type": "text/html" }).end("<p>not an image</p>");
+		return;
+	}
 
 	if (pathname === "/auth") {
 		recordAuthRequest(Object.fromEntries(searchParams));

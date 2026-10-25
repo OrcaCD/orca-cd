@@ -57,6 +57,11 @@ func setupDeployTestEnv(t *testing.T) {
 // and sets the notification status after its final database access.
 func expectAsyncNotification(t *testing.T) {
 	t.Helper()
+	t.Cleanup(notificationBarrier(t))
+}
+
+func notificationBarrier(t *testing.T) (wait func()) {
+	t.Helper()
 	notification := models.Notification{
 		Name:            crypto.EncryptedString("async notification barrier"),
 		Enabled:         true,
@@ -69,7 +74,7 @@ func expectAsyncNotification(t *testing.T) {
 	if err := db.DB.Select("*").Create(&notification).Error; err != nil {
 		t.Fatalf("create notification barrier: %v", err)
 	}
-	t.Cleanup(func() {
+	return func() {
 		deadline := time.Now().Add(time.Second)
 		for time.Now().Before(deadline) {
 			got, err := gorm.G[models.Notification](db.DB).
@@ -82,7 +87,7 @@ func expectAsyncNotification(t *testing.T) {
 			time.Sleep(time.Millisecond)
 		}
 		t.Error("async notification did not finish")
-	})
+	}
 }
 
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
