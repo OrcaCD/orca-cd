@@ -482,6 +482,29 @@ func ListRepositoryTreeHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, entries)
 }
 
+func GetRepositoryFileHandler(c *gin.Context) {
+	repoID := c.Param("id")
+	branch := strings.TrimSpace(c.Query("branch"))
+	path := strings.TrimSpace(c.Query("path"))
+	if branch == "" || path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "branch and path query parameters are required"})
+		return
+	}
+
+	repo, provider, ok := resolveRepositoryByID(c, repoID)
+	if !ok {
+		return
+	}
+
+	content, err := provider.GetFileContent(c.Request.Context(), &repo, branch, path)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"content": content})
+}
+
 func DeleteRepositoryHandler(c *gin.Context) {
 	id := c.Param("id")
 

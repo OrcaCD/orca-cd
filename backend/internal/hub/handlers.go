@@ -84,6 +84,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
 			protected.GET("/repositories/:id/branches", routes.ListRepositoryBranchesHandler)
 			protected.GET("/repositories/:id/tree", routes.ListRepositoryTreeHandler)
+			protected.GET("/repositories/:id/file", routes.GetRepositoryFileHandler)
 			protected.POST("/repositories/:id/sync", routes.SyncRepositoryHandler)
 
 			protected.GET("/agents", routes.ListAgentsHandler)
