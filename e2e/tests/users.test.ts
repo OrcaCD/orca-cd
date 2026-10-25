@@ -484,7 +484,10 @@ test.describe("User list", () => {
 
 		const sortBy = async (column: string, direction: "Asc" | "Desc") => {
 			await page.getByRole("columnheader", { name: column }).getByRole("button").click();
-			await page.getByRole("menuitem", { name: direction, exact: true }).click();
+			await page
+				.getByRole("menu", { name: column })
+				.getByRole("menuitem", { name: direction, exact: true })
+				.click();
 		};
 
 		await sortBy("Name", "Asc");
