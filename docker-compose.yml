@@ -17,18 +17,7 @@ services:
     image: ghcr.io/orcacd/agent:latest # Replace with your actual image version tag
     container_name: orca-agent
     restart: unless-stopped
-    # Only the agent's settings are passed from .env: it also holds the hub's APP_SECRET,
-    # which compose files deployed by the agent must not be able to read.
-    environment:
-      - HUB_URL
-      - AUTH_TOKEN
-      - CA_CERT_FILE
-      - DEPLOYMENTS_DIR
-      - ALLOWED_PRIVILEGED_APPS
-      - RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR
-      - HEALTHCHECK_PORT
-      - LOG_LEVEL
-      - LOG_JSON
+    env_file: agent.env # Keep the hub's .env separate: compose files deployed by the agent can read its environment
     security_opt:
       - no-new-privileges:true
     cap_drop:
