@@ -634,6 +634,10 @@ func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path
 		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
 	}
 
+	if err := repositories.VerifyCommit(c.Request.Context(), provider, &repo, latestCommit.Hash); err != nil {
+		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+	}
+
 	composeFile, err := provider.GetFileContent(c.Request.Context(), &repo, latestCommit.Hash, path)
 	if err != nil {
 		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()

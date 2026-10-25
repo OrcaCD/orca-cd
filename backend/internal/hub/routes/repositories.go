@@ -11,6 +11,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -51,27 +52,31 @@ type createRepositoryRequest struct {
 }
 
 type repositoryResponse struct {
-	Id                                string   `json:"id"`
-	Name                              string   `json:"name"`
-	Url                               string   `json:"url"`
-	Provider                          string   `json:"provider"`
-	AuthMethod                        string   `json:"authMethod"`
-	SyncType                          string   `json:"syncType"`
-	SyncStatus                        string   `json:"syncStatus"`
-	LastSyncError                     *string  `json:"lastSyncError"`
-	PollingIntervalSeconds            *int64   `json:"pollingIntervalSeconds"`
-	LastSyncedAt                      *string  `json:"lastSyncedAt"`
-	CreatedBy                         string   `json:"createdBy"`
-	CreatedAt                         string   `json:"createdAt"`
-	UpdatedAt                         string   `json:"updatedAt"`
-	WebhookSecret                     *string  `json:"webhookSecret,omitempty"`
-	WebhookUrl                        *string  `json:"webhookUrl,omitempty"`
-	AppCount                          int      `json:"appCount"`
-	GitHubActionsOIDCEnabled          bool     `json:"githubActionsOIDCEnabled"`
-	GitHubActionsOIDCAllowRepoSync    bool     `json:"githubActionsOIDCAllowRepoSync"`
-	GitHubActionsOIDCAllowImageSync   bool     `json:"githubActionsOIDCAllowImageSync"`
-	GitHubActionsOIDCAllowedBranches  []string `json:"githubActionsOIDCAllowedBranches"`
-	GitHubActionsOIDCAllowedWorkflows []string `json:"githubActionsOIDCAllowedWorkflows"`
+	Id                                string                 `json:"id"`
+	Name                              string                 `json:"name"`
+	Url                               string                 `json:"url"`
+	Provider                          string                 `json:"provider"`
+	AuthMethod                        string                 `json:"authMethod"`
+	SyncType                          string                 `json:"syncType"`
+	SyncStatus                        string                 `json:"syncStatus"`
+	LastSyncError                     *string                `json:"lastSyncError"`
+	PollingIntervalSeconds            *int64                 `json:"pollingIntervalSeconds"`
+	LastSyncedAt                      *string                `json:"lastSyncedAt"`
+	CreatedBy                         string                 `json:"createdBy"`
+	CreatedAt                         string                 `json:"createdAt"`
+	UpdatedAt                         string                 `json:"updatedAt"`
+	WebhookSecret                     *string                `json:"webhookSecret,omitempty"`
+	WebhookUrl                        *string                `json:"webhookUrl,omitempty"`
+	AppCount                          int                    `json:"appCount"`
+	GitHubActionsOIDCEnabled          bool                   `json:"githubActionsOIDCEnabled"`
+	GitHubActionsOIDCAllowRepoSync    bool                   `json:"githubActionsOIDCAllowRepoSync"`
+	GitHubActionsOIDCAllowImageSync   bool                   `json:"githubActionsOIDCAllowImageSync"`
+	GitHubActionsOIDCAllowedBranches  []string               `json:"githubActionsOIDCAllowedBranches"`
+	GitHubActionsOIDCAllowedWorkflows []string               `json:"githubActionsOIDCAllowedWorkflows"`
+	CommitSigningSupported            bool                   `json:"commitSigningSupported"`
+	RequireSignedCommits              bool                   `json:"requireSignedCommits"`
+	CommitSigningKeys                 string                 `json:"commitSigningKeys"`
+	CommitSigners                     []commitsigning.Signer `json:"commitSigners"`
 }
 
 // normalizeOIDCStringList trims, drops empty entries, and deduplicates the given list
@@ -116,6 +121,26 @@ func normalizeOIDCAllowedWorkflows(items []string) ([]string, error) {
 	return normalized, nil
 }
 
+// validateCommitSigning checks the trusted signing keys and that the provider
+// can verify signatures when signed commits are required.
+func validateCommitSigning(repo *models.Repository) string {
+	keys, err := commitsigning.ParseTrustedKeys(repo.CommitSigningKeys)
+	if err != nil {
+		return fmt.Sprintf("invalid commit signing keys: %v", err)
+	}
+	if !repo.RequireSignedCommits {
+		return ""
+	}
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil || !repositories.SupportsCommitSignatures(provider) {
+		return "commit signature verification is not supported for this provider"
+	}
+	if keys.Len() == 0 {
+		return "at least one trusted signing key is required when signed commits are required"
+	}
+	return ""
+}
+
 func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
 	allowedBranches := r.GitHubActionsOIDCAllowedBranches
 	if allowedBranches == nil {
@@ -125,6 +150,14 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 	if allowedWorkflows == nil {
 		allowedWorkflows = []string{}
 	}
+
+	// Stored keys were validated on save; a parse failure leaves the list empty.
+	commitSigners := []commitsigning.Signer{}
+	if keys, err := commitsigning.ParseTrustedKeys(r.CommitSigningKeys); err == nil {
+		commitSigners = keys.Signers()
+	}
+	provider, err := repositories.Get(r.Provider)
+	commitSigningSupported := err == nil && repositories.SupportsCommitSignatures(provider)
 
 	resp := repositoryResponse{
 		Id:                                r.Id,
@@ -144,6 +177,10 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 		GitHubActionsOIDCAllowImageSync:   r.GitHubActionsOIDCAllowImageSync,
 		GitHubActionsOIDCAllowedBranches:  allowedBranches,
 		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
+		CommitSigningSupported:            commitSigningSupported,
+		RequireSignedCommits:              r.RequireSignedCommits,
+		CommitSigningKeys:                 r.CommitSigningKeys,
+		CommitSigners:                     commitSigners,
 	}
 
 	if r.PollingInterval != nil {
@@ -546,6 +583,8 @@ type updateRepositoryRequest struct {
 	GitHubActionsOIDCAllowImageSync   *bool                        `json:"githubActionsOIDCAllowImageSync"`
 	GitHubActionsOIDCAllowedBranches  *[]string                    `json:"githubActionsOIDCAllowedBranches"`
 	GitHubActionsOIDCAllowedWorkflows *[]string                    `json:"githubActionsOIDCAllowedWorkflows"`
+	RequireSignedCommits              *bool                        `json:"requireSignedCommits"`
+	CommitSigningKeys                 *string                      `json:"commitSigningKeys"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -560,7 +599,8 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil &&
 		req.GitHubActionsOIDCEnabled == nil && req.GitHubActionsOIDCAllowRepoSync == nil &&
 		req.GitHubActionsOIDCAllowImageSync == nil && req.GitHubActionsOIDCAllowedBranches == nil &&
-		req.GitHubActionsOIDCAllowedWorkflows == nil {
+		req.GitHubActionsOIDCAllowedWorkflows == nil && req.RequireSignedCommits == nil &&
+		req.CommitSigningKeys == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field must be provided"})
 		return
 	}
@@ -673,6 +713,17 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	if repo.GitHubActionsOIDCEnabled && !repo.GitHubActionsOIDCAllowRepoSync && !repo.GitHubActionsOIDCAllowImageSync {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of repo sync or image sync must be true when GitHub Actions OIDC is enabled"})
+		return
+	}
+
+	if req.RequireSignedCommits != nil {
+		repo.RequireSignedCommits = *req.RequireSignedCommits
+	}
+	if req.CommitSigningKeys != nil {
+		repo.CommitSigningKeys = strings.TrimSpace(*req.CommitSigningKeys)
+	}
+	if errMsg := validateCommitSigning(&repo); errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
 

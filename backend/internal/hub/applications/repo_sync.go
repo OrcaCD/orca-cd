@@ -79,6 +79,18 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 			}
 			continue
 		}
+		// Polls of an already deployed commit are dropped by the queue, so they
+		// skip the extra provider request. Every commit that may be deployed is verified.
+		if origin.Source != models.ApplicationEventSourceRepositoryPolling || !allAtCommit(branchApps, hash) {
+			if err := repositories.VerifyCommit(ctx, provider, repo, hash); err != nil {
+				lastErrMsg = err.Error()
+				log.Warn().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("rejected commit during sync")
+				for i := range branchApps {
+					recordSyncFailure(ctx, &branchApps[i], origin, hash, message, lastErrMsg, log)
+				}
+				continue
+			}
+		}
 		if DefaultQueue != nil {
 			DefaultQueue.Enqueue(repo, provider, branchApps, hash, message, origin)
 		} else {
@@ -96,6 +108,15 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 		return
 	}
 	markRepositorySuccess(ctx, repo, &now, log)
+}
+
+func allAtCommit(apps []models.Application, hash string) bool {
+	for i := range apps {
+		if apps[i].Commit != hash {
+			return false
+		}
+	}
+	return true
 }
 
 func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) {

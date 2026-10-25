@@ -12,6 +12,12 @@ export type RepositoryAuthMethod = "none" | "token" | "basic" | "ssh";
 export type RepositorySyncType = "polling" | "webhook" | "manual";
 export type RepositorySyncStatus = "unknown" | "syncing" | "failed" | "success";
 
+export interface CommitSigner {
+	type: "pgp" | "ssh";
+	fingerprint: string;
+	identity: string;
+}
+
 export interface Repository {
 	id: string;
 	name: string;
@@ -34,6 +40,10 @@ export interface Repository {
 	githubActionsOIDCAllowImageSync: boolean;
 	githubActionsOIDCAllowedBranches: string[];
 	githubActionsOIDCAllowedWorkflows: string[];
+	commitSigningSupported: boolean;
+	requireSignedCommits: boolean;
+	commitSigningKeys: string;
+	commitSigners: CommitSigner[];
 }
 
 export interface CreateRepositoryRequest {
@@ -59,6 +69,8 @@ export interface UpdateRepositoryRequest {
 	githubActionsOIDCAllowImageSync?: boolean;
 	githubActionsOIDCAllowedBranches?: string[];
 	githubActionsOIDCAllowedWorkflows?: string[];
+	requireSignedCommits?: boolean;
+	commitSigningKeys?: string;
 }
 
 export interface TestConnectionRequest {
