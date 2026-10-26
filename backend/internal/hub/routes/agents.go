@@ -43,7 +43,8 @@ type agentResponse struct {
 
 type agentWithTokenResponse struct {
 	agentResponse
-	AuthToken string `json:"authToken,omitempty"`
+	AuthToken  string `json:"authToken,omitempty"`
+	AgentImage string `json:"agentImage,omitempty"`
 }
 
 type createAgentRequest struct {
@@ -241,6 +242,7 @@ func CreateAgentHandler(c *gin.Context) {
 	c.JSON(http.StatusCreated, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
+		AgentImage:    version.AgentImage(),
 	})
 	sse.PublishUpdate(sse.TopicAgents)
 }
@@ -342,6 +344,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
+		AgentImage:    version.AgentImage(),
 	})
 	sse.PublishUpdate(sse.TopicAgents)
 }
