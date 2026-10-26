@@ -2,9 +2,14 @@ package applications
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
@@ -82,8 +87,11 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 		// Polls of an already deployed commit are dropped by the queue, so they
 		// skip the extra provider request. Every commit that may be deployed is verified.
 		if origin.Source != models.ApplicationEventSourceRepositoryPolling || !allAtCommit(branchApps, hash) {
-			if err := repositories.VerifyCommit(ctx, provider, repo, hash); err != nil {
+			if repeated, err := verifySyncCommit(ctx, provider, repo, branch, hash, origin); err != nil {
 				lastErrMsg = err.Error()
+				if repeated {
+					continue
+				}
 				log.Warn().Err(err).Str("repositoryId", repo.Id).Str("branch", branch).Msg("rejected commit during sync")
 				for i := range branchApps {
 					recordSyncFailure(ctx, &branchApps[i], origin, hash, message, lastErrMsg, log)
@@ -108,6 +116,51 @@ func SyncApplications(ctx context.Context, repo *models.Repository, provider rep
 		return
 	}
 	markRepositorySuccess(ctx, repo, &now, log)
+}
+
+type rejectedCommit struct {
+	hash string
+	keys [sha256.Size]byte
+	err  error
+}
+
+// rejectedCommits remembers the last commit rejected for unsigned or untrusted
+// signatures per repository branch. Polls of that commit neither call the
+// provider again nor add another failed event to the history. Changing the
+// trusted keys invalidates the entry; a hub restart records the rejection once more.
+var rejectedCommits = struct {
+	sync.Mutex
+	byBranch map[string]rejectedCommit
+}{byBranch: map[string]rejectedCommit{}}
+
+// verifySyncCommit enforces the signed commit policy and reports whether a
+// rejection was already recorded by an earlier poll.
+func verifySyncCommit(ctx context.Context, provider repositories.Provider, repo *models.Repository, branch, hash string, origin SyncOrigin) (repeated bool, err error) {
+	if !repo.RequireSignedCommits {
+		return false, nil
+	}
+	key := repo.Id + "\x00" + branch
+	keysDigest := sha256.Sum256([]byte(strings.Join(repo.CommitSigningKeys, "\x00")))
+
+	rejectedCommits.Lock()
+	rejected, ok := rejectedCommits.byBranch[key]
+	rejectedCommits.Unlock()
+	if ok && origin.Source == models.ApplicationEventSourceRepositoryPolling && rejected.hash == hash && rejected.keys == keysDigest {
+		return true, rejected.err
+	}
+
+	err = repositories.VerifyCommit(ctx, provider, repo, hash)
+	rejectedCommits.Lock()
+	defer rejectedCommits.Unlock()
+	switch {
+	case errors.Is(err, commitsigning.ErrUnsigned), errors.Is(err, commitsigning.ErrUntrustedSigner):
+		// The signature of a commit never changes, so the result only
+		// depends on the trusted keys. Other errors may be transient.
+		rejectedCommits.byBranch[key] = rejectedCommit{hash: hash, keys: keysDigest, err: err}
+	case err == nil:
+		delete(rejectedCommits.byBranch, key)
+	}
+	return false, err
 }
 
 func allAtCommit(apps []models.Application, hash string) bool {

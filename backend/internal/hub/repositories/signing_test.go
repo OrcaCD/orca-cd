@@ -51,12 +51,11 @@ func signedFixture(t *testing.T) (payload, signature string) {
 
 func trustedFixtureKeys(t *testing.T, names ...string) *commitsigning.TrustedKeys {
 	t.Helper()
-	var text strings.Builder
-	for _, name := range names {
-		text.WriteString(readSigningFixture(t, name))
-		text.WriteString("\n")
+	entries := make([]string, len(names))
+	for i, name := range names {
+		entries[i] = readSigningFixture(t, name)
 	}
-	keys, err := commitsigning.ParseTrustedKeys(text.String())
+	keys, err := commitsigning.ParseTrustedKeys(entries)
 	if err != nil {
 		t.Fatalf("ParseTrustedKeys: %v", err)
 	}
@@ -147,6 +146,8 @@ func TestGitLabVerifyCommitSignature(t *testing.T) {
 	}{
 		{name: "trusted ssh", status: http.StatusOK, body: map[string]any{"signature_type": "SSH", "verification_status": "verified", "key": map[string]any{"key": sshKey[0] + " " + sshKey[1] + " Laptop"}}},
 		{name: "trusted pgp", status: http.StatusOK, body: map[string]any{"signature_type": "PGP", "verification_status": "verified", "gpg_key_primary_keyid": "E776AAD894292F76"}},
+		{name: "expired ssh", status: http.StatusOK, body: map[string]any{"signature_type": "SSH", "verification_status": "verified", "key": map[string]any{"key": sshKey[0] + " " + sshKey[1], "expires_at": "2020-01-01T00:00:00.000Z"}}, wantErr: commitsigning.ErrUntrustedSigner},
+		{name: "unexpired ssh", status: http.StatusOK, body: map[string]any{"signature_type": "SSH", "verification_status": "verified", "key": map[string]any{"key": sshKey[0] + " " + sshKey[1], "expires_at": "2999-01-01T00:00:00.000Z"}}},
 		{name: "untrusted pgp", status: http.StatusOK, body: map[string]any{"signature_type": "PGP", "verification_status": "verified", "gpg_key_primary_keyid": "F4DCE6935A83094F"}, wantErr: commitsigning.ErrUntrustedSigner},
 		{name: "untrusted ssh", status: http.StatusOK, body: map[string]any{"signature_type": "SSH", "verification_status": "verified", "key": map[string]any{"key": readSigningFixture(t, "ssh_other.pub")}}, wantErr: commitsigning.ErrUntrustedSigner},
 		{name: "ssh without key", status: http.StatusOK, body: map[string]any{"signature_type": "SSH", "verification_status": "verified"}, wantErr: commitsigning.ErrUntrustedSigner},

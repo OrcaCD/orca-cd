@@ -1,11 +1,17 @@
 package commitsigning
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
 // Fixtures were created with git 2.56 using throwaway keys, see testdata/.
@@ -54,9 +60,9 @@ func splitCommit(t *testing.T, raw string) (payload, signature string) {
 	return payloadBuilder.String(), signatureBuilder.String()
 }
 
-func mustParseKeys(t *testing.T, text string) *TrustedKeys {
+func mustParseKeys(t *testing.T, entries ...string) *TrustedKeys {
 	t.Helper()
-	keys, err := ParseTrustedKeys(text)
+	keys, err := ParseTrustedKeys(entries)
 	if err != nil {
 		t.Fatalf("ParseTrustedKeys: %v", err)
 	}
@@ -64,54 +70,55 @@ func mustParseKeys(t *testing.T, text string) *TrustedKeys {
 }
 
 func TestParseTrustedKeys(t *testing.T) {
-	text := strings.Join([]string{
-		"# deploy keys",
+	keys := mustParseKeys(t,
 		readFixture(t, "ssh_trusted.pub"),
-		readFixture(t, "pgp_trusted.asc"),
-		"",
-		readFixture(t, "ssh_trusted.pub"), // duplicates are dropped
+		"\n"+readFixture(t, "pgp_trusted.asc")+"\n",
 		readFixture(t, "ssh_other.pub"),
-	}, "\n")
-
-	keys := mustParseKeys(t, text)
+	)
 	signers := keys.Signers()
 	if len(signers) != 3 {
 		t.Fatalf("expected 3 keys, got %d: %+v", len(signers), signers)
 	}
-	if signers[0] != (Signer{Type: KeyTypePGP, Fingerprint: trustedPGPFingerprint, Identity: "OrcaCD Test <trusted@orcacd.test>"}) {
-		t.Errorf("unexpected PGP signer: %+v", signers[0])
+	if signers[0] != (Signer{Type: KeyTypeSSH, Fingerprint: trustedSSHFingerprint, Identity: "trusted@orcacd.test"}) {
+		t.Errorf("unexpected SSH signer: %+v", signers[0])
 	}
-	if signers[1] != (Signer{Type: KeyTypeSSH, Fingerprint: trustedSSHFingerprint, Identity: "trusted@orcacd.test"}) {
-		t.Errorf("unexpected SSH signer: %+v", signers[1])
+	if signers[1] != (Signer{Type: KeyTypePGP, Fingerprint: trustedPGPFingerprint, Identity: "OrcaCD Test <trusted@orcacd.test>"}) {
+		t.Errorf("unexpected PGP signer: %+v", signers[1])
 	}
 }
 
 func TestParseTrustedKeysEmpty(t *testing.T) {
-	keys := mustParseKeys(t, "\n  \n# nothing\n")
-	if keys.Len() != 0 {
+	keys := mustParseKeys(t)
+	if keys.Len() != 0 || len(keys.Signers()) != 0 {
 		t.Fatalf("expected no keys, got %d", keys.Len())
 	}
 }
 
 func TestParseTrustedKeysErrors(t *testing.T) {
-	pgp := readFixture(t, "pgp_trusted.asc")
+	sshKey := readFixture(t, "ssh_trusted.pub")
+	pgp := strings.TrimSpace(readFixture(t, "pgp_trusted.asc"))
 	pgpWithoutEnd, _, _ := strings.Cut(pgp, "-----END")
 	tests := map[string]struct {
-		text string
-		want string
+		entries []string
+		want    string
 	}{
-		"invalid ssh key":    {"ssh-ed25519 not-base64", "line 1: invalid SSH public key"},
-		"garbage after pgp":  {pgp + "\nnope", "line 12: invalid SSH public key"},
-		"unterminated pgp":   {"\n" + pgpWithoutEnd, "line 2: unterminated PGP public key block"},
-		"corrupt pgp":        {strings.Replace(pgp, "mDMEa", "mDMEb", 1), "line 1: invalid PGP public key block"},
-		"private key block":  {"-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----", "line 1: unsupported key block"},
-		"ssh key options":    {`command="x" ` + readFixture(t, "ssh_trusted.pub"), "line 1: SSH key options are not supported"},
-		"too large":          {strings.Repeat("#", MaxKeysTextLength+1), "exceed"},
-		"allowed signers id": {"trusted@orcacd.test " + readFixture(t, "ssh_trusted.pub"), "line 1: SSH key options are not supported"},
+		"invalid ssh key":    {[]string{"ssh-ed25519 not-base64"}, "key 1: invalid SSH public key"},
+		"empty key":          {[]string{sshKey, " \n"}, "key 2: key is empty"},
+		"two ssh keys":       {[]string{sshKey + "\n" + readFixture(t, "ssh_other.pub")}, "key 1: expected a single SSH public key"},
+		"garbage after pgp":  {[]string{pgp + "\nnope"}, "key 1: PGP public key block must end with"},
+		"unterminated pgp":   {[]string{pgpWithoutEnd}, "key 1: PGP public key block must end with"},
+		"corrupt pgp":        {[]string{strings.Replace(pgp, "mDMEa", "mDMEb", 1)}, "key 1: invalid PGP public key block"},
+		"two pgp keys":       {[]string{pgp + "\n" + strings.TrimSpace(readFixture(t, "pgp_other.asc"))}, "key 1: PGP public key block must contain exactly one key"},
+		"private key block":  {[]string{"-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----"}, "key 1: unsupported key block"},
+		"ssh key options":    {[]string{`command="x" ` + sshKey}, "key 1: SSH key options are not supported"},
+		"allowed signers id": {[]string{"trusted@orcacd.test " + sshKey}, "key 1: SSH key options are not supported"},
+		"duplicate":          {[]string{sshKey, pgp, sshKey}, "key 3 is a duplicate of key 1"},
+		"too large":          {[]string{strings.Repeat("a", MaxKeyLength+1)}, "key 1 exceeds"},
+		"too many":           {make([]string, MaxKeys+1), "at most"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := ParseTrustedKeys(tt.text)
+			_, err := ParseTrustedKeys(tt.entries)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected error containing %q, got %v", tt.want, err)
 			}
@@ -120,8 +127,8 @@ func TestParseTrustedKeysErrors(t *testing.T) {
 }
 
 func TestVerifyCommit(t *testing.T) {
-	trusted := mustParseKeys(t, readFixture(t, "ssh_trusted.pub")+"\n"+readFixture(t, "pgp_trusted.asc"))
-	untrusted := mustParseKeys(t, readFixture(t, "ssh_other.pub")+"\n"+readFixture(t, "pgp_other.asc"))
+	trusted := mustParseKeys(t, readFixture(t, "ssh_trusted.pub"), readFixture(t, "pgp_trusted.asc"))
+	untrusted := mustParseKeys(t, readFixture(t, "ssh_other.pub"), readFixture(t, "pgp_other.asc"))
 
 	tests := []struct {
 		name    string
@@ -226,6 +233,33 @@ func TestPGPSignerByKeyID(t *testing.T) {
 		if _, ok := keys.PGPSignerByKeyID(id); ok {
 			t.Errorf("PGPSignerByKeyID(%q) unexpectedly matched", id)
 		}
+	}
+}
+
+func TestPGPSignerByKeyIDRejectsExpiredKey(t *testing.T) {
+	created := time.Now().Add(-48 * time.Hour)
+	entity, err := openpgp.NewEntity("Expired", "", "expired@orcacd.test", &packet.Config{
+		Time:            func() time.Time { return created },
+		KeyLifetimeSecs: 3600,
+	})
+	if err != nil {
+		t.Fatalf("NewEntity: %v", err)
+	}
+	var armored bytes.Buffer
+	w, err := armor.Encode(&armored, openpgp.PublicKeyType, nil)
+	if err != nil {
+		t.Fatalf("armor.Encode: %v", err)
+	}
+	if err := entity.Serialize(w); err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close armor: %v", err)
+	}
+
+	keys := mustParseKeys(t, armored.String())
+	if _, ok := keys.PGPSignerByKeyID(entity.PrimaryKey.KeyIdString()); ok {
+		t.Fatal("expired key unexpectedly matched")
 	}
 }
 

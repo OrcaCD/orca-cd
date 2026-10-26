@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
@@ -53,7 +55,7 @@ func TestUpdateRepositoryHandler_CommitSigning(t *testing.T) {
 
 	w := updateRepositoryForTest(t, repo.Id, map[string]any{
 		"requireSignedCommits": true,
-		"commitSigningKeys":    "\n" + string(key) + "\n",
+		"commitSigningKeys":    []string{"\n" + string(key) + "\n"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -66,28 +68,35 @@ func TestUpdateRepositoryHandler_CommitSigning(t *testing.T) {
 	if !resp.CommitSigningSupported || !resp.RequireSignedCommits {
 		t.Fatalf("expected signing to be supported and required, got %+v", resp)
 	}
-	if resp.CommitSigningKeys != strings.TrimSpace(string(key)) {
-		t.Fatalf("expected trimmed keys, got %q", resp.CommitSigningKeys)
+	if len(resp.CommitSigningKeys) != 1 {
+		t.Fatalf("expected one signing key, got %+v", resp.CommitSigningKeys)
 	}
-	if len(resp.CommitSigners) != 1 || resp.CommitSigners[0].Identity != "trusted@orcacd.test" {
-		t.Fatalf("unexpected signers: %+v", resp.CommitSigners)
+	if got := resp.CommitSigningKeys[0]; got.Key != strings.TrimSpace(string(key)) || got.Identity != "trusted@orcacd.test" || got.Type != commitsigning.KeyTypeSSH {
+		t.Fatalf("unexpected signing key: %+v", got)
 	}
 
 	stored, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("load repository: %v", err)
 	}
-	if !stored.RequireSignedCommits || stored.CommitSigningKeys != resp.CommitSigningKeys {
+	if !stored.RequireSignedCommits || !slices.Equal(stored.CommitSigningKeys, []string{strings.TrimSpace(string(key))}) {
 		t.Fatalf("signing settings not persisted: %+v", stored)
 	}
 
+	c, listW := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/repositories", nil)
+	ListRepositoriesHandler(c)
+	if listW.Code != http.StatusOK || strings.Contains(listW.Body.String(), "commitSigningKeys") {
+		t.Fatalf("expected the list without signing keys, got %d: %s", listW.Code, listW.Body.String())
+	}
+
 	// Removing every key while signing is required is rejected.
-	w = updateRepositoryForTest(t, repo.Id, map[string]any{"commitSigningKeys": ""})
+	w = updateRepositoryForTest(t, repo.Id, map[string]any{"commitSigningKeys": []string{}})
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "at least one trusted signing key") {
 		t.Fatalf("expected 400 for missing keys, got %d: %s", w.Code, w.Body.String())
 	}
 
-	w = updateRepositoryForTest(t, repo.Id, map[string]any{"requireSignedCommits": false, "commitSigningKeys": ""})
+	w = updateRepositoryForTest(t, repo.Id, map[string]any{"requireSignedCommits": false, "commitSigningKeys": []string{}})
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 when disabling signing, got %d: %s", w.Code, w.Body.String())
 	}
@@ -97,7 +106,7 @@ func TestUpdateRepositoryHandler_CommitSigningRejectsInvalidKeys(t *testing.T) {
 	setupTestDBWithRepos(t)
 	repo := seedSigningTestRepo(t, models.GitHub, "https://github.com/owner/signed-repo")
 
-	w := updateRepositoryForTest(t, repo.Id, map[string]any{"commitSigningKeys": "ssh-ed25519 not-a-key"})
+	w := updateRepositoryForTest(t, repo.Id, map[string]any{"commitSigningKeys": []string{"ssh-ed25519 not-a-key"}})
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid commit signing keys") {
 		t.Fatalf("expected 400 for invalid keys, got %d: %s", w.Code, w.Body.String())
 	}
@@ -109,7 +118,7 @@ func TestUpdateRepositoryHandler_CommitSigningUnsupportedProvider(t *testing.T) 
 
 	w := updateRepositoryForTest(t, repo.Id, map[string]any{
 		"requireSignedCommits": true,
-		"commitSigningKeys":    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/",
+		"commitSigningKeys":    []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/"},
 	})
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not supported for this provider") {
 		t.Fatalf("expected 400 for unsupported provider, got %d: %s", w.Code, w.Body.String())
@@ -120,7 +129,7 @@ func TestCreateApplicationHandler_RejectsUnverifiedCommit(t *testing.T) {
 	setupTestDBWithApplications(t)
 	repo := seedTestRepository(t, "https://github.com/owner/repo-signed")
 	repo.RequireSignedCommits = true
-	repo.CommitSigningKeys = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/"
+	repo.CommitSigningKeys = []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/"}
 	if err := db.DB.Save(&repo).Error; err != nil {
 		t.Fatalf("save repository: %v", err)
 	}

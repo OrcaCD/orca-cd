@@ -10,7 +10,10 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 )
+
+var signingLog = logger.New("repositories", false)
 
 // CommitSignatureVerifier is an optional capability for providers whose API
 // exposes enough signature data to check a commit against trusted keys.
@@ -58,7 +61,7 @@ func fetchCommitSignatureJSON(req *http.Request, providerName string, v any) (fo
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			fmt.Printf("warning: failed to close %s response body: %v\n", providerName, err)
+			signingLog.Warn().Err(err).Str("provider", providerName).Msg("failed to close commit signature response body")
 		}
 	}()
 

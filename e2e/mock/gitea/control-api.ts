@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { pathSegments, readJson, send } from "./http.ts";
-import { commitFiles, createRepo, deleteRepo, getRepo } from "./store.ts";
+import { commitFiles, createRepo, deleteRepo, getRepo, pushSignedCommit } from "./store.ts";
 
 export async function handleControlApi(req: IncomingMessage, res: ServerResponse) {
 	const { pathname } = new URL(req.url ?? "/", "http://control");
@@ -8,7 +8,7 @@ export async function handleControlApi(req: IncomingMessage, res: ServerResponse
 		return send(res, 200, { status: "ok" });
 	}
 
-	// /__control/repos/{owner}/{repo}[/files|/token|/requests]
+	// /__control/repos/{owner}/{repo}[/files|/signed-commit|/token|/requests]
 	const [prefix, collection, owner, name, action] = pathSegments(pathname);
 	if (prefix !== "__control" || collection !== "repos" || !owner || !name) {
 		return send(res, 404, { error: "not found" });
@@ -32,6 +32,11 @@ export async function handleControlApi(req: IncomingMessage, res: ServerResponse
 	if (action === "files" && req.method === "PUT") {
 		const { branch, files, message } = await readJson(req);
 		const commit = commitFiles(repo, branch, files, message);
+		return commit ? send(res, 200, commit) : send(res, 404, { error: "branch does not exist" });
+	}
+	if (action === "signed-commit" && req.method === "PUT") {
+		const { branch, sha, message, files, payload, signature } = await readJson(req);
+		const commit = pushSignedCommit(repo, branch, { sha, message, files, payload, signature });
 		return commit ? send(res, 200, commit) : send(res, 404, { error: "branch does not exist" });
 	}
 	if (action === "token" && req.method === "PUT") {

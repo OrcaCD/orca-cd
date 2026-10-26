@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -49,7 +50,8 @@ type gitlabCommitSignature struct {
 	VerificationStatus string `json:"verification_status"`
 	GPGKeyPrimaryKeyID string `json:"gpg_key_primary_keyid"`
 	Key                *struct {
-		Key string `json:"key"`
+		Key       string     `json:"key"`
+		ExpiresAt *time.Time `json:"expires_at"`
 	} `json:"key"`
 }
 
@@ -537,7 +539,8 @@ func (gitlabProvider) GetLatestCommit(ctx context.Context, repo *models.Reposito
 // verified when the key belongs to the committer's GitLab account, so trusted
 // keys must also be added there. The signing key is then matched against the
 // trusted keys: SSH keys by their full public key, PGP keys by their 64-bit
-// primary key ID, the only identifier GitLab returns.
+// primary key ID, the only identifier GitLab returns. GitLab does not report
+// when the commit was signed, so keys that have expired by now are rejected.
 func (gitlabProvider) VerifyCommitSignature(ctx context.Context, repo *models.Repository, sha string, keys *commitsigning.TrustedKeys) (commitsigning.Signer, error) {
 	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
 	if err != nil {
@@ -572,6 +575,9 @@ func (gitlabProvider) VerifyCommitSignature(ctx context.Context, repo *models.Re
 		signer, ok = keys.PGPSignerByKeyID(parsed.GPGKeyPrimaryKeyID)
 	case "SSH":
 		if parsed.Key != nil {
+			if parsed.Key.ExpiresAt != nil && parsed.Key.ExpiresAt.Before(time.Now()) {
+				return commitsigning.Signer{}, fmt.Errorf("%w: the SSH key expired on GitLab", commitsigning.ErrUntrustedSigner)
+			}
 			signer, ok = keys.SSHSignerByAuthorizedKey(parsed.Key.Key)
 		}
 	default:

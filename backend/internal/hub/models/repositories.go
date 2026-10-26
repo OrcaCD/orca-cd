@@ -65,7 +65,7 @@ type Repository struct {
 	GitHubActionsOIDCAllowedBranches  []string                `gorm:"column:github_actions_oidc_allowed_branches;type:text;serializer:json;not null"`
 	GitHubActionsOIDCAllowedWorkflows []string                `gorm:"column:github_actions_oidc_allowed_workflows;type:text;serializer:json;not null"`
 	RequireSignedCommits              bool                    `gorm:"column:require_signed_commits;not null;default:false"`
-	CommitSigningKeys                 string                  `gorm:"column:commit_signing_keys;type:text;not null;default:''"`
+	CommitSigningKeys                 []string                `gorm:"column:commit_signing_keys;type:text;serializer:json;not null"`
 	Applications                      []Application           `gorm:"foreignKey:RepositoryId;"`
 }
 

@@ -52,31 +52,36 @@ type createRepositoryRequest struct {
 }
 
 type repositoryResponse struct {
-	Id                                string                 `json:"id"`
-	Name                              string                 `json:"name"`
-	Url                               string                 `json:"url"`
-	Provider                          string                 `json:"provider"`
-	AuthMethod                        string                 `json:"authMethod"`
-	SyncType                          string                 `json:"syncType"`
-	SyncStatus                        string                 `json:"syncStatus"`
-	LastSyncError                     *string                `json:"lastSyncError"`
-	PollingIntervalSeconds            *int64                 `json:"pollingIntervalSeconds"`
-	LastSyncedAt                      *string                `json:"lastSyncedAt"`
-	CreatedBy                         string                 `json:"createdBy"`
-	CreatedAt                         string                 `json:"createdAt"`
-	UpdatedAt                         string                 `json:"updatedAt"`
-	WebhookSecret                     *string                `json:"webhookSecret,omitempty"`
-	WebhookUrl                        *string                `json:"webhookUrl,omitempty"`
-	AppCount                          int                    `json:"appCount"`
-	GitHubActionsOIDCEnabled          bool                   `json:"githubActionsOIDCEnabled"`
-	GitHubActionsOIDCAllowRepoSync    bool                   `json:"githubActionsOIDCAllowRepoSync"`
-	GitHubActionsOIDCAllowImageSync   bool                   `json:"githubActionsOIDCAllowImageSync"`
-	GitHubActionsOIDCAllowedBranches  []string               `json:"githubActionsOIDCAllowedBranches"`
-	GitHubActionsOIDCAllowedWorkflows []string               `json:"githubActionsOIDCAllowedWorkflows"`
-	CommitSigningSupported            bool                   `json:"commitSigningSupported"`
-	RequireSignedCommits              bool                   `json:"requireSignedCommits"`
-	CommitSigningKeys                 string                 `json:"commitSigningKeys"`
-	CommitSigners                     []commitsigning.Signer `json:"commitSigners"`
+	Id                                string   `json:"id"`
+	Name                              string   `json:"name"`
+	Url                               string   `json:"url"`
+	Provider                          string   `json:"provider"`
+	AuthMethod                        string   `json:"authMethod"`
+	SyncType                          string   `json:"syncType"`
+	SyncStatus                        string   `json:"syncStatus"`
+	LastSyncError                     *string  `json:"lastSyncError"`
+	PollingIntervalSeconds            *int64   `json:"pollingIntervalSeconds"`
+	LastSyncedAt                      *string  `json:"lastSyncedAt"`
+	CreatedBy                         string   `json:"createdBy"`
+	CreatedAt                         string   `json:"createdAt"`
+	UpdatedAt                         string   `json:"updatedAt"`
+	WebhookSecret                     *string  `json:"webhookSecret,omitempty"`
+	WebhookUrl                        *string  `json:"webhookUrl,omitempty"`
+	AppCount                          int      `json:"appCount"`
+	GitHubActionsOIDCEnabled          bool     `json:"githubActionsOIDCEnabled"`
+	GitHubActionsOIDCAllowRepoSync    bool     `json:"githubActionsOIDCAllowRepoSync"`
+	GitHubActionsOIDCAllowImageSync   bool     `json:"githubActionsOIDCAllowImageSync"`
+	GitHubActionsOIDCAllowedBranches  []string `json:"githubActionsOIDCAllowedBranches"`
+	GitHubActionsOIDCAllowedWorkflows []string `json:"githubActionsOIDCAllowedWorkflows"`
+	CommitSigningSupported            bool     `json:"commitSigningSupported"`
+	RequireSignedCommits              bool     `json:"requireSignedCommits"`
+	// Only set by the single repository endpoints, the list does not need the keys.
+	CommitSigningKeys []commitSigningKeyResponse `json:"commitSigningKeys,omitempty"`
+}
+
+type commitSigningKeyResponse struct {
+	commitsigning.Signer
+	Key string `json:"key"`
 }
 
 // normalizeOIDCStringList trims, drops empty entries, and deduplicates the given list
@@ -141,6 +146,20 @@ func validateCommitSigning(repo *models.Repository) string {
 	return ""
 }
 
+// toRepositoryDetailResponse adds the trusted signing keys, which are parsed
+// for display and therefore left out of the repository list.
+func toRepositoryDetailResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
+	resp := toRepositoryResponse(r, includeWebhook, appCount)
+	resp.CommitSigningKeys = []commitSigningKeyResponse{}
+	// Stored keys were validated on save; a parse failure leaves the list empty.
+	if keys, err := commitsigning.ParseTrustedKeys(r.CommitSigningKeys); err == nil {
+		for i, signer := range keys.Signers() {
+			resp.CommitSigningKeys = append(resp.CommitSigningKeys, commitSigningKeyResponse{Signer: signer, Key: r.CommitSigningKeys[i]})
+		}
+	}
+	return resp
+}
+
 func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
 	allowedBranches := r.GitHubActionsOIDCAllowedBranches
 	if allowedBranches == nil {
@@ -151,11 +170,6 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 		allowedWorkflows = []string{}
 	}
 
-	// Stored keys were validated on save; a parse failure leaves the list empty.
-	commitSigners := []commitsigning.Signer{}
-	if keys, err := commitsigning.ParseTrustedKeys(r.CommitSigningKeys); err == nil {
-		commitSigners = keys.Signers()
-	}
 	provider, err := repositories.Get(r.Provider)
 	commitSigningSupported := err == nil && repositories.SupportsCommitSignatures(provider)
 
@@ -179,8 +193,6 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
 		CommitSigningSupported:            commitSigningSupported,
 		RequireSignedCommits:              r.RequireSignedCommits,
-		CommitSigningKeys:                 r.CommitSigningKeys,
-		CommitSigners:                     commitSigners,
 	}
 
 	if r.PollingInterval != nil {
@@ -360,6 +372,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 		GitHubActionsOIDCAllowImageSync:   allowImageSync,
 		GitHubActionsOIDCAllowedBranches:  allowedBranches,
 		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
+		CommitSigningKeys:                 []string{},
 	}
 
 	if req.AuthUser != nil && *req.AuthUser != "" {
@@ -478,7 +491,7 @@ func GetRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toRepositoryResponse(&repo, false, appCount))
+	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, false, appCount))
 }
 
 func ListRepositoryBranchesHandler(c *gin.Context) {
@@ -584,7 +597,7 @@ type updateRepositoryRequest struct {
 	GitHubActionsOIDCAllowedBranches  *[]string                    `json:"githubActionsOIDCAllowedBranches"`
 	GitHubActionsOIDCAllowedWorkflows *[]string                    `json:"githubActionsOIDCAllowedWorkflows"`
 	RequireSignedCommits              *bool                        `json:"requireSignedCommits"`
-	CommitSigningKeys                 *string                      `json:"commitSigningKeys"`
+	CommitSigningKeys                 *[]string                    `json:"commitSigningKeys"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -720,7 +733,10 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		repo.RequireSignedCommits = *req.RequireSignedCommits
 	}
 	if req.CommitSigningKeys != nil {
-		repo.CommitSigningKeys = strings.TrimSpace(*req.CommitSigningKeys)
+		repo.CommitSigningKeys = make([]string, len(*req.CommitSigningKeys))
+		for i, key := range *req.CommitSigningKeys {
+			repo.CommitSigningKeys[i] = strings.TrimSpace(key)
+		}
 	}
 	if errMsg := validateCommitSigning(&repo); errMsg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
@@ -745,7 +761,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "repository", id)
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
-	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
+	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, newWebhookSecret, appCount))
 	sse.PublishUpdate(sse.TopicRepositories)
 }
 

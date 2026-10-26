@@ -42,6 +42,9 @@ function handleRepoResource(repo: Repo, rest: string[], url: URL, res: ServerRes
 			);
 		}
 		case "git": {
+			if (path[0] === "commits") {
+				return sendGitCommit(repo, path[1] ?? "", res);
+			}
 			// git/trees/{branch}
 			const branch = repo.branches.get(path[1] ?? "");
 			if (path[0] !== "trees" || !branch) {
@@ -71,4 +74,16 @@ function handleRepoResource(repo: Repo, rest: string[], url: URL, res: ServerRes
 		default:
 			return send(res, 404, { message: "not found" });
 	}
+}
+
+// git/commits/{sha}, the only endpoint that reports the signature and the signed payload
+function sendGitCommit(repo: Repo, sha: string, res: ServerResponse) {
+	if (!repo.snapshots.has(sha)) {
+		return send(res, 404, { message: "commit does not exist" });
+	}
+	const signature = repo.signatures.get(sha);
+	const verification = signature
+		? { verified: false, reason: "gpg.error.no_gpg_keys_found", ...signature }
+		: { verified: false, reason: "gpg.error.not_signed_commit", signature: "", payload: "" };
+	return send(res, 200, { sha, commit: { verification } });
 }

@@ -38,7 +38,7 @@ func seedSigningRepo(t *testing.T) models.Repository {
 	repo := seedRepo(t)
 	repo.Provider = testSigningProvider
 	repo.RequireSignedCommits = true
-	repo.CommitSigningKeys = string(key)
+	repo.CommitSigningKeys = []string{string(key)}
 	if err := db.DB.Save(&repo).Error; err != nil {
 		t.Fatalf("save repository: %v", err)
 	}
@@ -97,6 +97,50 @@ func TestSyncRepository_UnsignedCommitIsRejected(t *testing.T) {
 	}
 }
 
+func TestSyncRepository_PollingRejectedCommitIsRecordedOnce(t *testing.T) {
+	setupTestDB(t)
+	setupSyncQueue(t)
+	repo := seedSigningRepo(t)
+	app := seedApp(t, repo.Id, seedAgent(t).Id, "compose: v1")
+	provider := &signingMockProvider{
+		latestCommit: repositories.CommitInfo{Hash: signedTestCommit},
+		verifyErr:    commitsigning.ErrUntrustedSigner,
+	}
+	repositories.Register(testSigningProvider, provider)
+
+	nop := zerolog.Nop()
+	polling := SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling}
+	SyncRepository(t.Context(), &repo, polling, &nop)
+	SyncRepository(t.Context(), &repo, polling, &nop)
+
+	if len(provider.verifyCalls) != 1 {
+		t.Fatalf("expected one verification for repeated polls, got %v", provider.verifyCalls)
+	}
+	if events := loadAppEvents(t, app.Id); len(events) != 1 {
+		t.Fatalf("expected one failed event for repeated polls, got %d", len(events))
+	}
+	got, err := gorm.G[models.Repository](db.DB).Where("id = ?", repo.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load repository: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusFailed {
+		t.Fatalf("expected the repository to stay failed, got %s", got.SyncStatus)
+	}
+
+	// New trusted keys may accept the commit, so it is verified again.
+	repo.CommitSigningKeys = append(repo.CommitSigningKeys, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINN6vrjmru+u6uFMiI/oHoRq6d/hIslW+RbNWQlQMgSb")
+	SyncRepository(t.Context(), &repo, polling, &nop)
+	if len(provider.verifyCalls) != 2 {
+		t.Fatalf("expected a new verification after the keys changed, got %v", provider.verifyCalls)
+	}
+
+	// A manual sync is always verified and recorded.
+	SyncRepository(t.Context(), &repo, SyncOrigin{Source: models.ApplicationEventSourceManual}, &nop)
+	if len(provider.verifyCalls) != 3 {
+		t.Fatalf("expected a manual sync to verify again, got %v", provider.verifyCalls)
+	}
+}
+
 func TestSyncRepository_PollingDeployedCommitSkipsVerification(t *testing.T) {
 	setupTestDB(t)
 	setupSyncQueue(t)
@@ -148,7 +192,7 @@ func TestVerifyCommitPolicy(t *testing.T) {
 	if err := repositories.VerifyCommit(t.Context(), provider, &repo, signedTestCommit); err == nil || !strings.Contains(err.Error(), "no trusted signing keys") {
 		t.Fatalf("expected missing keys error, got %v", err)
 	}
-	repo.CommitSigningKeys = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/"
+	repo.CommitSigningKeys = []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILzLKC57O0T9rFN/f1l8+X4tAzHb1b8+LMaAJoDFAQ9/"}
 	for _, ref := range []string{"main", signedTestCommit[:12]} {
 		if err := repositories.VerifyCommit(t.Context(), provider, &repo, ref); err == nil || !strings.Contains(err.Error(), "full commit hash") {
 			t.Fatalf("expected full hash error for %q, got %v", ref, err)
