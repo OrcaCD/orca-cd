@@ -29,6 +29,7 @@ export interface Agent {
 
 export interface AgentWithTokenResponse extends Agent {
 	authToken: string;
+	agentImage: string;
 }
 
 export interface CreateAgentRequest {
