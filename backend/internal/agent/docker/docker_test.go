@@ -326,12 +326,40 @@ func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]s
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(c.Close)
-	for deadline := time.Now().Add(time.Second); len(c.daemonStateChanged) > 0 && time.Now().Before(deadline); {
-		time.Sleep(time.Millisecond)
-	}
+	waitForDaemonStateNotifierIdle(t, c)
 	// Tests must not depend on the containers of the host's Docker daemon.
 	stubProjectContainers(t, nil, nil)
 	return c
+}
+
+// waitForDaemonStateNotifierIdle flushes the "reachable" notification sent by
+// New. An empty channel is not enough: the notifier may have received it but
+// not yet looked up the handler, and would then call the handler a test
+// installs next. Parking the notifier in a blocking handler guarantees that any
+// earlier notification has been handled before the handler is cleared.
+func waitForDaemonStateNotifierIdle(t *testing.T, c *Client) {
+	t.Helper()
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	c.SetDaemonStateHandler(func() {
+		entered <- struct{}{}
+		<-release
+	})
+	c.notifyDaemonStateChange()
+
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("daemon state notifier did not run")
+	}
+	// The notifier is blocked in the handler; drop a notification queued behind it.
+	select {
+	case <-c.daemonStateChanged:
+	default:
+	}
+	c.SetDaemonStateHandler(nil)
+	close(release)
 }
 
 func TestNew_Ready(t *testing.T) {
