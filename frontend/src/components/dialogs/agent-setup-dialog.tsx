@@ -1,9 +1,25 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Check, CheckIcon, CopyIcon, TriangleAlert } from "lucide-react";
+import {
+	ArrowRight,
+	Check,
+	CheckIcon,
+	ChevronDown,
+	CircleCheck,
+	CopyIcon,
+	ExternalLink,
+	OctagonAlert,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { CodeBlock, CodeBlockContent, CodeBlockLine } from "@/components/ui/code-block";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { useFetch } from "@/lib/api";
@@ -21,12 +37,9 @@ export function buildAgentComposeFile({
 	hubUrl: string;
 	authToken: string;
 }): string {
-	// "latest" is only handed out by development builds of the hub, which have no matching image.
-	const imageComment = image.endsWith(":latest") ? "" : `  # ${m.agentSetupImageComment()}`;
-
 	return `services:
-  orca-agent:
-    image: ${image}${imageComment}
+  agent:
+    image: ${image}
     restart: unless-stopped
     use_api_socket: true
     environment:
@@ -57,14 +70,16 @@ function SetupStep({ index, label, state }: { index: number; label: string; stat
 			{state === "done" ? (
 				<Check className="size-3.5 shrink-0" aria-hidden="true" />
 			) : (
-				<span aria-hidden="true">{index} ·</span>
+				<span className="shrink-0 whitespace-nowrap" aria-hidden="true">
+					{index} ·
+				</span>
 			)}
 			<span className="truncate">{label}</span>
 		</li>
 	);
 }
 
-function CopyComposeButton({ value }: { value: string }) {
+function CopyButtons({ composeFile, authToken }: { composeFile: string; authToken: string }) {
 	const [copied, setCopied] = useState(false);
 
 	useEffect(() => {
@@ -75,87 +90,66 @@ function CopyComposeButton({ value }: { value: string }) {
 		return () => clearTimeout(timeout);
 	}, [copied]);
 
+	const copy = async (value: string) => {
+		await navigator.clipboard.writeText(value);
+		setCopied(true);
+	};
+
 	return (
-		<Button
-			type="button"
-			variant="outline"
-			size="sm"
-			onClick={async () => {
-				await navigator.clipboard.writeText(value);
-				setCopied(true);
-			}}
-		>
-			{copied ? <CheckIcon className="text-emerald-500" /> : <CopyIcon />}
-			{m.copy()}
-		</Button>
+		<ButtonGroup>
+			<Button type="button" variant="outline" size="sm" onClick={() => copy(composeFile)}>
+				{copied ? <CheckIcon className="text-emerald-500" /> : <CopyIcon />}
+				{m.copy()}
+			</Button>
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<Button type="button" variant="outline" size="icon-sm" aria-label={m.moreCopyOptions()}>
+							<ChevronDown />
+						</Button>
+					}
+				/>
+				<DropdownMenuContent align="end" className="w-auto">
+					<DropdownMenuItem onClick={() => copy(authToken)}>
+						<CopyIcon />
+						{m.copyAgentAuthToken()}
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</ButtonGroup>
 	);
 }
 
-function ConnectionStatus({
+function ConnectedState({
 	agent,
 	onNavigate,
 }: {
 	agent: Pick<Agent, "name" | "status">;
 	onNavigate: () => void;
 }) {
-	const nextStepLink = (
-		<Link
-			to="/applications"
-			onClick={onNavigate}
-			className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
-		>
-			{m.agentSetupCreateFirstApplication()}
-			<ArrowRight className="size-3.5" />
-		</Link>
-	);
-
-	if (agent.status === AgentStatus.Online) {
-		return (
-			<div
-				role="status"
-				className="space-y-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm"
-			>
-				<p className="flex items-center gap-2 font-medium">
-					<span className="size-2.5 rounded-full bg-emerald-500" aria-hidden="true" />
-					{m.agentSetupConnected({ name: agent.name })}
-				</p>
-				<p className="text-muted-foreground">
-					{m.agentSetupConnectedDescription()} {nextStepLink}
-				</p>
-			</div>
-		);
-	}
-
 	if (agent.status === AgentStatus.Error) {
 		return (
-			<div
-				role="status"
-				className="space-y-1 rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm"
-			>
-				<p className="flex items-center gap-2 font-medium">
-					<span className="size-2.5 rounded-full bg-red-500" aria-hidden="true" />
-					{m.agentSetupConnectedWithError({ name: agent.name })}
-				</p>
-				<p className="text-muted-foreground">{m.agentStatusErrorDescription()}</p>
+			<div role="status" className="flex flex-col items-center gap-2 py-6 text-center">
+				<OctagonAlert className="size-10 text-red-500" aria-hidden="true" />
+				<p className="font-medium">{m.agentSetupConnectedWithError({ name: agent.name })}</p>
+				<p className="max-w-md text-sm text-muted-foreground">{m.agentStatusErrorDescription()}</p>
 			</div>
 		);
 	}
 
 	return (
-		<div
-			role="status"
-			className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
-		>
-			<p className="flex items-center gap-2 font-medium">
-				<span className="relative flex size-2.5" aria-hidden="true">
-					<span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-500 opacity-75" />
-					<span className="relative inline-flex size-2.5 rounded-full bg-amber-500" />
-				</span>
-				{m.agentSetupWaiting({ name: agent.name })}
-			</p>
-			<p className="text-muted-foreground">
-				{m.agentSetupWaitingDescription()} {nextStepLink}
-			</p>
+		<div role="status" className="flex flex-col items-center gap-2 py-6 text-center">
+			<CircleCheck className="size-10 text-emerald-500" aria-hidden="true" />
+			<p className="font-medium">{m.agentSetupConnected({ name: agent.name })}</p>
+			<p className="text-sm text-muted-foreground">{m.agentSetupConnectedDescription()}</p>
+			<Button
+				className="mt-2"
+				nativeButton={false}
+				render={<Link to="/applications" onClick={onNavigate} />}
+			>
+				{m.agentSetupCreateFirstApplication()}
+				<ArrowRight />
+			</Button>
 		</div>
 	);
 }
@@ -202,43 +196,51 @@ export default function AgentSetupDialog({
 					<SetupStep
 						index={3}
 						label={m.agentSetupStepConnected()}
-						state={isConnected ? "done" : "pending"}
+						state={isConnected ? "active" : "pending"}
 					/>
 				</ol>
 
-				<div className="flex min-h-0 flex-1 flex-col gap-2">
-					<div className="flex items-center justify-between gap-2">
-						<p className="text-sm text-muted-foreground">{m.agentSetupComposeLabel()}</p>
-						<CopyComposeButton value={composeFile} />
-					</div>
-					<CodeBlock className="min-h-0 flex-1">
-						<CodeBlockContent className="min-h-0 flex-1">
-							{composeLines.map((line, index) => (
-								<CodeBlockLine key={index}>{line}</CodeBlockLine>
-							))}
-						</CodeBlockContent>
-					</CodeBlock>
-					<p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-						<TriangleAlert className="size-3.5" aria-hidden="true" />
-						<span>{m.copyTokenNow()}</span>
-						<span aria-hidden="true">·</span>
-						<span>{m.agentSetupSelfSignedTls()}</span>
-						<a
-							href={agentEnvDocsUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-primary underline-offset-4 hover:underline"
-						>
-							{m.agentSetupSetCaCertFile()}
-						</a>
-					</p>
-				</div>
-
-				{agent && (
-					<ConnectionStatus
+				{agent && isConnected ? (
+					<ConnectedState
 						agent={{ name: agent.name, status }}
 						onNavigate={() => onOpenChange(false)}
 					/>
+				) : (
+					<>
+						<div className="flex min-h-0 flex-1 flex-col gap-2">
+							<div className="flex items-center justify-between gap-2">
+								<p className="text-sm text-muted-foreground">{m.agentSetupComposeLabel()}</p>
+								<CopyButtons composeFile={composeFile} authToken={agent?.authToken ?? ""} />
+							</div>
+							<CodeBlock className="min-h-0 flex-1">
+								<CodeBlockContent className="min-h-0 flex-1">
+									{composeLines.map((line, index) => (
+										<CodeBlockLine key={index}>{line}</CodeBlockLine>
+									))}
+								</CodeBlockContent>
+							</CodeBlock>
+							<a
+								href={agentEnvDocsUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+							>
+								{m.agentSetupMoreOptions()}
+								<ExternalLink className="size-3" aria-hidden="true" />
+							</a>
+						</div>
+
+						<div
+							role="status"
+							className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm font-medium"
+						>
+							<span className="relative flex size-2.5 shrink-0" aria-hidden="true">
+								<span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-500 opacity-75" />
+								<span className="relative inline-flex size-2.5 rounded-full bg-amber-500" />
+							</span>
+							{m.agentSetupWaiting({ name: agent?.name ?? "" })}
+						</div>
+					</>
 				)}
 			</DialogContent>
 		</Dialog>
