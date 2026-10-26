@@ -11,6 +11,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -72,6 +73,15 @@ type repositoryResponse struct {
 	GitHubActionsOIDCAllowImageSync   bool     `json:"githubActionsOIDCAllowImageSync"`
 	GitHubActionsOIDCAllowedBranches  []string `json:"githubActionsOIDCAllowedBranches"`
 	GitHubActionsOIDCAllowedWorkflows []string `json:"githubActionsOIDCAllowedWorkflows"`
+	CommitSigningSupported            bool     `json:"commitSigningSupported"`
+	RequireSignedCommits              bool     `json:"requireSignedCommits"`
+	// Only set by the single repository endpoints, the list does not need the keys.
+	CommitSigningKeys []commitSigningKeyResponse `json:"commitSigningKeys,omitempty"`
+}
+
+type commitSigningKeyResponse struct {
+	commitsigning.Signer
+	Key string `json:"key"`
 }
 
 // normalizeOIDCStringList trims, drops empty entries, and deduplicates the given list
@@ -116,6 +126,40 @@ func normalizeOIDCAllowedWorkflows(items []string) ([]string, error) {
 	return normalized, nil
 }
 
+// validateCommitSigning checks the trusted signing keys and that the provider
+// can verify signatures when signed commits are required.
+func validateCommitSigning(repo *models.Repository) string {
+	keys, err := commitsigning.ParseTrustedKeys(repo.CommitSigningKeys)
+	if err != nil {
+		return fmt.Sprintf("invalid commit signing keys: %v", err)
+	}
+	if !repo.RequireSignedCommits {
+		return ""
+	}
+	provider, err := repositories.Get(repo.Provider)
+	if err != nil || !repositories.SupportsCommitSignatures(provider) {
+		return "commit signature verification is not supported for this provider"
+	}
+	if keys.Len() == 0 {
+		return "at least one trusted signing key is required when signed commits are required"
+	}
+	return ""
+}
+
+// toRepositoryDetailResponse adds the trusted signing keys, which are parsed
+// for display and therefore left out of the repository list.
+func toRepositoryDetailResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
+	resp := toRepositoryResponse(r, includeWebhook, appCount)
+	resp.CommitSigningKeys = []commitSigningKeyResponse{}
+	// Stored keys were validated on save; a parse failure leaves the list empty.
+	if keys, err := commitsigning.ParseTrustedKeys(r.CommitSigningKeys); err == nil {
+		for i, signer := range keys.Signers() {
+			resp.CommitSigningKeys = append(resp.CommitSigningKeys, commitSigningKeyResponse{Signer: signer, Key: r.CommitSigningKeys[i]})
+		}
+	}
+	return resp
+}
+
 func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount int) repositoryResponse {
 	allowedBranches := r.GitHubActionsOIDCAllowedBranches
 	if allowedBranches == nil {
@@ -125,6 +169,9 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 	if allowedWorkflows == nil {
 		allowedWorkflows = []string{}
 	}
+
+	provider, err := repositories.Get(r.Provider)
+	commitSigningSupported := err == nil && repositories.SupportsCommitSignatures(provider)
 
 	resp := repositoryResponse{
 		Id:                                r.Id,
@@ -144,6 +191,8 @@ func toRepositoryResponse(r *models.Repository, includeWebhook bool, appCount in
 		GitHubActionsOIDCAllowImageSync:   r.GitHubActionsOIDCAllowImageSync,
 		GitHubActionsOIDCAllowedBranches:  allowedBranches,
 		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
+		CommitSigningSupported:            commitSigningSupported,
+		RequireSignedCommits:              r.RequireSignedCommits,
 	}
 
 	if r.PollingInterval != nil {
@@ -323,6 +372,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 		GitHubActionsOIDCAllowImageSync:   allowImageSync,
 		GitHubActionsOIDCAllowedBranches:  allowedBranches,
 		GitHubActionsOIDCAllowedWorkflows: allowedWorkflows,
+		CommitSigningKeys:                 []string{},
 	}
 
 	if req.AuthUser != nil && *req.AuthUser != "" {
@@ -441,7 +491,7 @@ func GetRepositoryHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toRepositoryResponse(&repo, false, appCount))
+	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, false, appCount))
 }
 
 func ListRepositoryBranchesHandler(c *gin.Context) {
@@ -546,6 +596,8 @@ type updateRepositoryRequest struct {
 	GitHubActionsOIDCAllowImageSync   *bool                        `json:"githubActionsOIDCAllowImageSync"`
 	GitHubActionsOIDCAllowedBranches  *[]string                    `json:"githubActionsOIDCAllowedBranches"`
 	GitHubActionsOIDCAllowedWorkflows *[]string                    `json:"githubActionsOIDCAllowedWorkflows"`
+	RequireSignedCommits              *bool                        `json:"requireSignedCommits"`
+	CommitSigningKeys                 *[]string                    `json:"commitSigningKeys"`
 }
 
 func UpdateRepositoryHandler(c *gin.Context) {
@@ -560,7 +612,8 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	if req.AuthMethod == nil && req.SyncType == nil && req.PollingInterval == nil &&
 		req.GitHubActionsOIDCEnabled == nil && req.GitHubActionsOIDCAllowRepoSync == nil &&
 		req.GitHubActionsOIDCAllowImageSync == nil && req.GitHubActionsOIDCAllowedBranches == nil &&
-		req.GitHubActionsOIDCAllowedWorkflows == nil {
+		req.GitHubActionsOIDCAllowedWorkflows == nil && req.RequireSignedCommits == nil &&
+		req.CommitSigningKeys == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one field must be provided"})
 		return
 	}
@@ -676,6 +729,20 @@ func UpdateRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	if req.RequireSignedCommits != nil {
+		repo.RequireSignedCommits = *req.RequireSignedCommits
+	}
+	if req.CommitSigningKeys != nil {
+		repo.CommitSigningKeys = make([]string, len(*req.CommitSigningKeys))
+		for i, key := range *req.CommitSigningKeys {
+			repo.CommitSigningKeys[i] = strings.TrimSpace(key)
+		}
+	}
+	if errMsg := validateCommitSigning(&repo); errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		return
+	}
+
 	if err := db.DB.WithContext(c.Request.Context()).Save(&repo).Error; err != nil {
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "repository already exists"})
@@ -694,7 +761,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "repository", id)
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
-	c.JSON(http.StatusOK, toRepositoryResponse(&repo, newWebhookSecret, appCount))
+	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, newWebhookSecret, appCount))
 	sse.PublishUpdate(sse.TopicRepositories)
 }
 

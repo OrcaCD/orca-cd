@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 )
@@ -41,6 +43,16 @@ type gitlabCommit struct {
 	ID      string `json:"id"`
 	Message string `json:"message"`
 	Title   string `json:"title"`
+}
+
+type gitlabCommitSignature struct {
+	SignatureType      string `json:"signature_type"`
+	VerificationStatus string `json:"verification_status"`
+	GPGKeyPrimaryKeyID string `json:"gpg_key_primary_keyid"`
+	Key                *struct {
+		Key       string     `json:"key"`
+		ExpiresAt *time.Time `json:"expires_at"`
+	} `json:"key"`
 }
 
 func init() {
@@ -520,6 +532,61 @@ func (gitlabProvider) GetLatestCommit(ctx context.Context, repo *models.Reposito
 	default:
 		return CommitInfo{}, fmt.Errorf("GitLab API returned unexpected status: %d", resp.StatusCode)
 	}
+}
+
+// VerifyCommitSignature relies on GitLab's own signature check, since its API
+// does not expose the signed commit data. GitLab only reports a signature as
+// verified when the key belongs to the committer's GitLab account, so trusted
+// keys must also be added there. The signing key is then matched against the
+// trusted keys: SSH keys by their full public key, PGP keys by their 64-bit
+// primary key ID, the only identifier GitLab returns. GitLab does not report
+// when the commit was signed, so keys that have expired by now are rejected.
+func (gitlabProvider) VerifyCommitSignature(ctx context.Context, repo *models.Repository, sha string, keys *commitsigning.TrustedKeys) (commitsigning.Signer, error) {
+	parsedRepoURL, err := parseGitLabRepositoryURL(repo.Url)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	projectPath := url.PathEscape(parsedRepoURL.namespace + "/" + parsedRepoURL.project)
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/commits/%s/signature", parsedRepoURL.baseURL, projectPath, url.PathEscape(sha))
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("failed to build GitLab request: %w", err)
+	}
+	addGitLabAuthHeader(req, repo)
+
+	var parsed gitlabCommitSignature
+	found, err := fetchCommitSignatureJSON(req, "GitLab", &parsed)
+	if err != nil {
+		return commitsigning.Signer{}, err
+	}
+	if !found {
+		// GitLab answers 404 for unsigned commits as well as unknown ones.
+		return commitsigning.Signer{}, commitsigning.ErrUnsigned
+	}
+	if parsed.VerificationStatus != "verified" {
+		return commitsigning.Signer{}, fmt.Errorf("GitLab reported the signature as %q instead of verified", parsed.VerificationStatus)
+	}
+
+	var signer commitsigning.Signer
+	var ok bool
+	switch parsed.SignatureType {
+	case "PGP":
+		signer, ok = keys.PGPSignerByKeyID(parsed.GPGKeyPrimaryKeyID)
+	case "SSH":
+		if parsed.Key != nil {
+			if parsed.Key.ExpiresAt != nil && parsed.Key.ExpiresAt.Before(time.Now()) {
+				return commitsigning.Signer{}, fmt.Errorf("%w: the SSH key expired on GitLab", commitsigning.ErrUntrustedSigner)
+			}
+			signer, ok = keys.SSHSignerByAuthorizedKey(parsed.Key.Key)
+		}
+	default:
+		return commitsigning.Signer{}, fmt.Errorf("unsupported signature type %q, only PGP and SSH signatures are supported", parsed.SignatureType)
+	}
+	if !ok {
+		return commitsigning.Signer{}, commitsigning.ErrUntrustedSigner
+	}
+	return signer, nil
 }
 
 func addGitLabAuthHeader(req *http.Request, repo *models.Repository) {

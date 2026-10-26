@@ -38,6 +38,7 @@ import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from '
 import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
 import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
 import { Route as AuthenticatedRepositoriesIdSettingsAuthRouteImport } from './routes/_authenticated/repositories/$id/settings/auth'
+import { Route as AuthenticatedRepositoriesIdSettingsSigningRouteImport } from './routes/_authenticated/repositories/$id/settings/signing'
 import { Route as AuthenticatedRepositoriesIdSettingsSyncRouteImport } from './routes/_authenticated/repositories/$id/settings/sync'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -205,6 +206,12 @@ const AuthenticatedRepositoriesIdSettingsAuthRoute =
     path: '/settings/auth',
     getParentRoute: () => AuthenticatedRepositoriesIdRoute,
   } as any)
+const AuthenticatedRepositoriesIdSettingsSigningRoute =
+  AuthenticatedRepositoriesIdSettingsSigningRouteImport.update({
+    id: '/settings/signing',
+    path: '/settings/signing',
+    getParentRoute: () => AuthenticatedRepositoriesIdRoute,
+  } as any)
 const AuthenticatedRepositoriesIdSettingsSyncRoute =
   AuthenticatedRepositoriesIdSettingsSyncRouteImport.update({
     id: '/settings/sync',
@@ -239,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
   '/repositories/$id/settings/': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
@@ -266,6 +274,7 @@ export interface FileRoutesByTo {
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/applications/$id/settings': typeof AuthenticatedApplicationsIdSettingsIndexRoute
   '/repositories/$id/settings': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
@@ -299,6 +308,7 @@ export interface FileRoutesById {
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/_authenticated/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/_authenticated/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  '/_authenticated/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/_authenticated/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   '/_authenticated/applications/$id/settings/': typeof AuthenticatedApplicationsIdSettingsIndexRoute
   '/_authenticated/repositories/$id/settings/': typeof AuthenticatedRepositoriesIdSettingsIndexRoute
@@ -332,6 +342,7 @@ export interface FileRouteTypes {
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
     | '/repositories/$id/settings/auth'
+    | '/repositories/$id/settings/signing'
     | '/repositories/$id/settings/sync'
     | '/applications/$id/settings/'
     | '/repositories/$id/settings/'
@@ -359,6 +370,7 @@ export interface FileRouteTypes {
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
     | '/repositories/$id/settings/auth'
+    | '/repositories/$id/settings/signing'
     | '/repositories/$id/settings/sync'
     | '/applications/$id/settings'
     | '/repositories/$id/settings'
@@ -391,6 +403,7 @@ export interface FileRouteTypes {
     | '/_authenticated/applications/$id/settings/general'
     | '/_authenticated/applications/$id/settings/image-polling'
     | '/_authenticated/repositories/$id/settings/auth'
+    | '/_authenticated/repositories/$id/settings/signing'
     | '/_authenticated/repositories/$id/settings/sync'
     | '/_authenticated/applications/$id/settings/'
     | '/_authenticated/repositories/$id/settings/'
@@ -607,6 +620,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsAuthRouteImport
       parentRoute: typeof AuthenticatedRepositoriesIdRoute
     }
+    '/_authenticated/repositories/$id/settings/signing': {
+      id: '/_authenticated/repositories/$id/settings/signing'
+      path: '/settings/signing'
+      fullPath: '/repositories/$id/settings/signing'
+      preLoaderRoute: typeof AuthenticatedRepositoriesIdSettingsSigningRouteImport
+      parentRoute: typeof AuthenticatedRepositoriesIdRoute
+    }
     '/_authenticated/repositories/$id/settings/sync': {
       id: '/_authenticated/repositories/$id/settings/sync'
       path: '/settings/sync'
@@ -686,6 +706,7 @@ const AuthenticatedApplicationsIdRouteWithChildren =
 interface AuthenticatedRepositoriesIdRouteChildren {
   AuthenticatedRepositoriesIdIndexRoute: typeof AuthenticatedRepositoriesIdIndexRoute
   AuthenticatedRepositoriesIdSettingsAuthRoute: typeof AuthenticatedRepositoriesIdSettingsAuthRoute
+  AuthenticatedRepositoriesIdSettingsSigningRoute: typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   AuthenticatedRepositoriesIdSettingsSyncRoute: typeof AuthenticatedRepositoriesIdSettingsSyncRoute
   AuthenticatedRepositoriesIdSettingsIndexRoute: typeof AuthenticatedRepositoriesIdSettingsIndexRoute
 }
@@ -696,6 +717,8 @@ const AuthenticatedRepositoriesIdRouteChildren: AuthenticatedRepositoriesIdRoute
       AuthenticatedRepositoriesIdIndexRoute,
     AuthenticatedRepositoriesIdSettingsAuthRoute:
       AuthenticatedRepositoriesIdSettingsAuthRoute,
+    AuthenticatedRepositoriesIdSettingsSigningRoute:
+      AuthenticatedRepositoriesIdSettingsSigningRoute,
     AuthenticatedRepositoriesIdSettingsSyncRoute:
       AuthenticatedRepositoriesIdSettingsSyncRoute,
     AuthenticatedRepositoriesIdSettingsIndexRoute:
