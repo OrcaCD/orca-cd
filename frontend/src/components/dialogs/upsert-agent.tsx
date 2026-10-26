@@ -66,13 +66,13 @@ function AgentSetupDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-2xl">
-				<DialogHeader>
+			<DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-2xl">
+				<DialogHeader className="shrink-0">
 					<DialogTitle>{m.agentSetupTitle()}</DialogTitle>
 					<DialogDescription>{m.agentSetupDescription()}</DialogDescription>
 				</DialogHeader>
 
-				<div className="space-y-2">
+				<div className="shrink-0 space-y-2">
 					<Label htmlFor="agent-hub-url">{m.hubUrl()}</Label>
 					<Input
 						id="agent-hub-url"
@@ -83,7 +83,7 @@ function AgentSetupDialog({
 					<p className="text-xs text-muted-foreground">{m.agentHubUrlDescription()}</p>
 				</div>
 
-				<div className="space-y-2">
+				<div className="shrink-0 space-y-2">
 					<Label htmlFor="agent-auth-token">{m.authToken()}</Label>
 					<div className="flex items-center gap-2">
 						<Input id="agent-auth-token" value={authToken} readOnly className="font-mono" />
@@ -92,13 +92,13 @@ function AgentSetupDialog({
 					<p className="text-xs text-muted-foreground">{m.copyTokenNow()}</p>
 				</div>
 
-				<div className="min-h-0 space-y-2">
+				<div className="flex min-h-0 flex-1 flex-col gap-2">
 					<div className="flex items-center justify-between gap-2">
 						<p className="text-sm font-medium">{m.agentComposeFile()}</p>
 						<CodeBlockCopyButton value={composeFile} />
 					</div>
-					<CodeBlock>
-						<CodeBlockContent className="max-h-[45dvh]" lineNumbers>
+					<CodeBlock className="min-h-0 flex-1">
+						<CodeBlockContent className="min-h-0 flex-1" lineNumbers>
 							{composeLines.map((line, index) => (
 								<CodeBlockLine key={index}>{line}</CodeBlockLine>
 							))}
@@ -106,7 +106,7 @@ function AgentSetupDialog({
 					</CodeBlock>
 				</div>
 
-				<DialogFooter>
+				<DialogFooter className="shrink-0">
 					<Button type="button" onClick={() => onOpenChange(false)}>
 						{m.done()}
 					</Button>
