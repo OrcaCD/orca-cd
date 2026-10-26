@@ -45,7 +45,7 @@ jobs:
         working-directory: ./e2e
 
       - name: Install Playwright Browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --only-shell chromium
         working-directory: ./e2e
 
       - name: Set up Docker Buildx
