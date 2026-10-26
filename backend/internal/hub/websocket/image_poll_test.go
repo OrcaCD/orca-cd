@@ -267,6 +267,104 @@ func TestHandlePullImagesResult_PeriodicFailure_RecordsTerminalPollingEvent(t *t
 	}
 }
 
+func handleAwaitingNotification(t *testing.T, client *Client, r *messages.PullImagesResult) {
+	t.Helper()
+	log := testLogger()
+	wait := notificationBarrier(t)
+	handlePullImagesResult(t.Context(), client, r, &log)
+	wait()
+}
+
+func TestHandlePullImagesResult_RepeatedPeriodicFailure_RecordsOnce(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-dedupe-1")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	failure := &messages.PullImagesResult{
+		ApplicationId: app.Id,
+		Success:       false,
+		ErrorMessage:  "image reg.example.com/x:main: unauthorized",
+	}
+	handleAwaitingNotification(t, client, failure)
+	handlePullImagesResult(t.Context(), client, failure, &log)
+
+	if events := loadImageEvents(t, app.Id); len(events) != 1 {
+		t.Fatalf("expected the repeated failure to create 1 event, got %d", len(events))
+	}
+}
+
+func TestHandlePullImagesResult_PeriodicFailureWithDifferentError_RecordsAgain(t *testing.T) {
+	setupImagePollTestEnv(t)
+
+	agent := createTestAgent(t, "key-ipr-dedupe-2")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	for _, msg := range []string{"unauthorized", "registry timeout"} {
+		handleAwaitingNotification(t, client, &messages.PullImagesResult{
+			ApplicationId: app.Id,
+			Success:       false,
+			ErrorMessage:  msg,
+		})
+	}
+
+	if events := loadImageEvents(t, app.Id); len(events) != 2 {
+		t.Fatalf("expected a changed error to create a new event, got %d events", len(events))
+	}
+}
+
+func TestHandlePullImagesResult_FailureAfterRecovery_RecordsAgain(t *testing.T) {
+	setupImagePollTestEnv(t)
+
+	agent := createTestAgent(t, "key-ipr-dedupe-3")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	failure := &messages.PullImagesResult{ApplicationId: app.Id, Success: false, ErrorMessage: "unauthorized"}
+	handleAwaitingNotification(t, client, failure)
+	handleAwaitingNotification(t, client, &messages.PullImagesResult{ApplicationId: app.Id, Success: true})
+	handleAwaitingNotification(t, client, failure)
+
+	if events := loadImageEvents(t, app.Id); len(events) != 2 {
+		t.Fatalf("expected a failure after recovery to be reported again, got %d events", len(events))
+	}
+}
+
+func TestHandlePullImagesResult_ExplicitFailure_AlwaysReports(t *testing.T) {
+	setupImagePollTestEnv(t)
+
+	agent := createTestAgent(t, "key-ipr-dedupe-4")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handleAwaitingNotification(t, client, &messages.PullImagesResult{
+		ApplicationId: app.Id,
+		Success:       false,
+		ErrorMessage:  "unauthorized",
+	})
+
+	startImageUpdateEvent(t, app.Id, "image-req-dedupe")
+	handleAwaitingNotification(t, client, &messages.PullImagesResult{
+		RequestId:     "image-req-dedupe",
+		ApplicationId: app.Id,
+		Success:       false,
+		ErrorMessage:  "unauthorized",
+	})
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 2 {
+		t.Fatalf("expected the explicit trigger to report despite the earlier failure, got %d events", len(events))
+	}
+	for _, e := range events {
+		if e.Status != models.ApplicationEventFailed {
+			t.Errorf("expected failed event, got %+v", e)
+		}
+	}
+}
+
 func TestHandlePullImagesResult_Failure(t *testing.T) {
 	setupImagePollTestEnv(t)
 	log := testLogger()

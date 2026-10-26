@@ -266,6 +266,71 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	}
 }
 
+func TestImagePoller_RunOnce_ReportsRecoveryOnceAfterFailure(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	var checkErr error
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+		return false, checkErr
+	}
+
+	sender := &stubMessageSender{}
+	p := newTestPoller(t, sender)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	checkErr = errors.New("unauthorized")
+	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false)
+	checkErr = nil
+	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false)
+
+	msgs := sender.received()
+	if len(msgs) != 3 {
+		t.Fatalf("expected 2 failures and 1 recovery, got %d messages", len(msgs))
+	}
+	for i, wantSuccess := range []bool{false, false, true} {
+		result := msgs[i].GetPullImagesResult()
+		if result == nil {
+			t.Fatalf("message %d: expected PullImagesResult payload", i)
+		}
+		if result.Success != wantSuccess {
+			t.Errorf("message %d: success = %v, want %v", i, result.Success, wantSuccess)
+		}
+		if result.ImagesUpdated {
+			t.Errorf("message %d: expected images_updated=false", i)
+		}
+	}
+}
+
+func TestImagePoller_RunOnce_RecoveryStateIsPerApplication(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	checkAndPullImages = func(_ context.Context, _ *Client, appID, _ string, _ bool) (bool, error) {
+		if appID == "app-failing" {
+			return false, errors.New("unauthorized")
+		}
+		return false, nil
+	}
+
+	sender := &stubMessageSender{}
+	p := newTestPoller(t, sender)
+
+	p.runOnce("app-failing", "a", "", false)
+	p.runOnce("app-healthy", "b", "", false)
+
+	msgs := sender.received()
+	if len(msgs) != 1 {
+		t.Fatalf("expected only the failure to be reported, got %d messages", len(msgs))
+	}
+	if got := msgs[0].GetPullImagesResult().ApplicationId; got != "app-failing" {
+		t.Errorf("expected the failing application to be reported, got %q", got)
+	}
+}
+
 func TestImagePoller_RunOnce_SendsResultOnExplicitRequestEvenWhenNothingChanged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })

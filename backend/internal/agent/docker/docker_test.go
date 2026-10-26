@@ -326,6 +326,9 @@ func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]s
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(c.Close)
+	for deadline := time.Now().Add(time.Second); len(c.daemonStateChanged) > 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	// Tests must not depend on the containers of the host's Docker daemon.
 	stubProjectContainers(t, nil, nil)
 	return c
