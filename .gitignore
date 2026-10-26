@@ -1,6 +1,6 @@
 # General
 .DS_Store
-.env
+*.env
 .claude/settings.local.json
 *.local
 

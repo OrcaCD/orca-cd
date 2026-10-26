@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -235,26 +236,41 @@ func (t *connTracker) setAndCancelled(ctx context.Context, conn *websocket.Conn)
 	return cancelled
 }
 
-// secretEnvVars are removed from the process environment once the config is
-// loaded. Compose builds the project environment from the agent's environment,
-// so a compose file could otherwise copy them into a container through
+// Secrets are removed from the process environment once the config is loaded.
+// Compose builds the project environment from the agent's environment, so a
+// compose file could otherwise copy them into a container through
 // interpolation or a value-less environment entry.
-var secretEnvVars = []string{"AUTH_TOKEN"}
+var agentSecretEnvVars = []string{"AUTH_TOKEN"}
 
-func clearSecretEnv() error {
-	for _, name := range secretEnvVars {
-		if err := os.Unsetenv(name); err != nil {
-			return fmt.Errorf("unset %s: %w", name, err)
+// hubSecretEnvVars are the hub's secrets, which reach the agent when both share
+// an env file. APP_SECRET derives the hub's JWT, handshake and database keys.
+var hubSecretEnvVars = []string{"APP_SECRET", "OLD_APP_SECRET"}
+
+// clearSecretEnv removes the secrets and returns the hub secrets it found.
+func clearSecretEnv() ([]string, error) {
+	var foundHubSecrets []string
+	for _, name := range hubSecretEnvVars {
+		if _, ok := os.LookupEnv(name); ok {
+			foundHubSecrets = append(foundHubSecrets, name)
 		}
 	}
-	return nil
+	for _, name := range slices.Concat(agentSecretEnvVars, hubSecretEnvVars) {
+		if err := os.Unsetenv(name); err != nil {
+			return nil, fmt.Errorf("unset %s: %w", name, err)
+		}
+	}
+	return foundHubSecrets, nil
 }
 
 func Run(cfg Config) error {
 	Log = logger.New("agent", cfg.LogJSON).Level(cfg.LogLevel)
 
-	if err := clearSecretEnv(); err != nil {
+	foundHubSecrets, err := clearSecretEnv()
+	if err != nil {
 		return err
+	}
+	if len(foundHubSecrets) > 0 {
+		Log.Warn().Strs("variables", foundHubSecrets).Msg("found the hub's secrets in the agent environment and removed them. Give the agent its own env file instead of sharing the hub's")
 	}
 
 	Log.Info().Str("version", version.Version).Msg("agent started")

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -493,15 +494,44 @@ func TestDefaultConfig_Errors(t *testing.T) {
 
 func TestClearSecretEnv(t *testing.T) {
 	t.Setenv("AUTH_TOKEN", "secret")
+	t.Setenv("APP_SECRET", "hub-secret")
+	t.Setenv("OLD_APP_SECRET", "old-hub-secret")
 	t.Setenv("HUB_URL", "https://hub.example.com")
 
-	if err := clearSecretEnv(); err != nil {
+	foundHubSecrets, err := clearSecretEnv()
+	if err != nil {
 		t.Fatalf("clearSecretEnv: %v", err)
 	}
-	if _, ok := os.LookupEnv("AUTH_TOKEN"); ok {
-		t.Fatal("expected AUTH_TOKEN to be removed from the environment")
+	for _, name := range []string{"AUTH_TOKEN", "APP_SECRET", "OLD_APP_SECRET"} {
+		if _, ok := os.LookupEnv(name); ok {
+			t.Fatalf("expected %s to be removed from the environment", name)
+		}
+	}
+	if !slices.Equal(foundHubSecrets, []string{"APP_SECRET", "OLD_APP_SECRET"}) {
+		t.Fatalf("expected the hub secrets to be reported, got %v", foundHubSecrets)
 	}
 	if os.Getenv("HUB_URL") == "" {
 		t.Fatal("expected non-secret settings to stay in the environment")
+	}
+}
+
+func TestClearSecretEnv_ReportsNoHubSecretsWhenAbsent(t *testing.T) {
+	t.Setenv("AUTH_TOKEN", "secret")
+	// t.Setenv registers the cleanup that restores the variables after unsetting them.
+	t.Setenv("APP_SECRET", "")
+	t.Setenv("OLD_APP_SECRET", "")
+	if err := os.Unsetenv("APP_SECRET"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("OLD_APP_SECRET"); err != nil {
+		t.Fatal(err)
+	}
+
+	foundHubSecrets, err := clearSecretEnv()
+	if err != nil {
+		t.Fatalf("clearSecretEnv: %v", err)
+	}
+	if len(foundHubSecrets) != 0 {
+		t.Fatalf("expected no hub secrets to be reported, got %v", foundHubSecrets)
 	}
 }
