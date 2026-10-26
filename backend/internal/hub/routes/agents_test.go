@@ -335,6 +335,9 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 	if body.AuthToken == "" {
 		t.Fatal("expected authToken to be set")
 	}
+	if body.AgentImage != version.AgentImage() {
+		t.Fatalf("expected agentImage %q, got %q", version.AgentImage(), body.AgentImage)
+	}
 
 	jwtToken, signingPriv, err := agenttoken.Decode(body.AuthToken)
 	if err != nil {
@@ -492,6 +495,9 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 	}
 	if body.AuthToken == "" {
 		t.Fatal("expected authToken to be set")
+	}
+	if body.AgentImage != version.AgentImage() {
+		t.Fatalf("expected agentImage %q, got %q", version.AgentImage(), body.AgentImage)
 	}
 
 	jwtToken, signingPriv, err := agenttoken.Decode(body.AuthToken)

@@ -5,7 +5,6 @@ import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
-	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
@@ -18,103 +17,10 @@ import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "../ui/field";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
-import { createAgent, updateAgent, type Agent } from "@/lib/agents";
+import { createAgent, updateAgent, type Agent, type AgentWithTokenResponse } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
-import CopyButton from "@/components/copy-btn";
-import { useHighlightedCode } from "@/hooks/use-highlighted-code";
-import {
-	CodeBlock,
-	CodeBlockContent,
-	CodeBlockCopyButton,
-	CodeBlockLine,
-} from "@/components/ui/code-block";
-
-function buildAgentComposeFile(hubUrl: string, authToken: string): string {
-	return `services:
-  agent:
-    image: ghcr.io/orcacd/agent:latest
-    restart: unless-stopped
-    environment:
-      HUB_URL: ${JSON.stringify(hubUrl)}
-      AUTH_TOKEN: ${JSON.stringify(authToken)}
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    use_api_socket: true
-    volumes:
-      - ./deployments:/deployments
-`;
-}
-
-function AgentSetupDialog({
-	open,
-	onOpenChange,
-	hubUrl,
-	onHubUrlChange,
-	authToken,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	hubUrl: string;
-	onHubUrlChange: (hubUrl: string) => void;
-	authToken: string;
-}) {
-	const composeFile = buildAgentComposeFile(hubUrl, authToken);
-	const composeLines = useHighlightedCode(composeFile, "yaml");
-
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-2xl">
-				<DialogHeader className="shrink-0">
-					<DialogTitle>{m.agentSetupTitle()}</DialogTitle>
-					<DialogDescription>{m.agentSetupDescription()}</DialogDescription>
-				</DialogHeader>
-
-				<div className="shrink-0 space-y-2">
-					<Label htmlFor="agent-hub-url">{m.hubUrl()}</Label>
-					<Input
-						id="agent-hub-url"
-						type="url"
-						value={hubUrl}
-						onChange={(event) => onHubUrlChange(event.target.value)}
-					/>
-					<p className="text-xs text-muted-foreground">{m.agentHubUrlDescription()}</p>
-				</div>
-
-				<div className="shrink-0 space-y-2">
-					<Label htmlFor="agent-auth-token">{m.authToken()}</Label>
-					<div className="flex items-center gap-2">
-						<Input id="agent-auth-token" value={authToken} readOnly className="font-mono" />
-						<CopyButton text={authToken} title={m.copyAgentAuthToken()} />
-					</div>
-					<p className="text-xs text-muted-foreground">{m.copyTokenNow()}</p>
-				</div>
-
-				<div className="flex min-h-0 flex-1 flex-col gap-2">
-					<div className="flex items-center justify-between gap-2">
-						<p className="text-sm font-medium">{m.agentComposeFile()}</p>
-						<CodeBlockCopyButton value={composeFile} />
-					</div>
-					<CodeBlock className="min-h-0 flex-1">
-						<CodeBlockContent className="min-h-0 flex-1" lineNumbers>
-							{composeLines.map((line, index) => (
-								<CodeBlockLine key={index}>{line}</CodeBlockLine>
-							))}
-						</CodeBlockContent>
-					</CodeBlock>
-				</div>
-
-				<DialogFooter className="shrink-0">
-					<Button type="button" onClick={() => onOpenChange(false)}>
-						{m.done()}
-					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
-	);
-}
+import AgentSetupDialog from "./agent-setup-dialog";
 
 const agentSchema = z.object({
 	name: z
@@ -137,9 +43,8 @@ export default function UpsertAgentDialog({
 	const isEditing = !!agent;
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [open, setOpen] = useState(false);
-	const [authToken, setAuthToken] = useState<string | null>(null);
+	const [createdAgent, setCreatedAgent] = useState<AgentWithTokenResponse | null>(null);
 	const [isAgentSetupOpen, setIsAgentSetupOpen] = useState(false);
-	const [hubUrl, setHubUrl] = useState("");
 
 	const form = useForm({
 		defaultValues: {
@@ -163,12 +68,8 @@ export default function UpsertAgentDialog({
 						name: value.name,
 						icon: value.icon,
 					});
-					if (response.authToken) {
-						setAuthToken(response.authToken);
-						setHubUrl(window.location.origin);
-						setIsAgentSetupOpen(true);
-					}
-					toast.add({ type: "success", title: m.agentConnected() });
+					setCreatedAgent(response);
+					setIsAgentSetupOpen(true);
 				}
 				setOpen(false);
 				form.reset();
@@ -281,17 +182,15 @@ export default function UpsertAgentDialog({
 			</Dialog>
 
 			<AgentSetupDialog
+				agent={createdAgent}
 				open={isAgentSetupOpen}
-				onOpenChange={(nextOpen) => {
-					setIsAgentSetupOpen(nextOpen);
+				onOpenChange={setIsAgentSetupOpen}
+				onOpenChangeComplete={(nextOpen) => {
+					// Keep the token in memory only while the dialog is shown.
 					if (!nextOpen) {
-						setAuthToken(null);
-						setHubUrl("");
+						setCreatedAgent(null);
 					}
 				}}
-				hubUrl={hubUrl}
-				onHubUrlChange={setHubUrl}
-				authToken={authToken ?? ""}
 			/>
 		</>
 	);

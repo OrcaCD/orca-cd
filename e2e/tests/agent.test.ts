@@ -128,11 +128,17 @@ test.describe("Agent setup", () => {
 		await dialog.getByRole("textbox", { name: "Name" }).fill(AGENT_NAME);
 		await dialog.getByRole("button", { name: "Add Agent" }).click();
 
-		const token = page.locator("#agent-auth-token");
-		await expect(token).toBeVisible();
-		authToken = await token.inputValue();
+		const setup = page.getByRole("dialog", { name: `Connect agent “${AGENT_NAME}”` });
+		await expect(
+			setup.getByText(`Waiting for the first connection from ${AGENT_NAME}`),
+		).toBeVisible();
+
+		const compose = await setup.locator("pre").innerText();
+		expect(compose).toContain(`HUB_URL: ${APP_URL}`);
+		expect(compose).toMatch(/image: ghcr\.io\/orcacd\/agent:\S+/);
+		authToken = compose.match(/AUTH_TOKEN: (\S+)/)?.[1] ?? "";
 		expect(authToken).not.toBe("");
-		await page.getByRole("button", { name: "Done" }).click();
+		await setup.getByRole("button", { name: "Close" }).click();
 
 		const agents = await listAgents(page);
 		expect(agents).toHaveLength(1);
