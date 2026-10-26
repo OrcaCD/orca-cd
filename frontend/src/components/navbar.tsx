@@ -47,9 +47,6 @@ const navItems = [
 	{ key: "notifications" as NavKey, href: "/notifications", icon: Bell },
 ];
 
-const activeNavItemClass =
-	"bg-sidebar-accent text-primary-foreground dark:text-white hover:bg-sidebar-accent! focus:bg-sidebar-accent!";
-
 function getNavLabel(key: NavKey): string {
 	switch (key) {
 		case "applications":
@@ -122,7 +119,7 @@ export default function Navbar() {
 					</Tooltip>
 
 					<NavigationMenu className="hidden md:flex">
-						<NavigationMenuList className="gap-2">
+						<NavigationMenuList className="gap-6">
 							{navItems.map((item) => (
 								<Tooltip key={item.key}>
 									<TooltipTrigger
@@ -134,8 +131,9 @@ export default function Navbar() {
 															key={item.key}
 															to={item.href}
 															className={cn(
-																"h-8",
-																location.pathname.startsWith(item.href) && activeNavItemClass,
+																"relative h-14 rounded-none px-1 text-muted-foreground hover:bg-transparent hover:text-foreground focus:bg-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors",
+																location.pathname.startsWith(item.href) &&
+																	"text-foreground after:bg-foreground",
 															)}
 														>
 															<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
@@ -164,7 +162,9 @@ export default function Navbar() {
 										variant="ghost"
 										size="icon"
 										aria-label={m.navAdmin()}
-										className={cn(location.pathname.startsWith("/admin") && activeNavItemClass)}
+										className={cn(
+											location.pathname.startsWith("/admin") && "bg-muted text-foreground",
+										)}
 										nativeButton={false}
 										render={<Link to="/admin" />}
 									>
@@ -267,8 +267,8 @@ export default function Navbar() {
 												key={item.key}
 												to={item.href}
 												className={cn(
-													"h-8 w-full",
-													location.pathname.startsWith(item.href) && activeNavItemClass,
+													"h-8 w-full text-muted-foreground hover:text-foreground",
+													location.pathname.startsWith(item.href) && "bg-muted text-foreground",
 												)}
 												onClick={() => setMobileMenuOpen(false)}
 											>
