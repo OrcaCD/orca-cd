@@ -62,6 +62,12 @@ func TestHasFloatingImageReference(t *testing.T) {
 	}
 }
 
+func TestIsDatabaseImageWithDigest(t *testing.T) {
+	if !isDatabaseImage("docker.io/library/postgres@sha256:0123456789abcdef") {
+		t.Fatal("expected a database image with a digest to be recognized")
+	}
+}
+
 func TestAnalyzeReportsInvalidCompose(t *testing.T) {
 	warnings := Analyze("not: [valid")
 	want := []Warning{{Code: "invalid_compose"}}
