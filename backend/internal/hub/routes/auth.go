@@ -23,6 +23,9 @@ const errInvalidSetupCode = "invalid setup code"
 // LocalAuthDisabled is set by the server config to gate local auth endpoints.
 var LocalAuthDisabled bool
 
+// DemoMode is set by the server config and exposed to the frontend.
+var DemoMode bool
+
 type registerRequest struct {
 	Name      string `json:"name" binding:"required,min=3,max=64"`
 	Email     string `json:"email" binding:"required,email"`
@@ -58,6 +61,7 @@ type setupResponse struct {
 	NeedsSetup       bool           `json:"needsSetup"`
 	Providers        []providerInfo `json:"providers"`
 	LocalAuthEnabled bool           `json:"localAuthEnabled"`
+	Demo             bool           `json:"demo"`
 }
 
 type profileResponse struct {
@@ -176,6 +180,7 @@ func SetupHandler(c *gin.Context) {
 		NeedsSetup:       count == 0,
 		Providers:        infos,
 		LocalAuthEnabled: !LocalAuthDisabled,
+		Demo:             DemoMode,
 	})
 }
 

@@ -16,6 +16,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
+	routes.DemoMode = cfg.Demo
 	routes.SetAdminSystemInfoConfig(routes.AdminSystemInfoConfig{
 		Host:             cfg.Host,
 		Port:             cfg.Port,
@@ -128,12 +129,16 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		websocket.DefaultHub = h
 		d := application_deployer.NewApplicationDeployer(h, &Log)
 		application_deployer.DefaultApplicationDeployer = d
-		w := websocket.NewWorker(h, &Log)
-		w.Start()
 
-		// Rate-limit reconnects: 20 req/min per IP, burst of 5
-		wsRateLimit := middleware.RateLimit(3*time.Second, 5)
-		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
+		// Agents cannot connect in demo mode, as the seeded data is read-only
+		if !cfg.Demo {
+			w := websocket.NewWorker(h, &Log)
+			w.Start()
+
+			// Rate-limit reconnects: 20 req/min per IP, burst of 5
+			wsRateLimit := middleware.RateLimit(3*time.Second, 5)
+			api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
+		}
 	}
 
 	if !cfg.DisableUI {

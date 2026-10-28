@@ -47,8 +47,18 @@ func sqliteDSN(readOnly bool) string {
 	if readOnly {
 		// https://www.sqlite.org/uri.html
 		q.Set("mode", "ro") // Read-only in demo mode
+
+		// https://sqlite.org/pragma.html#pragma_query_only
+		q.Set("_query_only", "1")
+
+		// Both pragmas write to the database file; WAL mode is persistent and already set
+		q.Del("_journal_mode")
+		q.Del("_auto_vacuum")
 	}
-	return sqliteFilePath + "?" + q.Encode()
+
+	// go-sqlite3 handles the _ pragma parameters itself, but only passes URI parameters
+	// like mode=ro on to SQLite if the DSN is a file: URI. Otherwise they are ignored.
+	return "file:" + sqliteFilePath + "?" + q.Encode()
 }
 
 func GetSQLiteFilePath() string {

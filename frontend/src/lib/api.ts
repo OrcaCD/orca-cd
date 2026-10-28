@@ -1,6 +1,10 @@
 import useSWR, { type SWRConfiguration } from "swr";
+import { m } from "@/lib/paraglide/messages";
 
 export const API_BASE = "/api/v1";
+
+// Plain text body returned by the hub for blocked requests in demo mode
+const DEMO_BLOCKED_MESSAGE = "This action is not allowed in demo mode.";
 
 export interface ErrorResponse {
 	error: string;
@@ -44,6 +48,10 @@ function parseErrorMessage(body: string): string | null {
 
 export async function getErrorMessage(res: Response): Promise<string> {
 	const body = await res.text().catch(() => "");
+	if (res.status === 403 && body.trim() === DEMO_BLOCKED_MESSAGE) {
+		return m.demoActionNotAllowed();
+	}
+
 	const parsedError = parseErrorMessage(body);
 	if (parsedError) {
 		return parsedError;

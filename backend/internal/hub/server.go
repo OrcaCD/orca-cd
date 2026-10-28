@@ -143,19 +143,21 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	recoverInterruptedState(context.Background(), &Log)
-
-	applications.DefaultQueue = applications.NewQueue(&Log)
-	applications.DefaultQueue.Start()
-
-	applications.DefaultPoller = applications.NewPoller(&Log)
-	applications.DefaultPoller.Start()
-	defer applications.DefaultPoller.Stop()
-
-	applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
-	defer applications.DefaultImagePullDebouncer.Stop()
-
+	// The demo database is read-only and no agents or git providers are reachable,
+	// so none of the background workers can do anything useful.
 	if !cfg.Demo {
+		recoverInterruptedState(context.Background(), &Log)
+
+		applications.DefaultQueue = applications.NewQueue(&Log)
+		applications.DefaultQueue.Start()
+
+		applications.DefaultPoller = applications.NewPoller(&Log)
+		applications.DefaultPoller.Start()
+		defer applications.DefaultPoller.Stop()
+
+		applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
+		defer applications.DefaultImagePullDebouncer.Stop()
+
 		defer db.StartVacuumScheduler()()
 	}
 

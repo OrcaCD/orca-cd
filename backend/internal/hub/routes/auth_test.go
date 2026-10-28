@@ -140,6 +140,29 @@ func TestSetupHandler_NoUsers(t *testing.T) {
 	}
 }
 
+func TestSetupHandler_ReportsDemoMode(t *testing.T) {
+	setupTestDB(t)
+
+	for _, demo := range []bool{false, true} {
+		DemoMode = demo
+		t.Cleanup(func() { DemoMode = false })
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/setup", nil)
+
+		SetupHandler(c)
+
+		var body setupResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if body.Demo != demo {
+			t.Errorf("expected demo=%v, got %v", demo, body.Demo)
+		}
+	}
+}
+
 func TestSetupHandler_WithUsers(t *testing.T) {
 	setupTestDB(t)
 	LocalAuthDisabled = false

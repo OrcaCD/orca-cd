@@ -741,5 +741,7 @@
 	"applicationSettingsDeploymentDescription": "Options applied to every deployment of this application.",
 	"noComposeFileSelected": "No Compose file selected",
 	"dangerZone": "Danger zone",
-	"deleteApplicationHint": "Permanently delete this application and remove its containers from the agent."
+	"deleteApplicationHint": "Permanently delete this application and remove its containers from the agent.",
+	"demoBannerMessage": "Demo mode: data is read-only.",
+	"demoActionNotAllowed": "Not allowed in demo mode."
 }
