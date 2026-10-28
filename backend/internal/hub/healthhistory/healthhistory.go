@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -159,14 +160,20 @@ func sanitizeServices(services []models.ServiceHealth) []models.ServiceHealth {
 	services = services[:min(len(services), maxServices)]
 	sanitized := make([]models.ServiceHealth, 0, len(services))
 	for _, service := range services {
-		name := strings.TrimSpace(service.Name)
-		if len(name) > maxServiceNameLength {
-			name = name[:maxServiceNameLength]
-		}
-		sanitized = append(sanitized, models.ServiceHealth{
-			Name:   strings.ToValidUTF8(name, ""),
-			Status: service.Status,
-		})
+		name := strings.ToValidUTF8(service.Name, "")
+		name = strings.TrimSpace(truncate(strings.TrimSpace(name), maxServiceNameLength))
+		sanitized = append(sanitized, models.ServiceHealth{Name: name, Status: service.Status})
 	}
 	return sanitized
+}
+
+// truncate cuts s to at most maxBytes without splitting a UTF-8 character.
+func truncate(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }

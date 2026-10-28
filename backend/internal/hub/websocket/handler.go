@@ -308,8 +308,11 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
+		if status == nil {
+			continue
+		}
 		health := reportedApplicationHealth(status)
-		event, applied, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
+		event, changed, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
@@ -317,14 +320,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 				Msg("failed to update application health from status report")
 			continue
 		}
-		if !applied {
-			continue
-		}
-		if _, err := healthhistory.Record(ctx, models.ApplicationHealthChange{
-			ApplicationId: status.ApplicationId,
-			Status:        health,
-			Services:      failingServices(status.Services),
-		}); err != nil {
+		if err := recordHealthHistory(ctx, client, status, health, changed); err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
 				Str("applicationId", status.ApplicationId).
@@ -399,9 +395,9 @@ func sanitizeReportedVersion(v string) string {
 }
 
 // applyReportedHealth stores the reported health and returns the health event
-// the change triggers, if any, and whether the application belongs to the
-// agent. Transitions are detected with conditional
-// updates so concurrent reports cannot notify twice.
+// the change triggers, if any, and whether the health of one of the agent's
+// applications changed. Transitions are detected with conditional updates so
+// concurrent reports cannot notify twice.
 //
 // Only Healthy→Unhealthy/Stopped/Degraded and back to Healthy notify; stopped
 // and degraded applications count as unhealthy for notifications. Unknown→Unhealthy
@@ -431,9 +427,37 @@ func applyReportedHealth(ctx context.Context, agentId, applicationId string, hea
 	}
 
 	rowsAffected, err := gorm.G[models.Application](db.DB).
-		Where("id = ? AND agent_id = ?", applicationId, agentId).
+		Where("id = ? AND agent_id = ? AND health_status <> ?", applicationId, agentId, health).
 		Update(ctx, "health_status", health)
 	return "", rowsAffected > 0, err
+}
+
+// recordHealthHistory adds a reported health to the application's health
+// history. Reports that do not change the application's health are only
+// recorded once per connection: the history can lag behind the stored health
+// after a hub restart, which records the agent as offline but keeps the health.
+func recordHealthHistory(ctx context.Context, client *Client, status *messages.ApplicationStatus, health models.HealthStatus, changed bool) error {
+	if !changed {
+		if client.healthHistorySynced(status.ApplicationId) {
+			return nil
+		}
+		// Unchanged reports update no row, so ownership is checked separately.
+		owned, err := gorm.G[models.Application](db.DB).
+			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
+			Count(ctx, "*")
+		if err != nil || owned == 0 {
+			return err
+		}
+	}
+	if _, err := healthhistory.Record(ctx, models.ApplicationHealthChange{
+		ApplicationId: status.ApplicationId,
+		Status:        health,
+		Services:      failingServices(status.Services),
+	}); err != nil {
+		return err
+	}
+	client.markHealthHistorySynced(status.ApplicationId)
+	return nil
 }
 
 func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, health models.HealthStatus, log *zerolog.Logger) {
@@ -459,12 +483,12 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 // report. Agents report a partially failing application as unhealthy; when at
 // least one of its services is still healthy, the hub records it as degraded.
 func reportedApplicationHealth(status *messages.ApplicationStatus) models.HealthStatus {
-	health := protoHealthToModel(status.Health)
+	health := protoHealthToModel(status.GetHealth())
 	if health != models.Unhealthy {
 		return health
 	}
 	for _, service := range status.Services {
-		if service.Health == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		if service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
 			return models.Degraded
 		}
 	}
@@ -476,10 +500,10 @@ func reportedApplicationHealth(status *messages.ApplicationStatus) models.Health
 func failingServices(services []*messages.ServiceStatus) []models.ServiceHealth {
 	var failing []models.ServiceHealth
 	for _, service := range services {
-		if service.Health == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		if service == nil || service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
 			continue
 		}
-		failing = append(failing, models.ServiceHealth{Name: service.Name, Status: protoHealthToModel(service.Health)})
+		failing = append(failing, models.ServiceHealth{Name: service.GetName(), Status: protoHealthToModel(service.GetHealth())})
 	}
 	return failing
 }

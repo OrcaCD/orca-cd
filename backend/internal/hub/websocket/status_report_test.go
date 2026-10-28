@@ -3,9 +3,11 @@ package websocket
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
@@ -210,8 +212,9 @@ func TestHandleApplicationStatusReport_RecordsHealthHistory(t *testing.T) {
 	other := seedAppForAgent(t, "agent-2")
 
 	nop := zerolog.Nop()
+	client := &Client{Id: "agent-1"}
 	report := func(appID string, health messages.HealthStatus, services ...*messages.ServiceStatus) {
-		handleApplicationStatusReport(t.Context(), &Client{Id: "agent-1"}, &messages.ApplicationStatusReport{
+		handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
 			Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health, Services: services}},
 		}, &nop)
 	}
@@ -221,6 +224,7 @@ func TestHandleApplicationStatusReport_RecordsHealthHistory(t *testing.T) {
 	report(app.Id, messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
 		&messages.ServiceStatus{Name: "db", Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
 		&messages.ServiceStatus{Name: "web", Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY},
+		nil,
 	)
 	// Spoofed: belongs to a different agent — must not be recorded.
 	report(other.Id, messages.HealthStatus_HEALTH_STATUS_HEALTHY)
@@ -239,5 +243,48 @@ func TestHandleApplicationStatusReport_RecordsHealthHistory(t *testing.T) {
 	if degraded.Status != models.Degraded || len(degraded.Services) != 1 ||
 		degraded.Services[0] != (models.ServiceHealth{Name: "web", Status: models.Unhealthy}) {
 		t.Errorf("expected degraded change with failing service web, got %+v", degraded)
+	}
+}
+
+func TestHandleApplicationStatusReport_SyncsHealthHistoryOncePerConnection(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+
+	nop := zerolog.Nop()
+	report := func(client *Client) {
+		handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
+			Statuses: []*messages.ApplicationStatus{nil, {ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
+		}, &nop)
+	}
+	latest := func() models.HealthStatus {
+		t.Helper()
+		change, err := healthhistory.Latest(t.Context(), app.Id)
+		if err != nil {
+			t.Fatalf("Latest() error: %v", err)
+		}
+		return change.Status
+	}
+
+	client := &Client{Id: "agent-1"}
+	report(client)
+	if got := latest(); got != models.Healthy {
+		t.Fatalf("expected healthy to be recorded, got %q", got)
+	}
+
+	// A hub restart records the agent offline but keeps the stored health.
+	if err := healthhistory.RecordAgentOffline(t.Context(), "agent-1", time.Now()); err != nil {
+		t.Fatalf("RecordAgentOffline() error: %v", err)
+	}
+	report(client)
+	if got := latest(); got != models.UnknownHealth {
+		t.Errorf("an unchanged report must not be recorded again on the same connection, got %q", got)
+	}
+
+	report(&Client{Id: "agent-1"})
+	if got := latest(); got != models.Healthy {
+		t.Errorf("expected the first report of a new connection to sync the history, got %q", got)
+	}
+	if got := healthOf(t, app.Id); got != models.Healthy {
+		t.Errorf("expected the stored health to stay healthy, got %q", got)
 	}
 }

@@ -3,6 +3,7 @@ package healthhistory
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -187,6 +189,28 @@ func TestRecord_BoundsServices(t *testing.T) {
 	}
 }
 
+func TestSanitizeServices(t *testing.T) {
+	long := strings.Repeat("s", maxServiceNameLength-1)
+	got := sanitizeServices([]models.ServiceHealth{
+		{Name: "  web  ", Status: models.Unhealthy},
+		{Name: long + "  tail", Status: models.Stopped},
+		{Name: long + "ü", Status: models.Unhealthy},
+		{Name: "bad\xffname", Status: models.Unhealthy},
+	})
+	want := []models.ServiceHealth{
+		{Name: "web", Status: models.Unhealthy},
+		{Name: long, Status: models.Stopped},
+		{Name: long, Status: models.Unhealthy},
+		{Name: "badname", Status: models.Unhealthy},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("sanitizeServices() = %q, want %q", got, want)
+	}
+	if sanitizeServices(nil) != nil {
+		t.Error("expected no services to stay nil")
+	}
+}
+
 func TestRecordAgentOffline(t *testing.T) {
 	setupTestDB(t)
 	app := seedApp(t, "agent-1")
@@ -258,4 +282,28 @@ func TestHealthChangesAreDeletedWithApplication(t *testing.T) {
 	if changes := changesOf(t, app.Id); len(changes) != 0 {
 		t.Errorf("expected health changes to be deleted with the application, got %d", len(changes))
 	}
+}
+
+func TestStartPruner(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	now := time.Now()
+	record(t, models.ApplicationHealthChange{ApplicationId: app.Id, Status: models.Healthy, ChangedAt: now.Add(-Retention - 2*time.Hour)})
+	record(t, models.ApplicationHealthChange{ApplicationId: app.Id, Status: models.Unhealthy, ChangedAt: now.Add(-Retention - time.Hour)})
+	record(t, models.ApplicationHealthChange{ApplicationId: app.Id, Status: models.Healthy, ChangedAt: now})
+
+	log := zerolog.Nop()
+	stop := StartPruner(&log)
+	deadline := time.Now().Add(5 * time.Second)
+	for len(changesOf(t, app.Id)) != 2 {
+		if time.Now().After(deadline) {
+			stop()
+			t.Fatalf("expected the pruner to prune on start, got %d changes", len(changesOf(t, app.Id)))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	stop()
+	// Stopping again must not block or panic.
+	stop()
 }
