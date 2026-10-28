@@ -61,9 +61,12 @@ func TestGetStats_WithoutHistory(t *testing.T) {
 		t.Fatalf("expected 56 buckets of 3h, got %d of %ds", len(stats.Buckets), stats.BucketSeconds)
 	}
 	for _, bucket := range stats.Buckets {
-		if bucket.Status != models.UnknownHealth {
-			t.Fatalf("expected only buckets without data, got %q", bucket.Status)
+		if bucket.Status != nil {
+			t.Fatalf("expected only untracked buckets, got %q", *bucket.Status)
 		}
+	}
+	if stats.NoDataSeconds != 0 {
+		t.Errorf("untracked time must not count as no data, got %ds", stats.NoDataSeconds)
 	}
 	if len(stats.Incidents) != 0 || stats.DataGapCount != 0 {
 		t.Errorf("the time before the first change must not be a data gap, got %+v", stats.Incidents)
@@ -144,8 +147,8 @@ func TestGetStats_Day(t *testing.T) {
 		if !ok {
 			want = models.Healthy
 		}
-		if bucket.Status != want {
-			t.Errorf("bucket %d: expected %q, got %q", i, want, bucket.Status)
+		if bucket.Status == nil || *bucket.Status != want {
+			t.Errorf("bucket %d: expected %q, got %v", i, want, bucket.Status)
 		}
 	}
 }
@@ -191,5 +194,30 @@ func TestGetStats_IncidentBeforeRangeKeepsRealStart(t *testing.T) {
 	if len(stats.Incidents) != 1 || !stats.Incidents[0].StartedAt.Equal(now.Add(-26*time.Hour)) ||
 		stats.Incidents[0].DurationSeconds != int64((3*time.Hour).Seconds()) {
 		t.Errorf("expected the incident to keep its real start and duration, got %+v", stats.Incidents)
+	}
+}
+
+func TestGetStats_NewlyTrackedApplication(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	now := time.Now().UTC().Truncate(time.Second)
+
+	seedChange(t, app.Id, models.Healthy, now.Add(-2*time.Minute))
+
+	stats := getStats(t, app.Id, Range24h, now)
+	if stats.Availability == nil || *stats.Availability != 100 {
+		t.Errorf("expected 100%% availability, got %v", stats.Availability)
+	}
+	if stats.NoDataSeconds != 0 || stats.DataGapCount != 0 {
+		t.Errorf("time before the first change must not count as no data, got %ds and %d gaps", stats.NoDataSeconds, stats.DataGapCount)
+	}
+	last := stats.Buckets[len(stats.Buckets)-1]
+	if last.Status == nil || *last.Status != models.Healthy {
+		t.Errorf("expected the current bucket to be healthy, got %v", last.Status)
+	}
+	for _, bucket := range stats.Buckets[:len(stats.Buckets)-1] {
+		if bucket.Status != nil {
+			t.Fatalf("expected earlier buckets to be untracked, got %q", *bucket.Status)
+		}
 	}
 }

@@ -52,7 +52,8 @@ const (
 )
 
 // Stats summarizes an application's health over a range. Durations are in
-// seconds and only count the part of the range that has data.
+// seconds. Time before the application's first health change is not tracked
+// and counts neither as data nor as a gap.
 type Stats struct {
 	Range         Range         `json:"range"`
 	From          time.Time     `json:"from"`
@@ -79,16 +80,17 @@ type CurrentState struct {
 
 // Bucket is one bar of the availability chart. Status is the most severe
 // failing status in the bucket; without failures it is unknown when the
-// bucket has more time without data than healthy time.
+// bucket has more time without data than healthy time. It is nil when the
+// bucket lies entirely before the application's first health change.
 type Bucket struct {
-	Start            time.Time           `json:"start"`
-	End              time.Time           `json:"end"`
-	Status           models.HealthStatus `json:"status"`
-	HealthySeconds   int64               `json:"healthySeconds"`
-	DegradedSeconds  int64               `json:"degradedSeconds"`
-	UnhealthySeconds int64               `json:"unhealthySeconds"`
-	StoppedSeconds   int64               `json:"stoppedSeconds"`
-	NoDataSeconds    int64               `json:"noDataSeconds"`
+	Start            time.Time            `json:"start"`
+	End              time.Time            `json:"end"`
+	Status           *models.HealthStatus `json:"status"`
+	HealthySeconds   int64                `json:"healthySeconds"`
+	DegradedSeconds  int64                `json:"degradedSeconds"`
+	UnhealthySeconds int64                `json:"unhealthySeconds"`
+	StoppedSeconds   int64                `json:"stoppedSeconds"`
+	NoDataSeconds    int64                `json:"noDataSeconds"`
 }
 
 // Incident is a period in which the application was degraded, unhealthy or
@@ -171,7 +173,7 @@ func GetStats(ctx context.Context, applicationID string, r Range, now time.Time)
 			healthy += d
 		case isFailing(s.status):
 			downtime += d
-		default:
+		case s.recorded:
 			noData += d
 		}
 	}
@@ -254,22 +256,28 @@ func buildBuckets(segments []segment, from, now time.Time, size time.Duration) [
 			case models.Stopped:
 				b.StoppedSeconds += d
 			default:
-				b.NoDataSeconds += d
+				if s.recorded {
+					b.NoDataSeconds += d
+				}
 			}
 		}
 
+		var status models.HealthStatus
 		switch {
 		case b.StoppedSeconds > 0:
-			b.Status = models.Stopped
+			status = models.Stopped
 		case b.UnhealthySeconds > 0:
-			b.Status = models.Unhealthy
+			status = models.Unhealthy
 		case b.DegradedSeconds > 0:
-			b.Status = models.Degraded
-		case b.HealthySeconds > 0 && b.HealthySeconds >= b.NoDataSeconds:
-			b.Status = models.Healthy
+			status = models.Degraded
+		case b.NoDataSeconds > b.HealthySeconds:
+			status = models.UnknownHealth
+		case b.HealthySeconds > 0:
+			status = models.Healthy
 		default:
-			b.Status = models.UnknownHealth
+			continue
 		}
+		b.Status = &status
 	}
 	return buckets
 }
