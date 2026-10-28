@@ -759,7 +759,10 @@ test.describe("Runtime health", () => {
 
 		await gotoApp(page, `/applications/${appId}/health?range=24h`);
 		await expect(page.getByRole("heading", { name: "Health" })).toBeVisible();
-		await expect(healthBadge(page, "Healthy")).toBeVisible();
+		// The availability legend also contains "Healthy", so match the status badge only
+		await expect(
+			page.locator("[data-slot='badge']").filter({ hasText: /^Healthy$/ }),
+		).toBeVisible();
 		await expect(page.getByText(/^\d{1,3}\.\d{2}%$/)).toBeVisible();
 		await expect(page.getByRole("row").filter({ hasText: "Unhealthy" }).first()).toBeVisible();
 		await expect(
