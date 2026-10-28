@@ -19,7 +19,7 @@ import { PasswordInput } from "@/components/auth/password-input";
 // Public credentials of the user seeded by the hub in demo mode
 const DEMO_CREDENTIALS = { email: "demo@orcacd.dev", password: "demo-password" };
 
-const loginSearchSchema =z.object({
+const loginSearchSchema = z.object({
 	error: z.string().optional(),
 });
 
