@@ -1,13 +1,11 @@
 import { FlaskConicalIcon } from "lucide-react";
-import { useFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { m } from "@/lib/paraglide/messages";
 
 export default function DemoBanner() {
-	const { data } = useFetch<{ demo?: boolean }>("/auth/setup", {
-		revalidateOnFocus: false,
-	});
+	const { auth } = useAuth();
 
-	if (!data?.demo) {
+	if (!auth.profile?.demo) {
 		return null;
 	}
 

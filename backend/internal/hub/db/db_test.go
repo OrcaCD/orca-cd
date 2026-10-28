@@ -1037,6 +1037,48 @@ func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	assertDemoSeedCounts(t, DB)
 }
 
+func TestConnect_RefusesNonDemoStartOnDemoDatabase(t *testing.T) {
+	initTestCrypto(t)
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to read current working directory: %v", err)
+	}
+
+	workDir := t.TempDir()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, "data"), 0750); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+		if DB != nil {
+			if sqlDB, err := DB.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+			DB = nil
+		}
+	})
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
+		t.Fatalf("demo Connect() error: %v", err)
+	}
+	closeGlobalDB(t)
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, false); !errors.Is(err, ErrNonDemoOnDemoDatabase) {
+		t.Fatalf("non-demo Connect() error = %v, want %v", err, ErrNonDemoOnDemoDatabase)
+	}
+	if DB != nil {
+		t.Fatal("expected the global DB to stay unset when the start is refused")
+	}
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
+		t.Fatalf("demo Connect() after refused start error: %v", err)
+	}
+}
+
 func TestSqliteFilePath_ReturnsExpectedPath(t *testing.T) {
 	expectedSuffix := "data/hub.db"
 	if got := GetSQLiteFilePath(); got != expectedSuffix {

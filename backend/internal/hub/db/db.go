@@ -111,6 +111,15 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 		return err
 	}
 
+	if !demo {
+		if err := refuseDemoDatabase(db); err != nil {
+			if sqlDB, dbErr := db.DB(); dbErr == nil {
+				_ = sqlDB.Close()
+			}
+			return err
+		}
+	}
+
 	// Populate the application name_hash blind index for rows created before the
 	// column existed. Skipped in demo mode where the database is read-only.
 	if !demo {

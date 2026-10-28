@@ -40,6 +40,25 @@ const (
 
 var ErrDemoOnExistingDatabase = errors.New("demo mode cannot be enabled on a database that contains non-demo users, use an empty data directory")
 
+func IsDemoLogin(email, password string) bool {
+	return email == demoSeedUserEmail && password == demoSeedUserPassword
+}
+
+var ErrNonDemoOnDemoDatabase = errors.New("the database contains the public demo users, refusing to start without DEMO=true, use an empty data directory")
+
+func refuseDemoDatabase(db *gorm.DB) error {
+	count, err := gorm.G[models.User](db).
+		Where("id IN ?", []string{demoSeedUserID, demoSeedMemberID}).
+		Count(context.Background(), "*")
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrNonDemoOnDemoDatabase
+	}
+	return nil
+}
+
 const demoWebComposeFile = `services:
   web:
     image: ghcr.io/orcacd/demo-app:1.4.2

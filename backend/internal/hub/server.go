@@ -165,10 +165,6 @@ func Run(cfg Config) error {
 
 	router.Use(middleware.RequestLogger(Log))
 
-	if cfg.Demo {
-		router.Use(middleware.DemoBlocking())
-	}
-
 	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		return err
@@ -178,6 +174,9 @@ func Run(cfg Config) error {
 	}
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.IPLock(cfg.AllowedIPs))
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
+	}
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
