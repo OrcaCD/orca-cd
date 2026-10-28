@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -47,12 +47,11 @@ func DefaultConfig() (Config, error) {
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
-	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 
-	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
-	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
-	disableUI, _ := strconv.ParseBool(os.Getenv("DISABLE_UI"))
+	disableLocalAuth := utils.EnvBool("DISABLE_LOCAL_AUTH")
+	demo := utils.EnvBool("DEMO")
+	disableUI := utils.EnvBool("DISABLE_UI")
 	if port == "" {
 		port = "8080"
 	}
@@ -62,7 +61,7 @@ func DefaultConfig() (Config, error) {
 		logLevel = zerolog.InfoLevel
 	}
 
-	logJSON := strings.EqualFold(logJSONStr, "true")
+	logJSON := utils.EnvBool("LOG_JSON")
 
 	var trustedProxies []string
 	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {

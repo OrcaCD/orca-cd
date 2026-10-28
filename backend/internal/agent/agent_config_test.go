@@ -282,7 +282,10 @@ func TestDefaultConfig_RestrictBindMountsToDeployDir(t *testing.T) {
 	}{
 		{"true", true},
 		{"TRUE", true},
+		{"1", true},
+		{"yes", true},
 		{"false", false},
+		{"0", false},
 		{"invalid", false},
 		{"", false},
 	}
