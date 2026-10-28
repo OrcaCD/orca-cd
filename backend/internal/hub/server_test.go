@@ -291,7 +291,7 @@ func setupRecoveryTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}, &models.ApplicationHealthChange{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	sqlDB, err := testDB.DB()
@@ -323,10 +323,12 @@ func TestRecoverInterruptedState(t *testing.T) {
 	if err := db.DB.Select("*").Create(&repo).Error; err != nil {
 		t.Fatalf("failed to seed repo: %v", err)
 	}
+	lastSeen := time.Now().Add(-10 * time.Minute).UTC()
 	agent := models.Agent{
-		Name:   crypto.EncryptedString("test-agent"),
-		KeyId:  crypto.EncryptedString("test-key"),
-		Status: models.AgentStatusOnline,
+		Name:     crypto.EncryptedString("test-agent"),
+		KeyId:    crypto.EncryptedString("test-key"),
+		Status:   models.AgentStatusOnline,
+		LastSeen: &lastSeen,
 	}
 	if err := db.DB.Select("*").Create(&agent).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
@@ -336,13 +338,20 @@ func TestRecoverInterruptedState(t *testing.T) {
 		RepositoryId: repo.Id,
 		AgentId:      agent.Id,
 		SyncStatus:   models.Syncing,
-		HealthStatus: models.UnknownHealth,
+		HealthStatus: models.Healthy,
 		Branch:       "main",
 		Path:         "deploy.yml",
 		ComposeFile:  crypto.EncryptedString("services: {}\n"),
 	}
 	if err := db.DB.Select("*").Create(&app).Error; err != nil {
 		t.Fatalf("failed to seed application: %v", err)
+	}
+	if err := db.DB.Create(&models.ApplicationHealthChange{
+		ApplicationId: app.Id,
+		Status:        models.Healthy,
+		ChangedAt:     time.Now().Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed health change: %v", err)
 	}
 
 	requestID := "interrupted-request"
@@ -393,6 +402,21 @@ func TestRecoverInterruptedState(t *testing.T) {
 	}
 	if recoveredApp.SyncStatus != models.OutOfSync {
 		t.Errorf("expected app SyncStatus %q, got %q", models.OutOfSync, recoveredApp.SyncStatus)
+	}
+	if recoveredApp.HealthStatus != models.Healthy {
+		t.Errorf("expected app HealthStatus to stay %q, got %q", models.Healthy, recoveredApp.HealthStatus)
+	}
+
+	var latestHealth models.ApplicationHealthChange
+	if err := db.DB.Order("changed_at DESC").First(&latestHealth, "application_id = ?", app.Id).Error; err != nil {
+		t.Fatalf("failed to load latest health change: %v", err)
+	}
+	if latestHealth.Status != models.UnknownHealth ||
+		latestHealth.Reason == nil || *latestHealth.Reason != models.HealthChangeReasonAgentOffline {
+		t.Errorf("expected agent offline health change, got %+v", latestHealth)
+	}
+	if !latestHealth.ChangedAt.Equal(lastSeen) {
+		t.Errorf("expected agent to be offline since it was last seen (%v), got %v", lastSeen, latestHealth.ChangedAt)
 	}
 
 	var recoveredEvent models.ApplicationEvent

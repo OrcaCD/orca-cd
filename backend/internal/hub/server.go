@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
@@ -158,6 +159,7 @@ func Run(cfg Config) error {
 		defer applications.DefaultImagePullDebouncer.Stop()
 
 		defer db.StartVacuumScheduler()()
+		defer healthhistory.StartPruner(&Log)()
 	}
 
 	router := gin.New()
@@ -280,6 +282,8 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
 	}
 
+	recoverApplicationHealth(ctx, log)
+
 	// No agent is connected yet, mark all agents as offline
 	if _, err := gorm.G[models.Agent](db.DB).
 		Where("status <> ?", models.AgentStatusOffline).
@@ -292,5 +296,25 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		log.Warn().Err(err).Msg("failed to recover interrupted application events")
 	} else if recovered > 0 {
 		log.Info().Int64("count", recovered).Msg("marked interrupted application events as failed")
+	}
+}
+
+// recoverApplicationHealth marks each agent offline in the health history from
+// when it was last seen, as no agent is connected yet. The time the hub was
+// down then shows up as a gap. The applications keep their last health so a
+// change while the hub was down still notifies once the agent reconnects.
+func recoverApplicationHealth(ctx context.Context, log *zerolog.Logger) {
+	agents, err := gorm.G[models.Agent](db.DB).Select("id", "last_seen").Find(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to load agents to recover application health")
+	}
+	for _, agent := range agents {
+		offlineSince := time.Now()
+		if agent.LastSeen != nil {
+			offlineSince = *agent.LastSeen
+		}
+		if err := healthhistory.RecordAgentOffline(ctx, agent.Id, offlineSince); err != nil {
+			log.Warn().Err(err).Str("agent_id", agent.Id).Msg("failed to record application health history for offline agent")
+		}
 	}
 }
