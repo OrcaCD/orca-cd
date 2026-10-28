@@ -293,7 +293,7 @@
 	"agentSetupConnected": "{name} ist verbunden",
 	"agentSetupConnectedDescription": "Der Agent ist bereit für Deployments.",
 	"agentSetupConnectedWithError": "{name} ist verbunden, erreicht aber Docker nicht",
-	"agentSetupCreateFirstApplication": "Erste Application anlegen",
+	"agentSetupCreateFirstApplication": "Erste Anwendung anlegen",
 	"authToken": "Authentifizierungstoken",
 	"authTokenPlaceholder": "z. B. ghp_xxxxxxxxxxxx",
 	"authTokenRecommendedHint": "Für private Repositories empfohlen.",
