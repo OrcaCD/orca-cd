@@ -100,7 +100,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
 
-			protected.GET("/events", routes.SSEHandler)
+			// The demo data never changes, so there is nothing to stream, and the
+			// per-user connection cap would let one visitor block the others
+			if !cfg.Demo {
+				protected.GET("/events", routes.SSEHandler)
+			}
 		}
 
 		// Admin routes (authentication + admin role required)

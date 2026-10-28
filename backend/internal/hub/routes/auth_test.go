@@ -424,6 +424,49 @@ func TestLoginHandler_Success(t *testing.T) {
 	}
 }
 
+func TestLoginHandler_DemoModeSkipsPasswordHashing(t *testing.T) {
+	setupTestDB(t)
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+
+	// An unparsable hash makes any argon2 comparison fail, so a successful
+	// demo login proves the hash was never checked.
+	invalidHash := "not-an-argon2-hash"
+	if err := db.DB.Create(&models.User{Email: "demo@orcacd.dev", Name: "Demo", PasswordHash: &invalidHash}).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		email      string
+		password   string
+		wantStatus int
+	}{
+		{"demo credentials", "demo@orcacd.dev", "demo-password", http.StatusOK},
+		{"wrong password", "demo@orcacd.dev", "wrong-password", http.StatusUnauthorized},
+		{"unknown email", "other@orcacd.dev", "demo-password", http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(loginRequest{Email: tt.email, Password: tt.password})
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			LoginHandler(c)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
+			}
+			if hasAuthCookie(w) != (tt.wantStatus == http.StatusOK) {
+				t.Errorf("unexpected auth cookie state for status %d", w.Code)
+			}
+		})
+	}
+}
+
 func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 	setupTestDB(t)
 
@@ -821,6 +864,32 @@ func TestProfileHandler_Success(t *testing.T) {
 	}
 	if body.IsLocal {
 		t.Error("expected isLocal=false for non-local user token")
+	}
+}
+
+func TestProfileHandler_ReportsDemoMode(t *testing.T) {
+	setupTestDB(t)
+
+	user := &models.User{Id: "user-demo-flag", Name: "Alice", Email: "alice@example.com"}
+
+	for _, demo := range []bool{false, true} {
+		DemoMode = demo
+		t.Cleanup(func() { DemoMode = false })
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+		setUserClaims(t, c, user)
+
+		ProfileHandler(c)
+
+		var body profileResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if body.Demo != demo {
+			t.Errorf("expected demo=%v, got %v", demo, body.Demo)
+		}
 	}
 }
 

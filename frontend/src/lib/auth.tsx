@@ -27,6 +27,7 @@ export interface Profile {
 	role: string;
 	passwordChangeRequired: boolean;
 	isLocal: boolean;
+	demo?: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -35,6 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 	const { data, isLoading, mutate } = useFetch<Profile>("/auth/profile", {
 		shouldRetryOnError: false,
 	});
+
+	const isDemo = data?.demo ?? false;
 
 	const auth: AuthState = {
 		isLoading,
@@ -52,13 +55,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		if (isLoading) {
 			return;
 		}
-		if (auth.isAuthenticated) {
+		// The demo hub has no event stream
+		if (auth.isAuthenticated && !isDemo) {
 			connect(refreshAuth);
 		} else {
 			disconnect();
 		}
 		return disconnect;
-	}, [isLoading, auth.isAuthenticated, refreshAuth]);
+	}, [isLoading, isDemo, auth.isAuthenticated, refreshAuth]);
 
 	const channelRef = useRef<BroadcastChannel | null>(null);
 	const prevAuthRef = useRef<boolean | null>(null);
