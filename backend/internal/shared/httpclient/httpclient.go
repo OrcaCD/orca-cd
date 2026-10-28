@@ -15,7 +15,7 @@ const DefaultTimeout = 15 * time.Second
 
 var safeTransport = func() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = dialer.DialContext
+	transport.DialContext = DialContext
 	transport.ForceAttemptHTTP2 = true
 	transport.MaxIdleConns = 100
 	transport.IdleConnTimeout = 90 * time.Second

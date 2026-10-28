@@ -21,6 +21,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
@@ -107,6 +108,10 @@ func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 	applications.Log = Log
+
+	if cfg.Demo {
+		httpclient.Disable()
+	}
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
