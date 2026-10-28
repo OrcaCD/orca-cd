@@ -210,6 +210,8 @@ func TestHandleApplicationStatusReport_RecordsHealthHistory(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedAppForAgent(t, "agent-1")
 	other := seedAppForAgent(t, "agent-2")
+	// Healthy→degraded sends a notification.
+	expectAsyncNotification(t)
 
 	nop := zerolog.Nop()
 	client := &Client{Id: "agent-1"}
