@@ -20,6 +20,7 @@ import (
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
@@ -53,7 +54,6 @@ type Config struct {
 
 func DefaultConfig() (Config, error) {
 	logLevelStr := os.Getenv("LOG_LEVEL")
-	logJSONStr := os.Getenv("LOG_JSON")
 	hubUrl := os.Getenv("HUB_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
 
@@ -84,7 +84,7 @@ func DefaultConfig() (Config, error) {
 		logLevel = zerolog.InfoLevel
 	}
 
-	logJSON := strings.EqualFold(logJSONStr, "true")
+	logJSON := utils.EnvBool("LOG_JSON")
 
 	healthPort := os.Getenv("HEALTHCHECK_PORT")
 	if healthPort == "" {
@@ -108,7 +108,7 @@ func DefaultConfig() (Config, error) {
 		}
 	}
 
-	restrictBindMountsToDeployDir := strings.EqualFold(os.Getenv("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR"), "true")
+	restrictBindMountsToDeployDir := utils.EnvBool("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR")
 
 	var rootCAs *x509.CertPool
 	if caCertFile := os.Getenv("CA_CERT_FILE"); caCertFile != "" {
