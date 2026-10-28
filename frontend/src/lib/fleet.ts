@@ -46,8 +46,13 @@ export const fleetCategoryConfig: Record<
 };
 
 export function getFleetCategory(app: ApplicationListItem): FleetCategory {
-	// Stopped apps are not running anything, so they need the same attention.
-	if (app.healthStatus === HealthStatus.Unhealthy || app.healthStatus === HealthStatus.Stopped) {
+	// Stopped and degraded apps are (partially) not running, so they need the
+	// same attention.
+	if (
+		app.healthStatus === HealthStatus.Unhealthy ||
+		app.healthStatus === HealthStatus.Stopped ||
+		app.healthStatus === HealthStatus.Degraded
+	) {
 		return "unhealthy";
 	}
 	if (app.syncStatus === SyncStatus.OutOfSync) {
@@ -113,6 +118,8 @@ export function getAttentionItems(
 			reason = m.applicationsAttentionAgentError({ agent: app.agentName });
 		} else if (app.healthStatus === HealthStatus.Stopped) {
 			reason = m.applicationsAttentionStopped();
+		} else if (app.healthStatus === HealthStatus.Degraded) {
+			reason = m.applicationsAttentionDegraded();
 		} else if (category === "unhealthy") {
 			reason = m.applicationsAttentionUnhealthy();
 		} else {

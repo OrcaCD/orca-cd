@@ -304,7 +304,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
-		health := protoHealthToModel(status.Health)
+		health := reportedApplicationHealth(status)
 		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
 			log.Error().Err(err).
@@ -385,8 +385,8 @@ func sanitizeReportedVersion(v string) string {
 // the change triggers, if any. Transitions are detected with conditional
 // updates so concurrent reports cannot notify twice.
 //
-// Only Healthy→Unhealthy/Stopped and Unhealthy/Stopped→Healthy notify; a
-// stopped application counts as unhealthy for notifications. Unknown→Unhealthy
+// Only Healthy→Unhealthy/Stopped/Degraded and back to Healthy notify; stopped
+// and degraded applications count as unhealthy for notifications. Unknown→Unhealthy
 // is deliberately silent: health is reset to Unknown on every disconnect, so it
 // would re-announce unhealthy apps after each agent reconnect. Apps that are
 // currently deploying are skipped, as the deployment reports its own outcome.
@@ -394,12 +394,12 @@ func applyReportedHealth(ctx context.Context, agentId, applicationId string, hea
 	var event models.NotificationEvent
 	transition := gorm.G[models.Application](db.DB).Where("id = ? AND agent_id = ?", applicationId, agentId)
 	switch health {
-	case models.Unhealthy, models.Stopped:
+	case models.Unhealthy, models.Stopped, models.Degraded:
 		event = models.NotificationEventHealthUnhealthy
 		transition = transition.Where("health_status = ? AND sync_status <> ?", models.Healthy, models.Syncing)
 	case models.Healthy:
 		event = models.NotificationEventHealthRecovered
-		transition = transition.Where("health_status IN ?", []models.HealthStatus{models.Unhealthy, models.Stopped})
+		transition = transition.Where("health_status IN ?", []models.HealthStatus{models.Unhealthy, models.Stopped, models.Degraded})
 	}
 
 	if event != "" {
@@ -431,8 +431,26 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 		message = "Application " + app.Name.String() + " is unhealthy"
 	case models.Stopped:
 		message = "Application " + app.Name.String() + " is stopped"
+	case models.Degraded:
+		message = "Application " + app.Name.String() + " is degraded"
 	}
 	go notifications.SendForApplication(applicationId, event, message, log)
+}
+
+// reportedApplicationHealth derives the application health from a status
+// report. Agents report a partially failing application as unhealthy; when at
+// least one of its services is still healthy, the hub records it as degraded.
+func reportedApplicationHealth(status *messages.ApplicationStatus) models.HealthStatus {
+	health := protoHealthToModel(status.Health)
+	if health != models.Unhealthy {
+		return health
+	}
+	for _, service := range status.Services {
+		if service.Health == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+			return models.Degraded
+		}
+	}
+	return health
 }
 
 func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {

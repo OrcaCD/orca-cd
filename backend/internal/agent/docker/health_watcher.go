@@ -47,12 +47,12 @@ type healthWatcher struct {
 	debounce        time.Duration
 	maxDelay        time.Duration
 	snapshotTimeout time.Duration
-	checkHealth     func(ctx context.Context, appID string) HealthState
+	checkHealth     func(ctx context.Context, appID string) HealthReport
 	sender          MessageSender
 	pending         map[string]*pendingHealthEvaluation
 	evaluating      map[string]*healthEvaluation
 	epochs          map[string]uint64
-	lastReported    map[string]HealthState
+	lastReported    map[string]HealthReport
 	nextEpoch       uint64
 	stopped         bool
 }
@@ -68,7 +68,7 @@ func newHealthWatcher(c *Client) *healthWatcher {
 		pending:         make(map[string]*pendingHealthEvaluation),
 		evaluating:      make(map[string]*healthEvaluation),
 		epochs:          make(map[string]uint64),
-		lastReported:    make(map[string]HealthState),
+		lastReported:    make(map[string]HealthReport),
 	}
 }
 
@@ -325,7 +325,7 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 	checkCtx, cancel := context.WithTimeout(evaluation.ctx, healthEvaluateTimeout)
 	health := w.checkHealth(checkCtx, appID)
 	cancel()
-	if health == HealthUnknown {
+	if health.State == HealthUnknown {
 		return
 	}
 
@@ -335,7 +335,7 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 		return
 	}
 	last, seen := w.lastReported[appID]
-	if seen && last == health {
+	if seen && last.Equal(health) {
 		w.mu.Unlock()
 		return
 	}
@@ -349,7 +349,7 @@ func (w *healthWatcher) runEvaluation(appID string, evaluation *healthEvaluation
 	if err := sender.SendMessage(&messages.ClientMessage{
 		Payload: &messages.ClientMessage_ApplicationStatusReport{
 			ApplicationStatusReport: &messages.ApplicationStatusReport{
-				Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health.Proto()}},
+				Statuses: []*messages.ApplicationStatus{health.Proto(appID)},
 			},
 		},
 	}); err != nil {
@@ -364,7 +364,7 @@ func (w *healthWatcher) markUnsent(appID string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !w.stopped {
-		w.lastReported[appID] = HealthUnknown
+		w.lastReported[appID] = HealthReport{State: HealthUnknown}
 	}
 }
 
@@ -385,18 +385,18 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 	snapshotCtx, cancel := context.WithTimeout(ctx, w.snapshotTimeout)
 	defer cancel()
 	statuses := make([]*messages.ApplicationStatus, 0, len(appIDs))
-	reported := make(map[string]HealthState, len(appIDs))
+	reported := make(map[string]HealthReport, len(appIDs))
 	var unchecked []string
 	for _, appID := range appIDs {
-		health := HealthUnknown
+		health := HealthReport{State: HealthUnknown}
 		if snapshotCtx.Err() == nil {
 			health = w.checkHealth(snapshotCtx, appID)
 		}
 		if snapshotCtx.Err() != nil {
-			health = HealthUnknown
+			health = HealthReport{State: HealthUnknown}
 			unchecked = append(unchecked, appID)
 		}
-		statuses = append(statuses, &messages.ApplicationStatus{ApplicationId: appID, Health: health.Proto()})
+		statuses = append(statuses, health.Proto(appID))
 		reported[appID] = health
 	}
 	if ctx.Err() != nil {
@@ -418,8 +418,8 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 		w.mu.Lock()
 		if !w.stopped {
 			for appID, health := range reported {
-				if health != HealthUnknown {
-					w.lastReported[appID] = HealthUnknown
+				if health.State != HealthUnknown {
+					w.lastReported[appID] = HealthReport{State: HealthUnknown}
 				}
 			}
 		}
@@ -430,7 +430,7 @@ func (w *healthWatcher) reportApplicationStatus(ctx context.Context, sender Mess
 	w.mu.Lock()
 	if !w.stopped {
 		for appID, health := range reported {
-			if health == HealthUnknown {
+			if health.State == HealthUnknown {
 				delete(w.lastReported, appID)
 				continue
 			}
@@ -468,7 +468,7 @@ func (w *healthWatcher) reconcileMissingApplication(appID string) {
 	sender := w.sender
 	w.mu.Unlock()
 	reported := false
-	reportedHealth := HealthUnknown
+	reportedHealth := HealthReport{State: HealthUnknown}
 	if !stopped && sender != nil {
 		checkCtx, cancel := context.WithTimeout(w.ctx, healthEvaluateTimeout)
 		health := w.checkHealth(checkCtx, appID)
@@ -478,7 +478,7 @@ func (w *healthWatcher) reconcileMissingApplication(appID string) {
 			if err := sender.SendMessage(&messages.ClientMessage{
 				Payload: &messages.ClientMessage_ApplicationStatusReport{
 					ApplicationStatusReport: &messages.ApplicationStatusReport{
-						Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health.Proto()}},
+						Statuses: []*messages.ApplicationStatus{health.Proto(appID)},
 					},
 				},
 			}); err != nil {
@@ -492,7 +492,7 @@ func (w *healthWatcher) reconcileMissingApplication(appID string) {
 	w.mu.Lock()
 	if !w.stopped {
 		switch {
-		case reported && reportedHealth != HealthUnknown:
+		case reported && reportedHealth.State != HealthUnknown:
 			w.lastReported[appID] = reportedHealth
 		case reported:
 			delete(w.lastReported, appID)
