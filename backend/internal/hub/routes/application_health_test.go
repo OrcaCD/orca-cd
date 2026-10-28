@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +75,9 @@ func TestGetApplicationHealthHandlerDefaultsToDay(t *testing.T) {
 	}
 	if stats.Range != healthhistory.Range24h || stats.Availability != nil {
 		t.Errorf("expected 24h range without availability, got %q / %v", stats.Range, stats.Availability)
+	}
+	if !strings.Contains(w.Body.String(), `"incidents":[]`) {
+		t.Errorf("expected an empty incidents list instead of null, got %s", w.Body.String())
 	}
 }
 

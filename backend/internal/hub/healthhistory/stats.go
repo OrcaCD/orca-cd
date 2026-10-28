@@ -277,7 +277,8 @@ func buildBuckets(segments []segment, from, now time.Time, size time.Duration) [
 // buildIncidents returns incidents and recorded data gaps in chronological
 // order.
 func buildIncidents(segments []segment, now time.Time) []Incident {
-	var incidents []Incident
+	// Non-nil so a range without incidents serializes as an empty list.
+	incidents := []Incident{}
 	for _, s := range segments {
 		if !s.recorded || s.status == models.Healthy || !s.end.After(s.start) {
 			continue
