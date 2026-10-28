@@ -449,7 +449,7 @@ func TestLoginHandler_DemoModeSkipsPasswordHashing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reqBody, _ := json.Marshal(loginRequest{Email: tt.email, Password: tt.password})
+			reqBody, _ := json.Marshal(loginRequest{Email: tt.email, Password: tt.password}) //nolint:gosec // test credentials
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
