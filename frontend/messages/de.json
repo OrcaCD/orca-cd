@@ -741,5 +741,7 @@
 	"applicationSettingsDeploymentDescription": "Optionen, die bei jedem Deployment dieser Anwendung gelten.",
 	"noComposeFileSelected": "Keine Compose-Datei ausgewählt",
 	"dangerZone": "Gefahrenbereich",
-	"deleteApplicationHint": "Diese Anwendung dauerhaft löschen und ihre Container vom Agenten entfernen."
+	"deleteApplicationHint": "Diese Anwendung dauerhaft löschen und ihre Container vom Agenten entfernen.",
+	"demoBannerMessage": "Demo-Modus: Daten sind schreibgeschützt.",
+	"demoActionNotAllowed": "Im Demo-Modus nicht erlaubt."
 }

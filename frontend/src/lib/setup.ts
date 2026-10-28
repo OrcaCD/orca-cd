@@ -6,11 +6,13 @@ export async function getSetupStatus() {
 		needsSetup: boolean;
 		providers?: AuthProviderInfo[];
 		localAuthEnabled?: boolean;
+		demo?: boolean;
 	}>("/auth/setup", "GET");
 
 	return {
 		needsSetup: data.needsSetup,
 		providers: data.providers ?? [],
 		localAuthEnabled: data.localAuthEnabled ?? true,
+		demo: data.demo ?? false,
 	};
 }

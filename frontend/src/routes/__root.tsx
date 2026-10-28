@@ -9,6 +9,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import Navbar from "@/components/navbar";
+import DemoBanner from "@/components/demo-banner";
 import { Toaster } from "@/components/ui/toast";
 import { useAuth, type AuthState } from "@/lib/auth";
 import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
@@ -30,6 +31,7 @@ function RootComponent() {
 			<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
 				<TooltipProvider>
 					<div className="min-h-screen bg-background">
+						{showNavbar && <DemoBanner />}
 						{showNavbar && <Navbar />}
 						<ForcePasswordChangeDialog />
 						<Outlet />
