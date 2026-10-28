@@ -31,6 +31,7 @@ import { Route as AuthenticatedSettingsProfileRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsSecurityRouteImport } from './routes/_authenticated/settings/security'
 import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_authenticated/applications/$id/index'
 import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
+import { Route as AuthenticatedApplicationsIdHealthRouteImport } from './routes/_authenticated/applications/$id/health'
 import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
 import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
@@ -164,6 +165,12 @@ const AuthenticatedApplicationsIdDetailsRoute =
     path: '/details',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdHealthRoute =
+  AuthenticatedApplicationsIdHealthRouteImport.update({
+    id: '/health',
+    path: '/health',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedApplicationsIdHistoryRoute =
   AuthenticatedApplicationsIdHistoryRouteImport.update({
     id: '/history',
@@ -240,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
@@ -268,6 +276,7 @@ export interface FileRoutesByTo {
   '/repositories': typeof AuthenticatedRepositoriesIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
@@ -302,6 +311,7 @@ export interface FileRoutesById {
   '/_authenticated/repositories/': typeof AuthenticatedRepositoriesIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
+  '/_authenticated/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/_authenticated/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
@@ -336,6 +346,7 @@ export interface FileRouteTypes {
     | '/repositories/'
     | '/settings/'
     | '/applications/$id/details'
+    | '/applications/$id/health'
     | '/applications/$id/history'
     | '/applications/$id/'
     | '/repositories/$id/'
@@ -364,6 +375,7 @@ export interface FileRouteTypes {
     | '/repositories'
     | '/settings'
     | '/applications/$id/details'
+    | '/applications/$id/health'
     | '/applications/$id/history'
     | '/applications/$id'
     | '/repositories/$id'
@@ -397,6 +409,7 @@ export interface FileRouteTypes {
     | '/_authenticated/repositories/'
     | '/_authenticated/settings/'
     | '/_authenticated/applications/$id/details'
+    | '/_authenticated/applications/$id/health'
     | '/_authenticated/applications/$id/history'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/repositories/$id/'
@@ -571,6 +584,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdDetailsRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/health': {
+      id: '/_authenticated/applications/$id/health'
+      path: '/health'
+      fullPath: '/applications/$id/health'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdHealthRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/applications/$id/history': {
       id: '/_authenticated/applications/$id/history'
       path: '/history'
@@ -675,6 +695,7 @@ const AuthenticatedSettingsRouteWithChildren =
 
 interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdDetailsRoute: typeof AuthenticatedApplicationsIdDetailsRoute
+  AuthenticatedApplicationsIdHealthRoute: typeof AuthenticatedApplicationsIdHealthRoute
   AuthenticatedApplicationsIdHistoryRoute: typeof AuthenticatedApplicationsIdHistoryRoute
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -686,6 +707,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
   {
     AuthenticatedApplicationsIdDetailsRoute:
       AuthenticatedApplicationsIdDetailsRoute,
+    AuthenticatedApplicationsIdHealthRoute:
+      AuthenticatedApplicationsIdHealthRoute,
     AuthenticatedApplicationsIdHistoryRoute:
       AuthenticatedApplicationsIdHistoryRoute,
     AuthenticatedApplicationsIdIndexRoute:
