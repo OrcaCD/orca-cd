@@ -772,5 +772,6 @@
 	"healthIncidentUnknown": "Health could not be determined",
 	"healthIncidentAfterDeploy": "After deploy",
 	"healthIncidentAfterDeployCommit": "After deploy {commit}",
-	"healthIncidentAfterImageUpdate": "After image update"
+	"healthIncidentAfterImageUpdate": "After image update",
+	"healthNotTracked": "Not tracked yet"
 }

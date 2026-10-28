@@ -772,5 +772,6 @@
 	"healthIncidentUnknown": "Gesundheitsstatus konnte nicht ermittelt werden",
 	"healthIncidentAfterDeploy": "Nach Deployment",
 	"healthIncidentAfterDeployCommit": "Nach Deployment {commit}",
-	"healthIncidentAfterImageUpdate": "Nach Image-Update"
+	"healthIncidentAfterImageUpdate": "Nach Image-Update",
+	"healthNotTracked": "Noch nicht erfasst"
 }

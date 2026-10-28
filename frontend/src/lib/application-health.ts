@@ -18,7 +18,8 @@ export interface ServiceHealth {
 export interface HealthBucket {
 	start: string;
 	end: string;
-	status: HealthStatus;
+	/** null when the bucket lies before the application's first health change. */
+	status: HealthStatus | null;
 	healthySeconds: number;
 	degradedSeconds: number;
 	unhealthySeconds: number;

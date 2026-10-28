@@ -52,7 +52,9 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 									<div
 										className={cn(
 											"h-full min-w-0 flex-1 rounded-[3px] transition-opacity hover:opacity-80",
-											healthStatusConfig[bucket.status].className,
+											bucket.status === null
+												? "bg-muted"
+												: healthStatusConfig[bucket.status].className,
 										)}
 									/>
 								}
@@ -61,6 +63,9 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 								<p className="font-medium">
 									{tooltipFormatter.formatRange(new Date(bucket.start), new Date(bucket.end))}
 								</p>
+								{bucket.status === null ? (
+									<p className="text-muted-foreground">{m.healthNotTracked()}</p>
+								) : null}
 								{bucketBreakdown
 									.filter((entry) => entry.seconds(bucket) > 0)
 									.map((entry) => (
