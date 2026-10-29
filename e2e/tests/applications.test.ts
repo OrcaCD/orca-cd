@@ -141,6 +141,11 @@ const safeCompose = policyComposeFile(
 
 const policyPath = (name: string) => `${name.toLowerCase().replaceAll(" ", "-")}/compose.yaml`;
 
+/** Starts without the healthy file, so its healthcheck fails right away. */
+function unhealthyComposeFile(version: number) {
+	return composeFile(version).replace(`touch ${HEALTHY_FILE}; `, "");
+}
+
 function composeFile(version: number, image = IMAGE) {
 	return `services:
   app:
@@ -771,6 +776,181 @@ test.describe("Runtime health", () => {
 		await expect(
 			page.getByRole("row").filter({ hasText: "All containers are stopped" }),
 		).toBeVisible();
+	});
+});
+
+test.describe("Rollback", () => {
+	const shortSha = (sha: string) => sha.slice(0, 7);
+	let goodSha = "";
+
+	async function rolledBackTo(page: Page, sha: string, source: string) {
+		await waitForApplication(
+			page,
+			appId,
+			(app) => !!app.rolledBackAt && app.syncStatus === "out_of_sync" && app.commit === sha,
+		);
+		await expect
+			.poll(
+				async () =>
+					(await applicationEvents(page, appId)).find(
+						(event) => event.type === "rollback" && event.source === source,
+					)?.status,
+				{ timeout: 60_000 },
+			)
+			.toBe("succeeded");
+		await waitForApplication(page, appId, (app) => app.syncStatus === "out_of_sync");
+	}
+
+	test("enable automatic rollback on its settings page", async ({ page }) => {
+		goodSha = (await getApplication(page, appId)).commit;
+		await gotoApp(page, `/applications/${appId}/settings/rollback`);
+		const toggle = page.getByRole("switch", { name: "Automatic rollback" });
+		await expect(toggle).not.toBeChecked();
+
+		await toggle.click();
+		await expect(page.getByRole("checkbox", { name: "Deploy fails" })).toBeChecked();
+		await expect(page.getByRole("checkbox", { name: "Unhealthy within" })).toBeChecked();
+		await expect(
+			page.getByRole("checkbox", { name: "Pause auto-sync after rollback" }),
+		).toBeChecked();
+		await page.locator("#healthTimeoutMinutes").fill("1");
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Application updated")).toBeVisible();
+
+		const { rollback } = await getApplication(page, appId);
+		expect(rollback).toEqual({
+			enabled: true,
+			onDeployFailure: true,
+			onUnhealthy: true,
+			healthTimeoutSeconds: 60,
+			pauseAutoSync: true,
+		});
+	});
+
+	test("a failed deployment is rolled back", async ({ page }) => {
+		const broken = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(7, UNPULLABLE_IMAGE) },
+			message: "Break the image again",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await rolledBackTo(page, broken.sha, "deployment_failure");
+		await expectEvent(page, "manual", broken.sha, "failed");
+		await expect.poll(runningVersion, { timeout: 30_000 }).toBe("6");
+		const app = await getApplication(page, appId);
+		expect(app.rolledBackCommit).toBe(goodSha);
+		expect(app.autoSyncPaused).toBe(true);
+
+		await gotoApp(page, `/applications/${appId}/details`);
+		await expect(page.getByText("Rolled back — out of sync with Git")).toBeVisible();
+		await expect(
+			page.getByText(`Running ${shortSha(goodSha)}, desired ${shortSha(broken.sha)}.`),
+		).toBeVisible();
+
+		await gotoApp(page, `/applications/${appId}/history`);
+		const rollback = page
+			.getByRole("listitem")
+			.filter({ hasText: `Automatic rollback to ${shortSha(goodSha)}` })
+			.first();
+		await expect(rollback).toContainText("Rolled back");
+		await expect(rollback).toContainText("Failed deployment");
+		await expect(page.getByText("Current", { exact: true })).toBeVisible();
+
+		await gotoApp(page, "/");
+		await expect(page.getByText(`Rolled back to ${shortSha(goodSha)}`)).toBeVisible();
+	});
+
+	test("resume auto-sync from the banner", async ({ page }) => {
+		const { commit: desired } = await getApplication(page, appId);
+		await gotoApp(page, `/applications/${appId}/history`);
+		await expect(page.getByText("Auto-sync is paused until you resume it.")).toBeVisible();
+
+		await page.getByRole("button", { name: "Resume auto-sync" }).click();
+
+		await expect(
+			page.getByText(`Auto-sync skips ${shortSha(desired)} until a new commit arrives.`),
+		).toBeVisible();
+		await expect(page.getByRole("button", { name: "Resume auto-sync" })).toHaveCount(0);
+		const app = await getApplication(page, appId);
+		expect(app.autoSyncPaused).toBe(false);
+		expect(app.rolledBackAt).toBeTruthy();
+	});
+
+	test("an unhealthy deployment is rolled back", async ({ page }) => {
+		const unhealthy = await commit(REPO, {
+			files: { [COMPOSE_PATH]: unhealthyComposeFile(8) },
+			message: "Never become healthy",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await rolledBackTo(page, unhealthy.sha, "health_check");
+		const failed = eventFor(await applicationEvents(page, appId), "manual", unhealthy.sha);
+		expect(failed?.status).toBe("failed");
+		expect(failed?.errorMessage).toMatch(/^health check failed: application was unhealthy/);
+		await expect.poll(runningVersion, { timeout: 30_000 }).toBe("6");
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+	});
+
+	test("deploying a fix ends the rollback", async ({ page }) => {
+		const fixed = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(9) },
+			message: "Become healthy again",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("9");
+		await waitForApplication(
+			page,
+			appId,
+			(app) => app.commit === fixed.sha && !app.rolledBackAt && app.syncStatus === "synced",
+		);
+		// The deployment completes once it stayed healthy for the configured minute
+		await gotoApp(page, `/applications/${appId}/history`);
+		await expect(
+			page
+				.getByRole("listitem")
+				.filter({ hasText: shortSha(fixed.sha) })
+				.first(),
+		).toContainText("Verifying health");
+		await expect(page.getByText("Rolled back — out of sync with Git")).toHaveCount(0);
+	});
+
+	test("roll back manually from the history", async ({ page }) => {
+		const { commit: desired } = await getApplication(page, appId);
+		await gotoApp(page, `/applications/${appId}/history`);
+		const target = page
+			.getByRole("listitem")
+			.filter({ has: page.getByRole("button", { name: "Roll back" }) })
+			.first();
+		await target.getByRole("button", { name: "Roll back" }).click();
+		await page.getByRole("dialog").getByRole("button", { name: "Roll back" }).click();
+		await expect(page.getByText("Rollback started")).toBeVisible();
+
+		await waitForApplication(page, appId, (app) => !!app.rolledBackAt && app.autoSyncPaused);
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("6");
+		const rollback = (await applicationEvents(page, appId)).find(
+			(event) => event.type === "rollback",
+		);
+		expect(rollback).toMatchObject({ source: "manual", status: "succeeded" });
+
+		await gotoApp(page, `/applications/${appId}/details`);
+		await expect(page.getByText(`desired ${shortSha(desired)}`)).toBeVisible();
+		await page.getByRole("button", { name: "Retry deploy" }).click();
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("9");
+		await waitForApplication(page, appId, (app) => !app.rolledBackAt && app.commit === desired);
+		await expect(page.getByText("Rolled back — out of sync with Git")).toHaveCount(0);
+	});
+
+	test("disable automatic rollback", async ({ page }) => {
+		await gotoApp(page, `/applications/${appId}/settings/rollback`);
+		await expect(page.getByRole("switch", { name: "Automatic rollback" })).toBeChecked();
+		await page.getByRole("switch", { name: "Automatic rollback" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Application updated")).toBeVisible();
+		expect((await getApplication(page, appId)).rollback.enabled).toBe(false);
 	});
 });
 
