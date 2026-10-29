@@ -116,6 +116,10 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 	return false
 }
 
+// ErrRedeployFailed reports that new images were pulled but recreating the
+// containers with them failed.
+var ErrRedeployFailed = errors.New("compose up after pull")
+
 // CheckAndPullImages checks whether any service image in the deployed compose
 // project for appName is stale compared to its registry. If any are stale, it
 // pulls all images and redeploys. Returns true if at least one image
@@ -210,7 +214,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 			SkipProviders:        !c.isPrivilegedApp(appID),
 		},
 	}); err != nil {
-		return false, fmt.Errorf("compose up after pull: %w", err)
+		return false, fmt.Errorf("%w: %w", ErrRedeployFailed, err)
 	}
 
 	if deleteOldImages {

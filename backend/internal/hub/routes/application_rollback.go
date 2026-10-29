@@ -106,3 +106,68 @@ func ResumeApplicationAutoSyncHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "auto-sync resumed"})
 	sse.PublishUpdate(sse.TopicApplications)
 }
+
+const (
+	minRollbackHealthTimeoutSeconds = 30
+	maxRollbackHealthTimeoutSeconds = 60 * 60
+)
+
+type updateRollbackSettingsRequest struct {
+	Enabled              bool  `json:"enabled"`
+	OnDeployFailure      bool  `json:"onDeployFailure"`
+	OnUnhealthy          bool  `json:"onUnhealthy"`
+	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds"`
+	PauseAutoSync        bool  `json:"pauseAutoSync"`
+}
+
+// UpdateRollbackSettingsHandler configures the automatic rollback of an
+// application.
+func UpdateRollbackSettingsHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+
+	var req updateRollbackSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if req.HealthTimeoutSeconds < minRollbackHealthTimeoutSeconds || req.HealthTimeoutSeconds > maxRollbackHealthTimeoutSeconds {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "health timeout must be between 30 seconds and 1 hour"})
+		return
+	}
+
+	rowsAffected, err := gorm.G[models.Application](db.DB).
+		Where("id = ?", id).
+		Select("RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
+		Updates(ctx, models.Application{
+			RollbackEnabled:              req.Enabled,
+			RollbackOnDeployFailure:      req.OnDeployFailure,
+			RollbackOnUnhealthy:          req.OnUnhealthy,
+			RollbackHealthTimeoutSeconds: req.HealthTimeoutSeconds,
+			RollbackPauseAutoSync:        req.PauseAutoSync,
+		})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+
+	application, err := gorm.G[models.Application](db.DB).
+		Preload("Repository", nil).
+		Preload("Agent", nil).
+		Where("id = ?", id).
+		First(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	utils.RecordAuditLog(c, "updated", "application", id)
+	c.JSON(http.StatusOK, toApplicationResponse(&application))
+	sse.PublishUpdate(sse.TopicApplications)
+	// The images kept for rollbacks depend on the settings.
+	sendAgentSettings(c, application.AgentId)
+}

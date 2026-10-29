@@ -68,6 +68,11 @@ type stubDeployer struct {
 	reqCh    chan agentdocker.DeployRequest
 	deleteCh chan agentdocker.DeleteRequest
 	images   []*messages.ServiceImage
+	retained sync.Map
+}
+
+func (d *stubDeployer) SetImageRetention(appID string, retention *messages.ImageRetention) {
+	d.retained.Store(appID, retention)
 }
 
 func (d *stubDeployer) ServiceImages(context.Context, string) ([]*messages.ServiceImage, error) {
@@ -824,6 +829,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 					{Service: "app", ImageId: "sha256:old", PinnedRef: "ghcr.io/orcacd/billing@sha256:old"},
 					{Service: "worker", ImageId: "sha256:worker"},
 				},
+				ImageRetention: &messages.ImageRetention{KeepImageIds: []string{"sha256:old"}},
 			},
 		},
 	}
@@ -848,6 +854,9 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if !req.DeleteOldImages {
 			t.Fatal("expected DeleteOldImages=true to be passed through from the request")
+		}
+		if retained, _ := deployer.retained.Load("app-1"); retained == nil || retained.(*messages.ImageRetention).KeepImageIds[0] != "sha256:old" {
+			t.Fatalf("expected the image retention to be stored before deploying, got %v", retained)
 		}
 		wantPins := map[string]string{"app": "ghcr.io/orcacd/billing@sha256:old", "worker": "sha256:worker"}
 		if !maps.Equal(req.PinnedImages, wantPins) {

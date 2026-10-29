@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -218,6 +220,7 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 			Enabled:         apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
 			DeleteOldImages: apps[i].DeleteOldImages,
+			ImageRetention:  h.imageRetention(&apps[i]),
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{
@@ -227,6 +230,21 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 			},
 		},
 	})
+}
+
+// imageRetention keeps the images a rollback needs when periodic image
+// updates delete old images.
+func (h *Hub) imageRetention(app *models.Application) *messages.ImageRetention {
+	if !app.RollbackEnabled || !app.DeleteOldImages {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	retention, err := deployments.ImageRetention(ctx, app)
+	if err != nil {
+		h.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to determine images to keep for rollbacks")
+	}
+	return retention
 }
 
 const writeWait = 10 * time.Second

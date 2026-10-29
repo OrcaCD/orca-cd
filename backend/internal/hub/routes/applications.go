@@ -84,37 +84,46 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id                       string  `json:"id"`
-	Icon                     string  `json:"icon"`
-	Name                     string  `json:"name"`
-	RepositoryId             string  `json:"repositoryId"`
-	RepositoryName           string  `json:"repositoryName"`
-	RepositoryUrl            string  `json:"repositoryUrl"`
-	RepositorySyncType       string  `json:"repositorySyncType"`
-	AgentId                  string  `json:"agentId"`
-	AgentName                string  `json:"agentName"`
-	SyncStatus               string  `json:"syncStatus"`
-	HealthStatus             string  `json:"healthStatus"`
-	Branch                   string  `json:"branch"`
-	Commit                   string  `json:"commit"`
-	CommitMessage            string  `json:"commitMessage"`
-	LastSyncedAt             *string `json:"lastSyncedAt"`
-	LastSyncError            *string `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string `json:"lastSyncSource,omitempty"`
-	Path                     string  `json:"path"`
-	CreatedAt                string  `json:"createdAt"`
-	UpdatedAt                string  `json:"updatedAt"`
-	ComposeFile              string  `json:"composeFile"`
-	PreviousComposeFile      string  `json:"previousComposeFile,omitempty"`
-	ImagePollEnabled         bool    `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
-	DeleteOldImages          bool    `json:"deleteOldImages"`
-	CurrentDeploymentId      *string `json:"currentDeploymentId"`
-	RolledBackAt             *string `json:"rolledBackAt"`
-	RolledBackCommit         *string `json:"rolledBackCommit"`
-	AutoSyncPaused           bool    `json:"autoSyncPaused"`
-	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
-	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
+	Id                       string                   `json:"id"`
+	Icon                     string                   `json:"icon"`
+	Name                     string                   `json:"name"`
+	RepositoryId             string                   `json:"repositoryId"`
+	RepositoryName           string                   `json:"repositoryName"`
+	RepositoryUrl            string                   `json:"repositoryUrl"`
+	RepositorySyncType       string                   `json:"repositorySyncType"`
+	AgentId                  string                   `json:"agentId"`
+	AgentName                string                   `json:"agentName"`
+	SyncStatus               string                   `json:"syncStatus"`
+	HealthStatus             string                   `json:"healthStatus"`
+	Branch                   string                   `json:"branch"`
+	Commit                   string                   `json:"commit"`
+	CommitMessage            string                   `json:"commitMessage"`
+	LastSyncedAt             *string                  `json:"lastSyncedAt"`
+	LastSyncError            *string                  `json:"lastSyncError,omitempty"`
+	LastSyncSource           *string                  `json:"lastSyncSource,omitempty"`
+	Path                     string                   `json:"path"`
+	CreatedAt                string                   `json:"createdAt"`
+	UpdatedAt                string                   `json:"updatedAt"`
+	ComposeFile              string                   `json:"composeFile"`
+	PreviousComposeFile      string                   `json:"previousComposeFile,omitempty"`
+	ImagePollEnabled         bool                     `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64                    `json:"imagePollIntervalSeconds"`
+	DeleteOldImages          bool                     `json:"deleteOldImages"`
+	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
+	RolledBackAt             *string                  `json:"rolledBackAt"`
+	RolledBackCommit         *string                  `json:"rolledBackCommit"`
+	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
+	Rollback                 rollbackSettingsResponse `json:"rollback"`
+	ImageWebhookEnabled      bool                     `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string                  `json:"imageWebhookUrl,omitempty"`
+}
+
+type rollbackSettingsResponse struct {
+	Enabled              bool  `json:"enabled"`
+	OnDeployFailure      bool  `json:"onDeployFailure"`
+	OnUnhealthy          bool  `json:"onUnhealthy"`
+	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds"`
+	PauseAutoSync        bool  `json:"pauseAutoSync"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
@@ -354,7 +363,8 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
 		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
-			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused").
+			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused",
+			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
@@ -611,7 +621,14 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		RolledBackAt:             formatTimestamp(app.RolledBackAt),
 		RolledBackCommit:         app.RolledBackCommit,
 		AutoSyncPaused:           app.AutoSyncPaused,
-		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
+		Rollback: rollbackSettingsResponse{
+			Enabled:              app.RollbackEnabled,
+			OnDeployFailure:      app.RollbackOnDeployFailure,
+			OnUnhealthy:          app.RollbackOnUnhealthy,
+			HealthTimeoutSeconds: app.RollbackHealthTimeoutSeconds,
+			PauseAutoSync:        app.RollbackPauseAutoSync,
+		},
+		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)

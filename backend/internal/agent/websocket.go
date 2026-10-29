@@ -49,6 +49,10 @@ type serviceImageReporter interface {
 	ServiceImages(ctx context.Context, appID string) ([]*messages.ServiceImage, error)
 }
 
+type imageRetentionSetter interface {
+	SetImageRetention(appID string, retention *messages.ImageRetention)
+}
+
 type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
 }
@@ -221,10 +225,14 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 			Log.Error().Err(err).Msg("failed to send Pong response")
 		}
 	case *messages.ServerMessage_DeployRequest:
+		setImageRetention(deployer, p.DeployRequest.ApplicationId, p.DeployRequest.ImageRetention)
 		go executeDeployment(ctx, sender, deployer, p.DeployRequest)
 	case *messages.ServerMessage_DeleteRequest:
 		go executeDelete(ctx, sender, deployer, p.DeleteRequest)
 	case *messages.ServerMessage_AgentSettings:
+		for _, settings := range p.AgentSettings.ImagePollSettings {
+			setImageRetention(deployer, settings.ApplicationId, settings.ImageRetention)
+		}
 		go applyAgentSettings(poller, p.AgentSettings)
 		// The hub sends AgentSettings right after connect, carrying the agent's
 		// full app list. Use it to report the real health of every application in
@@ -233,6 +241,7 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 			go reportApplicationStatus(ctx, sender, reporter, p.AgentSettings)
 		}
 	case *messages.ServerMessage_PullImagesRequest:
+		setImageRetention(deployer, p.PullImagesRequest.ApplicationId, p.PullImagesRequest.ImageRetention)
 		go executePullImages(poller, p.PullImagesRequest)
 	case *messages.ServerMessage_EnvListRequest:
 		go executeEnvList(ctx, sender, deployer, p.EnvListRequest)
@@ -257,6 +266,14 @@ func sendAgentInfo(sender outboundSender, dockerState dockerStateProvider) {
 		Payload: &messages.ClientMessage_AgentInfo{AgentInfo: info},
 	}); err != nil {
 		Log.Error().Err(err).Msg("failed to send agent info")
+	}
+}
+
+// setImageRetention stores the hub's latest image retention for an
+// application before the request that may delete old images runs.
+func setImageRetention(deployer deployExecutor, appID string, retention *messages.ImageRetention) {
+	if setter, ok := deployer.(imageRetentionSetter); ok {
+		setter.SetImageRetention(appID, retention)
 	}
 }
 
