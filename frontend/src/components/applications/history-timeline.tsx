@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import {
 	ApplicationEventStatus,
@@ -56,8 +57,6 @@ function groupByDay(events: ApplicationEvent[]) {
 }
 
 export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
-	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
-
 	return (
 		<div className="ml-1.5 space-y-6 border-l border-border">
 			{groupByDay(events).map((group) => (
@@ -67,7 +66,7 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 					</h2>
 					<ol>
 						{group.events.map((event) => (
-							<HistoryEvent key={event.id} event={event} timeFormatter={timeFormatter} />
+							<HistoryEvent key={event.id} event={event} />
 						))}
 					</ol>
 				</section>
@@ -76,13 +75,7 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 	);
 }
 
-function HistoryEvent({
-	event,
-	timeFormatter,
-}: {
-	event: ApplicationEvent;
-	timeFormatter: Intl.DateTimeFormat;
-}) {
+function HistoryEvent({ event }: { event: ApplicationEvent }) {
 	const createdAt = new Date(event.createdAt);
 	const duration = event.completedAt
 		? formatDuration(new Date(event.completedAt).getTime() - createdAt.getTime())
@@ -107,11 +100,8 @@ function HistoryEvent({
 					<span className="font-medium">{eventTypeLabel(event.type)}</span>
 					<ApplicationEventStatusBadge status={event.status} />
 				</div>
-				<span
-					className="text-xs whitespace-nowrap text-muted-foreground tabular-nums"
-					title={createdAt.toLocaleString()}
-				>
-					{timeFormatter.format(createdAt)}
+				<span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+					<RelativeTime value={createdAt} />
 					{duration ? ` · ${duration}` : null}
 				</span>
 			</div>

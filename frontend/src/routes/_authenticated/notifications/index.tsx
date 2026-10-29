@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
@@ -221,7 +222,7 @@ function NotificationsPage() {
 												{notification.enabled ? m.enabled() : m.disabled()}
 											</span>
 											<span className="text-muted-foreground">
-												{new Date(notification.updatedAt).toLocaleString()}
+												<RelativeTime value={notification.updatedAt} />
 											</span>
 										</div>
 									</CardContent>

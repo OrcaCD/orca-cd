@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ApplicationListItem } from "@/lib/applications";
 import type { Agent } from "@/lib/agents";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -188,8 +189,14 @@ function ApplicationsPage() {
 						) : null}
 						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 							{filteredApps.map((app) => (
-								<Link key={app.id} to="/applications/$id" params={{ id: app.id }}>
-									<Card className="border border-border hover:border-primary transition-colors">
+								<div key={app.id} className="group/application relative">
+									<Link
+										to="/applications/$id"
+										params={{ id: app.id }}
+										aria-label={app.name}
+										className="absolute inset-0 rounded-xl"
+									/>
+									<Card className="h-full border border-border group-hover/application:border-primary transition-colors">
 										<CardHeader>
 											<CardTitle>
 												<div className="flex items-center gap-3">
@@ -231,16 +238,14 @@ function ApplicationsPage() {
 														<GitCommit className="h-4 w-4" />
 														<span>{app.commit.slice(0, 7)}</span>
 													</div>
-													<span className="text-muted-foreground">
-														{app.lastSyncedAt
-															? new Date(app.lastSyncedAt).toLocaleString()
-															: m.never()}
+													<span className="relative text-muted-foreground">
+														<RelativeTime value={app.lastSyncedAt} />
 													</span>
 												</div>
 											</div>
 										</CardContent>
 									</Card>
-								</Link>
+								</div>
 							))}
 						</div>
 					</>
