@@ -172,6 +172,7 @@ func Run(cfg Config) error {
 
 		defer db.StartVacuumScheduler()()
 		defer healthhistory.StartPruner(&Log)()
+		defer websocket.StartHealthGate(&Log)()
 	}
 
 	router := gin.New()

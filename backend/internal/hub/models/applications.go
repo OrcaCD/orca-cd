@@ -68,8 +68,26 @@ type Application struct {
 	RolledBackCommit *string `gorm:"type:text;"`
 	// AutoSyncPaused stops automatic syncs of a rolled back application until
 	// they are resumed or the application is deployed again.
-	AutoSyncPaused bool           `gorm:"not null;default:false"`
-	Notifications  []Notification `gorm:"many2many:application_notifications;"`
+	AutoSyncPaused bool `gorm:"not null;default:false"`
+	// Automatic rollback to the previous deployment, off by default since it
+	// diverges from the state in Git.
+	RollbackEnabled         bool `gorm:"not null;default:false"`
+	RollbackOnDeployFailure bool `gorm:"not null;default:true"`
+	// RollbackOnUnhealthy rolls back deployments that become unhealthy, or
+	// don't become healthy, within RollbackHealthTimeoutSeconds.
+	RollbackOnUnhealthy          bool           `gorm:"not null;default:true"`
+	RollbackHealthTimeoutSeconds int64          `gorm:"not null;default:300"`
+	RollbackPauseAutoSync        bool           `gorm:"not null;default:true"`
+	Notifications                []Notification `gorm:"many2many:application_notifications;"`
+}
+
+// HealthGate returns how long a new deployment is watched before it counts as
+// succeeded, or 0 when its health doesn't decide whether to roll back.
+func (a *Application) HealthGate() time.Duration {
+	if !a.RollbackEnabled || !a.RollbackOnUnhealthy {
+		return 0
+	}
+	return time.Duration(a.RollbackHealthTimeoutSeconds) * time.Second
 }
 
 func (Application) TableName() string {

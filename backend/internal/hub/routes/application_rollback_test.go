@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -225,5 +227,64 @@ func TestPullApplicationImagesHandler_RolledBack(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func invokeRollbackSettingsHandler(t *testing.T, appID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+appID+"/rollback", strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: appID}}
+	UpdateRollbackSettingsHandler(c)
+	return w
+}
+
+func TestUpdateRollbackSettingsHandler(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-rollback-settings")
+	agent := seedTestAgent(t, "agent-rollback-settings")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Settings App")
+
+	w := invokeRollbackSettingsHandler(t, app.Id, `{"enabled":true,"onDeployFailure":false,"onUnhealthy":true,"healthTimeoutSeconds":120,"pauseAutoSync":false}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var response applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := rollbackSettingsResponse{Enabled: true, OnUnhealthy: true, HealthTimeoutSeconds: 120}
+	if response.Rollback != want {
+		t.Errorf("rollback settings = %+v, want %+v", response.Rollback, want)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if !updated.RollbackEnabled || updated.RollbackOnDeployFailure || !updated.RollbackOnUnhealthy ||
+		updated.RollbackHealthTimeoutSeconds != 120 || updated.RollbackPauseAutoSync {
+		t.Errorf("unexpected stored settings: %+v", updated)
+	}
+}
+
+func TestUpdateRollbackSettingsHandler_Rejects(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-rollback-settings-invalid")
+	agent := seedTestAgent(t, "agent-rollback-settings-invalid")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Settings App")
+
+	for _, tt := range []struct {
+		id, body string
+		want     int
+	}{
+		{app.Id, `{"enabled":true,"healthTimeoutSeconds":10}`, http.StatusBadRequest},
+		{app.Id, `{"enabled":true,"healthTimeoutSeconds":3601}`, http.StatusBadRequest},
+		{app.Id, `not json`, http.StatusBadRequest},
+		{"missing", `{"enabled":true,"healthTimeoutSeconds":300}`, http.StatusNotFound},
+	} {
+		if w := invokeRollbackSettingsHandler(t, tt.id, tt.body); w.Code != tt.want {
+			t.Errorf("%s %s: expected %d, got %d: %s", tt.id, tt.body, tt.want, w.Code, w.Body.String())
+		}
 	}
 }

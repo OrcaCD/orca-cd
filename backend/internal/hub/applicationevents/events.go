@@ -144,6 +144,45 @@ func Complete(
 	return true, nil
 }
 
+// CompleteForDeployment completes the running event that deployed the
+// deployment, once its health gate decided the outcome. Rollback events that
+// target the deployment are not affected.
+func CompleteForDeployment(
+	ctx context.Context,
+	applicationID string,
+	deploymentID string,
+	status models.ApplicationEventStatus,
+	errorMessage *string,
+) (bool, error) {
+	if !isCompletedStatus(status) {
+		return false, fmt.Errorf("event completion requires a completed status")
+	}
+
+	now := time.Now()
+	rowsAffected, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where(
+			"deployment_id = ? AND application_id = ? AND status = ? AND type <> ?",
+			deploymentID,
+			applicationID,
+			models.ApplicationEventRunning,
+			models.ApplicationEventRollback,
+		).
+		Select("Status", "ErrorMessage", "CompletedAt").
+		Updates(ctx, models.ApplicationEvent{
+			Status:       status,
+			ErrorMessage: errorMessage,
+			CompletedAt:  &now,
+		})
+	if err != nil {
+		return false, err
+	}
+	if rowsAffected == 0 {
+		return false, nil
+	}
+	publishUpdate(applicationID, true)
+	return true, nil
+}
+
 // ForRequest returns the event recorded for requestID, or nil when no such
 // event exists.
 func ForRequest(ctx context.Context, requestID string, applicationID string) (*models.ApplicationEvent, error) {
@@ -181,10 +220,16 @@ func SourceForRequest(ctx context.Context, requestID string, applicationID strin
 	return event.Source, true, nil
 }
 
+// NotVerifyingCondition excludes events whose deployment is under a health
+// gate: the agent reported their result, and the gate completes them.
+const NotVerifyingCondition = "(deployment_id IS NULL OR deployment_id NOT IN (SELECT id FROM application_deployments WHERE status = ?))"
+
+// RecoverRunning fails events whose result can no longer arrive.
 func RecoverRunning(ctx context.Context, message string) (int64, error) {
 	now := time.Now()
 	rowsAffected, err := gorm.G[models.ApplicationEvent](db.DB).
 		Where("status = ?", models.ApplicationEventRunning).
+		Where(NotVerifyingCondition, models.DeploymentVerifying).
 		Select("Status", "ErrorMessage", "CompletedAt").
 		Updates(ctx, models.ApplicationEvent{
 			Status:       models.ApplicationEventFailed,

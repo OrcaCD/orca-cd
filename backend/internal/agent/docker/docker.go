@@ -42,6 +42,8 @@ type Client struct {
 	daemonStateChanged        chan struct{}
 	healthWatcher             *healthWatcher
 	healthResyncMu            sync.Mutex
+	retentionMu               sync.Mutex
+	retention                 map[string]imageRetention
 	ctx                       context.Context
 	cancel                    context.CancelFunc
 }
