@@ -42,9 +42,16 @@ const (
 	// MaxIncidents bounds the incidents returned with the statistics. Counts
 	// always cover every incident in the range.
 	MaxIncidents = 100
+	// maxChanges bounds the health changes loaded for one range, so a flapping
+	// application cannot make the statistics arbitrarily expensive. When the
+	// range has more changes, only the latest ones are used.
+	maxChanges = 10_000
 	// deployIncidentGrace is how long after a deployment or image update an
 	// incident is still attributed to it.
 	deployIncidentGrace = 5 * time.Minute
+	// maxRunningEventAge bounds the attribution to a deployment or image update
+	// that is still running, so a stuck one is not blamed forever.
+	maxRunningEventAge = 30 * time.Minute
 	// eventQueryMargin widens the database filter for application events. Their
 	// timestamps are stored in the hub's local time, so the exact comparison
 	// happens in Go.
@@ -60,6 +67,9 @@ type Stats struct {
 	To            time.Time     `json:"to"`
 	BucketSeconds int64         `json:"bucketSeconds"`
 	Current       *CurrentState `json:"current"`
+	// Truncated is set when the range has more than maxChanges changes. The
+	// time before the oldest loaded change is then not tracked.
+	Truncated bool `json:"truncated"`
 	// Availability is the healthy share of the observed time in percent, nil
 	// when nothing was observed in the range.
 	Availability           *float64   `json:"availability"`
@@ -133,23 +143,30 @@ func GetStats(ctx context.Context, applicationID string, r Range, now time.Time)
 	now = now.UTC()
 	from := now.Add(-cfg.duration)
 
-	initial, err := gorm.G[models.ApplicationHealthChange](db.DB).
-		Where("application_id = ? AND changed_at < ?", applicationID, from).
-		Order("changed_at DESC, id DESC").
-		First(ctx)
-	hasInitial := err == nil
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return Stats{}, err
-	}
 	changes, err := gorm.G[models.ApplicationHealthChange](db.DB).
 		Where("application_id = ? AND changed_at >= ? AND changed_at <= ?", applicationID, from, now).
-		Order("changed_at, id").
+		Order("changed_at DESC, id DESC").
+		Limit(maxChanges + 1).
 		Find(ctx)
 	if err != nil {
 		return Stats{}, err
 	}
-	if hasInitial {
-		changes = append([]models.ApplicationHealthChange{initial}, changes...)
+	truncated := len(changes) > maxChanges
+	if truncated {
+		changes = changes[:maxChanges]
+	}
+	slices.Reverse(changes)
+	if !truncated {
+		initial, err := gorm.G[models.ApplicationHealthChange](db.DB).
+			Where("application_id = ? AND changed_at < ?", applicationID, from).
+			Order("changed_at DESC, id DESC").
+			First(ctx)
+		switch {
+		case err == nil:
+			changes = append([]models.ApplicationHealthChange{initial}, changes...)
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			return Stats{}, err
+		}
 	}
 
 	segments := buildSegments(changes, from, now)
@@ -158,6 +175,7 @@ func GetStats(ctx context.Context, applicationID string, r Range, now time.Time)
 		From:          from,
 		To:            now,
 		BucketSeconds: int64(cfg.bucket / time.Second),
+		Truncated:     truncated,
 		Buckets:       buildBuckets(segments, from, now, cfg.bucket),
 	}
 	if len(changes) > 0 {
@@ -234,6 +252,8 @@ func buildSegments(changes []models.ApplicationHealthChange, from, now time.Time
 	return segments
 }
 
+// buildBuckets sums the ordered, contiguous segments per bucket in a single
+// pass over both.
 func buildBuckets(segments []segment, from, now time.Time, size time.Duration) []Bucket {
 	count := int(now.Sub(from) / size)
 	buckets := make([]Bucket, count)
@@ -242,9 +262,16 @@ func buildBuckets(segments []segment, from, now time.Time, size time.Duration) [
 		buckets[i].End = buckets[i].Start.Add(size)
 	}
 
+	first := 0
 	for i := range buckets {
 		b := &buckets[i]
-		for _, s := range segments {
+		for first < len(segments) && !segments[first].end.After(b.Start) {
+			first++
+		}
+		for _, s := range segments[first:] {
+			if !s.start.Before(b.End) {
+				break
+			}
 			d := seconds(overlap(s.start, s.end, b.Start, b.End))
 			switch s.status {
 			case models.Healthy:
@@ -324,7 +351,8 @@ func buildIncidents(segments []segment, now time.Time) []Incident {
 }
 
 // attachTriggers links failing incidents to the deployment or image update
-// they started during or shortly after.
+// they started during or shortly after. Events that changed nothing are
+// ignored.
 func attachTriggers(ctx context.Context, applicationID string, incidents []Incident, now time.Time) error {
 	earliest := now
 	for _, incident := range incidents {
@@ -337,9 +365,10 @@ func attachTriggers(ctx context.Context, applicationID string, incidents []Incid
 	}
 
 	events, err := gorm.G[models.ApplicationEvent](db.DB).
-		Where("application_id = ? AND type IN ? AND created_at >= ?",
+		Where("application_id = ? AND type IN ? AND status <> ? AND created_at >= ?",
 			applicationID,
 			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventImageUpdate},
+			models.ApplicationEventNoChange,
 			earliest.Add(-eventQueryMargin),
 		).
 		Order("created_at DESC, id DESC").
@@ -357,7 +386,7 @@ func attachTriggers(ctx context.Context, applicationID string, incidents []Incid
 			if event.CreatedAt.After(incident.StartedAt) {
 				continue
 			}
-			if event.CompletedAt == nil || !incident.StartedAt.After(event.CompletedAt.Add(deployIncidentGrace)) {
+			if causedIncident(event, incident.StartedAt) {
 				incident.Trigger = &IncidentTrigger{Type: event.Type, CommitHash: event.CommitHash}
 			}
 			// Only the latest event before the incident can have caused it.
@@ -365,6 +394,19 @@ func attachTriggers(ctx context.Context, applicationID string, incidents []Incid
 		}
 	}
 	return nil
+}
+
+// causedIncident reports whether an incident started while the event was
+// running or within the grace period after it completed.
+func causedIncident(event models.ApplicationEvent, startedAt time.Time) bool {
+	switch {
+	case event.CompletedAt != nil:
+		return !startedAt.After(event.CompletedAt.Add(deployIncidentGrace))
+	case event.Status == models.ApplicationEventRunning:
+		return !startedAt.After(event.CreatedAt.Add(maxRunningEventAge))
+	default:
+		return false
+	}
 }
 
 func isFailing(status models.HealthStatus) bool {

@@ -23,14 +23,18 @@ func seedChange(t *testing.T, appID string, status models.HealthStatus, at time.
 
 func seedDeployment(t *testing.T, appID string, createdAt, completedAt time.Time, commit string) {
 	t.Helper()
-	event := models.ApplicationEvent{
+	seedEvent(t, models.ApplicationEvent{
 		ApplicationId: appID,
-		Type:          models.ApplicationEventDeployment,
-		Source:        models.ApplicationEventSourceManual,
 		Status:        models.ApplicationEventSucceeded,
 		CommitHash:    &commit,
 		CompletedAt:   &completedAt,
-	}
+	}, createdAt)
+}
+
+func seedEvent(t *testing.T, event models.ApplicationEvent, createdAt time.Time) {
+	t.Helper()
+	event.Type = models.ApplicationEventDeployment
+	event.Source = models.ApplicationEventSourceManual
 	if err := db.DB.Create(&event).Error; err != nil {
 		t.Fatalf("seed deployment: %v", err)
 	}
@@ -219,5 +223,100 @@ func TestGetStats_NewlyTrackedApplication(t *testing.T) {
 		if bucket.Status != nil {
 			t.Fatalf("expected earlier buckets to be untracked, got %q", *bucket.Status)
 		}
+	}
+}
+
+func TestGetStats_TriggerAttribution(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	at := func(d time.Duration) time.Time { return now.Add(-d) }
+	commit := func(hash string) *string { return &hash }
+
+	tests := []struct {
+		name   string
+		events []models.ApplicationEvent
+		want   *string
+	}{
+		{
+			name: "deployment without changes is ignored",
+			events: []models.ApplicationEvent{
+				{Status: models.ApplicationEventSucceeded, CommitHash: commit("changed"), CreatedAt: at(3 * time.Hour), CompletedAt: new(at(3 * time.Hour))},
+				{Status: models.ApplicationEventNoChange, CommitHash: commit("unchanged"), CreatedAt: at(2*time.Hour + 2*time.Minute), CompletedAt: new(at(2*time.Hour + 2*time.Minute))},
+				{Status: models.ApplicationEventSucceeded, CommitHash: commit("deployed"), CreatedAt: at(2*time.Hour + 5*time.Minute), CompletedAt: new(at(2*time.Hour + 3*time.Minute))},
+			},
+			want: commit("deployed"),
+		},
+		{
+			name: "running deployment",
+			events: []models.ApplicationEvent{
+				{Status: models.ApplicationEventRunning, CommitHash: commit("running"), CreatedAt: at(2*time.Hour + 10*time.Minute)},
+			},
+			want: commit("running"),
+		},
+		{
+			name: "stuck running deployment",
+			events: []models.ApplicationEvent{
+				{Status: models.ApplicationEventRunning, CommitHash: commit("stuck"), CreatedAt: at(5 * time.Hour)},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDB(t)
+			app := seedApp(t, "agent-1")
+			seedChange(t, app.Id, models.Healthy, at(6*time.Hour))
+			seedChange(t, app.Id, models.Unhealthy, at(2*time.Hour))
+			for _, event := range tt.events {
+				event.ApplicationId = app.Id
+				seedEvent(t, event, event.CreatedAt)
+			}
+
+			stats := getStats(t, app.Id, Range24h, now)
+			if len(stats.Incidents) != 1 {
+				t.Fatalf("expected 1 incident, got %d", len(stats.Incidents))
+			}
+			trigger := stats.Incidents[0].Trigger
+			switch {
+			case tt.want == nil && trigger != nil:
+				t.Errorf("expected no trigger, got %+v", trigger)
+			case tt.want != nil && (trigger == nil || trigger.CommitHash == nil || *trigger.CommitHash != *tt.want):
+				t.Errorf("expected trigger %q, got %+v", *tt.want, trigger)
+			}
+		})
+	}
+}
+
+func TestGetStats_BoundsLoadedChanges(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	now := time.Now().UTC().Truncate(time.Second)
+	seedChange(t, app.Id, models.Healthy, now.Add(-48*time.Hour))
+
+	// The latest maxChanges changes alternate every second within the last
+	// maxChanges seconds, the change before them lies earlier in the range.
+	changes := make([]models.ApplicationHealthChange, 0, maxChanges+1)
+	changes = append(changes, models.ApplicationHealthChange{ApplicationId: app.Id, Status: models.Unhealthy, ChangedAt: now.Add(-20 * time.Hour)})
+	for i := range maxChanges {
+		status := models.Healthy
+		if i%2 == 1 {
+			status = models.Stopped
+		}
+		changes = append(changes, models.ApplicationHealthChange{ApplicationId: app.Id, Status: status, ChangedAt: now.Add(-time.Duration(maxChanges-i) * time.Second)})
+	}
+	if err := db.DB.CreateInBatches(changes, 500).Error; err != nil {
+		t.Fatalf("seed health changes: %v", err)
+	}
+
+	stats := getStats(t, app.Id, Range24h, now)
+	if !stats.Truncated {
+		t.Error("expected the statistics to be truncated")
+	}
+	if stats.IncidentCount != maxChanges/2 {
+		t.Errorf("expected %d incidents from the loaded changes, got %d", maxChanges/2, stats.IncidentCount)
+	}
+	if stats.HealthySeconds+stats.DowntimeSeconds != maxChanges {
+		t.Errorf("expected only the loaded changes to be observed, got %ds", stats.HealthySeconds+stats.DowntimeSeconds)
+	}
+	if got := stats.Buckets[0].Status; got != nil {
+		t.Errorf("expected the time before the loaded changes to be untracked, got %q", *got)
 	}
 }
