@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"errors"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -66,6 +67,11 @@ type stubDeployer struct {
 	err      error
 	reqCh    chan agentdocker.DeployRequest
 	deleteCh chan agentdocker.DeleteRequest
+	images   []*messages.ServiceImage
+}
+
+func (d *stubDeployer) ServiceImages(context.Context, string) ([]*messages.ServiceImage, error) {
+	return d.images, nil
 }
 
 func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) error {
@@ -803,7 +809,8 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 	}
 
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
-	deployer := &stubDeployer{reqCh: make(chan agentdocker.DeployRequest, 1)}
+	deployedImages := []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new", PinnedRef: "ghcr.io/orcacd/billing@sha256:new"}}
+	deployer := &stubDeployer{reqCh: make(chan agentdocker.DeployRequest, 1), images: deployedImages}
 
 	deployMsg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_DeployRequest{
@@ -813,6 +820,10 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 				ApplicationName: "billing",
 				ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n",
 				DeleteOldImages: true,
+				PinnedImages: []*messages.ServiceImage{
+					{Service: "app", ImageId: "sha256:old", PinnedRef: "ghcr.io/orcacd/billing@sha256:old"},
+					{Service: "worker", ImageId: "sha256:worker"},
+				},
 			},
 		},
 	}
@@ -838,6 +849,10 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		if !req.DeleteOldImages {
 			t.Fatal("expected DeleteOldImages=true to be passed through from the request")
 		}
+		wantPins := map[string]string{"app": "ghcr.io/orcacd/billing@sha256:old", "worker": "sha256:worker"}
+		if !maps.Equal(req.PinnedImages, wantPins) {
+			t.Fatalf("expected pinned images %v, got %v", wantPins, req.PinnedImages)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy request")
 	}
@@ -853,6 +868,9 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if result.RequestId != "req-1" {
 			t.Fatalf("expected request id %q, got %q", "req-1", result.RequestId)
+		}
+		if len(result.Images) != 1 || result.Images[0].ImageId != "sha256:new" {
+			t.Fatalf("expected the deployed images in the result, got %v", result.Images)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy result")

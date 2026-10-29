@@ -59,7 +59,9 @@ type Application struct {
 	ImagePollIntervalSeconds int64                   `gorm:"not null;default:120"`
 	DeleteOldImages          bool                    `gorm:"not null;default:false"`
 	ImageWebhookSecret       *crypto.EncryptedString `gorm:"type:text;"`
-	Notifications            []Notification          `gorm:"many2many:application_notifications;"`
+	// CurrentDeploymentId is the deployment the agent runs, if it is known.
+	CurrentDeploymentId *string        `gorm:"type:text;"`
+	Notifications       []Notification `gorm:"many2many:application_notifications;"`
 }
 
 func (Application) TableName() string {

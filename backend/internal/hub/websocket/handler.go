@@ -12,6 +12,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
@@ -190,6 +191,9 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
 			}
 			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
+			if pendingErr := deployments.DiscardPendingForAgent(ctx, claims.Subject); pendingErr != nil {
+				log.Error().Err(pendingErr).Str("agent_id", claims.Subject).Msg("Failed to discard pending deployments after disconnect")
+			}
 			h.presence.Disconnected(claims.Subject)
 			sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
 		}()
