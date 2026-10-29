@@ -834,7 +834,7 @@ func TestWsHandler_SendsAgentSettingsOnConnect(t *testing.T) {
 
 	// Also migrate Application and Repository tables so the FindApplications query
 	// succeeds and the else-branch (h.SendAgentSettings) is exercised.
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("migrate Application: %v", err)
 	}
 

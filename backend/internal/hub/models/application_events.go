@@ -46,6 +46,8 @@ type ApplicationEvent struct {
 	CommitMessage *string                `gorm:"type:text"`
 	ErrorMessage  *string                `gorm:"type:text"`
 	CompletedAt   *time.Time             `gorm:"type:timestamp"`
+	// DeploymentId is the deployment the event deployed, or rolled back to.
+	DeploymentId *string `gorm:"type:text;index"`
 }
 
 func (ApplicationEvent) TableName() string { return "application_events" }

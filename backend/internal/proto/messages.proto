@@ -60,6 +60,19 @@ message DeployRequest {
   string application_name = 3;
   string compose_file = 4;
   bool delete_old_images = 5;
+  // Images to run instead of the ones the compose file names, so a rollback
+  // runs the exact images of an earlier deployment.
+  repeated ServiceImage pinned_images = 6;
+}
+
+// ServiceImage is the image the containers of a compose service run.
+message ServiceImage {
+  string service = 1;
+  // Local image ID (sha256:…).
+  string image_id = 2;
+  // Registry reference pinned by digest (repo@sha256:…). Empty for images that
+  // did not come from a registry, e.g. built locally.
+  string pinned_ref = 3;
 }
 
 message DeleteRequest {
@@ -80,6 +93,8 @@ message DeployResult {
   string application_id = 2;
   bool success = 3;
   string error_message = 4;
+  // Images the services run after a successful deployment.
+  repeated ServiceImage images = 5;
 }
 
 message AgentSettings {
@@ -107,6 +122,8 @@ message PullImagesResult {
   bool success = 3;
   bool images_updated = 4;
   string error_message = 5;
+  // Images the services run after a successful update.
+  repeated ServiceImage images = 6;
 }
 
 enum HealthStatus {

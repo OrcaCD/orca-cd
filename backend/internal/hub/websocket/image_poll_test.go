@@ -10,12 +10,13 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"gorm.io/gorm"
 )
 
 func setupImagePollTestEnv(t *testing.T) {
 	t.Helper()
 	setupHandlerTestEnv(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("failed to migrate Application: %v", err)
 	}
 	sse.DefaultBroker = sse.NewBroker(&zerolog_disabled)
@@ -237,6 +238,64 @@ func TestHandlePullImagesResult_PeriodicUpdate_RecordsTerminalPollingEvent(t *te
 		events[0].Source != models.ApplicationEventSourceImagePolling ||
 		events[0].Type != models.ApplicationEventImageUpdate {
 		t.Fatalf("unexpected periodic update event: %+v", events[0])
+	}
+}
+
+func TestHandlePullImagesResult_UpdateRecordsDeployment(t *testing.T) {
+	for _, requestID := range []string{"image-req", ""} {
+		t.Run("request "+requestID, func(t *testing.T) {
+			setupImagePollTestEnv(t)
+			log := testLogger()
+
+			agent := createTestAgent(t, "key-ipr-deploy-"+requestID)
+			app := createTestApplication(t, agent.Id)
+			client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+			expectAsyncNotification(t)
+
+			handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
+				RequestId:     requestID,
+				ApplicationId: app.Id,
+				Success:       true,
+				ImagesUpdated: true,
+				Images:        []*messages.ServiceImage{{Service: "web", ImageId: "sha256:new"}},
+			}, &log)
+
+			recorded, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).First(t.Context())
+			if err != nil {
+				t.Fatalf("load deployment: %v", err)
+			}
+			if len(recorded.Images) != 1 || recorded.Images[0].ImageId != "sha256:new" {
+				t.Errorf("deployment images = %v", recorded.Images)
+			}
+			events := loadImageEvents(t, app.Id)
+			if len(events) != 1 || events[0].DeploymentId == nil || *events[0].DeploymentId != recorded.Id {
+				t.Errorf("expected the image update event to link the deployment, got %+v", events)
+			}
+		})
+	}
+}
+
+func TestHandlePullImagesResult_NoUpdateRecordsNoDeployment(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-no-deploy")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	expectAsyncNotification(t)
+
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
+		RequestId:     "image-req",
+		ApplicationId: app.Id,
+		Success:       true,
+	}, &log)
+
+	count, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).Count(t.Context(), "*")
+	if err != nil {
+		t.Fatalf("count deployments: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected no deployment without an image update, got %d", count)
 	}
 }
 

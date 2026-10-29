@@ -107,6 +107,7 @@ type applicationResponse struct {
 	ImagePollEnabled         bool    `json:"imagePollEnabled"`
 	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
 	DeleteOldImages          bool    `json:"deleteOldImages"`
+	CurrentDeploymentId      *string `json:"currentDeploymentId"`
 	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
 	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
 }
@@ -347,7 +348,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
-		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource").
+		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource", "CurrentDeploymentId").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
@@ -593,6 +594,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollEnabled:         app.ImagePollEnabled,
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		DeleteOldImages:          app.DeleteOldImages,
+		CurrentDeploymentId:      app.CurrentDeploymentId,
 		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
 	if app.ImageWebhookSecret != nil {

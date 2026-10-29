@@ -39,6 +39,10 @@ type pollerHandler interface {
 	TriggerNow(appID, appName, requestID string, deleteOld bool)
 }
 
+type serviceImageReporter interface {
+	ServiceImages(ctx context.Context, appID string) ([]*messages.ServiceImage, error)
+}
+
 type statusReporter interface {
 	ReportApplicationStatus(ctx context.Context, sender docker.MessageSender, appIDs []string)
 }
@@ -337,6 +341,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 		DeleteOldImages: req.DeleteOldImages,
+		PinnedImages:    pinnedImages(req.PinnedImages),
 	}); err != nil {
 		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("deployment failed")
 		result.ErrorMessage = err.Error()
@@ -345,9 +350,45 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	}
 
 	result.Success = true
+	result.Images = reportServiceImages(deployCtx, deployer, req.ApplicationId)
 	sendDeployResult(sender, result)
 	// The deploy does not block on healthchecks; the docker client observes the
 	// application's health via daemon events and reports it once it settles.
+}
+
+// pinnedImages maps services to the image they are pinned to, preferring the
+// registry digest so a removed image can be pulled again.
+func pinnedImages(images []*messages.ServiceImage) map[string]string {
+	if len(images) == 0 {
+		return nil
+	}
+	pins := make(map[string]string, len(images))
+	for _, image := range images {
+		ref := image.GetPinnedRef()
+		if ref == "" {
+			ref = image.GetImageId()
+		}
+		if image.GetService() != "" && ref != "" {
+			pins[image.GetService()] = ref
+		}
+	}
+	return pins
+}
+
+// reportServiceImages returns the images the application runs after a
+// deployment. Failing to list them doesn't fail the deployment; the hub then
+// can't pin the images when rolling back to it.
+func reportServiceImages(ctx context.Context, deployer deployExecutor, appID string) []*messages.ServiceImage {
+	reporter, ok := deployer.(serviceImageReporter)
+	if !ok {
+		return nil
+	}
+	images, err := reporter.ServiceImages(ctx, appID)
+	if err != nil {
+		Log.Warn().Err(err).Str("application_id", appID).Msg("could not list service images")
+		return nil
+	}
+	return images
 }
 
 func executeDelete(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeleteRequest) {
