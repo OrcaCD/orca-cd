@@ -50,6 +50,8 @@ const notificationEventLabels: Record<NotificationEvent, () => string> = {
 	"application.sync.failed": () => m.notificationEventSyncFailed(),
 	"application.health.unhealthy": () => m.notificationEventHealthUnhealthy(),
 	"application.health.recovered": () => m.notificationEventHealthRecovered(),
+	"application.rollback.succeeded": () => m.notificationEventRollbackSucceeded(),
+	"application.rollback.failed": () => m.notificationEventRollbackFailed(),
 	"agent.offline": () => m.notificationEventAgentOffline(),
 	"agent.online": () => m.notificationEventAgentOnline(),
 	"repository.sync.failed": () => m.notificationEventRepositorySyncFailed(),

@@ -37,6 +37,7 @@ import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
 import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
 import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
+import { Route as AuthenticatedApplicationsIdSettingsRollbackRouteImport } from './routes/_authenticated/applications/$id/settings/rollback'
 import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
 import { Route as AuthenticatedRepositoriesIdSettingsAuthRouteImport } from './routes/_authenticated/repositories/$id/settings/auth'
 import { Route as AuthenticatedRepositoriesIdSettingsSigningRouteImport } from './routes/_authenticated/repositories/$id/settings/signing'
@@ -201,6 +202,12 @@ const AuthenticatedApplicationsIdSettingsImagePollingRoute =
     path: '/settings/image-polling',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdSettingsRollbackRoute =
+  AuthenticatedApplicationsIdSettingsRollbackRouteImport.update({
+    id: '/settings/rollback',
+    path: '/settings/rollback',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedRepositoriesIdSettingsIndexRoute =
   AuthenticatedRepositoriesIdSettingsIndexRouteImport.update({
     id: '/settings/',
@@ -253,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/applications/$id/settings/rollback': typeof AuthenticatedApplicationsIdSettingsRollbackRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
   '/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
@@ -282,6 +290,7 @@ export interface FileRoutesByTo {
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/applications/$id/settings/rollback': typeof AuthenticatedApplicationsIdSettingsRollbackRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
   '/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
@@ -317,6 +326,7 @@ export interface FileRoutesById {
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/_authenticated/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  '/_authenticated/applications/$id/settings/rollback': typeof AuthenticatedApplicationsIdSettingsRollbackRoute
   '/_authenticated/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
   '/_authenticated/repositories/$id/settings/signing': typeof AuthenticatedRepositoriesIdSettingsSigningRoute
   '/_authenticated/repositories/$id/settings/sync': typeof AuthenticatedRepositoriesIdSettingsSyncRoute
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/repositories/$id/'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
+    | '/applications/$id/settings/rollback'
     | '/repositories/$id/settings/auth'
     | '/repositories/$id/settings/signing'
     | '/repositories/$id/settings/sync'
@@ -381,6 +392,7 @@ export interface FileRouteTypes {
     | '/repositories/$id'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
+    | '/applications/$id/settings/rollback'
     | '/repositories/$id/settings/auth'
     | '/repositories/$id/settings/signing'
     | '/repositories/$id/settings/sync'
@@ -415,6 +427,7 @@ export interface FileRouteTypes {
     | '/_authenticated/repositories/$id/'
     | '/_authenticated/applications/$id/settings/general'
     | '/_authenticated/applications/$id/settings/image-polling'
+    | '/_authenticated/applications/$id/settings/rollback'
     | '/_authenticated/repositories/$id/settings/auth'
     | '/_authenticated/repositories/$id/settings/signing'
     | '/_authenticated/repositories/$id/settings/sync'
@@ -626,6 +639,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/settings/rollback': {
+      id: '/_authenticated/applications/$id/settings/rollback'
+      path: '/settings/rollback'
+      fullPath: '/applications/$id/settings/rollback'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsRollbackRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/repositories/$id/settings/': {
       id: '/_authenticated/repositories/$id/settings/'
       path: '/settings'
@@ -700,6 +720,7 @@ interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   AuthenticatedApplicationsIdSettingsImagePollingRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
+  AuthenticatedApplicationsIdSettingsRollbackRoute: typeof AuthenticatedApplicationsIdSettingsRollbackRoute
   AuthenticatedApplicationsIdSettingsIndexRoute: typeof AuthenticatedApplicationsIdSettingsIndexRoute
 }
 
@@ -717,6 +738,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
       AuthenticatedApplicationsIdSettingsGeneralRoute,
     AuthenticatedApplicationsIdSettingsImagePollingRoute:
       AuthenticatedApplicationsIdSettingsImagePollingRoute,
+    AuthenticatedApplicationsIdSettingsRollbackRoute:
+      AuthenticatedApplicationsIdSettingsRollbackRoute,
     AuthenticatedApplicationsIdSettingsIndexRoute:
       AuthenticatedApplicationsIdSettingsIndexRoute,
   }

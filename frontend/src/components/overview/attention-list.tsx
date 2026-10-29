@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, RotateCw, TriangleAlert } from "lucide-react";
+import { ArrowRight, RotateCcw, RotateCw, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "@/components/ui/toast";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
@@ -86,13 +86,19 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 						<span className={cn("size-1.5 rounded-full", config.dotClass)} />
 						{config.label()}
 					</span>
+					{app.rolledBackAt ? (
+						<span className="flex items-center gap-1 text-xs font-normal text-amber-500">
+							<RotateCcw className="size-3" />
+							{m.applicationsRolledBack()}
+						</span>
+					) : null}
 				</ItemTitle>
 				<ItemDescription className="truncate" title={reason}>
 					{reason}
 				</ItemDescription>
 			</ItemContent>
 			<ItemActions>
-				{app.lastSyncError && agentStatus === AgentStatus.Online ? (
+				{(app.lastSyncError || app.rolledBackAt) && agentStatus === AgentStatus.Online ? (
 					<Button variant="outline" size="sm" disabled={deploying} onClick={handleRetry}>
 						<RotateCw className={cn(deploying && "animate-spin")} />
 						{m.applicationsAttentionRetry()}
