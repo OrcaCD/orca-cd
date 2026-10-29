@@ -25,6 +25,7 @@ import {
 	Webhook,
 	Workflow,
 	WrapText,
+	AlertTriangle,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ import {
 	CodeBlockTitle,
 } from "@/components/ui/code-block";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/details")({
 	component: ApplicationDetailsPage,
@@ -241,6 +243,23 @@ function splitComposeLines(composeFile: string): string[] {
 	return lines;
 }
 
+function getApplicationWarningMessage(warning: Application["warnings"][number]) {
+	switch (warning.code) {
+		case "invalid_compose":
+			return m.applicationWarningInvalidCompose();
+		case "missing_restart_policy":
+			return m.applicationWarningMissingRestart({ service: warning.service ?? "" });
+		case "database_without_volume":
+			return m.applicationWarningDatabaseWithoutVolume({ service: warning.service ?? "" });
+		case "floating_image_reference":
+			return m.applicationWarningFloatingImage({ service: warning.service ?? "" });
+		case "privileged_container":
+			return m.applicationWarningPrivilegedContainer({ service: warning.service ?? "" });
+		case "host_network":
+			return m.applicationWarningHostNetwork({ service: warning.service ?? "" });
+	}
+}
+
 interface ComposeDiffLine {
 	variant: "default" | "added" | "removed";
 	// Index into the previous lines for removed lines, into the current lines otherwise.
@@ -352,10 +371,27 @@ function ApplicationDetailsPage() {
 		[previousComposeFile, composeFile],
 	);
 
+	const applicationWarnings = data?.warnings ?? [];
+
 	return (
 		<div className="space-y-6">
 			{data?.lastSyncError && (
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
+			)}
+			{applicationWarnings.length > 0 && (
+				<Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+					<AlertTriangle />
+					<AlertTitle>{m.applicationWarningsTitle()}</AlertTitle>
+					<AlertDescription className="text-foreground text-wrap">
+						<ul className="list-disc space-y-1 pl-4">
+							{applicationWarnings.map((warning, index) => (
+								<li key={`${warning.code}-${warning.service ?? ""}-${index}`}>
+									{getApplicationWarningMessage(warning)}
+								</li>
+							))}
+						</ul>
+					</AlertDescription>
+				</Alert>
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex min-w-0 items-start gap-4">
