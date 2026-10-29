@@ -28,7 +28,9 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 
 	event, err := applicationevents.ForRequest(ctx, result.RequestId, result.ApplicationId)
 	if err != nil {
+		// Without the event a rollback can't be told apart from a deployment.
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to look up deployment event")
+		return
 	}
 	if event != nil && event.Type == models.ApplicationEventRollback {
 		handleRollbackResult(ctx, agentID, app, event, result, log)

@@ -4,6 +4,7 @@ package rollback
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -47,8 +48,10 @@ func Trigger(ctx context.Context, app *models.Application, target *models.Applic
 	if target.CommitMessage != "" {
 		params.CommitMessage = &target.CommitMessage
 	}
+	// The agent's result is recognized as a rollback by its event. Without the
+	// event it would count as a deployment from Git.
 	if _, err := applicationevents.Start(ctx, params); err != nil {
-		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record rollback event")
+		return fmt.Errorf("record rollback event: %w", err)
 	}
 
 	return deployer.TriggerRollback(ctx, app, target, requestID)

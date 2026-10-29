@@ -198,6 +198,7 @@ func TestFailRunningDeploymentEventsForAgent(t *testing.T) {
 		{"deployment", app.Id, models.ApplicationEventDeployment, models.ApplicationEventFailed},
 		{"commit-sync", app.Id, models.ApplicationEventCommitSync, models.ApplicationEventRunning},
 		{"image-update", app.Id, models.ApplicationEventImageUpdate, models.ApplicationEventRunning},
+		{"rollback", app.Id, models.ApplicationEventRollback, models.ApplicationEventFailed},
 		{"other-agent", other.Id, models.ApplicationEventDeployment, models.ApplicationEventRunning},
 	}
 	for _, test := range tests {
@@ -213,6 +214,7 @@ func TestFailRunningDeploymentEventsForAgent(t *testing.T) {
 	}
 
 	nop := zerolog.Nop()
+	expectAsyncNotification(t)
 	failRunningDeploymentEventsForAgent(t.Context(), "agent-1", &nop)
 
 	for _, test := range tests {
