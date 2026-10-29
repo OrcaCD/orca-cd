@@ -13,7 +13,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.Context, appID string) HealthState) *healthWatcher {
+func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.Context, appID string) HealthReport) *healthWatcher {
 	t.Helper()
 	w := &healthWatcher{
 		ctx:             t.Context(),
@@ -26,14 +26,14 @@ func newTestWatcher(t *testing.T, sender MessageSender, check func(ctx context.C
 		pending:         make(map[string]*pendingHealthEvaluation),
 		evaluating:      make(map[string]*healthEvaluation),
 		epochs:          make(map[string]uint64),
-		lastReported:    make(map[string]HealthState),
+		lastReported:    make(map[string]HealthReport),
 	}
 	t.Cleanup(w.stop)
 	return w
 }
 
-func staticHealth(state HealthState) func(context.Context, string) HealthState {
-	return func(context.Context, string) HealthState { return state }
+func staticHealth(state HealthState) func(context.Context, string) HealthReport {
+	return func(context.Context, string) HealthReport { return HealthReport{State: state} }
 }
 
 // awaitReports polls the sender until it has received at least n messages.
@@ -110,7 +110,7 @@ func TestHealthWatcher_DeduplicatesUnchangedHealth(t *testing.T) {
 func TestHealthWatcher_ReportsChanges(t *testing.T) {
 	sender := &stubMessageSender{}
 	state := HealthHealthy
-	w := newTestWatcher(t, sender, func(context.Context, string) HealthState { return state })
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthReport { return HealthReport{State: state} })
 
 	w.schedule("app-1")
 	awaitReports(t, sender, 1)
@@ -122,6 +122,32 @@ func TestHealthWatcher_ReportsChanges(t *testing.T) {
 	report := msgs[1].GetApplicationStatusReport()
 	if report.Statuses[0].Health != messages.HealthStatus_HEALTH_STATUS_UNHEALTHY {
 		t.Errorf("expected unhealthy, got %v", report.Statuses[0].Health)
+	}
+}
+
+func TestHealthWatcher_ReportsServiceChangesWithSameAggregate(t *testing.T) {
+	sender := &stubMessageSender{}
+	failing := "web"
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthReport {
+		services := []ServiceHealth{{Name: "db", State: HealthHealthy}, {Name: "web", State: HealthHealthy}}
+		for i := range services {
+			if services[i].Name == failing {
+				services[i].State = HealthUnhealthy
+			}
+		}
+		return HealthReport{State: HealthUnhealthy, Services: services}
+	})
+
+	w.schedule("app-1")
+	awaitReports(t, sender, 1)
+
+	failing = "db"
+	w.schedule("app-1")
+
+	msgs := awaitReports(t, sender, 2)
+	services := msgs[1].GetApplicationStatusReport().Statuses[0].Services
+	if len(services) != 2 || services[0].Health != messages.HealthStatus_HEALTH_STATUS_UNHEALTHY || services[1].Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		t.Errorf("expected db unhealthy and web healthy, got %v", services)
 	}
 }
 
@@ -227,17 +253,17 @@ func TestHealthWatcher_SerializesEvaluationsPerApplication(t *testing.T) {
 	secondStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	var calls atomic.Int32
-	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthReport {
 		switch calls.Add(1) {
 		case 1:
 			close(firstStarted)
 			<-releaseFirst
-			return HealthHealthy
+			return HealthReport{State: HealthHealthy}
 		case 2:
 			close(secondStarted)
-			return HealthUnhealthy
+			return HealthReport{State: HealthUnhealthy}
 		default:
-			return HealthUnknown
+			return HealthReport{State: HealthUnknown}
 		}
 	})
 	w.debounce = time.Hour
@@ -296,7 +322,7 @@ func TestHealthWatcher_SerializesEvaluationsPerApplication(t *testing.T) {
 	w.mu.Lock()
 	last := w.lastReported["app-1"]
 	w.mu.Unlock()
-	if last != HealthUnhealthy {
+	if last.State != HealthUnhealthy {
 		t.Errorf("last reported health = %v, want unhealthy", last)
 	}
 }
@@ -307,17 +333,17 @@ func TestHealthWatcher_SerializesSnapshotAndIncrementalReports(t *testing.T) {
 	incrementalStarted := make(chan struct{})
 	releaseSnapshot := make(chan struct{})
 	var calls atomic.Int32
-	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthReport {
 		switch calls.Add(1) {
 		case 1:
 			close(snapshotStarted)
 			<-releaseSnapshot
-			return HealthHealthy
+			return HealthReport{State: HealthHealthy}
 		case 2:
 			close(incrementalStarted)
-			return HealthUnhealthy
+			return HealthReport{State: HealthUnhealthy}
 		default:
-			return HealthUnknown
+			return HealthReport{State: HealthUnknown}
 		}
 	})
 	w.debounce = time.Hour
@@ -389,12 +415,12 @@ func TestHealthWatcher_ForgetInvalidatesRunningEvaluation(t *testing.T) {
 	started := make(chan struct{})
 	canceled := make(chan struct{})
 	releaseCheck := make(chan struct{})
-	w := newTestWatcher(t, sender, func(ctx context.Context, _ string) HealthState {
+	w := newTestWatcher(t, sender, func(ctx context.Context, _ string) HealthReport {
 		close(started)
 		<-ctx.Done()
 		close(canceled)
 		<-releaseCheck
-		return HealthHealthy
+		return HealthReport{State: HealthHealthy}
 	})
 	release := func() {
 		select {
@@ -450,7 +476,7 @@ func TestHealthWatcher_NilSenderStillTracksState(t *testing.T) {
 		state, seen := w.lastReported["app-1"]
 		w.mu.Unlock()
 		if seen {
-			if state != HealthHealthy {
+			if state.State != HealthHealthy {
 				t.Errorf("expected HealthHealthy tracked, got %v", state)
 			}
 			return
@@ -527,7 +553,7 @@ func TestReconcileApplicationHealth_ReEvaluatesActiveApps(t *testing.T) {
 	c.healthWatcher.sender = sender
 	c.healthWatcher.debounce = time.Millisecond
 	c.healthWatcher.checkHealth = staticHealth(HealthHealthy)
-	c.healthWatcher.lastReported["app-1"] = HealthUnhealthy
+	c.healthWatcher.lastReported["app-1"] = HealthReport{State: HealthUnhealthy}
 
 	c.reconcileApplicationHealth(map[string]struct{}{"app-1": {}})
 
@@ -558,7 +584,7 @@ func TestReconcileApplicationHealth_ForgetsAppsWithoutContainers(t *testing.T) {
 	sender := &stubMessageSender{}
 	c.healthWatcher.sender = sender
 	c.healthWatcher.debounce = time.Hour
-	c.healthWatcher.lastReported["removed-app"] = HealthHealthy
+	c.healthWatcher.lastReported["removed-app"] = HealthReport{State: HealthHealthy}
 	c.healthWatcher.schedule("removed-app")
 
 	c.reconcileApplicationHealth(map[string]struct{}{})
@@ -591,9 +617,9 @@ func TestReconcileApplicationHealth_RechecksStaleMissingSnapshot(t *testing.T) {
 	c := newTestClient(t)
 	sender := &stubMessageSender{}
 	c.healthWatcher.sender = sender
-	c.healthWatcher.lastReported["recreated-app"] = HealthHealthy
-	c.healthWatcher.checkHealth = func(context.Context, string) HealthState {
-		return HealthHealthy
+	c.healthWatcher.lastReported["recreated-app"] = HealthReport{State: HealthHealthy}
+	c.healthWatcher.checkHealth = func(context.Context, string) HealthReport {
+		return HealthReport{State: HealthHealthy}
 	}
 
 	c.reconcileApplicationHealth(map[string]struct{}{})
@@ -603,7 +629,7 @@ func TestReconcileApplicationHealth_RechecksStaleMissingSnapshot(t *testing.T) {
 	if status.Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY {
 		t.Errorf("health = %v, want healthy", status.Health)
 	}
-	if got := c.healthWatcher.lastReported["recreated-app"]; got != HealthHealthy {
+	if got := c.healthWatcher.lastReported["recreated-app"]; got.State != HealthHealthy {
 		t.Errorf("last reported health = %v, want healthy", got)
 	}
 }
@@ -612,13 +638,13 @@ func TestReconcileApplicationHealth_RetriesAfterRecheckCancellation(t *testing.T
 	c := newTestClient(t)
 	sender := &stubMessageSender{}
 	c.healthWatcher.sender = sender
-	c.healthWatcher.lastReported["missing-app"] = HealthHealthy
+	c.healthWatcher.lastReported["missing-app"] = HealthReport{State: HealthHealthy}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	c.healthWatcher.ctx = cancelled
-	c.healthWatcher.checkHealth = func(ctx context.Context, _ string) HealthState {
+	c.healthWatcher.checkHealth = func(ctx context.Context, _ string) HealthReport {
 		<-ctx.Done()
-		return HealthUnknown
+		return HealthReport{State: HealthUnknown}
 	}
 
 	c.reconcileApplicationHealth(map[string]struct{}{})
@@ -634,7 +660,7 @@ func TestReconcileApplicationHealth_RetriesAfterRecheckCancellation(t *testing.T
 func TestReconcileApplicationHealth_RetriesAfterSendFailure(t *testing.T) {
 	sender := &stubMessageSender{err: context.DeadlineExceeded}
 	w := newTestWatcher(t, sender, staticHealth(HealthUnknown))
-	w.lastReported["missing-app"] = HealthHealthy
+	w.lastReported["missing-app"] = HealthReport{State: HealthHealthy}
 
 	w.reconcileMissingApplication("missing-app")
 
@@ -672,10 +698,10 @@ func TestHealthWatcher_ResendsAfterFailedSend(t *testing.T) {
 func TestReportApplicationStatus_FailedSendAllowsResend(t *testing.T) {
 	sender := &stubMessageSender{err: errors.New("connection closed")}
 	w := newTestWatcher(t, sender, staticHealth(HealthHealthy))
-	w.lastReported["app-1"] = HealthHealthy
+	w.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
 	w.reportApplicationStatus(t.Context(), sender, []string{"app-1"})
-	if got := w.lastReported["app-1"]; got == HealthHealthy {
+	if got := w.lastReported["app-1"]; got.State == HealthHealthy {
 		t.Fatal("a snapshot the hub never received must not count as reported")
 	}
 
@@ -695,16 +721,16 @@ func TestReportApplicationStatus_TimeoutReportsUncheckedAppsAsUnknown(t *testing
 	calls := make(map[string]int)
 	// The first check of app-2 hangs until the snapshot budget is spent; every
 	// later check, such as the follow-up evaluation, answers immediately.
-	w := newTestWatcher(t, sender, func(ctx context.Context, appID string) HealthState {
+	w := newTestWatcher(t, sender, func(ctx context.Context, appID string) HealthReport {
 		mu.Lock()
 		calls[appID]++
 		first := calls[appID] == 1
 		mu.Unlock()
 		if appID == "app-2" && first {
 			<-ctx.Done()
-			return HealthUnknown
+			return HealthReport{State: HealthUnknown}
 		}
-		return HealthHealthy
+		return HealthReport{State: HealthHealthy}
 	})
 	w.snapshotTimeout = 100 * time.Millisecond
 
@@ -747,10 +773,10 @@ func TestReportApplicationStatus_TimeoutReportsUncheckedAppsAsUnknown(t *testing
 func TestReportApplicationStatus_CancelledContextSendsNothing(t *testing.T) {
 	sender := &stubMessageSender{}
 	ctx, cancel := context.WithCancel(t.Context())
-	w := newTestWatcher(t, sender, func(context.Context, string) HealthState {
+	w := newTestWatcher(t, sender, func(context.Context, string) HealthReport {
 		// The agent is shutting down while the snapshot is being collected.
 		cancel()
-		return HealthUnknown
+		return HealthReport{State: HealthUnknown}
 	})
 
 	w.reportApplicationStatus(ctx, sender, []string{"app-1", "app-2"})
@@ -775,7 +801,7 @@ func TestClientDeploy_ReportsHealthAfterFailure(t *testing.T) {
 	c.healthWatcher.checkHealth = staticHealth(HealthHealthy)
 	// The previous containers still run, so the agent believes the hub already
 	// knows the app is healthy; the hub reset it to unknown on dispatch though.
-	c.healthWatcher.lastReported["app-1"] = HealthHealthy
+	c.healthWatcher.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
 	err := c.Deploy(t.Context(), DeployRequest{ApplicationID: "app-1", ApplicationName: "app"})
 	if err == nil {
@@ -811,7 +837,7 @@ func TestImagePoller_ExplicitPullWithoutUpdateReportsHealth(t *testing.T) {
 			w.sender = sender
 			w.debounce = time.Millisecond
 			w.checkHealth = staticHealth(HealthHealthy)
-			w.lastReported["app-1"] = HealthHealthy
+			w.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
 			p.runOnce("app-1", "app", "req-1", false)
 
@@ -833,7 +859,7 @@ func TestImagePoller_PeriodicPullWithoutUpdateDoesNotReportHealth(t *testing.T) 
 	w.sender = sender
 	w.debounce = time.Millisecond
 	w.checkHealth = staticHealth(HealthHealthy)
-	w.lastReported["app-1"] = HealthHealthy
+	w.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
 	p.runOnce("app-1", "app", "", false)
 	time.Sleep(50 * time.Millisecond)

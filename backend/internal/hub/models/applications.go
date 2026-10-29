@@ -30,6 +30,9 @@ const (
 	Unhealthy     HealthStatus = "unhealthy"
 	Stopped       HealthStatus = "stopped"
 	UnknownHealth HealthStatus = "unknown"
+	// Degraded means some services of the application are healthy while
+	// others are unhealthy or stopped.
+	Degraded HealthStatus = "degraded"
 )
 
 type Application struct {

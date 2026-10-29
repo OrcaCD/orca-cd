@@ -105,6 +105,10 @@ func TestApplyReportedHealth_Transitions(t *testing.T) {
 		{"unhealthy to stopped", models.Unhealthy, models.Synced, models.Stopped, "", models.Stopped},
 		{"stopped to unhealthy", models.Stopped, models.Synced, models.Unhealthy, "", models.Unhealthy},
 		{"stopped to healthy", models.Stopped, models.Synced, models.Healthy, models.NotificationEventHealthRecovered, models.Healthy},
+		{"healthy to degraded", models.Healthy, models.Synced, models.Degraded, models.NotificationEventHealthUnhealthy, models.Degraded},
+		{"degraded to unhealthy", models.Degraded, models.Synced, models.Unhealthy, "", models.Unhealthy},
+		{"unhealthy to degraded", models.Unhealthy, models.Synced, models.Degraded, "", models.Degraded},
+		{"degraded to healthy", models.Degraded, models.Synced, models.Healthy, models.NotificationEventHealthRecovered, models.Healthy},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -167,5 +171,35 @@ func TestHandleApplicationStatusReport_NotifiesOnHealthTransition(t *testing.T) 
 
 	if got := healthOf(t, app.Id); got != models.Unhealthy {
 		t.Errorf("expected unhealthy, got %q", got)
+	}
+}
+
+func TestReportedApplicationHealth(t *testing.T) {
+	healthy := messages.HealthStatus_HEALTH_STATUS_HEALTHY
+	unhealthy := messages.HealthStatus_HEALTH_STATUS_UNHEALTHY
+	stopped := messages.HealthStatus_HEALTH_STATUS_STOPPED
+	service := func(name string, health messages.HealthStatus) *messages.ServiceStatus {
+		return &messages.ServiceStatus{Name: name, Health: health}
+	}
+
+	tests := []struct {
+		name   string
+		status *messages.ApplicationStatus
+		want   models.HealthStatus
+	}{
+		{"healthy", &messages.ApplicationStatus{Health: healthy, Services: []*messages.ServiceStatus{service("web", healthy)}}, models.Healthy},
+		{"unhealthy without services from older agents", &messages.ApplicationStatus{Health: unhealthy}, models.Unhealthy},
+		{"all services unhealthy", &messages.ApplicationStatus{Health: unhealthy, Services: []*messages.ServiceStatus{service("db", unhealthy), service("web", stopped)}}, models.Unhealthy},
+		{"one healthy and one unhealthy service", &messages.ApplicationStatus{Health: unhealthy, Services: []*messages.ServiceStatus{service("db", healthy), service("web", unhealthy)}}, models.Degraded},
+		{"one healthy and one stopped service", &messages.ApplicationStatus{Health: unhealthy, Services: []*messages.ServiceStatus{service("db", healthy), service("web", stopped)}}, models.Degraded},
+		{"stopped", &messages.ApplicationStatus{Health: stopped, Services: []*messages.ServiceStatus{service("web", stopped)}}, models.Stopped},
+		{"unknown", &messages.ApplicationStatus{Health: messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED}, models.UnknownHealth},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reportedApplicationHealth(tt.status); got != tt.want {
+				t.Errorf("reportedApplicationHealth() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

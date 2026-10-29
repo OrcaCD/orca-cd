@@ -1209,17 +1209,74 @@ func (x *PullImagesResult) GetErrorMessage() string {
 	return ""
 }
 
+type ServiceStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Health        HealthStatus           `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceStatus) Reset() {
+	*x = ServiceStatus{}
+	mi := &file_messages_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceStatus) ProtoMessage() {}
+
+func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceStatus.ProtoReflect.Descriptor instead.
+func (*ServiceStatus) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ServiceStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ServiceStatus) GetHealth() HealthStatus {
+	if x != nil {
+		return x.Health
+	}
+	return HealthStatus_HEALTH_STATUS_UNSPECIFIED
+}
+
 type ApplicationStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Health        HealthStatus           `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	// Aggregate health of all containers. A mix of healthy and failing services
+	// is reported as unhealthy; the hub derives the degraded state from services.
+	Health HealthStatus `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	// Health per compose service, sorted by name. Empty for agents that predate
+	// per-service reporting.
+	Services      []*ServiceStatus `protobuf:"bytes,3,rep,name=services,proto3" json:"services,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApplicationStatus) Reset() {
 	*x = ApplicationStatus{}
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1231,7 +1288,7 @@ func (x *ApplicationStatus) String() string {
 func (*ApplicationStatus) ProtoMessage() {}
 
 func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1244,7 +1301,7 @@ func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatus.ProtoReflect.Descriptor instead.
 func (*ApplicationStatus) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{15}
+	return file_messages_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ApplicationStatus) GetApplicationId() string {
@@ -1261,6 +1318,13 @@ func (x *ApplicationStatus) GetHealth() HealthStatus {
 	return HealthStatus_HEALTH_STATUS_UNSPECIFIED
 }
 
+func (x *ApplicationStatus) GetServices() []*ServiceStatus {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
 // ApplicationStatusReport carries the health of every application managed by an
 // agent in a single message, sent right after the agent connects.
 type ApplicationStatusReport struct {
@@ -1272,7 +1336,7 @@ type ApplicationStatusReport struct {
 
 func (x *ApplicationStatusReport) Reset() {
 	*x = ApplicationStatusReport{}
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1284,7 +1348,7 @@ func (x *ApplicationStatusReport) String() string {
 func (*ApplicationStatusReport) ProtoMessage() {}
 
 func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1297,7 +1361,7 @@ func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatusReport.ProtoReflect.Descriptor instead.
 func (*ApplicationStatusReport) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{16}
+	return file_messages_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ApplicationStatusReport) GetStatuses() []*ApplicationStatus {
@@ -1318,7 +1382,7 @@ type AgentInfo struct {
 
 func (x *AgentInfo) Reset() {
 	*x = AgentInfo{}
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1330,7 +1394,7 @@ func (x *AgentInfo) String() string {
 func (*AgentInfo) ProtoMessage() {}
 
 func (x *AgentInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1343,7 +1407,7 @@ func (x *AgentInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfo.ProtoReflect.Descriptor instead.
 func (*AgentInfo) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{17}
+	return file_messages_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AgentInfo) GetVersion() string {
@@ -1453,10 +1517,14 @@ const file_messages_proto_rawDesc = "" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12%\n" +
 	"\x0eimages_updated\x18\x04 \x01(\bR\rimagesUpdated\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"j\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"S\n" +
+	"\rServiceStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
+	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"\x9f\x01\n" +
 	"\x11ApplicationStatus\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12.\n" +
-	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"R\n" +
+	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\x123\n" +
+	"\bservices\x18\x03 \x03(\v2\x17.messages.ServiceStatusR\bservices\"R\n" +
 	"\x17ApplicationStatusReport\x127\n" +
 	"\bstatuses\x18\x01 \x03(\v2\x1b.messages.ApplicationStatusR\bstatuses\"{\n" +
 	"\tAgentInfo\x12\x18\n" +
@@ -1483,7 +1551,7 @@ func file_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_messages_proto_goTypes = []any{
 	(HealthStatus)(0),               // 0: messages.HealthStatus
 	(*ClientMessage)(nil),           // 1: messages.ClientMessage
@@ -1501,9 +1569,10 @@ var file_messages_proto_goTypes = []any{
 	(*ImagePollSettings)(nil),       // 13: messages.ImagePollSettings
 	(*PullImagesRequest)(nil),       // 14: messages.PullImagesRequest
 	(*PullImagesResult)(nil),        // 15: messages.PullImagesResult
-	(*ApplicationStatus)(nil),       // 16: messages.ApplicationStatus
-	(*ApplicationStatusReport)(nil), // 17: messages.ApplicationStatusReport
-	(*AgentInfo)(nil),               // 18: messages.AgentInfo
+	(*ServiceStatus)(nil),           // 16: messages.ServiceStatus
+	(*ApplicationStatus)(nil),       // 17: messages.ApplicationStatus
+	(*ApplicationStatusReport)(nil), // 18: messages.ApplicationStatusReport
+	(*AgentInfo)(nil),               // 19: messages.AgentInfo
 }
 var file_messages_proto_depIdxs = []int32{
 	4,  // 0: messages.ClientMessage.pong:type_name -> messages.PongResponse
@@ -1512,8 +1581,8 @@ var file_messages_proto_depIdxs = []int32{
 	11, // 3: messages.ClientMessage.deploy_result:type_name -> messages.DeployResult
 	15, // 4: messages.ClientMessage.pull_images_result:type_name -> messages.PullImagesResult
 	10, // 5: messages.ClientMessage.delete_result:type_name -> messages.DeleteResult
-	17, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
-	18, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
+	18, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
+	19, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
 	3,  // 8: messages.ServerMessage.ping:type_name -> messages.PingRequest
 	5,  // 9: messages.ServerMessage.key_exchange_init:type_name -> messages.KeyExchangeInit
 	7,  // 10: messages.ServerMessage.encrypted_payload:type_name -> messages.EncryptedPayload
@@ -1522,13 +1591,15 @@ var file_messages_proto_depIdxs = []int32{
 	14, // 13: messages.ServerMessage.pull_images_request:type_name -> messages.PullImagesRequest
 	9,  // 14: messages.ServerMessage.delete_request:type_name -> messages.DeleteRequest
 	13, // 15: messages.AgentSettings.image_poll_settings:type_name -> messages.ImagePollSettings
-	0,  // 16: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
-	16, // 17: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	0,  // 16: messages.ServiceStatus.health:type_name -> messages.HealthStatus
+	0,  // 17: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
+	16, // 18: messages.ApplicationStatus.services:type_name -> messages.ServiceStatus
+	17, // 19: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -1561,7 +1632,7 @@ func file_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

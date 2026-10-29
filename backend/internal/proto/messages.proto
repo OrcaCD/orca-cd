@@ -116,9 +116,19 @@ enum HealthStatus {
   HEALTH_STATUS_STOPPED = 3;
 }
 
+message ServiceStatus {
+  string name = 1;
+  HealthStatus health = 2;
+}
+
 message ApplicationStatus {
   string application_id = 1;
+  // Aggregate health of all containers. A mix of healthy and failing services
+  // is reported as unhealthy; the hub derives the degraded state from services.
   HealthStatus health = 2;
+  // Health per compose service, sorted by name. Empty for agents that predate
+  // per-service reporting.
+  repeated ServiceStatus services = 3;
 }
 
 // ApplicationStatusReport carries the health of every application managed by an

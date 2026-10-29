@@ -76,6 +76,7 @@ export enum HealthStatus {
 	Healthy = "healthy",
 	Unhealthy = "unhealthy",
 	Stopped = "stopped",
+	Degraded = "degraded",
 	Unknown = "unknown",
 }
 
