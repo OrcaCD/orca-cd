@@ -55,6 +55,12 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		updates.SyncStatus = models.OutOfSync
 	}
 
+	// A result that was already underway when the application was rolled back
+	// must not mark it as synced with Git again.
+	rolledBack := app.RolledBackAt != nil
+	if rolledBack {
+		updates.SyncStatus = ""
+	}
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ? AND agent_id = ?", r.ApplicationId, client.Id).
 		Updates(ctx, updates); err != nil {
@@ -71,7 +77,7 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	if ctx.Err() != nil {
 		return
 	}
-	if r.Success && r.ImagesUpdated {
+	if r.Success && r.ImagesUpdated && !rolledBack {
 		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images); err != nil {
 			log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record image update deployment")
 		}

@@ -198,3 +198,32 @@ func TestSendAgentSettings_DisablesImagePollingWhileRolledBack(t *testing.T) {
 		t.Errorf("expected only the rolled back application to stop polling, got %v", settings)
 	}
 }
+
+func TestHandlePullImagesResult_KeepsRollbackState(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.OutOfSync)
+	now := time.Now()
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Update(t.Context(), "rolled_back_at", now); err != nil {
+		t.Fatalf("mark rolled back: %v", err)
+	}
+	log := testLogger()
+	expectAsyncNotification(t)
+
+	handlePullImagesResult(t.Context(), &Client{Id: "agent-1"}, &messages.PullImagesResult{
+		ApplicationId: app.Id,
+		Success:       true,
+		ImagesUpdated: true,
+	}, &log)
+
+	if updated := loadDeployTestApp(t, app.Id); updated.SyncStatus != models.OutOfSync {
+		t.Errorf("sync status = %q, want out of sync while rolled back", updated.SyncStatus)
+	}
+	count, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).Count(t.Context(), "*")
+	if err != nil {
+		t.Fatalf("count deployments: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected no deployment for an update while rolled back, got %d", count)
+	}
+}
