@@ -214,7 +214,8 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 		pollSettings = append(pollSettings, &messages.ImagePollSettings{
 			ApplicationId:   apps[i].Id,
 			ApplicationName: apps[i].Name.String(),
-			Enabled:         apps[i].ImagePollEnabled,
+			// A rolled back application runs pinned images until it is deployed again.
+			Enabled:         apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
 			DeleteOldImages: apps[i].DeleteOldImages,
 		})
