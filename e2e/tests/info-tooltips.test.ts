@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
-async function openActivity(page: Page) {
+async function openActivity(page: Page, days = 1) {
 	// The overview shows onboarding instead of activity when there are no applications.
 	await page.route("**/api/v1/applications", (route) =>
 		route.fulfill({
@@ -24,7 +24,11 @@ async function openActivity(page: Page) {
 	await page.route("**/api/v1/activity?*", (route) =>
 		route.fulfill({
 			json: {
-				days: [{ date: "2026-10-29", succeeded: 3, failed: 1 }],
+				days: Array.from({ length: days }, (_, index) => ({
+					date: `2026-10-${29 - index}`,
+					succeeded: 3,
+					failed: 1,
+				})),
 				recentDeployments: [],
 			},
 		}),
@@ -49,6 +53,48 @@ test("information tooltips open on desktop hover and keyboard focus", async ({ p
 	await expect(tooltip).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(tooltip).toBeHidden();
+});
+
+test("information tooltips share one media query and release its listener", async ({ page }) => {
+	await page.addInitScript(() => {
+		const stats = { queries: 0, listeners: 0 };
+		Object.assign(window, { tooltipMediaStats: stats });
+		const matchMedia = window.matchMedia.bind(window);
+		window.matchMedia = (query) => {
+			const result = matchMedia(query);
+			if (query === "(hover: none), (pointer: coarse)") {
+				stats.queries++;
+				const add = result.addEventListener.bind(result);
+				const remove = result.removeEventListener.bind(result);
+				result.addEventListener = (...args: Parameters<MediaQueryList["addEventListener"]>) => {
+					if (args[0] === "change") {
+						stats.listeners++;
+					}
+					add(...args);
+				};
+				result.removeEventListener = (
+					...args: Parameters<MediaQueryList["removeEventListener"]>
+				) => {
+					if (args[0] === "change") {
+						stats.listeners--;
+					}
+					remove(...args);
+				};
+			}
+			return result;
+		};
+	});
+	const trigger = await openActivity(page, 7);
+	await trigger.hover();
+	await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
+	const stats = () => page.evaluate(() => Reflect.get(window, "tooltipMediaStats"));
+	await expect.poll(stats).toEqual({ queries: 1, listeners: 1 });
+	await page.getByRole("link", { name: "Notifications", exact: true }).click();
+	await expect.poll(stats).toEqual({ queries: 1, listeners: 0 });
+	await page.goBack();
+	await trigger.hover();
+	await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
+	await expect.poll(stats).toEqual({ queries: 1, listeners: 1 });
 });
 
 test.describe("touch information popovers", () => {

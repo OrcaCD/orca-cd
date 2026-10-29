@@ -14,21 +14,46 @@ import { cn } from "@/lib/utils";
 // Use input capabilities rather than viewport width, including large touch-only tablets.
 const touchQuery = "(hover: none), (pointer: coarse)";
 const TouchContext = createContext(false);
+let mediaQuery: MediaQueryList | undefined;
+const listeners = new Set<() => void>();
+
+function getMediaQuery() {
+	if (typeof window === "undefined") {
+		return undefined;
+	}
+	mediaQuery ??= window.matchMedia(touchQuery);
+	return mediaQuery;
+}
+
+function notifyListeners() {
+	for (const listener of listeners) {
+		listener();
+	}
+}
 
 function subscribe(onChange: () => void) {
-	const query = window.matchMedia(touchQuery);
-	query.addEventListener("change", onChange);
-	return () => query.removeEventListener("change", onChange);
+	const query = getMediaQuery();
+	if (listeners.size === 0) {
+		query?.addEventListener("change", notifyListeners);
+	}
+	listeners.add(onChange);
+	return () => {
+		listeners.delete(onChange);
+		if (listeners.size === 0) {
+			query?.removeEventListener("change", notifyListeners);
+		}
+	};
 }
 
 function getSnapshot() {
-	return window.matchMedia(touchQuery).matches;
+	return getMediaQuery()?.matches ?? false;
 }
 
 function getServerSnapshot() {
 	return false;
 }
 
+// Action and navigation controls keep Tooltip so taps still perform their primary action.
 export function InfoTooltip({ children }: { children: ReactNode }) {
 	const touch = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 	return (
