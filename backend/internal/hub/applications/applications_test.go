@@ -317,6 +317,10 @@ type stubDeployer struct {
 	err       error
 }
 
+func (s *stubDeployer) TriggerRollback(context.Context, *models.Application, *models.ApplicationDeployment, string) error {
+	return nil
+}
+
 func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, requestID string) error {
 	s.called = true
 	s.compose = composeFile

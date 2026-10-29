@@ -23,6 +23,7 @@ type Params struct {
 	ActorName     *string
 	CommitHash    *string
 	CommitMessage *string
+	DeploymentID  *string
 }
 
 func Start(ctx context.Context, p Params) (*models.ApplicationEvent, error) {
@@ -64,6 +65,7 @@ func create(
 		CommitHash:    p.CommitHash,
 		CommitMessage: p.CommitMessage,
 		ErrorMessage:  errorMessage,
+		DeploymentId:  p.DeploymentID,
 	}
 	if status != models.ApplicationEventRunning {
 		now := time.Now()
@@ -140,6 +142,24 @@ func Complete(
 	// listed there and has to disappear.
 	publishUpdate(applicationID, true)
 	return true, nil
+}
+
+// ForRequest returns the event recorded for requestID, or nil when no such
+// event exists.
+func ForRequest(ctx context.Context, requestID string, applicationID string) (*models.ApplicationEvent, error) {
+	if requestID == "" {
+		return nil, nil
+	}
+	event, err := gorm.G[models.ApplicationEvent](db.DB).
+		Where("request_id = ? AND application_id = ?", requestID, applicationID).
+		First(ctx)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
 }
 
 // SourceForRequest returns the source of the event recorded for requestID, or

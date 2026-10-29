@@ -40,6 +40,14 @@ type stubRouteDeployer struct {
 	startedApp  string
 	startedWith string
 	requestID   string
+	rolledBack  *models.ApplicationDeployment
+}
+
+func (d *stubRouteDeployer) TriggerRollback(_ context.Context, app *models.Application, target *models.ApplicationDeployment, requestID string) error {
+	d.startedApp = app.Id
+	d.rolledBack = target
+	d.requestID = requestID
+	return d.startErr
 }
 
 func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error {

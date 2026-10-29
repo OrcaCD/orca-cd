@@ -12,11 +12,19 @@ import (
 
 // TriggerImagePull sends a PullImagesRequest to the agent for the given application
 // and records a correlated image_update history event for the explicit trigger.
+// Rolled back applications are skipped and reported as accepted.
 // Returns false if the hub is not initialized, the agent is not connected, or the send buffer is full.
 // Triggers that may arrive in bursts should go through ScheduleImagePull instead.
 func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// This pull supersedes a debounced one queued for the same application.
 	DefaultImagePullDebouncer.Cancel(app.Id)
+
+	// A rolled back application runs pinned images. Pulling would replace them
+	// with the latest ones, so updates wait until it is deployed again.
+	if app.RolledBackAt != nil {
+		Log.Info().Str("applicationId", app.Id).Msg("skipping image pull of rolled back application")
+		return true
+	}
 
 	ctx := context.Background()
 	requestID := uuid.NewString()
