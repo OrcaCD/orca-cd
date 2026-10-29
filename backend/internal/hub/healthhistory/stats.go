@@ -26,7 +26,7 @@ type rangeConfig struct {
 }
 
 var ranges = map[Range]rangeConfig{
-	Range24h: {duration: 24 * time.Hour, bucket: time.Hour},
+	Range24h: {duration: 24 * time.Hour, bucket: 30 * time.Minute},
 	Range7d:  {duration: 7 * 24 * time.Hour, bucket: 3 * time.Hour},
 	Range30d: {duration: 30 * 24 * time.Hour, bucket: 12 * time.Hour},
 }

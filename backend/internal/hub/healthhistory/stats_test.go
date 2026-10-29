@@ -135,16 +135,17 @@ func TestGetStats_Day(t *testing.T) {
 		t.Errorf("expected ended unhealthy incident without trigger, got %+v", unhealthy)
 	}
 
-	if len(stats.Buckets) != 24 {
-		t.Fatalf("expected 24 hourly buckets, got %d", len(stats.Buckets))
+	if len(stats.Buckets) != 48 || stats.BucketSeconds != int64((30*time.Minute).Seconds()) {
+		t.Fatalf("expected 48 buckets of 30m, got %d of %ds", len(stats.Buckets), stats.BucketSeconds)
 	}
-	// Bucket i covers (24-i)h..(23-i)h ago. The unhealthy incident starts
-	// exactly at the end of bucket 13, so that bucket stays healthy.
+	// Bucket i covers (24-i/2)h..(23.5-i/2)h ago. The unhealthy incident starts
+	// exactly at the end of bucket 27, so that bucket stays healthy.
 	wantStatus := map[int]models.HealthStatus{
-		14: models.Unhealthy,
-		19: models.UnknownHealth,
-		22: models.Stopped,
-		23: models.Degraded,
+		28: models.Unhealthy,
+		38: models.UnknownHealth,
+		39: models.UnknownHealth,
+		44: models.Stopped,
+		47: models.Degraded,
 	}
 	for i, bucket := range stats.Buckets {
 		want, ok := wantStatus[i]
