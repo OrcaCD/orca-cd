@@ -745,6 +745,30 @@ test.describe("Runtime health", () => {
 		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
 		await expect(healthBadge(page, "Stopped")).toHaveCount(0);
 	});
+
+	test("the health page shows the availability and the runtime incidents", async ({ page }) => {
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+
+		// The previous tests made the application unhealthy and stopped it
+		const { status, body } = await api(page, "GET", `/applications/${appId}/health?range=24h`);
+		expect(status).toBe(200);
+		const stats = body as { availability: number | null; incidentCount: number };
+		expect(stats.incidentCount).toBeGreaterThanOrEqual(3);
+		expect(stats.availability).not.toBeNull();
+		expect(stats.availability).toBeLessThan(100);
+
+		await gotoApp(page, `/applications/${appId}/health?range=24h`);
+		await expect(page.getByRole("heading", { name: "Health" })).toBeVisible();
+		// The availability legend also contains "Healthy", so match the status badge only
+		await expect(
+			page.locator("[data-slot='badge']").filter({ hasText: /^Healthy$/ }),
+		).toBeVisible();
+		await expect(page.getByText(/^\d{1,3}\.\d{2}%$/)).toBeVisible();
+		await expect(page.getByRole("row").filter({ hasText: "Unhealthy" }).first()).toBeVisible();
+		await expect(
+			page.getByRole("row").filter({ hasText: "All containers are stopped" }),
+		).toBeVisible();
+	});
 });
 
 test.describe("Move and rename", () => {
