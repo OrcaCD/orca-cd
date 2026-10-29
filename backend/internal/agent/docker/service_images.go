@@ -35,10 +35,15 @@ func (c *Client) ServiceImages(ctx context.Context, appID string) ([]*messages.S
 		return nil, err
 	}
 
+	// Running containers show what the service runs now. Stopped ones of an
+	// older configuration or `compose run` containers may still be around.
+	slices.SortStableFunc(containers, func(a, b container.Summary) int {
+		return cmp.Compare(runningRank(a), runningRank(b))
+	})
 	byService := make(map[string]*messages.ServiceImage)
 	for _, item := range containers {
 		service := item.Labels[api.ServiceLabel]
-		if service == "" || item.ImageID == "" {
+		if service == "" || item.ImageID == "" || item.Labels[api.OneoffLabel] == "True" {
 			continue
 		}
 		if _, seen := byService[service]; seen {
@@ -59,6 +64,13 @@ func (c *Client) ServiceImages(ctx context.Context, appID string) ([]*messages.S
 	}
 	slices.SortFunc(images, func(a, b *messages.ServiceImage) int { return cmp.Compare(a.Service, b.Service) })
 	return images, nil
+}
+
+func runningRank(item container.Summary) int {
+	if item.State == container.StateRunning {
+		return 0
+	}
+	return 1
 }
 
 // pinnedReference picks the repo digest of the repository imageRef names. An
