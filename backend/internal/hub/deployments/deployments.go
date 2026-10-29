@@ -4,7 +4,6 @@ package deployments
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -56,26 +55,26 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 	}
 	found := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		deployment, err := gorm.G[models.ApplicationDeployment](tx).
-			Where("application_id = ? AND request_id = ? AND status = ?", applicationID, requestID, models.DeploymentPending).
-			First(ctx)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		found = true
-
+		// Writing first makes SQLite lock the database for writing right away;
+		// upgrading a read lock fails without waiting for other writers.
 		now := time.Now()
-		if _, err := gorm.G[models.ApplicationDeployment](tx).
-			Where("id = ?", deployment.Id).
+		rowsAffected, err := gorm.G[models.ApplicationDeployment](tx).
+			Where("application_id = ? AND request_id = ? AND status = ?", applicationID, requestID, models.DeploymentPending).
 			Select("Status", "Images", "DeployedAt").
 			Updates(ctx, models.ApplicationDeployment{
 				Status:     models.DeploymentSucceeded,
 				Images:     toDeployedImages(images),
 				DeployedAt: &now,
-			}); err != nil {
+			})
+		if err != nil || rowsAffected == 0 {
+			return err
+		}
+		found = true
+		deployment, err := gorm.G[models.ApplicationDeployment](tx).
+			Select("id").
+			Where("application_id = ? AND request_id = ?", applicationID, requestID).
+			First(ctx)
+		if err != nil {
 			return err
 		}
 		return setCurrent(ctx, tx, applicationID, deployment.Id)
@@ -92,29 +91,28 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 // RecordImageUpdate records the images an image update deployed. The update
 // ran the application's current compose file at its current commit.
 func RecordImageUpdate(ctx context.Context, applicationID, requestID string, images []*messages.ServiceImage) (*models.ApplicationDeployment, error) {
-	var deployment models.ApplicationDeployment
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		app, err := gorm.G[models.Application](tx).
-			Select("id", "commit", "commit_message", "compose_file").
-			Where("id = ?", applicationID).
-			First(ctx)
-		if err != nil {
-			return err
-		}
+	app, err := gorm.G[models.Application](db.DB).
+		Select("id", "commit", "commit_message", "compose_file").
+		Where("id = ?", applicationID).
+		First(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-		now := time.Now()
-		deployment = models.ApplicationDeployment{
-			ApplicationId: applicationID,
-			Status:        models.DeploymentSucceeded,
-			Commit:        app.Commit,
-			CommitMessage: app.CommitMessage,
-			ComposeFile:   app.ComposeFile,
-			Images:        toDeployedImages(images),
-			DeployedAt:    &now,
-		}
-		if requestID != "" {
-			deployment.RequestId = &requestID
-		}
+	now := time.Now()
+	deployment := models.ApplicationDeployment{
+		ApplicationId: applicationID,
+		Status:        models.DeploymentSucceeded,
+		Commit:        app.Commit,
+		CommitMessage: app.CommitMessage,
+		ComposeFile:   app.ComposeFile,
+		Images:        toDeployedImages(images),
+		DeployedAt:    &now,
+	}
+	if requestID != "" {
+		deployment.RequestId = &requestID
+	}
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := gorm.G[models.ApplicationDeployment](tx).Create(ctx, &deployment); err != nil {
 			return err
 		}
@@ -159,15 +157,13 @@ func DiscardAllPending(ctx context.Context) error {
 }
 
 func deletePending(ctx context.Context, tx *gorm.DB, query string, args ...any) error {
-	q := gorm.G[models.ApplicationDeployment](tx).Select("id").Where("status = ?", models.DeploymentPending)
+	cond := "status = ?"
+	condArgs := []any{models.DeploymentPending}
 	if query != "" {
-		q = q.Where(query, args...)
+		cond += " AND (" + query + ")"
+		condArgs = append(condArgs, args...)
 	}
-	pending, err := q.Find(ctx)
-	if err != nil {
-		return err
-	}
-	return deleteDeployments(ctx, tx, deploymentIDs(pending))
+	return deleteDeploymentsWhere(ctx, tx, cond, condArgs...)
 }
 
 // setCurrent makes deploymentID the application's current deployment and
@@ -187,26 +183,26 @@ func setCurrent(ctx context.Context, tx *gorm.DB, applicationID, deploymentID st
 	if err != nil || len(succeeded) <= MaxPerApplication {
 		return err
 	}
-	return deleteDeployments(ctx, tx, deploymentIDs(succeeded[MaxPerApplication:]))
+	return deleteDeploymentsWhere(ctx, tx, "id IN ?", deploymentIDs(succeeded[MaxPerApplication:]))
 }
 
-// deleteDeployments deletes deployments and clears the events that reference
-// them. The reference has no foreign key, see migration 000037.
-func deleteDeployments(ctx context.Context, tx *gorm.DB, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
+// deleteDeploymentsWhere deletes the deployments matching cond and clears the
+// references to them, which have no foreign key (see migration 000037). Every
+// statement writes, so a transaction that starts with it locks the database
+// for writing right away.
+func deleteDeploymentsWhere(ctx context.Context, tx *gorm.DB, cond string, args ...any) error {
+	matching := "IN (SELECT id FROM application_deployments WHERE " + cond + ")"
 	if _, err := gorm.G[models.ApplicationEvent](tx).
-		Where("deployment_id IN ?", ids).
+		Where("deployment_id "+matching, args...).
 		Update(ctx, "deployment_id", nil); err != nil {
 		return err
 	}
 	if _, err := gorm.G[models.Application](tx).
-		Where("current_deployment_id IN ?", ids).
+		Where("current_deployment_id "+matching, args...).
 		Update(ctx, "current_deployment_id", nil); err != nil {
 		return err
 	}
-	_, err := gorm.G[models.ApplicationDeployment](tx).Where("id IN ?", ids).Delete(ctx)
+	_, err := gorm.G[models.ApplicationDeployment](tx).Where(cond, args...).Delete(ctx)
 	return err
 }
 
