@@ -51,6 +51,7 @@ import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
 import { syncRepository } from "@/lib/repositories";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	CodeBlock,
@@ -494,12 +495,14 @@ function ApplicationDetailsPage() {
 					loading={!data}
 				>
 					{data?.lastSyncedAt ? (
-						<Tooltip>
-							<TooltipTrigger render={<InfoValue className="w-fit max-w-full" />}>
+						<InfoTooltip>
+							<InfoTooltipTrigger render={<InfoValue className="w-fit max-w-full" />}>
 								{formatRelativeTime(data.lastSyncedAt)}
-							</TooltipTrigger>
-							<TooltipContent>{new Date(data.lastSyncedAt).toLocaleString()}</TooltipContent>
-						</Tooltip>
+							</InfoTooltipTrigger>
+							<InfoTooltipContent>
+								{new Date(data.lastSyncedAt).toLocaleString()}
+							</InfoTooltipContent>
+						</InfoTooltip>
 					) : (
 						<InfoValue>{m.never()}</InfoValue>
 					)}
