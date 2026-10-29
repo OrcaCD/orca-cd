@@ -620,7 +620,7 @@ func TestImagePullWebhookHandler_Harbor_PushImage_TriggersPull(t *testing.T) {
 
 	const secret = "harborsecret"
 	const agentID = "agent-harbor-push"
-	const body = `{"event_type":"pushImage","event_data":{"repository":{"name":"myimage"}}}`
+	const body = `{"type":"PUSH_ARTIFACT","occur_at":1680501893,"operator":"harbor-jobservice","event_data":{"resources":[{"digest":"sha256:954b","tag":"latest","resource_url":"localhost/harbor/alpine:latest"}],"repository":{"name":"alpine","namespace":"harbor","repo_full_name":"harbor/alpine"}}}`
 
 	app := seedAppWithWebhookSecret(t, secret)
 	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("agent_id", agentID).Error; err != nil {
@@ -658,7 +658,7 @@ func TestImagePullWebhookHandler_Harbor_DeleteImage_Returns204NoPull(t *testing.
 	setupHubForTest(t)
 
 	const secret = "harborsecret"
-	const body = `{"event_type":"deleteImage"}`
+	const body = `{"type":"DELETE_ARTIFACT","event_data":{"repository":{"name":"alpine"}}}`
 	app := seedAppWithWebhookSecret(t, secret)
 
 	c, w := makeHarborWebhookRequest(app.Id, secret, body)
@@ -674,7 +674,7 @@ func TestImagePullWebhookHandler_Harbor_PullImage_Returns204NoPull(t *testing.T)
 	setupHubForTest(t)
 
 	const secret = "harborsecret"
-	const body = `{"event_type":"pullImage"}`
+	const body = `{"type":"PULL_ARTIFACT","event_data":{"repository":{"name":"alpine"}}}`
 	app := seedAppWithWebhookSecret(t, secret)
 
 	c, w := makeHarborWebhookRequest(app.Id, secret, body)
@@ -932,10 +932,17 @@ func TestIsHarborPushEvent(t *testing.T) {
 		body string
 		want bool
 	}{
-		{"pushImage triggers", `{"event_type":"pushImage"}`, true},
-		{"deleteImage ignored", `{"event_type":"deleteImage"}`, false},
-		{"pullImage ignored", `{"event_type":"pullImage"}`, false},
-		{"scanningCompleted ignored", `{"event_type":"scanningCompleted"}`, false},
+		{"PUSH_ARTIFACT triggers", `{"type":"PUSH_ARTIFACT"}`, true},
+		{"CloudEvents push triggers", `{"specversion":"1.0","type":"harbor.artifact.pushed"}`, true},
+		{"DELETE_ARTIFACT ignored", `{"type":"DELETE_ARTIFACT"}`, false},
+		{"PULL_ARTIFACT ignored", `{"type":"PULL_ARTIFACT"}`, false},
+		{"SCANNING_COMPLETED ignored", `{"type":"SCANNING_COMPLETED"}`, false},
+		{"CloudEvents pull ignored", `{"specversion":"1.0","type":"harbor.artifact.pulled"}`, false},
+		{"type takes precedence over event_type", `{"type":"PULL_ARTIFACT","event_type":"pushImage"}`, false},
+		{"legacy pushImage triggers", `{"event_type":"pushImage"}`, true},
+		{"legacy deleteImage ignored", `{"event_type":"deleteImage"}`, false},
+		{"legacy pullImage ignored", `{"event_type":"pullImage"}`, false},
+		{"legacy scanningCompleted ignored", `{"event_type":"scanningCompleted"}`, false},
 		{"no event_type triggers", `{"foo":"bar"}`, true},
 		{"empty body triggers", ``, true},
 		{"invalid json triggers", `not json`, true},

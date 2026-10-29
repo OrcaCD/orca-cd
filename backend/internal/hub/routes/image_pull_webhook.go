@@ -156,17 +156,27 @@ func isDockerHubPayload(body []byte) bool {
 }
 
 // isHarborPushEvent returns true when the request should trigger an image pull.
-// Payloads with a Harbor-style event_type field only trigger on "pushImage";
-// payloads without event_type (simple generic webhooks) always trigger.
+// Harbor 2.x sends the event in "type" ("PUSH_ARTIFACT", or "harbor.artifact.pushed" in
+// the CloudEvents format); Harbor 1.x used "event_type" ("pushImage"). Payloads with
+// either field only trigger on a push; payloads with neither (simple generic webhooks)
+// always trigger.
 func isHarborPushEvent(body []byte) bool {
 	if len(body) == 0 {
 		return true
 	}
 	var payload struct {
+		Type      string `json:"type"`
 		EventType string `json:"event_type"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.EventType == "" {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return true
 	}
-	return payload.EventType == "pushImage"
+	switch {
+	case payload.Type != "":
+		return payload.Type == "PUSH_ARTIFACT" || payload.Type == "harbor.artifact.pushed"
+	case payload.EventType != "":
+		return payload.EventType == "pushImage"
+	default:
+		return true
+	}
 }
