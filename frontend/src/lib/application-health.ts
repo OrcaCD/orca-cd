@@ -1,4 +1,5 @@
-import { useFetch } from "./api";
+import useSWR from "swr";
+import { fetcher } from "./api";
 import { HealthStatus } from "./applications";
 import type { ApplicationEventType } from "./application-events";
 import { m } from "./paraglide/messages";
@@ -53,6 +54,8 @@ export interface HealthStats {
 	incidentCount: number;
 	longestIncidentSeconds: number;
 	dataGapCount: number;
+	/** Set when the range had too many changes; only the latest ones are included. */
+	truncated: boolean;
 	buckets: HealthBucket[];
 	incidents: HealthIncident[];
 }
@@ -60,11 +63,25 @@ export interface HealthStats {
 // Bars move with time, so refresh even without live updates.
 const HEALTH_REFRESH_INTERVAL = 60_000;
 
-export function useApplicationHealth(applicationId: string, range: HealthRange) {
-	return useFetch<HealthStats>(`/applications/${applicationId}/health?range=${range}`, {
-		refreshInterval: HEALTH_REFRESH_INTERVAL,
-		keepPreviousData: true,
-	});
+/**
+ * Loads the health statistics. The array key keeps them out of the live
+ * application updates, which fire for every change of any application; they
+ * are reloaded when the application's health changes instead.
+ */
+export function useApplicationHealth(
+	applicationId: string,
+	range: HealthRange,
+	currentHealth: HealthStatus | undefined,
+) {
+	return useSWR<HealthStats>(
+		currentHealth ? ["application-health", applicationId, range, currentHealth] : null,
+		([, id, healthRange]: [string, string, HealthRange]) =>
+			fetcher<HealthStats>(`/applications/${id}/health?range=${healthRange}`),
+		{
+			refreshInterval: HEALTH_REFRESH_INTERVAL,
+			keepPreviousData: true,
+		},
+	);
 }
 
 export const healthStatusConfig: Record<HealthStatus, { label: () => string; className: string }> =

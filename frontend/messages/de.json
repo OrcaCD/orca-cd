@@ -746,9 +746,9 @@
 	"deleteApplicationHint": "Diese Anwendung dauerhaft löschen und ihre Container vom Agenten entfernen.",
 	"demoBannerMessage": "Demo-Modus: Daten sind schreibgeschützt.",
 	"demoActionNotAllowed": "Im Demo-Modus nicht erlaubt.",
-	"healthTitle": "Gesundheit",
+	"healthTitle": "Health",
 	"healthSince": "seit {duration}",
-	"healthLoadFailed": "Gesundheitsstatistiken konnten nicht geladen werden",
+	"healthLoadFailed": "Health-Statistiken konnten nicht geladen werden",
 	"healthAvailability": "Verfügbarkeit",
 	"healthLastRange": "letzte {range}",
 	"healthDowntime": "Ausfallzeit",
@@ -769,9 +769,11 @@
 	"healthIncidentContext": "Kontext",
 	"healthIncidentOngoing": "Andauernd",
 	"healthIncidentAgentOffline": "Agent {agent} offline",
-	"healthIncidentUnknown": "Gesundheitsstatus konnte nicht ermittelt werden",
+	"healthIncidentUnknown": "Health-Status konnte nicht ermittelt werden",
 	"healthIncidentAfterDeploy": "Nach Deployment",
 	"healthIncidentAfterDeployCommit": "Nach Deployment {commit}",
 	"healthIncidentAfterImageUpdate": "Nach Image-Update",
-	"healthNotTracked": "Noch nicht erfasst"
+	"healthNotTracked": "Noch nicht erfasst",
+	"healthTruncatedTitle": "Health-Verlauf unvollständig",
+	"healthTruncatedDescription": "Der Health-Status dieser Anwendung hat sich in diesem Zeitraum zu oft geändert. Nur die neuesten Änderungen werden angezeigt; die Zeit davor erscheint als nicht erfasst."
 }

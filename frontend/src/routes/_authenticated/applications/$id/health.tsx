@@ -5,6 +5,7 @@ import { ApplicationStatusBadge } from "@/components/badges/application-status-b
 import { AvailabilityBar } from "@/components/applications/health/availability-bar";
 import { HealthIncidents } from "@/components/applications/health/health-incidents";
 import { HealthStatCards } from "@/components/applications/health/health-stat-cards";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFetch } from "@/lib/api";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/application-health";
 import { HealthStatus, type Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { AlertTriangleIcon } from "lucide-react";
 
 const healthSearchSchema = z.object({
 	range: z.enum(healthRanges).optional(),
@@ -39,8 +41,15 @@ function ApplicationHealthPage() {
 	const { id } = Route.useParams();
 	const { range = DEFAULT_RANGE } = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
-	const { data: application } = useFetch<Application>(`/applications/${id}`);
-	const { data: stats, error, isLoading } = useApplicationHealth(id, range);
+	const { data: application, error: applicationError } = useFetch<Application>(
+		`/applications/${id}`,
+	);
+	const {
+		data: stats,
+		error: statsError,
+		isLoading,
+	} = useApplicationHealth(id, range, application?.healthStatus);
+	const error = statsError ?? applicationError;
 
 	const current = stats?.current;
 
@@ -101,6 +110,15 @@ function ApplicationHealthPage() {
 				</div>
 			) : (
 				<>
+					{stats.truncated ? (
+						<Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+							<AlertTriangleIcon />
+							<AlertTitle>{m.healthTruncatedTitle()}</AlertTitle>
+							<AlertDescription className="text-foreground text-wrap">
+								{m.healthTruncatedDescription()}
+							</AlertDescription>
+						</Alert>
+					) : null}
 					<HealthStatCards stats={stats} />
 					<AvailabilityBar stats={stats} />
 					<HealthIncidents stats={stats} agentName={application?.agentName ?? ""} />

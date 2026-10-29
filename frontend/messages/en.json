@@ -773,5 +773,7 @@
 	"healthIncidentAfterDeploy": "After deploy",
 	"healthIncidentAfterDeployCommit": "After deploy {commit}",
 	"healthIncidentAfterImageUpdate": "After image update",
-	"healthNotTracked": "Not tracked yet"
+	"healthNotTracked": "Not tracked yet",
+	"healthTruncatedTitle": "Health history incomplete",
+	"healthTruncatedDescription": "This application changed its health too often in this range. Only the most recent changes are shown; earlier time appears as not tracked."
 }
