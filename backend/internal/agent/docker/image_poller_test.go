@@ -147,6 +147,40 @@ func TestImagePoller_ApplySettings_StopsOldTicker(t *testing.T) {
 	p.StopAll()
 }
 
+func TestImagePoller_ApplySettings_KeepsUnchangedTicker(t *testing.T) {
+	p := newTestPoller(t, nil)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 30})
+
+	p.mu.Lock()
+	firstStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+
+	// Normalized to the same minimum interval as before.
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 45})
+
+	p.mu.Lock()
+	secondStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if firstStop != secondStop {
+		t.Error("expected the unchanged ticker to keep running")
+	}
+	select {
+	case <-firstStop:
+		t.Error("expected the unchanged ticker not to be stopped")
+	default:
+	}
+
+	applyOne(p, "app-1", "renamed", PollSettings{Enabled: true, IntervalSeconds: 60})
+	p.mu.Lock()
+	renamedStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if renamedStop == firstStop {
+		t.Error("expected a renamed application to get a new ticker")
+	}
+
+	p.StopAll()
+}
+
 func TestImagePoller_ApplySettings_RemovesStaleApp(t *testing.T) {
 	p := newTestPoller(t, nil)
 

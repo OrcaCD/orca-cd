@@ -144,45 +144,6 @@ func Complete(
 	return true, nil
 }
 
-// CompleteForDeployment completes the running event that deployed the
-// deployment, once its health gate decided the outcome. Rollback events that
-// target the deployment are not affected.
-func CompleteForDeployment(
-	ctx context.Context,
-	applicationID string,
-	deploymentID string,
-	status models.ApplicationEventStatus,
-	errorMessage *string,
-) (bool, error) {
-	if !isCompletedStatus(status) {
-		return false, fmt.Errorf("event completion requires a completed status")
-	}
-
-	now := time.Now()
-	rowsAffected, err := gorm.G[models.ApplicationEvent](db.DB).
-		Where(
-			"deployment_id = ? AND application_id = ? AND status = ? AND type <> ?",
-			deploymentID,
-			applicationID,
-			models.ApplicationEventRunning,
-			models.ApplicationEventRollback,
-		).
-		Select("Status", "ErrorMessage", "CompletedAt").
-		Updates(ctx, models.ApplicationEvent{
-			Status:       status,
-			ErrorMessage: errorMessage,
-			CompletedAt:  &now,
-		})
-	if err != nil {
-		return false, err
-	}
-	if rowsAffected == 0 {
-		return false, nil
-	}
-	publishUpdate(applicationID, true)
-	return true, nil
-}
-
 // ForRequest returns the event recorded for requestID, or nil when no such
 // event exists.
 func ForRequest(ctx context.Context, requestID string, applicationID string) (*models.ApplicationEvent, error) {
