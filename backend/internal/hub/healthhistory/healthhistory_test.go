@@ -30,7 +30,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.User{}, &models.Repository{}, &models.Agent{}, &models.Application{}, &models.ApplicationHealthChange{}); err != nil {
+	if err := testDB.AutoMigrate(&models.User{}, &models.Repository{}, &models.Agent{}, &models.Application{}, &models.ApplicationEvent{}, &models.ApplicationHealthChange{}); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
 	sqlDB, err := testDB.DB()

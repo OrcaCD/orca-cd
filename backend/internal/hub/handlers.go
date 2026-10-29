@@ -69,6 +69,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.GET("/activity", routes.ApplicationActivityHandler)
 			protected.GET("/applications/:id", routes.GetApplicationHandler)
 			protected.GET("/applications/:id/events", routes.ListApplicationEventsHandler)
+			protected.GET("/applications/:id/health", routes.GetApplicationHealthHandler)
 			protected.POST("/applications", routes.CreateApplicationHandler)
 			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
 			protected.POST("/applications/:id/pull-images", routes.PullApplicationImagesHandler)
