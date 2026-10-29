@@ -32,17 +32,43 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 	}),
 });
 
-const rollbackSchema = z.object({
-	enabled: z.boolean(),
-	onDeployFailure: z.boolean(),
-	onUnhealthy: z.boolean(),
-	healthTimeoutMinutes: z
-		.number()
-		.int(m.validationRollbackTimeout())
-		.min(1, m.validationRollbackTimeout())
-		.max(60, m.validationRollbackTimeout()),
-	pauseAutoSync: z.boolean(),
-});
+const healthTimeoutMinutes = z.number().int().min(1).max(60);
+
+const rollbackSchema = z
+	.object({
+		enabled: z.boolean(),
+		onDeployFailure: z.boolean(),
+		onUnhealthy: z.boolean(),
+		healthTimeoutMinutes: z.number(),
+		pauseAutoSync: z.boolean(),
+	})
+	.superRefine((value, ctx) => {
+		// The timeout is hidden, and not used, unless unhealthy deployments roll back.
+		if (
+			value.enabled &&
+			value.onUnhealthy &&
+			!healthTimeoutMinutes.safeParse(value.healthTimeoutMinutes).success
+		) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["healthTimeoutMinutes"],
+				message: m.validationRollbackTimeout(),
+			});
+		}
+	});
+
+// healthTimeoutSeconds converts the minutes of the form back to seconds. A
+// timeout set to whole seconds through the API stays as it is unless edited,
+// and so does a hidden invalid value.
+function healthTimeoutSeconds(minutes: number, previousSeconds: number): number {
+	if (
+		minutes === Math.round(previousSeconds / 60) ||
+		!healthTimeoutMinutes.safeParse(minutes).success
+	) {
+		return previousSeconds;
+	}
+	return minutes * 60;
+}
 
 const rollbackEvents: NotificationEvent[] = [
 	"application.rollback.succeeded",
@@ -84,7 +110,10 @@ function RollbackSettingsPage() {
 					enabled: value.enabled,
 					onDeployFailure: value.onDeployFailure,
 					onUnhealthy: value.onUnhealthy,
-					healthTimeoutSeconds: value.healthTimeoutMinutes * 60,
+					healthTimeoutSeconds: healthTimeoutSeconds(
+						value.healthTimeoutMinutes,
+						settings?.healthTimeoutSeconds ?? 300,
+					),
 					pauseAutoSync: value.pauseAutoSync,
 				});
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset

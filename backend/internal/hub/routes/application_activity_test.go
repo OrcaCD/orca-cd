@@ -209,3 +209,32 @@ func TestApplicationActivityHandlerDBError(t *testing.T) {
 		t.Fatalf("expected 500, got %d", w.Code)
 	}
 }
+
+func TestApplicationActivityHandlerIncludesDeploymentStatus(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	event := seedActivityEvent(t, app.Id, models.ApplicationEventRunning, time.Now())
+	deployment := models.ApplicationDeployment{
+		ApplicationId: app.Id,
+		Status:        models.DeploymentVerifying,
+		Images:        []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployment); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	if _, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", event.Id).
+		Update(t.Context(), "deployment_id", deployment.Id); err != nil {
+		t.Fatalf("link deployment: %v", err)
+	}
+
+	w, response := invokeApplicationActivityHandler(t, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(response.RecentDeployments) != 1 {
+		t.Fatalf("expected 1 recent deployment, got %+v", response.RecentDeployments)
+	}
+	got := response.RecentDeployments[0]
+	if got.DeploymentStatus == nil || *got.DeploymentStatus != string(models.DeploymentVerifying) {
+		t.Errorf("deployment status = %v, want verifying", got.DeploymentStatus)
+	}
+}

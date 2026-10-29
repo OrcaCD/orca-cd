@@ -26,6 +26,18 @@ export function RolledBackBanner({ application }: { application: Application }) 
 	}
 
 	const desired = shortCommit(application.commit);
+	// A failed image update is rolled back to the same commit with older images.
+	const imagesRolledBack = application.rolledBackCommit === application.commit;
+	const running = imagesRolledBack
+		? m.rolledBackImages({ commit: desired })
+		: m.rolledBackRunning({ running: shortCommit(application.rolledBackCommit), desired });
+	let autoSync = m.rolledBackAutoSyncSkips({ desired });
+	if (application.autoSyncPaused) {
+		autoSync = m.rolledBackAutoSyncPaused();
+	} else if (imagesRolledBack) {
+		autoSync = m.rolledBackAutoSyncWaits();
+	}
+	const description = `${running} ${autoSync}`;
 	const deploymentInProgress = deploying || application.syncStatus === SyncStatus.Syncing;
 
 	const handleRetry = async () => {
@@ -68,15 +80,7 @@ export function RolledBackBanner({ application }: { application: Application }) 
 					<TriangleAlert className="size-4 shrink-0" />
 					{m.rolledBackTitle()}
 				</p>
-				<p className="text-sm text-muted-foreground">
-					{m.rolledBackRunning({
-						running: shortCommit(application.rolledBackCommit),
-						desired,
-					})}{" "}
-					{application.autoSyncPaused
-						? m.rolledBackAutoSyncPaused()
-						: m.rolledBackAutoSyncSkips({ desired })}
-				</p>
+				<p className="text-sm text-muted-foreground">{description}</p>
 				{application.lastSyncError ? (
 					<p
 						className="line-clamp-2 text-xs text-muted-foreground"

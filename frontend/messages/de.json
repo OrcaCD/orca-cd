@@ -823,5 +823,7 @@
 	"manageNotifications": "Benachrichtigungen verwalten",
 	"validationRollbackTimeout": "Gib zwischen 1 und 60 Minuten ein.",
 	"applicationsAttentionRolledBack": "Auf {commit} zurückgerollt",
-	"applicationsRolledBack": "Zurückgerollt"
+	"applicationsRolledBack": "Zurückgerollt",
+	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
+	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit."
 }

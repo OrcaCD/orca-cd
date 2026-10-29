@@ -89,12 +89,23 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	if hasMore {
 		events = events[:limit]
 	}
-	statuses, err := deploymentStatuses(ctx, events)
+	items, err := toApplicationEventResponses(ctx, events)
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
 			Msg("failed to load deployments of application events")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"items": items, "hasMore": hasMore})
+}
+
+// toApplicationEventResponses converts events and adds the deployments they
+// reference that are still recorded.
+func toApplicationEventResponses(ctx context.Context, events []models.ApplicationEvent) ([]applicationEventResponse, error) {
+	statuses, err := deploymentStatuses(ctx, events)
+	if err != nil {
+		return nil, err
 	}
 	items := make([]applicationEventResponse, 0, len(events))
 	for i := range events {
@@ -107,8 +118,7 @@ func ListApplicationEventsHandler(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-
-	c.JSON(http.StatusOK, gin.H{"items": items, "hasMore": hasMore})
+	return items, nil
 }
 
 // deploymentStatuses returns the status of every deployment the events
