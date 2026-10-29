@@ -3,10 +3,10 @@ import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, Container, EllipsisVertical, Search, Tag, Trash2 } from "lucide-react";
+import { EllipsisVertical, Search, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AgentCard } from "@/components/cards/agent-card";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -20,13 +20,10 @@ import { toSearchableText } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { AgentsDataTable } from "@/components/tables/agents/data-table";
 import { columns } from "@/components/tables/agents/columns";
-import { AgentStatusBadge } from "@/components/badges/agent-status-badge";
-import { AgentVersionBadge } from "@/components/badges/agent-version-badge";
 import OutdatedAgentsAlert from "@/components/alerts/outdated-agents-alert";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
-import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -118,91 +115,41 @@ function RouteComponent() {
 						) : null}
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredAgents.map((agent) => (
-								<Card key={agent.id} className="h-full border duration-300 hover:border-primary">
-									<CardHeader>
-										<CardAction>
-											<DropdownMenu>
-												<DropdownMenuTrigger
-													render={
-														<Button variant="ghost" size="icon" className="h-8 w-8">
-															<EllipsisVertical className="h-4 w-4" />
-															<span className="sr-only">{m.cardActions()}</span>
-														</Button>
-													}
-												></DropdownMenuTrigger>
-												<DropdownMenuContent align="end" className="w-fit" keepMounted>
-													<DropdownMenuGroup>
-														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-														<UpsertAgentDialog agent={agent} asDropdownItem />
-														<RotateAgentTokenDialog agent={agent} />
-														<ConfirmationDialog
-															onConfirm={() => handleDeleteCard(agent)}
-															title={m.deleteAgentCardTitle()}
-															description={m.deleteAgentCardDescription({ name: agent.name })}
-															triggerText={
-																<>
-																	<Trash2 className="h-4 w-4" />
-																	{m.delete()}
-																</>
-															}
-															asDropdownItem
-														/>
-													</DropdownMenuGroup>
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</CardAction>
-
-										<div className="flex min-w-0 items-center gap-3">
-											<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-												<StaticLucideIcon name={agent.icon} className="h-5 w-5 text-primary" />
-											</div>
-											<div className="min-w-0 space-y-1">
-												<CardTitle className="truncate" title={agent.name}>
-													{agent.name}
-												</CardTitle>
-											</div>
-										</div>
-									</CardHeader>
-
-									<hr className="mx-4" />
-
-									<CardContent className="space-y-3">
-										<AgentStatusBadge status={agent.status} />
-
-										<div className="grid grid-cols-2 gap-2 text-xs">
-											<div className="min-w-0 rounded-lg border bg-muted/50 p-2">
-												<p className="flex items-center gap-1 text-muted-foreground">
-													<AppWindow className="h-3 w-3" />
-													{m.appsCount()}
-												</p>
-												<p className="mt-1 font-medium">
-													{agent.appsCount ?? m.notAvailableShort()}
-												</p>
-											</div>
-											<div className="min-w-0 rounded-lg border bg-muted/50 p-2">
-												<p className="flex items-center gap-1 text-muted-foreground">
-													<Container className="h-3 w-3" />
-													{m.dockerVersion()}
-												</p>
-												<p
-													className="mt-1 truncate font-medium"
-													title={agent.dockerVersion ?? undefined}
-												>
-													{agent.dockerVersion ?? m.notAvailableShort()}
-												</p>
-											</div>
-											<div className="col-span-2 rounded-lg border bg-muted/50 p-2">
-												<p className="flex items-center gap-1 text-muted-foreground">
-													<Tag className="h-3 w-3" />
-													{m.agentVersion()}
-												</p>
-												<div className="mt-1">
-													<AgentVersionBadge version={agent.version} status={agent.versionStatus} />
-												</div>
-											</div>
-										</div>
-									</CardContent>
-								</Card>
+								<AgentCard
+									key={agent.id}
+									agent={agent}
+									action={
+										<DropdownMenu>
+											<DropdownMenuTrigger
+												render={
+													<Button variant="ghost" size="icon" className="h-8 w-8">
+														<EllipsisVertical className="h-4 w-4" />
+														<span className="sr-only">{m.cardActions()}</span>
+													</Button>
+												}
+											></DropdownMenuTrigger>
+											<DropdownMenuContent align="end" className="w-fit" keepMounted>
+												<DropdownMenuGroup>
+													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+													<UpsertAgentDialog agent={agent} asDropdownItem />
+													<RotateAgentTokenDialog agent={agent} />
+													<ConfirmationDialog
+														onConfirm={() => handleDeleteCard(agent)}
+														title={m.deleteAgentCardTitle()}
+														description={m.deleteAgentCardDescription({ name: agent.name })}
+														triggerText={
+															<>
+																<Trash2 className="h-4 w-4" />
+																{m.delete()}
+															</>
+														}
+														asDropdownItem
+													/>
+												</DropdownMenuGroup>
+											</DropdownMenuContent>
+										</DropdownMenu>
+									}
+								/>
 							))}
 						</div>
 					</>

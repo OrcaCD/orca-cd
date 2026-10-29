@@ -120,6 +120,13 @@
 
 @theme {
     --animate-rocket-launch: rocket-launch 1.4s infinite;
+    --animate-flow-dash: flow-dash 0.8s linear infinite;
+
+    @keyframes flow-dash {
+        to {
+            background-position-x: 8px;
+        }
+    }
 
     /*
      * Lucide's rocket points to the top right: it accelerates out of its (clipped) box towards the

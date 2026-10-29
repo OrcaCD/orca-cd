@@ -62,6 +62,14 @@ const healthConfig: Record<
 	},
 };
 
+export function getSyncStatusLabel(status: SyncStatus): string {
+	return syncConfig[status].label();
+}
+
+export function getHealthStatusLabel(status: HealthStatus): string {
+	return healthConfig[status].label();
+}
+
 export function ApplicationStatusBadge(props: StatusBadgeProps) {
 	let config =
 		props.type === "sync"
