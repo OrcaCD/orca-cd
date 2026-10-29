@@ -43,8 +43,16 @@ func serviceContainer(service, image, imageID string) containerapi.Summary {
 
 func TestServiceImages(t *testing.T) {
 	c := newTestClient(t)
+	oneOff := serviceContainer("web", "nginx:1.26", "sha256:oneoff")
+	oneOff.Labels[api.OneoffLabel] = "True"
+	stale := serviceContainer("web", "nginx:1.26", "sha256:stale")
+	stale.State = containerapi.StateExited
+	running := serviceContainer("web", "nginx:1.27", "sha256:web")
+	running.State = containerapi.StateRunning
 	stubServiceImageLookups(t, []containerapi.Summary{
-		serviceContainer("web", "nginx:1.27", "sha256:web"),
+		oneOff,
+		stale,
+		running,
 		serviceContainer("web", "nginx:1.27", "sha256:web"),
 		serviceContainer("app", "ghcr.io/org/app:latest", "sha256:app"),
 		serviceContainer("local", "local/app:dev", "sha256:local"),
