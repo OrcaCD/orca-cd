@@ -7,7 +7,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -154,8 +153,9 @@ func applyResult(deployment *models.ApplicationDeployment, images []*messages.Se
 	}
 }
 
-// Verify marks a deployment whose health gate passed as succeeded. It reports
-// false when the deployment is no longer being verified.
+// Verify marks a deployment whose health gate passed as succeeded and
+// completes the event that deployed it. It reports false when the deployment
+// is no longer being verified.
 func Verify(ctx context.Context, deployment *models.ApplicationDeployment) (bool, error) {
 	verified := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -166,6 +166,9 @@ func Verify(ctx context.Context, deployment *models.ApplicationDeployment) (bool
 			return err
 		}
 		verified = true
+		if err := completeEvent(ctx, tx, deployment, models.ApplicationEventSucceeded, nil); err != nil {
+			return err
+		}
 		return prune(ctx, tx, deployment.ApplicationId)
 	})
 	if verified {
@@ -175,11 +178,17 @@ func Verify(ctx context.Context, deployment *models.ApplicationDeployment) (bool
 }
 
 // Reject drops a deployment that failed its health gate, which can't be
-// rolled back to. It reports false when the deployment is no longer being
-// verified.
-func Reject(ctx context.Context, deployment *models.ApplicationDeployment) (bool, error) {
+// rolled back to, and fails the event that deployed it with reason. It
+// reports false when the deployment is no longer being verified.
+func Reject(ctx context.Context, deployment *models.ApplicationDeployment, reason string) (bool, error) {
 	var rejected bool
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The event is completed first: deleting the deployment unlinks it. Both
+		// only apply while the deployment is verified, so Verify can't interleave.
+		if err := completeEvent(ctx, tx, deployment, models.ApplicationEventFailed, &reason,
+			"deployment_id IN (SELECT id FROM application_deployments WHERE id = ? AND status = ?)", deployment.Id, models.DeploymentVerifying); err != nil {
+			return err
+		}
 		deleted, err := deleteDeploymentsWhere(ctx, tx, "id = ? AND status = ?", deployment.Id, models.DeploymentVerifying)
 		rejected = deleted > 0
 		return err
@@ -188,6 +197,22 @@ func Reject(ctx context.Context, deployment *models.ApplicationDeployment) (bool
 		publishUpdate(deployment.ApplicationId)
 	}
 	return rejected, err
+}
+
+// completeEvent completes the running event that deployed the deployment.
+// Rollback events that target the deployment are not affected.
+func completeEvent(ctx context.Context, tx *gorm.DB, deployment *models.ApplicationDeployment, status models.ApplicationEventStatus, errorMessage *string, conds ...any) error {
+	now := time.Now()
+	q := gorm.G[models.ApplicationEvent](tx).Where(
+		"deployment_id = ? AND application_id = ? AND status = ? AND type <> ?",
+		deployment.Id, deployment.ApplicationId, models.ApplicationEventRunning, models.ApplicationEventRollback,
+	)
+	if len(conds) > 0 {
+		q = q.Where(conds[0], conds[1:]...)
+	}
+	_, err := q.Select("Status", "ErrorMessage", "CompletedAt").
+		Updates(ctx, models.ApplicationEvent{Status: status, ErrorMessage: errorMessage, CompletedAt: &now})
+	return err
 }
 
 // supersededError is recorded for a deployment that was replaced before it
@@ -208,18 +233,10 @@ func Supersede(ctx context.Context, applicationID string) error {
 	}
 
 	if app.HealthStatus == models.Healthy {
-		if verified, err := Verify(ctx, verifying); err != nil || !verified {
-			return err
-		}
-		_, err = applicationevents.CompleteForDeployment(ctx, applicationID, verifying.Id, models.ApplicationEventSucceeded, nil)
+		_, err = Verify(ctx, verifying)
 		return err
 	}
-	// Completed before the deployment is dropped, which unlinks its event.
-	message := supersededError
-	if _, err := applicationevents.CompleteForDeployment(ctx, applicationID, verifying.Id, models.ApplicationEventFailed, &message); err != nil {
-		return err
-	}
-	_, err = Reject(ctx, verifying)
+	_, err = Reject(ctx, verifying, supersededError)
 	return err
 }
 
@@ -269,10 +286,10 @@ func Verifying(ctx context.Context, applicationID string) (*models.ApplicationDe
 	return &deployment, nil
 }
 
-// VerificationsDue returns the deployments whose health gate ended at now.
-func VerificationsDue(ctx context.Context, now time.Time) ([]models.ApplicationDeployment, error) {
+// AllVerifying returns every deployment whose health gate is running.
+func AllVerifying(ctx context.Context) ([]models.ApplicationDeployment, error) {
 	return gorm.G[models.ApplicationDeployment](db.DB).
-		Where("status = ? AND verify_until <= ?", models.DeploymentVerifying, now).
+		Where("status = ?", models.DeploymentVerifying).
 		Find(ctx)
 }
 
@@ -438,9 +455,16 @@ func deletePending(ctx context.Context, tx *gorm.DB, query string, args ...any) 
 // setCurrent makes the deployment the application's current one and, once it
 // succeeded, prunes older deployments.
 func setCurrent(ctx context.Context, tx *gorm.DB, deployment *models.ApplicationDeployment) error {
+	columns := []any{}
+	if deployment.Status == models.DeploymentVerifying {
+		// The health gate decides on reports about the new containers. The agent
+		// sends one after every deployment and image update, after this result.
+		columns = append(columns, "HealthStatus")
+	}
 	if _, err := gorm.G[models.Application](tx).
 		Where("id = ?", deployment.ApplicationId).
-		Update(ctx, "current_deployment_id", deployment.Id); err != nil {
+		Select("CurrentDeploymentId", columns...).
+		Updates(ctx, models.Application{CurrentDeploymentId: &deployment.Id, HealthStatus: models.UnknownHealth}); err != nil {
 		return err
 	}
 	if deployment.Status != models.DeploymentSucceeded {
@@ -532,5 +556,5 @@ func ToServiceImages(images []models.DeployedImage) []*messages.ServiceImage {
 }
 
 func publishUpdate(applicationID string) {
-	sse.PublishUpdate(sse.TopicApplications, sse.TopicApplicationEvents(applicationID))
+	sse.PublishUpdate(sse.TopicApplications, sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity)
 }

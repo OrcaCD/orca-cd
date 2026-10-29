@@ -342,6 +342,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
+		client.reportedHealth.Store(status.ApplicationId, struct{}{})
 		checkHealthGate(ctx, client.Id, status.ApplicationId, health, log)
 	}
 

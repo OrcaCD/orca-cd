@@ -53,28 +53,37 @@ func resolveEndedHealthGates(parent context.Context, now time.Time, log *zerolog
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 
-	due, err := deployments.VerificationsDue(ctx, now)
+	verifying, err := deployments.AllVerifying(ctx)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to load deployments with an ended health check")
+		log.Error().Err(err).Msg("failed to load deployments under a health check")
 		return
 	}
-	for i := range due {
-		app, err := gorm.G[models.Application](db.DB).Where("id = ?", due[i].ApplicationId).First(ctx)
+	for i := range verifying {
+		deployment := &verifying[i]
+		app, err := gorm.G[models.Application](db.DB).Where("id = ?", deployment.ApplicationId).First(ctx)
 		if err != nil {
-			log.Error().Err(err).Str("applicationId", due[i].ApplicationId).Msg("failed to load application for health check")
+			log.Error().Err(err).Str("applicationId", deployment.ApplicationId).Msg("failed to load application for health check")
 			continue
 		}
-		// Health is unknown while the agent is offline, which says nothing about
-		// the deployment. The gate is resolved once the agent reports again.
-		if DefaultHub == nil || !DefaultHub.IsRegistered(app.AgentId) {
+		// Turning the health check off ends the running one.
+		if app.HealthGate() == 0 {
+			passHealthGate(ctx, &app, deployment, log)
+			continue
+		}
+		if deployment.VerifyUntil == nil || now.Before(*deployment.VerifyUntil) {
+			continue
+		}
+		// The stored health says nothing about the deployment while the agent is
+		// offline, or until it reported again after reconnecting.
+		if DefaultHub == nil || !DefaultHub.HasReportedHealth(app.AgentId, app.Id) {
 			continue
 		}
 		if app.HealthStatus == models.Healthy {
-			passHealthGate(ctx, &app, &due[i], log)
+			passHealthGate(ctx, &app, deployment, log)
 			continue
 		}
-		reason := fmt.Sprintf("health check failed: application did not become healthy within %s", formatSeconds(gateDuration(&due[i])))
-		failHealthGate(ctx, &app, &due[i], reason, log)
+		reason := fmt.Sprintf("health check failed: application did not become healthy within %s", formatSeconds(gateDuration(deployment)))
+		failHealthGate(ctx, &app, deployment, reason, log)
 	}
 }
 
@@ -96,6 +105,11 @@ func checkHealthGate(ctx context.Context, agentID, applicationID string, health 
 	if err != nil {
 		return
 	}
+	// Turning the health check off ends the running one, without rolling back.
+	if app.HealthGate() == 0 {
+		passHealthGate(ctx, app, deployment, log)
+		return
+	}
 	elapsed := time.Duration(0)
 	if deployment.DeployedAt != nil {
 		elapsed = time.Since(*deployment.DeployedAt)
@@ -105,6 +119,7 @@ func checkHealthGate(ctx context.Context, agentID, applicationID string, health 
 }
 
 func passHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, log *zerolog.Logger) {
+	eventType := gatedEventType(ctx, app.Id, deployment, log)
 	verified, err := deployments.Verify(ctx, deployment)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to mark deployment as verified")
@@ -112,10 +127,6 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 	}
 	if !verified {
 		return
-	}
-	eventType := gatedEventType(ctx, app.Id, deployment, log)
-	if _, err := applicationevents.CompleteForDeployment(ctx, app.Id, deployment.Id, models.ApplicationEventSucceeded, nil); err != nil {
-		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to complete verified deployment event")
 	}
 	sendRetentionSettings(ctx, app, log)
 
@@ -128,11 +139,7 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 
 func failHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, reason string, log *zerolog.Logger) {
 	eventType := gatedEventType(ctx, app.Id, deployment, log)
-	// Completed before the deployment is dropped, which unlinks its event.
-	if _, err := applicationevents.CompleteForDeployment(ctx, app.Id, deployment.Id, models.ApplicationEventFailed, &reason); err != nil {
-		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to complete unhealthy deployment event")
-	}
-	rejected, err := deployments.Reject(ctx, deployment)
+	rejected, err := deployments.Reject(ctx, deployment, reason)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to drop unhealthy deployment")
 		return
@@ -197,9 +204,9 @@ func automaticRollbackTarget(ctx context.Context, app *models.Application, previ
 }
 
 // sendRetentionSettings pushes the agent settings again when the images kept
-// for rollbacks changed.
+// for rollbacks changed. Only periodic image updates use the settings' retention.
 func sendRetentionSettings(ctx context.Context, app *models.Application, log *zerolog.Logger) {
-	if app.RollbackEnabled && app.DeleteOldImages {
+	if app.RollbackEnabled && app.DeleteOldImages && app.ImagePollEnabled {
 		sendAgentSettings(ctx, app.AgentId, log)
 	}
 }

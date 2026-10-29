@@ -39,8 +39,9 @@ func recordRollbacks(t *testing.T) *rollbackRecorder {
 	return recorder
 }
 
-// registerAgent makes the agent count as connected for the health gate.
-func registerAgent(t *testing.T, agentID string) {
+// registerAgent connects the agent for the health gate, and makes it report
+// the health of reportedApps on that connection.
+func registerAgent(t *testing.T, agentID string, reportedApps ...string) {
 	t.Helper()
 	log := testLogger()
 	previous := DefaultHub
@@ -48,8 +49,12 @@ func registerAgent(t *testing.T, agentID string) {
 	t.Cleanup(func() { DefaultHub = previous })
 	conn := newTestWSConn(t)
 	t.Cleanup(func() { _ = conn.Close() })
-	if _, err := DefaultHub.Register(agentID, conn); err != nil {
+	client, err := DefaultHub.Register(agentID, conn)
+	if err != nil {
 		t.Fatalf("Register: %v", err)
+	}
+	for _, appID := range reportedApps {
+		client.reportedHealth.Store(appID, struct{}{})
 	}
 }
 
@@ -198,12 +203,14 @@ func TestResolveEndedHealthGates(t *testing.T) {
 		name         string
 		health       models.HealthStatus
 		connected    bool
+		reported     bool
 		wantEvent    models.ApplicationEventStatus
 		wantRollback bool
 	}{
-		{name: "healthy passes", health: models.Healthy, connected: true, wantEvent: models.ApplicationEventSucceeded},
-		{name: "not healthy fails", health: models.UnknownHealth, connected: true, wantEvent: models.ApplicationEventFailed, wantRollback: true},
+		{name: "healthy passes", health: models.Healthy, connected: true, reported: true, wantEvent: models.ApplicationEventSucceeded},
+		{name: "not healthy fails", health: models.UnknownHealth, connected: true, reported: true, wantEvent: models.ApplicationEventFailed, wantRollback: true},
 		{name: "offline agent waits", health: models.UnknownHealth, wantEvent: models.ApplicationEventRunning},
+		{name: "reconnected agent waits for its report", health: models.UnknownHealth, connected: true, wantEvent: models.ApplicationEventRunning},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,7 +218,9 @@ func TestResolveEndedHealthGates(t *testing.T) {
 			app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
 			good := deployGated(t, &app)
 			recorder := recordRollbacks(t)
-			if tt.connected {
+			if tt.connected && tt.reported {
+				registerAgent(t, "agent-1", app.Id)
+			} else if tt.connected {
 				registerAgent(t, "agent-1")
 			}
 			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
@@ -389,5 +398,63 @@ func TestHandlePullImagesResult_HealthGate(t *testing.T) {
 	}
 	if event.Type != models.ApplicationEventImageUpdate || event.Status != models.ApplicationEventRunning {
 		t.Errorf("unexpected image update event: %+v", event)
+	}
+}
+
+func TestHealthGate_EndsWhenTurnedOff(t *testing.T) {
+	for _, viaReport := range []bool{true, false} {
+		t.Run(map[bool]string{true: "unhealthy report", false: "background check"}[viaReport], func(t *testing.T) {
+			setupDeployTestEnv(t)
+			app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
+			deployGated(t, &app)
+			recorder := recordRollbacks(t)
+			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+				Update(t.Context(), "rollback_enabled", false); err != nil {
+				t.Fatalf("disable rollback: %v", err)
+			}
+			nop := zerolog.Nop()
+			expectAsyncNotification(t)
+
+			if viaReport {
+				checkHealthGate(t.Context(), "agent-1", app.Id, models.Unhealthy, &nop)
+			} else {
+				resolveEndedHealthGates(t.Context(), time.Now(), &nop)
+			}
+
+			if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventSucceeded {
+				t.Errorf("event status = %q, want succeeded once the health check is off", event.Status)
+			}
+			if len(recorder.targets) != 0 {
+				t.Errorf("expected no rollback, got %v", recorder.targets)
+			}
+			if verifyingDeployment(t, app.Id) != nil {
+				t.Error("expected the health check to end")
+			}
+		})
+	}
+}
+
+func TestHasReportedHealth(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	registerAgent(t, "agent-1")
+	client, ok := DefaultHub.GetClient("agent-1")
+	if !ok {
+		t.Fatal("expected the agent to be registered")
+	}
+	if DefaultHub.HasReportedHealth("agent-1", app.Id) {
+		t.Fatal("a new connection has not reported yet")
+	}
+	nop := zerolog.Nop()
+
+	handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
+		Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
+	}, &nop)
+
+	if !DefaultHub.HasReportedHealth("agent-1", app.Id) {
+		t.Error("expected the report to count for the connection")
+	}
+	if DefaultHub.HasReportedHealth("agent-2", app.Id) {
+		t.Error("another agent did not report")
 	}
 }

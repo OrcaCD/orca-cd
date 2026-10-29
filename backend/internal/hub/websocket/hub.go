@@ -33,6 +33,9 @@ type Client struct {
 	// healthSynced holds the applications whose health history was synced on
 	// this connection. Only the connection's message handler accesses it.
 	healthSynced map[string]struct{}
+	// reportedHealth holds the applications this connection reported the
+	// health of. Unlike healthSynced it is read outside the message handler.
+	reportedHealth sync.Map
 }
 
 func (c *Client) healthHistorySynced(applicationID string) bool {
@@ -152,6 +155,19 @@ func (h *Hub) GetClient(id string) (*Client, bool) {
 	}
 	h.mu.RUnlock()
 	return c, ok
+}
+
+// HasReportedHealth reports whether the agent's current connection reported
+// the health of the application. Until then its stored health may be stale.
+func (h *Hub) HasReportedHealth(agentID, applicationID string) bool {
+	h.mu.RLock()
+	c, ok := h.clients[agentID]
+	h.mu.RUnlock()
+	if !ok || c.closing.Load() {
+		return false
+	}
+	_, reported := c.reportedHealth.Load(applicationID)
+	return reported
 }
 
 // IsRegistered reports whether an ID is reserved by an active or closing
