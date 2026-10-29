@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -189,6 +190,7 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+		result.RedeployFailed = errors.Is(err, ErrRedeployFailed)
 
 		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to check/pull images")
 	} else {

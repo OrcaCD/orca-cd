@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -539,5 +540,34 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	case <-started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for second pull to run after first completed")
+	}
+}
+
+func TestImagePoller_RunOnce_ReportsFailedRedeploy(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	for _, tt := range []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("%w: container exited", ErrRedeployFailed), true},
+		{errors.New("registry unreachable"), false},
+	} {
+		checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+			return false, tt.err
+		}
+		sender := &stubMessageSender{}
+		p := newTestPoller(t, sender)
+
+		p.runOnce("app-1", "myapp", "req-1", false)
+
+		msgs := sender.received()
+		if len(msgs) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(msgs))
+		}
+		if got := msgs[0].GetPullImagesResult().RedeployFailed; got != tt.want {
+			t.Errorf("%v: redeploy_failed = %v, want %v", tt.err, got, tt.want)
+		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
@@ -333,6 +334,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
+		checkHealthGate(ctx, client.Id, status.ApplicationId, health, log)
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)
@@ -549,6 +551,8 @@ func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, lo
 			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventRollback},
 			agentID,
 		).
+		// Deployments under a health gate already reported their result.
+		Where(applicationevents.NotVerifyingCondition, models.DeploymentVerifying).
 		Select("Status", "ErrorMessage", "CompletedAt").
 		Updates(ctx, models.ApplicationEvent{
 			Status:       models.ApplicationEventFailed,
