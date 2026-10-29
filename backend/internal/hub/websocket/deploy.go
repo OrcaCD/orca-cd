@@ -26,6 +26,15 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		return
 	}
 
+	event, err := applicationevents.ForRequest(ctx, result.RequestId, result.ApplicationId)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to look up deployment event")
+	}
+	if event != nil && event.Type == models.ApplicationEventRollback {
+		handleRollbackResult(ctx, agentID, app, event, result, log)
+		return
+	}
+
 	if result.Success {
 		// History reflects the Agent's deployment result independently of whether
 		// persisting the application's summary status succeeds.
@@ -40,7 +49,11 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		// health stays "unknown" here until that report arrives.
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
-		source := eventSource(ctx, result.RequestId, result.ApplicationId, "", log)
+		// An empty source clears the stored one when the result has no event.
+		var source models.ApplicationEventSource
+		if event != nil {
+			source = event.Source
+		}
 		err := updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 			SyncStatus:     models.Synced,
 			LastSyncedAt:   &now,
@@ -50,6 +63,7 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		if err != nil {
 			return
 		}
+		clearRollbackState(ctx, agentID, app, log)
 		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}
