@@ -104,13 +104,20 @@ export function getAttentionItems(
 			category !== "unhealthy" &&
 			category !== "outOfSync" &&
 			!app.lastSyncError &&
+			!app.rolledBackAt &&
 			agentStatus === AgentStatus.Online
 		) {
 			continue;
 		}
 
 		let reason: string;
-		if (app.lastSyncError) {
+		if (app.rolledBackAt) {
+			// The error is why the application was rolled back.
+			const rolledBack = m.applicationsAttentionRolledBack({
+				commit: app.rolledBackCommit?.slice(0, 7) ?? "—",
+			});
+			reason = app.lastSyncError ? `${rolledBack}: ${app.lastSyncError}` : rolledBack;
+		} else if (app.lastSyncError) {
 			reason = app.lastSyncError;
 		} else if (agentStatus === AgentStatus.Offline) {
 			reason = m.applicationsAttentionAgentOffline({ agent: app.agentName });

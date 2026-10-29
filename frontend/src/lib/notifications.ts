@@ -20,6 +20,8 @@ export const notificationEvents = [
 	"application.sync.failed",
 	"application.health.unhealthy",
 	"application.health.recovered",
+	"application.rollback.succeeded",
+	"application.rollback.failed",
 	"agent.offline",
 	"agent.online",
 	"repository.sync.failed",
