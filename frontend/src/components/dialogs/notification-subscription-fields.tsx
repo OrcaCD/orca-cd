@@ -42,7 +42,7 @@ export const notificationSubscriptionSchema = z.object({
 	repositoryIds: z.array(z.string()),
 });
 
-const notificationEventLabels: Record<NotificationEvent, () => string> = {
+export const notificationEventLabels: Record<NotificationEvent, () => string> = {
 	"application.deployment.succeeded": () => m.notificationEventDeploymentSucceeded(),
 	"application.deployment.failed": () => m.notificationEventDeploymentFailed(),
 	"application.image_update.succeeded": () => m.notificationEventImageUpdateSucceeded(),
@@ -66,7 +66,7 @@ interface ResourceConfig {
 	empty: () => string;
 }
 
-const resourceConfigs: Record<NotificationResource, ResourceConfig> = {
+export const resourceConfigs: Record<NotificationResource, ResourceConfig> = {
 	applications: {
 		allKey: "allApplications",
 		idsKey: "applicationIds",

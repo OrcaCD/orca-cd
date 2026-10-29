@@ -7,7 +7,13 @@ import {
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { ResourceCard, type FlowState } from "./resource-card";
+import {
+	CardError,
+	RelativeTime,
+	ResourceCard,
+	ResourceFlow,
+	type FlowState,
+} from "./resource-card";
 
 const syncState: Record<SyncStatus, FlowState> = {
 	[SyncStatus.Synced]: "ok",
@@ -39,34 +45,39 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 				action={
 					<ArrowUpRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
 				}
-				stages={[
-					{
-						label: m.cardStageRevision(),
-						value: app.commit ? app.commit.slice(0, 7) : m.notAvailableShort(),
-						title: app.commit || undefined,
-						state: app.commit ? "info" : "unknown",
-						mono: true,
-					},
-					{
-						label: m.cardStageSync(),
-						value: getSyncStatusLabel(app.syncStatus),
-						state: syncState[app.syncStatus],
-					},
-					{
-						label: m.cardStageHealth(),
-						value: getHealthStatusLabel(app.healthStatus),
-						state: healthState[app.healthStatus],
-					},
-				]}
-				error={app.lastSyncError}
-				meta={
+				footer={
 					<>
-						<Server className="size-3.5 shrink-0" />
-						<span className="truncate">{app.agentName}</span>
+						<span className="flex min-w-0 items-center gap-1.5">
+							<Server className="size-3.5 shrink-0" />
+							<span className="truncate">{app.agentName}</span>
+						</span>
+						<RelativeTime value={app.lastSyncedAt} />
 					</>
 				}
-				time={app.lastSyncedAt ?? null}
-			/>
+			>
+				<ResourceFlow
+					stages={[
+						{
+							label: m.cardStageRevision(),
+							value: app.commit ? app.commit.slice(0, 7) : m.notAvailableShort(),
+							title: app.commit || undefined,
+							state: app.commit ? "info" : "unknown",
+							mono: true,
+						},
+						{
+							label: m.cardStageSync(),
+							value: getSyncStatusLabel(app.syncStatus),
+							state: syncState[app.syncStatus],
+						},
+						{
+							label: m.cardStageHealth(),
+							value: getHealthStatusLabel(app.healthStatus),
+							state: healthState[app.healthStatus],
+						},
+					]}
+				/>
+				{app.lastSyncError ? <CardError message={app.lastSyncError} className="mt-3" /> : null}
+			</ResourceCard>
 		</Link>
 	);
 }

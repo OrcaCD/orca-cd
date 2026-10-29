@@ -63,7 +63,7 @@ function FlowSegment({ state, interrupted }: { state: FlowState; interrupted: bo
  * the state of the stage it leads to; once a stage is broken or unknown, everything after it is
  * drawn as interrupted, so the point where the flow stops is visible at a glance.
  */
-function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowStage] }) {
+export function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowStage] }) {
 	const firstBroken = stages.findIndex((stage) => brokenStates.has(stage.state));
 
 	return (
@@ -111,29 +111,49 @@ function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowStage] })
 	);
 }
 
+export function RelativeTime({ value, className }: { value?: string | null; className?: string }) {
+	return (
+		<span
+			className={cn("shrink-0 tabular-nums", className)}
+			title={value ? new Date(value).toLocaleString() : undefined}
+		>
+			{value ? formatRelativeTime(value) : m.never()}
+		</span>
+	);
+}
+
+export function CardError({ message, className }: { message: string; className?: string }) {
+	return (
+		<p
+			className={cn("flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400", className)}
+			title={message}
+		>
+			<CircleAlert className="size-3.5 shrink-0" />
+			<span className="truncate">{message}</span>
+		</p>
+	);
+}
+
 interface ResourceCardProps {
 	icon: ReactNode;
 	title: string;
 	subtitle?: ReactNode;
 	monoSubtitle?: boolean;
 	action?: ReactNode;
-	stages: [FlowStage, FlowStage, FlowStage];
-	error?: string | null;
-	meta?: ReactNode;
-	time?: string | null;
+	children: ReactNode;
+	footer: ReactNode;
 	className?: string;
 }
 
+/** Shared shell of the resource cards: identity header, resource specific body and a footer bar. */
 export function ResourceCard({
 	icon,
 	title,
 	subtitle,
 	monoSubtitle = false,
 	action,
-	stages,
-	error,
-	meta,
-	time,
+	children,
+	footer,
 	className,
 }: ResourceCardProps) {
 	return (
@@ -157,29 +177,10 @@ export function ResourceCard({
 				{action ? <div className="-mr-1 shrink-0 self-start">{action}</div> : null}
 			</div>
 
-			<div className="px-4 pt-5 pb-4">
-				<ResourceFlow stages={stages} />
-				{error ? (
-					<p
-						className="mt-3 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400"
-						title={error}
-					>
-						<CircleAlert className="size-3.5 shrink-0" />
-						<span className="truncate">{error}</span>
-					</p>
-				) : null}
-			</div>
+			<div className="flex-1 px-4 pt-5 pb-4">{children}</div>
 
-			<div className="mt-auto flex min-h-10 items-center justify-between gap-3 border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-				<div className="flex min-w-0 items-center gap-1.5">{meta}</div>
-				{time !== undefined ? (
-					<span
-						className="shrink-0 tabular-nums"
-						title={time ? new Date(time).toLocaleString() : undefined}
-					>
-						{time ? formatRelativeTime(time) : m.never()}
-					</span>
-				) : null}
+			<div className="flex min-h-10 items-center justify-between gap-3 border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+				{footer}
 			</div>
 		</Card>
 	);

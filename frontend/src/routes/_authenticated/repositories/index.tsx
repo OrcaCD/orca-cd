@@ -4,6 +4,7 @@ import CreateRepositoryDialog from "@/components/dialogs/create-repository";
 import { deleteRepository, syncRepository, type Repository } from "@/lib/repositories";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
+import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
 import { EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
-import { toSearchableText } from "@/lib/utils";
+import { groupBy, toSearchableText } from "@/lib/utils";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 
@@ -39,6 +40,11 @@ export const Route = createFileRoute("/_authenticated/repositories/")({
 
 function RepositoriesPage() {
 	const { data, isLoading } = useFetch<Repository[]>("/repositories");
+	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
+	const applicationsByRepository = useMemo(
+		() => (applications ? groupBy(applications, (app) => app.repositoryId) : undefined),
+		[applications],
+	);
 
 	const [searchQuery, setSearchQuery] = useState("");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
@@ -126,6 +132,10 @@ function RepositoriesPage() {
 								<RepositoryCard
 									key={repository.id}
 									repository={repository}
+									apps={
+										applicationsByRepository && (applicationsByRepository.get(repository.id) ?? [])
+									}
+									onSync={() => handleSyncRepo(repository)}
 									action={
 										<DropdownMenu>
 											<DropdownMenuTrigger

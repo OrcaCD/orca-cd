@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { deleteAgent, type Agent } from "@/lib/agents";
-import { toSearchableText } from "@/lib/utils";
+import type { ApplicationListItem } from "@/lib/applications";
+import { groupBy, toSearchableText } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { AgentsDataTable } from "@/components/tables/agents/data-table";
 import { columns } from "@/components/tables/agents/columns";
@@ -38,6 +39,11 @@ export const Route = createFileRoute("/_authenticated/agents/")({
 
 function RouteComponent() {
 	const { data, isLoading } = useFetch<Agent[]>("/agents");
+	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
+	const applicationsByAgent = useMemo(
+		() => (applications ? groupBy(applications, (app) => app.agentId) : undefined),
+		[applications],
+	);
 
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
@@ -118,6 +124,7 @@ function RouteComponent() {
 								<AgentCard
 									key={agent.id}
 									agent={agent}
+									apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
 									action={
 										<DropdownMenu>
 											<DropdownMenuTrigger
