@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { eventSourceLabel, eventTypeLabel } from "@/lib/application-events";
 import type { ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { formatRelativeTime } from "@/lib/utils";
+import { RelativeTime } from "@/components/relative-time";
 import { useApplicationActivity } from "./activity";
 
 export function RecentDeploymentsCard() {
@@ -57,16 +57,19 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 	const description = deployment.errorMessage ?? deployment.commitMessage;
 
 	return (
-		<Item
-			size="xs"
-			render={<Link to="/applications/$id/history" params={{ id: deployment.applicationId }} />}
-		>
+		<Item size="xs" className="relative">
 			<ItemMedia className="size-8 rounded-md bg-primary/10">
 				<StaticLucideIcon name={deployment.applicationIcon} className="size-4 text-primary" />
 			</ItemMedia>
 			<ItemContent className="min-w-0">
 				<ItemTitle className="w-full">
-					<span className="truncate">{deployment.applicationName}</span>
+					<Link
+						to="/applications/$id/history"
+						params={{ id: deployment.applicationId }}
+						className="truncate after:absolute after:inset-0"
+					>
+						{deployment.applicationName}
+					</Link>
 					<span className="truncate text-xs font-normal text-muted-foreground">
 						{details.join(" · ")}
 					</span>
@@ -78,9 +81,10 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 				) : null}
 			</ItemContent>
 			<ItemActions className="gap-3">
-				<span className="text-xs whitespace-nowrap text-muted-foreground">
-					{formatRelativeTime(deployment.createdAt)}
-				</span>
+				<RelativeTime
+					value={deployment.createdAt}
+					className="relative text-xs text-muted-foreground"
+				/>
 				<ApplicationEventStatusBadge status={deployment.status} />
 			</ItemActions>
 		</Item>

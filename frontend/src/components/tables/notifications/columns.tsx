@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Send, Trash2, WebhookIcon } from "lucide-react";
 import { toast } from "@/components/ui/toast";
@@ -24,15 +25,6 @@ import {
 	testNotification,
 } from "@/lib/notifications";
 import { dataTableFeatures } from "@/components/tables/table-features";
-
-function formatDate(value: string): string {
-	const parsed = new Date(value);
-	if (Number.isNaN(parsed.getTime())) {
-		return value;
-	}
-
-	return parsed.toLocaleString();
-}
 
 export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 	{
@@ -90,13 +82,17 @@ export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 		id: "updatedAt",
 		accessorFn: (row) => row.updatedAt,
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnUpdatedAt()} />,
-		cell: ({ row }) => formatDate(row.original.updatedAt),
+		cell: ({ row }) => (
+			<RelativeTime value={row.original.updatedAt} fallback={row.original.updatedAt} />
+		),
 	},
 	{
 		id: "createdAt",
 		accessorFn: (row) => row.createdAt,
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnCreatedAt()} />,
-		cell: ({ row }) => formatDate(row.original.createdAt),
+		cell: ({ row }) => (
+			<RelativeTime value={row.original.createdAt} fallback={row.original.createdAt} />
+		),
 	},
 	{
 		id: "actions",

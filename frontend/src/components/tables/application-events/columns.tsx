@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import { eventSourceLabel, eventTypeLabel, type ApplicationEvent } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
@@ -15,7 +16,7 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 			if (isNaN(date.getTime())) {
 				return <span className="text-muted-foreground">-</span>;
 			}
-			return <span className="text-sm whitespace-nowrap">{date.toLocaleString()}</span>;
+			return <RelativeTime value={date} className="text-sm" />;
 		},
 	},
 	{
