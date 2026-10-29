@@ -101,8 +101,10 @@ export function eventTitle(event: ApplicationEvent): string {
 }
 
 // canRollBackTo reports whether the deployment of an event can be restored.
+// It is false while the current deployment is not loaded (undefined).
 export function canRollBackTo(event: ApplicationEvent, currentDeploymentId?: string | null) {
 	return (
+		currentDeploymentId !== undefined &&
 		event.type !== ApplicationEventType.Rollback &&
 		event.deploymentId !== null &&
 		event.deploymentStatus === DeploymentStatus.Succeeded &&

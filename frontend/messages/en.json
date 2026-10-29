@@ -891,5 +891,7 @@
 	"manageNotifications": "Manage notifications",
 	"validationRollbackTimeout": "Enter between 1 and 60 minutes.",
 	"applicationsAttentionRolledBack": "Rolled back to {commit}",
-	"applicationsRolledBack": "Rolled back"
+	"applicationsRolledBack": "Rolled back",
+	"rolledBackImages": "Running {commit} with the images from before the failed update.",
+	"rolledBackAutoSyncWaits": "Auto-sync waits for a new commit."
 }
