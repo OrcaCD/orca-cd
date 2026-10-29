@@ -24,7 +24,7 @@ func readOverride(t *testing.T, dir string) []byte {
 
 func TestWriteComposeOverride_NoServices(t *testing.T) {
 	dir := t.TempDir()
-	if err := writeComposeOverride(dir, orcaOverride(&composetypes.Project{}, "app-123")); err != nil {
+	if err := writeComposeOverride(dir, orcaOverride(&composetypes.Project{}, "app-123", nil)); err != nil {
 		t.Fatalf("writeComposeOverride: %v", err)
 	}
 	project := loadMergedProject(t, "services:\n  app:\n    image: nginx\n", readOverride(t, dir))
@@ -37,7 +37,7 @@ func TestWriteComposeOverride_RoundTripsSpecialCharacters(t *testing.T) {
 	appID := "id: \"with\" #special\nchars"
 	dir := t.TempDir()
 	project := &composetypes.Project{Services: composetypes.Services{"app": {}}}
-	if err := writeComposeOverride(dir, orcaOverride(project, appID)); err != nil {
+	if err := writeComposeOverride(dir, orcaOverride(project, appID, nil)); err != nil {
 		t.Fatalf("writeComposeOverride: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestOrcaOverride_MatchesApplyOrcaLabels(t *testing.T) {
 	project := loadMergedProject(t, base, nil)
 
 	dir := t.TempDir()
-	if err := writeComposeOverride(dir, orcaOverride(project, "app-123")); err != nil {
+	if err := writeComposeOverride(dir, orcaOverride(project, "app-123", nil)); err != nil {
 		t.Fatalf("writeComposeOverride: %v", err)
 	}
 	merged := loadMergedProject(t, base, readOverride(t, dir))
@@ -75,10 +75,10 @@ func TestWriteComposeOverride_ReplacesStaleServices(t *testing.T) {
 	two := &composetypes.Project{Services: composetypes.Services{"old": {}, "app": {}}}
 	one := &composetypes.Project{Services: composetypes.Services{"app": {}}}
 
-	if err := writeComposeOverride(dir, orcaOverride(two, "app-123")); err != nil {
+	if err := writeComposeOverride(dir, orcaOverride(two, "app-123", nil)); err != nil {
 		t.Fatalf("writeComposeOverride: %v", err)
 	}
-	if err := writeComposeOverride(dir, orcaOverride(one, "app-123")); err != nil {
+	if err := writeComposeOverride(dir, orcaOverride(one, "app-123", nil)); err != nil {
 		t.Fatalf("writeComposeOverride: %v", err)
 	}
 
@@ -144,4 +144,24 @@ func loadMergedProject(t *testing.T, base string, override []byte) *composetypes
 		t.Fatalf("failed to load compose project: %v", err)
 	}
 	return project
+}
+
+// A manual `docker compose up` must keep running the images of a rollback.
+func TestOrcaOverride_PinsImages(t *testing.T) {
+	base := "services:\n  app:\n    image: nginx:latest\n  db:\n    image: postgres:17\n"
+	project := loadMergedProject(t, base, nil)
+	pins := map[string]string{"app": "nginx@sha256:" + digestAaa}
+	pinServiceImages(project, pins)
+
+	dir := t.TempDir()
+	if err := writeComposeOverride(dir, orcaOverride(project, "app-123", pins)); err != nil {
+		t.Fatalf("writeComposeOverride: %v", err)
+	}
+	merged := loadMergedProject(t, base, readOverride(t, dir))
+	if got := merged.Services["app"].Image; got != "nginx@sha256:"+digestAaa {
+		t.Errorf("app image = %q, want pinned digest", got)
+	}
+	if got := merged.Services["db"].Image; got != "postgres:17" {
+		t.Errorf("db image = %q, want it unchanged", got)
+	}
 }

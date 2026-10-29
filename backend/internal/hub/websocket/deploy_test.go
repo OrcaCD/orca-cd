@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
@@ -36,7 +37,7 @@ func setupDeployTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationHealthChange{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}, &models.ApplicationHealthChange{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -316,5 +317,64 @@ func TestHandleDeployResult_OtherAgentsApplicationIsIgnored(t *testing.T) {
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).First(t.Context())
 	if err != nil || event.Status != models.ApplicationEventRunning {
 		t.Fatalf("event=%+v err=%v", event, err)
+	}
+}
+
+func TestHandleDeployResult_RecordsDeployment(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+	if _, err := deployments.Start(t.Context(), &app, "services: {}\n", "req-1"); err != nil {
+		t.Fatalf("start deployment: %v", err)
+	}
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		RequestId:     "req-1",
+		ApplicationId: app.Id,
+		Success:       true,
+		Images:        []*messages.ServiceImage{{Service: "web", ImageId: "sha256:web", PinnedRef: "nginx@sha256:web"}},
+	}, &nop)
+
+	recorded, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load deployment: %v", err)
+	}
+	if recorded.Status != models.DeploymentSucceeded {
+		t.Errorf("deployment status = %q, want succeeded", recorded.Status)
+	}
+	if len(recorded.Images) != 1 || recorded.Images[0].PinnedRef != "nginx@sha256:web" {
+		t.Errorf("deployment images = %v", recorded.Images)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.CurrentDeploymentId == nil || *updated.CurrentDeploymentId != recorded.Id {
+		t.Errorf("current deployment = %v, want %q", updated.CurrentDeploymentId, recorded.Id)
+	}
+}
+
+func TestHandleDeployResult_FailureDiscardsDeployment(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+	if _, err := deployments.Start(t.Context(), &app, "services: {}\n", "req-1"); err != nil {
+		t.Fatalf("start deployment: %v", err)
+	}
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		RequestId:     "req-1",
+		ApplicationId: app.Id,
+		ErrorMessage:  "compose up failed",
+	}, &nop)
+
+	count, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).Count(t.Context(), "*")
+	if err != nil {
+		t.Fatalf("count deployments: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected the failed deployment to be discarded, got %d", count)
 	}
 }

@@ -35,6 +35,11 @@ var checkAndPullImages = func(ctx context.Context, c *Client, appID, appName str
 	return c.CheckAndPullImages(ctx, appID, appName, deleteOld)
 }
 
+// listServiceImages is a package-level var so tests can override it.
+var listServiceImages = func(ctx context.Context, c *Client, appID string) ([]*messages.ServiceImage, error) {
+	return c.ServiceImages(ctx, appID)
+}
+
 type appPollState struct {
 	settings PollSettings
 	appName  string
@@ -196,6 +201,9 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to check/pull images")
 	} else {
 		result.Success = true
+		if updated {
+			result.Images = p.serviceImages(ctx, appID)
+		}
 	}
 
 	if sendErr := p.sender.SendMessage(&messages.ClientMessage{
@@ -205,6 +213,20 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Str("application_id", appID).Msg("image poll: failed to send result")
 	}
+}
+
+// serviceImages lists the images the application runs after an update, so
+// the hub can roll back to them. Failing to list them doesn't fail the update.
+func (p *ImagePoller) serviceImages(ctx context.Context, appID string) []*messages.ServiceImage {
+	if p.client == nil {
+		return nil
+	}
+	images, err := listServiceImages(ctx, p.client, appID)
+	if err != nil {
+		p.log.Warn().Err(err).Str("application_id", appID).Msg("image poll: could not list service images")
+		return nil
+	}
+	return images
 }
 
 // markRun records the outcome of a run and reports whether the previous run

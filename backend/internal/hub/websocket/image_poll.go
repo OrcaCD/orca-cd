@@ -6,10 +6,12 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -65,9 +67,14 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		return
 	}
 
-	recordImagePullHistory(ctx, r, log)
+	requestID := recordImagePullHistory(ctx, r, log)
 	if ctx.Err() != nil {
 		return
+	}
+	if r.Success && r.ImagesUpdated {
+		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images); err != nil {
+			log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record image update deployment")
+		}
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)
@@ -98,7 +105,8 @@ func isRepeatedPeriodicFailure(ctx context.Context, r *messages.PullImagesResult
 // recordImagePullHistory completes the explicit image_update event matching this
 // result, or records a completed image_polling event for unsolicited periodic
 // results that changed images or failed. Successful no-op polls leave no history.
-func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, log *zerolog.Logger) {
+// It returns the request ID of the event, if one was recorded.
+func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, log *zerolog.Logger) string {
 	status := models.ApplicationEventFailed
 	if r.Success && r.ImagesUpdated {
 		status = models.ApplicationEventSucceeded
@@ -113,25 +121,32 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, l
 	matched, err := applicationevents.Complete(ctx, r.RequestId, r.ApplicationId, status, errMsg)
 	if err != nil {
 		log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to complete image update event")
-		return
+		return ""
 	}
 	if matched {
-		return
+		return r.RequestId
 	}
 	if r.Success && !r.ImagesUpdated {
-		return
+		return ""
 	}
 
+	// Periodic updates carry no request ID. One is generated so the deployment
+	// recorded for the update can be linked to the event.
+	requestID := r.RequestId
+	if requestID == "" && status == models.ApplicationEventSucceeded {
+		requestID = uuid.NewString()
+	}
 	params := applicationevents.Params{
 		ApplicationID: r.ApplicationId,
 		Type:          models.ApplicationEventImageUpdate,
 		Source:        models.ApplicationEventSourceImagePolling,
 	}
-	if r.RequestId != "" {
-		requestID := r.RequestId
+	if requestID != "" {
 		params.RequestID = &requestID
 	}
 	if _, err := applicationevents.RecordCompleted(ctx, params, status, errMsg); err != nil {
 		log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record periodic image update event")
+		return ""
 	}
+	return requestID
 }
