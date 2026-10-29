@@ -29,6 +29,12 @@ services:
     profiles:
       - agent
     container_name: orca-agent-e2e-test
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_READ_SEARCH
     use_api_socket: true
     volumes:
       - ./data/agent/deployments:/deployments

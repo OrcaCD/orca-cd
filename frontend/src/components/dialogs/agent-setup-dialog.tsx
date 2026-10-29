@@ -49,6 +49,9 @@ export function buildAgentComposeFile({
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      # Inspect deployment paths even when application containers restrict directory permissions.
+      - DAC_READ_SEARCH
     volumes:
       - ./deployments:/deployments
 `;
