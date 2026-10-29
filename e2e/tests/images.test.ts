@@ -407,7 +407,7 @@ test.describe("Image pull webhook", () => {
 		expect(
 			await deliver(id, {
 				headers: bearer(),
-				body: JSON.stringify({ event_type: "deleteImage" }),
+				body: JSON.stringify({ type: "DELETE_ARTIFACT" }),
 			}),
 		).toBe(204);
 
