@@ -12,6 +12,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -177,6 +178,9 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if applicationErr != nil {
 				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
 			}
+			if historyErr := healthhistory.RecordAgentOffline(ctx, claims.Subject, time.Now()); historyErr != nil {
+				log.Error().Err(historyErr).Str("agent_id", claims.Subject).Msg("Failed to record application health history for offline agent")
+			}
 			// Fail any deploy still in progress: the agent that owned it is gone, so
 			// no result will arrive and the app would otherwise spin in syncing.
 			_, syncErr := gorm.G[models.Application](db.DB).
@@ -304,14 +308,23 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
+		if status == nil {
+			continue
+		}
 		health := reportedApplicationHealth(status)
-		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
+		event, changed, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
 				Str("applicationId", status.ApplicationId).
 				Msg("failed to update application health from status report")
 			continue
+		}
+		if err := recordHealthHistory(ctx, client, status, health, changed); err != nil {
+			log.Error().Err(err).
+				Str("agent_id", client.Id).
+				Str("applicationId", status.ApplicationId).
+				Msg("failed to record application health history")
 		}
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
@@ -382,15 +395,16 @@ func sanitizeReportedVersion(v string) string {
 }
 
 // applyReportedHealth stores the reported health and returns the health event
-// the change triggers, if any. Transitions are detected with conditional
-// updates so concurrent reports cannot notify twice.
+// the change triggers, if any, and whether the health of one of the agent's
+// applications changed. Transitions are detected with conditional updates so
+// concurrent reports cannot notify twice.
 //
 // Only Healthy→Unhealthy/Stopped/Degraded and back to Healthy notify; stopped
 // and degraded applications count as unhealthy for notifications. Unknown→Unhealthy
 // is deliberately silent: health is reset to Unknown on every disconnect, so it
 // would re-announce unhealthy apps after each agent reconnect. Apps that are
 // currently deploying are skipped, as the deployment reports its own outcome.
-func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, error) {
+func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, bool, error) {
 	var event models.NotificationEvent
 	transition := gorm.G[models.Application](db.DB).Where("id = ? AND agent_id = ?", applicationId, agentId)
 	switch health {
@@ -405,17 +419,45 @@ func applyReportedHealth(ctx context.Context, agentId, applicationId string, hea
 	if event != "" {
 		rowsAffected, err := transition.Update(ctx, "health_status", health)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if rowsAffected > 0 {
-			return event, nil
+			return event, true, nil
 		}
 	}
 
-	_, err := gorm.G[models.Application](db.DB).
-		Where("id = ? AND agent_id = ?", applicationId, agentId).
+	rowsAffected, err := gorm.G[models.Application](db.DB).
+		Where("id = ? AND agent_id = ? AND health_status <> ?", applicationId, agentId, health).
 		Update(ctx, "health_status", health)
-	return "", err
+	return "", rowsAffected > 0, err
+}
+
+// recordHealthHistory adds a reported health to the application's health
+// history. Reports that do not change the application's health are only
+// recorded once per connection: the history can lag behind the stored health
+// after a hub restart, which records the agent as offline but keeps the health.
+func recordHealthHistory(ctx context.Context, client *Client, status *messages.ApplicationStatus, health models.HealthStatus, changed bool) error {
+	if !changed {
+		if client.healthHistorySynced(status.ApplicationId) {
+			return nil
+		}
+		// Unchanged reports update no row, so ownership is checked separately.
+		owned, err := gorm.G[models.Application](db.DB).
+			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
+			Count(ctx, "*")
+		if err != nil || owned == 0 {
+			return err
+		}
+	}
+	if _, err := healthhistory.Record(ctx, models.ApplicationHealthChange{
+		ApplicationId: status.ApplicationId,
+		Status:        health,
+		Services:      failingServices(status.Services),
+	}); err != nil {
+		return err
+	}
+	client.markHealthHistorySynced(status.ApplicationId)
+	return nil
 }
 
 func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, health models.HealthStatus, log *zerolog.Logger) {
@@ -441,16 +483,29 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 // report. Agents report a partially failing application as unhealthy; when at
 // least one of its services is still healthy, the hub records it as degraded.
 func reportedApplicationHealth(status *messages.ApplicationStatus) models.HealthStatus {
-	health := protoHealthToModel(status.Health)
+	health := protoHealthToModel(status.GetHealth())
 	if health != models.Unhealthy {
 		return health
 	}
 	for _, service := range status.Services {
-		if service.Health == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+		if service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
 			return models.Degraded
 		}
 	}
 	return health
+}
+
+// failingServices returns the services of a status report that are not
+// healthy, which give context to incidents in the health history.
+func failingServices(services []*messages.ServiceStatus) []models.ServiceHealth {
+	var failing []models.ServiceHealth
+	for _, service := range services {
+		if service == nil || service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+			continue
+		}
+		failing = append(failing, models.ServiceHealth{Name: service.GetName(), Status: protoHealthToModel(service.GetHealth())})
+	}
+	return failing
 }
 
 func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {

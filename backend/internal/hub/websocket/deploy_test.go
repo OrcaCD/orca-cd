@@ -36,7 +36,7 @@ func setupDeployTestEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationHealthChange{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 

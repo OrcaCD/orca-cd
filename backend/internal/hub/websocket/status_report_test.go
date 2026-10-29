@@ -3,9 +3,11 @@ package websocket
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
@@ -116,7 +118,7 @@ func TestApplyReportedHealth_Transitions(t *testing.T) {
 			app := seedAppForAgent(t, "agent-1")
 			setAppHealthAndSync(t, app.Id, tt.health, tt.sync)
 
-			event, err := applyReportedHealth(t.Context(), "agent-1", app.Id, tt.reported)
+			event, _, err := applyReportedHealth(t.Context(), "agent-1", app.Id, tt.reported)
 			if err != nil {
 				t.Fatalf("applyReportedHealth() error: %v", err)
 			}
@@ -128,7 +130,7 @@ func TestApplyReportedHealth_Transitions(t *testing.T) {
 			}
 
 			// Repeating the same report is never a transition.
-			event, err = applyReportedHealth(t.Context(), "agent-1", app.Id, tt.reported)
+			event, _, err = applyReportedHealth(t.Context(), "agent-1", app.Id, tt.reported)
 			if err != nil {
 				t.Fatalf("applyReportedHealth() error: %v", err)
 			}
@@ -144,7 +146,7 @@ func TestApplyReportedHealth_IgnoresOtherAgentsApps(t *testing.T) {
 	app := seedAppForAgent(t, "agent-1")
 	setAppHealthAndSync(t, app.Id, models.Healthy, models.Synced)
 
-	event, err := applyReportedHealth(t.Context(), "agent-2", app.Id, models.Unhealthy)
+	event, _, err := applyReportedHealth(t.Context(), "agent-2", app.Id, models.Unhealthy)
 	if err != nil {
 		t.Fatalf("applyReportedHealth() error: %v", err)
 	}
@@ -201,5 +203,90 @@ func TestReportedApplicationHealth(t *testing.T) {
 				t.Errorf("reportedApplicationHealth() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHandleApplicationStatusReport_RecordsHealthHistory(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	other := seedAppForAgent(t, "agent-2")
+	// Healthy→degraded sends a notification.
+	expectAsyncNotification(t)
+
+	nop := zerolog.Nop()
+	client := &Client{Id: "agent-1"}
+	report := func(appID string, health messages.HealthStatus, services ...*messages.ServiceStatus) {
+		handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
+			Statuses: []*messages.ApplicationStatus{{ApplicationId: appID, Health: health, Services: services}},
+		}, &nop)
+	}
+
+	report(app.Id, messages.HealthStatus_HEALTH_STATUS_HEALTHY)
+	report(app.Id, messages.HealthStatus_HEALTH_STATUS_HEALTHY)
+	report(app.Id, messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
+		&messages.ServiceStatus{Name: "db", Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
+		&messages.ServiceStatus{Name: "web", Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY},
+		nil,
+	)
+	// Spoofed: belongs to a different agent — must not be recorded.
+	report(other.Id, messages.HealthStatus_HEALTH_STATUS_HEALTHY)
+
+	changes, err := gorm.G[models.ApplicationHealthChange](db.DB).Order("changed_at, id").Find(t.Context())
+	if err != nil {
+		t.Fatalf("load health changes: %v", err)
+	}
+	if len(changes) != 2 {
+		t.Fatalf("expected 2 health changes, got %d: %+v", len(changes), changes)
+	}
+	if changes[0].ApplicationId != app.Id || changes[0].Status != models.Healthy {
+		t.Errorf("expected healthy change first, got %+v", changes[0])
+	}
+	degraded := changes[1]
+	if degraded.Status != models.Degraded || len(degraded.Services) != 1 ||
+		degraded.Services[0] != (models.ServiceHealth{Name: "web", Status: models.Unhealthy}) {
+		t.Errorf("expected degraded change with failing service web, got %+v", degraded)
+	}
+}
+
+func TestHandleApplicationStatusReport_SyncsHealthHistoryOncePerConnection(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+
+	nop := zerolog.Nop()
+	report := func(client *Client) {
+		handleApplicationStatusReport(t.Context(), client, &messages.ApplicationStatusReport{
+			Statuses: []*messages.ApplicationStatus{nil, {ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
+		}, &nop)
+	}
+	latest := func() models.HealthStatus {
+		t.Helper()
+		change, err := healthhistory.Latest(t.Context(), app.Id)
+		if err != nil {
+			t.Fatalf("Latest() error: %v", err)
+		}
+		return change.Status
+	}
+
+	client := &Client{Id: "agent-1"}
+	report(client)
+	if got := latest(); got != models.Healthy {
+		t.Fatalf("expected healthy to be recorded, got %q", got)
+	}
+
+	// A hub restart records the agent offline but keeps the stored health.
+	if err := healthhistory.RecordAgentOffline(t.Context(), "agent-1", time.Now()); err != nil {
+		t.Fatalf("RecordAgentOffline() error: %v", err)
+	}
+	report(client)
+	if got := latest(); got != models.UnknownHealth {
+		t.Errorf("an unchanged report must not be recorded again on the same connection, got %q", got)
+	}
+
+	report(&Client{Id: "agent-1"})
+	if got := latest(); got != models.Healthy {
+		t.Errorf("expected the first report of a new connection to sync the history, got %q", got)
+	}
+	if got := healthOf(t, app.Id); got != models.Healthy {
+		t.Errorf("expected the stored health to stay healthy, got %q", got)
 	}
 }

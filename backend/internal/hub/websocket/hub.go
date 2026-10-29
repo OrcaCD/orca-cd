@@ -27,6 +27,22 @@ type Client struct {
 
 	closeOnce sync.Once
 	closing   atomic.Bool
+
+	// healthSynced holds the applications whose health history was synced on
+	// this connection. Only the connection's message handler accesses it.
+	healthSynced map[string]struct{}
+}
+
+func (c *Client) healthHistorySynced(applicationID string) bool {
+	_, synced := c.healthSynced[applicationID]
+	return synced
+}
+
+func (c *Client) markHealthHistorySynced(applicationID string) {
+	if c.healthSynced == nil {
+		c.healthSynced = make(map[string]struct{})
+	}
+	c.healthSynced[applicationID] = struct{}{}
 }
 
 // Close signals the WritePump to stop.
