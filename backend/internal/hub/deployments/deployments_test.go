@@ -413,8 +413,12 @@ func TestSucceedWithHealthGate(t *testing.T) {
 	if gated.VerifyUntil == nil || gated.VerifyUntil.Sub(*gated.DeployedAt) != 5*time.Minute {
 		t.Errorf("verify until = %v, want 5m after %v", gated.VerifyUntil, gated.DeployedAt)
 	}
-	if current := loadApp(t, app.Id).CurrentDeploymentId; current == nil || *current != gated.Id {
+	updated := loadApp(t, app.Id)
+	if current := updated.CurrentDeploymentId; current == nil || *current != gated.Id {
 		t.Errorf("current deployment = %v, want the verifying one", current)
+	}
+	if updated.HealthStatus != models.UnknownHealth {
+		t.Errorf("health = %q, want unknown until the agent reports the new containers", updated.HealthStatus)
 	}
 	target, err := RollbackTarget(t.Context(), &app)
 	if err != nil {
@@ -424,19 +428,12 @@ func TestSucceedWithHealthGate(t *testing.T) {
 		t.Errorf("rollback target = %v, want the deployment before the verifying one", target)
 	}
 
-	due, err := VerificationsDue(t.Context(), time.Now())
+	verifying, err := AllVerifying(t.Context())
 	if err != nil {
-		t.Fatalf("VerificationsDue: %v", err)
+		t.Fatalf("AllVerifying: %v", err)
 	}
-	if len(due) != 0 {
-		t.Errorf("expected no due verification yet, got %v", due)
-	}
-	due, err = VerificationsDue(t.Context(), time.Now().Add(6*time.Minute))
-	if err != nil {
-		t.Fatalf("VerificationsDue: %v", err)
-	}
-	if len(due) != 1 || due[0].Id != gated.Id {
-		t.Errorf("expected the gated deployment to be due, got %v", due)
+	if len(verifying) != 1 || verifying[0].Id != gated.Id {
+		t.Errorf("expected the gated deployment to be verified, got %v", verifying)
 	}
 }
 
@@ -451,13 +448,13 @@ func TestVerifyAndReject(t *testing.T) {
 	if ok, _ := Verify(t.Context(), verified); ok {
 		t.Error("a deployment must only be verified once")
 	}
-	if ok, _ := Reject(t.Context(), verified); ok {
+	if ok, _ := Reject(t.Context(), verified, "too late"); ok {
 		t.Error("a verified deployment must not be rejected")
 	}
 
 	event := seedEvent(t, app.Id, "req-2")
 	rejected := succeedDeployment(t, &app, "req-2", time.Minute)
-	if ok, err := Reject(t.Context(), rejected); err != nil || !ok {
+	if ok, err := Reject(t.Context(), rejected, "unhealthy"); err != nil || !ok {
 		t.Fatalf("Reject = %v, %v", ok, err)
 	}
 	if got := deploymentsOf(t, app.Id); len(got) != 1 || got[0].Id != verified.Id || got[0].Status != models.DeploymentSucceeded {
@@ -531,5 +528,68 @@ func TestImageRetention(t *testing.T) {
 	}
 	if want := []string{"sha256:oldest"}; !slices.Equal(retention.GetRemoveImageIds(), want) {
 		t.Errorf("remove = %v, want %v", retention.GetRemoveImageIds(), want)
+	}
+}
+
+func startRollbackEvent(t *testing.T, appID, deploymentID string) models.ApplicationEvent {
+	t.Helper()
+	requestID := "rollback-" + deploymentID
+	event := models.ApplicationEvent{
+		ApplicationId: appID,
+		RequestId:     &requestID,
+		Type:          models.ApplicationEventRollback,
+		Source:        models.ApplicationEventSourceManual,
+		Status:        models.ApplicationEventRunning,
+		DeploymentId:  &deploymentID,
+	}
+	if err := gorm.G[models.ApplicationEvent](db.DB).Create(t.Context(), &event); err != nil {
+		t.Fatalf("seed rollback event: %v", err)
+	}
+	return event
+}
+
+func TestVerifyAndRejectCompleteTheirEvent(t *testing.T) {
+	for _, verify := range []bool{true, false} {
+		t.Run(map[bool]string{true: "verify", false: "reject"}[verify], func(t *testing.T) {
+			setupTestDB(t)
+			app := seedApp(t, "agent-1")
+			event := seedEvent(t, app.Id, "req-1")
+			gated := succeedDeployment(t, &app, "req-1", time.Minute)
+			rollback := startRollbackEvent(t, app.Id, gated.Id)
+
+			if verify {
+				if ok, err := Verify(t.Context(), gated); err != nil || !ok {
+					t.Fatalf("Verify = %v, %v", ok, err)
+				}
+			} else if ok, err := Reject(t.Context(), gated, "unhealthy"); err != nil || !ok {
+				t.Fatalf("Reject = %v, %v", ok, err)
+			}
+
+			completed := loadEvent(t, event.Id)
+			if verify && completed.Status != models.ApplicationEventSucceeded {
+				t.Errorf("event status = %q, want succeeded", completed.Status)
+			}
+			if !verify && (completed.Status != models.ApplicationEventFailed || completed.ErrorMessage == nil || *completed.ErrorMessage != "unhealthy") {
+				t.Errorf("unexpected event: %+v", completed)
+			}
+			if completed.CompletedAt == nil {
+				t.Error("expected the event to be completed")
+			}
+			if got := loadEvent(t, rollback.Id); got.Status != models.ApplicationEventRunning {
+				t.Errorf("rollback event status = %q, want it untouched", got.Status)
+			}
+
+			// The other outcome can't apply anymore, nor change the event.
+			if verify {
+				if ok, _ := Reject(t.Context(), gated, "late"); ok {
+					t.Error("a verified deployment must not be rejected")
+				}
+			} else if ok, _ := Verify(t.Context(), gated); ok {
+				t.Error("a rejected deployment must not be verified")
+			}
+			if got := loadEvent(t, event.Id); got.Status != completed.Status {
+				t.Errorf("event status changed to %q", got.Status)
+			}
+		})
 	}
 }

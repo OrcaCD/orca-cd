@@ -518,37 +518,3 @@ func TestRecoverRunningKeepsEventsUnderHealthCheck(t *testing.T) {
 		}
 	}
 }
-
-func TestCompleteForDeployment(t *testing.T) {
-	app, _ := setupEventTestDB(t)
-	ctx := t.Context()
-	deployment := seedDeployment(t, app.Id, models.DeploymentVerifying)
-	deployed, err := Start(ctx, Params{ApplicationID: app.Id, Type: models.ApplicationEventCommitSync, Source: models.ApplicationEventSourceRepositoryWebhook, DeploymentID: &deployment.Id})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	rollback, err := Start(ctx, Params{ApplicationID: app.Id, Type: models.ApplicationEventRollback, Source: models.ApplicationEventSourceManual, DeploymentID: &deployment.Id})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-
-	message := "health check failed"
-	completed, err := CompleteForDeployment(ctx, app.Id, deployment.Id, models.ApplicationEventFailed, &message)
-	if err != nil || !completed {
-		t.Fatalf("CompleteForDeployment = %v, %v", completed, err)
-	}
-	if again, _ := CompleteForDeployment(ctx, app.Id, deployment.Id, models.ApplicationEventSucceeded, nil); again {
-		t.Error("a completed event must not be completed again")
-	}
-
-	got, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", deployed.Id).First(ctx)
-	if err != nil {
-		t.Fatalf("load event: %v", err)
-	}
-	if got.Status != models.ApplicationEventFailed || got.ErrorMessage == nil || *got.ErrorMessage != message || got.CompletedAt == nil {
-		t.Errorf("unexpected deployment event: %+v", got)
-	}
-	if got, _ := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", rollback.Id).First(ctx); got.Status != models.ApplicationEventRunning {
-		t.Errorf("rollback event status = %q, want it untouched", got.Status)
-	}
-}
