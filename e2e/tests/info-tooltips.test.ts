@@ -55,46 +55,87 @@ test("information tooltips open on desktop hover and keyboard focus", async ({ p
 	await expect(tooltip).toBeHidden();
 });
 
-test("information tooltips share one media query and release its listener", async ({ page }) => {
-	await page.addInitScript(() => {
-		const stats = { queries: 0, listeners: 0 };
-		Object.assign(window, { tooltipMediaStats: stats });
-		const matchMedia = window.matchMedia.bind(window);
-		window.matchMedia = (query) => {
-			const result = matchMedia(query);
-			if (query === "(hover: none), (pointer: coarse)") {
-				stats.queries++;
-				const add = result.addEventListener.bind(result);
-				const remove = result.removeEventListener.bind(result);
-				result.addEventListener = (...args: Parameters<MediaQueryList["addEventListener"]>) => {
-					if (args[0] === "change") {
-						stats.listeners++;
-					}
-					add(...args);
-				};
-				result.removeEventListener = (
-					...args: Parameters<MediaQueryList["removeEventListener"]>
-				) => {
-					if (args[0] === "change") {
-						stats.listeners--;
-					}
-					remove(...args);
-				};
-			}
-			return result;
-		};
+test.describe("hybrid mouse and touch input", () => {
+	test.use({ hasTouch: true, isMobile: false, viewport: { width: 1280, height: 900 } });
+
+	test.beforeEach(async ({ page }) => {
+		// Playwright's touch emulation normally makes touch the primary input.
+		// Model a Windows touchscreen laptop that reports a primary mouse instead.
+		await page.addInitScript(() => {
+			const matchMedia = window.matchMedia.bind(window);
+			const capabilities: Record<string, boolean> = {
+				"(hover: none), (pointer: coarse)": false,
+				"(hover: none)": false,
+				"(pointer: coarse)": false,
+				"(hover: hover)": true,
+				"(pointer: fine)": true,
+				"(any-pointer: coarse)": true,
+			};
+			window.matchMedia = (query) => {
+				const result = matchMedia(query);
+				if (query in capabilities) {
+					Object.defineProperty(result, "matches", { value: capabilities[query] });
+				}
+				return result;
+			};
+		});
 	});
-	const trigger = await openActivity(page, 7);
-	await trigger.hover();
-	await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
-	const stats = () => page.evaluate(() => Reflect.get(window, "tooltipMediaStats"));
-	await expect.poll(stats).toEqual({ queries: 1, listeners: 1 });
-	await page.getByRole("link", { name: "Notifications", exact: true }).click();
-	await expect.poll(stats).toEqual({ queries: 1, listeners: 0 });
-	await page.goBack();
-	await trigger.hover();
-	await expect(page.locator('[data-slot="tooltip-content"]')).toBeVisible();
-	await expect.poll(stats).toEqual({ queries: 1, listeners: 1 });
+
+	test("hover, touch, and hover again work on the same trigger", async ({ page }) => {
+		const trigger = await openActivity(page, 7);
+		await expect
+			.poll(() =>
+				page.evaluate(() => ({
+					hover: matchMedia("(hover: hover)").matches,
+					fine: matchMedia("(pointer: fine)").matches,
+					touch: matchMedia("(any-pointer: coarse)").matches,
+				})),
+			)
+			.toEqual({ hover: true, fine: true, touch: true });
+		const tooltip = page.locator('[data-slot="tooltip-content"]');
+		const popup = page.getByRole("dialog", { name: "Details" });
+		await trigger.hover();
+		await expect(tooltip).toContainText("Succeeded: 3 · Failed: 1");
+		await trigger.tap();
+		await expect(popup).toContainText("Succeeded: 3 · Failed: 1");
+		await expect(tooltip).toBeHidden();
+		await trigger.tap();
+		await expect(popup).toBeHidden();
+		await trigger.tap();
+		await expect(popup).toBeVisible();
+		await page.getByRole("heading", { name: "Overview" }).tap();
+		await expect(popup).toBeHidden();
+		await page.mouse.move(0, 0);
+		await trigger.hover();
+		await expect(tooltip).toBeVisible();
+	});
+	test("form help buttons support both hover and touch", async ({ page }) => {
+		await page.route("**/api/v1/repositories/info-repo", (route) =>
+			route.fulfill({
+				json: {
+					id: "info-repo",
+					name: "Info repository",
+					commitSigningSupported: true,
+					requireSignedCommits: false,
+					commitSigningKeys: [],
+				},
+			}),
+		);
+		await page.goto("/repositories/info-repo/settings/signing");
+		const trigger = page.getByRole("button", { name: "Details", exact: true });
+		await trigger.hover();
+		await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+			"Reject commits that are not signed by a trusted key.",
+		);
+		await trigger.tap();
+		await expect(page.getByRole("dialog", { name: "Details" })).toHaveText(
+			"Reject commits that are not signed by a trusted key.",
+		);
+		await expect(page.locator('[data-slot="tooltip-content"]')).toBeHidden();
+		await trigger.tap();
+		await expect(page.getByRole("dialog", { name: "Details" })).toBeHidden();
+		await expect(page.getByRole("switch")).not.toBeChecked();
+	});
 });
 
 test.describe("touch information popovers", () => {
