@@ -1,0 +1,65 @@
+name: Upload Translations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - frontend/messages/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crowdin
+  cancel-in-progress: false
+
+jobs:
+  upload-to-crowdin:
+    # Merged Crowdin PRs only contain what is already in Crowdin, possibly outdated.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(translations):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crowdin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.x.x"
+
+      # New keys have to exist in Crowdin before translations for them can be imported.
+      - name: Upload sources
+        uses: crowdin/github-action@959dc74ac104447731cba99a016f85d0ae719788 # v3.5.0
+        with:
+          upload_sources: true
+          upload_translations: false
+          download_translations: false
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+
+      - name: Keep only changed translations
+        id: changes
+        working-directory: ./frontend
+        env:
+          BASE_REVISION: ${{ github.event.before }}
+        run: node scripts/prepare-translation-upload.ts "$BASE_REVISION"
+
+      - name: Upload changed translations
+        if: ${{ steps.changes.outputs.has_changes == 'true' }}
+        uses: crowdin/github-action@959dc74ac104447731cba99a016f85d0ae719788 # v3.5.0
+        with:
+          upload_sources: false
+          upload_translations: true
+          auto_approve_imported: true
+          download_translations: false
+        env:
+          CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
