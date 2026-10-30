@@ -1,65 +1,16 @@
 import { Popover } from "@base-ui/react/popover";
-import {
-	createContext,
-	useContext,
-	useSyncExternalStore,
-	type ComponentProps,
-	type ReactElement,
-	type ReactNode,
-} from "react";
+import { useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
 
-// Use input capabilities rather than viewport width, including large touch-only tablets.
-const touchQuery = "(hover: none), (pointer: coarse)";
-const TouchContext = createContext(false);
-let mediaQuery: MediaQueryList | undefined;
-const listeners = new Set<() => void>();
-
-function getMediaQuery() {
-	if (typeof window === "undefined") {
-		return undefined;
-	}
-	mediaQuery ??= window.matchMedia(touchQuery);
-	return mediaQuery;
-}
-
-function notifyListeners() {
-	for (const listener of listeners) {
-		listener();
-	}
-}
-
-function subscribe(onChange: () => void) {
-	const query = getMediaQuery();
-	if (listeners.size === 0) {
-		query?.addEventListener("change", notifyListeners);
-	}
-	listeners.add(onChange);
-	return () => {
-		listeners.delete(onChange);
-		if (listeners.size === 0) {
-			query?.removeEventListener("change", notifyListeners);
-		}
-	};
-}
-
-function getSnapshot() {
-	return getMediaQuery()?.matches ?? false;
-}
-
-function getServerSnapshot() {
-	return false;
-}
-
 // Action and navigation controls keep Tooltip so taps still perform their primary action.
 export function InfoTooltip({ children }: { children: ReactNode }) {
-	const touch = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+	const [open, setOpen] = useState(false);
 	return (
-		<TouchContext value={touch}>
-			{touch ? <Popover.Root>{children}</Popover.Root> : <Tooltip>{children}</Tooltip>}
-		</TouchContext>
+		<Popover.Root open={open} onOpenChange={setOpen}>
+			<Tooltip disabled={open}>{children}</Tooltip>
+		</Popover.Root>
 	);
 }
 
@@ -68,11 +19,12 @@ export function InfoTooltipTrigger({
 	nativeButton = !render,
 	...props
 }: Omit<ComponentProps<"button">, "ref"> & { render?: ReactElement; nativeButton?: boolean }) {
-	const touch = useContext(TouchContext);
-	return touch ? (
-		<Popover.Trigger render={render} nativeButton={nativeButton} {...props} />
-	) : (
-		<TooltipTrigger render={render} tabIndex={0} {...props} />
+	return (
+		<TooltipTrigger
+			render={<Popover.Trigger render={render} nativeButton={nativeButton} />}
+			tabIndex={0}
+			{...props}
+		/>
 	);
 }
 
@@ -87,33 +39,30 @@ export function InfoTooltipContent({
 	children: ReactNode;
 	className?: string;
 } & Pick<Popover.Positioner.Props, "side" | "sideOffset" | "align" | "alignOffset">) {
-	const touch = useContext(TouchContext);
-	if (!touch) {
-		return (
+	return (
+		<>
 			<TooltipContent {...{ className, side, sideOffset, align, alignOffset }}>
 				{children}
 			</TooltipContent>
-		);
-	}
-	return (
-		<Popover.Portal>
-			<Popover.Positioner
-				side={side}
-				sideOffset={sideOffset}
-				align={align}
-				alignOffset={alignOffset}
-				className="isolate z-50"
-			>
-				<Popover.Popup
-					aria-label={m.details()}
-					className={cn(
-						"flex w-fit max-w-[min(20rem,calc(100vw-2rem))] flex-col gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md outline-none",
-						className,
-					)}
+			<Popover.Portal>
+				<Popover.Positioner
+					side={side}
+					sideOffset={sideOffset}
+					align={align}
+					alignOffset={alignOffset}
+					className="isolate z-50"
 				>
-					{children}
-				</Popover.Popup>
-			</Popover.Positioner>
-		</Popover.Portal>
+					<Popover.Popup
+						aria-label={m.details()}
+						className={cn(
+							"flex w-fit max-w-[min(20rem,calc(100vw-2rem))] flex-col gap-1.5 rounded-md bg-foreground px-3 py-2 text-xs text-background shadow-md outline-none",
+							className,
+						)}
+					>
+						{children}
+					</Popover.Popup>
+				</Popover.Positioner>
+			</Popover.Portal>
+		</>
 	);
 }
