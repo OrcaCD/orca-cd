@@ -4,22 +4,32 @@ let now = Date.now();
 let timer: ReturnType<typeof setInterval> | undefined;
 const listeners = new Set<() => void>();
 
+function updateNow() {
+	now = Date.now();
+	for (const notify of listeners) {
+		notify();
+	}
+}
+
+function onVisibilityChange() {
+	if (document.visibilityState === "visible") {
+		updateNow();
+	}
+}
+
 function subscribe(listener: () => void) {
 	listeners.add(listener);
 	if (!timer) {
 		now = Date.now();
-		timer = setInterval(() => {
-			now = Date.now();
-			for (const notify of listeners) {
-				notify();
-			}
-		}, 60_000);
+		timer = setInterval(updateNow, 60_000);
+		document.addEventListener("visibilitychange", onVisibilityChange);
 	}
 	return () => {
 		listeners.delete(listener);
 		if (listeners.size === 0) {
 			clearInterval(timer);
 			timer = undefined;
+			document.removeEventListener("visibilitychange", onVisibilityChange);
 		}
 	};
 }

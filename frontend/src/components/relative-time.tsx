@@ -5,6 +5,8 @@ import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
+const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
 export function RelativeTime({
 	value,
 	className,
@@ -17,12 +19,17 @@ export function RelativeTime({
 	format?: (relative: string) => string;
 }) {
 	const now = useNow();
-	const date = value ? new Date(value) : null;
+	const date =
+		value instanceof Date
+			? value
+			: typeof value === "string" && timestampPattern.test(value)
+				? new Date(value)
+				: null;
 	if (!date || Number.isNaN(date.getTime())) {
 		return <span className={className}>{fallback ?? m.never()}</span>;
 	}
 
-	const relative = formatRelativeTime(date, now);
+	const relative = formatRelativeTime(date, Math.max(now, date.getTime()));
 	return (
 		<InfoTooltip>
 			<InfoTooltipTrigger
