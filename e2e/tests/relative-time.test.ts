@@ -61,6 +61,41 @@ test("relative dates refresh while the page stays open", async ({ page }) => {
 	await expect(page.locator("time")).toHaveText("3 minutes ago");
 });
 
+test("fresh events never appear to be in the future", async ({ page }) => {
+	await page.clock.setFixedTime(now);
+	await page.route("**/api/v1/applications", (route) =>
+		route.fulfill({
+			json: [{ ...app, lastSyncedAt: new Date(now.getTime() + 30_000).toISOString() }],
+		}),
+	);
+	await page.goto("/applications");
+	await expect(page.locator("time")).toHaveText("now");
+});
+
+test("relative dates refresh immediately when a background tab becomes visible", async ({
+	page,
+}) => {
+	await page.clock.install({ time: now });
+	await page.route("**/api/v1/applications", (route) =>
+		route.fulfill({
+			json: [{ ...app, lastSyncedAt: new Date(now.getTime() - 120_000).toISOString() }],
+		}),
+	);
+	await page.goto("/applications");
+	await expect(page.locator("time")).toHaveText("2 minutes ago");
+	await page.clock.setSystemTime(new Date(now.getTime() + 300_000));
+	await page.evaluate(() => {
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+		document.dispatchEvent(new Event("visibilitychange"));
+	});
+	await expect(page.locator("time")).toHaveText("2 minutes ago");
+	await page.evaluate(() => {
+		Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+		document.dispatchEvent(new Event("visibilitychange"));
+	});
+	await expect(page.locator("time")).toHaveText("7 minutes ago");
+});
+
 test("table dates are relative and missing or invalid dates stay readable", async ({ page }) => {
 	await page.clock.setFixedTime(now);
 	await page.addInitScript(() => localStorage.setItem("orca-preferred-layout", "table"));
@@ -70,6 +105,9 @@ test("table dates are relative and missing or invalid dates stay readable", asyn
 				app,
 				{ ...app, id: "never", name: "Never synced", lastSyncedAt: null },
 				{ ...app, id: "invalid", name: "Invalid date", lastSyncedAt: "invalid" },
+				{ ...app, id: "zero", name: "Numeric date", lastSyncedAt: "0" },
+				{ ...app, id: "blank", name: "Blank date", lastSyncedAt: " " },
+				{ ...app, id: "offset", name: "Offset date", lastSyncedAt: "2026-10-25T14:34:56+02:00" },
 			],
 		}),
 	);
@@ -79,6 +117,12 @@ test("table dates are relative and missing or invalid dates stay readable", asyn
 	).toHaveText("4 days ago");
 	await expect(page.getByRole("row").filter({ hasText: "Never synced" })).toContainText("Never");
 	await expect(page.getByRole("row").filter({ hasText: "Invalid date" })).toContainText("Never");
+	await expect(page.getByRole("row").filter({ hasText: "Numeric date" })).toContainText("Never");
+	await expect(page.getByRole("row").filter({ hasText: "Blank date" })).toContainText("Never");
+	await expect(
+		page.getByRole("row").filter({ hasText: "Offset date" }).locator("time"),
+	).toHaveAttribute("datetime", new Date(timestamp).toISOString());
+	await expect(page.locator("time")).toHaveCount(2);
 });
 
 test("relative and exact dates follow the selected language", async ({ page }) => {
@@ -110,5 +154,48 @@ test.describe("touch dates in linked cards", () => {
 		await expect(popup).toBeHidden();
 		await page.getByRole("link", { name: app.name, exact: true }).tap();
 		await expect(page).toHaveURL(new RegExp(`/applications/${app.id}`));
+	});
+
+	test("recent deployment rows navigate from their padding while timestamps remain independent", async ({
+		page,
+	}) => {
+		await page.clock.setFixedTime(now);
+		await mockApplications(page);
+		await page.route("**/api/v1/activity?*", (route) =>
+			route.fulfill({
+				json: {
+					days: [],
+					recentDeployments: [
+						{
+							id: "recent-deployment",
+							applicationId: app.id,
+							applicationName: app.name,
+							applicationIcon: "",
+							type: "deployment",
+							status: "succeeded",
+							source: "manual",
+							createdAt: timestamp,
+							completedAt: timestamp,
+							actorName: null,
+							commitHash: app.commit,
+							commitMessage: "A recent deployment",
+							errorMessage: null,
+						},
+					],
+				},
+			}),
+		);
+		await page.goto("/");
+		const row = page.locator('[data-slot="item"]').filter({ hasText: app.name });
+		const time = row.locator("time");
+		await time.tap();
+		await expect(page.getByRole("dialog", { name: "Details" })).toHaveText(await exactDate(page));
+		await expect(page).toHaveURL("/");
+		await time.tap();
+		await expect(page.getByRole("dialog", { name: "Details" })).toBeHidden();
+		const bounds = await row.boundingBox();
+		expect(bounds).not.toBeNull();
+		await row.tap({ position: { x: bounds!.width / 2, y: bounds!.height - 4 } });
+		await expect(page).toHaveURL(new RegExp(`/applications/${app.id}/history`));
 	});
 });

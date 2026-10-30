@@ -57,19 +57,19 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 	const description = deployment.errorMessage ?? deployment.commitMessage;
 
 	return (
-		<Item size="xs" className="relative">
+		<Item size="xs" className="relative hover:bg-muted/40">
+			<Link
+				to="/applications/$id/history"
+				params={{ id: deployment.applicationId }}
+				aria-label={deployment.applicationName}
+				className="absolute inset-0 rounded-lg"
+			/>
 			<ItemMedia className="size-8 rounded-md bg-primary/10">
 				<StaticLucideIcon name={deployment.applicationIcon} className="size-4 text-primary" />
 			</ItemMedia>
 			<ItemContent className="min-w-0">
 				<ItemTitle className="w-full">
-					<Link
-						to="/applications/$id/history"
-						params={{ id: deployment.applicationId }}
-						className="truncate after:absolute after:inset-0"
-					>
-						{deployment.applicationName}
-					</Link>
+					<span className="truncate">{deployment.applicationName}</span>
 					<span className="truncate text-xs font-normal text-muted-foreground">
 						{details.join(" · ")}
 					</span>
