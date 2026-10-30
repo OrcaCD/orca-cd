@@ -464,7 +464,7 @@ test.describe("Live updates", () => {
 			syncType: "polling",
 			pollingIntervalSeconds: 3600,
 		});
-		await expect(card.getByText("Polling", { exact: true })).toBeVisible();
+		await expect(card.getByText("Polling every 1h", { exact: true })).toBeVisible();
 
 		await api(page, "DELETE", `/repositories/${repo.id}`);
 		await expect(card).toHaveCount(0);
