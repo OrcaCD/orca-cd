@@ -28,6 +28,9 @@ func deploymentPathViolation(path, deploymentsDir, applicationDir string) string
 	}
 	link, err := firstSymlink(deploymentsDir, path)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return fmt.Sprintf("could not be checked for symlinks: %v; allow the agent to search the parent directories, or opt in to the agent's DAC_READ_SEARCH capability (bypasses read/search permissions for all files accessible to the agent)", err)
+		}
 		return fmt.Sprintf("could not be checked for symlinks: %v", err)
 	}
 	if link != "" {

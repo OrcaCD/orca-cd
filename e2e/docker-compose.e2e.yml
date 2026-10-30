@@ -34,6 +34,7 @@ services:
     cap_drop:
       - ALL
     cap_add:
+      # Exercise the optional capability for restricted deployment directories.
       - DAC_READ_SEARCH
     use_api_socket: true
     volumes:
