@@ -125,7 +125,7 @@ export function inspectContainer(id: string) {
 
 // The deployments directory is owned by root on Linux hosts and the agent image has no shell,
 // so a throwaway container with the agent's volumes reads it
-function runWithAgentVolumes(command: string[]) {
+export function runWithAgentVolumes(command: string[]) {
 	return spawnSync(
 		"docker",
 		["run", "--rm", "--volumes-from", AGENT_CONTAINER, BUSYBOX_IMAGE, ...command],
