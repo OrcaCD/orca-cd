@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -50,6 +51,7 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 				ApplicationId:   app.Id,
 				ApplicationName: app.Name.String(),
 				DeleteOldImages: app.DeleteOldImages,
+				ImageRetention:  imageRetention(ctx, app),
 			},
 		},
 	})
@@ -67,6 +69,16 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 		LastSyncError: &cleared,
 	}, &Log)
 	return true
+}
+
+// imageRetention keeps the images a rollback needs when old images are
+// deleted. Without it the agent deletes them, and a rollback pulls them again.
+func imageRetention(ctx context.Context, app *models.Application) *messages.ImageRetention {
+	retention, err := deployments.ImageRetention(ctx, app)
+	if err != nil {
+		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to determine images to keep for rollbacks")
+	}
+	return retention
 }
 
 func failImagePullEvent(ctx context.Context, requestID, applicationID, message string) {

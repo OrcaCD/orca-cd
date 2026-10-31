@@ -63,6 +63,17 @@ message DeployRequest {
   // Images to run instead of the ones the compose file names, so a rollback
   // runs the exact images of an earlier deployment.
   repeated ServiceImage pinned_images = 6;
+  ImageRetention image_retention = 7;
+}
+
+// ImageRetention adjusts which old images are deleted for an application that
+// can be rolled back. Unset, the images replaced by an update are deleted.
+message ImageRetention {
+  // Images of the deployment a rollback would restore. They are kept.
+  repeated string keep_image_ids = 1;
+  // Images of earlier deployments that were kept before. They are deleted
+  // too, unless a container still uses them.
+  repeated string remove_image_ids = 2;
 }
 
 // ServiceImage is the image the containers of a compose service run.
@@ -107,6 +118,7 @@ message ImagePollSettings {
   int64 interval_seconds = 3;
   bool delete_old_images = 4;
   string application_name = 5;
+  ImageRetention image_retention = 6;
 }
 
 message PullImagesRequest {
@@ -114,6 +126,7 @@ message PullImagesRequest {
   string application_id = 2;
   string application_name = 3;
   bool delete_old_images = 4;
+  ImageRetention image_retention = 5;
 }
 
 message PullImagesResult {
@@ -124,6 +137,9 @@ message PullImagesResult {
   string error_message = 5;
   // Images the services run after a successful update.
   repeated ServiceImage images = 6;
+  // Set when new images were pulled but recreating the containers failed,
+  // which leaves the application in an unknown state.
+  bool redeploy_failed = 7;
 }
 
 enum HealthStatus {

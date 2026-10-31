@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -141,6 +142,40 @@ func TestImagePoller_ApplySettings_StopsOldTicker(t *testing.T) {
 		// closed correctly
 	default:
 		t.Error("expected old stop channel to be closed after reconfigure")
+	}
+
+	p.StopAll()
+}
+
+func TestImagePoller_ApplySettings_KeepsUnchangedTicker(t *testing.T) {
+	p := newTestPoller(t, nil)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 30})
+
+	p.mu.Lock()
+	firstStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+
+	// Normalized to the same minimum interval as before.
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 45})
+
+	p.mu.Lock()
+	secondStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if firstStop != secondStop {
+		t.Error("expected the unchanged ticker to keep running")
+	}
+	select {
+	case <-firstStop:
+		t.Error("expected the unchanged ticker not to be stopped")
+	default:
+	}
+
+	applyOne(p, "app-1", "renamed", PollSettings{Enabled: true, IntervalSeconds: 60})
+	p.mu.Lock()
+	renamedStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if renamedStop == firstStop {
+		t.Error("expected a renamed application to get a new ticker")
 	}
 
 	p.StopAll()
@@ -539,5 +574,34 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	case <-started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for second pull to run after first completed")
+	}
+}
+
+func TestImagePoller_RunOnce_ReportsFailedRedeploy(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	for _, tt := range []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("%w: container exited", ErrRedeployFailed), true},
+		{errors.New("registry unreachable"), false},
+	} {
+		checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+			return false, tt.err
+		}
+		sender := &stubMessageSender{}
+		p := newTestPoller(t, sender)
+
+		p.runOnce("app-1", "myapp", "req-1", false)
+
+		msgs := sender.received()
+		if len(msgs) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(msgs))
+		}
+		if got := msgs[0].GetPullImagesResult().RedeployFailed; got != tt.want {
+			t.Errorf("%v: redeploy_failed = %v, want %v", tt.err, got, tt.want)
+		}
 	}
 }
