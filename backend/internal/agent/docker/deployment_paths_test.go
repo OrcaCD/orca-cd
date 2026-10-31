@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,36 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 )
+
+func TestDeploymentPaths_RejectsInaccessiblePathsWithGuidance(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	parent := filepath.Join(rules.applicationDir, "data")
+	source := filepath.Join(parent, "private")
+	if err := os.Mkdir(source, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		//nolint:gosec // Restore directory traversal so t.TempDir can clean up.
+		if err := os.Chmod(parent, 0o750); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := os.Lstat(source); !errors.Is(err, os.ErrPermission) {
+		if err == nil {
+			t.Skip("process can bypass directory permissions")
+		}
+		t.Fatal(err)
+	}
+
+	err := checkDeployPolicy(bindMountProject(source), rules)
+	requireErrorContains(t, err, "could not be checked for symlinks")
+	requireErrorContains(t, err, "allow the agent to search the parent directories")
+	requireErrorContains(t, err, "opt in to the agent's DAC_READ_SEARCH capability")
+	requireErrorContains(t, err, "bypasses read/search permissions for all files accessible to the agent")
+}
 
 func setupDeploymentDirs(t *testing.T) pathRules {
 	t.Helper()
