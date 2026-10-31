@@ -61,6 +61,10 @@ type Hub struct {
 	deleteMu       sync.Mutex
 	pendingDeletes map[string]pendingDelete
 
+	envMu             sync.Mutex
+	pendingEnvLists   map[string]pendingEnv[*messages.EnvListResult]
+	pendingEnvUpdates map[string]pendingEnv[*messages.EnvUpdateResult]
+
 	presence *agentPresenceNotifier
 }
 
@@ -69,6 +73,9 @@ func NewHub(log *zerolog.Logger) *Hub {
 		clients:        make(map[string]*Client),
 		log:            log,
 		pendingDeletes: make(map[string]pendingDelete),
+
+		pendingEnvLists:   make(map[string]pendingEnv[*messages.EnvListResult]),
+		pendingEnvUpdates: make(map[string]pendingEnv[*messages.EnvUpdateResult]),
 		presence: newAgentPresenceNotifier(agentOfflineGracePeriod, func(agentId string, event models.NotificationEvent) {
 			notifyAgentPresence(agentId, event, log)
 		}),
@@ -130,6 +137,7 @@ func (h *Hub) FinishDisconnect(c *Client) {
 		delete(h.clients, c.Id)
 	}
 	h.mu.Unlock()
+	h.abortPendingEnv(c.Id)
 	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
 }
 

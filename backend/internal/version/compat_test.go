@@ -38,3 +38,30 @@ func TestCheckAgentCompatibility(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportsEnvManagement(t *testing.T) {
+	tests := []struct {
+		agent string
+		want  bool
+	}{
+		{"", false},
+		{"v0.5.0", false},
+		{"v0.5.9", false},
+		{"v0.5.0-dirty", false},
+		{"v0.5.0-11-g2d9317c", true},
+		{"v0.5.0-11-g2d9317c-dirty", true},
+		{"v0.6.0-rc.1", true},
+		{"v0.6.0", true},
+		{"0.7.1", true},
+		{"dev", true},
+		{"main", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.agent, func(t *testing.T) {
+			if got := SupportsEnvManagement(tt.agent); got != tt.want {
+				t.Errorf("SupportsEnvManagement(%q) = %v, want %v", tt.agent, got, tt.want)
+			}
+		})
+	}
+}

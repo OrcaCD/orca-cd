@@ -10,6 +10,7 @@ import (
 )
 
 const envListTimeout = 30 * time.Second
+const envUpdateTimeout = 2 * time.Minute
 
 const errEnvUnsupported = "managing environment variables is not available on this agent"
 
@@ -63,7 +64,7 @@ func executeEnvUpdate(ctx context.Context, sender outboundSender, deployer deplo
 	lock.Lock()
 	defer lock.Unlock()
 
-	updateCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
+	updateCtx, cancel := context.WithTimeout(ctx, envUpdateTimeout)
 	defer cancel()
 
 	if err := manager.UpdateEnv(updateCtx, req.ApplicationName, req.Files); err != nil {
