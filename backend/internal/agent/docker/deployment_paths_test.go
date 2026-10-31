@@ -118,3 +118,74 @@ func TestDeploymentPaths_RejectsSymlinkedApplicationDir(t *testing.T) {
 	err := checkDeployPolicy(bindMountProject(filepath.Join(applicationDir, "data")), rules)
 	requireErrorContains(t, err, "traverses symlink \""+applicationDir+"\"")
 }
+
+func TestDeploymentPaths_ProtectEnvFilesOfOtherApplications(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	rules.applicationDir = filepath.Join(rules.deploymentsDir, "attacker")
+	hostDir := filepath.Join(t.TempDir(), "host", "deployments")
+	rules.hostDeploymentsDir = hostDir
+
+	victimEnv := filepath.Join("billing", ".env")
+	sources := map[string]string{
+		"agent path of the env file":      filepath.Join(rules.deploymentsDir, victimEnv),
+		"host path of the env file":       filepath.Join(hostDir, victimEnv),
+		"host path of the other app dir":  filepath.Join(hostDir, "billing"),
+		"deployments directory":           rules.deploymentsDir,
+		"host deployments directory":      hostDir,
+		"directory above the agent dir":   filepath.Dir(rules.deploymentsDir),
+		"directory above the host dir":    filepath.Dir(hostDir),
+		"host path with parent reference": filepath.Join(hostDir, "attacker", "..", "billing", ".env"),
+	}
+	for name, source := range sources {
+		for _, restrict := range []bool{false, true} {
+			t.Run(name, func(t *testing.T) {
+				rules := rules
+				if restrict {
+					rules.restrictMountsDir = rules.deploymentsDir
+				}
+				for kind, project := range map[string]*composetypes.Project{
+					"bind mount": bindMountProject(source),
+					"env_file":   envFileProject(source),
+					"secret":     {Secrets: composetypes.Secrets{"s": {File: source}}},
+				} {
+					if err := checkDeployPolicy(project, rules); err == nil {
+						t.Fatalf("expected %s of %q to be rejected (restrict=%v)", kind, source, restrict)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestDeploymentPaths_AllowsOwnDirectoryByHostPath(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	hostDir := filepath.Join(t.TempDir(), "host", "deployments")
+	rules.hostDeploymentsDir = hostDir
+
+	for _, source := range []string{
+		filepath.Join(hostDir, "billing"),
+		filepath.Join(hostDir, "billing", ".env"),
+		filepath.Join(hostDir, "billing", "data", "new"),
+		filepath.Join(rules.applicationDir, ".env"),
+	} {
+		if err := checkDeployPolicy(bindMountProject(source), rules); err != nil {
+			t.Fatalf("expected %q to be allowed, got: %v", source, err)
+		}
+		if err := checkDeployPolicy(envFileProject(source), rules); err != nil {
+			t.Fatalf("expected env_file %q to be allowed, got: %v", source, err)
+		}
+	}
+}
+
+func TestDeploymentPaths_HostPathsAreSymlinkChecked(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	hostDir := filepath.Join(t.TempDir(), "host", "deployments")
+	rules.hostDeploymentsDir = hostDir
+	link := filepath.Join(rules.applicationDir, "data", "link")
+	if err := os.Symlink(t.TempDir(), link); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+
+	hostLink := filepath.Join(hostDir, "billing", "data", "link", "sub")
+	requireErrorContains(t, checkDeployPolicy(bindMountProject(hostLink), rules), "traverses symlink")
+}

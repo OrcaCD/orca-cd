@@ -95,8 +95,9 @@ type pathRules struct {
 	restrictMountsDir string
 	// deploymentsDir and applicationDir confine paths inside the deployments
 	// directory to the application's own directory, see deploymentPathViolation.
-	deploymentsDir string
-	applicationDir string
+	deploymentsDir     string
+	applicationDir     string
+	hostDeploymentsDir string
 }
 
 // inspects every service in the project and returns an
@@ -312,7 +313,7 @@ func hostPathViolation(path string, rules pathRules) string {
 	} else if reason := sensitivePathReason(path); reason != "" {
 		return reason
 	}
-	return deploymentPathViolation(path, rules.deploymentsDir, rules.applicationDir)
+	return deploymentPathViolation(path, rules)
 }
 
 // sensitivePathReason returns why a path is on the deny-list, or "" if it is not.

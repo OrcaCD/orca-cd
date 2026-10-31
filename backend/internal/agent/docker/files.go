@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -46,6 +48,37 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
+	name = filepath.FromSlash(name)
+	dir := filepath.Dir(name)
+	if dir != "." {
+		if err := root.MkdirAll(dir, 0o750); err != nil {
+			return err
+		}
+	}
+
+	var suffix [8]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	tmpName := filepath.Join(dir, "."+filepath.Base(name)+"."+hex.EncodeToString(suffix[:])+".tmp")
+
+	tmp, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return root.Rename(tmpName, name)
 }
 
 // readDeploymentFile reads name from dir without following symlinks out of dir.

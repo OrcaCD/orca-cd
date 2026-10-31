@@ -52,3 +52,17 @@ func IsPathWithinBase(basePath, filePath string) error {
 
 	return nil
 }
+
+// RelativePathInDir returns the slash separated path of path below dir, or false
+// if it is dir itself or outside of it. A relative path is taken relative to dir.
+// Like IsPathWithinBase, it does not resolve symlinks.
+func RelativePathInDir(dir, path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	rel, err := filepath.Rel(dir, filepath.Clean(path))
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
