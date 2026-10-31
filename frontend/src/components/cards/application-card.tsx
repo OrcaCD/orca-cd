@@ -40,7 +40,7 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 			<ResourceCard
 				icon={<StaticLucideIcon name={app.icon} className="size-5 text-primary" />}
 				title={app.name}
-				subtitle={`${app.repositoryName} / ${app.branch}`}
+				subtitle={`${app.repositoryName} @ ${app.branch}`}
 				monoSubtitle
 				action={
 					<ArrowUpRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />

@@ -13,7 +13,7 @@ import {
 	type Repository,
 	type RepositorySyncStatus,
 } from "@/lib/repositories";
-import { cn } from "@/lib/utils";
+import { cn, formatInterval } from "@/lib/utils";
 import { RelativeTime, ResourceCard } from "./resource-card";
 
 const maxListedApplications = 2;
@@ -26,16 +26,6 @@ const syncStatusIcon: Record<RepositorySyncStatus, ReactNode> = {
 	),
 	unknown: <CircleDashed className="size-4 shrink-0 text-muted-foreground" />,
 };
-
-function formatInterval(seconds: number): string {
-	if (seconds % 3600 === 0) {
-		return `${seconds / 3600}h`;
-	}
-	if (seconds % 60 === 0) {
-		return `${seconds / 60}m`;
-	}
-	return `${seconds}s`;
-}
 
 function getTriggerLabel(repository: Repository): string {
 	if (repository.syncType === "polling" && repository.pollingIntervalSeconds) {
@@ -142,9 +132,9 @@ export function RepositoryCard({
 					{getSyncTypeIcon(repository.syncType, "size-3.5 shrink-0")}
 					<span className="truncate">{getTriggerLabel(repository)}</span>
 					<Button
-						variant="ghost"
+						variant="outline"
 						size="xs"
-						className="-mr-2 ml-auto"
+						className="-mr-1.5 ml-auto"
 						disabled={triggering || repository.syncStatus === "syncing"}
 						onClick={() => void handleSync()}
 					>

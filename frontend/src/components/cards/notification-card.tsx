@@ -13,9 +13,8 @@ import { API_BASE } from "@/lib/api";
 import {
 	getNotificationResourceEvents,
 	getNotificationTypeIconPath,
-	normalizeNotificationSubscription,
 	notificationResources,
-	updateNotification,
+	setNotificationEnabled,
 	type Notification,
 	type NotificationResource,
 	type NotificationStatus,
@@ -129,18 +128,7 @@ function EnabledSwitch({ notification }: { notification: Notification }) {
 	const handleChange = async (checked: boolean) => {
 		setPending(checked);
 		try {
-			await updateNotification(notification.id, {
-				enabled: checked,
-				...normalizeNotificationSubscription({
-					events: notification.events,
-					allApplications: notification.allApplications,
-					applicationIds: notification.applicationIds,
-					allAgents: notification.allAgents,
-					agentIds: notification.agentIds,
-					allRepositories: notification.allRepositories,
-					repositoryIds: notification.repositoryIds,
-				}),
-			});
+			await setNotificationEnabled(notification.id, checked);
 			await mutate(`${API_BASE}/notifications`);
 			toast.add({ type: "success", title: m.notificationUpdated() });
 		} catch (err) {

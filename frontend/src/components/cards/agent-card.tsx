@@ -6,7 +6,7 @@ import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatus, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
-import { fleetCategoryConfig, getFleetCategory } from "@/lib/fleet";
+import { fleetCategories, fleetCategoryConfig, getFleetCategory } from "@/lib/fleet";
 import { m } from "@/lib/paraglide/messages";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { ResourceCard } from "./resource-card";
@@ -81,10 +81,20 @@ function ApplicationList({
 		);
 	}
 
+	// Apps that need attention first, as only the first few are listed.
+	const listed = apps
+		.map((app) => ({ app, category: getFleetCategory(app) }))
+		.sort(
+			(a, b) =>
+				fleetCategories.indexOf(a.category) - fleetCategories.indexOf(b.category) ||
+				a.app.name.localeCompare(b.app.name),
+		)
+		.slice(0, maxListedApplications);
+
 	return (
 		<ul className="-mx-2">
-			{apps.slice(0, maxListedApplications).map((app) => {
-				const category = fleetCategoryConfig[getFleetCategory(app)];
+			{listed.map(({ app, category: fleetCategory }) => {
+				const category = fleetCategoryConfig[fleetCategory];
 				return (
 					<li key={app.id}>
 						<Link

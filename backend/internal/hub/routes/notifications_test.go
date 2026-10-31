@@ -949,6 +949,82 @@ func TestUpdateNotificationHandler_RejectsInvalidEvents(t *testing.T) {
 	}
 }
 
+func setNotificationEnabled(t *testing.T, id string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	reqBody, _ := json.Marshal(body)
+	router := gin.New()
+	router.PUT("/api/v1/notifications/:id/enabled", SetNotificationEnabledHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/notifications/"+id+"/enabled", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestSetNotificationEnabledHandler_TogglesOnlyEnabled(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	repo := seedNotificationRepository(t)
+	agent := seedNotificationAgent(t)
+	app := seedNotificationApplication(t, repo.Id, agent.Id, "App A")
+	notification := createNotificationRecord(t, []string{app.Id})
+
+	for _, enabled := range []bool{false, true} {
+		w := setNotificationEnabled(t, notification.Id, map[string]any{"enabled": enabled})
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+
+		var body notificationResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if body.Enabled != enabled {
+			t.Fatalf("expected enabled=%v, got %v", enabled, body.Enabled)
+		}
+		if !slices.Equal(body.ApplicationIds, []string{app.Id}) {
+			t.Fatalf("expected applicationIds [%s] to be kept, got %v", app.Id, body.ApplicationIds)
+		}
+		if !slices.Equal(body.Events, models.NotificationEvents) {
+			t.Fatalf("expected events to be kept, got %v", body.Events)
+		}
+	}
+
+	stored, err := gorm.G[models.Notification](db.DB).Where("id = ?", notification.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load stored notification: %v", err)
+	}
+	if !stored.Enabled {
+		t.Fatal("expected stored notification to be enabled")
+	}
+	if stored.Config.String() != validDiscordConfig {
+		t.Fatalf("expected stored config to remain unchanged, got %q", stored.Config.String())
+	}
+}
+
+func TestSetNotificationEnabledHandler_NotFound(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	w := setNotificationEnabled(t, "missing", map[string]any{"enabled": true})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetNotificationEnabledHandler_InvalidRequest(t *testing.T) {
+	setupTestDBWithNotifications(t)
+
+	notification := createNotificationRecord(t, nil)
+	for _, body := range []any{map[string]any{}, map[string]any{"enabled": "yes"}} {
+		w := setNotificationEnabled(t, notification.Id, body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %v, got %d: %s", body, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestDeleteNotificationHandler_Success(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
