@@ -2,13 +2,13 @@ import { useState, type ReactNode } from "react";
 import { mutate } from "swr";
 import { AppWindow, Check, GitBranch, Minus, Server, WebhookIcon } from "lucide-react";
 import { getNotificationStatusLabel } from "@/components/badges/notification-status-badge";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import {
 	notificationEventLabels,
 	resourceConfigs,
 } from "@/components/dialogs/notification-subscription-fields";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { API_BASE } from "@/lib/api";
 import {
 	getNotificationResourceEvents,
@@ -70,18 +70,14 @@ function SubscriptionRow({
 			>
 				{scope}
 			</span>
-			<Tooltip>
-				<TooltipTrigger
-					render={
-						<span
-							tabIndex={0}
-							className="flex shrink-0 cursor-help items-center gap-1 rounded-sm p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							aria-label={m.cardSubscribedEvents({
-								count: subscribed.length,
-								total: events.length,
-							})}
-						/>
-					}
+			<InfoTooltip>
+				<InfoTooltipTrigger
+					render={<span />}
+					className="flex shrink-0 cursor-help items-center gap-1 rounded-sm p-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					aria-label={m.cardSubscribedEvents({
+						count: subscribed.length,
+						total: events.length,
+					})}
 				>
 					<span className="mr-1 text-xs text-muted-foreground tabular-nums">
 						{subscribed.length}/{events.length}
@@ -95,8 +91,8 @@ function SubscriptionRow({
 							)}
 						/>
 					))}
-				</TooltipTrigger>
-				<TooltipContent>
+				</InfoTooltipTrigger>
+				<InfoTooltipContent>
 					<ul className="space-y-0.5">
 						{events.map((event) => (
 							<li
@@ -115,8 +111,8 @@ function SubscriptionRow({
 							</li>
 						))}
 					</ul>
-				</TooltipContent>
-			</Tooltip>
+				</InfoTooltipContent>
+			</InfoTooltip>
 		</li>
 	);
 }

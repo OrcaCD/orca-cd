@@ -97,7 +97,6 @@
 	"cardScopeRepositories": "Repositories: {count}",
 	"cardSubscribedEvents": "{count} of {total} events",
 	"cardLastDelivery": "Last delivery",
-	"dockerVersion": "Docker version",
 	"deleteAgentCardTitle": "Delete agent card?",
 	"deleteAgentCardDescription": "This will permanently delete \"{name}\". This action cannot be undone.",
 	"deleteRepositoryTitle": "Delete repository?",

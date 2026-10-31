@@ -5,15 +5,10 @@ import {
 	getSyncStatusLabel,
 } from "@/components/badges/application-status-badge";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { RelativeTime } from "@/components/relative-time";
 import { HealthStatus, SyncStatus, type ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import {
-	CardError,
-	RelativeTime,
-	ResourceCard,
-	ResourceFlow,
-	type FlowState,
-} from "./resource-card";
+import { CardError, ResourceCard, ResourceFlow, type FlowState } from "./resource-card";
 
 const syncState: Record<SyncStatus, FlowState> = {
 	[SyncStatus.Synced]: "ok",
@@ -32,18 +27,23 @@ const healthState: Record<HealthStatus, FlowState> = {
 
 export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 	return (
-		<Link
-			to="/applications/$id"
-			params={{ id: app.id }}
-			className="group block h-full rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
+		// The link overlays the card instead of wrapping it, as interactive content like the timestamp
+		// tooltip must not be nested inside a link.
+		<div className="group/application relative h-full">
+			<Link
+				to="/applications/$id"
+				params={{ id: app.id }}
+				aria-label={app.name}
+				className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			/>
 			<ResourceCard
+				className="group-hover/application:ring-primary/50"
 				icon={<StaticLucideIcon name={app.icon} className="size-5 text-primary" />}
 				title={app.name}
 				subtitle={`${app.repositoryName} @ ${app.branch}`}
 				monoSubtitle
 				action={
-					<ArrowUpRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
+					<ArrowUpRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover/application:translate-x-0.5 group-hover/application:-translate-y-0.5 group-hover/application:text-primary" />
 				}
 				footer={
 					<>
@@ -51,7 +51,7 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 							<Server className="size-3.5 shrink-0" />
 							<span className="truncate">{app.agentName}</span>
 						</span>
-						<RelativeTime value={app.lastSyncedAt} />
+						<RelativeTime value={app.lastSyncedAt} className="relative" />
 					</>
 				}
 			>
@@ -78,6 +78,6 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 				/>
 				{app.lastSyncError ? <CardError message={app.lastSyncError} className="mt-3" /> : null}
 			</ResourceCard>
-		</Link>
+		</div>
 	);
 }

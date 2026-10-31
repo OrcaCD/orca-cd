@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { m } from "@/lib/paraglide/messages";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export type FlowState = "ok" | "progress" | "warning" | "error" | "unknown" | "info" | "off";
 
@@ -108,17 +107,6 @@ export function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowSt
 				))}
 			</dl>
 		</div>
-	);
-}
-
-export function RelativeTime({ value, className }: { value?: string | null; className?: string }) {
-	return (
-		<span
-			className={cn("shrink-0 tabular-nums", className)}
-			title={value ? new Date(value).toLocaleString() : undefined}
-		>
-			{value ? formatRelativeTime(value) : m.never()}
-		</span>
 	);
 }
 

@@ -2,13 +2,15 @@ import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { Container } from "lucide-react";
 import { AgentVersionBadge } from "@/components/badges/agent-version-badge";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
+import { RelativeTime } from "@/components/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatus, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
 import { fleetCategories, fleetCategoryConfig, getFleetCategory } from "@/lib/fleet";
 import { m } from "@/lib/paraglide/messages";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ResourceCard } from "./resource-card";
 
 const maxListedApplications = 3;
@@ -21,9 +23,11 @@ function ConnectionStatus({ agent }: { agent: Agent }) {
 				<span className="text-red-600 dark:text-red-400">{m.statusOffline()}</span>
 				<span className="truncate">
 					·{" "}
-					{agent.lastSeen
-						? m.applicationsAgentsLastSeen({ time: formatRelativeTime(agent.lastSeen) })
-						: m.applicationsAgentsNeverSeen()}
+					<RelativeTime
+						value={agent.lastSeen}
+						format={(time) => m.applicationsAgentsLastSeen({ time })}
+						fallback={m.applicationsAgentsNeverSeen()}
+					/>
 				</span>
 			</span>
 		);
@@ -32,10 +36,7 @@ function ConnectionStatus({ agent }: { agent: Agent }) {
 	// An agent in the error state is connected to the hub, but cannot reach the Docker daemon.
 	const dockerUnreachable = agent.status === AgentStatus.Error;
 	return (
-		<span
-			className="flex items-center gap-1.5"
-			title={dockerUnreachable ? m.agentStatusErrorDescription() : undefined}
-		>
+		<span className="flex items-center gap-1.5">
 			<span className="relative flex size-2 shrink-0">
 				{dockerUnreachable ? null : (
 					<span className="absolute inline-flex size-full rounded-full bg-emerald-500 opacity-60 motion-safe:animate-ping" />
@@ -49,9 +50,15 @@ function ConnectionStatus({ agent }: { agent: Agent }) {
 			</span>
 			<span className="text-emerald-600 dark:text-emerald-400">{m.statusOnline()}</span>
 			{dockerUnreachable ? (
-				<span className="truncate text-amber-600 dark:text-amber-400">
-					· {m.applicationsAgentsDockerUnreachable()}
-				</span>
+				<InfoTooltip>
+					<InfoTooltipTrigger
+						render={<span />}
+						className="cursor-help truncate text-amber-600 dark:text-amber-400"
+					>
+						· {m.applicationsAgentsDockerUnreachable()}
+					</InfoTooltipTrigger>
+					<InfoTooltipContent>{m.agentStatusErrorDescription()}</InfoTooltipContent>
+				</InfoTooltip>
 			) : null}
 		</span>
 	);
@@ -144,7 +151,7 @@ export function AgentCard({
 			action={action}
 			footer={
 				<>
-					<span className="flex min-w-0 items-center gap-1.5" title={m.dockerVersion()}>
+					<span className="flex min-w-0 items-center gap-1.5">
 						<Container className="size-3.5 shrink-0" />
 						<span className="truncate">
 							Docker{" "}

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { AppWindow, CircleCheck, CircleDashed, CircleX, RefreshCw } from "lucide-react";
+import { RelativeTime } from "@/components/relative-time";
 import { getRepositorySyncStatusLabel } from "@/components/badges/repository-status-badge";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import {
 	type RepositorySyncStatus,
 } from "@/lib/repositories";
 import { cn, formatInterval } from "@/lib/utils";
-import { RelativeTime, ResourceCard } from "./resource-card";
+import { ResourceCard } from "./resource-card";
 
 const maxListedApplications = 2;
 

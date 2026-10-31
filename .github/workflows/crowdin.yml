@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: crowdin
+  cancel-in-progress: false
+
 jobs:
   synchronize-with-crowdin:
     runs-on: ubuntu-latest

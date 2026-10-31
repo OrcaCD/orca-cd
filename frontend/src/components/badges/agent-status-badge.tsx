@@ -1,6 +1,6 @@
 import { AgentStatus } from "@/lib/agents";
 import { Badge } from "../ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { m } from "@/lib/paraglide/messages";
 
 export function AgentStatusBadge({ status }: { status: AgentStatus }) {
@@ -16,15 +16,15 @@ export function AgentStatusBadge({ status }: { status: AgentStatus }) {
 	return (
 		<div className="flex items-center gap-2">
 			{isError ? (
-				<Tooltip>
-					<TooltipTrigger
+				<InfoTooltip>
+					<InfoTooltipTrigger
 						render={<Badge tabIndex={0} variant={badgeVariant} className="cursor-help" />}
 					>
 						{statusDot}
 						{statusLabel}
-					</TooltipTrigger>
-					<TooltipContent>{m.agentStatusErrorDescription()}</TooltipContent>
-				</Tooltip>
+					</InfoTooltipTrigger>
+					<InfoTooltipContent>{m.agentStatusErrorDescription()}</InfoTooltipContent>
+				</InfoTooltip>
 			) : (
 				<Badge variant={badgeVariant}>
 					{statusDot}
