@@ -37,6 +37,8 @@ const (
 	NotificationEventSyncFailed           NotificationEvent = "application.sync.failed"
 	NotificationEventHealthUnhealthy      NotificationEvent = "application.health.unhealthy"
 	NotificationEventHealthRecovered      NotificationEvent = "application.health.recovered"
+	NotificationEventRollbackSucceeded    NotificationEvent = "application.rollback.succeeded"
+	NotificationEventRollbackFailed       NotificationEvent = "application.rollback.failed"
 
 	NotificationEventAgentOffline NotificationEvent = "agent.offline"
 	NotificationEventAgentOnline  NotificationEvent = "agent.online"
@@ -54,6 +56,8 @@ var NotificationEvents = []NotificationEvent{
 	NotificationEventSyncFailed,
 	NotificationEventHealthUnhealthy,
 	NotificationEventHealthRecovered,
+	NotificationEventRollbackSucceeded,
+	NotificationEventRollbackFailed,
 	NotificationEventAgentOffline,
 	NotificationEventAgentOnline,
 	NotificationEventRepositorySyncFailed,

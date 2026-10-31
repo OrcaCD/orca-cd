@@ -47,6 +47,11 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && job.Commit == job.Application.Commit {
 		return
 	}
+	if skipAutoSyncAfterRollback(job) {
+		log.Info().Str("applicationId", job.Application.Id).Str("commit", job.Commit).
+			Msg("skipping automatic sync of rolled back application")
+		return
+	}
 
 	requestID := uuid.NewString()
 	if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
@@ -62,7 +67,9 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 
-	if content == job.Application.ComposeFile.String() {
+	// A rolled back application runs an earlier compose file, so a new commit
+	// is deployed even when it doesn't change the compose file.
+	if content == job.Application.ComposeFile.String() && job.Application.RolledBackAt == nil {
 		// Compose file unchanged: record the new commit and mark synced without redeploying.
 		now := time.Now()
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
@@ -118,6 +125,17 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to trigger application deploy")
 		failSyncJob(job.Application, log)
 	}
+}
+
+// skipAutoSyncAfterRollback reports whether an automatic sync must not deploy
+// a rolled back application: while auto-sync is paused not at all, otherwise
+// not the commit it was rolled back from, which would fail again.
+func skipAutoSyncAfterRollback(job syncJob) bool {
+	app := job.Application
+	if app.RolledBackAt == nil || !job.Origin.Source.IsAutomatic() {
+		return false
+	}
+	return app.AutoSyncPaused || job.Commit == app.Commit
 }
 
 func syncEventParams(job syncJob, requestID *string) applicationevents.Params {

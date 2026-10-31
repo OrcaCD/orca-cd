@@ -526,13 +526,27 @@ func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
 }
 
 func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, log *zerolog.Logger) {
-	now := time.Now()
-	errorMessage := "agent disconnected before the deployment result was received"
-	_, err := gorm.G[models.ApplicationEvent](db.DB).
+	// A rollback is not retried, so its failure is announced like any other.
+	rollbacks, err := gorm.G[models.ApplicationEvent](db.DB).
+		Select("id", "application_id").
 		Where(
 			"status = ? AND type = ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
 			models.ApplicationEventRunning,
-			models.ApplicationEventDeployment,
+			models.ApplicationEventRollback,
+			agentID,
+		).
+		Find(ctx)
+	if err != nil {
+		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to load running rollbacks after disconnect")
+	}
+
+	now := time.Now()
+	errorMessage := "agent disconnected before the deployment result was received"
+	_, err = gorm.G[models.ApplicationEvent](db.DB).
+		Where(
+			"status = ? AND type IN ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
+			models.ApplicationEventRunning,
+			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventRollback},
 			agentID,
 		).
 		Select("Status", "ErrorMessage", "CompletedAt").
@@ -543,6 +557,16 @@ func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, lo
 		})
 	if err != nil {
 		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to complete running deployment events after disconnect")
+		return
+	}
+
+	for i := range rollbacks {
+		app, err := gorm.G[models.Application](db.DB).Select("id", "name").Where("id = ?", rollbacks[i].ApplicationId).First(ctx)
+		if err != nil {
+			log.Error().Err(err).Str("applicationId", rollbacks[i].ApplicationId).Msg("Failed to load application for rollback notification")
+			continue
+		}
+		go notifications.SendForApplication(app.Id, models.NotificationEventRollbackFailed, "Error: rollback failed for "+app.Name.String()+": "+errorMessage, log)
 	}
 }
 

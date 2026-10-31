@@ -236,6 +236,19 @@ func toDeployedImages(images []*messages.ServiceImage) []models.DeployedImage {
 	return deployed
 }
 
+// ToServiceImages converts deployed images into the pins of a deploy request.
+func ToServiceImages(images []models.DeployedImage) []*messages.ServiceImage {
+	pins := make([]*messages.ServiceImage, 0, len(images))
+	for _, image := range images {
+		pins = append(pins, &messages.ServiceImage{
+			Service:   image.Service,
+			ImageId:   image.ImageId,
+			PinnedRef: image.PinnedRef,
+		})
+	}
+	return pins
+}
+
 func publishUpdate(applicationID string) {
 	sse.PublishUpdate(sse.TopicApplications, sse.TopicApplicationEvents(applicationID))
 }
