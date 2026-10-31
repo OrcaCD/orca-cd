@@ -1,21 +1,17 @@
-import { RelativeTime } from "@/components/relative-time";
 import type { ApplicationListItem } from "@/lib/applications";
 import type { Agent } from "@/lib/agents";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { ArrowRight, GitBranch, GitCommit, Search, Server } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApplicationCard } from "@/components/cards/application-card";
 import { useFetch } from "@/lib/api";
-import { Separator } from "@/components/ui/separator";
 import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
-import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
 import {
 	fleetCategories,
@@ -189,63 +185,7 @@ function ApplicationsPage() {
 						) : null}
 						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 							{filteredApps.map((app) => (
-								<div key={app.id} className="group/application relative">
-									<Link
-										to="/applications/$id"
-										params={{ id: app.id }}
-										aria-label={app.name}
-										className="absolute inset-0 rounded-xl"
-									/>
-									<Card className="h-full border border-border group-hover/application:border-primary transition-colors">
-										<CardHeader>
-											<CardTitle>
-												<div className="flex items-center gap-3">
-													<div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-														<StaticLucideIcon name={app.icon} className="h-5 w-5 text-primary" />
-													</div>
-													<div>
-														<h3 className="font-medium group-hover:text-primary transition-colors">
-															{app.name}
-														</h3>
-													</div>
-												</div>
-											</CardTitle>
-											<CardAction>
-												<ArrowRight className="h-5 w-5" />
-											</CardAction>
-										</CardHeader>
-										<CardContent>
-											<div className="flex gap-2">
-												<ApplicationStatusBadge status={app.syncStatus} type="sync" />
-												<ApplicationStatusBadge status={app.healthStatus} type="health" />
-											</div>
-
-											<Separator className="my-4" />
-
-											<div className="space-y-2">
-												<div className="flex items-center gap-2 text-sm text-muted-foreground">
-													<Server className="h-4 w-4" />
-													<span className="truncate">{app.agentName}</span>
-												</div>
-												<div className="flex items-center gap-2 text-sm text-muted-foreground">
-													<GitBranch className="h-4 w-4" />
-													<span className="truncate">
-														{app.repositoryName} @ {app.branch}
-													</span>
-												</div>
-												<div className="flex items-center justify-between text-sm">
-													<div className="flex items-center gap-2 text-muted-foreground">
-														<GitCommit className="h-4 w-4" />
-														<span>{app.commit.slice(0, 7)}</span>
-													</div>
-													<span className="relative text-muted-foreground">
-														<RelativeTime value={app.lastSyncedAt} />
-													</span>
-												</div>
-											</div>
-										</CardContent>
-									</Card>
-								</div>
+								<ApplicationCard key={app.id} app={app} />
 							))}
 						</div>
 					</>

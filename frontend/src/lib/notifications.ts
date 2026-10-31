@@ -106,6 +106,10 @@ export function updateNotification(
 	return fetcher<Notification>(`/notifications/${id}`, "PUT", data);
 }
 
+export function setNotificationEnabled(id: string, enabled: boolean): Promise<Notification> {
+	return fetcher<Notification>(`/notifications/${id}/enabled`, "PUT", { enabled });
+}
+
 export function deleteNotification(id: string): Promise<void> {
 	return fetcher(`/notifications/${id}`, "DELETE");
 }

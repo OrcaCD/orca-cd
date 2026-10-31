@@ -1,23 +1,17 @@
-import { RelativeTime } from "@/components/relative-time";
 import { columns } from "@/components/tables/repositories/columns";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
 import CreateRepositoryDialog from "@/components/dialogs/create-repository";
-import {
-	deleteRepository,
-	syncRepository,
-	getGitProviderIconClass,
-	getGitProviderIconPath,
-	type Repository,
-} from "@/lib/repositories";
+import { deleteRepository, syncRepository, type Repository } from "@/lib/repositories";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
+import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { useMemo, useState } from "react";
-import { AppWindow, EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
+import { EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RepositoryCard } from "@/components/cards/repository-card";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -29,9 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
-import { toSearchableText } from "@/lib/utils";
-import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
-import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
+import { groupBy, toSearchableText } from "@/lib/utils";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 
@@ -48,6 +40,11 @@ export const Route = createFileRoute("/_authenticated/repositories/")({
 
 function RepositoriesPage() {
 	const { data, isLoading } = useFetch<Repository[]>("/repositories");
+	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
+	const applicationsByRepository = useMemo(
+		() => (applications ? groupBy(applications, (app) => app.repositoryId) : undefined),
+		[applications],
+	);
 
 	const [searchQuery, setSearchQuery] = useState("");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
@@ -132,100 +129,60 @@ function RepositoriesPage() {
 						) : null}
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredRepositories.map((repository) => (
-								<Card
+								<RepositoryCard
 									key={repository.id}
-									className="h-full border duration-300 hover:border-primary"
-								>
-									<CardHeader>
-										<CardAction>
-											<DropdownMenu>
-												<DropdownMenuTrigger
-													render={
-														<Button variant="ghost" size="icon" className="h-8 w-8">
-															<EllipsisVertical className="h-4 w-4" />
-															<span className="sr-only">{m.cardActions()}</span>
-														</Button>
-													}
-												></DropdownMenuTrigger>
-												<DropdownMenuContent align="end" className="w-fit" keepMounted>
-													<DropdownMenuGroup>
-														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-														<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
-															<RefreshCw className="h-4 w-4" />
-															{m.sync()}
-														</DropdownMenuItem>
-														<DropdownMenuSeparator />
-														<DropdownMenuItem
-															render={
-																<Link
-																	to="/repositories/$id/settings/auth"
-																	params={{ id: repository.id }}
-																>
-																	<Settings className="h-4 w-4" />
-																	{m.settings()}
-																</Link>
-															}
-														/>
-														<DropdownMenuSeparator />
-														<ConfirmationDialog
-															onConfirm={() => handleDeleteRepo(repository)}
-															title={m.deleteRepositoryTitle()}
-															description={m.deleteRepositoryDescription({ name: repository.name })}
-															triggerText={
-																<>
-																	<Trash2 className="h-4 w-4" />
-																	{m.delete()}
-																</>
-															}
-															asDropdownItem
-														/>
-													</DropdownMenuGroup>
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</CardAction>
-
-										<div className="flex min-w-0 items-center gap-3">
-											<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-												<img
-													src={getGitProviderIconPath(repository.provider)}
-													alt={m.gitProviderAlt()}
-													className={`h-7 w-7 ${getGitProviderIconClass(repository.provider)}`}
-												/>
-											</div>
-											<div className="min-w-0 space-y-1">
-												<CardTitle className="truncate" title={repository.name}>
-													{repository.name}
-												</CardTitle>
-											</div>
-										</div>
-									</CardHeader>
-
-									<hr className="mx-4" />
-
-									<CardContent className="space-y-3">
-										<RepositoryStatusBadge status={repository.syncStatus} />
-
-										<div className="grid grid-cols-1 gap-2 text-xs">
-											<div className="rounded-lg border bg-muted/50 p-2">
-												<p className="flex items-center gap-1 text-muted-foreground">
-													<AppWindow className="h-3 w-3" />
-													{m.appsCount()}
-												</p>
-												<p className="mt-1 font-medium">
-													{repository.appCount ?? m.notAvailableShort()}
-												</p>
-											</div>
-										</div>
-
-										<div className="flex justify-between">
-											<RepositorySyncTypeBadge syncType={repository.syncType} />
-
-											<span className="text-muted-foreground">
-												<RelativeTime value={repository.lastSyncedAt} />
-											</span>
-										</div>
-									</CardContent>
-								</Card>
+									repository={repository}
+									apps={
+										applicationsByRepository && (applicationsByRepository.get(repository.id) ?? [])
+									}
+									onSync={() => handleSyncRepo(repository)}
+									action={
+										<DropdownMenu>
+											<DropdownMenuTrigger
+												render={
+													<Button variant="ghost" size="icon" className="h-8 w-8">
+														<EllipsisVertical className="h-4 w-4" />
+														<span className="sr-only">{m.cardActions()}</span>
+													</Button>
+												}
+											></DropdownMenuTrigger>
+											<DropdownMenuContent align="end" className="w-fit" keepMounted>
+												<DropdownMenuGroup>
+													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+														<RefreshCw className="h-4 w-4" />
+														{m.sync()}
+													</DropdownMenuItem>
+													<DropdownMenuSeparator />
+													<DropdownMenuItem
+														render={
+															<Link
+																to="/repositories/$id/settings/auth"
+																params={{ id: repository.id }}
+															>
+																<Settings className="h-4 w-4" />
+																{m.settings()}
+															</Link>
+														}
+													/>
+													<DropdownMenuSeparator />
+													<ConfirmationDialog
+														onConfirm={() => handleDeleteRepo(repository)}
+														title={m.deleteRepositoryTitle()}
+														description={m.deleteRepositoryDescription({ name: repository.name })}
+														triggerText={
+															<>
+																<Trash2 className="h-4 w-4" />
+																{m.delete()}
+															</>
+														}
+														asDropdownItem
+													/>
+												</DropdownMenuGroup>
+											</DropdownMenuContent>
+										</DropdownMenu>
+									}
+								/>
 							))}
 						</div>
 					</>

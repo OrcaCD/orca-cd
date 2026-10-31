@@ -258,6 +258,9 @@ func TestListApplicationsHandler_ReturnsSummaryFields(t *testing.T) {
 	if item["name"] != "Summary App" {
 		t.Errorf("expected name %q, got %v", "Summary App", item["name"])
 	}
+	if item["repositoryId"] != repo.Id {
+		t.Errorf("expected repositoryId %q, got %v", repo.Id, item["repositoryId"])
+	}
 	if item["repositoryName"] != repo.Name {
 		t.Errorf("expected repositoryName %q, got %v", repo.Name, item["repositoryName"])
 	}
