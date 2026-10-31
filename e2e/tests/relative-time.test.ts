@@ -106,6 +106,8 @@ test("table dates are relative and missing or invalid dates stay readable", asyn
 				{ ...app, id: "never", name: "Never synced", lastSyncedAt: null },
 				{ ...app, id: "invalid", name: "Invalid date", lastSyncedAt: "invalid" },
 				{ ...app, id: "zero", name: "Numeric date", lastSyncedAt: "0" },
+				{ ...app, id: "one", name: "Ambiguous date", lastSyncedAt: "1" },
+				{ ...app, id: "impossible", name: "Impossible date", lastSyncedAt: "2026-02-30T12:00:00Z" },
 				{ ...app, id: "blank", name: "Blank date", lastSyncedAt: " " },
 				{ ...app, id: "offset", name: "Offset date", lastSyncedAt: "2026-10-25T14:34:56+02:00" },
 			],
@@ -118,6 +120,8 @@ test("table dates are relative and missing or invalid dates stay readable", asyn
 	await expect(page.getByRole("row").filter({ hasText: "Never synced" })).toContainText("Never");
 	await expect(page.getByRole("row").filter({ hasText: "Invalid date" })).toContainText("Never");
 	await expect(page.getByRole("row").filter({ hasText: "Numeric date" })).toContainText("Never");
+	await expect(page.getByRole("row").filter({ hasText: "Ambiguous date" })).toContainText("Never");
+	await expect(page.getByRole("row").filter({ hasText: "Impossible date" })).toContainText("Never");
 	await expect(page.getByRole("row").filter({ hasText: "Blank date" })).toContainText("Never");
 	await expect(
 		page.getByRole("row").filter({ hasText: "Offset date" }).locator("time"),
@@ -136,6 +140,83 @@ test("relative and exact dates follow the selected language", async ({ page }) =
 	await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
 		await exactDate(page, "de"),
 	);
+});
+
+test.describe("precise event timestamps", () => {
+	const dates = [timestamp, "2026-10-25T12:36:56Z"];
+	const events = dates.map((createdAt, index) => ({
+		id: `event-${index}`,
+		createdAt,
+		completedAt: createdAt,
+		type: "deployment",
+		status: "succeeded",
+		source: "manual",
+		actorName: null,
+		commitHash: app.commit,
+		commitMessage: "Test deployment",
+		errorMessage: null,
+	}));
+
+	test.beforeEach(async ({ page }) => {
+		await page.clock.setFixedTime(now);
+		await page.route(`**/api/v1/applications/${app.id}`, (route) => route.fulfill({ json: app }));
+		await page.route(`**/api/v1/applications/${app.id}/events?*`, (route) =>
+			route.fulfill({
+				json: { items: events, hasMore: false },
+			}),
+		);
+	});
+
+	test("history tables show full dates and distinguish events on the same day", async ({
+		page,
+	}) => {
+		await page.addInitScript(() => localStorage.setItem("orca-history-layout", "table"));
+		await page.goto(`/applications/${app.id}/history`);
+		const expected = await page.evaluate(
+			(dates) => dates.map((date) => new Date(date).toLocaleString("en")),
+			dates,
+		);
+		await expect(page.locator("tbody time")).toHaveText(expected);
+	});
+
+	test("grouped history shows exact times with full dates on hover", async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem("orca-history-layout", "timeline"));
+		await page.goto(`/applications/${app.id}/history`);
+		const expected = await page.evaluate((dates) => {
+			const formatter = new Intl.DateTimeFormat("en", { timeStyle: "short" });
+			return dates.map((date) => formatter.format(new Date(date)));
+		}, dates);
+		const times = page.locator("ol time");
+		await expect(times).toHaveText(expected);
+		await times.first().hover();
+		await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(await exactDate(page));
+	});
+
+	test("audit logs show full dates without requiring hover", async ({ page }) => {
+		await page.route("**/api/v1/admin/audit-logs?*", (route) =>
+			route.fulfill({
+				json: {
+					items: dates.map((createdAt, index) => ({
+						id: `audit-${index}`,
+						createdAt,
+						updatedAt: createdAt,
+						userId: "review-user",
+						user: { id: "review-user", name: "Review user", email: "review@example.com" },
+						eventType: "created",
+						targetType: "application",
+						targetId: app.id,
+					})),
+					hasMore: false,
+				},
+			}),
+		);
+		await page.goto("/admin/audit-log");
+		const expected = await page.evaluate(
+			(dates) => dates.map((date) => new Date(date).toLocaleString("en")),
+			dates,
+		);
+		await expect(page.locator("tbody time")).toHaveText(expected);
+	});
 });
 
 test.describe("touch dates in linked cards", () => {

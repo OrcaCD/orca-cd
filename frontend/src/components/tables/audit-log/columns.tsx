@@ -1,8 +1,8 @@
-import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { AuditLog } from "@/lib/audit-log";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
+import { getLocale } from "@/lib/paraglide/runtime";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth";
 import { EventTypeBadge } from "@/components/badges/audit-status-badge";
@@ -25,7 +25,11 @@ export const columns: ColumnDef<typeof dataTableFeatures, AuditLog>[] = [
 				return <span className="text-muted-foreground text-xs font-mono">{dateStr}</span>;
 			}
 
-			return <RelativeTime value={date} className="text-sm" />;
+			return (
+				<time dateTime={date.toISOString()} className="text-sm whitespace-nowrap">
+					{date.toLocaleString(getLocale())}
+				</time>
+			);
 		},
 	},
 	{

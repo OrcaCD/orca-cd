@@ -1,4 +1,4 @@
-import { RelativeTime } from "@/components/relative-time";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import {
 	ApplicationEventStatus,
@@ -77,6 +77,7 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 
 function HistoryEvent({ event }: { event: ApplicationEvent }) {
 	const createdAt = new Date(event.createdAt);
+	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
 	const duration = event.completedAt
 		? formatDuration(new Date(event.completedAt).getTime() - createdAt.getTime())
 		: null;
@@ -101,7 +102,16 @@ function HistoryEvent({ event }: { event: ApplicationEvent }) {
 					<ApplicationEventStatusBadge status={event.status} />
 				</div>
 				<span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-					<RelativeTime value={createdAt} />
+					<InfoTooltip>
+						<InfoTooltipTrigger
+							render={<time dateTime={createdAt.toISOString()} />}
+							nativeButton={false}
+							className="cursor-help"
+						>
+							{timeFormatter.format(createdAt)}
+						</InfoTooltipTrigger>
+						<InfoTooltipContent>{createdAt.toLocaleString(getLocale())}</InfoTooltipContent>
+					</InfoTooltip>
 					{duration ? ` · ${duration}` : null}
 				</span>
 			</div>

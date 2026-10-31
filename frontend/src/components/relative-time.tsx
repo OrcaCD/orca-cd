@@ -1,11 +1,12 @@
 import { type ReactNode } from "react";
+import { z } from "zod";
 import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { useNow } from "@/hooks/use-now";
 import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
-const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const timestampSchema = z.iso.datetime({ offset: true });
 
 export function RelativeTime({
 	value,
@@ -22,7 +23,7 @@ export function RelativeTime({
 	const date =
 		value instanceof Date
 			? value
-			: typeof value === "string" && timestampPattern.test(value)
+			: typeof value === "string" && timestampSchema.safeParse(value).success
 				? new Date(value)
 				: null;
 	if (!date || Number.isNaN(date.getTime())) {

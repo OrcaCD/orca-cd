@@ -1,7 +1,7 @@
-import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import { eventSourceLabel, eventTypeLabel, type ApplicationEvent } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
+import { getLocale } from "@/lib/paraglide/runtime";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -16,7 +16,11 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 			if (isNaN(date.getTime())) {
 				return <span className="text-muted-foreground">-</span>;
 			}
-			return <RelativeTime value={date} className="text-sm" />;
+			return (
+				<time dateTime={date.toISOString()} className="text-sm whitespace-nowrap">
+					{date.toLocaleString(getLocale())}
+				</time>
+			);
 		},
 	},
 	{
