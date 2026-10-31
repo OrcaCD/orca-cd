@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/toast";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { updateRepository, type CommitSigningKey, type Repository } from "@/lib/repositories";
@@ -117,14 +117,19 @@ function RepositorySigningPage() {
 											<Label htmlFor={field.name} className="cursor-pointer">
 												{m.requireSignedCommits()}
 											</Label>
-											<Tooltip>
-												<TooltipTrigger
-													render={
-														<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-													}
-												/>
-												<TooltipContent>{m.requireSignedCommitsTooltip()}</TooltipContent>
-											</Tooltip>
+											<InfoTooltip>
+												<InfoTooltipTrigger
+													type="button"
+													aria-label={m.details()}
+													className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+												>
+													<InfoIcon
+														aria-hidden="true"
+														className="size-3.5 text-muted-foreground cursor-help"
+													/>
+												</InfoTooltipTrigger>
+												<InfoTooltipContent>{m.requireSignedCommitsTooltip()}</InfoTooltipContent>
+											</InfoTooltip>
 										</div>
 										<Switch
 											id={field.name}

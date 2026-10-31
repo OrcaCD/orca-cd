@@ -15,6 +15,7 @@ import {
 	pullImage,
 	removeApplicationContainers,
 	removeVolumes,
+	runWithAgentVolumes,
 	startContainer,
 	stopContainer,
 } from "./helpers/docker.ts";
@@ -130,7 +131,7 @@ const SAFE_VOLUME = `${SAFE_PROJECT}_data`;
 const safeCompose = policyComposeFile(
 	`    volumes:
       - data:/named
-      - ./bound:/bound
+      - ./bound/data:/bound
 `,
 	`volumes:
   data:
@@ -259,7 +260,9 @@ async function fillApplicationWizard(page: Page, name: string) {
 
 /** The application's card in the list, not the overview's last deployment link. */
 function applicationListEntry(page: Page, name: string) {
-	return page.getByRole("link", { name }).filter({ has: page.locator("[data-slot='card']") });
+	return page
+		.locator("[data-slot='card']")
+		.filter({ has: page.getByRole("heading", { name, exact: true }) });
 }
 
 function repositoryCard(page: Page) {
@@ -693,7 +696,7 @@ test.describe("Runtime health", () => {
 
 			await gotoApp(page, "/applications");
 			await expect(
-				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
+				applicationListEntry(page, APP_NAME).getByText("Unhealthy", { exact: true }),
 			).toBeVisible();
 		} finally {
 			execInContainer(container.id, ["touch", HEALTHY_FILE]);
@@ -944,7 +947,7 @@ test.describe("Compose security policy", () => {
 		const bind = mounts.find((mount) => mount.Destination === "/bound");
 		expect(bind?.Type).toBe("bind");
 		// The agent translates the path inside its container to the one on the Docker host
-		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound$`));
+		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound/data$`));
 
 		await expect
 			.poll(() => execInContainer(container.id, ["cat", "/named/file"]), { timeout: 15_000 })
@@ -954,6 +957,35 @@ test.describe("Compose security policy", () => {
 		const events = await applicationEvents(page, id);
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({ type: "deployment", status: "succeeded" });
+	});
+
+	test("redeploys through a directory restricted to an application user", async ({ page }) => {
+		const id = policyAppIds.get(SAFE_NAME)!;
+		const parent = `/deployments/${SAFE_PROJECT}/bound`;
+		const restrict = runWithAgentVolumes([
+			"sh",
+			"-ec",
+			`chown 1234:1234 ${parent}; chmod 700 ${parent}`,
+		]);
+		expect(restrict.status, restrict.stderr).toBe(0);
+		try {
+			const before = (await applicationEvents(page, id)).length;
+			expect((await api(page, "POST", `/applications/${id}/deploy`)).status).toBe(202);
+			await expect
+				.poll(async () => (await applicationEvents(page, id)).length, { timeout: 60_000 })
+				.toBe(before + 1);
+			await expect
+				.poll(async () => (await applicationEvents(page, id))[0].status, { timeout: 60_000 })
+				.toBe("succeeded");
+			expect((await getApplication(page, id)).lastSyncError).toBeUndefined();
+		} finally {
+			const restore = runWithAgentVolumes([
+				"sh",
+				"-ec",
+				`chmod 755 ${parent}; chown 0:0 ${parent}`,
+			]);
+			expect(restore.status, restore.stderr).toBe(0);
+		}
 	});
 });
 

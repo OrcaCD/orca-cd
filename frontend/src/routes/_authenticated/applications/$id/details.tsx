@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import {
 	deployApplication,
 	HealthStatus,
@@ -41,7 +42,7 @@ import { useMemo, useState } from "react";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import CopyButton from "@/components/copy-btn";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
@@ -494,12 +495,9 @@ function ApplicationDetailsPage() {
 					loading={!data}
 				>
 					{data?.lastSyncedAt ? (
-						<Tooltip>
-							<TooltipTrigger render={<InfoValue className="w-fit max-w-full" />}>
-								{formatRelativeTime(data.lastSyncedAt)}
-							</TooltipTrigger>
-							<TooltipContent>{new Date(data.lastSyncedAt).toLocaleString()}</TooltipContent>
-						</Tooltip>
+						<InfoValue>
+							<RelativeTime value={data.lastSyncedAt} />
+						</InfoValue>
 					) : (
 						<InfoValue>{m.never()}</InfoValue>
 					)}
