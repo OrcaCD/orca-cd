@@ -1,10 +1,17 @@
+import { RotateCcw } from "lucide-react";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
+import { RollbackButton } from "@/components/applications/rollback-button";
+import { Badge } from "@/components/ui/badge";
 import {
 	ApplicationEventStatus,
+	ApplicationEventType,
+	canRollBackTo,
 	eventSourceLabel,
-	eventTypeLabel,
+	eventTitle,
+	isCurrentDeployment,
 	type ApplicationEvent,
 } from "@/lib/application-events";
+import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
 import { cn, formatDuration } from "@/lib/utils";
 
@@ -55,7 +62,15 @@ function groupByDay(events: ApplicationEvent[]) {
 	return groups;
 }
 
-export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
+export function HistoryTimeline({
+	events,
+	applicationId,
+	currentDeploymentId,
+}: {
+	events: ApplicationEvent[];
+	applicationId: string;
+	currentDeploymentId?: string | null;
+}) {
 	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
 
 	return (
@@ -67,7 +82,13 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 					</h2>
 					<ol>
 						{group.events.map((event) => (
-							<HistoryEvent key={event.id} event={event} timeFormatter={timeFormatter} />
+							<HistoryEvent
+								key={event.id}
+								event={event}
+								timeFormatter={timeFormatter}
+								applicationId={applicationId}
+								currentDeploymentId={currentDeploymentId}
+							/>
 						))}
 					</ol>
 				</section>
@@ -79,11 +100,16 @@ export function HistoryTimeline({ events }: { events: ApplicationEvent[] }) {
 function HistoryEvent({
 	event,
 	timeFormatter,
+	applicationId,
+	currentDeploymentId,
 }: {
 	event: ApplicationEvent;
 	timeFormatter: Intl.DateTimeFormat;
+	applicationId: string;
+	currentDeploymentId?: string | null;
 }) {
 	const createdAt = new Date(event.createdAt);
+	const isRollback = event.type === ApplicationEventType.Rollback;
 	const duration = event.completedAt
 		? formatDuration(new Date(event.completedAt).getTime() - createdAt.getTime())
 		: null;
@@ -98,22 +124,45 @@ function HistoryEvent({
 				<span
 					className={cn(
 						"block size-full rounded-full",
-						dotClasses[event.status] ?? "bg-muted-foreground/40",
+						isRollback && event.status === ApplicationEventStatus.Succeeded
+							? "bg-amber-500"
+							: (dotClasses[event.status] ?? "bg-muted-foreground/40"),
 					)}
 				/>
 			</span>
 			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-				<div className="flex items-center gap-2">
-					<span className="font-medium">{eventTypeLabel(event.type)}</span>
-					<ApplicationEventStatusBadge status={event.status} />
+				<div className="flex flex-wrap items-center gap-2">
+					<span className="flex items-center gap-1.5 font-medium">
+						{isRollback ? <RotateCcw className="size-3.5 text-muted-foreground" /> : null}
+						{eventTitle(event)}
+					</span>
+					<ApplicationEventStatusBadge
+						status={event.status}
+						type={event.type}
+						deploymentStatus={event.deploymentStatus}
+					/>
+					{isCurrentDeployment(event, currentDeploymentId) ? (
+						<Badge
+							variant="outline"
+							className="border-blue-500/40 text-blue-500"
+							title={m.historyCurrentDeploymentDescription()}
+						>
+							{m.historyCurrentDeployment()}
+						</Badge>
+					) : null}
 				</div>
-				<span
-					className="text-xs whitespace-nowrap text-muted-foreground tabular-nums"
-					title={createdAt.toLocaleString()}
-				>
-					{timeFormatter.format(createdAt)}
-					{duration ? ` · ${duration}` : null}
-				</span>
+				<div className="flex items-center gap-3">
+					<span
+						className="text-xs whitespace-nowrap text-muted-foreground tabular-nums"
+						title={createdAt.toLocaleString()}
+					>
+						{timeFormatter.format(createdAt)}
+						{duration ? ` · ${duration}` : null}
+					</span>
+					{canRollBackTo(event, currentDeploymentId) ? (
+						<RollbackButton applicationId={applicationId} event={event} />
+					) : null}
+				</div>
 			</div>
 			<p className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-muted-foreground">
 				<span>{eventSourceLabel(event.source)}</span>

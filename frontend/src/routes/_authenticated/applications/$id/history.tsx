@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import useSWRInfinite from "swr/infinite";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { HistoryLayoutToggle } from "@/components/applications/history-layout-toggle";
 import { HistoryTimeline } from "@/components/applications/history-timeline";
-import { columns } from "@/components/tables/application-events/columns";
+import { RolledBackBanner } from "@/components/applications/rolled-back-banner";
+import { getColumns } from "@/components/tables/application-events/columns";
 import { ApplicationEventsDataTable } from "@/components/tables/application-events/data-table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { API_BASE, fetcher } from "@/lib/api";
+import { API_BASE, fetcher, useFetch } from "@/lib/api";
 import type { ApplicationEventsPage } from "@/lib/application-events";
+import type { Application } from "@/lib/applications";
 import { useHistoryLayout } from "@/lib/history-layout-preference";
 import { m } from "@/lib/paraglide/messages";
 
@@ -47,6 +49,11 @@ function ApplicationHistoryPage() {
 	const [search, setSearch] = useState("");
 	const debouncedSearch = useDebouncedValue(search.trim());
 	const { historyLayout, setHistoryLayout } = useHistoryLayout();
+	const { data: application } = useFetch<Application>(`/applications/${id}`);
+	const columns = useMemo(
+		() => getColumns(id, application?.currentDeploymentId),
+		[id, application?.currentDeploymentId],
+	);
 	const { data, error, isLoading, isValidating, size, setSize } =
 		useSWRInfinite<ApplicationEventsPage>(
 			getKey(id, debouncedSearch),
@@ -61,6 +68,7 @@ function ApplicationHistoryPage() {
 	return (
 		<div className="flex flex-col gap-6">
 			<h1 className="text-2xl font-bold">{m.applicationHistory()}</h1>
+			{application ? <RolledBackBanner application={application} /> : null}
 			<div className="flex items-center justify-between gap-4">
 				<div className="relative w-md max-w-full">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -94,7 +102,11 @@ function ApplicationHistoryPage() {
 							emptyMessage={debouncedSearch ? m.noResults() : undefined}
 						/>
 					) : events.length > 0 ? (
-						<HistoryTimeline events={events} />
+						<HistoryTimeline
+							events={events}
+							applicationId={id}
+							currentDeploymentId={application?.currentDeploymentId}
+						/>
 					) : (
 						<div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
 							{debouncedSearch ? m.noResults() : m.applicationHistoryEmpty()}

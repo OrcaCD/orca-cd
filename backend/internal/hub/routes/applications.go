@@ -66,20 +66,21 @@ type updateApplicationRequest struct {
 }
 
 type applicationListResponse struct {
-	Id             string  `json:"id"`
-	Icon           string  `json:"icon"`
-	Name           string  `json:"name"`
-	HealthStatus   string  `json:"healthStatus"`
-	SyncStatus     string  `json:"syncStatus"`
-	Branch         string  `json:"branch"`
-	Commit         string  `json:"commit"`
-	LastSyncedAt   *string `json:"lastSyncedAt"`
-	Path           string  `json:"path"`
-	LastSyncError  *string `json:"lastSyncError,omitempty"`
-	AgentId        string  `json:"agentId"`
-	AgentName      string  `json:"agentName"`
-	RolledBackAt   *string `json:"rolledBackAt"`
-	RepositoryName string  `json:"repositoryName"`
+	Id               string  `json:"id"`
+	Icon             string  `json:"icon"`
+	Name             string  `json:"name"`
+	HealthStatus     string  `json:"healthStatus"`
+	SyncStatus       string  `json:"syncStatus"`
+	Branch           string  `json:"branch"`
+	Commit           string  `json:"commit"`
+	LastSyncedAt     *string `json:"lastSyncedAt"`
+	Path             string  `json:"path"`
+	LastSyncError    *string `json:"lastSyncError,omitempty"`
+	AgentId          string  `json:"agentId"`
+	AgentName        string  `json:"agentName"`
+	RolledBackAt     *string `json:"rolledBackAt"`
+	RolledBackCommit *string `json:"rolledBackCommit"`
+	RepositoryName   string  `json:"repositoryName"`
 }
 
 type applicationResponse struct {
@@ -552,20 +553,21 @@ func PullApplicationImagesHandler(c *gin.Context) {
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
-		Id:             app.Id,
-		Icon:           app.Icon,
-		Name:           app.Name.String(),
-		HealthStatus:   string(app.HealthStatus),
-		SyncStatus:     string(app.SyncStatus),
-		Branch:         app.Branch,
-		Commit:         app.Commit,
-		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
-		LastSyncError:  normalizeSyncError(app.LastSyncError),
-		Path:           app.Path,
-		RepositoryName: app.Repository.Name,
-		AgentId:        app.AgentId,
-		AgentName:      app.Agent.Name.String(),
-		RolledBackAt:   formatTimestamp(app.RolledBackAt),
+		Id:               app.Id,
+		Icon:             app.Icon,
+		Name:             app.Name.String(),
+		HealthStatus:     string(app.HealthStatus),
+		SyncStatus:       string(app.SyncStatus),
+		Branch:           app.Branch,
+		Commit:           app.Commit,
+		LastSyncedAt:     formatTimestamp(app.LastSyncedAt),
+		LastSyncError:    normalizeSyncError(app.LastSyncError),
+		Path:             app.Path,
+		RepositoryName:   app.Repository.Name,
+		AgentId:          app.AgentId,
+		AgentName:        app.Agent.Name.String(),
+		RolledBackAt:     formatTimestamp(app.RolledBackAt),
+		RolledBackCommit: app.RolledBackCommit,
 	}
 }
 
