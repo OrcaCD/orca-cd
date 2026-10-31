@@ -138,7 +138,7 @@ test.describe("Agent setup", () => {
 		expect(compose).toMatch(/image: ghcr\.io\/orcacd\/agent:\S+/);
 		expect(compose).toMatch(/cap_drop:\s+- ALL/);
 		expect(compose).not.toMatch(/^\s*cap_add:/m);
-		expect(compose).toMatch(/# cap_add:\s+#\s+- DAC_READ_SEARCH/);
+		expect(compose).not.toContain("DAC_READ_SEARCH");
 		authToken = compose.match(/AUTH_TOKEN: (\S+)/)?.[1] ?? "";
 		expect(authToken).not.toBe("");
 		await setup.getByRole("button", { name: "Close" }).click();

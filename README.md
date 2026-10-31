@@ -17,12 +17,6 @@ OrcaCD is a simple GitOps tool for Docker. It allows you to deploy your applicat
 
 You can get started with OrcaCD by following the guide in the [documentation](https://orcacd.dev).
 
-### Restricted deployment directories
-
-The agent checks deployment paths for symlinks before deploying. A container can create a symlink in a writable bind mount and use it as a mount source on a later deployment to access paths outside its application directory. If directory permissions prevent the agent from inspecting a path, the deployment is rejected.
-
-Prefer granting the agent search permission on the affected parent directories. If that is impractical, you can uncomment the `cap_add` block for `DAC_READ_SEARCH` in the agent's Compose configuration and recreate the agent container. This optional Linux capability bypasses file read and directory read/search permissions for **all files accessible to the agent**, not just the deployments directory. It does not bypass write permissions. It is disabled by default; symlink checks remain enabled.
-
 ## Contribute
 
 You're very welcome to contribute to OrcaCD! Please follow the [contribution guide](https://github.com/OrcaCD/orca-cd/blob/main/CONTRIBUTING.md) to get started. If you wish to contribute to the documentation head over to the [repository](https://github.com/OrcaCD/docs).
