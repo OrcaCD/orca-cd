@@ -78,6 +78,7 @@ type applicationListResponse struct {
 	LastSyncError  *string `json:"lastSyncError,omitempty"`
 	AgentId        string  `json:"agentId"`
 	AgentName      string  `json:"agentName"`
+	RepositoryId   string  `json:"repositoryId"`
 	RepositoryName string  `json:"repositoryName"`
 }
 
@@ -541,6 +542,7 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
 		LastSyncError:  normalizeSyncError(app.LastSyncError),
 		Path:           app.Path,
+		RepositoryId:   app.RepositoryId,
 		RepositoryName: app.Repository.Name,
 		AgentId:        app.AgentId,
 		AgentName:      app.Agent.Name.String(),

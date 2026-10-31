@@ -38,6 +38,7 @@ export interface ApplicationListItem {
 	icon: string;
 	syncStatus: SyncStatus;
 	healthStatus: HealthStatus;
+	repositoryId: string;
 	repositoryName: string;
 	agentId: string;
 	agentName: string;
