@@ -4,14 +4,14 @@ go 1.27.0
 
 require (
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/ProtonMail/go-crypto v1.4.1
+	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aegis-aead/go-libaegis v0.2.16
 	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
-	github.com/compose-spec/compose-go/v2 v2.16.1
+	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/docker/cli v29.9.2+incompatible
-	github.com/docker/compose/v5 v5.6.0
+	github.com/docker/compose/v5 v5.6.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -20,7 +20,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
-	github.com/nicholas-fedor/shoutrrr v0.22.0
+	github.com/nicholas-fedor/shoutrrr v0.22.1
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.58.0
