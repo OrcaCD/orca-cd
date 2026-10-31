@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import { columns } from "@/components/tables/repositories/columns";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
 import CreateRepositoryDialog from "@/components/dialogs/create-repository";
@@ -220,9 +221,7 @@ function RepositoriesPage() {
 											<RepositorySyncTypeBadge syncType={repository.syncType} />
 
 											<span className="text-muted-foreground">
-												{repository.lastSyncedAt
-													? new Date(repository.lastSyncedAt).toLocaleString()
-													: m.never()}
+												<RelativeTime value={repository.lastSyncedAt} />
 											</span>
 										</div>
 									</CardContent>

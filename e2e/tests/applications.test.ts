@@ -260,7 +260,9 @@ async function fillApplicationWizard(page: Page, name: string) {
 
 /** The application's card in the list, not the overview's last deployment link. */
 function applicationListEntry(page: Page, name: string) {
-	return page.getByRole("link", { name }).filter({ has: page.locator("[data-slot='card']") });
+	return page
+		.locator("[data-slot='card']")
+		.filter({ has: page.getByRole("heading", { name, exact: true }) });
 }
 
 function repositoryCard(page: Page) {
@@ -694,7 +696,7 @@ test.describe("Runtime health", () => {
 
 			await gotoApp(page, "/applications");
 			await expect(
-				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
+				applicationListEntry(page, APP_NAME).getByText("Unhealthy", { exact: true }),
 			).toBeVisible();
 		} finally {
 			execInContainer(container.id, ["touch", HEALTHY_FILE]);
