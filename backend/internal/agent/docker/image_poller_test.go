@@ -185,8 +185,14 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
+	origListImages := listServiceImages
+	t.Cleanup(func() { listServiceImages = origListImages })
+
 	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // images updated
+	}
+	listServiceImages = func(_ context.Context, _ *Client, appID string) ([]*messages.ServiceImage, error) {
+		return []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new-" + appID}}, nil
 	}
 
 	sender := &stubMessageSender{}
@@ -212,6 +218,9 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	}
 	if result.RequestId != "req-1" {
 		t.Errorf("expected request_id %q, got %q", "req-1", result.RequestId)
+	}
+	if len(result.Images) != 1 || result.Images[0].ImageId != "sha256:new-app-1" {
+		t.Errorf("expected the updated images in the result, got %v", result.Images)
 	}
 }
 

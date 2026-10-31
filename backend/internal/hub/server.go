@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -296,6 +297,10 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		log.Warn().Err(err).Msg("failed to recover interrupted application events")
 	} else if recovered > 0 {
 		log.Info().Int64("count", recovered).Msg("marked interrupted application events as failed")
+	}
+
+	if err := deployments.DiscardAllPending(ctx); err != nil {
+		log.Warn().Err(err).Msg("failed to discard interrupted deployments")
 	}
 }
 
