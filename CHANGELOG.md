@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/OrcaCD/orca-cd/compare/v0.5.0...v0.6.0) (2026-10-31)
+
+
+### Features
+
+* Accept more truthy values for boolean env vars ([#432](https://github.com/OrcaCD/orca-cd/issues/432)) ([206c9cd](https://github.com/OrcaCD/orca-cd/commit/206c9cd4b023b824b2b11d3079d61e26c5bdc525))
+* **health:** add application health page ([#427](https://github.com/OrcaCD/orca-cd/issues/427)) ([03dfe64](https://github.com/OrcaCD/orca-cd/commit/03dfe648e6aa6e489b34df5433e3f9b928585160))
+* **health:** add application health statistics endpoint ([#426](https://github.com/OrcaCD/orca-cd/issues/426)) ([b527d23](https://github.com/OrcaCD/orca-cd/commit/b527d2395cc0b3e16871a3fced7414e15d40e415))
+* **health:** record application health history ([#425](https://github.com/OrcaCD/orca-cd/issues/425)) ([a82d80e](https://github.com/OrcaCD/orca-cd/commit/a82d80e86029563d4b53219567acf34f112da1d6))
+* **health:** report per-service health and add degraded status ([#424](https://github.com/OrcaCD/orca-cd/issues/424)) ([c455e32](https://github.com/OrcaCD/orca-cd/commit/c455e3225060d0749b0b957d6fe0cdab66fa6cc3))
+* Improve demo, update sample data, fix readonly ([#429](https://github.com/OrcaCD/orca-cd/issues/429)) ([8213123](https://github.com/OrcaCD/orca-cd/commit/821312361b80c694374228023c83be4eaddce27a))
+
+
+### Bug Fixes
+
+* Further harden demo mode ([#431](https://github.com/OrcaCD/orca-cd/issues/431)) ([9123555](https://github.com/OrcaCD/orca-cd/commit/9123555e322441cd82c539578f7c1baba44fba8d))
+* Support Harbor v2 webhooks ([#433](https://github.com/OrcaCD/orca-cd/issues/433)) ([2723fac](https://github.com/OrcaCD/orca-cd/commit/2723facc8c66edcc1b40e8ea492269d9000f4ff1))
+
 ## [0.5.0](https://github.com/OrcaCD/orca-cd/compare/v0.4.0...v0.5.0) (2026-10-28)
 
 
