@@ -1,5 +1,5 @@
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import {
 	formatHealthDuration,
 	healthLegend,
@@ -44,10 +44,18 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 				</CardAction>
 			</CardHeader>
 			<CardContent className="space-y-3">
-				<div className="flex h-12 gap-0.5 sm:gap-1" role="img" aria-label={m.healthAvailability()}>
+				<div
+					className="flex h-12 gap-0.5 sm:gap-1"
+					role="group"
+					aria-label={m.healthAvailability()}
+				>
 					{stats.buckets.map((bucket) => (
-						<Tooltip key={bucket.start}>
-							<TooltipTrigger
+						<InfoTooltip key={bucket.start}>
+							<InfoTooltipTrigger
+								aria-label={tooltipFormatter.formatRange(
+									new Date(bucket.start),
+									new Date(bucket.end),
+								)}
 								render={
 									<div
 										className={cn(
@@ -59,7 +67,7 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 									/>
 								}
 							/>
-							<TooltipContent className="flex-col items-start gap-1">
+							<InfoTooltipContent className="flex-col items-start gap-1">
 								<p className="font-medium">
 									{tooltipFormatter.formatRange(new Date(bucket.start), new Date(bucket.end))}
 								</p>
@@ -80,8 +88,8 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 											{formatHealthDuration(entry.seconds(bucket))}
 										</p>
 									))}
-							</TooltipContent>
-						</Tooltip>
+							</InfoTooltipContent>
+						</InfoTooltip>
 					))}
 				</div>
 				<div className="flex justify-between text-xs text-muted-foreground">

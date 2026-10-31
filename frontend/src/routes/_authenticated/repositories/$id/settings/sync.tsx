@@ -15,7 +15,7 @@ import { SyncTypeRadioGroup, WebhookSetupDetails } from "@/components/dialogs/re
 import SuccessAlert from "@/components/alerts/success-alert";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { m } from "@/lib/paraglide/messages";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { useFetch } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -349,14 +349,21 @@ function RepositorySyncPage() {
 														<Label htmlFor={field.name} className="cursor-pointer">
 															{m.githubActionsOIDCEnabled()}
 														</Label>
-														<Tooltip>
-															<TooltipTrigger
-																render={
-																	<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-																}
-															/>
-															<TooltipContent>{m.githubActionsOIDCEnabledTooltip()}</TooltipContent>
-														</Tooltip>
+														<InfoTooltip>
+															<InfoTooltipTrigger
+																type="button"
+																aria-label={m.details()}
+																className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+															>
+																<InfoIcon
+																	aria-hidden="true"
+																	className="size-3.5 text-muted-foreground cursor-help"
+																/>
+															</InfoTooltipTrigger>
+															<InfoTooltipContent>
+																{m.githubActionsOIDCEnabledTooltip()}
+															</InfoTooltipContent>
+														</InfoTooltip>
 													</div>
 													<Switch
 														id={field.name}
@@ -383,16 +390,21 @@ function RepositorySyncPage() {
 																		<Label htmlFor="githubActionsOIDCAllowedActions">
 																			{m.githubActionsOIDCAllowedActions()}
 																		</Label>
-																		<Tooltip>
-																			<TooltipTrigger
-																				render={
-																					<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-																				}
-																			/>
-																			<TooltipContent>
+																		<InfoTooltip>
+																			<InfoTooltipTrigger
+																				type="button"
+																				aria-label={m.details()}
+																				className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+																			>
+																				<InfoIcon
+																					aria-hidden="true"
+																					className="size-3.5 text-muted-foreground cursor-help"
+																				/>
+																			</InfoTooltipTrigger>
+																			<InfoTooltipContent>
 																				{m.githubActionsOIDCAllowedActionsTooltip()}
-																			</TooltipContent>
-																		</Tooltip>
+																			</InfoTooltipContent>
+																		</InfoTooltip>
 																	</div>
 																	<Select
 																		items={[
@@ -451,16 +463,21 @@ function RepositorySyncPage() {
 																		<Label htmlFor={field.name}>
 																			{m.githubActionsOIDCAllowedBranches()}
 																		</Label>
-																		<Tooltip>
-																			<TooltipTrigger
-																				render={
-																					<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-																				}
-																			/>
-																			<TooltipContent>
+																		<InfoTooltip>
+																			<InfoTooltipTrigger
+																				type="button"
+																				aria-label={m.details()}
+																				className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+																			>
+																				<InfoIcon
+																					aria-hidden="true"
+																					className="size-3.5 text-muted-foreground cursor-help"
+																				/>
+																			</InfoTooltipTrigger>
+																			<InfoTooltipContent>
 																				{m.githubActionsOIDCAllowedBranchesTooltip()}
-																			</TooltipContent>
-																		</Tooltip>
+																			</InfoTooltipContent>
+																		</InfoTooltip>
 																	</div>
 																	<Combobox
 																		items={branches ?? []}
@@ -509,16 +526,21 @@ function RepositorySyncPage() {
 																		<Label htmlFor={field.name}>
 																			{m.githubActionsOIDCAllowedWorkflows()}
 																		</Label>
-																		<Tooltip>
-																			<TooltipTrigger
-																				render={
-																					<InfoIcon className="size-3.5 text-muted-foreground cursor-help" />
-																				}
-																			/>
-																			<TooltipContent>
+																		<InfoTooltip>
+																			<InfoTooltipTrigger
+																				type="button"
+																				aria-label={m.details()}
+																				className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+																			>
+																				<InfoIcon
+																					aria-hidden="true"
+																					className="size-3.5 text-muted-foreground cursor-help"
+																				/>
+																			</InfoTooltipTrigger>
+																			<InfoTooltipContent>
 																				{m.githubActionsOIDCAllowedWorkflowsTooltip()}
-																			</TooltipContent>
-																		</Tooltip>
+																			</InfoTooltipContent>
+																		</InfoTooltip>
 																	</div>
 																	<WorkflowsComboboxField
 																		id={field.name}
