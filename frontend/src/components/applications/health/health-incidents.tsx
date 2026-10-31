@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +20,6 @@ import {
 import { ApplicationEventType } from "@/lib/application-events";
 import { HealthStatus } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { getLocale } from "@/lib/paraglide/runtime";
 import { cn } from "@/lib/utils";
 
 const PLACEHOLDER = "\u0000";
@@ -100,13 +100,6 @@ function IncidentContext({ incident, agentName }: { incident: HealthIncident; ag
 }
 
 export function HealthIncidents({ stats, agentName }: { stats: HealthStats; agentName: string }) {
-	const formatter = new Intl.DateTimeFormat(getLocale(), {
-		day: "2-digit",
-		month: "short",
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-
 	return (
 		<Card>
 			<CardHeader>
@@ -149,7 +142,7 @@ export function HealthIncidents({ stats, agentName }: { stats: HealthStats; agen
 										</span>
 									</TableCell>
 									<TableCell className="tabular-nums">
-										{formatter.format(new Date(incident.startedAt))}
+										<RelativeTime value={incident.startedAt} />
 									</TableCell>
 									<TableCell className="tabular-nums">
 										{formatHealthDuration(incident.durationSeconds)}
