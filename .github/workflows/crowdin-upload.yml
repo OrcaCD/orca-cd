@@ -15,9 +15,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-source-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      head-ref: ${{ steps.pr.outputs.head-ref }}
+
+    steps:
+      - name: Find merged pull request branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          head_ref=$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq '[.[] | select(.base.ref == "main")][0].head.ref // ""')
+          echo "head-ref=$head_ref" >> "$GITHUB_OUTPUT"
+
   upload-to-crowdin:
+    needs: check-source-branch
     # Merged Crowdin PRs only contain what is already in Crowdin, possibly outdated.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(translations):') }}
+    if: ${{ needs.check-source-branch.outputs.head-ref != 'i18n_crowdin' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: crowdin

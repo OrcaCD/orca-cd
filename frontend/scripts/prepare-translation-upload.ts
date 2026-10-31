@@ -18,18 +18,27 @@ const defaultLocaleFile = "en.json";
 
 type Messages = Record<string, unknown>;
 
+// Any git failure aborts the script: falling back to an empty base would upload the
+// whole locale file and overwrite every translation in Crowdin.
+function git(...args: string[]): string {
+	return execFileSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
+try {
+	git("rev-parse", "--verify", "--quiet", `${baseRevision}^{commit}`);
+} catch (error) {
+	throw new Error(`Base revision "${baseRevision}" is not a known commit`, { cause: error });
+}
+
 function readPreviousMessages(file: string): Messages {
-	try {
-		const content = execFileSync("git", ["show", `${baseRevision}:./messages/${file}`], {
-			cwd: root,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return JSON.parse(content) as Messages;
-	} catch {
+	const path = `messages/${file}`;
+
+	if (git("ls-tree", "--name-only", baseRevision, "--", path).trim() === "") {
 		// The locale did not exist at the base revision, so all of its messages are new.
 		return {};
 	}
+
+	return JSON.parse(git("show", `${baseRevision}:./${path}`)) as Messages;
 }
 
 let hasChanges = false;
