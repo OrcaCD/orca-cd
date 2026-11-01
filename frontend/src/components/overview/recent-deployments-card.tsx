@@ -12,7 +12,7 @@ import {
 	ItemTitle,
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { eventSourceLabel, eventTypeLabel } from "@/lib/application-events";
+import { ApplicationEventType, eventSourceLabel, eventTitle } from "@/lib/application-events";
 import type { ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { RelativeTime } from "@/components/relative-time";
@@ -50,9 +50,10 @@ export function RecentDeploymentsCard() {
 
 function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDeployment }) {
 	const details = [
-		eventTypeLabel(deployment.type),
+		eventTitle(deployment),
 		deployment.actorName ?? eventSourceLabel(deployment.source),
-		deployment.commitHash?.slice(0, 7),
+		// Rollback titles name their commit already.
+		deployment.type === ApplicationEventType.Rollback ? null : deployment.commitHash?.slice(0, 7),
 	].filter(Boolean);
 	const description = deployment.errorMessage ?? deployment.commitMessage;
 
@@ -85,7 +86,11 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 					value={deployment.createdAt}
 					className="relative text-xs text-muted-foreground"
 				/>
-				<ApplicationEventStatusBadge status={deployment.status} />
+				<ApplicationEventStatusBadge
+					status={deployment.status}
+					type={deployment.type}
+					deploymentStatus={deployment.deploymentStatus}
+				/>
 			</ItemActions>
 		</Item>
 	);

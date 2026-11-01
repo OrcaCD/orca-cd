@@ -30,6 +30,19 @@ export interface Application {
 	deleteOldImages: boolean;
 	imageWebhookEnabled: boolean;
 	imageWebhookUrl?: string;
+	currentDeploymentId: string | null;
+	rolledBackAt: string | null;
+	rolledBackCommit: string | null;
+	autoSyncPaused: boolean;
+	rollback: RollbackSettings;
+}
+
+export interface RollbackSettings {
+	enabled: boolean;
+	onDeployFailure: boolean;
+	onUnhealthy: boolean;
+	healthTimeoutSeconds: number;
+	pauseAutoSync: boolean;
 }
 
 export interface ApplicationListItem {
@@ -47,6 +60,8 @@ export interface ApplicationListItem {
 	lastSyncedAt?: string;
 	lastSyncError?: string;
 	path: string;
+	rolledBackAt: string | null;
+	rolledBackCommit: string | null;
 }
 
 export interface ApplicationActivityDay {
@@ -150,4 +165,22 @@ export function generateImageWebhook(id: string): Promise<GenerateImageWebhookRe
 
 export function revokeImageWebhook(id: string): Promise<void> {
 	return fetcher(`/applications/${id}/image-webhook`, "DELETE");
+}
+
+export function rollbackApplication(
+	id: string,
+	deploymentId: string,
+): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(
+		`/applications/${id}/deployments/${deploymentId}/rollback`,
+		"POST",
+	);
+}
+
+export function resumeApplicationAutoSync(id: string): Promise<DeployApplicationResponse> {
+	return fetcher<DeployApplicationResponse>(`/applications/${id}/resume-auto-sync`, "POST");
+}
+
+export function updateRollbackSettings(id: string, data: RollbackSettings): Promise<Application> {
+	return fetcher<Application>(`/applications/${id}/rollback`, "PUT", data);
 }

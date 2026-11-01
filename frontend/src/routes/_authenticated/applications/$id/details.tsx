@@ -28,6 +28,7 @@ import {
 	WrapText,
 } from "lucide-react";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
+import { RolledBackBanner } from "@/components/applications/rolled-back-banner";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import {
@@ -133,7 +134,8 @@ function InfoMeta({
 	);
 }
 
-const lastSyncSourceIcons: Record<ApplicationEventSource, React.ReactNode> = {
+// Rollbacks are not syncs, so their sources are never the last sync source.
+const lastSyncSourceIcons: Partial<Record<ApplicationEventSource, React.ReactNode>> = {
 	[ApplicationEventSource.Manual]: <MousePointerClick />,
 	[ApplicationEventSource.ApplicationCreated]: <Sparkles />,
 	[ApplicationEventSource.RepositoryPolling]: <RefreshCw />,
@@ -195,7 +197,7 @@ function ComposeFileView({
 	);
 }
 
-const lastSyncSourceLabels: Record<ApplicationEventSource, () => string> = {
+const lastSyncSourceLabels: Partial<Record<ApplicationEventSource, () => string>> = {
 	[ApplicationEventSource.Manual]: () => m.applicationInfoLastSyncSourceManual(),
 	[ApplicationEventSource.ApplicationCreated]: () =>
 		m.applicationInfoLastSyncSourceApplicationCreated(),
@@ -353,9 +355,12 @@ function ApplicationDetailsPage() {
 		[previousComposeFile, composeFile],
 	);
 
+	const rolledBack = Boolean(data?.rolledBackAt);
+
 	return (
 		<div className="space-y-6">
-			{data?.lastSyncError && (
+			{data && rolledBack ? <RolledBackBanner application={data} /> : null}
+			{data?.lastSyncError && !rolledBack && (
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
@@ -416,11 +421,17 @@ function ApplicationDetailsPage() {
 									</span>
 								</div>
 							</DropdownMenuItem>
-							<DropdownMenuItem onClick={handlePullImages} className="items-start cursor-pointer">
+							<DropdownMenuItem
+								onClick={handlePullImages}
+								disabled={rolledBack}
+								className="items-start cursor-pointer"
+							>
 								<ImageDown className="mt-0.5 h-4 w-4" />
 								<div className="flex flex-col gap-0.5">
 									<span>{m.pullImages()}</span>
-									<span className="text-xs text-muted-foreground">{m.pullImagesDescription()}</span>
+									<span className="text-xs text-muted-foreground">
+										{rolledBack ? m.pullImagesRolledBack() : m.pullImagesDescription()}
+									</span>
 								</div>
 							</DropdownMenuItem>
 						</DropdownMenuContent>
