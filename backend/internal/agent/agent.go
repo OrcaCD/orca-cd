@@ -117,8 +117,8 @@ func DefaultConfig() (Config, error) {
 	var imagePollIntervalOverride time.Duration
 	if value := os.Getenv("IMAGE_POLL_INTERVAL_OVERRIDE"); value != "" {
 		imagePollIntervalOverride, err = time.ParseDuration(value)
-		if err != nil || imagePollIntervalOverride <= 0 {
-			return Config{}, &FatalConfigError{fmt.Sprintf("IMAGE_POLL_INTERVAL_OVERRIDE: %q is not a positive duration", value)}
+		if err != nil || imagePollIntervalOverride < time.Second {
+			return Config{}, &FatalConfigError{fmt.Sprintf("IMAGE_POLL_INTERVAL_OVERRIDE: %q is not a duration of at least 1s", value)}
 		}
 	}
 

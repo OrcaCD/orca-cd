@@ -317,6 +317,8 @@ func TestDefaultConfig_ImagePollIntervalOverride(t *testing.T) {
 		{"", 0, false},
 		{"5s", 5 * time.Second, false},
 		{"1m30s", 90 * time.Second, false},
+		{"1s", time.Second, false},
+		{"999ms", 0, true},
 		{"0s", 0, true},
 		{"-5s", 0, true},
 		{"5", 0, true},

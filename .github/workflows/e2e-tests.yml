@@ -51,7 +51,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: chromium
+          # All tests that need neither the agent nor a hub restart
+          - name: general
             targets: hub
             projects: --project=chromium
           # These tests restart the hub and share the agent container, so they run one after
@@ -82,17 +83,17 @@ jobs:
         working-directory: ./e2e
 
       - name: Run Linter
-        if: ${{ matrix.name == 'chromium' }}
+        if: ${{ matrix.name == 'general' }}
         run: node --run lint
         working-directory: ./e2e
 
       - name: Check Formatting
-        if: ${{ matrix.name == 'chromium' }}
+        if: ${{ matrix.name == 'general' }}
         run: node --run format:check
         working-directory: ./e2e
 
       - name: Type Checking
-        if: ${{ matrix.name == 'chromium' }}
+        if: ${{ matrix.name == 'general' }}
         run: node --run typecheck
         working-directory: ./e2e
 
