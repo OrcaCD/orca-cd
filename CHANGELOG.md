@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.0](https://github.com/OrcaCD/orca-cd/compare/v0.5.0...v0.6.0) (2026-11-01)
+
+
+### Features
+
+* Accept more truthy values for boolean env vars ([#432](https://github.com/OrcaCD/orca-cd/issues/432)) ([206c9cd](https://github.com/OrcaCD/orca-cd/commit/206c9cd4b023b824b2b11d3079d61e26c5bdc525))
+* Add compose style env file parser and writer ([#451](https://github.com/OrcaCD/orca-cd/issues/451)) ([3235474](https://github.com/OrcaCD/orca-cd/commit/32354747ab2b49107e4050e4ec2191afbadcae97))
+* Add frontend for env configuration ([#460](https://github.com/OrcaCD/orca-cd/issues/460)) ([f6cfcfe](https://github.com/OrcaCD/orca-cd/commit/f6cfcfe3a746b897ef3bbe8e3dc2d90c1420a19e))
+* Add proto messages for env feature ([#450](https://github.com/OrcaCD/orca-cd/issues/450)) ([a3529ce](https://github.com/OrcaCD/orca-cd/commit/a3529ce4edbd6f599e46fa5ecc44bde8bfd44534))
+* **agent:** Implement env configuration feature ([#453](https://github.com/OrcaCD/orca-cd/issues/453)) ([1d360d6](https://github.com/OrcaCD/orca-cd/commit/1d360d6f7672236fa1084f1c2fae090a44b1bcc2))
+* **frontend:** add dedicated notification type selection step ([#456](https://github.com/OrcaCD/orca-cd/issues/456)) ([26a1cee](https://github.com/OrcaCD/orca-cd/commit/26a1cee977ff5ac54677a38ab7e52329c9791f2b))
+* **frontend:** redesign system info page with grouped settings ([#458](https://github.com/OrcaCD/orca-cd/issues/458)) ([937a1aa](https://github.com/OrcaCD/orca-cd/commit/937a1aa5e92a586cb94eaf849db064186874f0a5))
+* **frontend:** show relative timestamps with exact date hints ([#442](https://github.com/OrcaCD/orca-cd/issues/442)) ([241d11b](https://github.com/OrcaCD/orca-cd/commit/241d11b49ddb66f36fefac4c2aa5c300cef9ed91))
+* **health:** add application health page ([#427](https://github.com/OrcaCD/orca-cd/issues/427)) ([03dfe64](https://github.com/OrcaCD/orca-cd/commit/03dfe648e6aa6e489b34df5433e3f9b928585160))
+* **health:** add application health statistics endpoint ([#426](https://github.com/OrcaCD/orca-cd/issues/426)) ([b527d23](https://github.com/OrcaCD/orca-cd/commit/b527d2395cc0b3e16871a3fced7414e15d40e415))
+* **health:** record application health history ([#425](https://github.com/OrcaCD/orca-cd/issues/425)) ([a82d80e](https://github.com/OrcaCD/orca-cd/commit/a82d80e86029563d4b53219567acf34f112da1d6))
+* **health:** report per-service health and add degraded status ([#424](https://github.com/OrcaCD/orca-cd/issues/424)) ([c455e32](https://github.com/OrcaCD/orca-cd/commit/c455e3225060d0749b0b957d6fe0cdab66fa6cc3))
+* **hub:** Add APIs for env configuration feature ([#454](https://github.com/OrcaCD/orca-cd/issues/454)) ([12dfea7](https://github.com/OrcaCD/orca-cd/commit/12dfea7ad6581750c433550c6b9113e867bac7a9))
+* **hub:** add request max body size middleware ([#461](https://github.com/OrcaCD/orca-cd/issues/461)) ([b7eb4a8](https://github.com/OrcaCD/orca-cd/commit/b7eb4a85f4eed6c62180d490c93d37f8c68f61de))
+* Improve demo, update sample data, fix readonly ([#429](https://github.com/OrcaCD/orca-cd/issues/429)) ([8213123](https://github.com/OrcaCD/orca-cd/commit/821312361b80c694374228023c83be4eaddce27a))
+* **ui:** redesign resource cards with flow-stage layout ([#446](https://github.com/OrcaCD/orca-cd/issues/446)) ([7fd90f0](https://github.com/OrcaCD/orca-cd/commit/7fd90f0ce760f78c498cbae23d016159bf06f931))
+
+
+### Bug Fixes
+
+* **agent:** explain restricted deployment path permissions ([#445](https://github.com/OrcaCD/orca-cd/issues/445)) ([bebf43f](https://github.com/OrcaCD/orca-cd/commit/bebf43f7484fe8f8466bc2662146a6d3b28e81b3))
+* **frontend:** make info tooltips work on touch devices ([#441](https://github.com/OrcaCD/orca-cd/issues/441)) ([418c556](https://github.com/OrcaCD/orca-cd/commit/418c556d86105fb84ca67be03a2c699d12e58bac))
+* Further harden demo mode ([#431](https://github.com/OrcaCD/orca-cd/issues/431)) ([9123555](https://github.com/OrcaCD/orca-cd/commit/9123555e322441cd82c539578f7c1baba44fba8d))
+* **justfile:** wait for hub to be healthy before starting frontend dev server ([#457](https://github.com/OrcaCD/orca-cd/issues/457)) ([fd96948](https://github.com/OrcaCD/orca-cd/commit/fd969482db45563990fd8814961e90e9d7417bb7))
+* Support Harbor v2 webhooks ([#433](https://github.com/OrcaCD/orca-cd/issues/433)) ([2723fac](https://github.com/OrcaCD/orca-cd/commit/2723facc8c66edcc1b40e8ea492269d9000f4ff1))
+
 ## [0.5.0](https://github.com/OrcaCD/orca-cd/compare/v0.4.0...v0.5.0) (2026-10-28)
 
 
