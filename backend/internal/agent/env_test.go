@@ -11,6 +11,7 @@ import (
 
 	agentdocker "github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 )
 
@@ -24,6 +25,8 @@ type stubEnvDeployer struct {
 	updateErr   error
 	redeployErr error
 	updateStart chan struct{}
+
+	redeployDeadline time.Time
 }
 
 func (d *stubEnvDeployer) record(call string) {
@@ -51,7 +54,10 @@ func (d *stubEnvDeployer) UpdateEnv(_ context.Context, appName string, files []*
 	return d.updateErr
 }
 
-func (d *stubEnvDeployer) Redeploy(_ context.Context, appID, appName string) error {
+func (d *stubEnvDeployer) Redeploy(ctx context.Context, appID, appName string) error {
+	d.mu.Lock()
+	d.redeployDeadline, _ = ctx.Deadline()
+	d.mu.Unlock()
 	d.record("redeploy " + appID + " " + appName)
 	return d.redeployErr
 }
@@ -143,6 +149,22 @@ func TestExecuteEnvUpdate_SavesAndRedeploysOnce(t *testing.T) {
 	}
 }
 
+func TestExecuteEnvUpdate_RedeployUsesDeploymentTimeout(t *testing.T) {
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployer := &stubEnvDeployer{}
+
+	start := time.Now()
+	executeEnvUpdate(t.Context(), sender, deployer, &messages.EnvUpdateRequest{RequestId: "req-1", ApplicationId: "app-1"})
+	receiveMessage(t, sender)
+
+	deployer.mu.Lock()
+	deadline := deployer.redeployDeadline
+	deployer.mu.Unlock()
+	if want := start.Add(deploymentTimeout - time.Minute); deadline.Before(want) {
+		t.Fatalf("redeploy deadline %v is shorter than the deployment timeout (%v)", deadline.Sub(start), deploymentTimeout)
+	}
+}
+
 func TestExecuteEnvUpdate_ConflictDoesNotRedeploy(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 	deployer := &stubEnvDeployer{updateErr: fmt.Errorf("wrapped: %w", agentdocker.ErrEnvConflict)}
@@ -187,6 +209,27 @@ func TestExecuteEnvUpdate_RedeployFailureIsReported(t *testing.T) {
 	}
 	if !strings.Contains(result.ErrorMessage, "saved") || !strings.Contains(result.ErrorMessage, "compose up failed") {
 		t.Fatalf("expected the error to say the changes were saved and why the redeploy failed, got %q", result.ErrorMessage)
+	}
+}
+
+func TestExecuteEnvUpdate_RejectsWhenApplicationIsBusy(t *testing.T) {
+	envLockWaitTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { envLockWaitTimeout = envrules.LockWaitTimeout })
+
+	lock := lockForApplication("app-busy")
+	lock.Lock()
+	defer lock.Unlock()
+
+	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployer := &stubEnvDeployer{}
+	go executeEnvUpdate(t.Context(), sender, deployer, &messages.EnvUpdateRequest{RequestId: "req-1", ApplicationId: "app-busy"})
+
+	result := receiveMessage(t, sender).GetEnvUpdateResult()
+	if result.Success || result.Conflict || !strings.Contains(result.ErrorMessage, "busy") {
+		t.Fatalf("expected a busy error, got %+v", result)
+	}
+	if got := deployer.recordedCalls(); len(got) != 0 {
+		t.Fatalf("expected no calls, got %v", got)
 	}
 }
 

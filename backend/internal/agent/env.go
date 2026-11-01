@@ -7,12 +7,16 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 )
 
 const envListTimeout = 30 * time.Second
-const envUpdateTimeout = 2 * time.Minute
+
+var envLockWaitTimeout = envrules.LockWaitTimeout
 
 const errEnvUnsupported = "managing environment variables is not available on this agent"
+const errEnvBusy = "the application is busy with another operation, please try again shortly"
 
 func executeEnvList(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.EnvListRequest) {
 	Log.Debug().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("listing env files")
@@ -61,13 +65,17 @@ func executeEnvUpdate(ctx context.Context, sender outboundSender, deployer deplo
 	}
 
 	lock := lockForApplication(req.ApplicationId)
-	lock.Lock()
+	if !utils.LockWithTimeout(ctx, lock, envLockWaitTimeout) {
+		result.ErrorMessage = errEnvBusy
+		sendEnvUpdateResult(sender, result)
+		return
+	}
 	defer lock.Unlock()
 
-	updateCtx, cancel := context.WithTimeout(ctx, envUpdateTimeout)
-	defer cancel()
+	writeCtx, cancelWrite := context.WithTimeout(ctx, envrules.WriteTimeout)
+	defer cancelWrite()
 
-	if err := manager.UpdateEnv(updateCtx, req.ApplicationName, req.Files); err != nil {
+	if err := manager.UpdateEnv(writeCtx, req.ApplicationName, req.Files); err != nil {
 		result.Conflict = errors.Is(err, docker.ErrEnvConflict)
 		result.ErrorMessage = err.Error()
 		if !result.Conflict {
@@ -77,7 +85,10 @@ func executeEnvUpdate(ctx context.Context, sender outboundSender, deployer deplo
 		return
 	}
 
-	if err := manager.Redeploy(updateCtx, req.ApplicationId, req.ApplicationName); err != nil {
+	redeployCtx, cancelRedeploy := context.WithTimeout(ctx, envrules.RedeployTimeout)
+	defer cancelRedeploy()
+
+	if err := manager.Redeploy(redeployCtx, req.ApplicationId, req.ApplicationName); err != nil {
 		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("redeploy after env update failed")
 		result.ErrorMessage = "the changes were saved, but redeploying the application failed: " + err.Error()
 		sendEnvUpdateResult(sender, result)

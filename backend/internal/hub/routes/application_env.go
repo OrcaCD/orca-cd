@@ -25,7 +25,7 @@ var applicationEnvLog = logger.New("application-env", false)
 
 const (
 	envListTimeout   = 30 * time.Second
-	envUpdateTimeout = 2 * time.Minute
+	envUpdateTimeout = envrules.LockWaitTimeout + envrules.WriteTimeout + envrules.RedeployTimeout + 30*time.Second
 	// envWriteGrace is the time left to write the response after the wait ended.
 	envWriteGrace = 10 * time.Second
 
@@ -183,8 +183,8 @@ func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {
 		return application, agent, false
 	}
 
-	if !version.SupportsEnvManagement(agent.Version) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("the agent does not support managing environment variables, please update it to %s or newer", strings.TrimSuffix(version.MinEnvAgentVersion, "-0"))})
+	if agent.Version == "" || version.CheckAgentCompatibility(version.Version, agent.Version) == version.AgentIncompatible {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("the agent does not support managing environment variables, please update it to %s or newer", strings.TrimSuffix(version.MinAgentVersion, "-0"))})
 		return application, agent, false
 	}
 

@@ -10,6 +10,7 @@ import (
 type pendingEnv[T any] struct {
 	agentID       string
 	applicationID string
+	client        *Client
 	ch            chan T
 }
 
@@ -50,11 +51,11 @@ func (h *Hub) ResolveEnvUpdateResult(agentID string, result *messages.EnvUpdateR
 	return resolveEnv(h, h.pendingEnvUpdates, agentID, result.RequestId, result.ApplicationId, result)
 }
 
-func (h *Hub) abortPendingEnv(agentID string) {
+func (h *Hub) abortPendingEnv(c *Client) {
 	h.envMu.Lock()
 	defer h.envMu.Unlock()
-	abortEnv(h.pendingEnvLists, agentID)
-	abortEnv(h.pendingEnvUpdates, agentID)
+	abortEnv(h.pendingEnvLists, c)
+	abortEnv(h.pendingEnvUpdates, c)
 }
 
 func requestEnv[T any](
@@ -68,17 +69,20 @@ func requestEnv[T any](
 	requestID := uuid.NewString()
 	ch := make(chan T, 1)
 
-	h.envMu.Lock()
-	pending[requestID] = pendingEnv[T]{agentID: agentID, applicationID: applicationID, ch: ch}
-	h.envMu.Unlock()
-
 	defer func() {
 		h.envMu.Lock()
 		delete(pending, requestID)
 		h.envMu.Unlock()
 	}()
 
-	if !h.Send(agentID, build(requestID)) {
+	// Registered before queueing so the result cannot arrive first, and bound
+	// to the client so a stale disconnect cannot abort it.
+	register := func(c *Client) {
+		h.envMu.Lock()
+		pending[requestID] = pendingEnv[T]{agentID: agentID, applicationID: applicationID, client: c, ch: ch}
+		h.envMu.Unlock()
+	}
+	if !h.send(agentID, build(requestID), register) {
 		return zero, ErrAgentOffline
 	}
 
@@ -110,9 +114,9 @@ func resolveEnv[T any](h *Hub, pending map[string]pendingEnv[T], agentID, reques
 	return true
 }
 
-func abortEnv[T any](pending map[string]pendingEnv[T], agentID string) {
+func abortEnv[T any](pending map[string]pendingEnv[T], c *Client) {
 	for requestID, entry := range pending {
-		if entry.agentID == agentID {
+		if entry.client == c {
 			delete(pending, requestID)
 			close(entry.ch)
 		}

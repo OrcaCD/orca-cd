@@ -137,7 +137,7 @@ func (h *Hub) FinishDisconnect(c *Client) {
 		delete(h.clients, c.Id)
 	}
 	h.mu.Unlock()
-	h.abortPendingEnv(c.Id)
+	h.abortPendingEnv(c)
 	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
 }
 
@@ -165,11 +165,20 @@ func (h *Hub) IsRegistered(id string) bool {
 // Send sends a message to a specific client by Id.
 // Returns false if the client doesn't exist or the buffer is full.
 func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
+	return h.send(id, msg, nil)
+}
+
+// send queues msg for the client, calling beforeSend with the target client
+// while the hub lock is held.
+func (h *Hub) send(id string, msg *messages.ServerMessage, beforeSend func(*Client)) bool {
 	h.mu.RLock()
 	c, ok := h.clients[id]
 	defer h.mu.RUnlock()
 	if !ok || c.closing.Load() {
 		return false
+	}
+	if beforeSend != nil {
+		beforeSend(c)
 	}
 	select {
 	case c.Send <- msg:

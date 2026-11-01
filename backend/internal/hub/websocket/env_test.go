@@ -171,6 +171,40 @@ func TestResolveEnvResult_RejectsMismatches(t *testing.T) {
 	<-done
 }
 
+func TestEnvRequests_NotAbortedByStaleDisconnect(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+	oldClient := registerEnvTestClient(t, h)
+	h.BeginDisconnect(oldClient)
+	h.Unregister("agent-1")
+	newClient := registerEnvTestClient(t, h)
+
+	type res struct {
+		result *messages.EnvUpdateResult
+		err    error
+	}
+	done := make(chan res, 1)
+	go func() {
+		result, err := h.UpdateEnv(context.Background(), "agent-1", "app-1", "billing", nil)
+		done <- res{result, err}
+	}()
+	req := receiveServerMessage(t, newClient).GetEnvUpdateRequest()
+
+	h.FinishDisconnect(oldClient)
+
+	if !h.ResolveEnvUpdateResult("agent-1", &messages.EnvUpdateResult{RequestId: req.RequestId, ApplicationId: "app-1", Success: true}) {
+		t.Fatal("request of the new connection was aborted by the old connection's cleanup")
+	}
+	select {
+	case r := <-done:
+		if r.err != nil || r.result == nil || !r.result.Success {
+			t.Fatalf("unexpected outcome: %+v, %v", r.result, r.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("UpdateEnv did not return")
+	}
+}
+
 func TestEnvRequests_AbortedOnDisconnect(t *testing.T) {
 	log := testLogger()
 	h := NewHub(&log)

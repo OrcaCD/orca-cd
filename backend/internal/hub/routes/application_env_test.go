@@ -511,9 +511,9 @@ func TestUpdateApplicationEnvHandler_ExtendsWriteDeadline(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	// The server's default write timeout is far shorter than a redeploy.
-	if min := start.Add(envUpdateTimeout); w.deadline.Before(min) {
-		t.Fatalf("write deadline %v is earlier than the update timeout (%v)", w.deadline, min)
+	agentMax := envrules.LockWaitTimeout + envrules.WriteTimeout + envrules.RedeployTimeout
+	if min := start.Add(agentMax); w.deadline.Before(min) {
+		t.Fatalf("write deadline %v is earlier than the agent's maximum update time (%v)", w.deadline, min)
 	}
 }
 

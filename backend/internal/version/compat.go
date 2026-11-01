@@ -10,26 +10,8 @@ import (
 // MinAgentVersion is the oldest agent release the hub still works with. Bump it
 // whenever a hub change requires agents to be upgraded (e.g. a breaking change
 // to the Hub↔Agent protocol), so those agents are flagged as incompatible.
-const MinAgentVersion = "v0.4.0"
-
-// MinEnvAgentVersion is the first agent release that can manage env files. The
-// "-0" suffix is the lowest pre-release, so release candidates also qualify.
-const MinEnvAgentVersion = "v0.6.0-0"
-
-func SupportsEnvManagement(agentVersion string) bool {
-	if agentVersion == "" {
-		return false
-	}
-	// Builds ahead of a release tag may already contain the feature.
-	if gitDescribeAhead.MatchString(agentVersion) {
-		return true
-	}
-	agent, ok := normalize(agentVersion)
-	if !ok {
-		return true
-	}
-	return semver.Compare(agent, MinEnvAgentVersion) >= 0
-}
+// The "-0" suffix is the lowest pre-release, so release candidates also qualify.
+const MinAgentVersion = "v0.6.0-0"
 
 type AgentCompatibility string
 
@@ -71,7 +53,6 @@ func CheckAgentCompatibility(hubVersion, agentVersion string) AgentCompatibility
 // gitDescribeSuffix matches what `git describe --tags --dirty` appends to the
 // tag for local builds, e.g. "-3-gabc1234" or "-3-gabc1234-dirty".
 var gitDescribeSuffix = regexp.MustCompile(`(?:-\d+-g[0-9a-f]+)?(?:-dirty)?$`)
-var gitDescribeAhead = regexp.MustCompile(`-\d+-g[0-9a-f]+(?:-dirty)?$`)
 
 // normalize converts a version to canonical semver. The `git describe` suffix
 // is dropped because such builds are newer than their tag, while semver would
