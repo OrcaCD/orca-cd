@@ -14,6 +14,8 @@ message ClientMessage {
     DeleteResult delete_result = 6;
     ApplicationStatusReport application_status_report = 7;
     AgentInfo agent_info = 8;
+    EnvListResult env_list_result = 9;
+    EnvUpdateResult env_update_result = 10;
   }
 }
 
@@ -26,6 +28,8 @@ message ServerMessage {
     AgentSettings agent_settings = 5;
     PullImagesRequest pull_images_request = 6;
     DeleteRequest delete_request = 7;
+    EnvListRequest env_list_request = 8;
+    EnvUpdateRequest env_update_request = 9;
   }
 }
 
@@ -141,4 +145,60 @@ message AgentInfo {
   string version = 1;
   string docker_version = 2;
   bool docker_unreachable = 3;
+}
+
+message EnvListRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message EnvEntry {
+  string key = 1;
+  bool is_secret = 2;
+  string value = 3;
+  bool is_set = 4;
+}
+
+message EnvFile {
+  string path = 1;
+  repeated string services = 2;
+  repeated EnvEntry entries = 3;
+  string revision = 4;
+}
+
+message EnvListResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  repeated EnvFile env_files = 5;
+}
+
+message EnvChange {
+  string key = 1;
+  bool delete = 2;
+  string value = 3;
+  bool is_secret = 4;
+}
+
+message EnvFileChanges {
+  string path = 1;
+  repeated EnvChange changes = 2;
+  string expected_revision = 3;
+}
+
+message EnvUpdateRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  repeated EnvFileChanges files = 4;
+}
+
+message EnvUpdateResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  bool conflict = 5;
 }
