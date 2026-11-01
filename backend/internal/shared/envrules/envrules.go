@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -12,6 +13,14 @@ const (
 	MaxFileBytes   = 1 << 20
 	MaxKeysPerFile = 1000
 	MaxValueBytes  = 16 << 10
+)
+
+// The agent spends at most LockWaitTimeout + WriteTimeout + RedeployTimeout on
+// an update, which the hub has to outlast when waiting for the result.
+const (
+	LockWaitTimeout = 30 * time.Second
+	WriteTimeout    = 2 * time.Minute
+	RedeployTimeout = 5 * time.Minute
 )
 
 // KeyPattern matches the keys Compose accepts: letters, digits and _ . - [ ].

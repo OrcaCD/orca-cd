@@ -197,8 +197,8 @@ func Run(cfg Config) error {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		MaxHeaderBytes:    22 << 10, // 22 KB
+		WriteTimeout:      35 * time.Second, // above the 30s request timeout, so timeout errors can still be written
+		MaxHeaderBytes:    22 << 10,         // 22 KB
 		IdleTimeout:       120 * time.Second,
 	}
 

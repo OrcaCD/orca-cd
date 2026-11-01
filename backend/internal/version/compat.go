@@ -10,7 +10,8 @@ import (
 // MinAgentVersion is the oldest agent release the hub still works with. Bump it
 // whenever a hub change requires agents to be upgraded (e.g. a breaking change
 // to the Hub↔Agent protocol), so those agents are flagged as incompatible.
-const MinAgentVersion = "v0.4.0"
+// The "-0" suffix is the lowest pre-release, so release candidates also qualify.
+const MinAgentVersion = "v0.6.0-0"
 
 type AgentCompatibility string
 
