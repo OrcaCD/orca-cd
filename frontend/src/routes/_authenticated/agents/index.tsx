@@ -12,6 +12,7 @@ import {
 	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuLabel,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -140,6 +141,7 @@ function RouteComponent() {
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													<UpsertAgentDialog agent={agent} asDropdownItem />
 													<RotateAgentTokenDialog agent={agent} />
+													<DropdownMenuSeparator />
 													<ConfirmationDialog
 														onConfirm={() => handleDeleteCard(agent)}
 														title={m.deleteAgentCardTitle()}

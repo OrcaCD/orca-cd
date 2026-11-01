@@ -166,6 +166,12 @@
   }
 }
 
+[data-slot='dropdown-menu-item'],
+[data-slot='dropdown-menu-sub-trigger'],
+[data-slot='dropdown-menu-content'] [data-slot='dialog-trigger'] {
+  gap: 0.5rem;
+}
+
 [data-show-whitespace] [data-whitespace] {
   position: relative;
   &::before {
