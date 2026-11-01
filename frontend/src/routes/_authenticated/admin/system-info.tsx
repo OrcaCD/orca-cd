@@ -4,6 +4,7 @@ import {
 	CircleCheck,
 	Clock,
 	ExternalLink,
+	GitBranch,
 	GitCommitHorizontal,
 	Globe,
 	Info,
@@ -40,7 +41,36 @@ interface GitHubRelease {
 
 const repoUrl = "https://github.com/OrcaCD/orca-cd";
 const commitHashPattern = /^[0-9a-f]{7,40}$/i;
+const releasePattern = /^v\d+\.\d+\.\d+(?:-[0-9a-z.]+)?$/i;
+// `git describe --tags --dirty` output for builds after a tag, e.g. "v0.5.0-15-ge2b60f4"
+const describePattern = /^(.+)-(\d+)-g[0-9a-f]+$/i;
 const logLevels = ["trace", "debug", "info", "warn", "error"];
+
+interface ParsedVersion {
+	label: string;
+	isRelease: boolean;
+	dirty: boolean;
+	commitsSinceTag?: { tag: string; count: number };
+}
+
+// Local builds embed `git describe` output, which repeats the commit hash shown separately.
+function parseVersion(version: string): ParsedVersion {
+	const dirty = version.endsWith("-dirty");
+	const base = dirty ? version.slice(0, -"-dirty".length) : version;
+
+	const describe = describePattern.exec(base);
+	if (describe) {
+		const [, tag, count] = describe;
+		return { label: tag, isRelease: false, dirty, commitsSinceTag: { tag, count: Number(count) } };
+	}
+
+	// Without any reachable tag, `git describe --always` falls back to the bare hash.
+	if (commitHashPattern.test(base)) {
+		return { label: "dev", isRelease: false, dirty };
+	}
+
+	return { label: base, isRelease: !dirty && releasePattern.test(base), dirty };
+}
 
 export const Route = createFileRoute("/_authenticated/admin/system-info")({
 	component: SystemInfoPage,
@@ -170,17 +200,19 @@ function CommitInfo({ commit }: { commit: string }) {
 	);
 }
 
-function ReleaseStatus({ version }: { version: string }) {
+function ReleaseStatus({ version }: { version: ParsedVersion }) {
+	// Unauthenticated GitHub API requests are rate limited, so avoid refetching on focus or error.
 	const { data } = useFetch<GitHubRelease>(
 		"https://api.github.com/repos/OrcaCD/orca-cd/releases/latest",
+		{ revalidateOnFocus: false, shouldRetryOnError: false },
 	);
 
 	if (!data) {
 		return null;
 	}
 
-	const isRelease = version.startsWith("v");
-	const isUpToDate = data.tag_name === version;
+	const { isRelease } = version;
+	const isUpToDate = data.tag_name === version.label;
 	const releaseNotesLink = (
 		<a
 			href={`${repoUrl}/releases/tag/${data.tag_name}`}
@@ -223,7 +255,7 @@ function ReleaseStatus({ version }: { version: string }) {
 }
 
 function BuildInfoCard({ systemInfo }: { systemInfo: SystemInfo }) {
-	const isRelease = systemInfo.version.startsWith("v");
+	const version = parseVersion(systemInfo.version);
 
 	return (
 		<Card>
@@ -233,12 +265,29 @@ function BuildInfoCard({ systemInfo }: { systemInfo: SystemInfo }) {
 					<div className="min-w-0">
 						<div className="flex flex-wrap items-center gap-2">
 							<h2 className="text-xl font-semibold tracking-tight">
-								OrcaCD <span className="font-mono font-medium">{systemInfo.version}</span>
+								OrcaCD <span className="font-mono font-medium">{version.label}</span>
 							</h2>
-							{!isRelease && <Badge variant="secondary">{m.developmentBuild()}</Badge>}
+							{!version.isRelease && <Badge variant="secondary">{m.developmentBuild()}</Badge>}
+							{version.dirty && (
+								<Badge
+									variant="outline"
+									className="border-amber-500/30 bg-amber-500/20 text-amber-600 dark:text-amber-400"
+								>
+									{m.uncommittedChanges()}
+								</Badge>
+							)}
 						</div>
 						<div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
 							<CommitInfo commit={systemInfo.commit} />
+							{version.commitsSinceTag && (
+								<span className="flex items-center gap-1.5">
+									<GitBranch className="size-3.5" aria-hidden="true" />
+									{m.commitsSinceTag({
+										tag: version.commitsSinceTag.tag,
+										count: version.commitsSinceTag.count,
+									})}
+								</span>
+							)}
 							<span className="flex items-center gap-1.5">
 								<Clock className="size-3.5" aria-hidden="true" />
 								<RelativeTime
@@ -250,7 +299,7 @@ function BuildInfoCard({ systemInfo }: { systemInfo: SystemInfo }) {
 						</div>
 					</div>
 				</div>
-				<ReleaseStatus version={systemInfo.version} />
+				<ReleaseStatus version={version} />
 			</CardContent>
 		</Card>
 	);

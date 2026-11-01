@@ -243,6 +243,8 @@
 	"allowedIps": "Erlaubte IPs",
 	"noneConfigured": "Nicht konfiguriert",
 	"developmentBuild": "Entwicklungs-Build",
+	"commitsSinceTag": "Commits seit {tag}: {count}",
+	"uncommittedChanges": "Nicht committete Änderungen",
 	"builtAt": "Gebaut {time}",
 	"latestRelease": "Neuestes Release: {version}",
 	"releaseNotes": "Release Notes",
