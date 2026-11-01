@@ -219,7 +219,7 @@ export default function Navbar() {
 							<DropdownMenuItem
 								render={
 									<Link to="/settings" className="flex items-center">
-										<User className="mr-2 h-4 w-4" />
+										<User className="h-4 w-4" />
 										{m.userSettings()}
 									</Link>
 								}
@@ -232,7 +232,7 @@ export default function Navbar() {
 									await navigate({ to: "/login" });
 								}}
 							>
-								<LogOut className="mr-2 h-4 w-4" />
+								<LogOut className="h-4 w-4" />
 								{m.signOut()}
 							</DropdownMenuItem>
 						</DropdownMenuContent>
