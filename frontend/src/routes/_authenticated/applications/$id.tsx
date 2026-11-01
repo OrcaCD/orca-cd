@@ -28,7 +28,7 @@ import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Activity, History, Info, Settings, ImageDown, KeyRound } from "lucide-react";
+import { Activity, History, Info, Settings, ImageDown, Braces } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -79,7 +79,7 @@ const sidebarGroups: SidebarGroup[] = [
 			},
 			{
 				title: () => m.envTitle(),
-				icon: KeyRound,
+				icon: Braces,
 				to: "/applications/$id/settings/environment",
 			},
 		],

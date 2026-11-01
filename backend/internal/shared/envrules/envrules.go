@@ -15,6 +15,8 @@ const (
 	MaxValueBytes  = 16 << 10
 )
 
+const SavedRedeployFailedPrefix = "the changes were saved, but redeploying the application failed"
+
 // The agent spends at most LockWaitTimeout + WriteTimeout + RedeployTimeout on
 // an update, which the hub has to outlast when waiting for the result.
 const (

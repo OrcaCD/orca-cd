@@ -31,8 +31,6 @@ const (
 
 	maxEnvPathBytes = 4096
 	maxEnvFiles     = 100
-
-	envSavedRedeployFailedPrefix = "the changes were saved, but redeploying the application failed"
 )
 
 type envEntryResponse struct {
@@ -147,8 +145,13 @@ func UpdateApplicationEnvHandler(c *gin.Context) {
 
 	// The values were persisted, so the change is audited even though the
 	// redeploy failed.
-	if strings.HasPrefix(result.ErrorMessage, envSavedRedeployFailedPrefix) {
+	if strings.HasPrefix(result.ErrorMessage, envrules.SavedRedeployFailedPrefix) {
 		utils.RecordAuditLog(c, "updated-environment", "application", application.Id)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":                  utils.CapitalizeFirst(result.ErrorMessage),
+			"savedButRedeployFailed": true,
+		})
+		return
 	}
 	c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to update the environment files.")})
 }

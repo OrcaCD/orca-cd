@@ -338,7 +338,7 @@ func TestUpdateApplicationEnvHandler_AgentFailure(t *testing.T) {
 
 func TestUpdateApplicationEnvHandler_SavedButRedeployFailed(t *testing.T) {
 	app := setupEnvTest(t, "v0.6.0")
-	withEnvAgent(t, app.AgentId, nil, &messages.EnvUpdateResult{ErrorMessage: envSavedRedeployFailedPrefix + ": boom"})
+	withEnvAgent(t, app.AgentId, nil, &messages.EnvUpdateResult{ErrorMessage: envrules.SavedRedeployFailedPrefix + ": boom"})
 
 	w := envRequest(t, UpdateApplicationEnvHandler, http.MethodPut, app.Id, validEnvUpdateBody())
 	if w.Code != http.StatusBadGateway {
@@ -346,6 +346,12 @@ func TestUpdateApplicationEnvHandler_SavedButRedeployFailed(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "boom") {
 		t.Fatalf("expected agent error in body, got %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"savedButRedeployFailed":true`) {
+		t.Fatalf("expected savedButRedeployFailed flag, got %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"error":"The changes were saved`) {
+		t.Fatalf("expected capitalized message, got %s", w.Body.String())
 	}
 	if got := countEnvAuditLogs(t, app.Id); got != 1 {
 		t.Fatalf("saved values must be audited, got %d entries", got)

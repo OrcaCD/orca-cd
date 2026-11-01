@@ -138,8 +138,14 @@ function EnvRowItem({
 			<TableCell className="whitespace-normal">
 				{row.deleted ? null : row.isSecret ? (
 					<div className="flex h-8 items-center font-mono text-muted-foreground">
-						<span aria-hidden>••••••••</span>
-						<span className="sr-only">{m.envSecretIsSet()}</span>
+						{row.isSet ? (
+							<>
+								<span aria-hidden>••••••••</span>
+								<span className="sr-only">{m.envSecretIsSet()}</span>
+							</>
+						) : (
+							<span className="font-sans italic">{m.envSecretNotSet()}</span>
+						)}
 					</div>
 				) : (
 					<>

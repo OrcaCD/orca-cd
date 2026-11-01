@@ -8,7 +8,6 @@ const keyPattern = /^[\p{L}\p{N}_.\-[\]]+$/u;
 // Control characters except tab, CR and LF
 // oxlint-disable-next-line no-control-regex
 const forbiddenValuePattern = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
-const savedRedeployFailedPrefix = "the changes were saved, but redeploying the application failed";
 
 export interface EnvEntry {
 	key: string;
@@ -52,6 +51,7 @@ export interface EnvRow {
 	isSecret: boolean;
 	// The variable value, or the pending value of a secret. Empty for untouched secrets.
 	value: string;
+	isSet: boolean;
 	isNew: boolean;
 	deleted: boolean;
 	draft?: EnvDraft;
@@ -73,6 +73,7 @@ export function buildEnvRows(file: EnvFile, drafts: Record<string, EnvDraft> = {
 			key: entry.key,
 			isSecret: edit?.isSecret ?? entry.isSecret,
 			value: edit?.value ?? entry.value ?? "",
+			isSet: edit ? true : entry.isSet,
 			isNew: false,
 			deleted: draft?.delete ?? false,
 			draft,
@@ -86,6 +87,7 @@ export function buildEnvRows(file: EnvFile, drafts: Record<string, EnvDraft> = {
 					key,
 					isSecret: draft.isSecret,
 					value: draft.value,
+					isSet: true,
 					isNew: true,
 					deleted: false,
 					draft,
@@ -221,7 +223,7 @@ export function isEnvConflict(err: unknown): boolean {
 }
 
 export function isEnvSavedButRedeployFailed(err: unknown): boolean {
-	return err instanceof ApiError && err.message.startsWith(savedRedeployFailedPrefix);
+	return err instanceof ApiError && err.body.savedButRedeployFailed === true;
 }
 
 export type EnvKeyError = "empty" | "invalid";

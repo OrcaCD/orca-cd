@@ -170,10 +170,9 @@ function EnvironmentPage() {
 			if (isEnvConflict(err)) {
 				setConflictOpen(true);
 			} else {
-				const message = err instanceof Error ? err.message : m.envSaveFailed();
 				toast.add({
 					type: "error",
-					title: message.charAt(0).toUpperCase() + message.slice(1),
+					title: err instanceof Error ? err.message : m.envSaveFailed(),
 				});
 				// The values were written, so the local edits are obsolete
 				if (isEnvSavedButRedeployFailed(err)) {
@@ -234,7 +233,7 @@ function EnvironmentPage() {
 						)}
 						<Button
 							variant="outline"
-							onClick={() => setDrafts({})}
+							onClick={handleReload}
 							disabled={isBusy || changeCount === 0}
 						>
 							{m.envDiscardChanges()}
@@ -247,7 +246,15 @@ function EnvironmentPage() {
 				</>
 			)}
 
-			<Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
+			<Dialog
+				open={conflictOpen}
+				onOpenChange={(open) => {
+					// Dismissing must not keep the stale revisions
+					if (!open) {
+						void handleReload();
+					}
+				}}
+			>
 				<DialogContent className="sm:max-w-md">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">

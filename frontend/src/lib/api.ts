@@ -62,18 +62,28 @@ export async function getErrorMessage(res: Response): Promise<string> {
 
 export class ApiError extends Error {
 	status: number;
+	body: Record<string, unknown>;
 
-	constructor(message: string, status: number) {
+	constructor(message: string, status: number, body: Record<string, unknown> = {}) {
 		super(message);
 		this.name = "ApiError";
 		this.status = status;
+		this.body = body;
 	}
 }
 
 async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit): Promise<JSON> {
 	const res = await fetch(input, { ...init });
 	if (!res.ok) {
-		throw new ApiError(await getErrorMessage(res), res.status);
+		const body = await res
+			.clone()
+			.json()
+			.catch(() => null);
+		throw new ApiError(
+			await getErrorMessage(res),
+			res.status,
+			body && typeof body === "object" ? body : {},
+		);
 	}
 	return (await res.json()) as JSON;
 }
