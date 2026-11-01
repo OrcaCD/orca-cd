@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -59,6 +60,17 @@ func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
 		}
 	}
 
+	existingMode := os.FileMode(0)
+	info, err := root.Lstat(name)
+	switch {
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("%s is a symlink, which can not be edited", filepath.ToSlash(name))
+	case err == nil && info.Mode().IsRegular():
+		existingMode = info.Mode().Perm()
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+
 	var suffix [8]byte
 	if _, err := rand.Read(suffix[:]); err != nil {
 		return err
@@ -71,6 +83,12 @@ func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
 	}
 	defer func() { _ = root.Remove(tmpName) }()
 
+	if existingMode != 0 {
+		if err := tmp.Chmod(existingMode); err != nil {
+			_ = tmp.Close()
+			return err
+		}
+	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return err

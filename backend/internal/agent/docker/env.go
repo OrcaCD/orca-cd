@@ -115,7 +115,7 @@ func (c *Client) declaredEnvFiles(ctx context.Context, root *os.Root, projectNam
 	var declared []declaredEnvFile
 	indexByPath := make(map[string]int)
 	for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
-		for _, envFile := range project.Services[serviceName].EnvFiles {
+		for _, envFile := range serviceEnvFiles(project.Services[serviceName]) {
 			if envFile.Format == "raw" {
 				continue
 			}
@@ -392,6 +392,14 @@ func resolveEnvFiles(dir string, project *composetypes.Project) (*composetypes.P
 	return resolved, nil
 }
 
+func serviceEnvFiles(service composetypes.ServiceConfig) []composetypes.EnvFile {
+	envFiles := slices.Clone(service.EnvFiles)
+	for _, hook := range service.PreStart {
+		envFiles = append(envFiles, hook.EnvFiles...)
+	}
+	return envFiles
+}
+
 func createMissingEnvFiles(dir string, project *composetypes.Project) error {
 	var root *os.Root
 	defer func() {
@@ -401,7 +409,7 @@ func createMissingEnvFiles(dir string, project *composetypes.Project) error {
 	}()
 
 	for _, service := range project.Services {
-		for _, envFile := range service.EnvFiles {
+		for _, envFile := range serviceEnvFiles(service) {
 			rel, ok := utils.RelativePathInDir(dir, envFile.Path)
 			if !ok || !bool(envFile.Required) {
 				continue

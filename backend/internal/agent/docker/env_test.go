@@ -696,7 +696,7 @@ func TestEnvAccess_SymlinkedDirectoryOutsideApplicationDir(t *testing.T) {
 	}
 }
 
-func TestEnvAccess_ReplacesSymlinkInsideApplicationDir(t *testing.T) {
+func TestEnvAccess_RejectsUpdateOfSymlinkInsideApplicationDir(t *testing.T) {
 	c := newTestClient(t)
 	dir := setupEnvApp(t, c, map[string][]envTestFile{"web": {required(".env")}})
 	writeTestFile(t, filepath.Join(dir, "real.env"), "A=1\n")
@@ -706,14 +706,14 @@ func TestEnvAccess_ReplacesSymlinkInsideApplicationDir(t *testing.T) {
 	err := c.UpdateEnv(t.Context(), envTestApp, []*messages.EnvFileChanges{
 		envUpdate(".env", listEnvFile(t, c, ".env").Revision, setChange("A", "2", true)),
 	})
-	if err != nil {
-		t.Fatalf("UpdateEnv: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected a symlink error, got %v", err)
 	}
-	if got := readTestFile(t, filepath.Join(dir, ".env")); got != "A=2\n" {
-		t.Fatalf(".env: %q", got)
+	if info, err := os.Lstat(filepath.Join(dir, ".env")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env to stay a symlink (err=%v)", err)
 	}
 	if got := readTestFile(t, filepath.Join(dir, "real.env")); got != "A=1\n" {
-		t.Fatalf("expected the update to replace the link, not write through it, got %q", got)
+		t.Fatalf("expected the link target to stay unchanged, got %q", got)
 	}
 }
 
@@ -1057,6 +1057,62 @@ func TestDeploy_WithRealComposeLoaderCreatesRequiredEnvFile(t *testing.T) {
 	}
 	if value := environment["GREETING"]; value == nil || *value != "hello world" {
 		t.Fatalf("expected the env file to be part of the deployed environment, got %v", environment)
+	}
+}
+
+func TestDeploy_WithRealComposeLoaderCreatesRequiredPreStartEnvFile(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	dir := filepath.Join(c.deploymentsDir, envTestApp)
+	c.mu.Lock()
+	c.ready = true
+	c.hostDirDetectionComplete = true
+	c.mu.Unlock()
+
+	originalUp := upProject
+	t.Cleanup(func() { upProject = originalUp })
+	upProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.UpOptions) error {
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-1",
+		ApplicationName: envTestApp,
+		ComposeFile:     "services:\n  web:\n    image: img:1\n    pre_start:\n      - command: migrate\n        env_file: migrate.env\n",
+	})
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "migrate.env")); err != nil {
+		t.Fatalf("expected the required pre_start env file to be created: %v", err)
+	}
+}
+
+func TestListEnv_IncludesPreStartEnvFiles(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	dir := filepath.Join(c.deploymentsDir, envTestApp)
+	writeTestFile(t, filepath.Join(dir, composeFileName), `services:
+  web:
+    image: img:1
+    env_file: .env
+    pre_start:
+      - command: migrate
+        env_file:
+          - migrate.env
+          - .env
+`)
+
+	files, err := c.ListEnv(t.Context(), envTestApp)
+	if err != nil {
+		t.Fatalf("ListEnv: %v", err)
+	}
+	var got []string
+	for _, file := range files {
+		got = append(got, file.Path+"="+strings.Join(file.Services, "+"))
+	}
+	if want := ".env=web,migrate.env=web"; strings.Join(got, ",") != want {
+		t.Fatalf("expected %q, got %q", want, strings.Join(got, ","))
 	}
 }
 

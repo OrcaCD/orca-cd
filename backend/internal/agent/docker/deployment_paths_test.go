@@ -136,6 +136,14 @@ func TestDeploymentPaths_ProtectEnvFilesOfOtherApplications(t *testing.T) {
 		"directory above the host dir":    filepath.Dir(hostDir),
 		"host path with parent reference": filepath.Join(hostDir, "attacker", "..", "billing", ".env"),
 	}
+	// The agent reads env_file at the literal path, so host paths do not apply.
+	hostOnly := map[string]bool{
+		"host path of the env file":       true,
+		"host path of the other app dir":  true,
+		"host deployments directory":      true,
+		"directory above the host dir":    true,
+		"host path with parent reference": true,
+	}
 	for name, source := range sources {
 		for _, restrict := range []bool{false, true} {
 			t.Run(name, func(t *testing.T) {
@@ -148,12 +156,35 @@ func TestDeploymentPaths_ProtectEnvFilesOfOtherApplications(t *testing.T) {
 					"env_file":   envFileProject(source),
 					"secret":     {Secrets: composetypes.Secrets{"s": {File: source}}},
 				} {
+					if kind == "env_file" && hostOnly[name] {
+						continue
+					}
 					if err := checkDeployPolicy(project, rules); err == nil {
 						t.Fatalf("expected %s of %q to be rejected (restrict=%v)", kind, source, restrict)
 					}
 				}
 			})
 		}
+	}
+}
+
+func TestDeploymentPaths_EnvFileIsCheckedAsAgentPath(t *testing.T) {
+	rules := setupDeploymentDirs(t)
+	rules.applicationDir = filepath.Join(rules.deploymentsDir, "attacker")
+	hostDir := filepath.Join(t.TempDir(), "host", "deployments")
+	rules.hostDeploymentsDir = hostDir
+
+	hostPath := filepath.Join(hostDir, "billing", ".env")
+	if err := checkDeployPolicy(envFileProject(hostPath), rules); err != nil {
+		t.Fatalf("expected env_file %q not to be mapped to the agent's deployments directory, got: %v", hostPath, err)
+	}
+	if err := checkDeployPolicy(bindMountProject(hostPath), rules); err == nil {
+		t.Fatalf("expected the bind mount of %q to be mapped and rejected", hostPath)
+	}
+
+	agentPath := filepath.Join(rules.deploymentsDir, "billing", ".env")
+	if err := checkDeployPolicy(envFileProject(agentPath), rules); err == nil {
+		t.Fatalf("expected env_file %q of another application to be rejected", agentPath)
 	}
 }
 

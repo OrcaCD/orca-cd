@@ -102,7 +102,7 @@ func TestWriteRootFileAtomic_OverwritesExistingFile(t *testing.T) {
 	}
 }
 
-func TestWriteRootFileAtomic_ReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
+func TestWriteRootFileAtomic_RejectsSymlinkTarget(t *testing.T) {
 	dir := t.TempDir()
 	root := openTestRoot(t, dir)
 	outside := filepath.Join(t.TempDir(), "outside")
@@ -114,8 +114,8 @@ func TestWriteRootFileAtomic_ReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 		t.Skipf("symlinks are not available: %v", err)
 	}
 
-	if err := writeRootFileAtomic(root, ".env", []byte("new")); err != nil {
-		t.Fatalf("writeRootFileAtomic: %v", err)
+	if err := writeRootFileAtomic(root, ".env", []byte("new")); err == nil {
+		t.Fatal("expected writing to a symlink to be rejected")
 	}
 
 	//nolint:gosec // path is built from t.TempDir()
@@ -126,8 +126,46 @@ func TestWriteRootFileAtomic_ReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lstat: %v", err)
 	}
-	if !info.Mode().IsRegular() {
-		t.Fatalf("expected %s to be replaced by a regular file, got mode %v", target, info.Mode())
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to stay a symlink, got mode %v", target, info.Mode())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected no leftover temporary files, got %v", entries)
+	}
+}
+
+func TestWriteRootFileAtomic_PreservesFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not supported on Windows")
+	}
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+	target := filepath.Join(dir, ".env")
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil { //nolint:gosec // the test needs a world-readable file
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(target, 0o644); err != nil { //nolint:gosec // the test needs a world-readable file
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	if err := writeRootFileAtomic(root, ".env", []byte("new")); err != nil {
+		t.Fatalf("writeRootFileAtomic: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("expected mode 0644 to be kept, got %v", info.Mode().Perm())
+	}
+	//nolint:gosec // path is built from t.TempDir()
+	if content, _ := os.ReadFile(target); string(content) != "new" {
+		t.Fatalf("expected the file to be updated, got %q", content)
 	}
 }
 
