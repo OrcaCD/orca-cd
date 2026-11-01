@@ -95,8 +95,9 @@ type pathRules struct {
 	restrictMountsDir string
 	// deploymentsDir and applicationDir confine paths inside the deployments
 	// directory to the application's own directory, see deploymentPathViolation.
-	deploymentsDir string
-	applicationDir string
+	deploymentsDir     string
+	applicationDir     string
+	hostDeploymentsDir string
 }
 
 // inspects every service in the project and returns an
@@ -312,7 +313,7 @@ func hostPathViolation(path string, rules pathRules) string {
 	} else if reason := sensitivePathReason(path); reason != "" {
 		return reason
 	}
-	return deploymentPathViolation(path, rules.deploymentsDir, rules.applicationDir)
+	return deploymentPathViolation(path, rules)
 }
 
 // sensitivePathReason returns why a path is on the deny-list, or "" if it is not.
@@ -346,8 +347,10 @@ func sensitivePathReason(source string) string {
 
 // checkEnvFile applies the same rules as checkBindMounts to env_file, since it
 // is read from the agent's filesystem (e.g. /proc/self/environ holds the
-// agent's token).
+// agent's token). The path is read as is and not by the Docker daemon, so it is
+// not mapped from the host's deployments directory.
 func checkEnvFile(serviceName string, svc composetypes.ServiceConfig, rules pathRules) []error {
+	rules.hostDeploymentsDir = ""
 	var violations []error
 	for _, envFile := range svc.EnvFiles {
 		if reason := hostPathViolation(envFile.Path, rules); reason != "" {

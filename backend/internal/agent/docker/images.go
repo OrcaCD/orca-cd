@@ -136,6 +136,10 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
 	}
 
+	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
+		return false, fmt.Errorf("resolve host deployments directory: %w", err)
+	}
+
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
 		ProjectName: projectName,
 		ConfigPaths: []string{composePath},
@@ -148,9 +152,6 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	// deployment directory, so it is checked again before every redeploy.
 	if err := c.enforceDeployPolicy(appID, project, filepath.Dir(composePath)); err != nil {
 		return false, err
-	}
-	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
-		return false, fmt.Errorf("resolve host deployments directory: %w", err)
 	}
 	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
 		return false, fmt.Errorf("translate bind mount sources: %w", err)

@@ -34,6 +34,12 @@ type deployExecutor interface {
 	Remove(ctx context.Context, req docker.DeleteRequest) error
 }
 
+type envManager interface {
+	ListEnv(ctx context.Context, appName string) ([]*messages.EnvFile, error)
+	UpdateEnv(ctx context.Context, appName string, files []*messages.EnvFileChanges) error
+	Redeploy(ctx context.Context, appID, appName string) error
+}
+
 type pollerHandler interface {
 	ApplySettings(apps []docker.AppPollConfig)
 	TriggerNow(appID, appName, requestID string, deleteOld bool)
@@ -224,6 +230,10 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		}
 	case *messages.ServerMessage_PullImagesRequest:
 		go executePullImages(poller, p.PullImagesRequest)
+	case *messages.ServerMessage_EnvListRequest:
+		go executeEnvList(ctx, sender, deployer, p.EnvListRequest)
+	case *messages.ServerMessage_EnvUpdateRequest:
+		go executeEnvUpdate(ctx, sender, deployer, p.EnvUpdateRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
