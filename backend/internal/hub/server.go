@@ -102,6 +102,9 @@ func DefaultConfig() (Config, error) {
 	}, nil
 }
 
+// Must not be lower than the webhook body limit in routes.
+const maxRequestBodyBytes = 10 << 20 // 10 MiB
+
 var Log = logger.New("hub", false)
 
 func Run(cfg Config) error {
@@ -179,6 +182,7 @@ func Run(cfg Config) error {
 		router.Use(middleware.DemoBlocking())
 	}
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
+	router.Use(middleware.MaxBodySize(maxRequestBodyBytes))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
 	err = RegisterRoutes(router, cfg)
