@@ -2,6 +2,7 @@ package dotenv
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -36,56 +37,125 @@ func Parse(text string) *Doc {
 		lines = lines[:len(lines)-1]
 	}
 
+	joined := false
 	for i := 0; i < len(lines); {
-		item, consumed := scanItem(lines, i)
+		item, consumed, tail := scanItem(lines, i)
+		item.joined = joined
+		if item.key != "" && !joined {
+			doc.attachMarkers(&item)
+		}
 		doc.items = append(doc.items, item)
+
+		joined = tail != ""
 		i += consumed
+		if joined {
+			i--
+			lines[i] = tail
+		}
 	}
 	return doc
 }
 
-func scanItem(lines []string, i int) (item, int) {
+func (d *Doc) attachMarkers(assignment *item) {
+	start := len(d.items)
+	for start > 0 && d.items[start-1].markerLine {
+		start--
+	}
+	for _, marker := range d.items[start:] {
+		assignment.markers = append(assignment.markers, marker.raw...)
+	}
+	d.items = d.items[:start]
+}
+
+// scanItem returns the item starting at lines[i], the number of lines it uses
+// and, if another statement follows the closing quote, the text of it.
+func scanItem(lines []string, i int) (item, int, string) {
 	line := lines[i]
 	opaque := item{raw: []string{line}}
 
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
-		return opaque, 1
+		return opaque, 1, ""
 	}
 	if strings.HasPrefix(trimmed, "#") {
-		opaque.marker = strings.TrimSpace(trimmed[1:]) == PublicMarker
-		return opaque, 1
+		opaque.markerLine = strings.TrimSpace(trimmed[1:]) == PublicMarker
+		return opaque, 1, ""
 	}
 
-	statement := exportPattern.ReplaceAllString(strings.TrimLeft(line, " \t"), "")
+	// Slice instead of ReplaceAllString, which copies the rest of the line for
+	// every statement on it.
+	statement := strings.TrimLeft(line, " \t")
+	if loc := exportPattern.FindStringIndex(statement); loc != nil {
+		statement = statement[loc[1]:]
+	}
 	// Compose also accepts "KEY: value" and splits at whichever comes first.
 	idx := strings.IndexAny(statement, "=:")
 	if idx < 0 {
-		return opaque, 1
+		return opaque, 1, ""
 	}
 	key := strings.TrimSpace(statement[:idx])
 	if !envrules.KeyPattern.MatchString(key) {
-		return opaque, 1
+		return opaque, 1, ""
 	}
 
-	rest := strings.TrimLeft(statement[idx+1:], " \t")
+	rest := strings.TrimLeftFunc(statement[idx+1:], isValueSpace)
+	prefix := line[:len(line)-len(rest)]
 	if rest != "" && (rest[0] == '"' || rest[0] == '\'') {
-		value, consumed, ok := scanQuotedValue(lines, i, rest)
+		value, consumed, tail, ok := scanQuotedValue(lines, i, rest)
 		if !ok {
-			return opaque, 1
+			return opaque, 1, ""
 		}
-		return item{raw: lines[i : i+consumed], key: key, value: value}, consumed
+		quoted := item{
+			raw:    slices.Clone(lines[i : i+consumed]),
+			key:    key,
+			value:  value,
+			prefix: prefix,
+		}
+		if t := strings.TrimSpace(tail); t != "" && t[0] != '#' {
+			last := len(quoted.raw) - 1
+			quoted.raw[last] = quoted.raw[last][:len(quoted.raw[last])-len(tail)]
+			return quoted, consumed, tail
+		}
+		quoted.suffix = commentSuffix(tail)
+		return quoted, consumed, ""
 	}
 
 	value, _, _ := strings.Cut(rest, " #")
 	value = strings.TrimRightFunc(value, unicode.IsSpace)
-	return item{raw: []string{line}, key: key, value: value}, 1
+	return item{
+		raw:    []string{line},
+		key:    key,
+		value:  value,
+		prefix: prefix,
+		suffix: commentSuffix(rest[len(value):]),
+	}, 1, ""
+}
+
+// isValueSpace matches isSpace in the Compose parser, except for "\r", which is
+// the line ending of CRLF files here.
+func isValueSpace(r rune) bool {
+	switch r {
+	case ' ', '\t', '\v', '\f', 0x85, 0xA0:
+		return true
+	}
+	return false
+}
+
+func commentSuffix(tail string) string {
+	tail = strings.TrimRight(tail, "\r")
+	if !strings.HasPrefix(strings.TrimSpace(tail), "#") {
+		return ""
+	}
+	if strings.HasPrefix(tail, "#") {
+		return " " + tail
+	}
+	return tail
 }
 
 // scanQuotedValue mirrors the Compose parser, including values that continue
 // on the following lines. rest starts with the opening quote on
-// lines[startLine].
-func scanQuotedValue(lines []string, startLine int, rest string) (string, int, bool) {
+// lines[startLine]. tail is the text after the closing quote.
+func scanQuotedValue(lines []string, startLine int, rest string) (value string, consumed int, tail string, ok bool) {
 	quote := rest[0]
 	var chars []byte
 	escaped := false
@@ -122,14 +192,14 @@ func scanQuotedValue(lines []string, startLine int, rest string) (string, int, b
 				continue
 			}
 
-			value := string(chars)
+			value = string(chars)
 			if quote == '"' {
 				value = unescape(value)
 			}
-			return value, line - startLine + 1, true
+			return value, line - startLine + 1, segment[pos+1:], true
 		}
 	}
-	return "", 0, false
+	return "", 0, "", false
 }
 
 func unescape(s string) string {

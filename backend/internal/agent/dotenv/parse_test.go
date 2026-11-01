@@ -26,6 +26,59 @@ func assertValues(t *testing.T, text string, want map[string]string) {
 	}
 }
 
+func TestParse_StatementsAfterClosingQuote(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want map[string]string
+	}{
+		{"after a space", "A=\"x\" B=2\n", map[string]string{"A": "x", "B": "2"}},
+		{"without a space", "A=\"x\"B=2\n", map[string]string{"A": "x", "B": "2"}},
+		{"quoted second value", "A='x' B=\"y z\"\n", map[string]string{"A": "x", "B": "y z"}},
+		{"multi-line first value", "A=\"x\ny\" B=2\n", map[string]string{"A": "x\ny", "B": "2"}},
+		{"chain", "A=\"x\" B=\"y\" C=3\n", map[string]string{"A": "x", "B": "y", "C": "3"}},
+		{"comment after second", "A=\"x\" B=2 # c\n", map[string]string{"A": "x", "B": "2"}},
+		{"word that is not an assignment", "A=\"x\" junk\n", map[string]string{"A": "x"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValues(t, tt.text, tt.want)
+			if got := Parse(tt.text).String(); got != tt.text {
+				t.Fatalf("expected the text to round-trip, got %q", got)
+			}
+		})
+	}
+}
+
+func TestParse_WhitespaceBeforeValue(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want map[string]string
+	}{
+		{"no-break space before quoted", "A=\u00a0\"x\"\n", map[string]string{"A": "x"}},
+		{"vertical tab before quoted", "A=\v\"x\"\n", map[string]string{"A": "x"}},
+		{"form feed before quoted", "A=\f\"x\"\n", map[string]string{"A": "x"}},
+		{"next line before quoted", "A=\u0085\"x\"\n", map[string]string{"A": "x"}},
+		{"mixed before quoted", "A= \u00a0\t\"x\"\n", map[string]string{"A": "x"}},
+		{"yaml style", "A:\u00a0\"x\"\n", map[string]string{"A": "x"}},
+		{"no-break space before unquoted", "A=\u00a0x\n", map[string]string{"A": "x"}},
+		{"no-break space then space", "A=\u00a0 x y\n", map[string]string{"A": "x y"}},
+		{"statement after quoted", "A=\u00a0'x' B=2\n", map[string]string{"A": "x", "B": "2"}},
+		{"only a no-break space", "A=\u00a0\n", map[string]string{"A": ""}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValues(t, tt.text, tt.want)
+			if got := Parse(tt.text).String(); got != tt.text {
+				t.Fatalf("expected the text to round-trip, got %q", got)
+			}
+		})
+	}
+}
+
 func TestParse_MarkerMakesVariable(t *testing.T) {
 	doc := Parse("# orcacd:public\nLOG_LEVEL=debug\nDB_PASSWORD=hunter2\n")
 

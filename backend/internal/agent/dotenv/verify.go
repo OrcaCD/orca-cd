@@ -32,32 +32,77 @@ func VerifyEdit(before, after string, changes []Change) error {
 		return errors.New("the edited file would no longer be valid")
 	}
 
+	var rawBefore map[string]string
+	if oldErr == nil {
+		rawBefore = rawValues(before)
+	}
+
+	unchanged := func(change Change) bool {
+		raw, existed := rawBefore[change.Key]
+		return !change.Delete && existed && raw == change.Value
+	}
+	othersChange := slices.ContainsFunc(changes, func(change Change) bool { return !unchanged(change) })
+
 	for _, change := range changes {
 		value, ok := newVars[change.Key]
 		switch {
 		case change.Delete && ok:
 			return fmt.Errorf("verification failed: key %q is still present after deleting it", change.Key)
-		case !change.Delete && (!ok || value != change.Value):
+		case change.Delete:
+		case !ok:
 			return fmt.Errorf("verification failed: key %q does not have the requested value", change.Key)
+		default:
+			want := change.Value
+			if unchanged(change) && strings.Contains(change.Value, "$") {
+				if othersChange {
+					continue
+				}
+				want = oldVars[change.Key]
+			}
+			if value != want {
+				return fmt.Errorf("verification failed: key %q does not have the requested value", change.Key)
+			}
 		}
 	}
 
 	if oldErr != nil {
 		return nil
 	}
-	want := make(map[string]struct{}, len(oldVars)+len(changes))
+	wantKeys := make(map[string]struct{}, len(oldVars)+len(changes))
 	for key := range oldVars {
-		want[key] = struct{}{}
+		wantKeys[key] = struct{}{}
 	}
+	touched := make(map[string]struct{}, len(changes))
 	for _, change := range changes {
+		touched[change.Key] = struct{}{}
 		if change.Delete {
-			delete(want, change.Key)
+			delete(wantKeys, change.Key)
 		} else {
-			want[change.Key] = struct{}{}
+			wantKeys[change.Key] = struct{}{}
 		}
 	}
-	if !slices.Equal(slices.Sorted(maps.Keys(want)), slices.Sorted(maps.Keys(newVars))) {
+	if !maps.EqualFunc(wantKeys, newVars, func(struct{}, string) bool { return true }) {
 		return errors.New("verification failed: the edit changed keys that were not requested")
 	}
+
+	rawAfter := rawValues(after)
+	for key, raw := range rawBefore {
+		if _, ok := touched[key]; ok {
+			continue
+		}
+		// Values with $ may reference a changed key, so only their text is compared.
+		if rawAfter[key] != raw || (!strings.Contains(raw, "$") && newVars[key] != oldVars[key]) {
+			return errors.New("verification failed: the edit changed the value of a key that was not requested")
+		}
+	}
 	return nil
+}
+
+func rawValues(text string) map[string]string {
+	entries := Parse(text).Entries()
+	values := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		values[entry.Key] = entry.Value
+	}
+	return values
 }

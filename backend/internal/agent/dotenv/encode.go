@@ -11,7 +11,10 @@ func EncodeValue(value string) string {
 	if isPlain(value) {
 		return value
 	}
+	return quoteValue(value)
+}
 
+func quoteValue(value string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range value {
