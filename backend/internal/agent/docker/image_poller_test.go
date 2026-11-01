@@ -33,7 +33,7 @@ func (s *stubMessageSender) received() []*messages.ClientMessage {
 func newTestPoller(t *testing.T, sender MessageSender) *ImagePoller {
 	t.Helper()
 	c := newTestClient(t)
-	return NewImagePoller(c, sender, zerolog.Nop())
+	return NewImagePoller(c, sender, zerolog.Nop(), 0)
 }
 
 func applyOne(p *ImagePoller, appID, appName string, settings PollSettings) {
@@ -395,11 +395,39 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	}
 
 	c := newTestClient(t)
-	p := NewImagePoller(c, noopSender{}, zerolog.Nop())
+	p := NewImagePoller(c, noopSender{}, zerolog.Nop(), 0)
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "", false) // must not panic
+}
+
+func TestImagePoller_IntervalOverride(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	called := make(chan struct{}, 1)
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+		return false, nil
+	}
+
+	p := NewImagePoller(newTestClient(t), noopSender{}, zerolog.Nop(), 10*time.Millisecond)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a tick with the overridden interval")
+	}
+	// The configured interval is kept, only the ticker uses the override
+	if got := p.SettingsFor("app-1"); got == nil || got.IntervalSeconds != 60 {
+		t.Errorf("expected stored interval 60, got %+v", got)
+	}
 }
 
 func TestImagePoller_TriggerNow(t *testing.T) {

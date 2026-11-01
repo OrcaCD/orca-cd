@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -47,6 +48,9 @@ type Config struct {
 	DeploymentsDir                string
 	AllowedPrivilegedApps         map[string]struct{}
 	RestrictBindMountsToDeployDir bool
+	// ImagePollIntervalOverride replaces the image polling interval of every
+	// application. Only meant for tests, it is zero unless set.
+	ImagePollIntervalOverride time.Duration
 	// RootCAs is nil unless CA_CERT_FILE is set, in which case it holds the
 	// system roots plus the configured certificates.
 	RootCAs *x509.CertPool
@@ -110,6 +114,14 @@ func DefaultConfig() (Config, error) {
 
 	restrictBindMountsToDeployDir := utils.EnvBool("RESTRICT_VOLUMES_TO_DEPLOYMENTS_DIR")
 
+	var imagePollIntervalOverride time.Duration
+	if value := os.Getenv("IMAGE_POLL_INTERVAL_OVERRIDE"); value != "" {
+		imagePollIntervalOverride, err = time.ParseDuration(value)
+		if err != nil || imagePollIntervalOverride < time.Second {
+			return Config{}, &FatalConfigError{fmt.Sprintf("IMAGE_POLL_INTERVAL_OVERRIDE: %q is not a duration of at least 1s", value)}
+		}
+	}
+
 	var rootCAs *x509.CertPool
 	if caCertFile := os.Getenv("CA_CERT_FILE"); caCertFile != "" {
 		rootCAs, err = loadCACertPool(caCertFile)
@@ -130,6 +142,7 @@ func DefaultConfig() (Config, error) {
 		DeploymentsDir:                deploymentsDir,
 		AllowedPrivilegedApps:         allowedPrivilegedApps,
 		RestrictBindMountsToDeployDir: restrictBindMountsToDeployDir,
+		ImagePollIntervalOverride:     imagePollIntervalOverride,
 		RootCAs:                       rootCAs,
 	}, nil
 }
@@ -288,7 +301,7 @@ func Run(cfg Config) error {
 	// Re-report the Docker state when the daemon goes away or comes (back) up
 	// after the agent already connected; without a connection this is a no-op.
 	dockerClient.SetDaemonStateHandler(func() { sendAgentInfo(sRef, dockerClient) })
-	poller := docker.NewImagePoller(dockerClient, sRef, Log)
+	poller := docker.NewImagePoller(dockerClient, sRef, Log, cfg.ImagePollIntervalOverride)
 	defer poller.StopAll()
 
 	var wsConnected atomic.Bool
