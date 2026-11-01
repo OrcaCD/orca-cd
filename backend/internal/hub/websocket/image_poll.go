@@ -73,23 +73,66 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		return
 	}
 
-	requestID := recordImagePullHistory(ctx, r, log)
+	// An update under a health gate completes once the gate decided.
+	var gate time.Duration
+	if r.Success && r.ImagesUpdated && !rolledBack {
+		gate = app.HealthGate()
+	}
+	requestID := recordImagePullHistory(ctx, r, gate > 0, log)
 	if ctx.Err() != nil {
 		return
 	}
 	if r.Success && r.ImagesUpdated && !rolledBack {
-		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images); err != nil {
+		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images, gate); err != nil {
 			log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record image update deployment")
 		}
+		sendRetentionSettings(ctx, &app, log)
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)
 
 	if r.Success {
-		go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
+		if gate == 0 {
+			go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
+		}
 		return
 	}
 	go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String(), log)
+
+	// Only a failed redeploy changed the application. A failed check or pull
+	// left the containers as they were.
+	if r.RedeployFailed {
+		if target := automaticRollbackTarget(ctx, &app, nil, log); target != nil {
+			triggerAutomaticRollback(ctx, &app, target, models.ApplicationEventSourceDeploymentFailure, log)
+		}
+	}
+}
+
+// startGatedImageUpdateEvent keeps the image update event of a result under a
+// health gate running, and records a running event for periodic updates.
+func startGatedImageUpdateEvent(ctx context.Context, r *messages.PullImagesResult, log *zerolog.Logger) string {
+	event, err := applicationevents.ForRequest(ctx, r.RequestId, r.ApplicationId)
+	if err != nil {
+		log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to look up image update event")
+		return ""
+	}
+	if event != nil {
+		return r.RequestId
+	}
+	requestID := r.RequestId
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	if _, err := applicationevents.Start(ctx, applicationevents.Params{
+		ApplicationID: r.ApplicationId,
+		RequestID:     &requestID,
+		Type:          models.ApplicationEventImageUpdate,
+		Source:        models.ApplicationEventSourceImagePolling,
+	}); err != nil {
+		log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record periodic image update event")
+		return ""
+	}
+	return requestID
 }
 
 // Prevent reporting a lot of failures for periodic image polling with same error message
@@ -111,8 +154,9 @@ func isRepeatedPeriodicFailure(ctx context.Context, r *messages.PullImagesResult
 // recordImagePullHistory completes the explicit image_update event matching this
 // result, or records a completed image_polling event for unsolicited periodic
 // results that changed images or failed. Successful no-op polls leave no history.
-// It returns the request ID of the event, if one was recorded.
-func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, log *zerolog.Logger) string {
+// An update under a health gate stays running instead. It returns the request
+// ID of the event, if one was recorded.
+func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, gated bool, log *zerolog.Logger) string {
 	status := models.ApplicationEventFailed
 	if r.Success && r.ImagesUpdated {
 		status = models.ApplicationEventSucceeded
@@ -122,6 +166,9 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, l
 	var errMsg *string
 	if !r.Success && r.ErrorMessage != "" {
 		errMsg = &r.ErrorMessage
+	}
+	if gated {
+		return startGatedImageUpdateEvent(ctx, r, log)
 	}
 
 	matched, err := applicationevents.Complete(ctx, r.RequestId, r.ApplicationId, status, errMsg)

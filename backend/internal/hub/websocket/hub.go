@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -31,6 +33,9 @@ type Client struct {
 	// healthSynced holds the applications whose health history was synced on
 	// this connection. Only the connection's message handler accesses it.
 	healthSynced map[string]struct{}
+	// reportedHealth holds the applications this connection reported the
+	// health of. Unlike healthSynced it is read outside the message handler.
+	reportedHealth sync.Map
 }
 
 func (c *Client) healthHistorySynced(applicationID string) bool {
@@ -152,6 +157,19 @@ func (h *Hub) GetClient(id string) (*Client, bool) {
 	return c, ok
 }
 
+// HasReportedHealth reports whether the agent's current connection reported
+// the health of the application. Until then its stored health may be stale.
+func (h *Hub) HasReportedHealth(agentID, applicationID string) bool {
+	h.mu.RLock()
+	c, ok := h.clients[agentID]
+	h.mu.RUnlock()
+	if !ok || c.closing.Load() {
+		return false
+	}
+	_, reported := c.reportedHealth.Load(applicationID)
+	return reported
+}
+
 // IsRegistered reports whether an ID is reserved by an active or closing
 // client. It allows duplicate reconnects to be rejected before the expensive
 // WebSocket and key-exchange handshakes.
@@ -218,6 +236,7 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 			Enabled:         apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
 			DeleteOldImages: apps[i].DeleteOldImages,
+			ImageRetention:  h.imageRetention(&apps[i]),
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{
@@ -227,6 +246,21 @@ func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool 
 			},
 		},
 	})
+}
+
+// imageRetention keeps the images a rollback needs when periodic image
+// updates delete old images.
+func (h *Hub) imageRetention(app *models.Application) *messages.ImageRetention {
+	if !app.RollbackEnabled || !app.DeleteOldImages {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	retention, err := deployments.ImageRetention(ctx, app)
+	if err != nil {
+		h.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to determine images to keep for rollbacks")
+	}
+	return retention
 }
 
 const writeWait = 10 * time.Second

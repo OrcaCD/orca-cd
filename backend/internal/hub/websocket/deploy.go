@@ -38,11 +38,16 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	}
 
 	if result.Success {
-		// History reflects the Agent's deployment result independently of whether
-		// persisting the application's summary status succeeds.
-		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
-		if _, err := deployments.Succeed(ctx, result.ApplicationId, result.RequestId, result.Images); err != nil {
+		deployment, err := deployments.Succeed(ctx, result.ApplicationId, result.RequestId, result.Images, app.HealthGate())
+		if err != nil {
 			log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to record deployment")
+		}
+		// A deployment under a health gate completes once the gate decided.
+		verifying := deployment != nil && deployment.Status == models.DeploymentVerifying
+		if !verifying {
+			// History reflects the Agent's deployment result independently of whether
+			// persisting the application's summary status succeeds.
+			completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 		}
 
 		// A successful deploy means the compose project was applied, not that the
@@ -56,7 +61,7 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		if event != nil {
 			source = event.Source
 		}
-		err := updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
+		err = updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 			SyncStatus:     models.Synced,
 			LastSyncedAt:   &now,
 			LastSyncError:  &cleared,
@@ -66,7 +71,10 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 			return
 		}
 		clearRollbackState(ctx, agentID, app, log)
-		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
+		sendRetentionSettings(ctx, app, log)
+		if !verifying {
+			go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
+		}
 		return
 	}
 
@@ -74,7 +82,8 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	if errMsg == "" {
 		errMsg = "deployment failed"
 	}
-	if err := deployments.Discard(ctx, result.ApplicationId, result.RequestId); err != nil {
+	discarded, err := deployments.Discard(ctx, result.ApplicationId, result.RequestId)
+	if err != nil {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to discard failed deployment")
 	}
 
@@ -83,8 +92,21 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
-	if ctx.Err() == nil {
-		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
+	if ctx.Err() != nil {
+		return
+	}
+	go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
+
+	// Only deployments the hub dispatched are rolled back.
+	if event == nil {
+		return
+	}
+	var previous *string
+	if discarded != nil {
+		previous = discarded.PreviousDeploymentId
+	}
+	if target := automaticRollbackTarget(ctx, app, previous, log); target != nil {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, log)
 	}
 }
 

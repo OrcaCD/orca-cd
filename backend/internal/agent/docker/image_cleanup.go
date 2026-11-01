@@ -3,9 +3,45 @@ package docker
 import (
 	"context"
 
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 )
+
+// imageRetention is the hub's ImageRetention for an application that can be
+// rolled back.
+type imageRetention struct {
+	keep   map[string]struct{}
+	remove []string
+}
+
+// SetImageRetention stores which old images to keep or remove for the
+// application. Without a retention, the images an update replaced are removed.
+func (c *Client) SetImageRetention(appID string, retention *messages.ImageRetention) {
+	if c == nil {
+		return
+	}
+	c.retentionMu.Lock()
+	defer c.retentionMu.Unlock()
+	if retention == nil {
+		delete(c.retention, appID)
+		return
+	}
+	if c.retention == nil {
+		c.retention = make(map[string]imageRetention)
+	}
+	keep := make(map[string]struct{}, len(retention.GetKeepImageIds()))
+	for _, id := range retention.GetKeepImageIds() {
+		keep[id] = struct{}{}
+	}
+	c.retention[appID] = imageRetention{keep: keep, remove: retention.GetRemoveImageIds()}
+}
+
+func (c *Client) imageRetention(appID string) imageRetention {
+	c.retentionMu.Lock()
+	defer c.retentionMu.Unlock()
+	return c.retention[appID]
+}
 
 var listApplicationImageIDs = func(ctx context.Context, cli client.APIClient, appID string) (map[string]struct{}, error) {
 	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
@@ -46,8 +82,25 @@ func (c *Client) applicationImages(ctx context.Context, appID string) map[string
 // so this works regardless of whether the update changed a tag in the compose
 // file or pulled a new digest for the same tag. Images still used by other
 // containers are kept, since the daemon refuses to remove them without force.
+// An application that can be rolled back keeps the images of the deployment a
+// rollback restores, and removes those of earlier deployments instead.
 func (c *Client) removeReplacedImages(ctx context.Context, appID string, previous map[string]struct{}) {
-	if len(previous) == 0 {
+	if previous == nil {
+		return
+	}
+	retention := c.imageRetention(appID)
+	candidates := make(map[string]struct{}, len(previous)+len(retention.remove))
+	for imageID := range previous {
+		if _, keep := retention.keep[imageID]; !keep {
+			candidates[imageID] = struct{}{}
+		}
+	}
+	for _, imageID := range retention.remove {
+		if _, keep := retention.keep[imageID]; !keep {
+			candidates[imageID] = struct{}{}
+		}
+	}
+	if len(candidates) == 0 {
 		return
 	}
 	current, err := listApplicationImageIDs(ctx, c.cli.Client(), appID)
@@ -56,7 +109,7 @@ func (c *Client) removeReplacedImages(ctx context.Context, appID string, previou
 		return
 	}
 
-	for imageID := range previous {
+	for imageID := range candidates {
 		if _, inUse := current[imageID]; inUse {
 			continue
 		}
