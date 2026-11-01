@@ -777,6 +777,31 @@ func TestDeploy_LoadErrorRestoresPreviousDeployment(t *testing.T) {
 	}
 }
 
+func TestDeploy_InvalidComposeYAMLDoesNotRunComposeUp(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	originalLoadProject := loadProject
+	originalUpProject := upProject
+	t.Cleanup(func() {
+		loadProject = originalLoadProject
+		upProject = originalUpProject
+	})
+	upProject = func(context.Context, api.Compose, *composetypes.Project, api.UpOptions) error {
+		t.Fatal("compose up must not run when the compose file is invalid")
+		return nil
+	}
+
+	err := c.Deploy(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "not: [valid",
+	})
+	if err == nil {
+		t.Fatal("expected invalid compose YAML to abort deployment")
+	}
+}
+
 func TestDeploy_ReplacesSymlinkedComposeFile(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
