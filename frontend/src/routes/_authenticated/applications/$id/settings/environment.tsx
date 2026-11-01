@@ -231,11 +231,7 @@ function EnvironmentPage() {
 								{m.envUnsavedChanges({ count: changeCount })}
 							</span>
 						)}
-						<Button
-							variant="outline"
-							onClick={handleReload}
-							disabled={isBusy || changeCount === 0}
-						>
+						<Button variant="outline" onClick={handleReload} disabled={isBusy || changeCount === 0}>
 							{m.envDiscardChanges()}
 						</Button>
 						<Button onClick={handleSave} disabled={isBusy || changeCount === 0 || hasInvalidValue}>
