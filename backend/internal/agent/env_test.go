@@ -201,6 +201,19 @@ func TestExecuteEnvUpdate_UnsupportedDeployer(t *testing.T) {
 	}
 }
 
+func TestExecuteEnv_SendFailureDoesNotPanic(t *testing.T) {
+	sender := &stubSender{err: errors.New("connection closed"), sent: make(chan *messages.ClientMessage, 2)}
+	deployer := &stubEnvDeployer{}
+
+	executeEnvList(t.Context(), sender, deployer, &messages.EnvListRequest{RequestId: "req-1", ApplicationId: "app-1"})
+	executeEnvUpdate(t.Context(), sender, deployer, &messages.EnvUpdateRequest{RequestId: "req-2", ApplicationId: "app-1"})
+
+	want := []string{"list ", "update  0", "redeploy app-1 "}
+	if got := deployer.recordedCalls(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("expected calls %v, got %v", want, got)
+	}
+}
+
 func TestExecuteEnvUpdate_SerializesWithDeploy(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 2)}
 	deployer := &stubEnvDeployer{

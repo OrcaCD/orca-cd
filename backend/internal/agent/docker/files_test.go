@@ -216,3 +216,36 @@ func TestReadDeploymentFile(t *testing.T) {
 		t.Fatalf("expected a symlink pointing outside the directory not to be read, got %q", content)
 	}
 }
+
+func TestFileHelpers_Errors(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Run("ensureDeploymentDir below a file", func(t *testing.T) {
+		if err := ensureDeploymentDir(filepath.Join(blocker, "app")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("writeFileAtomic into a missing directory", func(t *testing.T) {
+		if err := writeFileAtomic(filepath.Join(dir, "missing", "app.env"), []byte("A=1")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("writeRootFileAtomic below a file", func(t *testing.T) {
+		root := openTestRoot(t, dir)
+		if err := writeRootFileAtomic(root, "blocker/sub/app.env", []byte("A=1")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("readDeploymentFile in a missing directory", func(t *testing.T) {
+		if _, ok := readDeploymentFile(filepath.Join(dir, "missing"), ".env"); ok {
+			t.Fatal("expected the file not to be read")
+		}
+	})
+}

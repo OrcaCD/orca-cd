@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/agent/dotenv"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -1057,4 +1058,173 @@ func TestDeploy_WithRealComposeLoaderCreatesRequiredEnvFile(t *testing.T) {
 	if value := environment["GREETING"]; value == nil || *value != "hello world" {
 		t.Fatalf("expected the env file to be part of the deployed environment, got %v", environment)
 	}
+}
+
+func TestOpenApplicationDir_Errors(t *testing.T) {
+	t.Run("deployments directory not configured", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = ""
+
+		if _, err := c.ListEnv(t.Context(), envTestApp); err == nil || !strings.Contains(err.Error(), "not configured") {
+			t.Fatalf("expected a configuration error, got %v", err)
+		}
+	})
+
+	t.Run("name without usable characters", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = t.TempDir()
+
+		if _, err := c.ListEnv(t.Context(), "!!!"); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("application directory is a file", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = t.TempDir()
+		writeTestFile(t, filepath.Join(c.deploymentsDir, envTestApp), "not a directory")
+
+		if _, err := c.ListEnv(t.Context(), envTestApp); err == nil || !strings.Contains(err.Error(), "not a directory") {
+			t.Fatalf("expected a not-a-directory error, got %v", err)
+		}
+	})
+}
+
+func TestEnvEntries_SkipsEntriesThatCannotBeShown(t *testing.T) {
+	entries := envEntries(dotenv.Parse("# " + dotenv.PublicMarker + "\nVALID=1\n# " + dotenv.PublicMarker + "\nBAD:KEY=2\n# " + dotenv.PublicMarker + "\nINVALID_UTF8=\xff\xfe\nSECRET=hidden\n"))
+
+	got := map[string]*messages.EnvEntry{}
+	for _, entry := range entries {
+		got[entry.Key] = entry
+	}
+	if _, ok := got["BAD:KEY"]; ok {
+		t.Fatal("expected a key compose does not accept to be skipped")
+	}
+	if _, ok := got["INVALID_UTF8"]; ok {
+		t.Fatal("expected a value that is not valid UTF-8 to be skipped")
+	}
+	if got["VALID"] == nil || got["VALID"].Value != "1" {
+		t.Fatalf("expected VALID to be listed, got %v", entries)
+	}
+}
+
+func TestUpdateEnv_NotDeployed(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	err := c.UpdateEnv(t.Context(), envTestApp, []*messages.EnvFileChanges{envUpdate(".env", "rev")})
+	if !errors.Is(err, errApplicationNotDeployed) {
+		t.Fatalf("expected errApplicationNotDeployed, got %v", err)
+	}
+}
+
+func TestUpdateEnv_ComposeFileDoesNotLoad(t *testing.T) {
+	c := newTestClient(t)
+	setupEnvApp(t, c, nil)
+	loadProject = func(context.Context, api.Compose, api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return nil, errors.New("yaml: invalid")
+	}
+
+	err := c.UpdateEnv(t.Context(), envTestApp, []*messages.EnvFileChanges{envUpdate(".env", "rev")})
+	if err == nil || !strings.Contains(err.Error(), "yaml: invalid") {
+		t.Fatalf("expected the load error, got %v", err)
+	}
+}
+
+func TestUpdateEnv_CanceledContextWritesNothing(t *testing.T) {
+	c := newTestClient(t)
+	dir := setupEnvApp(t, c, map[string][]envTestFile{"web": {required(".env")}})
+	writeTestFile(t, filepath.Join(dir, ".env"), "A=1\n")
+	revision := listEnvFile(t, c, ".env").Revision
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := c.UpdateEnv(ctx, envTestApp, []*messages.EnvFileChanges{envUpdate(".env", revision, setChange("A", "2", true))})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if got := readTestFile(t, filepath.Join(dir, ".env")); got != "A=1\n" {
+		t.Fatalf("expected the file to stay untouched, got %q", got)
+	}
+}
+
+func TestUpdateEnv_RejectsResultLargerThanLimit(t *testing.T) {
+	c := newTestClient(t)
+	dir := setupEnvApp(t, c, map[string][]envTestFile{"web": {required(".env")}})
+	value := strings.Repeat("a", envrules.MaxValueBytes-100)
+	var existing strings.Builder
+	for i := range 60 {
+		fmt.Fprintf(&existing, "%s=%s\n", numberedKey(i), value)
+	}
+	writeTestFile(t, filepath.Join(dir, ".env"), existing.String())
+	revision := listEnvFile(t, c, ".env").Revision
+
+	var changes []*messages.EnvChange
+	for i := 100; i < 106; i++ {
+		changes = append(changes, setChange(numberedKey(i), value, false))
+	}
+
+	err := c.UpdateEnv(t.Context(), envTestApp, []*messages.EnvFileChanges{envUpdate(".env", revision, changes...)})
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("expected a size error, got %v", err)
+	}
+	if got := readTestFile(t, filepath.Join(dir, ".env")); got != existing.String() {
+		t.Fatal("expected the file to stay untouched")
+	}
+}
+
+func TestRedeploy_Errors(t *testing.T) {
+	t.Run("not deployed", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = t.TempDir()
+
+		if err := c.Redeploy(t.Context(), "app-1", envTestApp); !errors.Is(err, errApplicationNotDeployed) {
+			t.Fatalf("expected errApplicationNotDeployed, got %v", err)
+		}
+	})
+
+	t.Run("compose file cannot be read", func(t *testing.T) {
+		c := newTestClient(t)
+		dir := setupEnvApp(t, c, nil)
+		if err := os.Remove(filepath.Join(dir, composeFileName)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(dir, composeFileName), 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		err := c.Redeploy(t.Context(), "app-1", envTestApp)
+		if err == nil || errors.Is(err, errComposeFileMissing) {
+			t.Fatalf("expected a read error, got %v", err)
+		}
+	})
+}
+
+func TestCreateMissingEnvFiles_Errors(t *testing.T) {
+	t.Run("application directory does not exist", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "missing")
+		project := &composetypes.Project{Services: composetypes.Services{
+			"web": {Name: "web", EnvFiles: []composetypes.EnvFile{{Path: filepath.Join(dir, ".env"), Required: true}}},
+		}}
+
+		if err := createMissingEnvFiles(dir, project); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("parent of the env file is a file", func(t *testing.T) {
+		dir := t.TempDir()
+		writeTestFile(t, filepath.Join(dir, "blocker"), "x")
+		project := &composetypes.Project{Services: composetypes.Services{
+			"web": {Name: "web", EnvFiles: []composetypes.EnvFile{{Path: filepath.Join(dir, "blocker", "sub", ".env"), Required: true}}},
+		}}
+
+		if err := createMissingEnvFiles(dir, project); err == nil {
+			t.Fatal("expected an error")
+		}
+		if _, err := resolveEnvFiles(dir, project); err == nil || !strings.Contains(err.Error(), "create missing env files") {
+			t.Fatalf("expected resolveEnvFiles to report the error, got %v", err)
+		}
+	})
 }
