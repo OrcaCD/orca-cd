@@ -13,6 +13,10 @@ import (
 // The "-0" suffix is the lowest pre-release, so release candidates also qualify.
 const MinAgentVersion = "v0.6.0-0"
 
+// SkipMinAgentVersion disables the MinAgentVersion check. For local development
+// only, where agents are built from untagged commits.
+var SkipMinAgentVersion bool
+
 type AgentCompatibility string
 
 const (
@@ -39,7 +43,7 @@ func CheckAgentCompatibility(hubVersion, agentVersion string) AgentCompatibility
 	if !ok {
 		return AgentUnknown
 	}
-	if semver.Compare(agent, MinAgentVersion) < 0 {
+	if !SkipMinAgentVersion && semver.Compare(agent, MinAgentVersion) < 0 {
 		return AgentIncompatible
 	}
 	// Non-release hub builds (e.g. "dev", "main") can only be checked against

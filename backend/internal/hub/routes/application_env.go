@@ -31,8 +31,6 @@ const (
 
 	maxEnvPathBytes = 4096
 	maxEnvFiles     = 100
-
-	envSavedRedeployFailedPrefix = "the changes were saved, but redeploying the application failed"
 )
 
 type envEntryResponse struct {
@@ -85,7 +83,7 @@ func ListApplicationEnvHandler(c *gin.Context) {
 		return
 	}
 	if !result.Success {
-		c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "agent failed to list environment files")})
+		c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to load the environment files.")})
 		return
 	}
 
@@ -133,7 +131,7 @@ func UpdateApplicationEnvHandler(c *gin.Context) {
 
 	if result.Conflict {
 		c.JSON(http.StatusConflict, gin.H{
-			"error":    "the environment settings changed in the meantime",
+			"error":    "The environment settings were changed by someone else in the meantime.",
 			"conflict": true,
 		})
 		return
@@ -147,10 +145,15 @@ func UpdateApplicationEnvHandler(c *gin.Context) {
 
 	// The values were persisted, so the change is audited even though the
 	// redeploy failed.
-	if strings.HasPrefix(result.ErrorMessage, envSavedRedeployFailedPrefix) {
+	if strings.HasPrefix(result.ErrorMessage, envrules.SavedRedeployFailedPrefix) {
 		utils.RecordAuditLog(c, "updated-environment", "application", application.Id)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":                  utils.CapitalizeFirst(result.ErrorMessage),
+			"savedButRedeployFailed": true,
+		})
+		return
 	}
-	c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "agent failed to update environment files")})
+	c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to update the environment files.")})
 }
 
 func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {
@@ -179,12 +182,12 @@ func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {
 	}
 
 	if _, online := websocket.DefaultHub.GetClient(agent.Id); !online {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent is offline; environment variables cannot be viewed or changed"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Environment variables can only be viewed or changed while it is connected."})
 		return application, agent, false
 	}
 
 	if agent.Version == "" || version.CheckAgentCompatibility(version.Version, agent.Version) == version.AgentIncompatible {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("the agent does not support managing environment variables, please update it to %s or newer", strings.TrimSuffix(version.MinAgentVersion, "-0"))})
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("This agent is too old to manage environment variables. Please update it to version %s or newer.", strings.TrimSuffix(version.MinAgentVersion, "-0"))})
 		return application, agent, false
 	}
 
@@ -194,9 +197,9 @@ func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {
 func respondEnvTransportError(c *gin.Context, agent models.Agent, err error) {
 	switch {
 	case errors.Is(err, websocket.ErrAgentOffline):
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent is offline; environment variables cannot be viewed or changed"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Environment variables can only be viewed or changed while it is connected."})
 	case errors.Is(err, context.DeadlineExceeded):
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "agent did not respond in time"})
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "The agent did not respond in time. Please try again."})
 	default:
 		applicationEnvLog.Error().Err(err).Str("agent_id", agent.Id).Msg("environment request failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

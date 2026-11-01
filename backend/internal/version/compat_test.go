@@ -2,6 +2,32 @@ package version
 
 import "testing"
 
+func TestCheckAgentCompatibilitySkipMinVersion(t *testing.T) {
+	SkipMinAgentVersion = true
+	t.Cleanup(func() { SkipMinAgentVersion = false })
+
+	tests := []struct {
+		name  string
+		hub   string
+		agent string
+		want  AgentCompatibility
+	}{
+		{"below minimum is not incompatible", "v0.8.0", "v0.5.0-30-gabc123", AgentOutdated},
+		{"still outdated against hub", "v0.8.0", "v0.7.0", AgentOutdated},
+		{"non-release hub", "dev", "v0.3.0", AgentUpToDate},
+		{"not reported", "v0.8.0", "", AgentUnknown},
+		{"non-release agent", "v0.8.0", "main", AgentUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckAgentCompatibility(tt.hub, tt.agent); got != tt.want {
+				t.Errorf("CheckAgentCompatibility(%q, %q) = %q, want %q", tt.hub, tt.agent, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckAgentCompatibility(t *testing.T) {
 	tests := []struct {
 		name  string

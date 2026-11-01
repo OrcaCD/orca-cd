@@ -35,6 +35,7 @@ import { Route as AuthenticatedApplicationsIdHealthRouteImport } from './routes/
 import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
 import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
+import { Route as AuthenticatedApplicationsIdSettingsEnvironmentRouteImport } from './routes/_authenticated/applications/$id/settings/environment'
 import { Route as AuthenticatedApplicationsIdSettingsGeneralRouteImport } from './routes/_authenticated/applications/$id/settings/general'
 import { Route as AuthenticatedApplicationsIdSettingsImagePollingRouteImport } from './routes/_authenticated/applications/$id/settings/image-polling'
 import { Route as AuthenticatedRepositoriesIdSettingsIndexRouteImport } from './routes/_authenticated/repositories/$id/settings/index'
@@ -189,6 +190,12 @@ const AuthenticatedApplicationsIdSettingsIndexRoute =
     path: '/settings/',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdSettingsEnvironmentRoute =
+  AuthenticatedApplicationsIdSettingsEnvironmentRouteImport.update({
+    id: '/settings/environment',
+    path: '/settings/environment',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedApplicationsIdSettingsGeneralRoute =
   AuthenticatedApplicationsIdSettingsGeneralRouteImport.update({
     id: '/settings/general',
@@ -251,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
+  '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
@@ -280,6 +288,7 @@ export interface FileRoutesByTo {
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
+  '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   '/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
@@ -315,6 +324,7 @@ export interface FileRoutesById {
   '/_authenticated/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
+  '/_authenticated/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   '/_authenticated/applications/$id/settings/general': typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   '/_authenticated/applications/$id/settings/image-polling': typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   '/_authenticated/repositories/$id/settings/auth': typeof AuthenticatedRepositoriesIdSettingsAuthRoute
@@ -350,6 +360,7 @@ export interface FileRouteTypes {
     | '/applications/$id/history'
     | '/applications/$id/'
     | '/repositories/$id/'
+    | '/applications/$id/settings/environment'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
     | '/repositories/$id/settings/auth'
@@ -379,6 +390,7 @@ export interface FileRouteTypes {
     | '/applications/$id/history'
     | '/applications/$id'
     | '/repositories/$id'
+    | '/applications/$id/settings/environment'
     | '/applications/$id/settings/general'
     | '/applications/$id/settings/image-polling'
     | '/repositories/$id/settings/auth'
@@ -413,6 +425,7 @@ export interface FileRouteTypes {
     | '/_authenticated/applications/$id/history'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/repositories/$id/'
+    | '/_authenticated/applications/$id/settings/environment'
     | '/_authenticated/applications/$id/settings/general'
     | '/_authenticated/applications/$id/settings/image-polling'
     | '/_authenticated/repositories/$id/settings/auth'
@@ -612,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/settings/environment': {
+      id: '/_authenticated/applications/$id/settings/environment'
+      path: '/settings/environment'
+      fullPath: '/applications/$id/settings/environment'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdSettingsEnvironmentRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/applications/$id/settings/general': {
       id: '/_authenticated/applications/$id/settings/general'
       path: '/settings/general'
@@ -698,6 +718,7 @@ interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdHealthRoute: typeof AuthenticatedApplicationsIdHealthRoute
   AuthenticatedApplicationsIdHistoryRoute: typeof AuthenticatedApplicationsIdHistoryRoute
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
+  AuthenticatedApplicationsIdSettingsEnvironmentRoute: typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
   AuthenticatedApplicationsIdSettingsImagePollingRoute: typeof AuthenticatedApplicationsIdSettingsImagePollingRoute
   AuthenticatedApplicationsIdSettingsIndexRoute: typeof AuthenticatedApplicationsIdSettingsIndexRoute
@@ -713,6 +734,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
       AuthenticatedApplicationsIdHistoryRoute,
     AuthenticatedApplicationsIdIndexRoute:
       AuthenticatedApplicationsIdIndexRoute,
+    AuthenticatedApplicationsIdSettingsEnvironmentRoute:
+      AuthenticatedApplicationsIdSettingsEnvironmentRoute,
     AuthenticatedApplicationsIdSettingsGeneralRoute:
       AuthenticatedApplicationsIdSettingsGeneralRoute,
     AuthenticatedApplicationsIdSettingsImagePollingRoute:

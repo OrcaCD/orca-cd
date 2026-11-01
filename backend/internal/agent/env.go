@@ -90,7 +90,7 @@ func executeEnvUpdate(ctx context.Context, sender outboundSender, deployer deplo
 
 	if err := manager.Redeploy(redeployCtx, req.ApplicationId, req.ApplicationName); err != nil {
 		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("redeploy after env update failed")
-		result.ErrorMessage = "the changes were saved, but redeploying the application failed: " + err.Error()
+		result.ErrorMessage = envrules.SavedRedeployFailedPrefix + ": " + err.Error()
 		sendEnvUpdateResult(sender, result)
 		return
 	}
