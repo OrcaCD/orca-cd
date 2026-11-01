@@ -69,9 +69,9 @@ async function openNotifications(page: Page) {
 	await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
 }
 
-async function selectType(page: Page, dialog: Locator, label: string) {
-	await dialog.locator("#type").click();
-	await page.getByRole("option", { name: label, exact: true }).click();
+async function selectType(dialog: Locator, label: string) {
+	await dialog.getByText(label, { exact: true }).click();
+	await dialog.getByRole("button", { name: "Next" }).click();
 }
 
 async function startWizard(page: Page, name: string, type: string) {
@@ -80,8 +80,8 @@ async function startWizard(page: Page, name: string, type: string) {
 	const dialog = page
 		.getByRole("dialog")
 		.filter({ hasText: "Create a new notification endpoint." });
+	await selectType(dialog, type);
 	await dialog.locator("#name").fill(name);
-	await selectType(page, dialog, type);
 	await dialog.getByRole("button", { name: "Next" }).click();
 	return dialog;
 }
