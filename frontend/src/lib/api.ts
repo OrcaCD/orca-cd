@@ -88,5 +88,6 @@ export const useFetch = <JSON extends Record<string, any> = any>(
 	url: string | null,
 	config?: SWRConfiguration,
 ) => {
-	return useSWR<JSON>(url ? API_BASE + url : null, fetchWrapper, config);
+	const requestURL = url && !/^https?:\/\//.test(url) ? API_BASE + url : url;
+	return useSWR<JSON>(requestURL, fetchWrapper, config);
 };
