@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -29,6 +30,9 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		// History reflects the Agent's deployment result independently of whether
 		// persisting the application's summary status succeeds.
 		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
+		if _, err := deployments.Succeed(ctx, result.ApplicationId, result.RequestId, result.Images); err != nil {
+			log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to record deployment")
+		}
 
 		// A successful deploy means the compose project was applied, not that the
 		// application is healthy: the agent observes runtime health after the
@@ -53,6 +57,9 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	errMsg := result.ErrorMessage
 	if errMsg == "" {
 		errMsg = "deployment failed"
+	}
+	if err := deployments.Discard(ctx, result.ApplicationId, result.RequestId); err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to discard failed deployment")
 	}
 
 	_ = updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{

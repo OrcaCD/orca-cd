@@ -74,6 +74,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"agent_notifications",
 		"repository_notifications",
 		"application_events",
+		"application_deployments",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {

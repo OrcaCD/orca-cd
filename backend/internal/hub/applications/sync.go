@@ -107,6 +107,11 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 
+	// The deployment is recorded with the application's new commit.
+	job.Application.ComposeFile = crypto.EncryptedString(content)
+	job.Application.Commit = job.Commit
+	job.Application.CommitMessage = job.CommitMessage
+
 	// The deployer completes the event on dispatch failure; the Agent's deploy
 	// result completes it otherwise, so this path does not write a final status.
 	if err := deployer.TriggerApplicationDeploy(context.Background(), &job.Application, content, requestID); err != nil {

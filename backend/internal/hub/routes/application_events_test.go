@@ -22,7 +22,7 @@ import (
 func setupApplicationEventsRouteTest(t *testing.T) models.Application {
 	t.Helper()
 	setupTestDBWithApplications(t)
-	if err := db.DB.AutoMigrate(&models.ApplicationEvent{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("migrate application events: %v", err)
 	}
 	repo := seedTestRepository(t, "https://github.com/owner/event-history")
@@ -221,5 +221,53 @@ func TestEventActorSnapshotsClaims(t *testing.T) {
 	userID, userName := eventActor(c)
 	if userID == nil || *userID != "actor-1" || userName == nil || *userName != "Test User" {
 		t.Fatalf("eventActor() = %v, %v", userID, userName)
+	}
+}
+
+func TestListApplicationEventsHandlerIncludesRecordedDeployments(t *testing.T) {
+	app := setupApplicationEventsRouteTest(t)
+	base := time.Date(2026, 7, 12, 10, 0, 0, 0, time.UTC)
+	seedApplicationEventAt(t, app.Id, "with-deployment", base)
+	seedApplicationEventAt(t, app.Id, "pruned-deployment", base.Add(time.Minute))
+	seedApplicationEventAt(t, app.Id, "without-deployment", base.Add(2*time.Minute))
+
+	deployment := models.ApplicationDeployment{
+		ApplicationId: app.Id,
+		Status:        models.DeploymentSucceeded,
+		Images:        []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployment); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	for id, deploymentID := range map[string]string{"with-deployment": deployment.Id, "pruned-deployment": "missing"} {
+		if _, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", id).
+			Update(t.Context(), "deployment_id", deploymentID); err != nil {
+			t.Fatalf("link deployment: %v", err)
+		}
+	}
+
+	w := invokeApplicationEventsHandler(t, app.Id, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Items []applicationEventResponse `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	byID := map[string]applicationEventResponse{}
+	for _, item := range response.Items {
+		byID[item.Id] = item
+	}
+	linked := byID["with-deployment"]
+	if linked.DeploymentId == nil || *linked.DeploymentId != deployment.Id ||
+		linked.DeploymentStatus == nil || *linked.DeploymentStatus != string(models.DeploymentSucceeded) {
+		t.Errorf("expected the recorded deployment, got %+v", linked)
+	}
+	for _, id := range []string{"pruned-deployment", "without-deployment"} {
+		if item := byID[id]; item.DeploymentId != nil || item.DeploymentStatus != nil {
+			t.Errorf("%s: expected no deployment, got %+v", id, item)
+		}
 	}
 }
