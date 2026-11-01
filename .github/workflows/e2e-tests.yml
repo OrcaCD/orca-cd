@@ -2,14 +2,63 @@ name: E2E Tests
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  tests:
+  # Pull requests can only read caches saved on main, so main keeps the image build cache
+  # warm and pull requests only read it.
+  build-cache:
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build E2E images
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: ./e2e
+          files: docker-compose.e2e.yml
+          targets: hub,agent
+          set: |
+            *.output=type=cacheonly
+            hub.cache-from=type=gha,scope=e2e-hub
+            hub.cache-to=type=gha,scope=e2e-hub,mode=max
+            agent.cache-from=type=gha,scope=e2e-agent
+            agent.cache-to=type=gha,scope=e2e-agent,mode=max
+
+  e2e:
+    name: E2E (${{ matrix.name }})
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: chromium
+            targets: hub
+            projects: --project=chromium
+          # These tests restart the hub and share the agent container, so they run one after
+          # another in their own job
+          - name: shared-infrastructure
+            targets: hub,agent
+            projects: --project=agent --project=applications --project=images --project=users
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -21,26 +70,29 @@ jobs:
         with:
           package_json_file: ./frontend/package.json
 
+      # No pnpm cache: the install only takes a few seconds and the cache would be saved
+      # again for every pull request
       - name: Use Node.js 26.x
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26.x
-          cache: "pnpm"
-          cache-dependency-path: ./e2e/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
         working-directory: ./e2e
 
       - name: Run Linter
+        if: ${{ matrix.name == 'chromium' }}
         run: node --run lint
         working-directory: ./e2e
 
       - name: Check Formatting
+        if: ${{ matrix.name == 'chromium' }}
         run: node --run format:check
         working-directory: ./e2e
 
       - name: Type Checking
+        if: ${{ matrix.name == 'chromium' }}
         run: node --run typecheck
         working-directory: ./e2e
 
@@ -56,26 +108,42 @@ jobs:
         with:
           source: ./e2e
           files: docker-compose.e2e.yml
-          targets: |
-            hub
-            agent
+          targets: ${{ matrix.targets }}
           load: true
           set: |
             hub.cache-from=type=gha,scope=e2e-hub
-            hub.cache-to=type=gha,scope=e2e-hub
             agent.cache-from=type=gha,scope=e2e-agent
-            agent.cache-to=type=gha,scope=e2e-agent
 
       - name: Run E2E tests
-        run: node --run test
+        run: |
+          read -ra projects <<< "$PROJECTS"
+          node --run test -- "${projects[@]}"
         working-directory: ./e2e
         env:
           E2E_SKIP_BUILD: "1"
+          E2E_SEPARATE_SHARED_INFRASTRUCTURE: "1"
+          PROJECTS: ${{ matrix.projects }}
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.name }}
           path: ./e2e/playwright-report
           retention-days: 30
+
+  # Keeps the required "tests" check the same, however the E2E tests are split up
+  tests:
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check E2E results
+        env:
+          RESULT: ${{ needs.e2e.result }}
+        run: |
+          if [[ "$RESULT" != "success" ]]; then
+            echo "E2E tests finished with result: $RESULT"
+            exit 1
+          fi
