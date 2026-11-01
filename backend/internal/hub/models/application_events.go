@@ -8,6 +8,7 @@ const (
 	ApplicationEventDeployment  ApplicationEventType = "deployment"
 	ApplicationEventCommitSync  ApplicationEventType = "commit_sync"
 	ApplicationEventImageUpdate ApplicationEventType = "image_update"
+	ApplicationEventRollback    ApplicationEventType = "rollback"
 )
 
 type ApplicationEventSource string
@@ -21,6 +22,17 @@ const (
 	ApplicationEventSourceImagePolling       ApplicationEventSource = "image_polling"
 	ApplicationEventSourceImageWebhook       ApplicationEventSource = "image_webhook"
 )
+
+// IsAutomatic reports whether the source triggers syncs without a user, which
+// a rollback pauses.
+func (s ApplicationEventSource) IsAutomatic() bool {
+	switch s {
+	case ApplicationEventSourceRepositoryPolling, ApplicationEventSourceRepositoryWebhook,
+		ApplicationEventSourceGitHubActions, ApplicationEventSourceImagePolling, ApplicationEventSourceImageWebhook:
+		return true
+	}
+	return false
+}
 
 type ApplicationEventStatus string
 
