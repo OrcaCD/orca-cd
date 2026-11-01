@@ -14,7 +14,7 @@ const authenticated = {
 
 // These files share the single agent container and restart the hub, so they must not overlap
 // with other tests and run one after another after everything else
-const sharedInfrastructure = /(agent|applications|images|users)\.test\.ts$/;
+const sharedInfrastructure = /(agent|applications|images|env|users)\.test\.ts$/;
 // CI runs them in a separate job with its own hub, so they don't have to wait for the other tests
 const separateSharedInfrastructure = ["1", "true"].includes(
 	process.env.E2E_SEPARATE_SHARED_INFRASTRUCTURE ?? "",
@@ -76,10 +76,16 @@ export default defineConfig({
 			dependencies: ["applications"],
 		},
 		{
+			name: "env",
+			testMatch: /env\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["images"],
+		},
+		{
 			name: "users",
 			testMatch: /users\.test\.ts$/,
 			use: authenticated,
-			dependencies: ["images"],
+			dependencies: [separateSharedInfrastructure ? "chromium" : "env"],
 		},
 	],
 

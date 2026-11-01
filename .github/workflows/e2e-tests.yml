@@ -54,12 +54,12 @@ jobs:
           # All tests that need neither the agent nor a hub restart
           - name: general
             targets: hub
-            projects: --project=chromium
+            projects: --project=chromium --project=users
           # These tests restart the hub and share the agent container, so they run one after
           # another in their own job
           - name: shared-infrastructure
             targets: hub,agent
-            projects: --project=agent --project=applications --project=images --project=users
+            projects: --project=agent --project=applications --project=images --project=env
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
