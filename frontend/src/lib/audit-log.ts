@@ -27,4 +27,5 @@ export enum EventType {
 	EnabledImageWebhook = "enabled-image-webhook",
 	DisabledImageWebhook = "disabled-image-webhook",
 	RevokedSessions = "revoked-sessions",
+	UpdatedEnvironment = "updated-environment",
 }

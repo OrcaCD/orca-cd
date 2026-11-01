@@ -20,6 +20,8 @@ function getBadgeVariant(type: string): Parameters<typeof Badge>[0]["variant"] {
 		case "revoked-sessions":
 		case "disabled-image-webhook":
 			return "destructive";
+		case "updated-environment":
+			return "secondary";
 		default:
 			return "secondary";
 	}

@@ -60,10 +60,20 @@ export async function getErrorMessage(res: Response): Promise<string> {
 	return fallbackErrorMessage(res);
 }
 
+export class ApiError extends Error {
+	status: number;
+
+	constructor(message: string, status: number) {
+		super(message);
+		this.name = "ApiError";
+		this.status = status;
+	}
+}
+
 async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit): Promise<JSON> {
 	const res = await fetch(input, { ...init });
 	if (!res.ok) {
-		throw new Error(await getErrorMessage(res));
+		throw new ApiError(await getErrorMessage(res), res.status);
 	}
 	return (await res.json()) as JSON;
 }
