@@ -20,6 +20,7 @@ func orcaOverride(project *composetypes.Project, appID string, pins map[string]s
 		config := composetypes.ServiceConfig{Labels: orcaLabels(appID)}
 		if pins[name] != "" && service.Build == nil {
 			config.Image = service.Image
+			config.PullPolicy = service.PullPolicy
 		}
 		override.Services[name] = config
 	}

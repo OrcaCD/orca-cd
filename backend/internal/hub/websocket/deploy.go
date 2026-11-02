@@ -32,6 +32,7 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
 		if _, err := deployments.Succeed(ctx, result.ApplicationId, result.RequestId, result.Images); err != nil {
 			log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to record deployment")
+			forgetCurrentDeployment(ctx, result.ApplicationId, log)
 		}
 
 		// A successful deploy means the compose project was applied, not that the
@@ -69,6 +70,15 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
 	if ctx.Err() == nil {
 		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
+	}
+}
+
+// forgetCurrentDeployment clears the current deployment of an application
+// that runs a deployment that couldn't be recorded. Otherwise the earlier
+// deployment would still count as running.
+func forgetCurrentDeployment(ctx context.Context, applicationID string, log *zerolog.Logger) {
+	if err := deployments.ClearCurrent(ctx, applicationID); err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to clear current deployment")
 	}
 }
 

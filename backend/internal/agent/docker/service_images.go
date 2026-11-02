@@ -11,19 +11,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
 )
-
-var listApplicationContainers = func(ctx context.Context, cli client.APIClient, appID string) ([]container.Summary, error) {
-	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", labelApplicationID+"="+appID),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Items, nil
-}
 
 // ServiceImages reports the image each compose service of the application
 // runs, so the hub can later roll back to exactly these images. Images from a
@@ -78,7 +66,7 @@ func runningRank(item container.Summary) int {
 // more than one. Containers created from an image ID name no repository, so
 // only an unambiguous digest is used for them.
 func pinnedReference(imageRef string, repoDigests []string) string {
-	if strings.HasPrefix(imageRef, "sha256:") {
+	if isImageID(imageRef) {
 		if len(repoDigests) == 1 {
 			return repoDigests[0]
 		}
@@ -99,6 +87,8 @@ func pinnedReference(imageRef string, repoDigests []string) string {
 
 // pinServiceImages replaces the image of every pinned service. Services that
 // are built locally keep their image, since compose would build them instead.
+// An image pinned by ID can't be pulled, so a pull policy that always pulls
+// would fail the deployment.
 func pinServiceImages(project *composetypes.Project, pins map[string]string) {
 	for name, service := range project.Services {
 		ref := pins[name]
@@ -106,6 +96,13 @@ func pinServiceImages(project *composetypes.Project, pins map[string]string) {
 			continue
 		}
 		service.Image = ref
+		if isImageID(ref) {
+			service.PullPolicy = composetypes.PullPolicyNever
+		}
 		project.Services[name] = service
 	}
+}
+
+func isImageID(ref string) bool {
+	return strings.HasPrefix(ref, "sha256:")
 }

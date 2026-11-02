@@ -75,16 +75,13 @@ func (c *Client) ApplicationHealth(ctx context.Context, appID string) HealthRepo
 		return HealthReport{State: HealthUnknown}
 	}
 
-	result, err := c.cli.Client().ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", labelApplicationID+"="+appID),
-	})
+	containers, err := listApplicationContainers(ctx, c.cli.Client(), appID)
 	if err != nil {
 		c.log.Error().Err(err).Str("application_id", appID).Msg("failed to list containers for health check")
 		return HealthReport{State: HealthUnknown}
 	}
 
-	items, err := withInspectedHealth(ctx, c.cli.Client(), result.Items)
+	items, err := withInspectedHealth(ctx, c.cli.Client(), containers)
 	if err != nil {
 		c.log.Error().Err(err).Str("application_id", appID).Msg("failed to inspect containers for health check")
 		return HealthReport{State: HealthUnknown}

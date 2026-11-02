@@ -165,3 +165,22 @@ func TestOrcaOverride_PinsImages(t *testing.T) {
 		t.Errorf("db image = %q, want it unchanged", got)
 	}
 }
+
+func TestOrcaOverride_ImageIDPinIsNeverPulled(t *testing.T) {
+	base := "services:\n  app:\n    image: local/app:latest\n    pull_policy: always\n"
+	project := loadMergedProject(t, base, nil)
+	pins := map[string]string{"app": "sha256:" + digestAaa}
+	pinServiceImages(project, pins)
+
+	dir := t.TempDir()
+	if err := writeComposeOverride(dir, orcaOverride(project, "app-123", pins)); err != nil {
+		t.Fatalf("writeComposeOverride: %v", err)
+	}
+	merged := loadMergedProject(t, base, readOverride(t, dir))
+	if got := merged.Services["app"].Image; got != "sha256:"+digestAaa {
+		t.Errorf("app image = %q, want pinned ID", got)
+	}
+	if got := merged.Services["app"].PullPolicy; got != composetypes.PullPolicyNever {
+		t.Errorf("app pull policy = %q, want %q", got, composetypes.PullPolicyNever)
+	}
+}

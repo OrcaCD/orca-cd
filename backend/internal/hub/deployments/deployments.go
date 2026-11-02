@@ -32,7 +32,7 @@ func Start(ctx context.Context, app *models.Application, composeFile, requestID 
 		Images:        []models.DeployedImage{},
 	}
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := deletePending(ctx, tx, "application_id = ?", app.Id); err != nil {
+		if err := deleteDeployments(ctx, tx, pendingIDs(tx).Where("application_id = ?", app.Id)); err != nil {
 			return err
 		}
 		if err := gorm.G[models.ApplicationDeployment](tx).Create(ctx, &deployment); err != nil {
@@ -66,8 +66,13 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 				Images:     toDeployedImages(images),
 				DeployedAt: &now,
 			})
-		if err != nil || rowsAffected == 0 {
+		if err != nil {
 			return err
+		}
+		if rowsAffected == 0 {
+			// The deployment that runs now was not recorded, so the current one
+			// is unknown.
+			return clearCurrent(ctx, tx, applicationID)
 		}
 		found = true
 		deployment, err := gorm.G[models.ApplicationDeployment](tx).
@@ -136,7 +141,7 @@ func Discard(ctx context.Context, applicationID, requestID string) error {
 		return nil
 	}
 	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return deletePending(ctx, tx, "application_id = ? AND request_id = ?", applicationID, requestID)
+		return deleteDeployments(ctx, tx, pendingIDs(tx).Where("application_id = ? AND request_id = ?", applicationID, requestID))
 	})
 }
 
@@ -144,7 +149,8 @@ func Discard(ctx context.Context, applicationID, requestID string) error {
 // applications. Their results can't arrive anymore once the agent disconnected.
 func DiscardPendingForAgent(ctx context.Context, agentID string) error {
 	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return deletePending(ctx, tx, "application_id IN (SELECT id FROM applications WHERE agent_id = ?)", agentID)
+		agentApplications := gorm.G[models.Application](tx).Select("id").Where("agent_id = ?", agentID)
+		return deleteDeployments(ctx, tx, pendingIDs(tx).Where("application_id IN (?)", agentApplications))
 	})
 }
 
@@ -152,18 +158,39 @@ func DiscardPendingForAgent(ctx context.Context, agentID string) error {
 // agent is connected that could still report a result.
 func DiscardAllPending(ctx context.Context) error {
 	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return deletePending(ctx, tx, "")
+		return deleteDeployments(ctx, tx, pendingIDs(tx))
 	})
 }
 
-func deletePending(ctx context.Context, tx *gorm.DB, query string, args ...any) error {
-	cond := "status = ?"
-	condArgs := []any{models.DeploymentPending}
-	if query != "" {
-		cond += " AND (" + query + ")"
-		condArgs = append(condArgs, args...)
+// ClearCurrent forgets the application's current deployment, when what it
+// runs is unknown.
+func ClearCurrent(ctx context.Context, applicationID string) error {
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return clearCurrent(ctx, tx, applicationID)
+	})
+	if err != nil {
+		return err
 	}
-	return deleteDeploymentsWhere(ctx, tx, cond, condArgs...)
+	publishUpdate(applicationID)
+	return nil
+}
+
+func clearCurrent(ctx context.Context, tx *gorm.DB, applicationID string) error {
+	_, err := gorm.G[models.Application](tx).
+		Where("id = ?", applicationID).
+		Update(ctx, "current_deployment_id", nil)
+	return err
+}
+
+// idsWhere selects the IDs of the deployments matching query, to pass to
+// deleteDeployments.
+func idsWhere(tx *gorm.DB, query string, args ...any) gorm.ChainInterface[models.ApplicationDeployment] {
+	return gorm.G[models.ApplicationDeployment](tx).Select("id").Where(query, args...)
+}
+
+// pendingIDs selects the IDs of pending deployments.
+func pendingIDs(tx *gorm.DB) gorm.ChainInterface[models.ApplicationDeployment] {
+	return idsWhere(tx, "status = ?", models.DeploymentPending)
 }
 
 // setCurrent makes deploymentID the application's current deployment and
@@ -183,26 +210,25 @@ func setCurrent(ctx context.Context, tx *gorm.DB, applicationID, deploymentID st
 	if err != nil || len(succeeded) <= MaxPerApplication {
 		return err
 	}
-	return deleteDeploymentsWhere(ctx, tx, "id IN ?", deploymentIDs(succeeded[MaxPerApplication:]))
+	return deleteDeployments(ctx, tx, idsWhere(tx, "id IN ?", deploymentIDs(succeeded[MaxPerApplication:])))
 }
 
-// deleteDeploymentsWhere deletes the deployments matching cond and clears the
+// deleteDeployments deletes the deployments ids selects and clears the
 // references to them, which have no foreign key (see migration 000037). Every
 // statement writes, so a transaction that starts with it locks the database
 // for writing right away.
-func deleteDeploymentsWhere(ctx context.Context, tx *gorm.DB, cond string, args ...any) error {
-	matching := "IN (SELECT id FROM application_deployments WHERE " + cond + ")"
+func deleteDeployments(ctx context.Context, tx *gorm.DB, ids gorm.ChainInterface[models.ApplicationDeployment]) error {
 	if _, err := gorm.G[models.ApplicationEvent](tx).
-		Where("deployment_id "+matching, args...).
+		Where("deployment_id IN (?)", ids).
 		Update(ctx, "deployment_id", nil); err != nil {
 		return err
 	}
 	if _, err := gorm.G[models.Application](tx).
-		Where("current_deployment_id "+matching, args...).
+		Where("current_deployment_id IN (?)", ids).
 		Update(ctx, "current_deployment_id", nil); err != nil {
 		return err
 	}
-	_, err := gorm.G[models.ApplicationDeployment](tx).Where(cond, args...).Delete(ctx)
+	_, err := gorm.G[models.ApplicationDeployment](tx).Where("id IN (?)", ids).Delete(ctx)
 	return err
 }
 

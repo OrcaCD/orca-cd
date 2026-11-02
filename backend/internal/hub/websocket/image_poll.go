@@ -74,6 +74,7 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	if r.Success && r.ImagesUpdated {
 		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images); err != nil {
 			log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record image update deployment")
+			forgetCurrentDeployment(ctx, r.ApplicationId, log)
 		}
 	}
 

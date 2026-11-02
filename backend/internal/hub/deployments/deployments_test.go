@@ -218,6 +218,50 @@ func TestSucceedIgnoresUnknownRequests(t *testing.T) {
 	}
 }
 
+// A deployment that couldn't be recorded replaced the current one, so the
+// earlier deployment must not count as running anymore.
+func TestSucceedOfUnrecordedDeploymentClearsCurrent(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	startDeployment(t, &app, "req-1")
+	if _, err := Succeed(t.Context(), app.Id, "req-1", nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+	if loadApp(t, app.Id).CurrentDeploymentId == nil {
+		t.Fatal("expected a current deployment")
+	}
+
+	found, err := Succeed(t.Context(), app.Id, "req-unrecorded", nil)
+	if err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+	if found {
+		t.Error("expected no deployment to be found")
+	}
+	if current := loadApp(t, app.Id).CurrentDeploymentId; current != nil {
+		t.Errorf("current deployment = %q, want none", *current)
+	}
+	if got := len(deploymentsOf(t, app.Id)); got != 1 {
+		t.Errorf("expected the earlier deployment to be kept, got %d deployments", got)
+	}
+}
+
+func TestClearCurrent(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	startDeployment(t, &app, "req-1")
+	if _, err := Succeed(t.Context(), app.Id, "req-1", nil); err != nil {
+		t.Fatalf("Succeed: %v", err)
+	}
+
+	if err := ClearCurrent(t.Context(), app.Id); err != nil {
+		t.Fatalf("ClearCurrent: %v", err)
+	}
+	if current := loadApp(t, app.Id).CurrentDeploymentId; current != nil {
+		t.Errorf("current deployment = %q, want none", *current)
+	}
+}
+
 func TestSucceedPrunesOldDeployments(t *testing.T) {
 	setupTestDB(t)
 	app := seedApp(t, "agent-1")

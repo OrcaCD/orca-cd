@@ -148,3 +148,24 @@ func TestPinServiceImages(t *testing.T) {
 		t.Error("pins must not add services")
 	}
 }
+
+// Compose tries to pull an image ID with a pull policy that always pulls, and
+// fails since an ID names no repository.
+func TestPinServiceImages_ImageIDIsNeverPulled(t *testing.T) {
+	project := &composetypes.Project{Services: composetypes.Services{
+		"local":  {Name: "local", Image: "local/app:latest", PullPolicy: composetypes.PullPolicyAlways},
+		"remote": {Name: "remote", Image: "nginx:latest", PullPolicy: composetypes.PullPolicyAlways},
+	}}
+
+	pinServiceImages(project, map[string]string{
+		"local":  "sha256:" + digestAaa,
+		"remote": "nginx@sha256:" + digestAaa,
+	})
+
+	if got := project.Services["local"].PullPolicy; got != composetypes.PullPolicyNever {
+		t.Errorf("local pull policy = %q, want %q", got, composetypes.PullPolicyNever)
+	}
+	if got := project.Services["remote"].PullPolicy; got != composetypes.PullPolicyAlways {
+		t.Errorf("remote pull policy = %q, want it unchanged", got)
+	}
+}
