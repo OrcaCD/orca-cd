@@ -792,6 +792,8 @@
 	"healthIncidentUnknown": "Health-Status konnte nicht ermittelt werden",
 	"healthIncidentAfterDeploy": "Nach Deployment",
 	"healthIncidentAfterDeployCommit": "Nach Deployment {commit}",
+	"healthIncidentAfterRollback": "Nach Rollback",
+	"healthIncidentAfterRollbackCommit": "Nach Rollback auf {commit}",
 	"healthIncidentAfterImageUpdate": "Nach Image-Update",
 	"healthNotTracked": "Noch nicht erfasst",
 	"healthTruncatedTitle": "Health-Verlauf unvollständig",

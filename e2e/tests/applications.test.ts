@@ -6,7 +6,9 @@ import {
 	appContainers,
 	BUSYBOX_IMAGE,
 	composeProject,
+	containerImageId,
 	containerMounts,
+	createLocalImage,
 	deployedComposeFile,
 	deploymentDirExists,
 	execInContainer,
@@ -14,6 +16,7 @@ import {
 	projectContainers,
 	pullImage,
 	removeApplicationContainers,
+	removeImages,
 	removeVolumes,
 	runWithAgentVolumes,
 	startContainer,
@@ -951,6 +954,63 @@ test.describe("Rollback", () => {
 		await page.getByRole("button", { name: "Save Changes" }).click();
 		await expect(page.getByText("Application updated")).toBeVisible();
 		expect((await getApplication(page, appId)).rollback.enabled).toBe(false);
+	});
+
+	test("a rollback restores a local image by its ID", async ({ page }) => {
+		// A local image has no registry digest, so the rollback pins it by ID
+		const localImage = "orca-e2e-local/rollback:latest";
+		const runningImage = () => {
+			const containers = appContainers(appId);
+			return containers.length === 1 ? containerImageId(containers[0].id) : undefined;
+		};
+		try {
+			const firstId = createLocalImage(IMAGE, localImage, "orca-e2e=first");
+			const first = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(10, localImage) },
+				message: "Run a local image",
+			});
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 10, first.sha);
+			expect(runningImage()).toBe(firstId);
+
+			// The tag moves to another image, which the next deployment runs
+			const secondId = createLocalImage(IMAGE, localImage, "orca-e2e=second");
+			expect(secondId).not.toBe(firstId);
+			const second = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(11, localImage) },
+				message: "Run the retagged local image",
+			});
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 11, second.sha);
+			expect(runningImage()).toBe(secondId);
+
+			await gotoApp(page, `/applications/${appId}/history`);
+			const target = page
+				.getByRole("listitem")
+				.filter({ hasText: shortSha(first.sha) })
+				.filter({ has: page.getByRole("button", { name: "Roll back" }) })
+				.first();
+			await target.getByRole("button", { name: "Roll back" }).click();
+			await page.getByRole("dialog").getByRole("button", { name: "Roll back" }).click();
+			await expect(page.getByText("Rollback started")).toBeVisible();
+
+			await waitForApplication(page, appId, (app) => !!app.rolledBackAt);
+			await expect.poll(runningVersion, { timeout: 60_000 }).toBe("10");
+			expect(runningImage()).toBe(firstId);
+
+			// Back to the regular image, so the local one can be removed
+			const regular = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(12) },
+				message: "Run the regular image again",
+			});
+			await gotoApp(page, `/applications/${appId}/details`);
+			await page.getByRole("button", { name: "Resume auto-sync" }).click();
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 12, regular.sha);
+			await waitForApplication(page, appId, (app) => !app.rolledBackAt);
+		} finally {
+			removeImages(localImage);
+		}
 	});
 });
 
