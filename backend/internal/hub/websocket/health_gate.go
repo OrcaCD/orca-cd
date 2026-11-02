@@ -16,17 +16,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// healthGateInterval is how often ended health gates are resolved.
-const healthGateInterval = 10 * time.Second
+const (
+	// healthGateInterval is how often health gates are checked.
+	healthGateInterval = 10 * time.Second
+	// healthGateGrace is how long an application has to keep failing before its
+	// health gate fails early. It rides out a container that restarts once, e.g.
+	// while it waits for its database.
+	healthGateGrace = 30 * time.Second
+	// healthReportTimeout is how long an ended health gate waits for the agent to
+	// report the deployment's health, e.g. while it is offline.
+	healthReportTimeout = 10 * time.Minute
+)
 
 // A deployment of an application that rolls back when it becomes unhealthy is
-// watched for the application's health timeout (its health gate). Becoming
-// unhealthy, stopped or degraded during the gate fails it right away; not
-// being healthy when the gate ends fails it too. A failed deployment is
-// rolled back to the deployment before it.
+// watched for the application's health timeout (its health gate). Staying
+// unhealthy, stopped or degraded for healthGateGrace fails it early; not being
+// healthy when the gate ends fails it too. A failed deployment is rolled back
+// to the deployment before it. Only reports the agent sent after the
+// deployment count: a gate the agent doesn't report on fails without rolling
+// back after healthReportTimeout.
+//
+// An application counts as unhealthy while any of its containers isn't
+// running, so one that runs one-shot containers (such as migrations) fails
+// its health gate.
 
-// StartHealthGate resolves ended health gates in the background until the
-// returned stop function is called.
+// StartHealthGate checks health gates in the background until the returned
+// stop function is called.
 func StartHealthGate(log *zerolog.Logger) (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -39,7 +54,7 @@ func StartHealthGate(log *zerolog.Logger) (stop func()) {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				resolveEndedHealthGates(ctx, now, log)
+				resolveHealthGates(ctx, now, log)
 			}
 		}
 	}()
@@ -49,7 +64,7 @@ func StartHealthGate(log *zerolog.Logger) (stop func()) {
 	}
 }
 
-func resolveEndedHealthGates(parent context.Context, now time.Time, log *zerolog.Logger) {
+func resolveHealthGates(parent context.Context, now time.Time, log *zerolog.Logger) {
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 
@@ -65,57 +80,55 @@ func resolveEndedHealthGates(parent context.Context, now time.Time, log *zerolog
 			log.Error().Err(err).Str("applicationId", deployment.ApplicationId).Msg("failed to load application for health check")
 			continue
 		}
-		// Turning the health check off ends the running one.
-		if app.HealthGate() == 0 {
-			passHealthGate(ctx, &app, deployment, log)
-			continue
-		}
-		if deployment.VerifyUntil == nil || now.Before(*deployment.VerifyUntil) {
-			continue
-		}
-		// The stored health says nothing about the deployment while the agent is
-		// offline, or until it reported again after reconnecting.
-		if DefaultHub == nil || !DefaultHub.HasReportedHealth(app.AgentId, app.Id) {
-			continue
-		}
-		if app.HealthStatus == models.Healthy {
-			passHealthGate(ctx, &app, deployment, log)
-			continue
-		}
-		reason := fmt.Sprintf("health check failed: application did not become healthy within %s", formatSeconds(gateDuration(deployment)))
-		failHealthGate(ctx, &app, deployment, reason, log)
+		resolveHealthGate(ctx, &app, deployment, now, log)
 	}
 }
 
-// checkHealthGate fails the health gate of the application's deployment when
-// the agent reports it as failing.
-func checkHealthGate(ctx context.Context, agentID, applicationID string, health models.HealthStatus, log *zerolog.Logger) {
-	if !isFailingHealth(health) {
-		return
-	}
-	deployment, err := deployments.Verifying(ctx, applicationID)
-	if err != nil {
-		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to load deployment for health check")
-		return
-	}
-	if deployment == nil {
-		return
-	}
-	app, err := getApplicationByID(ctx, agentID, applicationID, log)
-	if err != nil {
-		return
-	}
+func resolveHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, now time.Time, log *zerolog.Logger) {
 	// Turning the health check off ends the running one, without rolling back.
 	if app.HealthGate() == 0 {
 		passHealthGate(ctx, app, deployment, log)
 		return
 	}
-	elapsed := time.Duration(0)
-	if deployment.DeployedAt != nil {
-		elapsed = time.Since(*deployment.DeployedAt)
+	report, reported := deploymentHealthReport(app, deployment)
+	end := gateEnd(deployment)
+
+	if reported && isFailingHealth(report.health) {
+		failingSince := report.failingSince
+		if at := deployedAt(deployment); at.After(failingSince) {
+			failingSince = at
+		}
+		if failing := now.Sub(failingSince); failing >= healthGateGrace {
+			reason := fmt.Sprintf("health check failed: application was %s for %s after the deployment", report.health, formatSeconds(failing))
+			failHealthGate(ctx, app, deployment, reason, true, log)
+			return
+		}
 	}
-	reason := fmt.Sprintf("health check failed: application was %s %s after the deployment", health, formatSeconds(elapsed))
-	failHealthGate(ctx, app, deployment, reason, log)
+	switch {
+	case now.Before(end):
+	case reported && report.health == models.Healthy:
+		passHealthGate(ctx, app, deployment, log)
+	case reported:
+		reason := fmt.Sprintf("health check failed: application did not become healthy within %s", formatSeconds(gateDuration(deployment)))
+		failHealthGate(ctx, app, deployment, reason, true, log)
+	case !now.Before(end.Add(healthReportTimeout)):
+		reason := "health check failed: the agent did not report the application's health"
+		failHealthGate(ctx, app, deployment, reason, false, log)
+	}
+}
+
+// deploymentHealthReport returns the health the application's agent reported
+// after the deployment. Earlier reports, of the deployment before it or of an
+// earlier connection, say nothing about it.
+func deploymentHealthReport(app *models.Application, deployment *models.ApplicationDeployment) (healthReport, bool) {
+	if DefaultHub == nil {
+		return healthReport{}, false
+	}
+	report, ok := DefaultHub.lastHealthReport(app.AgentId, app.Id)
+	if !ok || report.at.Before(deployedAt(deployment)) {
+		return healthReport{}, false
+	}
+	return report, true
 }
 
 func passHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, log *zerolog.Logger) {
@@ -137,7 +150,9 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 	go notifications.SendForApplication(app.Id, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
 }
 
-func failHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, reason string, log *zerolog.Logger) {
+// failHealthGate drops the deployment and, if rollBack is set, rolls back to
+// the deployment before it.
+func failHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, reason string, rollBack bool, log *zerolog.Logger) {
 	eventType := gatedEventType(ctx, app.Id, deployment, log)
 	rejected, err := deployments.Reject(ctx, deployment, reason)
 	if err != nil {
@@ -160,6 +175,9 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 		event, message = models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String()+": "+reason
 	}
 	go notifications.SendForApplication(app.Id, event, message, log)
+	if !rollBack {
+		return
+	}
 
 	target, err := deployments.Get(ctx, app.Id, deployment.PreviousDeploymentId)
 	if err != nil {
@@ -230,10 +248,22 @@ func isFailingHealth(health models.HealthStatus) bool {
 }
 
 func gateDuration(deployment *models.ApplicationDeployment) time.Duration {
-	if deployment.DeployedAt == nil || deployment.VerifyUntil == nil {
-		return 0
+	return gateEnd(deployment).Sub(deployedAt(deployment))
+}
+
+// gateEnd returns when the deployment's health gate ends.
+func gateEnd(deployment *models.ApplicationDeployment) time.Time {
+	if deployment.VerifyUntil == nil {
+		return deployedAt(deployment)
 	}
-	return deployment.VerifyUntil.Sub(*deployment.DeployedAt)
+	return *deployment.VerifyUntil
+}
+
+func deployedAt(deployment *models.ApplicationDeployment) time.Time {
+	if deployment.DeployedAt == nil {
+		return time.Time{}
+	}
+	return *deployment.DeployedAt
 }
 
 func formatSeconds(d time.Duration) string {

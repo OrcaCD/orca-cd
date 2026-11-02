@@ -220,7 +220,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
 		} else {
-			h.SendAgentSettings(claims.Subject, apps)
+			h.SendAgentSettings(c.Request.Context(), claims.Subject, apps)
 		}
 
 		for {
@@ -342,8 +342,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
-		client.reportedHealth.Store(status.ApplicationId, struct{}{})
-		checkHealthGate(ctx, client.Id, status.ApplicationId, health, log)
+		client.recordHealthReport(status.ApplicationId, health, time.Now())
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)

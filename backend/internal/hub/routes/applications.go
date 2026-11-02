@@ -643,11 +643,12 @@ func sendAgentSettings(c *gin.Context, agentID string) {
 	if websocket.DefaultHub == nil {
 		return
 	}
-	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(c.Request.Context())
+	ctx := c.Request.Context()
+	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(ctx)
 	if err != nil {
 		return
 	}
-	websocket.DefaultHub.SendAgentSettings(agentID, apps)
+	websocket.DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }
 
 func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {

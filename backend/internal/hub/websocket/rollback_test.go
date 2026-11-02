@@ -188,7 +188,7 @@ func TestSendAgentSettings_DisablesImagePollingWhileRolledBack(t *testing.T) {
 	}
 	now := time.Now()
 
-	h.SendAgentSettings("agent-1", []models.Application{
+	h.SendAgentSettings(t.Context(), "agent-1", []models.Application{
 		{Id: "polling", ImagePollEnabled: true},
 		{Id: "rolled-back", ImagePollEnabled: true, RolledBackAt: &now},
 	})

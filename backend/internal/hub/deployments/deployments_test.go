@@ -575,6 +575,43 @@ func TestImageRetention(t *testing.T) {
 	}
 }
 
+func TestImageRetentions(t *testing.T) {
+	setupTestDB(t)
+	gated := seedApp(t, "agent-1")
+	succeedDeployment(t, &gated, "gated-1", 0, &messages.ServiceImage{Service: "web", ImageId: "sha256:good"})
+	succeedDeployment(t, &gated, "gated-2", time.Minute, &messages.ServiceImage{Service: "web", ImageId: "sha256:new"})
+	other := seedApp(t, "agent-1")
+	succeedDeployment(t, &other, "other-1", 0, &messages.ServiceImage{Service: "web", ImageId: "sha256:old"})
+	succeedDeployment(t, &other, "other-2", 0, &messages.ServiceImage{Service: "web", ImageId: "sha256:current"})
+	ignored := seedApp(t, "agent-1")
+	succeedDeployment(t, &ignored, "ignored-1", 0, &messages.ServiceImage{Service: "web", ImageId: "sha256:ignored"})
+	apps := []models.Application{loadApp(t, gated.Id), loadApp(t, other.Id), loadApp(t, ignored.Id)}
+	for i := range apps[:2] {
+		apps[i].RollbackEnabled = true
+		apps[i].DeleteOldImages = true
+	}
+
+	retentions, err := ImageRetentions(t.Context(), apps)
+	if err != nil {
+		t.Fatalf("ImageRetentions: %v", err)
+	}
+
+	if len(retentions) != 2 || retentions[ignored.Id] != nil {
+		t.Fatalf("expected retentions of the applications that keep images, got %v", retentions)
+	}
+	keep := retentions[gated.Id].GetKeepImageIds()
+	slices.Sort(keep)
+	if want := []string{"sha256:good", "sha256:new"}; !slices.Equal(keep, want) || len(retentions[gated.Id].GetRemoveImageIds()) != 0 {
+		t.Errorf("gated retention = %v, want to keep %v", retentions[gated.Id], want)
+	}
+	if got := retentions[other.Id]; !slices.Equal(got.GetKeepImageIds(), []string{"sha256:current"}) || !slices.Equal(got.GetRemoveImageIds(), []string{"sha256:old"}) {
+		t.Errorf("other retention = %v, want to keep sha256:current and remove sha256:old", got)
+	}
+	if retentions, err := ImageRetentions(t.Context(), apps[2:]); err != nil || retentions != nil {
+		t.Errorf("expected no retentions, got %v, %v", retentions, err)
+	}
+}
+
 func startRollbackEvent(t *testing.T, appID, deploymentID string) models.ApplicationEvent {
 	t.Helper()
 	requestID := "rollback-" + deploymentID

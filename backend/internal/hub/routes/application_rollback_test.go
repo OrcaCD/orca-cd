@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -273,15 +274,20 @@ func TestUpdateRollbackSettingsHandler_Rejects(t *testing.T) {
 	repo := seedTestRepository(t, "https://github.com/owner/repo-rollback-settings-invalid")
 	agent := seedTestAgent(t, "agent-rollback-settings-invalid")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Settings App")
+	settings := func(healthTimeoutSeconds int) string {
+		return fmt.Sprintf(`{"enabled":true,"onDeployFailure":true,"onUnhealthy":true,"healthTimeoutSeconds":%d,"pauseAutoSync":false}`, healthTimeoutSeconds)
+	}
 
 	for _, tt := range []struct {
 		id, body string
 		want     int
 	}{
-		{app.Id, `{"enabled":true,"healthTimeoutSeconds":10}`, http.StatusBadRequest},
-		{app.Id, `{"enabled":true,"healthTimeoutSeconds":3601}`, http.StatusBadRequest},
+		{app.Id, settings(10), http.StatusBadRequest},
+		{app.Id, settings(3601), http.StatusBadRequest},
+		{app.Id, `{"enabled":true,"healthTimeoutSeconds":300}`, http.StatusBadRequest},
+		{app.Id, `{"enabled":false,"onDeployFailure":false,"onUnhealthy":false,"healthTimeoutSeconds":300}`, http.StatusBadRequest},
 		{app.Id, `not json`, http.StatusBadRequest},
-		{"missing", `{"enabled":true,"healthTimeoutSeconds":300}`, http.StatusNotFound},
+		{"missing", settings(300), http.StatusNotFound},
 	} {
 		if w := invokeRollbackSettingsHandler(t, tt.id, tt.body); w.Code != tt.want {
 			t.Errorf("%s %s: expected %d, got %d: %s", tt.id, tt.body, tt.want, w.Code, w.Body.String())

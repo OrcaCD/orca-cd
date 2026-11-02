@@ -558,7 +558,7 @@ func TestHub_SendAgentSettings_NoClient(t *testing.T) {
 	apps := []models.Application{
 		{Id: "app-1", ImagePollEnabled: true, ImagePollIntervalSeconds: 120},
 	}
-	ok := h.SendAgentSettings("nonexistent-agent", apps)
+	ok := h.SendAgentSettings(t.Context(), "nonexistent-agent", apps)
 	if ok {
 		t.Error("expected false when agent is not connected")
 	}
@@ -589,7 +589,7 @@ func TestHub_SendAgentSettings(t *testing.T) {
 		},
 	}
 
-	ok := h.SendAgentSettings("agent-1", apps)
+	ok := h.SendAgentSettings(t.Context(), "agent-1", apps)
 	if !ok {
 		t.Fatal("expected true when agent is connected")
 	}

@@ -39,23 +39,24 @@ func recordRollbacks(t *testing.T) *rollbackRecorder {
 	return recorder
 }
 
-// registerAgent connects the agent for the health gate, and makes it report
-// the health of reportedApps on that connection.
-func registerAgent(t *testing.T, agentID string, reportedApps ...string) {
+// connectAgents connects the agents for the health gate.
+func connectAgents(t *testing.T, agentIDs ...string) map[string]*Client {
 	t.Helper()
 	log := testLogger()
 	previous := DefaultHub
 	DefaultHub = NewHub(&log)
 	t.Cleanup(func() { DefaultHub = previous })
-	conn := newTestWSConn(t)
-	t.Cleanup(func() { _ = conn.Close() })
-	client, err := DefaultHub.Register(agentID, conn)
-	if err != nil {
-		t.Fatalf("Register: %v", err)
+	clients := map[string]*Client{}
+	for _, agentID := range agentIDs {
+		conn := newTestWSConn(t)
+		t.Cleanup(func() { _ = conn.Close() })
+		client, err := DefaultHub.Register(agentID, conn)
+		if err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+		clients[agentID] = client
 	}
-	for _, appID := range reportedApps {
-		client.reportedHealth.Store(appID, struct{}{})
-	}
+	return clients
 }
 
 func enableAutomaticRollback(t *testing.T, appID string) models.Application {
@@ -151,24 +152,28 @@ func TestHandleDeployResult_NoHealthGateWithoutAutomaticRollback(t *testing.T) {
 	}
 }
 
-func TestCheckHealthGate_UnhealthyRollsBack(t *testing.T) {
+func TestResolveHealthGates_FailingRollsBackAfterGrace(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
 	good := deployGated(t, &app)
 	recorder := recordRollbacks(t)
+	clients := connectAgents(t, "agent-1", "other-agent")
+	deployedAt := *verifyingDeployment(t, app.Id).DeployedAt
+	at := func(seconds int) time.Time { return deployedAt.Add(time.Duration(seconds) * time.Second) }
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
 
-	checkHealthGate(t.Context(), "agent-1", app.Id, models.Healthy, &nop)
+	clients["other-agent"].recordHealthReport(app.Id, models.Unhealthy, at(1))
+	clients["agent-1"].recordHealthReport(app.Id, models.Unhealthy, at(1))
+	clients["agent-1"].recordHealthReport(app.Id, models.Healthy, at(10))
+	clients["agent-1"].recordHealthReport(app.Id, models.Unhealthy, at(20))
+	clients["agent-1"].recordHealthReport(app.Id, models.Stopped, at(30))
+	resolveHealthGates(t.Context(), at(49), &nop)
 	if len(recorder.targets) != 0 || verifyingDeployment(t, app.Id) == nil {
-		t.Fatal("a healthy report must not end the health check")
-	}
-	checkHealthGate(t.Context(), "other-agent", app.Id, models.Unhealthy, &nop)
-	if len(recorder.targets) != 0 {
-		t.Fatal("a report of another agent must be ignored")
+		t.Fatal("a failing streak shorter than the grace period must not end the health check")
 	}
 
-	checkHealthGate(t.Context(), "agent-1", app.Id, models.Unhealthy, &nop)
+	resolveHealthGates(t.Context(), at(50), &nop)
 
 	if len(recorder.targets) != 1 || recorder.targets[0] != good.Id {
 		t.Fatalf("expected a rollback to %q, got %v", good.Id, recorder.targets)
@@ -177,7 +182,7 @@ func TestCheckHealthGate_UnhealthyRollsBack(t *testing.T) {
 	if event.Status != models.ApplicationEventFailed || event.ErrorMessage == nil {
 		t.Fatalf("unexpected deployment event: %+v", event)
 	}
-	if want := "health check failed: application was unhealthy 0s after the deployment"; *event.ErrorMessage != want {
+	if want := "health check failed: application was stopped for 30s after the deployment"; *event.ErrorMessage != want {
 		t.Errorf("error = %q, want %q", *event.ErrorMessage, want)
 	}
 	if verifyingDeployment(t, app.Id) != nil {
@@ -198,19 +203,63 @@ func TestCheckHealthGate_UnhealthyRollsBack(t *testing.T) {
 	}
 }
 
-func TestResolveEndedHealthGates(t *testing.T) {
+func TestFailHealthGate_WithoutEarlierDeployment(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
+	startDeployEvent(t, &app, "gated")
+	nop := zerolog.Nop()
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: "gated", ApplicationId: app.Id, Success: true}, &nop)
+	recorder := recordRollbacks(t)
+	deployment := verifyingDeployment(t, app.Id)
+	connectAgents(t, "agent-1")["agent-1"].recordHealthReport(app.Id, models.Unhealthy, *deployment.DeployedAt)
+	expectAsyncNotification(t)
+
+	resolveHealthGates(t.Context(), deployment.DeployedAt.Add(healthGateGrace), &nop)
+
+	if len(recorder.targets) != 0 {
+		t.Errorf("expected no rollback without an earlier deployment, got %v", recorder.targets)
+	}
+	if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventFailed {
+		t.Errorf("event status = %q, want failed", event.Status)
+	}
+	if verifyingDeployment(t, app.Id) != nil {
+		t.Error("expected the unhealthy deployment to be dropped")
+	}
+}
+
+func TestStartHealthGate_Stops(t *testing.T) {
+	nop := zerolog.Nop()
+	stop := StartHealthGate(&nop)
+	stop()
+}
+
+func TestResolveHealthGates_GateEnd(t *testing.T) {
+	type report struct {
+		health models.HealthStatus
+		// before reports before the deployment instead of after it.
+		before bool
+	}
 	tests := []struct {
 		name         string
-		health       models.HealthStatus
 		connected    bool
-		reported     bool
+		report       *report
+		after        time.Duration
 		wantEvent    models.ApplicationEventStatus
+		wantError    string
 		wantRollback bool
 	}{
-		{name: "healthy passes", health: models.Healthy, connected: true, reported: true, wantEvent: models.ApplicationEventSucceeded},
-		{name: "not healthy fails", health: models.UnknownHealth, connected: true, reported: true, wantEvent: models.ApplicationEventFailed, wantRollback: true},
-		{name: "offline agent waits", health: models.UnknownHealth, wantEvent: models.ApplicationEventRunning},
-		{name: "reconnected agent waits for its report", health: models.UnknownHealth, connected: true, wantEvent: models.ApplicationEventRunning},
+		{name: "healthy passes", connected: true, report: &report{health: models.Healthy}, after: time.Minute, wantEvent: models.ApplicationEventSucceeded},
+		{
+			name: "not healthy fails", connected: true, report: &report{health: models.UnknownHealth}, after: time.Minute,
+			wantEvent: models.ApplicationEventFailed, wantError: "health check failed: application did not become healthy within 300s", wantRollback: true,
+		},
+		{name: "offline agent waits", after: time.Minute, wantEvent: models.ApplicationEventRunning},
+		{name: "reconnected agent waits for its report", connected: true, after: time.Minute, wantEvent: models.ApplicationEventRunning},
+		{name: "report from before the deployment is ignored", connected: true, report: &report{health: models.Healthy, before: true}, after: time.Minute, wantEvent: models.ApplicationEventRunning},
+		{
+			name: "missing report fails without rolling back", after: healthReportTimeout,
+			wantEvent: models.ApplicationEventFailed, wantError: "health check failed: the agent did not report the application's health",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,37 +267,37 @@ func TestResolveEndedHealthGates(t *testing.T) {
 			app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
 			good := deployGated(t, &app)
 			recorder := recordRollbacks(t)
-			if tt.connected && tt.reported {
-				registerAgent(t, "agent-1", app.Id)
-			} else if tt.connected {
-				registerAgent(t, "agent-1")
-			}
-			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
-				Update(t.Context(), "health_status", tt.health); err != nil {
-				t.Fatalf("set health: %v", err)
+			deployment := verifyingDeployment(t, app.Id)
+			if tt.connected {
+				client := connectAgents(t, "agent-1")["agent-1"]
+				if tt.report != nil {
+					at := deployment.DeployedAt.Add(time.Second)
+					if tt.report.before {
+						at = deployment.DeployedAt.Add(-time.Second)
+					}
+					client.recordHealthReport(app.Id, tt.report.health, at)
+				}
 			}
 			nop := zerolog.Nop()
 			if tt.wantEvent != models.ApplicationEventRunning {
 				expectAsyncNotification(t)
 			}
 
-			resolveEndedHealthGates(t.Context(), time.Now(), &nop)
+			resolveHealthGates(t.Context(), deployment.VerifyUntil.Add(-time.Second), &nop)
 			if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventRunning {
 				t.Fatalf("a health check must not end before its timeout, got %q", event.Status)
 			}
-			resolveEndedHealthGates(t.Context(), time.Now().Add(6*time.Minute), &nop)
+			resolveHealthGates(t.Context(), deployment.VerifyUntil.Add(tt.after), &nop)
 
-			if event := loadEventByRequest(t, "gated"); event.Status != tt.wantEvent {
+			event := loadEventByRequest(t, "gated")
+			if event.Status != tt.wantEvent {
 				t.Errorf("event status = %q, want %q", event.Status, tt.wantEvent)
 			}
 			if got := len(recorder.targets) == 1 && recorder.targets[0] == good.Id; got != tt.wantRollback {
 				t.Errorf("rolled back = %v, want %v", recorder.targets, tt.wantRollback)
 			}
-			if tt.wantEvent == models.ApplicationEventFailed {
-				event := loadEventByRequest(t, "gated")
-				if want := "health check failed: application did not become healthy within 300s"; event.ErrorMessage == nil || *event.ErrorMessage != want {
-					t.Errorf("error = %v, want %q", event.ErrorMessage, want)
-				}
+			if tt.wantError != "" && (event.ErrorMessage == nil || *event.ErrorMessage != tt.wantError) {
+				t.Errorf("error = %v, want %q", event.ErrorMessage, tt.wantError)
 			}
 		})
 	}
@@ -399,50 +448,51 @@ func TestHandlePullImagesResult_HealthGate(t *testing.T) {
 	if event.Type != models.ApplicationEventImageUpdate || event.Status != models.ApplicationEventRunning {
 		t.Errorf("unexpected image update event: %+v", event)
 	}
+
+	connectAgents(t, "agent-1")["agent-1"].recordHealthReport(app.Id, models.Healthy, *deployment.DeployedAt)
+	expectAsyncNotification(t)
+	resolveHealthGates(t.Context(), *deployment.VerifyUntil, &log)
+
+	event, err = gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", event.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("reload image update event: %v", err)
+	}
+	if event.Status != models.ApplicationEventSucceeded {
+		t.Errorf("image update event status = %q, want succeeded", event.Status)
+	}
 }
 
 func TestHealthGate_EndsWhenTurnedOff(t *testing.T) {
-	for _, viaReport := range []bool{true, false} {
-		t.Run(map[bool]string{true: "unhealthy report", false: "background check"}[viaReport], func(t *testing.T) {
-			setupDeployTestEnv(t)
-			app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
-			deployGated(t, &app)
-			recorder := recordRollbacks(t)
-			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
-				Update(t.Context(), "rollback_enabled", false); err != nil {
-				t.Fatalf("disable rollback: %v", err)
-			}
-			nop := zerolog.Nop()
-			expectAsyncNotification(t)
+	setupDeployTestEnv(t)
+	app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
+	deployGated(t, &app)
+	recorder := recordRollbacks(t)
+	connectAgents(t, "agent-1")["agent-1"].recordHealthReport(app.Id, models.Unhealthy, time.Now())
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Update(t.Context(), "rollback_enabled", false); err != nil {
+		t.Fatalf("disable rollback: %v", err)
+	}
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
 
-			if viaReport {
-				checkHealthGate(t.Context(), "agent-1", app.Id, models.Unhealthy, &nop)
-			} else {
-				resolveEndedHealthGates(t.Context(), time.Now(), &nop)
-			}
+	resolveHealthGates(t.Context(), time.Now().Add(time.Minute), &nop)
 
-			if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventSucceeded {
-				t.Errorf("event status = %q, want succeeded once the health check is off", event.Status)
-			}
-			if len(recorder.targets) != 0 {
-				t.Errorf("expected no rollback, got %v", recorder.targets)
-			}
-			if verifyingDeployment(t, app.Id) != nil {
-				t.Error("expected the health check to end")
-			}
-		})
+	if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventSucceeded {
+		t.Errorf("event status = %q, want succeeded once the health check is off", event.Status)
+	}
+	if len(recorder.targets) != 0 {
+		t.Errorf("expected no rollback, got %v", recorder.targets)
+	}
+	if verifyingDeployment(t, app.Id) != nil {
+		t.Error("expected the health check to end")
 	}
 }
 
-func TestHasReportedHealth(t *testing.T) {
+func TestHealthReports(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedAppForAgent(t, "agent-1")
-	registerAgent(t, "agent-1")
-	client, ok := DefaultHub.GetClient("agent-1")
-	if !ok {
-		t.Fatal("expected the agent to be registered")
-	}
-	if DefaultHub.HasReportedHealth("agent-1", app.Id) {
+	client := connectAgents(t, "agent-1")["agent-1"]
+	if _, ok := DefaultHub.lastHealthReport("agent-1", app.Id); ok {
 		t.Fatal("a new connection has not reported yet")
 	}
 	nop := zerolog.Nop()
@@ -451,10 +501,28 @@ func TestHasReportedHealth(t *testing.T) {
 		Statuses: []*messages.ApplicationStatus{{ApplicationId: app.Id, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}},
 	}, &nop)
 
-	if !DefaultHub.HasReportedHealth("agent-1", app.Id) {
-		t.Error("expected the report to count for the connection")
+	healthy, ok := DefaultHub.lastHealthReport("agent-1", app.Id)
+	if !ok || healthy.health != models.Healthy || !healthy.failingSince.IsZero() {
+		t.Fatalf("expected the report to count for the connection, got %+v, %v", healthy, ok)
 	}
-	if DefaultHub.HasReportedHealth("agent-2", app.Id) {
+	if _, ok := DefaultHub.lastHealthReport("agent-2", app.Id); ok {
 		t.Error("another agent did not report")
+	}
+
+	start := time.Now()
+	client.recordHealthReport(app.Id, models.Unhealthy, start)
+	client.recordHealthReport(app.Id, models.Degraded, start.Add(time.Second))
+	if got, _ := DefaultHub.lastHealthReport("agent-1", app.Id); !got.failingSince.Equal(start) {
+		t.Errorf("expected the failing streak to continue from %v, got %+v", start, got)
+	}
+	client.recordHealthReport(app.Id, models.Healthy, start.Add(2*time.Second))
+	client.recordHealthReport(app.Id, models.Stopped, start.Add(3*time.Second))
+	if got, _ := DefaultHub.lastHealthReport("agent-1", app.Id); !got.failingSince.Equal(start.Add(3 * time.Second)) {
+		t.Errorf("expected a healthy report to end the failing streak, got %+v", got)
+	}
+
+	client.Close()
+	if _, ok := DefaultHub.lastHealthReport("agent-1", app.Id); ok {
+		t.Error("a closing connection's reports must not count")
 	}
 }

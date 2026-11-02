@@ -5,6 +5,8 @@ package deployments
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -364,27 +366,64 @@ func DiscardAllPending(ctx context.Context) error {
 // which images of earlier deployments it removes. It is nil unless the
 // application deletes old images and rolls back automatically.
 func ImageRetention(ctx context.Context, app *models.Application) (*messages.ImageRetention, error) {
-	if !app.RollbackEnabled || !app.DeleteOldImages {
+	if !retainsImages(app) {
 		return nil, nil
 	}
 	current, err := gorm.G[models.Application](db.DB).Select("id", "current_deployment_id").Where("id = ?", app.Id).First(ctx)
 	if err != nil {
 		return nil, err
 	}
+	fresh := *app
+	fresh.CurrentDeploymentId = current.CurrentDeploymentId
+	retentions, err := ImageRetentions(ctx, []models.Application{fresh})
+	return retentions[app.Id], err
+}
+
+// ImageRetentions returns the ImageRetention of each of the applications
+// that keeps images for rollbacks, by application ID. It loads the
+// deployments of all applications at once and trusts their current
+// deployment.
+func ImageRetentions(ctx context.Context, apps []models.Application) (map[string]*messages.ImageRetention, error) {
+	currents := map[string]*string{}
+	for i := range apps {
+		if retainsImages(&apps[i]) {
+			currents[apps[i].Id] = apps[i].CurrentDeploymentId
+		}
+	}
+	if len(currents) == 0 {
+		return nil, nil
+	}
 	recorded, err := gorm.G[models.ApplicationDeployment](db.DB).
-		Select("id", "status", "images", "previous_deployment_id").
-		Where("application_id = ? AND status <> ?", app.Id, models.DeploymentPending).
+		Select("id", "application_id", "status", "images", "previous_deployment_id").
+		Where("application_id IN ? AND status <> ?", slices.Collect(maps.Keys(currents)), models.DeploymentPending).
 		Order("deployed_at DESC, id DESC").
 		Find(ctx)
 	if err != nil {
 		return nil, err
 	}
+	byApplication := map[string][]models.ApplicationDeployment{}
+	for i := range recorded {
+		byApplication[recorded[i].ApplicationId] = append(byApplication[recorded[i].ApplicationId], recorded[i])
+	}
+	retentions := make(map[string]*messages.ImageRetention, len(currents))
+	for id, current := range currents {
+		retentions[id] = imageRetention(current, byApplication[id])
+	}
+	return retentions, nil
+}
 
+func retainsImages(app *models.Application) bool {
+	return app.RollbackEnabled && app.DeleteOldImages
+}
+
+// imageRetention derives the retention from the application's recorded
+// deployments, newest first.
+func imageRetention(current *string, recorded []models.ApplicationDeployment) *messages.ImageRetention {
 	// Keep the images a rollback restores: of the current deployment, and while
 	// it is verified, of the deployment before it.
 	restored := map[string]bool{}
 	for i := range recorded {
-		if current.CurrentDeploymentId == nil || recorded[i].Id != *current.CurrentDeploymentId {
+		if current == nil || recorded[i].Id != *current {
 			continue
 		}
 		restored[recorded[i].Id] = true
@@ -418,7 +457,7 @@ func ImageRetention(ctx context.Context, app *models.Application) (*messages.Ima
 			}
 		}
 	}
-	return retention, nil
+	return retention
 }
 
 // lastGood returns the deployment an automatic rollback restores: the one the

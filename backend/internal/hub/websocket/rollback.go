@@ -100,5 +100,5 @@ func sendAgentSettings(ctx context.Context, agentID string, log *zerolog.Logger)
 		log.Error().Err(err).Str("agent_id", agentID).Msg("failed to load applications for agent settings")
 		return
 	}
-	DefaultHub.SendAgentSettings(agentID, apps)
+	DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }

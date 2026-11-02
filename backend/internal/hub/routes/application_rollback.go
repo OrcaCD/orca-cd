@@ -112,12 +112,14 @@ const (
 	maxRollbackHealthTimeoutSeconds = 60 * 60
 )
 
+// updateRollbackSettingsRequest replaces all rollback settings, so every
+// field is required: an omitted one would be reset.
 type updateRollbackSettingsRequest struct {
-	Enabled              bool  `json:"enabled"`
-	OnDeployFailure      bool  `json:"onDeployFailure"`
-	OnUnhealthy          bool  `json:"onUnhealthy"`
-	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds"`
-	PauseAutoSync        bool  `json:"pauseAutoSync"`
+	Enabled              *bool `json:"enabled" binding:"required"`
+	OnDeployFailure      *bool `json:"onDeployFailure" binding:"required"`
+	OnUnhealthy          *bool `json:"onUnhealthy" binding:"required"`
+	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds" binding:"required"`
+	PauseAutoSync        *bool `json:"pauseAutoSync" binding:"required"`
 }
 
 // UpdateRollbackSettingsHandler configures the automatic rollback of an
@@ -140,11 +142,11 @@ func UpdateRollbackSettingsHandler(c *gin.Context) {
 		Where("id = ?", id).
 		Select("RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(ctx, models.Application{
-			RollbackEnabled:              req.Enabled,
-			RollbackOnDeployFailure:      req.OnDeployFailure,
-			RollbackOnUnhealthy:          req.OnUnhealthy,
+			RollbackEnabled:              *req.Enabled,
+			RollbackOnDeployFailure:      *req.OnDeployFailure,
+			RollbackOnUnhealthy:          *req.OnUnhealthy,
 			RollbackHealthTimeoutSeconds: req.HealthTimeoutSeconds,
-			RollbackPauseAutoSync:        req.PauseAutoSync,
+			RollbackPauseAutoSync:        *req.PauseAutoSync,
 		})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
