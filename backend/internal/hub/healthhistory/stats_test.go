@@ -33,7 +33,9 @@ func seedDeployment(t *testing.T, appID string, createdAt, completedAt time.Time
 
 func seedEvent(t *testing.T, event models.ApplicationEvent, createdAt time.Time) {
 	t.Helper()
-	event.Type = models.ApplicationEventDeployment
+	if event.Type == "" {
+		event.Type = models.ApplicationEventDeployment
+	}
 	event.Source = models.ApplicationEventSourceManual
 	if err := db.DB.Create(&event).Error; err != nil {
 		t.Fatalf("seed deployment: %v", err)
@@ -245,6 +247,14 @@ func TestGetStats_TriggerAttribution(t *testing.T) {
 				{Status: models.ApplicationEventSucceeded, CommitHash: commit("deployed"), CreatedAt: at(2*time.Hour + 5*time.Minute), CompletedAt: new(at(2*time.Hour + 3*time.Minute))},
 			},
 			want: commit("deployed"),
+		},
+		{
+			name: "rollback after a deployment",
+			events: []models.ApplicationEvent{
+				{Status: models.ApplicationEventSucceeded, CommitHash: commit("deployed"), CreatedAt: at(3 * time.Hour), CompletedAt: new(at(3 * time.Hour))},
+				{Type: models.ApplicationEventRollback, Status: models.ApplicationEventSucceeded, CommitHash: commit("rolled-back"), CreatedAt: at(2*time.Hour + 5*time.Minute), CompletedAt: new(at(2*time.Hour + 3*time.Minute))},
+			},
+			want: commit("rolled-back"),
 		},
 		{
 			name: "running deployment",

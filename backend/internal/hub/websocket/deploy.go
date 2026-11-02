@@ -27,10 +27,12 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	}
 
 	event, err := applicationevents.ForRequest(ctx, result.RequestId, result.ApplicationId)
-	if err != nil {
-		// Without the event a rollback can't be told apart from a deployment.
+	// Without the event a rollback can't be told apart from a deployment. The
+	// result is still applied as a deployment's, so nothing stays running, but
+	// the rolled back state is kept.
+	lookupFailed := err != nil
+	if lookupFailed {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to look up deployment event")
-		return
 	}
 	if event != nil && event.Type == models.ApplicationEventRollback {
 		handleRollbackResult(ctx, agentID, app, event, result, log)
@@ -66,7 +68,9 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		if err != nil {
 			return
 		}
-		clearRollbackState(ctx, agentID, app, log)
+		if !lookupFailed {
+			clearRollbackState(ctx, agentID, app, log)
+		}
 		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
 		return
 	}

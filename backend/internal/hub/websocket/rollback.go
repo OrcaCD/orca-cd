@@ -8,6 +8,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -58,7 +59,7 @@ func handleRollbackResult(ctx context.Context, agentID string, app *models.Appli
 
 	message := "Warning: " + app.Name.String() + " was rolled back"
 	if event.CommitHash != nil && *event.CommitHash != "" {
-		message += " to " + shortCommit(*event.CommitHash)
+		message += " to " + utils.ShortCommit(*event.CommitHash)
 	}
 	go notifications.SendForApplication(app.Id, models.NotificationEventRollbackSucceeded, message, log)
 }
@@ -92,11 +93,4 @@ func sendAgentSettings(ctx context.Context, agentID string, log *zerolog.Logger)
 		return
 	}
 	DefaultHub.SendAgentSettings(agentID, apps)
-}
-
-func shortCommit(commit string) string {
-	if len(commit) > 7 {
-		return commit[:7]
-	}
-	return commit
 }
