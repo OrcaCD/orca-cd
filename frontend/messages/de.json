@@ -880,7 +880,7 @@
 	"rollbackOnDeployFailure": "Deployment fehlschlägt",
 	"rollbackOnDeployFailureDescription": "Docker Compose schlägt fehl, oder ein Image-Update kann die Container nicht neu erstellen.",
 	"rollbackOnUnhealthy": "Unhealthy innerhalb von",
-	"rollbackOnUnhealthyDescription": "Die Anwendung wird nach einem Deployment unhealthy, degraded oder gestoppt, oder ist nach Ablauf der Zeit nicht healthy.",
+	"rollbackOnUnhealthyDescription": "Die Anwendung ist nach einem Deployment 30 Sekunden lang unhealthy, degraded oder gestoppt, oder ist nach Ablauf der Zeit nicht healthy. Beendete Container, etwa einmalige Migrationen, gelten als unhealthy.",
 	"rollbackMinutes": "Minuten",
 	"rollbackAfter": "Nach einem Rollback",
 	"rollbackAfterDescription": "Der fehlgeschlagene Commit wird erst wieder automatisch deployt, wenn ein neuer Commit kommt.",

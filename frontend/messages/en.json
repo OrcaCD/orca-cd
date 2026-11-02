@@ -880,7 +880,7 @@
 	"rollbackOnDeployFailure": "Deploy fails",
 	"rollbackOnDeployFailureDescription": "Docker Compose fails, or an image update can't recreate the containers.",
 	"rollbackOnUnhealthy": "Unhealthy within",
-	"rollbackOnUnhealthyDescription": "The application becomes unhealthy, degraded or stopped after a deployment, or isn't healthy when the time is up.",
+	"rollbackOnUnhealthyDescription": "The application stays unhealthy, degraded or stopped for 30 seconds after a deployment, or isn't healthy when the time is up. Containers that exit, such as one-shot migrations, count as unhealthy.",
 	"rollbackMinutes": "minutes",
 	"rollbackAfter": "After a rollback",
 	"rollbackAfterDescription": "The commit that failed is not deployed again automatically until a new commit arrives.",
