@@ -30,6 +30,18 @@ export interface Application {
 	deleteOldImages: boolean;
 	imageWebhookEnabled: boolean;
 	imageWebhookUrl?: string;
+	warnings: ApplicationWarning[];
+}
+
+export interface ApplicationWarning {
+	code:
+		| "invalid_compose"
+		| "missing_restart_policy"
+		| "database_without_volume"
+		| "floating_image_reference"
+		| "privileged_container"
+		| "host_network";
+	service?: string;
 }
 
 export interface ApplicationListItem {
