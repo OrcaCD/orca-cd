@@ -98,6 +98,99 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 }
 
+func TestDeployWithWarnings_PreconditionErrors(t *testing.T) {
+	t.Run("compose service is not initialized", func(t *testing.T) {
+		c := &Client{}
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "docker compose service is not initialized")
+	})
+
+	t.Run("deployments directory is not configured", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = ""
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "deployments directory is not configured")
+	})
+
+	t.Run("docker daemon is not ready", func(t *testing.T) {
+		c := newTestClient(t)
+		c.mu.Lock()
+		c.ready = false
+		c.mu.Unlock()
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "docker daemon is not ready")
+	})
+
+	t.Run("host deployments directory resolution fails", func(t *testing.T) {
+		c := newTestClient(t)
+		c.mu.Lock()
+		c.hostDeploymentsDir = ""
+		c.hostDirDetectionComplete = false
+		c.mu.Unlock()
+		ctx, cancel := context.WithCancel(t.Context())
+		c.detectHostDeploymentsDir = func(ctx context.Context) (string, error) {
+			cancel()
+			return "", ctx.Err()
+		}
+
+		_, err := c.DeployWithWarnings(ctx, DeployRequest{})
+		requireErrorContains(t, err, "resolve host deployments directory: context canceled")
+	})
+
+	t.Run("compose file is empty", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = t.TempDir()
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{ApplicationName: "billing"})
+		requireErrorContains(t, err, "compose file is empty")
+	})
+}
+
+func TestDeployWithWarnings_WriteComposeFileError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	composePath := filepath.Join(c.deploymentsDir, "billing", composeFileName)
+	if err := os.MkdirAll(composePath, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	_, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+	requireErrorContains(t, err, "write compose file:")
+}
+
+func TestDeployWithWarnings_TranslateBindMountSourcesError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	c.hostDeploymentsDir = "relative/host/deployments"
+
+	originalLoadProject := loadProject
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name: options.ProjectName,
+			Services: composetypes.Services{
+				"app": {Image: "ghcr.io/orcacd/app:latest"},
+			},
+		}, nil
+	}
+
+	warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+	requireErrorContains(t, err, "translate bind mount sources: host deployments directory")
+	if !reflect.DeepEqual(warnings, []composewarnings.Warning{
+		{Code: "missing_restart_policy", Service: "app"},
+		{Code: "floating_image_reference", Service: "app"},
+	}) {
+		t.Fatalf("DeployWithWarnings() warnings = %#v", warnings)
+	}
+}
+
 func TestDeploy_RejectsUnsafeApplicationName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()

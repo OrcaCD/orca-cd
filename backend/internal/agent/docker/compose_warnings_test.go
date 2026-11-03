@@ -89,6 +89,25 @@ func TestHasPersistentDataMount(t *testing.T) {
 	}
 }
 
+func TestDatabaseImageName(t *testing.T) {
+	tests := []struct {
+		image string
+		want  string
+	}{
+		{image: "postgres:16", want: "postgres"},
+		{image: "registry.example:5000/team/postgres@sha256:0123456789abcdef", want: "postgres"},
+		{image: "redis@sha256:0123456789abcdef", want: "redis"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			if got := databaseImageName(tt.image); got != tt.want {
+				t.Errorf("databaseImageName(%q) = %q, want %q", tt.image, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHasFloatingImageReference(t *testing.T) {
 	tests := []struct {
 		image string

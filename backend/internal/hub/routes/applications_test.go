@@ -375,6 +375,59 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	}
 }
 
+func TestGetApplicationHandler_InvalidWarnings(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-invalid-warnings")
+	agent := seedTestAgent(t, "agent-invalid-warnings")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Invalid Warnings")
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("warnings", "{").Error; err != nil {
+		t.Fatalf("failed to set invalid application warnings: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetApplicationHandler_NullWarningsReturnsEmptyArray(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-null-warnings")
+	agent := seedTestAgent(t, "agent-null-warnings")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Null Warnings")
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("warnings", "null").Error; err != nil {
+		t.Fatalf("failed to set null application warnings: %v", err)
+	}
+
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/applications/"+app.Id, nil)
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	GetApplicationHandler(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Warnings == nil {
+		t.Fatal("expected warnings to be an empty array, got nil")
+	}
+	if len(body.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %#v", body.Warnings)
+	}
+}
+
 func TestGetApplicationHandler_IncludesLastSyncSource(t *testing.T) {
 	setupTestDBWithApplications(t)
 
@@ -542,6 +595,31 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 		event.Source != models.ApplicationEventSourceApplicationCreated ||
 		event.ActorName == nil || *event.ActorName != "Test User" {
 		t.Fatalf("unexpected initial deployment event: %+v", event)
+	}
+}
+
+func TestCreateApplicationHandler_InvalidWarnings(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-warnings")
+	agent := seedTestAgent(t, "agent-create-invalid-warnings")
+	if err := db.DB.Exec(`CREATE TRIGGER invalidate_application_warnings_after_insert
+		AFTER INSERT ON applications
+		BEGIN
+			UPDATE applications SET warnings = '{' WHERE id = NEW.id;
+		END`).Error; err != nil {
+		t.Fatalf("failed to create invalid-warnings trigger: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(validApplicationRequestBody(repo.Id, agent.Id))
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	CreateApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -884,6 +962,33 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 	}
 	if got := deletes.Load(); got != 1 {
 		t.Errorf("expected old agent to receive 1 delete request, got %d", got)
+	}
+}
+
+func TestUpdateApplicationHandler_InvalidWarnings(t *testing.T) {
+	setupTestDBWithApplications(t)
+
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update-invalid-warnings")
+	agent := seedTestAgent(t, "agent-update-invalid-warnings")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Billing Service")
+	if err := db.DB.Exec(`CREATE TRIGGER invalidate_application_warnings_after_update
+		AFTER UPDATE OF name ON applications
+		BEGIN
+			UPDATE applications SET warnings = '{' WHERE id = NEW.id;
+		END`).Error; err != nil {
+		t.Fatalf("failed to create invalid-warnings trigger: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(validApplicationRequestBody(repo.Id, agent.Id))
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id, bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: app.Id}}
+
+	UpdateApplicationHandler(c)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
