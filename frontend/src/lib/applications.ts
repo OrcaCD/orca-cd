@@ -40,8 +40,11 @@ export interface ApplicationWarning {
 		| "database_without_volume"
 		| "floating_image_reference"
 		| "privileged_container"
-		| "host_network";
+		| "host_network"
+		| "host_namespace"
+		| "analysis_timeout";
 	service?: string;
+	field?: string;
 }
 
 export interface ApplicationListItem {

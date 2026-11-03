@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -93,9 +94,11 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", job.Application.Id).
-		Select("ComposeFile", "PreviousComposeFile", "Commit", "CommitMessage").
+		Select("ComposeFile", "ComposeFileHash", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage").
 		Updates(context.Background(), models.Application{
 			ComposeFile:         crypto.EncryptedString(content),
+			ComposeFileHash:     composewarnings.Hash(content),
+			Warnings:            "[]",
 			PreviousComposeFile: job.Application.ComposeFile,
 			Commit:              job.Commit,
 			CommitMessage:       job.CommitMessage,

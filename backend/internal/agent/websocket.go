@@ -14,6 +14,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gorilla/websocket"
@@ -30,7 +31,7 @@ type outboundSender interface {
 }
 
 type deployExecutor interface {
-	Deploy(ctx context.Context, req docker.DeployRequest) error
+	DeployWithWarnings(ctx context.Context, req docker.DeployRequest) ([]composewarnings.Warning, error)
 	Remove(ctx context.Context, req docker.DeleteRequest) error
 }
 
@@ -315,8 +316,9 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	Log.Info().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("starting deployment")
 
 	result := &messages.DeployResult{
-		RequestId:     req.RequestId,
-		ApplicationId: req.ApplicationId,
+		RequestId:         req.RequestId,
+		ApplicationId:     req.ApplicationId,
+		ComposeFileSha256: composewarnings.Hash(req.ComposeFile),
 	}
 
 	if deployer == nil {
@@ -332,12 +334,20 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	deployCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
 	defer cancel()
 
-	if err := deployer.Deploy(deployCtx, docker.DeployRequest{
+	warnings, err := deployer.DeployWithWarnings(deployCtx, docker.DeployRequest{
 		ApplicationID:   req.ApplicationId,
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 		DeleteOldImages: req.DeleteOldImages,
-	}); err != nil {
+	})
+	for _, warning := range warnings {
+		result.Warnings = append(result.Warnings, &messages.ComposeWarning{
+			Code:    warning.Code,
+			Service: warning.Service,
+			Field:   warning.Field,
+		})
+	}
+	if err != nil {
 		Log.Error().Err(err).Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("deployment failed")
 		result.ErrorMessage = err.Error()
 		sendDeployResult(sender, result)

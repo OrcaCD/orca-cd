@@ -17,6 +17,7 @@ import (
 
 	agentdocker "github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -66,6 +67,7 @@ type stubDeployer struct {
 	err      error
 	reqCh    chan agentdocker.DeployRequest
 	deleteCh chan agentdocker.DeleteRequest
+	warnings []composewarnings.Warning
 }
 
 func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) error {
@@ -75,7 +77,7 @@ func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) 
 	return d.err
 }
 
-func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest) error {
+func (d *stubDeployer) DeployWithWarnings(ctx context.Context, req agentdocker.DeployRequest) ([]composewarnings.Warning, error) {
 	if d.reqCh != nil {
 		d.reqCh <- req
 	}
@@ -83,11 +85,11 @@ func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest
 		select {
 		case <-d.block:
 		case <-ctx.Done():
-			return ctx.Err()
+			return d.warnings, ctx.Err()
 		}
 	}
 
-	return d.err
+	return d.warnings, d.err
 }
 
 // newTestServer starts a test WebSocket server. The handler is called for each
@@ -803,7 +805,11 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 	}
 
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
-	deployer := &stubDeployer{reqCh: make(chan agentdocker.DeployRequest, 1)}
+	deployer := &stubDeployer{
+		reqCh:    make(chan agentdocker.DeployRequest, 1),
+		warnings: []composewarnings.Warning{{Code: "missing_restart_policy", Service: "app"}},
+	}
+	const composeFile = "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n"
 
 	deployMsg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_DeployRequest{
@@ -811,7 +817,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 				RequestId:       "req-1",
 				ApplicationId:   "app-1",
 				ApplicationName: "billing",
-				ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n",
+				ComposeFile:     composeFile,
 				DeleteOldImages: true,
 			},
 		},
@@ -853,6 +859,12 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if result.RequestId != "req-1" {
 			t.Fatalf("expected request id %q, got %q", "req-1", result.RequestId)
+		}
+		if result.ComposeFileSha256 != composewarnings.Hash(composeFile) {
+			t.Fatalf("unexpected compose file hash: %q", result.ComposeFileSha256)
+		}
+		if len(result.Warnings) != 1 || result.Warnings[0].Code != "missing_restart_policy" {
+			t.Fatalf("unexpected warnings: %#v", result.Warnings)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy result")

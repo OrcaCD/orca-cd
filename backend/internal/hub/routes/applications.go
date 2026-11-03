@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
-	"github.com/OrcaCD/orca-cd/internal/hub/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -18,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	sharedutils "github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -149,7 +150,13 @@ func GetApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toApplicationResponse(&application))
+	response, err := toApplicationResponse(&application)
+	if err != nil {
+		hubApplications.Log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to decode application warnings")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func CreateApplicationHandler(c *gin.Context) {
@@ -203,6 +210,8 @@ func CreateApplicationHandler(c *gin.Context) {
 		LastSyncedAt:             nil,
 		Path:                     req.Path,
 		ComposeFile:              crypto.EncryptedString(composeFile),
+		ComposeFileHash:          composewarnings.Hash(composeFile),
+		Warnings:                 "[]",
 		PreviousComposeFile:      crypto.EncryptedString(""),
 		ImagePollEnabled:         req.ImagePollEnabled,
 		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
@@ -234,7 +243,13 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "created", "application", application.Id)
 
-	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
+	response, err := toApplicationResponse(&createdApplication)
+	if err != nil {
+		hubApplications.Log.Error().Err(err).Str("applicationId", createdApplication.Id).Msg("failed to decode application warnings")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusCreated, response)
 	sse.PublishUpdate(sse.TopicApplications)
 
 	sendAgentSettings(c, req.AgentId)
@@ -343,6 +358,11 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Path = req.Path
 	application.PreviousComposeFile = application.ComposeFile
 	application.ComposeFile = crypto.EncryptedString(composeFile)
+	composeFileHash := composewarnings.Hash(composeFile)
+	if application.ComposeFileHash != composeFileHash {
+		application.Warnings = "[]"
+	}
+	application.ComposeFileHash = composeFileHash
 	application.ImagePollEnabled = req.ImagePollEnabled
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages
@@ -375,7 +395,13 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "updated", "application", id)
 
-	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
+	response, err := toApplicationResponse(&updatedApplication)
+	if err != nil {
+		hubApplications.Log.Error().Err(err).Str("applicationId", updatedApplication.Id).Msg("failed to decode application warnings")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
 	sse.PublishUpdate(sse.TopicApplications)
 	sendAgentSettings(c, req.AgentId)
 	if oldAgentId != req.AgentId {
@@ -568,7 +594,15 @@ func normalizeSyncSource(source *models.ApplicationEventSource) *string {
 	return &s
 }
 
-func toApplicationResponse(app *models.Application) applicationResponse {
+func toApplicationResponse(app *models.Application) (applicationResponse, error) {
+	var warnings []composewarnings.Warning
+	if err := json.Unmarshal([]byte(app.Warnings), &warnings); err != nil {
+		return applicationResponse{}, fmt.Errorf("decode application warnings: %w", err)
+	}
+	if warnings == nil {
+		warnings = []composewarnings.Warning{}
+	}
+
 	resp := applicationResponse{
 		Id:                       app.Id,
 		Icon:                     app.Icon,
@@ -596,13 +630,13 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		DeleteOldImages:          app.DeleteOldImages,
 		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
-		Warnings:                 composewarnings.Analyze(app.ComposeFile.String()),
+		Warnings:                 warnings,
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)
 		resp.ImageWebhookUrl = &webhookUrl
 	}
-	return resp
+	return resp, nil
 }
 
 // sendAgentSettings fetches all applications for agentID and pushes an

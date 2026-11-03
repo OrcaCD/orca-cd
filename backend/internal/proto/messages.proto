@@ -80,6 +80,14 @@ message DeployResult {
   string application_id = 2;
   bool success = 3;
   string error_message = 4;
+  repeated ComposeWarning warnings = 5;
+  string compose_file_sha256 = 6;
+}
+
+message ComposeWarning {
+  string code = 1;
+  string service = 2;
+  string field = 3;
 }
 
 message AgentSettings {

@@ -136,11 +136,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
 	}
 
-	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: projectName,
-		ConfigPaths: []string{composePath},
-		WorkingDir:  filepath.Dir(composePath),
-	})
+	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, filepath.Dir(composePath)))
 	if err != nil {
 		return false, fmt.Errorf("load compose project: %w", err)
 	}

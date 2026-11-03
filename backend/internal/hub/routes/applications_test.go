@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -359,10 +358,8 @@ func TestGetApplicationHandler_ReturnsAllFields(t *testing.T) {
 	if body.CommitMessage != "initial commit" {
 		t.Errorf("expected commitMessage %q, got %q", "initial commit", body.CommitMessage)
 	}
-	if len(body.Warnings) != 1 || body.Warnings[0] != (composewarnings.Warning{
-		Code: "missing_restart_policy", Service: "app",
-	}) {
-		t.Errorf("expected missing restart policy warning for app service, got %#v", body.Warnings)
+	if len(body.Warnings) != 0 {
+		t.Errorf("expected no warnings before the agent reports deployment analysis, got %#v", body.Warnings)
 	}
 	if body.PreviousComposeFile != "" {
 		t.Errorf("expected previousComposeFile to be empty, got %q", body.PreviousComposeFile)

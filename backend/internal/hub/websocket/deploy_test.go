@@ -13,6 +13,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -132,6 +133,55 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	}
 	if updated.LastSyncSource == nil || *updated.LastSyncSource != "" {
 		t.Errorf("expected empty LastSyncSource for a result without an event, got %v", updated.LastSyncSource)
+	}
+}
+
+func TestHandleDeployResultPersistsWarningsForMatchingComposeFile(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId:     app.Id,
+		Success:           true,
+		ComposeFileSha256: composewarnings.Hash(app.ComposeFile.String()),
+		Warnings: []*messages.ComposeWarning{
+			{Code: "missing_restart_policy", Service: "api"},
+		},
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != `[{"code":"missing_restart_policy","service":"api"}]` {
+		t.Fatalf("Warnings = %q", updated.Warnings)
+	}
+	if updated.ComposeFileHash != composewarnings.Hash(app.ComposeFile.String()) {
+		t.Fatalf("ComposeFileHash = %q", updated.ComposeFileHash)
+	}
+}
+
+func TestHandleDeployResultDoesNotPersistStaleWarnings(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId:     app.Id,
+		Success:           true,
+		ComposeFileSha256: composewarnings.Hash("a newer compose file"),
+		Warnings:          []*messages.ComposeWarning{{Code: "invalid_compose"}},
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != "[]" {
+		t.Fatalf("stale warnings were persisted: %q", updated.Warnings)
 	}
 }
 
