@@ -758,31 +758,74 @@ func TestDeploy_RejectedComposeFileRestoresPreviousDeployment(t *testing.T) {
 	}
 }
 
-func TestDeploy_InvalidComposeYAMLDoesNotRunComposeUp(t *testing.T) {
+func TestDeploy_LoadErrorReportsWarningAndRestoresPreviousDeployment(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
+	appDir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	const previous = "services:\n  app:\n    image: img:1.0.0\n"
+	composePath := filepath.Join(appDir, composeFileName)
+	if err := os.WriteFile(composePath, []byte(previous), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
 	originalLoadProject := loadProject
-	originalUpProject := upProject
-	t.Cleanup(func() {
-		loadProject = originalLoadProject
-		upProject = originalUpProject
-	})
-	upProject = func(context.Context, api.Compose, *composetypes.Project, api.UpOptions) error {
-		t.Fatal("compose up must not run when the compose file is invalid")
-		return nil
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	loadProject = func(ctx context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected compose analysis to have a deadline")
+		}
+		return nil, errors.New("invalid compose")
 	}
 
 	warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
 		ApplicationID:   "app-123",
 		ApplicationName: "billing",
-		ComposeFile:     "not: [valid",
+		ComposeFile:     "services:\n  app:\n    image: img:2.0.0\n",
 	})
 	if err == nil {
-		t.Fatal("expected invalid compose YAML to abort deployment")
+		t.Fatal("expected compose loading to fail")
 	}
 	if !reflect.DeepEqual(warnings, []composewarnings.Warning{{Code: "invalid_compose"}}) {
 		t.Fatalf("DeployWithWarnings() warnings = %#v, want invalid_compose warning", warnings)
+	}
+
+	//nolint:gosec // composePath is built from t.TempDir() and a fixed application name
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(content) != previous {
+		t.Fatalf("expected the previous compose file to be restored, got %q", content)
+	}
+}
+
+func TestDeploy_LoadTimeoutReportsWarning(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	originalLoadProject := loadProject
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	ctx, cancel := context.WithCancel(t.Context())
+	loadProject = func(loadCtx context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		cancel()
+		<-loadCtx.Done()
+		return nil, loadCtx.Err()
+	}
+
+	warnings, err := c.DeployWithWarnings(ctx, DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:1.0.0\n",
+	})
+	if err == nil {
+		t.Fatal("expected canceled compose loading to abort deployment")
+	}
+	if !reflect.DeepEqual(warnings, []composewarnings.Warning{{Code: "analysis_timeout"}}) {
+		t.Fatalf("DeployWithWarnings() warnings = %#v, want analysis_timeout warning", warnings)
 	}
 }
 

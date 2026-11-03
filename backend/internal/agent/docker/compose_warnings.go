@@ -102,6 +102,9 @@ func hasFloatingImageReference(image string) bool {
 	if image == "" || strings.Contains(image, "@") || strings.Contains(image, "$") {
 		return false
 	}
+	if strings.HasSuffix(image, ":") {
+		return true
+	}
 
 	lastSlash := strings.LastIndexByte(image, '/')
 	lastColon := strings.LastIndexByte(image, ':')

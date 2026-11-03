@@ -96,6 +96,7 @@ func TestHasFloatingImageReference(t *testing.T) {
 	}{
 		{image: "nginx", want: true},
 		{image: "nginx:latest", want: true},
+		{image: "nginx:", want: true},
 		{image: "nginx:1.27", want: false},
 		{image: "registry.example:5000/team/app", want: true},
 		{image: "registry.example:5000/team/app:1.2", want: false},
