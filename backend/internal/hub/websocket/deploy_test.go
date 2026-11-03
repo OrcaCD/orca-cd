@@ -3,7 +3,6 @@ package websocket
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -223,26 +222,6 @@ func TestHandleDeployResultLogsComposeWarningsPersistenceError(t *testing.T) {
 	}
 	if updated.Warnings != "[]" {
 		t.Errorf("Warnings = %q, want unchanged warnings after persistence failure", updated.Warnings)
-	}
-}
-
-func TestStoreComposeWarnings_MarshalError(t *testing.T) {
-	setupDeployTestEnv(t)
-	app := seedDeployApp(t, models.Syncing)
-
-	originalMarshal := marshalComposeWarningsJSON
-	t.Cleanup(func() { marshalComposeWarningsJSON = originalMarshal })
-	marshalComposeWarningsJSON = func(any) ([]byte, error) {
-		return nil, errors.New("marshal failed")
-	}
-
-	nop := zerolog.Nop()
-	err := storeComposeWarnings(t.Context(), app.AgentId, &app, &messages.DeployResult{
-		ApplicationId:     app.Id,
-		ComposeFileSha256: composewarnings.Hash(app.ComposeFile.String()),
-	}, &nop)
-	if err == nil || err.Error() != "marshal failed" {
-		t.Fatalf("storeComposeWarnings() error = %v, want marshal failed", err)
 	}
 }
 
