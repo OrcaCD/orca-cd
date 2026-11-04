@@ -791,7 +791,8 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 		"agents":             {&models.Agent{}, 2},
 		"repositories":       {&models.Repository{}, 2},
 		"applications":       {&models.Application{}, 3},
-		"application events": {&models.ApplicationEvent{}, 7},
+		"application events": {&models.ApplicationEvent{}, 8},
+		"deployments":        {&models.ApplicationDeployment{}, 4},
 		"notifications":      {&models.Notification{}, 2},
 		"audit logs":         {&models.AuditLog{}, 7},
 	}

@@ -277,6 +277,18 @@ func seedDemoRepositories(ctx context.Context, tx *gorm.DB, createdBy string) er
 	return nil
 }
 
+// The Monitoring Stack was rolled back automatically after its Grafana
+// deployment became unhealthy; the Demo Web App can be rolled back by hand.
+const (
+	demoWebDeploymentCreated       = "demo-deployment-web-created"
+	demoWebDeploymentImage         = "demo-deployment-web-image"
+	demoWebDeploymentCurrent       = "demo-deployment-web-current"
+	demoMonitoringDeploymentGood   = "demo-deployment-monitoring-prometheus"
+	demoMonitoringPrometheusCommit = "5c0a8e2f91d3476b0a8e1d4c6f32b975e1a0d843"
+	demoMonitoringRollbackAgo      = 46 * time.Minute
+	demoMonitoringRollbackReason   = "health check failed: application was unhealthy for 30s after the deployment"
+)
+
 func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	now := time.Now()
 	syncedAt := now.Add(-12 * time.Minute)
@@ -285,48 +297,68 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	syncSource := models.ApplicationEventSourceRepositoryPolling
 	manualSource := models.ApplicationEventSourceManual
 	webhookSecret := crypto.EncryptedString("demo-image-webhook-secret")
+	webDeployment, monitoringDeployment := demoWebDeploymentCurrent, demoMonitoringDeploymentGood
+	rolledBackAt := now.Add(-demoMonitoringRollbackAgo)
+	rolledBackCommit, rolledBackReason := demoMonitoringPrometheusCommit, demoMonitoringRollbackReason
 
 	apps := []models.Application{
 		{
-			Id:                       "demo-app-web",
-			Name:                     crypto.EncryptedString("Demo Web App"),
-			NameHash:                 crypto.BlindIndex(models.NormalizeName("Demo Web App")),
-			Icon:                     "globe",
-			RepositoryId:             demoSeedRepositoryID,
-			AgentId:                  demoSeedAgentID,
-			SyncStatus:               models.Synced,
-			HealthStatus:             models.Healthy,
-			Branch:                   "main",
-			Commit:                   "3f9c2a7d41b86e05c1a9d7f3e2b4a60819cd5e77",
-			CommitMessage:            "chore: Bump demo-app to 1.4.2",
-			LastSyncedAt:             &syncedAt,
-			LastSyncSource:           &manualSource,
-			Path:                     "docker-compose.yml",
-			ComposeFile:              crypto.EncryptedString(demoWebComposeFile),
-			PreviousComposeFile:      crypto.EncryptedString(demoWebPreviousComposeFile),
-			ImagePollEnabled:         true,
-			ImagePollIntervalSeconds: 300,
-			DeleteOldImages:          true,
-			ImageWebhookSecret:       &webhookSecret,
+			Id:                           "demo-app-web",
+			Name:                         crypto.EncryptedString("Demo Web App"),
+			NameHash:                     crypto.BlindIndex(models.NormalizeName("Demo Web App")),
+			Icon:                         "globe",
+			RepositoryId:                 demoSeedRepositoryID,
+			AgentId:                      demoSeedAgentID,
+			SyncStatus:                   models.Synced,
+			HealthStatus:                 models.Healthy,
+			Branch:                       "main",
+			Commit:                       "3f9c2a7d41b86e05c1a9d7f3e2b4a60819cd5e77",
+			CommitMessage:                "chore: Bump demo-app to 1.4.2",
+			LastSyncedAt:                 &syncedAt,
+			LastSyncSource:               &manualSource,
+			Path:                         "docker-compose.yml",
+			ComposeFile:                  crypto.EncryptedString(demoWebComposeFile),
+			PreviousComposeFile:          crypto.EncryptedString(demoWebPreviousComposeFile),
+			ImagePollEnabled:             true,
+			ImagePollIntervalSeconds:     300,
+			DeleteOldImages:              true,
+			ImageWebhookSecret:           &webhookSecret,
+			CurrentDeploymentId:          &webDeployment,
+			RollbackEnabled:              true,
+			RollbackOnDeployFailure:      true,
+			RollbackOnUnhealthy:          true,
+			RollbackHealthTimeoutSeconds: 300,
+			RollbackPauseAutoSync:        true,
 		},
 		{
-			Id:                       "demo-app-monitoring",
-			Name:                     crypto.EncryptedString("Monitoring Stack"),
-			NameHash:                 crypto.BlindIndex(models.NormalizeName("Monitoring Stack")),
-			Icon:                     "chart-line",
-			RepositoryId:             demoSeedSignedRepositoryID,
-			AgentId:                  demoSeedAgentID,
-			SyncStatus:               models.OutOfSync,
-			HealthStatus:             models.Unhealthy,
-			Branch:                   "main",
-			Commit:                   "b81e4c0a9d2f7365e1c48a0f6d93b27a5e04c1d8",
-			CommitMessage:            "feat: Add Grafana to the monitoring stack",
-			LastSyncedAt:             &syncedAt,
-			LastSyncSource:           &syncSource,
-			Path:                     "monitoring/compose.yml",
-			ComposeFile:              crypto.EncryptedString(demoMonitoringComposeFile),
-			PreviousComposeFile:      crypto.EncryptedString(""),
-			ImagePollIntervalSeconds: 120,
+			Id:                           "demo-app-monitoring",
+			Name:                         crypto.EncryptedString("Monitoring Stack"),
+			NameHash:                     crypto.BlindIndex(models.NormalizeName("Monitoring Stack")),
+			Icon:                         "chart-line",
+			RepositoryId:                 demoSeedSignedRepositoryID,
+			AgentId:                      demoSeedAgentID,
+			SyncStatus:                   models.OutOfSync,
+			HealthStatus:                 models.Healthy,
+			Branch:                       "main",
+			Commit:                       "b81e4c0a9d2f7365e1c48a0f6d93b27a5e04c1d8",
+			CommitMessage:                "feat: Add Grafana to the monitoring stack",
+			LastSyncedAt:                 &syncedAt,
+			LastSyncError:                &rolledBackReason,
+			LastSyncSource:               &syncSource,
+			Path:                         "monitoring/compose.yml",
+			ComposeFile:                  crypto.EncryptedString(demoMonitoringComposeFile),
+			PreviousComposeFile:          crypto.EncryptedString(""),
+			ImagePollIntervalSeconds:     120,
+			CurrentDeploymentId:          &monitoringDeployment,
+			RolledBackAt:                 &rolledBackAt,
+			RolledBackCommit:             &rolledBackCommit,
+			RolledBackReason:             &rolledBackReason,
+			AutoSyncPaused:               true,
+			RollbackEnabled:              true,
+			RollbackOnDeployFailure:      true,
+			RollbackOnUnhealthy:          true,
+			RollbackHealthTimeoutSeconds: 300,
+			RollbackPauseAutoSync:        true,
 		},
 		{
 			Id:                       "demo-app-worker",
@@ -356,6 +388,47 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 		}
 	}
 
+	return seedDemoDeployments(ctx, tx, now)
+}
+
+// seedDemoDeployments records what the applications ran, so their history
+// offers rollbacks.
+func seedDemoDeployments(ctx context.Context, tx *gorm.DB, now time.Time) error {
+	deployment := func(id, appID, commit, message, composeFile string, ago time.Duration, images ...models.DeployedImage) models.ApplicationDeployment {
+		deployedAt := now.Add(-ago)
+		return models.ApplicationDeployment{
+			Base:          models.Base{Id: id},
+			ApplicationId: appID,
+			Status:        models.DeploymentSucceeded,
+			Commit:        commit,
+			CommitMessage: message,
+			ComposeFile:   crypto.EncryptedString(composeFile),
+			Images:        images,
+			DeployedAt:    &deployedAt,
+		}
+	}
+	image := func(service, id, ref string) models.DeployedImage {
+		return models.DeployedImage{Service: service, ImageId: "sha256:" + id, PinnedRef: ref + "@sha256:" + id}
+	}
+	deployments := []models.ApplicationDeployment{
+		deployment(demoWebDeploymentCreated, "demo-app-web", "9d1e5b3a07c24f68a1e0d3b5c7f92a46e8b01d35", "feat: Initial demo-app release",
+			demoWebPreviousComposeFile, 6*24*time.Hour,
+			image("web", "4a1f0c9e8d7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f", "ghcr.io/orcacd/demo-app")),
+		deployment(demoWebDeploymentImage, "demo-app-web", "9d1e5b3a07c24f68a1e0d3b5c7f92a46e8b01d35", "feat: Initial demo-app release",
+			demoWebPreviousComposeFile, 2*24*time.Hour,
+			image("web", "7c3e9a1b5d2f8064e1a7c3b9d5f2e8a04c6b1d7e3f9a5c2b8e4d0a6f1c7b3e9d", "ghcr.io/orcacd/demo-app")),
+		deployment(demoWebDeploymentCurrent, "demo-app-web", "3f9c2a7d41b86e05c1a9d7f3e2b4a60819cd5e77", "chore: Bump demo-app to 1.4.2",
+			demoWebComposeFile, 3*time.Hour,
+			image("web", "b2d8f4a0c6e1937d5b2f8a4c0e6d1b7f3a9c5e2d8b4f0a6c1e7d3b9f5a2c8e4d", "ghcr.io/orcacd/demo-app")),
+		deployment(demoMonitoringDeploymentGood, "demo-app-monitoring", demoMonitoringPrometheusCommit, "feat: Add Prometheus",
+			demoMonitoringComposeFile, 4*24*time.Hour,
+			image("prometheus", "e5a1c7d3b9f2084a6e1c7d3b9f5a2e8c4d0b6a1f7c3e9d5b2a8f4c0e6d1b7a3f", "prom/prometheus")),
+	}
+	for i := range deployments {
+		if err := gorm.G[models.ApplicationDeployment](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &deployments[i]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -369,6 +442,7 @@ type demoEvent struct {
 	commitHash    string
 	commitMessage string
 	errorMessage  string
+	deploymentId  string
 	ago           time.Duration
 	duration      time.Duration
 }
@@ -382,21 +456,24 @@ func seedDemoApplicationEvents(ctx context.Context, tx *gorm.DB, actor *models.U
 			eventType: models.ApplicationEventDeployment, source: models.ApplicationEventSourceApplicationCreated,
 			status: models.ApplicationEventSucceeded, actorUser: true,
 			commitHash: "9d1e5b3a07c24f68a1e0d3b5c7f92a46e8b01d35", commitMessage: "feat: Initial demo-app release",
-			ago: 6 * 24 * time.Hour, duration: 14 * time.Second,
+			deploymentId: demoWebDeploymentCreated,
+			ago:          6 * 24 * time.Hour, duration: 14 * time.Second,
 		},
 		{
 			id: "demo-event-web-image", applicationId: "demo-app-web",
 			eventType: models.ApplicationEventImageUpdate, source: models.ApplicationEventSourceImagePolling,
 			status:     models.ApplicationEventSucceeded,
 			commitHash: "9d1e5b3a07c24f68a1e0d3b5c7f92a46e8b01d35", commitMessage: "feat: Initial demo-app release",
-			ago: 2 * 24 * time.Hour, duration: 31 * time.Second,
+			deploymentId: demoWebDeploymentImage,
+			ago:          2 * 24 * time.Hour, duration: 31 * time.Second,
 		},
 		{
 			id: "demo-event-web-sync", applicationId: "demo-app-web",
 			eventType: models.ApplicationEventCommitSync, source: models.ApplicationEventSourceRepositoryWebhook,
 			status:     models.ApplicationEventSucceeded,
 			commitHash: "3f9c2a7d41b86e05c1a9d7f3e2b4a60819cd5e77", commitMessage: "chore: Bump demo-app to 1.4.2",
-			ago: 3 * time.Hour, duration: 9 * time.Second,
+			deploymentId: demoWebDeploymentCurrent,
+			ago:          3 * time.Hour, duration: 9 * time.Second,
 		},
 		{
 			id: "demo-event-web-nochange", applicationId: "demo-app-web",
@@ -409,17 +486,26 @@ func seedDemoApplicationEvents(ctx context.Context, tx *gorm.DB, actor *models.U
 			id: "demo-event-monitoring-created", applicationId: "demo-app-monitoring",
 			eventType: models.ApplicationEventDeployment, source: models.ApplicationEventSourceApplicationCreated,
 			status: models.ApplicationEventSucceeded, actorUser: true,
-			commitHash: "5c0a8e2f91d3476b0a8e1d4c6f32b975e1a0d843", commitMessage: "feat: Add Prometheus",
-			ago: 4 * 24 * time.Hour, duration: 22 * time.Second,
+			commitHash: demoMonitoringPrometheusCommit, commitMessage: "feat: Add Prometheus",
+			deploymentId: demoMonitoringDeploymentGood,
+			ago:          4 * 24 * time.Hour, duration: 22 * time.Second,
 		},
 		{
 			id: "demo-event-monitoring-deploy", applicationId: "demo-app-monitoring",
 			eventType: models.ApplicationEventDeployment, source: models.ApplicationEventSourceGitHubActions,
 			status:       models.ApplicationEventFailed,
 			commitHash:   "b81e4c0a9d2f7365e1c48a0f6d93b27a5e04c1d8",
-			errorMessage: "service grafana is unhealthy: container exited with code 1",
+			errorMessage: demoMonitoringRollbackReason,
 			ago:          47 * time.Minute, duration: 41 * time.Second,
 			commitMessage: "feat: Add Grafana to the monitoring stack",
+		},
+		{
+			id: "demo-event-monitoring-rollback", applicationId: "demo-app-monitoring",
+			eventType: models.ApplicationEventRollback, source: models.ApplicationEventSourceHealthCheck,
+			status:     models.ApplicationEventSucceeded,
+			commitHash: demoMonitoringPrometheusCommit, commitMessage: "feat: Add Prometheus",
+			deploymentId: demoMonitoringDeploymentGood,
+			ago:          demoMonitoringRollbackAgo, duration: 12 * time.Second,
 		},
 		{
 			id: "demo-event-worker-sync", applicationId: "demo-app-worker",
@@ -455,6 +541,9 @@ func seedDemoApplicationEvents(ctx context.Context, tx *gorm.DB, actor *models.U
 		}
 		if e.errorMessage != "" {
 			event.ErrorMessage = &e.errorMessage
+		}
+		if e.deploymentId != "" {
+			event.DeploymentId = &e.deploymentId
 		}
 
 		if err := gorm.G[models.ApplicationEvent](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &event); err != nil {
