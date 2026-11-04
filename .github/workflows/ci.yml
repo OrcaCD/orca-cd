@@ -133,11 +133,11 @@ jobs:
 
       - name: Build
         working-directory: ./backend
-        run: go build -v ./...
+        run: go build -tags=nomsgpack -v ./...
 
       - name: Run Tests
         working-directory: ./backend
-        run: gotestsum -- -failfast -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: gotestsum -- -tags=nomsgpack -failfast -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1

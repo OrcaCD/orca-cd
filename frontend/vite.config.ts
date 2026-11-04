@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => ({
 		viteReact(),
 		tailwindcss(),
 		compression({
-			algorithms: ["gzip", "brotli", "zstd"],
+			algorithms: ["gzip", "brotli"],
 		}),
 	],
 	resolve: {

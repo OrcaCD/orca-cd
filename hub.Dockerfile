@@ -42,7 +42,7 @@ COPY backend/ .
 
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
     CC=$( [ "$TARGETARCH" = "arm64" ] && echo aarch64-linux-gnu-gcc || echo gcc ) \
-    go build \
+    go build -tags=nomsgpack \
     -ldflags "-s -w \
     -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
     -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \
