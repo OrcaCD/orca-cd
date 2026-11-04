@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogFooter,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+} from "@/components/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import CopyButton from "../copy-btn";
@@ -36,25 +36,25 @@ export default function CopyValueDialog({
 	doneLabel = m.done(),
 }: CopyValueDialogProps) {
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-md">
-				<DialogHeader>
-					<DialogTitle>{title}</DialogTitle>
-					<DialogDescription>{description}</DialogDescription>
-				</DialogHeader>
+		<ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+			<ResponsiveDialogContent className="sm:max-w-md">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{title}</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription>{description}</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 
 				<div className="space-y-2">
 					<Label htmlFor={inputId}>{label}</Label>
 					<Input id={inputId} value={value} readOnly />
 				</div>
 
-				<DialogFooter>
+				<ResponsiveDialogFooter>
 					<CopyButton text={value} title={copyTitle} />
 					<Button type="button" onClick={() => onOpenChange(false)}>
 						{doneLabel}
 					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+				</ResponsiveDialogFooter>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
