@@ -18,6 +18,7 @@ import { applicationEventsTableFeatures } from "./table-features";
 export const getColumns = (
 	applicationId: string,
 	currentDeploymentId?: string | null,
+	deploying = false,
 ): ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[] => [
 	{
 		accessorKey: "createdAt",
@@ -115,7 +116,11 @@ export const getColumns = (
 		cell: ({ row }) =>
 			canRollBackTo(row.original, currentDeploymentId) ? (
 				<div className="flex justify-end">
-					<RollbackButton applicationId={applicationId} event={row.original} />
+					<RollbackButton
+						applicationId={applicationId}
+						event={row.original}
+						deploying={deploying}
+					/>
 				</div>
 			) : null,
 	},

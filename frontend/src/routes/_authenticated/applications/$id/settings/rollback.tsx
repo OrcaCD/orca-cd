@@ -43,6 +43,13 @@ const rollbackSchema = z
 		pauseAutoSync: z.boolean(),
 	})
 	.superRefine((value, ctx) => {
+		if (value.enabled && !value.onDeployFailure && !value.onUnhealthy) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["onUnhealthy"],
+				message: m.validationRollbackTrigger(),
+			});
+		}
 		// The timeout is hidden, and not used, unless unhealthy deployments roll back.
 		if (
 			value.enabled &&
@@ -193,6 +200,7 @@ function RollbackSettingsPage() {
 												onChange={field.handleChange}
 												label={m.rollbackOnUnhealthy()}
 												description={m.rollbackOnUnhealthyDescription()}
+												errors={field.state.meta.errors}
 											/>
 										)}
 									</form.Field>
@@ -320,15 +328,17 @@ function CheckboxField({
 	onChange,
 	label,
 	description,
+	errors = [],
 }: {
 	id: string;
 	checked: boolean;
 	onChange: (checked: boolean) => void;
 	label: string;
 	description: string;
+	errors?: ({ message?: string } | undefined)[];
 }) {
 	return (
-		<Field>
+		<Field data-invalid={errors.length > 0}>
 			<div className="flex items-start gap-2">
 				<Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
 				<div className="space-y-1">
@@ -336,6 +346,7 @@ function CheckboxField({
 					<p className="text-muted-foreground text-xs">{description}</p>
 				</div>
 			</div>
+			{errors.length > 0 && <FieldError errors={errors} />}
 		</Field>
 	);
 }

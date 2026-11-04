@@ -67,10 +67,12 @@ export function HistoryTimeline({
 	events,
 	applicationId,
 	currentDeploymentId,
+	deploying,
 }: {
 	events: ApplicationEvent[];
 	applicationId: string;
 	currentDeploymentId?: string | null;
+	deploying: boolean;
 }) {
 	return (
 		<div className="ml-1.5 space-y-6 border-l border-border">
@@ -86,6 +88,7 @@ export function HistoryTimeline({
 								event={event}
 								applicationId={applicationId}
 								currentDeploymentId={currentDeploymentId}
+								deploying={deploying}
 							/>
 						))}
 					</ol>
@@ -99,10 +102,12 @@ function HistoryEvent({
 	event,
 	applicationId,
 	currentDeploymentId,
+	deploying,
 }: {
 	event: ApplicationEvent;
 	applicationId: string;
 	currentDeploymentId?: string | null;
+	deploying: boolean;
 }) {
 	const createdAt = new Date(event.createdAt);
 	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
@@ -163,7 +168,7 @@ function HistoryEvent({
 						{duration ? ` · ${duration}` : null}
 					</span>
 					{canRollBackTo(event, currentDeploymentId) ? (
-						<RollbackButton applicationId={applicationId} event={event} />
+						<RollbackButton applicationId={applicationId} event={event} deploying={deploying} />
 					) : null}
 				</div>
 			</div>

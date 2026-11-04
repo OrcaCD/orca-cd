@@ -33,6 +33,7 @@ export interface Application {
 	currentDeploymentId: string | null;
 	rolledBackAt: string | null;
 	rolledBackCommit: string | null;
+	rolledBackReason: string | null;
 	autoSyncPaused: boolean;
 	rollback: RollbackSettings;
 }

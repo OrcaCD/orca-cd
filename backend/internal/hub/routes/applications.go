@@ -113,6 +113,7 @@ type applicationResponse struct {
 	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
 	RolledBackAt             *string                  `json:"rolledBackAt"`
 	RolledBackCommit         *string                  `json:"rolledBackCommit"`
+	RolledBackReason         *string                  `json:"rolledBackReason"`
 	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
 	Rollback                 rollbackSettingsResponse `json:"rollback"`
 	ImageWebhookEnabled      bool                     `json:"imageWebhookEnabled"`
@@ -364,7 +365,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
 		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
-			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused",
+			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
 			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -622,6 +623,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		CurrentDeploymentId:      app.CurrentDeploymentId,
 		RolledBackAt:             formatTimestamp(app.RolledBackAt),
 		RolledBackCommit:         app.RolledBackCommit,
+		RolledBackReason:         app.RolledBackReason,
 		AutoSyncPaused:           app.AutoSyncPaused,
 		Rollback: rollbackSettingsResponse{
 			Enabled:              app.RollbackEnabled,

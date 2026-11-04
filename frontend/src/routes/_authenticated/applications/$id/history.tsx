@@ -14,7 +14,7 @@ import { ApplicationEventsDataTable } from "@/components/tables/application-even
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { API_BASE, fetcher, useFetch } from "@/lib/api";
 import type { ApplicationEventsPage } from "@/lib/application-events";
-import type { Application } from "@/lib/applications";
+import { SyncStatus, type Application } from "@/lib/applications";
 import { useHistoryLayout } from "@/lib/history-layout-preference";
 import { m } from "@/lib/paraglide/messages";
 
@@ -50,9 +50,10 @@ function ApplicationHistoryPage() {
 	const debouncedSearch = useDebouncedValue(search.trim());
 	const { historyLayout, setHistoryLayout } = useHistoryLayout();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
+	const deploying = application?.syncStatus === SyncStatus.Syncing;
 	const columns = useMemo(
-		() => getColumns(id, application?.currentDeploymentId),
-		[id, application?.currentDeploymentId],
+		() => getColumns(id, application?.currentDeploymentId, deploying),
+		[id, application?.currentDeploymentId, deploying],
 	);
 	const { data, error, isLoading, isValidating, size, setSize } =
 		useSWRInfinite<ApplicationEventsPage>(
@@ -106,6 +107,7 @@ function ApplicationHistoryPage() {
 							events={events}
 							applicationId={id}
 							currentDeploymentId={application?.currentDeploymentId}
+							deploying={deploying}
 						/>
 					) : (
 						<div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

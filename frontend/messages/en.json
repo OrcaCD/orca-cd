@@ -892,6 +892,8 @@
 	"rollbackNotifyEmpty": "No notification is subscribed to rollbacks of this application.",
 	"manageNotifications": "Manage notifications",
 	"validationRollbackTimeout": "Enter between 1 and 60 minutes.",
+	"validationRollbackTrigger": "Choose at least one reason to roll back.",
+	"rollbackDeploymentInProgress": "Wait until the running deployment has finished.",
 	"applicationsAttentionRolledBack": "Rolled back to {commit}",
 	"applicationsRolledBack": "Rolled back",
 	"rolledBackImages": "Running {commit} with the images from before the failed update.",

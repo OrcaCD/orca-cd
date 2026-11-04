@@ -850,6 +850,7 @@ test.describe("Rollback", () => {
 		await expect(
 			page.getByText(`Running ${shortSha(goodSha)}, desired ${shortSha(broken.sha)}.`),
 		).toBeVisible();
+		await expect(page.getByText(/^Rolled back after: /)).toBeVisible();
 
 		await gotoApp(page, `/applications/${appId}/history`);
 		const rollback = page
@@ -941,6 +942,8 @@ test.describe("Rollback", () => {
 
 		await gotoApp(page, `/applications/${appId}/details`);
 		await expect(page.getByText(`desired ${shortSha(desired)}`)).toBeVisible();
+		// The earlier failure is not the reason for a manual rollback
+		await expect(page.getByText(/^Rolled back after: /)).toHaveCount(0);
 		await page.getByRole("button", { name: "Retry deploy" }).click();
 		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("9");
 		await waitForApplication(page, appId, (app) => !app.rolledBackAt && app.commit === desired);
@@ -950,10 +953,41 @@ test.describe("Rollback", () => {
 	test("disable automatic rollback", async ({ page }) => {
 		await gotoApp(page, `/applications/${appId}/settings/rollback`);
 		await expect(page.getByRole("switch", { name: "Automatic rollback" })).toBeChecked();
+		// Enabled, it needs a reason to roll back
+		await page.getByRole("checkbox", { name: "Deploy fails" }).click();
+		await page.getByRole("checkbox", { name: "Unhealthy within" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Choose at least one reason to roll back.")).toBeVisible();
+		expect((await getApplication(page, appId)).rollback.onDeployFailure).toBe(true);
+
 		await page.getByRole("switch", { name: "Automatic rollback" }).click();
 		await page.getByRole("button", { name: "Save Changes" }).click();
 		await expect(page.getByText("Application updated")).toBeVisible();
 		expect((await getApplication(page, appId)).rollback.enabled).toBe(false);
+	});
+
+	test("a failed deployment is not rolled back while automatic rollback is off", async ({
+		page,
+	}) => {
+		const rollbacks = async () =>
+			(await applicationEvents(page, appId)).filter((event) => event.type === "rollback").length;
+		const rollbacksBefore = await rollbacks();
+		const broken = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(13, UNPULLABLE_IMAGE) },
+			message: "Break the image without automatic rollback",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await expectEvent(page, "manual", broken.sha, "failed");
+		const app = await waitForApplication(
+			page,
+			appId,
+			(app) => app.commit === broken.sha && app.syncStatus === "out_of_sync",
+		);
+		expect(app.rolledBackAt).toBeNull();
+		expect(await rollbacks()).toBe(rollbacksBefore);
+		expect(runningVersion()).toBe("9");
 	});
 
 	test("a rollback restores a local image by its ID", async ({ page }) => {

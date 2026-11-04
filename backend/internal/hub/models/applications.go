@@ -66,6 +66,9 @@ type Application struct {
 	RolledBackAt *time.Time `gorm:"type:timestamp;"`
 	// RolledBackCommit is the commit of the deployment it was rolled back to.
 	RolledBackCommit *string `gorm:"type:text;"`
+	// RolledBackReason is why it was rolled back automatically: the error of
+	// the deployment the rollback replaced. It is empty for manual rollbacks.
+	RolledBackReason *string `gorm:"type:text;"`
 	// AutoSyncPaused stops automatic syncs of a rolled back application until
 	// they are resumed or the application is deployed again.
 	AutoSyncPaused bool `gorm:"not null;default:false"`

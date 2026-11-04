@@ -81,12 +81,12 @@ export function RolledBackBanner({ application }: { application: Application }) 
 					{m.rolledBackTitle()}
 				</p>
 				<p className="text-sm text-muted-foreground">{description}</p>
-				{application.lastSyncError ? (
+				{application.rolledBackReason ? (
 					<p
 						className="line-clamp-2 text-xs text-muted-foreground"
-						title={application.lastSyncError}
+						title={application.rolledBackReason}
 					>
-						{m.rolledBackReason({ reason: application.lastSyncError })}
+						{m.rolledBackReason({ reason: application.rolledBackReason })}
 					</p>
 				) : null}
 			</div>

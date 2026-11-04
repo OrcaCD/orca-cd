@@ -892,6 +892,8 @@
 	"rollbackNotifyEmpty": "Keine Benachrichtigung hat Rollbacks dieser Anwendung abonniert.",
 	"manageNotifications": "Benachrichtigungen verwalten",
 	"validationRollbackTimeout": "Gib zwischen 1 und 60 Minuten ein.",
+	"validationRollbackTrigger": "Wähle mindestens einen Grund für einen Rollback.",
+	"rollbackDeploymentInProgress": "Warte, bis das laufende Deployment abgeschlossen ist.",
 	"applicationsAttentionRolledBack": "Auf {commit} zurückgerollt",
 	"applicationsRolledBack": "Zurückgerollt",
 	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
