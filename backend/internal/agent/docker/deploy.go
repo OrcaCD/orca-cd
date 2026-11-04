@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
+	"github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
@@ -142,14 +143,15 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	}
 
 	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName: projectName,
-		ConfigPaths: []string{composePath},
-		WorkingDir:  applicationDir,
+		ProjectName:       projectName,
+		ConfigPaths:       []string{composePath},
+		WorkingDir:        applicationDir,
+		ProjectOptionsFns: []cli.ProjectOptionsFn{cli.WithoutEnvironmentResolution},
 	})
 	if err != nil {
 		err = fmt.Errorf("load compose project: %w", err)
-	} else {
-		err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir)
+	} else if err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir); err == nil {
+		project, err = resolveEnvFiles(applicationDir, project)
 	}
 	if err != nil {
 		// Image pulls redeploy the compose file on disk, so a rejected file must
@@ -209,7 +211,11 @@ func (c *Client) enforceDeployPolicy(appID string, project *composetypes.Project
 	if c.isPrivilegedApp(appID) {
 		return nil
 	}
-	rules := pathRules{deploymentsDir: c.deploymentsDir, applicationDir: applicationDir}
+	rules := pathRules{
+		deploymentsDir:     c.deploymentsDir,
+		applicationDir:     applicationDir,
+		hostDeploymentsDir: c.hostDeploymentsBase(),
+	}
 	if c.restrictMountsToDeployDir {
 		rules.restrictMountsDir = c.deploymentsDir
 	}

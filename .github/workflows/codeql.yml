@@ -37,11 +37,24 @@ jobs:
 
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       name: Set up Go
+      id: go
       if: matrix.build-mode == 'manual' && matrix.language == 'go'
       with:
         go-version: stable
-        cache: true
-        cache-dependency-path: backend/go.sum
+        cache: false
+
+    # Only main saves the cache, as pull requests can read main's caches but not each other's
+    - name: Restore Go modules and build outputs
+      id: go-cache
+      if: matrix.build-mode == 'manual' && matrix.language == 'go'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: codeql-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-${{ hashFiles('backend/go.sum') }}
+        restore-keys: |
+          codeql-${{ runner.os }}-${{ runner.arch }}-go-${{ steps.go.outputs.go-version }}-
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
@@ -56,6 +69,15 @@ jobs:
       run: go build -o bin/hub ./cmd/hub && go build -o bin/agent ./cmd/agent
       env:
         CGO_ENABLED: 1
+
+    - name: Save Go modules and build outputs
+      if: matrix.build-mode == 'manual' && matrix.language == 'go' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

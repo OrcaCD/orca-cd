@@ -31,17 +31,18 @@ import (
 )
 
 type Config struct {
-	Host             string
-	Port             string
-	LogLevel         zerolog.Level
-	LogJSON          bool
-	TrustedProxies   []string
-	AllowedIPs       []string
-	AppURL           string
-	AppSecret        string
-	DisableLocalAuth bool
-	Demo             bool
-	DisableUI        bool
+	Host                  string
+	Port                  string
+	LogLevel              zerolog.Level
+	LogJSON               bool
+	TrustedProxies        []string
+	AllowedIPs            []string
+	AppURL                string
+	AppSecret             string
+	DisableLocalAuth      bool
+	Demo                  bool
+	DisableUI             bool
+	SkipAgentVersionCheck bool
 }
 
 func DefaultConfig() (Config, error) {
@@ -53,6 +54,7 @@ func DefaultConfig() (Config, error) {
 	disableLocalAuth := utils.EnvBool("DISABLE_LOCAL_AUTH")
 	demo := utils.EnvBool("DEMO")
 	disableUI := utils.EnvBool("DISABLE_UI")
+	skipAgentVersionCheck := utils.EnvBool("SKIP_AGENT_VERSION_CHECK")
 	if port == "" {
 		port = "8080"
 	}
@@ -88,19 +90,23 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Host:             host,
-		Port:             port,
-		LogLevel:         logLevel,
-		LogJSON:          logJSON,
-		TrustedProxies:   trustedProxies,
-		AllowedIPs:       allowedIPs,
-		AppURL:           appURL,
-		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth,
-		Demo:             demo,
-		DisableUI:        disableUI,
+		Host:                  host,
+		Port:                  port,
+		LogLevel:              logLevel,
+		LogJSON:               logJSON,
+		TrustedProxies:        trustedProxies,
+		AllowedIPs:            allowedIPs,
+		AppURL:                appURL,
+		AppSecret:             appSecret,
+		DisableLocalAuth:      disableLocalAuth,
+		Demo:                  demo,
+		DisableUI:             disableUI,
+		SkipAgentVersionCheck: skipAgentVersionCheck,
 	}, nil
 }
+
+// Must not be lower than the webhook body limit in routes.
+const maxRequestBodyBytes = 10 << 20 // 10 MiB
 
 var Log = logger.New("hub", false)
 
@@ -111,6 +117,11 @@ func Run(cfg Config) error {
 
 	if cfg.Demo {
 		httpclient.Disable()
+	}
+
+	version.SkipMinAgentVersion = cfg.SkipAgentVersionCheck
+	if cfg.SkipAgentVersionCheck {
+		Log.Warn().Msg("SKIP_AGENT_VERSION_CHECK is set, the minimum agent version is not enforced, do not use in production")
 	}
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
@@ -179,6 +190,7 @@ func Run(cfg Config) error {
 		router.Use(middleware.DemoBlocking())
 	}
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
+	router.Use(middleware.MaxBodySize(maxRequestBodyBytes))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
 	err = RegisterRoutes(router, cfg)
@@ -193,8 +205,8 @@ func Run(cfg Config) error {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		MaxHeaderBytes:    22 << 10, // 22 KB
+		WriteTimeout:      35 * time.Second, // above the 30s request timeout, so timeout errors can still be written
+		MaxHeaderBytes:    22 << 10,         // 22 KB
 		IdleTimeout:       120 * time.Second,
 	}
 

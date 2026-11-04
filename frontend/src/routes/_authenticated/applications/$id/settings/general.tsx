@@ -49,7 +49,16 @@ import {
 	type RepositoryTreeEntry,
 } from "@/components/dialogs/upsert-application";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
-import { AppWindow, FileCode, GitBranch, Rocket, Trash2, type LucideIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+	AppWindow,
+	FileCode,
+	GitBranch,
+	Rocket,
+	Trash2,
+	TriangleAlert,
+	type LucideIcon,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/general")({
 	component: GeneralSettingsPage,
@@ -147,6 +156,10 @@ function GeneralSettingsPage() {
 		},
 	});
 
+	const name = useStore(form.store, (state) => state.values.name);
+	const agentId = useStore(form.store, (state) => state.values.agentId);
+	const movesDeployment =
+		!!application && (name.trim() !== application.name || agentId !== application.agentId);
 	const repositoryId = useStore(form.store, (state) => state.values.repositoryId);
 	const branch = useStore(form.store, (state) => state.values.branch);
 	const isPristine = useStore(form.store, (state) => state.isDefaultValue);
@@ -278,6 +291,13 @@ function GeneralSettingsPage() {
 									);
 								}}
 							</form.Field>
+
+							{movesDeployment && (
+								<Alert variant="destructive">
+									<TriangleAlert />
+									<AlertDescription>{m.applicationRenameEnvWarning()}</AlertDescription>
+								</Alert>
+							)}
 						</FormSection>
 
 						<FormSection

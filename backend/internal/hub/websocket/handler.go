@@ -282,6 +282,14 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(client.Id, p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
+	case *messages.ClientMessage_EnvListResult:
+		if DefaultHub == nil || !DefaultHub.ResolveEnvListResult(client.Id, p.EnvListResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.EnvListResult.RequestId).Msg("received env list result for unknown request")
+		}
+	case *messages.ClientMessage_EnvUpdateResult:
+		if DefaultHub == nil || !DefaultHub.ResolveEnvUpdateResult(client.Id, p.EnvUpdateResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.EnvUpdateResult.RequestId).Msg("received env update result for unknown request")
+		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:

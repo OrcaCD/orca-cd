@@ -250,14 +250,14 @@ func TestGetAgentHandler_Versions(t *testing.T) {
 	setupTestDBWithAgents(t)
 
 	originalVersion := version.Version
-	version.Version = "v0.6.0"
+	version.Version = "v0.7.0"
 	t.Cleanup(func() { version.Version = originalVersion })
 
 	reported := createTestAgentRecord(t, "Reported", "reported-key", models.AgentStatusOnline, nil)
 	if _, err := gorm.G[models.Agent](db.DB).
 		Where("id = ?", reported.Id).
 		Select("Version", "DockerVersion").
-		Updates(t.Context(), models.Agent{Version: "v0.5.0", DockerVersion: "28.1.1"}); err != nil {
+		Updates(t.Context(), models.Agent{Version: "v0.6.0", DockerVersion: "28.1.1"}); err != nil {
 		t.Fatalf("failed to set agent versions: %v", err)
 	}
 	unreported := createTestAgentRecord(t, "Unreported", "unreported-key", models.AgentStatusOffline, nil)
@@ -280,8 +280,8 @@ func TestGetAgentHandler_Versions(t *testing.T) {
 	}
 
 	body := get(reported.Id)
-	if body.Version == nil || *body.Version != "v0.5.0" {
-		t.Fatalf("expected version v0.5.0, got %v", body.Version)
+	if body.Version == nil || *body.Version != "v0.6.0" {
+		t.Fatalf("expected version v0.6.0, got %v", body.Version)
 	}
 	if body.DockerVersion == nil || *body.DockerVersion != "28.1.1" {
 		t.Fatalf("expected docker version 28.1.1, got %v", body.DockerVersion)

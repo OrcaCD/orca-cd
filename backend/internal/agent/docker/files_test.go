@@ -3,6 +3,7 @@ package docker
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -41,6 +42,167 @@ func TestWriteFileAtomic_ReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected no leftover temporary files, got %v", entries)
+	}
+}
+
+func openTestRoot(t *testing.T, dir string) *os.Root {
+	t.Helper()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	return root
+}
+
+func TestWriteRootFileAtomic_CreatesFileAndParentDirectories(t *testing.T) {
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+
+	if err := writeRootFileAtomic(root, "env/nested/app.env", []byte("A=1\n")); err != nil {
+		t.Fatalf("writeRootFileAtomic: %v", err)
+	}
+
+	target := filepath.Join(dir, "env", "nested", "app.env")
+	//nolint:gosec // path is built from t.TempDir()
+	if content, err := os.ReadFile(target); err != nil || string(content) != "A=1\n" {
+		t.Fatalf("expected file content, got %q (err=%v)", content, err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(target)
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("expected mode 0600, got %v", info.Mode().Perm())
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(target))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected no leftover temporary files, got %v", entries)
+	}
+}
+
+func TestWriteRootFileAtomic_OverwritesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+
+	for _, content := range []string{"old", "new"} {
+		if err := writeRootFileAtomic(root, ".env", []byte(content)); err != nil {
+			t.Fatalf("writeRootFileAtomic: %v", err)
+		}
+	}
+
+	//nolint:gosec // path is built from t.TempDir()
+	if content, _ := os.ReadFile(filepath.Join(dir, ".env")); string(content) != "new" {
+		t.Fatalf("expected the file to be overwritten, got %q", content)
+	}
+}
+
+func TestWriteRootFileAtomic_RejectsSymlinkTarget(t *testing.T) {
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("original"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	target := filepath.Join(dir, ".env")
+	if err := os.Symlink(outside, target); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+
+	if err := writeRootFileAtomic(root, ".env", []byte("new")); err == nil {
+		t.Fatal("expected writing to a symlink to be rejected")
+	}
+
+	//nolint:gosec // path is built from t.TempDir()
+	if content, _ := os.ReadFile(outside); string(content) != "original" {
+		t.Fatalf("expected the symlink target to stay unchanged, got %q", content)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected %s to stay a symlink, got mode %v", target, info.Mode())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected no leftover temporary files, got %v", entries)
+	}
+}
+
+func TestWriteRootFileAtomic_PreservesFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not supported on Windows")
+	}
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+	target := filepath.Join(dir, ".env")
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil { //nolint:gosec // the test needs a world-readable file
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.Chmod(target, 0o644); err != nil { //nolint:gosec // the test needs a world-readable file
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	if err := writeRootFileAtomic(root, ".env", []byte("new")); err != nil {
+		t.Fatalf("writeRootFileAtomic: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("expected mode 0644 to be kept, got %v", info.Mode().Perm())
+	}
+	//nolint:gosec // path is built from t.TempDir()
+	if content, _ := os.ReadFile(target); string(content) != "new" {
+		t.Fatalf("expected the file to be updated, got %q", content)
+	}
+}
+
+func TestWriteRootFileAtomic_RejectsSymlinkedDirectoryOutsideRoot(t *testing.T) {
+	dir := t.TempDir()
+	root := openTestRoot(t, dir)
+	outsideDir := t.TempDir()
+	if err := os.Symlink(outsideDir, filepath.Join(dir, "link")); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+
+	if err := writeRootFileAtomic(root, "link/app.env", []byte("secret")); err == nil {
+		t.Fatal("expected a write through a symlink leaving the root to be rejected")
+	}
+
+	entries, err := os.ReadDir(outsideDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected nothing to be written outside the root, got %v", entries)
+	}
+}
+
+func TestWriteRootFileAtomic_RejectsPathTraversal(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "root")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	root := openTestRoot(t, dir)
+
+	if err := writeRootFileAtomic(root, "../escaped.env", []byte("secret")); err == nil {
+		t.Fatal("expected a path leaving the root to be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(base, "escaped.env")); err == nil {
+		t.Fatal("expected nothing to be written outside the root")
 	}
 }
 
@@ -91,4 +253,37 @@ func TestReadDeploymentFile(t *testing.T) {
 	if content, ok := readDeploymentFile(dir, "link"); ok {
 		t.Fatalf("expected a symlink pointing outside the directory not to be read, got %q", content)
 	}
+}
+
+func TestFileHelpers_Errors(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Run("ensureDeploymentDir below a file", func(t *testing.T) {
+		if err := ensureDeploymentDir(filepath.Join(blocker, "app")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("writeFileAtomic into a missing directory", func(t *testing.T) {
+		if err := writeFileAtomic(filepath.Join(dir, "missing", "app.env"), []byte("A=1")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("writeRootFileAtomic below a file", func(t *testing.T) {
+		root := openTestRoot(t, dir)
+		if err := writeRootFileAtomic(root, "blocker/sub/app.env", []byte("A=1")); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+
+	t.Run("readDeploymentFile in a missing directory", func(t *testing.T) {
+		if _, ok := readDeploymentFile(filepath.Join(dir, "missing"), ".env"); ok {
+			t.Fatal("expected the file not to be read")
+		}
+	})
 }

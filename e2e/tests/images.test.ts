@@ -78,8 +78,9 @@ const LOCAL_IMAGES = [
 	PRIVATE_IMAGE,
 ];
 
-// The agent never polls more often than every 60 seconds; the margin covers the check itself
-const POLL_INTERVAL_MS = 60_000;
+// The E2E agent polls every 5 seconds whatever the application configures (see
+// IMAGE_POLL_INTERVAL_OVERRIDE in docker-compose.e2e.yml); the margin covers the check itself
+const POLL_INTERVAL_MS = 5_000;
 const POLL_MARGIN_MS = 5_000;
 
 // The hub combines deliveries of a burst within 5 seconds into one pull
@@ -106,8 +107,8 @@ function composeFile(image: string) {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const waitForTick = (enabledAt: number, tick = 1) =>
-	sleep(Math.max(0, enabledAt + tick * POLL_INTERVAL_MS + POLL_MARGIN_MS - Date.now()));
+const waitForTick = (enabledAt: number) =>
+	sleep(Math.max(0, enabledAt + POLL_INTERVAL_MS + POLL_MARGIN_MS - Date.now()));
 
 test.beforeAll(async ({ browser }) => {
 	pullImage(BUSYBOX_IMAGE);
@@ -561,7 +562,7 @@ test.describe("Image polling", () => {
 	let id = "";
 
 	// The control applications are checked while the main one waits for its tick, so the
-	// 60 second intervals overlap instead of adding up
+	// intervals overlap instead of adding up
 	const idle = { id: "", enabledAt: 0, containerIds: [] as string[] };
 	const off = { id: "", enabledAt: 0, containerIds: [] as string[] };
 
@@ -668,7 +669,7 @@ test.describe("Image polling", () => {
 		pushImage(POLL_IMAGE, "2");
 
 		// The first check runs one interval after polling was enabled
-		await expect.poll(() => runningVersion(id), { timeout: 150_000 }).toBe("2");
+		await expect.poll(() => runningVersion(id), { timeout: 60_000 }).toBe("2");
 		const [updated] = appContainers(id);
 		expect(updated.id).not.toBe(container.id);
 		expect(containerImageId(updated.id)).not.toBe(oldImageId);
@@ -808,7 +809,7 @@ test.describe("Local-only images", () => {
 });
 
 test.describe("Private registry", () => {
-	const app = { id: "", enabledAt: 0 };
+	const app = { id: "" };
 
 	const failedChecks = () =>
 		agentLogs()
@@ -827,7 +828,6 @@ test.describe("Private registry", () => {
 			imagePollEnabled: true,
 			imagePollIntervalSeconds: 60,
 		});
-		app.enabledAt = Date.now();
 
 		await requireRegistryAuth();
 		expect(runningVersion(app.id)).toBe("1");
@@ -835,7 +835,7 @@ test.describe("Private registry", () => {
 
 	test("the periodic check reports that the registry can't be checked", async ({ page }) => {
 		await expect
-			.poll(async () => (await imageEvents(page, app.id)).length, { timeout: 120_000 })
+			.poll(async () => (await imageEvents(page, app.id)).length, { timeout: 30_000 })
 			.toBe(1);
 
 		const [event] = await imageEvents(page, app.id);
@@ -862,9 +862,7 @@ test.describe("Private registry", () => {
 	test("repeated periodic failures are not recorded again", async ({ page }) => {
 		const checks = failedChecks();
 
-		await waitForTick(app.enabledAt, 2);
-
-		expect(failedChecks()).toBeGreaterThan(checks);
+		await expect.poll(failedChecks, { timeout: 30_000 }).toBeGreaterThan(checks);
 		expect(await imageEvents(page, app.id)).toHaveLength(2);
 		expect((await getApplication(page, app.id)).syncStatus).toBe("out_of_sync");
 	});
@@ -873,7 +871,7 @@ test.describe("Private registry", () => {
 		await allowAnonymousRegistry();
 
 		await waitForApplication(page, app.id, (current) => current.syncStatus === "synced", {
-			timeout: 90_000,
+			timeout: 30_000,
 		});
 		expect(await imageEvents(page, app.id)).toHaveLength(2);
 		expect(runningVersion(app.id)).toBe("1");

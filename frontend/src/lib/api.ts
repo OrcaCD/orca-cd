@@ -60,10 +60,30 @@ export async function getErrorMessage(res: Response): Promise<string> {
 	return fallbackErrorMessage(res);
 }
 
+export class ApiError extends Error {
+	status: number;
+	body: Record<string, unknown>;
+
+	constructor(message: string, status: number, body: Record<string, unknown> = {}) {
+		super(message);
+		this.name = "ApiError";
+		this.status = status;
+		this.body = body;
+	}
+}
+
 async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit): Promise<JSON> {
 	const res = await fetch(input, { ...init });
 	if (!res.ok) {
-		throw new Error(await getErrorMessage(res));
+		const body = await res
+			.clone()
+			.json()
+			.catch(() => null);
+		throw new ApiError(
+			await getErrorMessage(res),
+			res.status,
+			body && typeof body === "object" ? body : {},
+		);
 	}
 	return (await res.json()) as JSON;
 }
@@ -88,5 +108,6 @@ export const useFetch = <JSON extends Record<string, any> = any>(
 	url: string | null,
 	config?: SWRConfiguration,
 ) => {
-	return useSWR<JSON>(url ? API_BASE + url : null, fetchWrapper, config);
+	const requestURL = url && !/^https?:\/\//.test(url) ? API_BASE + url : url;
+	return useSWR<JSON>(requestURL, fetchWrapper, config);
 };

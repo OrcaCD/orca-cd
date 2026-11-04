@@ -50,18 +50,23 @@ type ImagePoller struct {
 	failing  map[string]struct{} // applications whose last run failed
 	client   *Client
 	sender   MessageSender
+	// intervalOverride replaces every application's interval when set, so the
+	// E2E tests don't have to wait for the 60 second minimum.
+	intervalOverride time.Duration
 }
 
 // NewImagePoller creates a new ImagePoller. sender is used to report results to the hub;
-// SendMessage is a no-op when the agent is disconnected.
-func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger) *ImagePoller {
+// SendMessage is a no-op when the agent is disconnected. A non-zero intervalOverride
+// is used instead of the configured interval of every application.
+func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger, intervalOverride time.Duration) *ImagePoller {
 	return &ImagePoller{
-		log:      log,
-		apps:     make(map[string]*appPollState),
-		runLocks: make(map[string]*sync.Mutex),
-		failing:  make(map[string]struct{}),
-		client:   c,
-		sender:   sender,
+		log:              log,
+		apps:             make(map[string]*appPollState),
+		runLocks:         make(map[string]*sync.Mutex),
+		failing:          make(map[string]struct{}),
+		client:           c,
+		sender:           sender,
+		intervalOverride: intervalOverride,
 	}
 }
 
@@ -133,6 +138,9 @@ func (p *ImagePoller) StopAll() {
 
 func (p *ImagePoller) runTicker(appID, appName string, settings PollSettings, stop <-chan struct{}) {
 	interval := time.Duration(settings.IntervalSeconds) * time.Second
+	if p.intervalOverride > 0 {
+		interval = p.intervalOverride
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

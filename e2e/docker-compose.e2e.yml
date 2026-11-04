@@ -42,3 +42,5 @@ services:
     environment:
       - HUB_URL=${AGENT_HUB_URL:-}
       - AUTH_TOKEN=${AGENT_AUTH_TOKEN:-}
+      # Image polling ticks every 5 seconds instead of the configured 60 second minimum
+      - IMAGE_POLL_INTERVAL_OVERRIDE=5s
