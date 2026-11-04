@@ -397,7 +397,7 @@ func seedDemoDeployments(ctx context.Context, tx *gorm.DB, now time.Time) error 
 	deployment := func(id, appID, commit, message, composeFile string, ago time.Duration, images ...models.DeployedImage) models.ApplicationDeployment {
 		deployedAt := now.Add(-ago)
 		return models.ApplicationDeployment{
-			Base:          models.Base{Id: id},
+			Id:            id,
 			ApplicationId: appID,
 			Status:        models.DeploymentSucceeded,
 			Commit:        commit,
