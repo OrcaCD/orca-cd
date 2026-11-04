@@ -851,6 +851,8 @@
 	"eventSourceHealthCheck": "Failed health check",
 	"eventStatusRolledBack": "Rolled back",
 	"eventStatusVerifying": "Verifying health",
+	"eventStatusWaitingForAgent": "Waiting for the agent",
+	"eventStatusWaitingForAgentDescription": "The agent is offline. The health check continues once it reports again, and fails without rolling back if it doesn't report within 10 minutes after the health timeout.",
 	"notificationEventRollbackSucceeded": "Rolled back",
 	"notificationEventRollbackFailed": "Rollback failed",
 	"historyRollbackTo": "Rollback to {commit}",

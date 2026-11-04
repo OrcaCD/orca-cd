@@ -42,6 +42,9 @@ type applicationEventResponse struct {
 	// back to is still recorded.
 	DeploymentId     *string `json:"deploymentId"`
 	DeploymentStatus *string `json:"deploymentStatus"`
+	// WaitingForAgent is set while the health of the deployment is checked
+	// but its agent is not connected to report it.
+	WaitingForAgent bool `json:"waitingForAgent,omitempty"`
 }
 
 func ListApplicationEventsHandler(c *gin.Context) {
@@ -103,7 +106,7 @@ func ListApplicationEventsHandler(c *gin.Context) {
 // toApplicationEventResponses converts events and adds the deployments they
 // reference that are still recorded.
 func toApplicationEventResponses(ctx context.Context, events []models.ApplicationEvent) ([]applicationEventResponse, error) {
-	statuses, err := deploymentStatuses(ctx, events)
+	states, err := deploymentStates(ctx, events)
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +114,11 @@ func toApplicationEventResponses(ctx context.Context, events []models.Applicatio
 	for i := range events {
 		item := toApplicationEventResponse(&events[i])
 		if id := events[i].DeploymentId; id != nil {
-			if status, ok := statuses[*id]; ok {
+			if state, ok := states[*id]; ok {
+				status := string(state.status)
 				item.DeploymentId = id
 				item.DeploymentStatus = &status
+				item.WaitingForAgent = state.waitingForAgent
 			}
 		}
 		items = append(items, item)
@@ -121,9 +126,14 @@ func toApplicationEventResponses(ctx context.Context, events []models.Applicatio
 	return items, nil
 }
 
-// deploymentStatuses returns the status of every deployment the events
+type deploymentState struct {
+	status          models.ApplicationDeploymentStatus
+	waitingForAgent bool
+}
+
+// deploymentStates returns the state of every deployment the events
 // reference that is still recorded.
-func deploymentStatuses(ctx context.Context, events []models.ApplicationEvent) (map[string]string, error) {
+func deploymentStates(ctx context.Context, events []models.ApplicationEvent) (map[string]deploymentState, error) {
 	ids := make([]string, 0, len(events))
 	for i := range events {
 		if events[i].DeploymentId != nil {
@@ -134,17 +144,51 @@ func deploymentStatuses(ctx context.Context, events []models.ApplicationEvent) (
 		return nil, nil
 	}
 	deployments, err := gorm.G[models.ApplicationDeployment](db.DB).
-		Select("id", "status").
+		Select("id", "application_id", "status").
 		Where("id IN ?", ids).
 		Find(ctx)
 	if err != nil {
 		return nil, err
 	}
-	statuses := make(map[string]string, len(deployments))
-	for i := range deployments {
-		statuses[deployments[i].Id] = string(deployments[i].Status)
+	offline, err := offlineApplications(ctx, deployments)
+	if err != nil {
+		return nil, err
 	}
-	return statuses, nil
+	states := make(map[string]deploymentState, len(deployments))
+	for i := range deployments {
+		states[deployments[i].Id] = deploymentState{
+			status:          deployments[i].Status,
+			waitingForAgent: deployments[i].Status == models.DeploymentVerifying && offline[deployments[i].ApplicationId],
+		}
+	}
+	return states, nil
+}
+
+// offlineApplications returns the applications of the verifying deployments
+// whose agent is not connected and healthy, so it can't report their health.
+func offlineApplications(ctx context.Context, deployments []models.ApplicationDeployment) (map[string]bool, error) {
+	var appIDs []string
+	for i := range deployments {
+		if deployments[i].Status == models.DeploymentVerifying {
+			appIDs = append(appIDs, deployments[i].ApplicationId)
+		}
+	}
+	if len(appIDs) == 0 {
+		return nil, nil
+	}
+	onlineAgents := gorm.G[models.Agent](db.DB).Select("id").Where("status = ?", models.AgentStatusOnline)
+	apps, err := gorm.G[models.Application](db.DB).
+		Select("id").
+		Where("id IN ? AND agent_id NOT IN (?)", appIDs, onlineAgents).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	offline := make(map[string]bool, len(apps))
+	for i := range apps {
+		offline[apps[i].Id] = true
+	}
+	return offline, nil
 }
 
 func applicationEventPagination(c *gin.Context) (int, int, bool) {

@@ -851,6 +851,8 @@
 	"eventSourceHealthCheck": "Fehlgeschlagener Health-Check",
 	"eventStatusRolledBack": "Zurückgerollt",
 	"eventStatusVerifying": "Prüft Health",
+	"eventStatusWaitingForAgent": "Wartet auf den Agent",
+	"eventStatusWaitingForAgentDescription": "Der Agent ist offline. Die Health-Prüfung geht weiter, sobald er sich wieder meldet, und schlägt ohne Rollback fehl, wenn er sich nicht innerhalb von 10 Minuten nach Ablauf der Zeit meldet.",
 	"notificationEventRollbackSucceeded": "Zurückgerollt",
 	"notificationEventRollbackFailed": "Rollback fehlgeschlagen",
 	"historyRollbackTo": "Rollback auf {commit}",

@@ -32,10 +32,12 @@ export function ApplicationEventStatusBadge({
 	status,
 	type,
 	deploymentStatus,
+	waitingForAgent = false,
 }: {
 	status: ApplicationEventStatus;
 	type?: ApplicationEventType;
 	deploymentStatus?: DeploymentStatus | null;
+	waitingForAgent?: boolean;
 }) {
 	if (type === ApplicationEventType.Rollback && status === ApplicationEventStatus.Succeeded) {
 		return (
@@ -48,6 +50,17 @@ export function ApplicationEventStatusBadge({
 		status === ApplicationEventStatus.Running &&
 		deploymentStatus === DeploymentStatus.Verifying
 	) {
+		if (waitingForAgent) {
+			return (
+				<Badge
+					variant="outline"
+					className="border-amber-500/40 text-amber-500"
+					title={m.eventStatusWaitingForAgentDescription()}
+				>
+					{m.eventStatusWaitingForAgent()}
+				</Badge>
+			);
+		}
 		return <Badge variant="secondary">{m.eventStatusVerifying()}</Badge>;
 	}
 

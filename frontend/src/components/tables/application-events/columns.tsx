@@ -92,6 +92,7 @@ export const getColumns = (
 					status={row.original.status}
 					type={row.original.type}
 					deploymentStatus={row.original.deploymentStatus}
+					waitingForAgent={row.original.waitingForAgent}
 				/>
 				{row.original.errorMessage && (
 					<Button

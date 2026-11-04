@@ -142,6 +142,7 @@ function HistoryEvent({
 						status={event.status}
 						type={event.type}
 						deploymentStatus={event.deploymentStatus}
+						waitingForAgent={event.waitingForAgent}
 					/>
 					{isCurrentDeployment(event, currentDeploymentId) ? (
 						<Badge

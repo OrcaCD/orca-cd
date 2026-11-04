@@ -45,6 +45,8 @@ export interface ApplicationEvent {
 	errorMessage: string | null;
 	deploymentId: string | null;
 	deploymentStatus: DeploymentStatus | null;
+	// waitingForAgent is set while the health is checked but the agent is offline.
+	waitingForAgent?: boolean;
 }
 
 export interface ApplicationEventsPage {

@@ -90,6 +90,7 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 					status={deployment.status}
 					type={deployment.type}
 					deploymentStatus={deployment.deploymentStatus}
+					waitingForAgent={deployment.waitingForAgent}
 				/>
 			</ItemActions>
 		</Item>

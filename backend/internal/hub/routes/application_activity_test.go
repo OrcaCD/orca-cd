@@ -237,4 +237,16 @@ func TestApplicationActivityHandlerIncludesDeploymentStatus(t *testing.T) {
 	if got.DeploymentStatus == nil || *got.DeploymentStatus != string(models.DeploymentVerifying) {
 		t.Errorf("deployment status = %v, want verifying", got.DeploymentStatus)
 	}
+	if got.WaitingForAgent {
+		t.Error("a connected agent reports the health itself")
+	}
+
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", app.AgentId).
+		Update(t.Context(), "status", models.AgentStatusOffline); err != nil {
+		t.Fatalf("disconnect agent: %v", err)
+	}
+	_, response = invokeApplicationActivityHandler(t, "")
+	if len(response.RecentDeployments) != 1 || !response.RecentDeployments[0].WaitingForAgent {
+		t.Errorf("expected the health check to wait for the offline agent, got %+v", response.RecentDeployments)
+	}
 }
