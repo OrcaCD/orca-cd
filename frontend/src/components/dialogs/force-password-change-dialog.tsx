@@ -6,12 +6,12 @@ import { z } from "zod";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+} from "@/components/responsive-dialog";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,12 +82,14 @@ export default function ForcePasswordChangeDialog() {
 	}
 
 	return (
-		<Dialog open disablePointerDismissal={true}>
-			<DialogContent showCloseButton={false} className="sm:max-w-md">
-				<DialogHeader>
-					<DialogTitle>{m.forcePasswordChangeRequired()}</DialogTitle>
-					<DialogDescription>{m.forcePasswordChangeDescription()}</DialogDescription>
-				</DialogHeader>
+		<ResponsiveDialog open disablePointerDismissal={true}>
+			<ResponsiveDialogContent showCloseButton={false} className="sm:max-w-md">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{m.forcePasswordChangeRequired()}</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription>
+						{m.forcePasswordChangeDescription()}
+					</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 
 				<form
 					onSubmit={async (event) => {
@@ -178,7 +180,7 @@ export default function ForcePasswordChangeDialog() {
 						</div>
 					</FieldGroup>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }

@@ -2,13 +2,13 @@
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -86,8 +86,8 @@ export default function UpsertAgentDialog({
 
 	return (
 		<>
-			<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
-				<DialogTrigger
+			<ResponsiveDialog open={open} onOpenChange={(open) => setOpen(open)}>
+				<ResponsiveDialogTrigger
 					nativeButton={!asDropdownItem}
 					render={
 						asDropdownItem ? (
@@ -106,16 +106,16 @@ export default function UpsertAgentDialog({
 							</Button>
 						)
 					}
-				></DialogTrigger>
-				<DialogContent className="sm:max-w-106.25">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
+				></ResponsiveDialogTrigger>
+				<ResponsiveDialogContent className="sm:max-w-106.25">
+					<ResponsiveDialogHeader>
+						<ResponsiveDialogTitle className="flex items-center gap-2">
 							{isEditing ? m.editAgent() : m.addAgent()}
-						</DialogTitle>
-						<DialogDescription className="py-2">
+						</ResponsiveDialogTitle>
+						<ResponsiveDialogDescription className="py-2">
 							{isEditing ? m.editAgentDescription() : m.addAgentDescription()}
-						</DialogDescription>
-					</DialogHeader>
+						</ResponsiveDialogDescription>
+					</ResponsiveDialogHeader>
 
 					<form
 						onSubmit={async (e) => {
@@ -178,8 +178,8 @@ export default function UpsertAgentDialog({
 							</div>
 						</FieldGroup>
 					</form>
-				</DialogContent>
-			</Dialog>
+				</ResponsiveDialogContent>
+			</ResponsiveDialog>
 
 			<AgentSetupDialog
 				agent={createdAgent}

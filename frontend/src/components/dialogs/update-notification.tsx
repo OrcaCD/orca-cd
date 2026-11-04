@@ -6,13 +6,13 @@ import { toast } from "@/components/ui/toast";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FieldGroup } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
@@ -88,8 +88,8 @@ export default function UpdateNotificationDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={(next) => (next ? handleOpen() : handleClose())}>
-			<DialogTrigger
+		<ResponsiveDialog open={open} onOpenChange={(next) => (next ? handleOpen() : handleClose())}>
+			<ResponsiveDialogTrigger
 				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
@@ -104,12 +104,14 @@ export default function UpdateNotificationDialog({
 						</Button>
 					)
 				}
-			></DialogTrigger>
-			<DialogContent className="sm:max-w-lg">
-				<DialogHeader>
-					<DialogTitle>{m.editNotification()}</DialogTitle>
-					<DialogDescription>{m.editNotificationDescription()}</DialogDescription>
-				</DialogHeader>
+			></ResponsiveDialogTrigger>
+			<ResponsiveDialogContent className="sm:max-w-lg">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{m.editNotification()}</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription>
+						{m.editNotificationDescription()}
+					</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 				<form
 					onSubmit={async (event) => {
 						event.preventDefault();
@@ -155,7 +157,7 @@ export default function UpdateNotificationDialog({
 						</div>
 					</FieldGroup>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
