@@ -2,13 +2,13 @@
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { createUser, updateUser, type UserDetail } from "@/lib/users";
 import { useState } from "react";
@@ -101,8 +101,8 @@ export default function UpsertUserDialog({
 
 	return (
 		<>
-			<Dialog open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
-				<DialogTrigger
+			<ResponsiveDialog open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
+				<ResponsiveDialogTrigger
 					nativeButton={!asDropdownItem}
 					render={
 						asDropdownItem ? (
@@ -121,14 +121,14 @@ export default function UpsertUserDialog({
 							</Button>
 						)
 					}
-				></DialogTrigger>
-				<DialogContent className="sm:max-w-106.25">
-					<DialogHeader>
-						<DialogTitle>{isEditing ? m.editUser() : m.addUser()}</DialogTitle>
-						<DialogDescription className="py-2">
+				></ResponsiveDialogTrigger>
+				<ResponsiveDialogContent className="sm:max-w-106.25">
+					<ResponsiveDialogHeader>
+						<ResponsiveDialogTitle>{isEditing ? m.editUser() : m.addUser()}</ResponsiveDialogTitle>
+						<ResponsiveDialogDescription className="py-2">
 							{isEditing ? m.editUserDescription() : m.addUserDescription()}
-						</DialogDescription>
-					</DialogHeader>
+						</ResponsiveDialogDescription>
+					</ResponsiveDialogHeader>
 
 					<form
 						onSubmit={async (e) => {
@@ -263,8 +263,8 @@ export default function UpsertUserDialog({
 							</div>
 						</FieldGroup>
 					</form>
-				</DialogContent>
-			</Dialog>
+				</ResponsiveDialogContent>
+			</ResponsiveDialog>
 
 			<CopyValueDialog
 				open={isGeneratedPasswordOpen}

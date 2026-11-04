@@ -8,13 +8,13 @@ import { defineStepper } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { Switch } from "@/components/ui/switch";
 import {
 	Field,
@@ -953,25 +953,27 @@ export default function CreateNotificationDialog() {
 	}
 
 	return (
-		<Dialog
+		<ResponsiveDialog
 			open={open}
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			modal={false}
 		>
-			<DialogTrigger
+			<ResponsiveDialogTrigger
 				render={
 					<Button>
 						<Plus className="h-4 w-4" />
 						{m.addNotification()}
 					</Button>
 				}
-			></DialogTrigger>
+			></ResponsiveDialogTrigger>
 
-			<DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
-				<DialogHeader>
-					<DialogTitle>{m.addNotification()}</DialogTitle>
-					<DialogDescription>{m.addNotificationDescription()}</DialogDescription>
-				</DialogHeader>
+			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{m.addNotification()}</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription>
+						{m.addNotificationDescription()}
+					</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 
 				<form
 					className="min-h-0 min-w-0 flex-1 overflow-y-auto"
@@ -1068,7 +1070,7 @@ export default function CreateNotificationDialog() {
 						}}
 					</Stepper.Root>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }

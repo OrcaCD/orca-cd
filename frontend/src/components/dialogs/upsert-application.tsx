@@ -9,13 +9,13 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { defineStepper } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "../ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "../ui/dropdown-menu";
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "../ui/field";
 import { Label } from "../ui/label";
@@ -404,7 +404,7 @@ export default function UpsertApplicationDialog({
 	}
 
 	return (
-		<Dialog
+		<ResponsiveDialog
 			open={open}
 			onOpenChange={(nextOpen) => {
 				if (nextOpen) {
@@ -414,7 +414,7 @@ export default function UpsertApplicationDialog({
 				handleClose();
 			}}
 		>
-			<DialogTrigger
+			<ResponsiveDialogTrigger
 				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
@@ -434,16 +434,16 @@ export default function UpsertApplicationDialog({
 						</Button>
 					)
 				}
-			></DialogTrigger>
-			<DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
-				<DialogHeader>
-					<DialogTitle className="flex items-center gap-2">
+			></ResponsiveDialogTrigger>
+			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle className="flex items-center gap-2">
 						{isEditing ? m.editApplication() : m.addApplication()}
-					</DialogTitle>
-					<DialogDescription className="py-2">
+					</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription className="py-2">
 						{isEditing ? m.editApplicationDescription() : m.addApplicationDescription()}
-					</DialogDescription>
-				</DialogHeader>
+					</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 
 				<form
 					className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
@@ -862,7 +862,7 @@ export default function UpsertApplicationDialog({
 						}}
 					</Stepper.Root>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
