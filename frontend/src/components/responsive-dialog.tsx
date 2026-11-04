@@ -27,10 +27,16 @@ function useIsDrawer() {
 function ResponsiveDialog({
 	open,
 	onOpenChange,
+	onOpenChangeComplete,
+	modal,
+	disablePointerDismissal = false,
 	children,
 }: {
 	open: boolean;
-	onOpenChange: (open: boolean) => void;
+	onOpenChange?: (open: boolean) => void;
+	onOpenChangeComplete?: (open: boolean) => void;
+	modal?: boolean;
+	disablePointerDismissal?: boolean;
 	children: React.ReactNode;
 }) {
 	const isMobile = useIsMobile();
@@ -38,11 +44,31 @@ function ResponsiveDialog({
 	return (
 		<ResponsiveDialogContext.Provider value={isMobile}>
 			{isMobile ? (
-				<Drawer open={open} onOpenChange={(next) => onOpenChange(next)} showSwipeHandle>
+				<Drawer
+					open={open}
+					onOpenChange={(next, details) => {
+						// A swipe is as easy to trigger by accident as an outside press.
+						if (!next && disablePointerDismissal && details.reason === "swipe") {
+							details.cancel();
+							return;
+						}
+						onOpenChange?.(next);
+					}}
+					onOpenChangeComplete={onOpenChangeComplete}
+					modal={modal}
+					disablePointerDismissal={disablePointerDismissal}
+					showSwipeHandle={!disablePointerDismissal}
+				>
 					{children}
 				</Drawer>
 			) : (
-				<Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
+				<Dialog
+					open={open}
+					onOpenChange={(next) => onOpenChange?.(next)}
+					onOpenChangeComplete={onOpenChangeComplete}
+					modal={modal}
+					disablePointerDismissal={disablePointerDismissal}
+				>
 					{children}
 				</Dialog>
 			)}
@@ -58,9 +84,11 @@ function ResponsiveDialogTrigger(
 
 function ResponsiveDialogContent({
 	className,
+	showCloseButton,
 	children,
 }: {
 	className?: string;
+	showCloseButton?: boolean;
 	children: React.ReactNode;
 }) {
 	if (useIsDrawer()) {
@@ -75,7 +103,11 @@ function ResponsiveDialogContent({
 		);
 	}
 
-	return <DialogContent className={className}>{children}</DialogContent>;
+	return (
+		<DialogContent className={className} showCloseButton={showCloseButton}>
+			{children}
+		</DialogContent>
+	);
 }
 
 function ResponsiveDialogTitle(props: React.ComponentProps<typeof DialogTitle>) {

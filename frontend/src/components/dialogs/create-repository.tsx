@@ -2,12 +2,12 @@
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
 	createRepository,
@@ -441,12 +441,12 @@ export default function CreateRepositoryDialog({
 	}
 
 	return (
-		<Dialog
+		<ResponsiveDialog
 			open={open}
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			disablePointerDismissal={true}
 		>
-			<DialogTrigger
+			<ResponsiveDialogTrigger
 				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
@@ -461,12 +461,12 @@ export default function CreateRepositoryDialog({
 						</Button>
 					)
 				}
-			></DialogTrigger>
-			<DialogContent className="sm:max-w-md overflow-hidden" aria-describedby={undefined}>
+			></ResponsiveDialogTrigger>
+			<ResponsiveDialogContent className="sm:max-w-md overflow-hidden">
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
-				<DialogHeader>
-					<DialogTitle>{m.addRepository()}</DialogTitle>
-				</DialogHeader>
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{m.addRepository()}</ResponsiveDialogTitle>
+				</ResponsiveDialogHeader>
 				<form
 					className="max-w-[calc(var(--container-md)-2rem)]"
 					onSubmit={async (e) => {
@@ -564,7 +564,7 @@ export default function CreateRepositoryDialog({
 						}}
 					</Stepper.Root>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
