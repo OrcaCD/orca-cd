@@ -872,7 +872,7 @@
 	"autoSyncResumed": "Auto-sync resumed",
 	"failedResumeAutoSync": "Failed to resume auto-sync",
 	"pullImagesRolledBack": "Not available while the application is rolled back",
-	"rollbackSettingsTitle": "Rollback",
+	"rollbackSettingsTitle": "Rollbacks",
 	"automaticRollback": "Automatic rollback",
 	"automaticRollbackDescription": "Off by default — a rollback intentionally diverges from the state in Git.",
 	"rollbackWhen": "Roll back when",
