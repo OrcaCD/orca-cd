@@ -1,3 +1,4 @@
+import { SearchField } from "@/components/search-field";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { AuditLogsDataTable } from "@/components/tables/audit-log/data-table";
@@ -5,8 +6,6 @@ import { columns } from "@/components/tables/audit-log/columns";
 import useSWRInfinite from "swr/infinite";
 import { fetcher } from "@/lib/api";
 import { Button } from "@base-ui/react";
-import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
 import { useState } from "react";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
@@ -45,15 +44,13 @@ function AuditLogPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="relative w-md max-w-full">
-				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-				<Input
-					placeholder={m.searchAuditLog()}
-					className="pl-9 bg-muted border-border"
-					value={search}
-					onChange={(event) => setSearch(event.target.value)}
-				/>
-			</div>
+			<SearchField
+				value={search}
+				onChange={setSearch}
+				label={m.searchAuditLogLabel()}
+				placeholder={m.searchAuditLog()}
+				className="w-md max-w-full"
+			/>
 
 			<AuditLogsDataTable columns={columns} data={logs} />
 

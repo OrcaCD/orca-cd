@@ -20,22 +20,23 @@ export const fleetCategoryConfig: Record<
 > = {
 	ok: {
 		label: () => m.applicationsFleetOk(),
-		dotClass: "bg-emerald-400",
+		dotClass: "bg-emerald-500 dark:bg-emerald-400",
 		barClass: "bg-emerald-500",
 	},
 	syncing: {
 		label: () => m.statusSyncing(),
-		dotClass: "bg-blue-400 animate-pulse",
+		dotClass: "bg-blue-500 dark:bg-blue-400 animate-pulse",
 		barClass: "bg-blue-500",
 	},
 	outOfSync: {
 		label: () => m.statusOutOfSync(),
-		dotClass: "bg-amber-400",
+		dotClass: "bg-amber-500 dark:bg-amber-400",
 		barClass: "bg-amber-500",
 	},
+	// Groups unhealthy, degraded and stopped apps, so it must not claim they are all unhealthy.
 	unhealthy: {
-		label: () => m.statusUnhealthy(),
-		dotClass: "bg-red-400",
+		label: () => m.applicationsFleetNotHealthy(),
+		dotClass: "bg-red-500 dark:bg-red-400",
 		barClass: "bg-red-500",
 	},
 	unknown: {
@@ -65,6 +66,36 @@ export function getFleetCategory(app: ApplicationListItem): FleetCategory {
 		return "ok";
 	}
 	return "unknown";
+}
+
+export interface StatusIndicator {
+	label: () => string;
+	dotClass: string;
+}
+
+// The fleet groups stopped and degraded apps with unhealthy ones, but wherever a single app is
+// shown its actual health is named, with degraded apps drawn as a warning instead of an error.
+const healthIndicators: Partial<Record<HealthStatus, StatusIndicator>> = {
+	[HealthStatus.Unhealthy]: {
+		label: () => m.statusUnhealthy(),
+		dotClass: fleetCategoryConfig.unhealthy.dotClass,
+	},
+	[HealthStatus.Stopped]: {
+		label: () => m.statusStopped(),
+		dotClass: fleetCategoryConfig.unhealthy.dotClass,
+	},
+	[HealthStatus.Degraded]: {
+		label: () => m.statusDegraded(),
+		dotClass: fleetCategoryConfig.outOfSync.dotClass,
+	},
+};
+
+export function getStatusIndicator(app: ApplicationListItem): StatusIndicator {
+	const category = getFleetCategory(app);
+	return (
+		(category === "unhealthy" ? healthIndicators[app.healthStatus] : undefined) ??
+		fleetCategoryConfig[category]
+	);
 }
 
 export function countFleetCategories(apps: ApplicationListItem[]): Record<FleetCategory, number> {

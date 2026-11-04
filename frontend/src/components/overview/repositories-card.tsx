@@ -1,9 +1,9 @@
 import { RelativeTime } from "@/components/relative-time";
 import { Link } from "@tanstack/react-router";
-import { CircleCheck, RefreshCw } from "lucide-react";
+import { CircleCheck, GitBranch, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
 	Item,
 	ItemActions,
@@ -18,13 +18,14 @@ import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { syncRepository, type Repository, type RepositorySyncStatus } from "@/lib/repositories";
 import { cn } from "@/lib/utils";
+import { Metric, OverviewCardHeader } from "./overview-card";
 
 const maxListedRepositories = 4;
 
 const syncStatusDotClass: Record<RepositorySyncStatus, string> = {
-	failed: "bg-red-400",
-	syncing: "bg-blue-400 animate-pulse",
-	success: "bg-emerald-400",
+	failed: "bg-red-500 dark:bg-red-400",
+	syncing: "bg-blue-500 dark:bg-blue-400 animate-pulse",
+	success: "bg-emerald-500 dark:bg-emerald-400",
 	unknown: "bg-zinc-400",
 };
 
@@ -47,23 +48,21 @@ export function RepositoriesCard() {
 
 	return (
 		<Card>
-			<CardHeader>
-				<CardTitle>{m.navRepositories()}</CardTitle>
-				<CardDescription>{m.overviewRepositoriesDescription()}</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-3">
+			<OverviewCardHeader
+				icon={GitBranch}
+				title={m.navRepositories()}
+				description={m.overviewRepositoriesDescription()}
+			/>
+			<CardContent className="flex flex-col gap-3">
 				{repositories ? (
 					<>
-						<div className="flex items-baseline gap-2">
-							<span className={cn("text-2xl font-bold", failed > 0 && "text-red-400")}>
-								{synced}
-							</span>
-							<span className="text-xs text-muted-foreground">
-								{m.overviewRepositoriesSynced({ total })}
-							</span>
-						</div>
+						<Metric
+							value={synced}
+							label={m.overviewRepositoriesSynced({ total })}
+							tone={failed > 0 ? "error" : "default"}
+						/>
 						{total > 0 && synced === total ? (
-							<p className="flex items-center gap-1.5 text-xs text-emerald-400">
+							<p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
 								<CircleCheck className="size-3.5" />
 								{m.overviewRepositoriesAllSynced()}
 							</p>
@@ -139,7 +138,10 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 					</Link>
 				</ItemTitle>
 				<ItemDescription
-					className={cn("truncate text-xs", repo.syncStatus === "failed" && "text-red-400")}
+					className={cn(
+						"truncate text-xs",
+						repo.syncStatus === "failed" && "text-red-600 dark:text-red-400",
+					)}
 					title={typeof detail === "string" ? detail : undefined}
 				>
 					{detail}

@@ -18,7 +18,7 @@ const nodeClass: Record<FlowState, string> = {
 	progress: "border-blue-500 bg-blue-500/25 motion-safe:animate-pulse",
 	warning: "border-amber-500 bg-amber-500",
 	error: "border-red-500 bg-red-500 ring-4 ring-red-500/15",
-	unknown: "border-dashed border-zinc-400 dark:border-zinc-500",
+	unknown: "border-zinc-400 dark:border-zinc-500",
 	info: "border-primary bg-card",
 	off: "border-zinc-400 bg-zinc-400/30 dark:border-zinc-500",
 };
@@ -36,7 +36,7 @@ const segmentClass: Record<FlowState, string> = {
 const valueClass: Record<FlowState, string> = {
 	ok: "",
 	progress: "text-blue-600 dark:text-blue-400",
-	warning: "text-amber-600 dark:text-amber-400",
+	warning: "text-amber-700 dark:text-amber-400",
 	error: "text-red-600 dark:text-red-400",
 	unknown: "text-muted-foreground",
 	info: "",
@@ -90,7 +90,7 @@ export function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowSt
 							index === stages.length - 1 && "text-right",
 						)}
 					>
-						<dt className="text-[0.6875rem] font-medium tracking-wider text-muted-foreground uppercase">
+						<dt className="font-mono text-[0.625rem] font-medium tracking-[0.12em] text-muted-foreground uppercase">
 							{stage.label}
 						</dt>
 						<dd
@@ -113,11 +113,14 @@ export function ResourceFlow({ stages }: { stages: [FlowStage, FlowStage, FlowSt
 export function CardError({ message, className }: { message: string; className?: string }) {
 	return (
 		<p
-			className={cn("flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400", className)}
+			className={cn(
+				"flex items-start gap-1.5 text-xs leading-4 text-red-600 dark:text-red-400",
+				className,
+			)}
 			title={message}
 		>
-			<CircleAlert className="size-3.5 shrink-0" />
-			<span className="truncate">{message}</span>
+			<CircleAlert className="mt-px size-3.5 shrink-0" />
+			<span className="line-clamp-2 wrap-break-word">{message}</span>
 		</p>
 	);
 }
@@ -145,18 +148,29 @@ export function ResourceCard({
 	className,
 }: ResourceCardProps) {
 	return (
-		<Card className={cn("h-full gap-0 py-0 transition-shadow hover:ring-primary/50", className)}>
+		<Card
+			className={cn(
+				"h-full gap-0 py-0 transition-[box-shadow,translate] duration-200 hover:ring-primary/40 hover:shadow-[0_12px_32px_-16px_oklch(0.3_0.08_240/35%)] motion-safe:hover:-translate-y-px",
+				className,
+			)}
+		>
 			<div className="flex items-center gap-3 px-4 pt-4">
-				<div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/60">
+				<div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted ring-1 ring-foreground/5 ring-inset">
 					{icon}
 				</div>
 				<div className="min-w-0 flex-1">
-					<h3 className="truncate text-base leading-snug font-medium" title={title}>
+					<h3
+						className="truncate text-[0.9375rem] leading-snug font-semibold tracking-tight"
+						title={title}
+					>
 						{title}
 					</h3>
 					{subtitle ? (
 						<div
-							className={cn("truncate text-xs text-muted-foreground", monoSubtitle && "font-mono")}
+							className={cn(
+								"mt-0.5 truncate text-xs text-muted-foreground",
+								monoSubtitle && "font-mono text-[0.6875rem]",
+							)}
 						>
 							{subtitle}
 						</div>
@@ -167,7 +181,7 @@ export function ResourceCard({
 
 			<div className="flex-1 px-4 pt-5 pb-4">{children}</div>
 
-			<div className="flex min-h-10 items-center justify-between gap-3 border-t bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+			<div className="flex min-h-10 items-center justify-between gap-3 border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
 				{footer}
 			</div>
 		</Card>

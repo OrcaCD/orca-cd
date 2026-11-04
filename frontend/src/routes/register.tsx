@@ -97,8 +97,8 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.enterSetupCode()}</h1>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-3xl font-semibold tracking-tight">{m.enterSetupCode()}</h1>
 				<p className="text-sm text-balance text-muted-foreground">
 					{m.enterSetupCodeDescription()}
 				</p>
@@ -139,7 +139,7 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 						}}
 					/>
 					<Field>
-						<Button type="submit" className="w-full" disabled={isLoading}>
+						<Button type="submit" size="lg" className="h-11 w-full" disabled={isLoading}>
 							{isLoading ? m.verifyingSetupCode() : m.next()}
 						</Button>
 					</Field>
@@ -215,8 +215,8 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.createYourAccount()}</h1>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-3xl font-semibold tracking-tight">{m.createYourAccount()}</h1>
 				<p className="text-sm text-balance text-muted-foreground">
 					{m.createAdminAccountDescription()}
 				</p>
@@ -321,7 +321,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 						}}
 					/>
 					<Field>
-						<Button type="submit" className="w-full" disabled={isLoading}>
+						<Button type="submit" size="lg" className="h-11 w-full" disabled={isLoading}>
 							{isLoading ? m.creatingAccount() : m.createAccount()}
 						</Button>
 					</Field>

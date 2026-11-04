@@ -89,7 +89,7 @@ function InfoCard({
 	children: React.ReactNode;
 }) {
 	return (
-		<Card className="gap-3">
+		<Card className="gap-3 bg-card ring-0">
 			<CardHeader className="min-h-7 items-center">
 				<CardTitle className="flex items-center gap-2 text-sm font-normal text-muted-foreground">
 					{icon}
@@ -126,9 +126,10 @@ function InfoMeta({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={title}>
-			<span className="shrink-0 [&_svg]:size-3.5">{icon}</span>
-			<span className="truncate">{children}</span>
+		<div className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground" title={title}>
+			<span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{icon}</span>
+			{/* Narrow tiles wrap onto a second line rather than cutting off the sentence. */}
+			<span className="line-clamp-2 min-w-0 text-pretty wrap-break-word">{children}</span>
 		</div>
 	);
 }
@@ -360,11 +361,13 @@ function ApplicationDetailsPage() {
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex min-w-0 items-start gap-4">
-					<div className="h-14 w-14 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
-						<StaticLucideIcon name={data?.icon} className="h-7 w-7 text-primary" />
+					<div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-muted ring-1 ring-foreground/5 ring-inset">
+						<StaticLucideIcon name={data?.icon} className="size-7 text-primary" />
 					</div>
-					<div className="min-w-0 space-y-2">
-						<h1 className="text-2xl font-bold wrap-break-word">{data?.name}</h1>
+					<div className="min-w-0 space-y-1.5">
+						<h1 className="text-2xl leading-8 font-semibold tracking-tight wrap-break-word">
+							{data?.name}
+						</h1>
 						<div className="flex flex-wrap items-center gap-2">
 							<ApplicationStatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
 							<ApplicationStatusBadge
@@ -428,7 +431,7 @@ function ApplicationDetailsPage() {
 				</ButtonGroup>
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+			<div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border ring-1 ring-foreground/10 md:grid-cols-2 xl:grid-cols-[1.25fr_1fr_1fr_1fr] [&>div]:min-w-0 [&>div]:rounded-none">
 				<InfoCard
 					icon={<FolderGit2 className="h-4 w-4" />}
 					label={m.applicationInfoRepository()}
@@ -460,12 +463,6 @@ function ApplicationDetailsPage() {
 					<InfoMeta icon={<GitBranch />} title={data?.branch}>
 						<span className="font-mono">{data?.branch}</span>
 					</InfoMeta>
-					{data ? (
-						<InfoMeta icon={getSyncTypeIcon(data.repositorySyncType, "")}>
-							{m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })}
-						</InfoMeta>
-					) : null}
-					{imageSyncTriggers ? <InfoMeta icon={<ImageDown />}>{imageSyncTriggers}</InfoMeta> : null}
 				</InfoCard>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
@@ -507,6 +504,15 @@ function ApplicationDetailsPage() {
 						</InfoMeta>
 					) : null}
 				</InfoCard>
+			</div>
+
+			<div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-1">
+				{data ? (
+					<InfoMeta icon={getSyncTypeIcon(data.repositorySyncType, "")}>
+						{m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })}
+					</InfoMeta>
+				) : null}
+				{imageSyncTriggers ? <InfoMeta icon={<ImageDown />}>{imageSyncTriggers}</InfoMeta> : null}
 			</div>
 
 			<Tabs defaultValue="manifest" className="space-y-4">

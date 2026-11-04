@@ -20,7 +20,7 @@ import { ResourceCard } from "./resource-card";
 const maxListedApplications = 2;
 
 const syncStatusIcon: Record<RepositorySyncStatus, ReactNode> = {
-	success: <CircleCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />,
+	success: <CircleCheck className="size-4 shrink-0 text-emerald-700 dark:text-emerald-400" />,
 	failed: <CircleX className="size-4 shrink-0 text-red-600 dark:text-red-400" />,
 	syncing: (
 		<RefreshCw className="size-4 shrink-0 text-blue-600 motion-safe:animate-spin dark:text-blue-400" />
