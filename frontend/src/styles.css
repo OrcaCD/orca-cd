@@ -172,8 +172,6 @@
   gap: 0.5rem;
 }
 
-/* Dialogs, drawers and the toast viewport all use z-50, and the later portal wins the tie.
-   Bottom drawers overlap the toast stack on mobile, so keep toasts above them. */
 [data-slot='toast-viewport'] {
   z-index: 60;
 }
