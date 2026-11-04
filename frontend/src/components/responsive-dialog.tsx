@@ -24,8 +24,6 @@ function useIsDrawer() {
 	return React.useContext(ResponsiveDialogContext);
 }
 
-// Renders a Dialog on desktop and a bottom Drawer on mobile, where a centered
-// dialog competes with the software keyboard.
 function ResponsiveDialog({
 	open,
 	onOpenChange,
