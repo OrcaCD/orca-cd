@@ -1,14 +1,14 @@
 import { AlertCircle } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogFooter,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import type { VariantProps } from "class-variance-authority";
@@ -45,8 +45,8 @@ export default function ConfirmationDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger
+		<ResponsiveDialog open={open} onOpenChange={setOpen}>
+			<ResponsiveDialogTrigger
 				nativeButton={!asDropdownItem}
 				render={
 					asDropdownItem ? (
@@ -55,16 +55,16 @@ export default function ConfirmationDialog({
 						<Button {...triggerProps}>{triggerText}</Button>
 					)
 				}
-			></DialogTrigger>
-			<DialogContent className="sm:max-w-106.25">
-				<DialogHeader>
-					<DialogTitle className="flex items-center gap-2">
+			></ResponsiveDialogTrigger>
+			<ResponsiveDialogContent className="sm:max-w-106.25">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle className="flex items-center gap-2">
 						<AlertCircle className="h-5 w-5 text-red-500" />
 						{title}
-					</DialogTitle>
-					<DialogDescription className="py-2">{description}</DialogDescription>
-				</DialogHeader>
-				<DialogFooter className="flex-col space-y-2 sm:flex-row sm:justify-end sm:space-x-2 sm:space-y-0">
+					</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription className="py-2">{description}</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
+				<ResponsiveDialogFooter className="flex-col space-y-2 sm:flex-row sm:justify-end sm:space-x-2 sm:space-y-0">
 					<Button
 						type="button"
 						variant="secondary"
@@ -81,8 +81,8 @@ export default function ConfirmationDialog({
 					>
 						{confirmText}
 					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
+				</ResponsiveDialogFooter>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
