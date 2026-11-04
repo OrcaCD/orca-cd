@@ -13,7 +13,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+} from "@/components/responsive-dialog";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -180,11 +185,17 @@ export default function AgentSetupDialog({
 	const composeLines = useHighlightedCode(composeFile, "yaml");
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange} onOpenChangeComplete={onOpenChangeComplete}>
-			<DialogContent className="flex max-h-[90dvh] flex-col gap-5 overflow-hidden sm:max-w-2xl">
-				<DialogHeader className="shrink-0">
-					<DialogTitle>{m.agentSetupTitle({ name: agent?.name ?? "" })}</DialogTitle>
-				</DialogHeader>
+		<ResponsiveDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			onOpenChangeComplete={onOpenChangeComplete}
+		>
+			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col gap-5 overflow-hidden sm:max-w-2xl">
+				<ResponsiveDialogHeader className="shrink-0">
+					<ResponsiveDialogTitle>
+						{m.agentSetupTitle({ name: agent?.name ?? "" })}
+					</ResponsiveDialogTitle>
+				</ResponsiveDialogHeader>
 
 				<ol className="grid shrink-0 gap-2 sm:grid-cols-3">
 					<SetupStep index={1} label={m.agentSetupStepCreated()} state="done" />
@@ -242,7 +253,7 @@ export default function AgentSetupDialog({
 						</div>
 					</>
 				)}
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }
