@@ -172,6 +172,10 @@
   gap: 0.5rem;
 }
 
+[data-slot='toast-viewport'] {
+  z-index: 60;
+}
+
 [data-show-whitespace] [data-whitespace] {
   position: relative;
   &::before {
