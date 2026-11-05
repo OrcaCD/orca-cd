@@ -112,10 +112,14 @@ func recentDeployments(ctx context.Context) ([]applicationActivityDeployment, er
 		return nil, err
 	}
 
+	items, err := toApplicationEventResponses(ctx, events)
+	if err != nil {
+		return nil, err
+	}
 	deployments := make([]applicationActivityDeployment, 0, len(events))
 	for i := range events {
 		deployments = append(deployments, applicationActivityDeployment{
-			applicationEventResponse: toApplicationEventResponse(&events[i]),
+			applicationEventResponse: items[i],
 			ApplicationId:            events[i].ApplicationId,
 			ApplicationName:          events[i].Application.Name.String(),
 			ApplicationIcon:          events[i].Application.Icon,

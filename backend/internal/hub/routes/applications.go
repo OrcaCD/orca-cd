@@ -66,21 +66,22 @@ type updateApplicationRequest struct {
 }
 
 type applicationListResponse struct {
-	Id             string  `json:"id"`
-	Icon           string  `json:"icon"`
-	Name           string  `json:"name"`
-	HealthStatus   string  `json:"healthStatus"`
-	SyncStatus     string  `json:"syncStatus"`
-	Branch         string  `json:"branch"`
-	Commit         string  `json:"commit"`
-	LastSyncedAt   *string `json:"lastSyncedAt"`
-	Path           string  `json:"path"`
-	LastSyncError  *string `json:"lastSyncError,omitempty"`
-	AgentId        string  `json:"agentId"`
-	AgentName      string  `json:"agentName"`
-	RepositoryId   string  `json:"repositoryId"`
-	RolledBackAt   *string `json:"rolledBackAt"`
-	RepositoryName string  `json:"repositoryName"`
+	Id               string  `json:"id"`
+	Icon             string  `json:"icon"`
+	Name             string  `json:"name"`
+	HealthStatus     string  `json:"healthStatus"`
+	SyncStatus       string  `json:"syncStatus"`
+	Branch           string  `json:"branch"`
+	Commit           string  `json:"commit"`
+	LastSyncedAt     *string `json:"lastSyncedAt"`
+	Path             string  `json:"path"`
+	LastSyncError    *string `json:"lastSyncError,omitempty"`
+	AgentId          string  `json:"agentId"`
+	AgentName        string  `json:"agentName"`
+	RepositoryId     string  `json:"repositoryId"`
+	RolledBackAt     *string `json:"rolledBackAt"`
+	RolledBackCommit *string `json:"rolledBackCommit"`
+	RepositoryName   string  `json:"repositoryName"`
 }
 
 type applicationResponse struct {
@@ -112,6 +113,7 @@ type applicationResponse struct {
 	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
 	RolledBackAt             *string                  `json:"rolledBackAt"`
 	RolledBackCommit         *string                  `json:"rolledBackCommit"`
+	RolledBackReason         *string                  `json:"rolledBackReason"`
 	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
 	Rollback                 rollbackSettingsResponse `json:"rollback"`
 	ImageWebhookEnabled      bool                     `json:"imageWebhookEnabled"`
@@ -363,7 +365,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
 		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
-			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused",
+			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
 			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -553,21 +555,22 @@ func PullApplicationImagesHandler(c *gin.Context) {
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
-		Id:             app.Id,
-		Icon:           app.Icon,
-		Name:           app.Name.String(),
-		HealthStatus:   string(app.HealthStatus),
-		SyncStatus:     string(app.SyncStatus),
-		Branch:         app.Branch,
-		Commit:         app.Commit,
-		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
-		LastSyncError:  normalizeSyncError(app.LastSyncError),
-		Path:           app.Path,
-		RepositoryId:   app.RepositoryId,
-		RepositoryName: app.Repository.Name,
-		AgentId:        app.AgentId,
-		AgentName:      app.Agent.Name.String(),
-		RolledBackAt:   formatTimestamp(app.RolledBackAt),
+		Id:               app.Id,
+		Icon:             app.Icon,
+		Name:             app.Name.String(),
+		HealthStatus:     string(app.HealthStatus),
+		SyncStatus:       string(app.SyncStatus),
+		Branch:           app.Branch,
+		Commit:           app.Commit,
+		LastSyncedAt:     formatTimestamp(app.LastSyncedAt),
+		LastSyncError:    normalizeSyncError(app.LastSyncError),
+		Path:             app.Path,
+		RepositoryId:     app.RepositoryId,
+		RepositoryName:   app.Repository.Name,
+		AgentId:          app.AgentId,
+		AgentName:        app.Agent.Name.String(),
+		RolledBackAt:     formatTimestamp(app.RolledBackAt),
+		RolledBackCommit: app.RolledBackCommit,
 	}
 }
 
@@ -620,6 +623,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		CurrentDeploymentId:      app.CurrentDeploymentId,
 		RolledBackAt:             formatTimestamp(app.RolledBackAt),
 		RolledBackCommit:         app.RolledBackCommit,
+		RolledBackReason:         app.RolledBackReason,
 		AutoSyncPaused:           app.AutoSyncPaused,
 		Rollback: rollbackSettingsResponse{
 			Enabled:              app.RollbackEnabled,

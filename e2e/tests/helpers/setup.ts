@@ -29,6 +29,17 @@ export interface ApiApplication {
 	deleteOldImages: boolean;
 	imageWebhookEnabled: boolean;
 	imageWebhookUrl?: string;
+	currentDeploymentId: string | null;
+	rolledBackAt: string | null;
+	rolledBackCommit: string | null;
+	autoSyncPaused: boolean;
+	rollback: {
+		enabled: boolean;
+		onDeployFailure: boolean;
+		onUnhealthy: boolean;
+		healthTimeoutSeconds: number;
+		pauseAutoSync: boolean;
+	};
 }
 
 export interface ApiApplicationEvent {
@@ -38,6 +49,8 @@ export interface ApiApplicationEvent {
 	status: string;
 	commitHash: string | null;
 	errorMessage: string | null;
+	deploymentId: string | null;
+	deploymentStatus: string | null;
 }
 
 export function newAuthenticatedContext(browser: Browser) {

@@ -46,12 +46,14 @@ func handleRollbackResult(ctx context.Context, agentID string, app *models.Appli
 		CurrentDeploymentId: event.DeploymentId,
 		RolledBackAt:        &now,
 		RolledBackCommit:    event.CommitHash,
+		RolledBackReason:    app.LastSyncError,
 		AutoSyncPaused:      app.RollbackPauseAutoSync,
 	}
-	columns := []any{"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused"}
+	columns := []any{"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused"}
 	// A user rolled back on purpose, which auto-sync must not undo. An
-	// automatic rollback keeps the error of the failed deployment.
+	// automatic rollback keeps the error of the failed deployment as its reason.
 	if event.Source == models.ApplicationEventSourceManual {
+		updates.RolledBackReason = nil
 		updates.AutoSyncPaused = true
 		columns = append(columns, "LastSyncError")
 	}
@@ -80,7 +82,7 @@ func clearRollbackState(ctx context.Context, agentID string, app *models.Applica
 	}
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ? AND agent_id = ?", app.Id, agentID).
-		Select("RolledBackAt", "RolledBackCommit", "AutoSyncPaused").
+		Select("RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused").
 		Updates(ctx, models.Application{}); err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to clear rollback state")
 		return

@@ -67,6 +67,10 @@ func TestHandleDeployResult_RollbackSucceeded(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
 	target := seedRollbackTarget(t, app.Id)
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Update(t.Context(), "last_sync_error", "an earlier failure"); err != nil {
+		t.Fatalf("set error: %v", err)
+	}
 	startRollbackEvent(t, app.Id, &target, "rollback-1")
 	nop := zerolog.Nop()
 	expectAsyncNotification(t)
@@ -74,6 +78,9 @@ func TestHandleDeployResult_RollbackSucceeded(t *testing.T) {
 	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: "rollback-1", ApplicationId: app.Id, Success: true}, &nop)
 
 	updated := loadDeployTestApp(t, app.Id)
+	if updated.LastSyncError != nil || updated.RolledBackReason != nil {
+		t.Errorf("a manual rollback must not keep an earlier error as its reason, got %v, %v", updated.LastSyncError, updated.RolledBackReason)
+	}
 	if updated.SyncStatus != models.OutOfSync {
 		t.Errorf("sync status = %q, want out of sync", updated.SyncStatus)
 	}
@@ -138,10 +145,10 @@ func TestHandleDeployResult_DeploymentClearsRollbackState(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
 	now := time.Now()
-	commit := "0123456"
+	commit, reason := "0123456", "compose up failed"
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
-		Select("RolledBackAt", "RolledBackCommit", "AutoSyncPaused").
-		Updates(t.Context(), models.Application{RolledBackAt: &now, RolledBackCommit: &commit, AutoSyncPaused: true}); err != nil {
+		Select("RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused").
+		Updates(t.Context(), models.Application{RolledBackAt: &now, RolledBackCommit: &commit, RolledBackReason: &reason, AutoSyncPaused: true}); err != nil {
 		t.Fatalf("mark rolled back: %v", err)
 	}
 	nop := zerolog.Nop()
@@ -150,7 +157,7 @@ func TestHandleDeployResult_DeploymentClearsRollbackState(t *testing.T) {
 	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{ApplicationId: app.Id, Success: true}, &nop)
 
 	updated := loadDeployTestApp(t, app.Id)
-	if updated.RolledBackAt != nil || updated.RolledBackCommit != nil || updated.AutoSyncPaused {
+	if updated.RolledBackAt != nil || updated.RolledBackCommit != nil || updated.RolledBackReason != nil || updated.AutoSyncPaused {
 		t.Errorf("expected the rollback state to be cleared, got %+v", updated)
 	}
 	if updated.SyncStatus != models.Synced {

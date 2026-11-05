@@ -69,6 +69,40 @@ export function execInContainer(id: string, command: string[]) {
 	return result.stdout;
 }
 
+export function containerImageId(id: string) {
+	const { ok, stdout } = docker(["inspect", "-f", "{{.Image}}", id]);
+	if (!ok) {
+		throw new Error(`docker inspect ${id} failed`);
+	}
+	return stdout;
+}
+
+/**
+ * Tags a new image derived from base that exists only locally, so it has no
+ * registry digest. Returns its ID.
+ */
+export function createLocalImage(base: string, tag: string, label: string) {
+	const container = `orca-e2e-local-image-${Date.now()}`;
+	const created = docker(["create", "--name", container, base]);
+	if (!created.ok) {
+		throw new Error(`docker create ${base} failed: ${created.stderr}`);
+	}
+	try {
+		const committed = docker(["commit", "--change", `LABEL ${label}`, container, tag]);
+		if (!committed.ok) {
+			throw new Error(`docker commit ${container} failed: ${committed.stderr}`);
+		}
+	} finally {
+		docker(["rm", "-f", container]);
+	}
+	const { stdout } = docker(["image", "inspect", "-f", "{{.Id}}", tag]);
+	return stdout;
+}
+
+export function removeImages(...refs: string[]) {
+	docker(["image", "rm", "-f", ...refs]);
+}
+
 export function containerMounts(id: string) {
 	const { ok, stdout } = docker(["inspect", "-f", "{{json .Mounts}}", id]);
 	if (!ok) {

@@ -51,16 +51,22 @@ function IncidentContext({ incident, agentName }: { incident: HealthIncident; ag
 		);
 	}
 
+	const commit = incident.trigger?.commitHash ? (
+		<span className="font-mono text-xs text-foreground">
+			{incident.trigger.commitHash.slice(0, 7)}
+		</span>
+	) : null;
 	if (incident.trigger?.type === ApplicationEventType.Deployment) {
 		parts.push(
-			incident.trigger.commitHash
-				? withHighlight(
-						(commit) => m.healthIncidentAfterDeployCommit({ commit }),
-						<span className="font-mono text-xs text-foreground">
-							{incident.trigger.commitHash.slice(0, 7)}
-						</span>,
-					)
+			commit
+				? withHighlight((value) => m.healthIncidentAfterDeployCommit({ commit: value }), commit)
 				: m.healthIncidentAfterDeploy(),
+		);
+	} else if (incident.trigger?.type === ApplicationEventType.Rollback) {
+		parts.push(
+			commit
+				? withHighlight((value) => m.healthIncidentAfterRollbackCommit({ commit: value }), commit)
+				: m.healthIncidentAfterRollback(),
 		);
 	} else if (incident.trigger?.type === ApplicationEventType.ImageUpdate) {
 		parts.push(m.healthIncidentAfterImageUpdate());

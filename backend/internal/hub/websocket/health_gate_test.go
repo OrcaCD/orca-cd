@@ -395,6 +395,9 @@ func TestHandleDeployResult_AutomaticRollbackKeepsError(t *testing.T) {
 	if updated.LastSyncError == nil || *updated.LastSyncError != failure {
 		t.Errorf("last sync error = %v, want the failure that was rolled back", updated.LastSyncError)
 	}
+	if updated.RolledBackReason == nil || *updated.RolledBackReason != failure {
+		t.Errorf("rolled back reason = %v, want the failure that was rolled back", updated.RolledBackReason)
+	}
 }
 
 func TestHandlePullImagesResult_FailedRedeployRollsBack(t *testing.T) {

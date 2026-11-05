@@ -500,11 +500,19 @@ func TestQueue_Start_ProcessesJobs(t *testing.T) {
 	}
 	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
-	// Compose is unchanged, so the worker records the new commit without redeploying.
+	// Compose is unchanged, so the worker records the new commit without
+	// redeploying. Completing the event is its last write, which must finish
+	// before the test database is removed.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-		if err == nil && updated.Commit == "sha" {
+		events, err := gorm.G[models.ApplicationEvent](db.DB).
+			Where("application_id = ? AND status = ?", app.Id, models.ApplicationEventNoChange).
+			Find(t.Context())
+		if err == nil && len(events) == 1 {
+			updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+			if err != nil || updated.Commit != "sha" {
+				t.Errorf("expected the new commit to be recorded, got %+v, %v", updated, err)
+			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
