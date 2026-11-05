@@ -6,6 +6,7 @@ import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/")({
 	component: OverviewPage,
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/_authenticated/")({
 function OverviewPage() {
 	const { data: apps } = useFetch<ApplicationListItem[]>("/applications");
 	const { data: agents } = useFetch<Agent[]>("/agents");
+	const { can } = usePermissions();
 
 	return (
 		<div className="p-6 space-y-6">
@@ -34,7 +36,7 @@ function OverviewPage() {
 					<Skeleton className="h-44" />
 					<Skeleton className="h-44" />
 				</div>
-			) : apps.length === 0 ? (
+			) : apps.length === 0 && can("application", "create") ? (
 				<OnboardingChecklist agents={agents} />
 			) : (
 				<OverviewDashboard apps={apps} agents={agents} />

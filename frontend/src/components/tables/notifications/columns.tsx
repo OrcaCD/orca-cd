@@ -18,6 +18,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import {
 	deleteNotification,
 	getNotificationTypeIconPath,
@@ -96,71 +97,87 @@ export const columns: ColumnDef<typeof dataTableFeatures, Notification>[] = [
 	},
 	{
 		id: "actions",
-		cell: ({ row }) => {
-			async function handleDelete(item: Notification) {
-				try {
-					await deleteNotification(item.id);
-					const identifier = item.name.trim() || item.id;
-					toast.add({ type: "success", title: m.notificationDeleted({ name: identifier }) });
-				} catch (err) {
-					toast.add({
-						type: "error",
-						title: err instanceof Error ? err.message : m.failedDeleteNotification(),
-					});
-				}
-			}
+		cell: ({ row }) => <NotificationActions notification={row.original} />,
+	},
+];
 
-			async function handleTest(item: Notification) {
-				try {
-					await testNotification(item.id);
-					toast.add({ type: "success", title: m.testNotificationSent() });
-				} catch (err) {
-					toast.add({
-						type: "error",
-						title: err instanceof Error ? err.message : m.failedSendTestNotification(),
-					});
-				}
-			}
+function NotificationActions({ notification }: { notification: Notification }) {
+	const { can } = usePermissions();
+	const canUpdate = can("notification", "update", notification.id);
+	const canDelete = can("notification", "delete", notification.id);
 
-			return (
-				<div className="flex justify-end">
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button variant="ghost" className="h-8 w-8 p-0">
-									<span className="sr-only">{m.openMenu()}</span>
-									<MoreHorizontal className="h-4 w-4" />
-								</Button>
-							}
-						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit" keepMounted>
-							<DropdownMenuGroup>
-								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-								<UpdateNotificationDialog notification={row.original} asDropdownItem />
-								<DropdownMenuItem onClick={() => handleTest(row.original)}>
+	if (!canUpdate && !canDelete) {
+		return null;
+	}
+
+	async function handleDelete() {
+		try {
+			await deleteNotification(notification.id);
+			const identifier = notification.name.trim() || notification.id;
+			toast.add({ type: "success", title: m.notificationDeleted({ name: identifier }) });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteNotification(),
+			});
+		}
+	}
+
+	async function handleTest() {
+		try {
+			await testNotification(notification.id);
+			toast.add({ type: "success", title: m.testNotificationSent() });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedSendTestNotification(),
+			});
+		}
+	}
+
+	return (
+		<div className="flex justify-end">
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<Button variant="ghost" className="h-8 w-8 p-0">
+							<span className="sr-only">{m.openMenu()}</span>
+							<MoreHorizontal className="h-4 w-4" />
+						</Button>
+					}
+				></DropdownMenuTrigger>
+				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+					<DropdownMenuGroup>
+						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+						{canUpdate && (
+							<>
+								<UpdateNotificationDialog notification={notification} asDropdownItem />
+								<DropdownMenuItem onClick={handleTest}>
 									<Send className="h-4 w-4" />
 									{m.sendTest()}
 								</DropdownMenuItem>
-								<DropdownMenuSeparator />
-								<ConfirmationDialog
-									onConfirm={() => {
-										void handleDelete(row.original);
-									}}
-									title={m.deleteNotificationTitle()}
-									description={m.deleteNotificationDescription({ name: row.original.name })}
-									triggerText={
-										<>
-											<Trash2 className="h-4 w-4" />
-											{m.delete()}
-										</>
-									}
-									asDropdownItem
-								/>
-							</DropdownMenuGroup>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
-			);
-		},
-	},
-];
+							</>
+						)}
+						{canUpdate && canDelete && <DropdownMenuSeparator />}
+						{canDelete && (
+							<ConfirmationDialog
+								onConfirm={() => {
+									void handleDelete();
+								}}
+								title={m.deleteNotificationTitle()}
+								description={m.deleteNotificationDescription({ name: notification.name })}
+								triggerText={
+									<>
+										<Trash2 className="h-4 w-4" />
+										{m.delete()}
+									</>
+								}
+								asDropdownItem
+							/>
+						)}
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	);
+}

@@ -31,11 +31,13 @@ export function EnvFileCard({
 	file,
 	rows,
 	disabled,
+	readOnly,
 	onDraftChange,
 }: {
 	file: EnvFile;
 	rows: EnvRow[];
 	disabled: boolean;
+	readOnly: boolean;
 	onDraftChange: (key: string, entry: EnvEntry | undefined, draft: EnvDraft | null) => void;
 }) {
 	const entries = new Map(file.entries.map((entry) => [entry.key, entry]));
@@ -57,19 +59,21 @@ export function EnvFileCard({
 						))
 					)}
 				</CardDescription>
-				<CardAction>
-					<AddEnvEntryDialog
-						path={file.path}
-						existingKeys={new Set(rows.map((row) => row.key))}
-						disabled={disabled || activeRows >= MAX_ENV_KEYS_PER_FILE}
-						onAdd={(key, value, isSecret) =>
-							onDraftChange(key, undefined, { delete: false, value, isSecret })
-						}
-					/>
-				</CardAction>
+				{!readOnly && (
+					<CardAction>
+						<AddEnvEntryDialog
+							path={file.path}
+							existingKeys={new Set(rows.map((row) => row.key))}
+							disabled={disabled || activeRows >= MAX_ENV_KEYS_PER_FILE}
+							onAdd={(key, value, isSecret) =>
+								onDraftChange(key, undefined, { delete: false, value, isSecret })
+							}
+						/>
+					</CardAction>
+				)}
 			</CardHeader>
 			<Separator />
-			{activeRows >= MAX_ENV_KEYS_PER_FILE && (
+			{!readOnly && activeRows >= MAX_ENV_KEYS_PER_FILE && (
 				<p className="px-(--card-spacing) text-muted-foreground">{m.envErrorTooManyKeys()}</p>
 			)}
 			{rows.length === 0 ? (
@@ -80,7 +84,7 @@ export function EnvFileCard({
 						<TableRow>
 							<TableHead className="pl-(--card-spacing)">{m.envColumnKey()}</TableHead>
 							<TableHead className="w-full">{m.envColumnValue()}</TableHead>
-							<TableHead className="pr-(--card-spacing)" />
+							{!readOnly && <TableHead className="pr-(--card-spacing)" />}
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -89,6 +93,7 @@ export function EnvFileCard({
 								key={row.key}
 								row={row}
 								disabled={disabled}
+								readOnly={readOnly}
 								onChange={(draft) => onDraftChange(row.key, entries.get(row.key), draft)}
 							/>
 						))}
@@ -102,10 +107,12 @@ export function EnvFileCard({
 function EnvRowItem({
 	row,
 	disabled,
+	readOnly,
 	onChange,
 }: {
 	row: EnvRow;
 	disabled: boolean;
+	readOnly: boolean;
 	onChange: (draft: EnvDraft | null) => void;
 }) {
 	const valueError = row.valueError;
@@ -153,7 +160,7 @@ function EnvRowItem({
 							className="min-h-8 resize-none py-1 font-mono"
 							rows={1}
 							value={row.value}
-							disabled={disabled}
+							disabled={disabled || readOnly}
 							aria-label={row.key}
 							aria-invalid={!!valueError}
 							autoComplete="off"
@@ -166,40 +173,42 @@ function EnvRowItem({
 					</>
 				)}
 			</TableCell>
-			<TableCell className="pr-(--card-spacing)">
-				<div className="flex items-center justify-end gap-1">
-					{row.isSecret && !row.deleted && (
-						<ReplaceEnvSecretDialog
-							envKey={row.key}
-							disabled={disabled}
-							onReplace={(value) => onChange({ delete: false, value, isSecret: true })}
-						/>
-					)}
-					{!row.isSecret && !row.deleted && (
-						<IconAction
-							label={m.envMakeSecret()}
-							disabled={disabled || !!valueError}
-							onClick={() => onChange({ delete: false, value: row.value, isSecret: true })}
-						>
-							<Lock />
-						</IconAction>
-					)}
-					{canUndo && (
-						<IconAction label={m.envUndo()} disabled={disabled} onClick={() => onChange(null)}>
-							<Undo2 />
-						</IconAction>
-					)}
-					{!row.deleted && (
-						<IconAction
-							label={m.envDeleteEntry({ key: row.key })}
-							disabled={disabled}
-							onClick={() => onChange(row.isNew ? null : { delete: true })}
-						>
-							<Trash2 />
-						</IconAction>
-					)}
-				</div>
-			</TableCell>
+			{!readOnly && (
+				<TableCell className="pr-(--card-spacing)">
+					<div className="flex items-center justify-end gap-1">
+						{row.isSecret && !row.deleted && (
+							<ReplaceEnvSecretDialog
+								envKey={row.key}
+								disabled={disabled}
+								onReplace={(value) => onChange({ delete: false, value, isSecret: true })}
+							/>
+						)}
+						{!row.isSecret && !row.deleted && (
+							<IconAction
+								label={m.envMakeSecret()}
+								disabled={disabled || !!valueError}
+								onClick={() => onChange({ delete: false, value: row.value, isSecret: true })}
+							>
+								<Lock />
+							</IconAction>
+						)}
+						{canUndo && (
+							<IconAction label={m.envUndo()} disabled={disabled} onClick={() => onChange(null)}>
+								<Undo2 />
+							</IconAction>
+						)}
+						{!row.deleted && (
+							<IconAction
+								label={m.envDeleteEntry({ key: row.key })}
+								disabled={disabled}
+								onClick={() => onChange(row.isNew ? null : { delete: true })}
+							>
+								<Trash2 />
+							</IconAction>
+						)}
+					</div>
+				</TableCell>
+			)}
 		</TableRow>
 	);
 }

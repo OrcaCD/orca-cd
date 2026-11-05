@@ -20,6 +20,7 @@ import {
 	type NotificationStatus,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { ResourceCard } from "./resource-card";
 
@@ -119,6 +120,7 @@ function SubscriptionRow({
 
 function EnabledSwitch({ notification }: { notification: Notification }) {
 	const [pending, setPending] = useState<boolean | null>(null);
+	const { can } = usePermissions();
 	const enabled = pending ?? notification.enabled;
 
 	const handleChange = async (checked: boolean) => {
@@ -136,6 +138,10 @@ function EnabledSwitch({ notification }: { notification: Notification }) {
 			setPending(null);
 		}
 	};
+
+	if (!can("notification", "update", notification.id)) {
+		return <span className="shrink-0">{enabled ? m.enabled() : m.disabled()}</span>;
+	}
 
 	return (
 		<label className="flex shrink-0 cursor-pointer items-center gap-2">

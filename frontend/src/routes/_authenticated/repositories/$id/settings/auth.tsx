@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { updateRepository, testRepositoryConnection, type Repository } from "@/lib/repositories";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { useFetch } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -32,6 +33,8 @@ function RepositoryAuthPage() {
 
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | undefined>();
+	const { can } = usePermissions();
+	const canUpdate = can("repository", "update", id);
 
 	const form = useForm({
 		defaultValues: {
@@ -97,6 +100,7 @@ function RepositoryAuthPage() {
 													field.handleChange(e.target.value);
 												}}
 												placeholder={m.authTokenPlaceholder()}
+												disabled={!canUpdate}
 											/>
 											<p className="text-muted-foreground text-xs">{m.authTokenLeaveBlankHint()}</p>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -105,22 +109,24 @@ function RepositoryAuthPage() {
 								}}
 							</form.Field>
 							{error && <ErrorAlert title={m.cantConnectToRepository()} description={error} />}
-							<div className="flex flex-wrap gap-2 pt-2">
-								<Button type="submit" disabled={isLoading || !repository}>
-									{m.updateAuthentication()}
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => {
-										setError(undefined);
-										form.reset();
-									}}
-									disabled={isLoading}
-								>
-									{m.cancel()}
-								</Button>
-							</div>
+							{canUpdate && (
+								<div className="flex flex-wrap gap-2 pt-2">
+									<Button type="submit" disabled={isLoading || !repository}>
+										{m.updateAuthentication()}
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => {
+											setError(undefined);
+											form.reset();
+										}}
+										disabled={isLoading}
+									>
+										{m.cancel()}
+									</Button>
+								</div>
+							)}
 						</FieldGroup>
 					</form>
 				</CardContent>

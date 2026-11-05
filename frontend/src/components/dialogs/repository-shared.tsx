@@ -111,11 +111,13 @@ export function SyncTypeRadioGroup({
 	onChange,
 	onBlur,
 	className,
+	disabled,
 }: {
 	value: RepositorySyncType;
 	onChange: (v: RepositorySyncType) => void;
 	onBlur: () => void;
 	className?: string;
+	disabled?: boolean;
 }) {
 	const syncTypes = getSyncTypes();
 	return (
@@ -123,6 +125,7 @@ export function SyncTypeRadioGroup({
 			value={value}
 			onBlur={onBlur}
 			onValueChange={(v) => onChange(v as RepositorySyncType)}
+			disabled={disabled}
 			className={cn("w-fit", className)}
 		>
 			{syncTypes.map((type) => (

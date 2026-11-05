@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { syncRepository, type Repository, type RepositorySyncStatus } from "@/lib/repositories";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +98,7 @@ export function RepositoriesCard() {
 
 function RepositoryRow({ repo }: { repo: Repository }) {
 	const [syncing, setSyncing] = useState(false);
+	const { can } = usePermissions();
 
 	const handleSync = async () => {
 		setSyncing(true);
@@ -145,7 +147,7 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 					{detail}
 				</ItemDescription>
 			</ItemContent>
-			{repo.syncStatus !== "syncing" ? (
+			{repo.syncStatus !== "syncing" && can("repository", "sync", repo.id) ? (
 				<ItemActions>
 					<Button
 						variant="ghost"
