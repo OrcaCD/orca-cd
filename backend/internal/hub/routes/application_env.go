@@ -69,6 +69,11 @@ type updateEnvRequest struct {
 }
 
 func ListApplicationEnvHandler(c *gin.Context) {
+	if DemoMode {
+		listDemoApplicationEnv(c)
+		return
+	}
+
 	application, agent, ok := loadEnvTarget(c)
 	if !ok {
 		return
