@@ -21,11 +21,18 @@ export interface ApiOidcProvider {
 	callbackUrl: string;
 }
 
+export interface ApiUserRole {
+	id: string;
+	name: string;
+	builtIn: "admin" | "user" | null;
+	sources: ("manual" | "oidc")[];
+}
+
 export interface ApiAdminUser {
 	id: string;
 	name: string;
 	email: string;
-	role: string;
+	roles: ApiUserRole[];
 	providers: string[];
 }
 
@@ -33,7 +40,8 @@ export interface ApiProfile {
 	id: string;
 	name: string;
 	email: string;
-	role: string;
+	isAdmin: boolean;
+	roles: ApiUserRole[];
 	isLocal: boolean;
 	picture?: string;
 }

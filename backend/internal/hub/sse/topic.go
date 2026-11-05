@@ -18,6 +18,9 @@ var (
 	TopicNotifications       = Topic{apiPrefix + "/notifications"}
 	TopicAdminUsers          = Topic{apiPrefix + "/admin/users"}
 	TopicAdminOIDCProvider   = Topic{apiPrefix + "/admin/oidc-providers"}
+	TopicAdminRoles          = Topic{apiPrefix + "/admin/roles"}
+	// TopicProfile makes clients reload their own profile, which holds their permissions.
+	TopicProfile = Topic{apiPrefix + "/auth/profile"}
 )
 
 func TopicApplicationEvents(applicationID string) Topic {

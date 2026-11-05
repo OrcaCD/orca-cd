@@ -17,6 +17,8 @@ import { Badge } from "@/components/ui/badge";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
 import { m } from "@/lib/paraglide/messages";
 import { dataTableFeatures } from "../table-features";
+import { RoleBadges } from "@/components/badges/role-badge";
+import { roleName } from "@/lib/roles";
 
 export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 	{
@@ -48,18 +50,12 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 		},
 	},
 	{
-		accessorKey: "role",
+		id: "roles",
+		accessorFn: (user) => user.roles.map((role) => roleName(role)).join(", "),
 		header: ({ column }) => {
-			return <DataTableColumnHeader column={column} title={m.columnRole()} />;
+			return <DataTableColumnHeader column={column} title={m.columnRoles()} />;
 		},
-		cell: ({ row }) => {
-			const role = row.original.role;
-			return (
-				<Badge variant={role === "admin" ? "default" : "secondary"}>
-					{role === "admin" ? m.roleAdmin() : role === "user" ? m.roleUser() : role}
-				</Badge>
-			);
-		},
+		cell: ({ row }) => <RoleBadges roles={row.original.roles} />,
 	},
 	{
 		accessorKey: "providers",
@@ -83,8 +79,6 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 	{
 		id: "actions",
 		cell: ({ row }) => {
-			const hasPasswordProvider = row.original.providers.includes("password");
-
 			async function handleDelete() {
 				try {
 					await deleteUser(row.original.id);
@@ -110,11 +104,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 						></DropdownMenuTrigger>
 						<DropdownMenuContent align="end" keepMounted>
 							<DropdownMenuGroup>
-								<UpsertUserDialog
-									user={row.original}
-									asDropdownItem
-									disabled={!hasPasswordProvider}
-								/>
+								<UpsertUserDialog user={row.original} asDropdownItem />
 								<DropdownMenuSeparator />
 								<ConfirmationDialog
 									onConfirm={() => handleDelete()}

@@ -5,7 +5,7 @@ import {
 	type Locator,
 	type Page,
 } from "@playwright/test";
-import { APP_URL } from "../const.ts";
+import { APP_URL, USER_ROLE_ID } from "../const.ts";
 import { api } from "./api.ts";
 import { uniqueId, useNewClientIp, type ApiAdminUser } from "./oidc.ts";
 
@@ -19,19 +19,24 @@ export interface TestUser extends ApiAdminUser {
 const createdUserIds: string[] = [];
 const openContexts: BrowserContext[] = [];
 
+// Names the built-in roles of a user, or the role name for custom roles
+export function roleKeys(user: Pick<ApiAdminUser, "roles"> | undefined) {
+	return user?.roles.map((role) => role.builtIn ?? role.name) ?? [];
+}
+
 export function trackUser(id: string) {
 	createdUserIds.push(id);
 }
 
 export async function createUser(
 	admin: Page,
-	overrides: Partial<Pick<ApiAdminUser, "name" | "email" | "role">> = {},
+	overrides: Partial<Pick<ApiAdminUser, "name" | "email"> & { roleIds: string[] }> = {},
 ) {
 	const id = uniqueId("e2e-user");
 	const { status, body } = await api(admin, "POST", "/admin/users", {
 		name: `Name ${id}`,
 		email: `${id}@example.com`,
-		role: "user",
+		roleIds: [USER_ROLE_ID],
 		...overrides,
 	});
 	expect(status, JSON.stringify(body)).toBe(201);

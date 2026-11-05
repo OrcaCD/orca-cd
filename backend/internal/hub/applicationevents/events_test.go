@@ -66,7 +66,6 @@ func setupEventTestDB(t *testing.T) (models.Application, models.Application) {
 		Id:    "user-1",
 		Email: "alex@example.com",
 		Name:  "Alex",
-		Role:  models.UserRoleAdmin,
 	}
 	if err := gorm.G[models.User](testDB).Create(ctx, &user); err != nil {
 		t.Fatalf("seed user: %v", err)

@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	ResponsiveDialog,
@@ -15,20 +15,39 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
 import { z } from "zod";
-import { Field, FieldContent, FieldError, FieldGroup, FieldLabel, FieldTitle } from "../ui/field";
+import {
+	Field,
+	FieldContent,
+	FieldDescription,
+	FieldError,
+	FieldGroup,
+	FieldLabel,
+	FieldTitle,
+} from "../ui/field";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
-import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
+import { Badge } from "../ui/badge";
 import CopyValueDialog from "./copy-value-dialog";
 import { m } from "@/lib/paraglide/messages";
+import { useFetch } from "@/lib/api";
+import { roleDescription, roleName, type Role } from "@/lib/roles";
 
 const baseSchema = z.object({
 	name: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
 	email: z.email(m.validationMustBeValidEmailAddress()).trim(),
-	role: z.enum(["admin", "user"]),
+	roleIds: z.array(z.string()),
 	resetPassword: z.boolean(),
 });
+
+function manualRoleIds(user: UserDetail | null, roles: Role[] | undefined): string[] {
+	if (user) {
+		return user.roles.filter((role) => role.sources.includes("manual")).map((role) => role.id);
+	}
+	// New users get the default role, like users created by an OIDC login
+	const defaultRole = roles?.find((role) => role.builtIn === "user");
+	return defaultRole ? [defaultRole.id] : [];
+}
 
 export default function UpsertUserDialog({
 	user,
@@ -40,8 +59,14 @@ export default function UpsertUserDialog({
 	disabled?: boolean;
 }) {
 	const isEditing = !!user;
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [open, setOpen] = useState(false);
+	// The profile of OIDC users is managed by their provider, only their roles can change
+	const isManaged = isEditing && !user.providers.includes("password");
+	const { data: roles } = useFetch<Role[]>("/admin/roles");
+	const oidcRoleIds = new Set(
+		user?.roles.filter((role) => role.sources.includes("oidc")).map((role) => role.id) ?? [],
+	);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
 
@@ -49,7 +74,7 @@ export default function UpsertUserDialog({
 		defaultValues: {
 			name: user?.name ?? "",
 			email: user?.email ?? "",
-			role: (user?.role as "admin" | "user") ?? "user",
+			roleIds: manualRoleIds(user, roles),
 			resetPassword: false,
 		},
 		validators: {
@@ -64,7 +89,7 @@ export default function UpsertUserDialog({
 					const response = await updateUser(user.id, {
 						name: value.name,
 						email: value.email,
-						role: value.role,
+						roleIds: value.roleIds,
 						resetPassword: value.resetPassword,
 					});
 					generated = response.generatedPassword ?? null;
@@ -76,7 +101,7 @@ export default function UpsertUserDialog({
 					const response = await createUser({
 						name: value.name,
 						email: value.email,
-						role: value.role,
+						roleIds: value.roleIds,
 					});
 					generated = response.generatedPassword;
 					toast.add({ type: "success", title: m.userCreated() });
@@ -150,7 +175,8 @@ export default function UpsertUserDialog({
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
 												placeholder={m.fullNamePlaceholder()}
-												autoFocus
+												disabled={isManaged}
+												autoFocus={!isManaged}
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
@@ -171,6 +197,7 @@ export default function UpsertUserDialog({
 												onBlur={field.handleBlur}
 												onChange={(e) => field.handleChange(e.target.value)}
 												placeholder={m.emailPlaceholder()}
+												disabled={isManaged}
 											/>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
@@ -178,50 +205,54 @@ export default function UpsertUserDialog({
 								}}
 							/>
 							<form.Field
-								name="role"
+								name="roleIds"
 								children={(field) => (
 									<Field>
-										<Label htmlFor={field.name}>{m.role()}</Label>
-										<div className="flex gap-4">
-											<RadioGroup
-												name={field.name}
-												value={field.state.value}
-												onValueChange={(value) => field.handleChange(value as "admin" | "user")}
-											>
-												<FieldLabel>
-													<Field
-														orientation="horizontal"
-														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-													>
-														<FieldContent>
-															<FieldTitle>{m.roleAdmin()}</FieldTitle>
-														</FieldContent>
-														<RadioGroupItem
-															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-															value="admin"
-														/>
-													</Field>
-												</FieldLabel>
-												<FieldLabel>
-													<Field
-														orientation="horizontal"
-														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-													>
-														<FieldContent>
-															<FieldTitle>{m.roleUser()}</FieldTitle>
-														</FieldContent>
-														<RadioGroupItem
-															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-															value="user"
-														/>
-													</Field>
-												</FieldLabel>
-											</RadioGroup>
+										<Label>{m.roles()}</Label>
+										<FieldDescription>{m.userRolesDescription()}</FieldDescription>
+										<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+											{roles?.map((role) => {
+												const fromOIDC = oidcRoleIds.has(role.id);
+												const checked = fromOIDC || field.state.value.includes(role.id);
+												return (
+													<FieldLabel key={role.id} htmlFor={`user-role-${role.id}`}>
+														<Field orientation="horizontal" data-disabled={fromOIDC || undefined}>
+															<Checkbox
+																id={`user-role-${role.id}`}
+																checked={checked}
+																disabled={fromOIDC}
+																onCheckedChange={(next) =>
+																	field.handleChange(
+																		next
+																			? [...field.state.value, role.id]
+																			: field.state.value.filter((id) => id !== role.id),
+																	)
+																}
+															/>
+															<FieldContent>
+																<FieldTitle>
+																	{role.builtIn === "admin" && <ShieldCheck className="size-4" />}
+																	{roleName(role)}
+																	{fromOIDC && (
+																		<Badge variant="outline">
+																			<Users />
+																			{m.oidcGroup()}
+																		</Badge>
+																	)}
+																</FieldTitle>
+																{roleDescription(role) && (
+																	<FieldDescription>{roleDescription(role)}</FieldDescription>
+																)}
+															</FieldContent>
+														</Field>
+													</FieldLabel>
+												);
+											})}
 										</div>
 									</Field>
 								)}
 							/>
-							{isEditing && (
+							{isEditing && !isManaged && (
 								<form.Field
 									name="resetPassword"
 									children={(field) => (

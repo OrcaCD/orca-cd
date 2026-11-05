@@ -155,7 +155,6 @@ func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
 		Id:                     demoSeedUserID,
 		Email:                  demoSeedUserEmail,
 		Name:                   demoSeedUserName,
-		Role:                   models.UserRoleAdmin,
 		PasswordChangeRequired: false,
 		PasswordHash:           &hashedPassword,
 	}
@@ -168,9 +167,15 @@ func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
 		Id:    demoSeedMemberID,
 		Email: demoSeedMemberEmail,
 		Name:  demoSeedMemberName,
-		Role:  models.UserRoleUser,
 	}
 	if err := gorm.G[models.User](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &member); err != nil {
+		return nil, err
+	}
+
+	if err := assignDemoRole(ctx, tx, user.Id, models.RoleBuiltInAdmin); err != nil {
+		return nil, err
+	}
+	if err := assignDemoRole(ctx, tx, member.Id, models.RoleBuiltInUser); err != nil {
 		return nil, err
 	}
 
@@ -183,6 +188,18 @@ func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
 	}
 
 	return &resolvedUser, nil
+}
+
+func assignDemoRole(ctx context.Context, tx *gorm.DB, userID string, builtIn models.RoleBuiltIn) error {
+	role, err := gorm.G[models.Role](tx).Where("built_in = ?", builtIn).First(ctx)
+	if err != nil {
+		return err
+	}
+	return gorm.G[models.UserRole](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &models.UserRole{
+		UserId: userID,
+		RoleId: role.Id,
+		Source: models.UserRoleSourceManual,
+	})
 }
 
 func seedDemoAgents(ctx context.Context, tx *gorm.DB) error {

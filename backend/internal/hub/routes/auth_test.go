@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -50,6 +52,9 @@ func setupTestDB(t *testing.T) {
 	}
 	if err := testDB.AutoMigrate(&models.User{}, &models.OIDCProvider{}, &models.UserOIDCIdentity{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
+	}
+	if err := rbac.MigrateForTest(testDB); err != nil {
+		t.Fatalf("failed to migrate roles: %v", err)
 	}
 
 	sqlDB, err := testDB.DB()
@@ -1024,20 +1029,29 @@ func TestRegisterHandler_AssignsAdminRole(t *testing.T) {
 	if err := db.DB.Where("email = ?", "admin@example.com").First(&user).Error; err != nil {
 		t.Fatalf("failed to find user: %v", err)
 	}
-	if user.Role != models.UserRoleAdmin {
-		t.Errorf("expected role %q, got %q", models.UserRoleAdmin, user.Role)
+	isAdmin, err := rbac.IsAdmin(t.Context(), db.DB, user.Id)
+	if err != nil {
+		t.Fatalf("failed to check admin role: %v", err)
+	}
+	if !isAdmin {
+		t.Error("expected the first user to get the admin role")
 	}
 }
 
-func TestProfileHandler_ReturnsRole(t *testing.T) {
+func TestProfileHandler_ReturnsRolesAndPermissions(t *testing.T) {
 	setupTestDB(t)
 
 	user := &models.User{
 		Id:                     "user-admin",
 		Name:                   "Admin",
 		Email:                  "admin@example.com",
-		Role:                   models.UserRoleAdmin,
 		PasswordChangeRequired: true,
+	}
+	if err := gorm.G[models.User](db.DB).Create(t.Context(), user); err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+	if err := rbac.AssignBuiltInRole(t.Context(), db.DB, user.Id, models.RoleBuiltInAdmin); err != nil {
+		t.Fatalf("failed to assign role: %v", err)
 	}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
@@ -1065,8 +1079,14 @@ func TestProfileHandler_ReturnsRole(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.Role != "admin" {
-		t.Errorf("expected role %q, got %q", "admin", body.Role)
+	if !body.IsAdmin {
+		t.Error("expected isAdmin=true")
+	}
+	if len(body.Roles) != 1 || body.Roles[0].Id != rbac.AdminRoleID {
+		t.Errorf("expected the admin role, got %+v", body.Roles)
+	}
+	if got := body.Permissions[models.ResourceApplication].All; !slices.Contains(got, models.ActionDeploy) {
+		t.Errorf("expected admin to be allowed to deploy all applications, got %v", got)
 	}
 	if !body.PasswordChangeRequired {
 		t.Error("expected passwordChangeRequired=true")
@@ -1077,7 +1097,7 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1131,7 +1151,7 @@ func TestUpdateOwnProfileHandler_NameOnlyKeepsEmailConfirmed(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1162,8 +1182,8 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 
 	hashA, _ := auth.HashPassword("password123")
 	hashB, _ := auth.HashPassword("password456")
-	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA, Role: models.UserRoleUser}
-	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB, Role: models.UserRoleUser}
+	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA}
+	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB}
 	if err := db.DB.Create(userA).Error; err != nil {
 		t.Fatalf("failed to create user A: %v", err)
 	}
@@ -1197,7 +1217,7 @@ func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1252,7 +1272,7 @@ func TestUpdateOwnProfileHandler_NoClaims(t *testing.T) {
 func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Id: "user-managed-no-password", Email: "managed@example.com", Name: "Managed User", Role: models.UserRoleUser}
+	user := &models.User{Id: "user-managed-no-password", Email: "managed@example.com", Name: "Managed User"}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1275,7 +1295,7 @@ func TestUpdateOwnProfileHandler_InternalErrorWhenUpdateFails(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash, Role: models.UserRoleUser}
+	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1305,7 +1325,7 @@ func TestUpdateOwnProfileHandler_InternalErrorWhenUpdateFails(t *testing.T) {
 func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Id: "user-sso-1", Email: "user@example.com", Name: "User", Role: models.UserRoleUser}
+	user := &models.User{Id: "user-sso-1", Email: "user@example.com", Name: "User"}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1350,7 +1370,7 @@ func TestSelfUpdateHandlers_RejectSSOUsers(t *testing.T) {
 func TestLogoutAllHandler_InvalidatesAllTokens(t *testing.T) {
 	setupTestDB(t)
 
-	user := &models.User{Id: "user-logout-all", Email: "user@example.com", Name: "User", Role: models.UserRoleUser, TokenVersion: 3}
+	user := &models.User{Id: "user-logout-all", Email: "user@example.com", Name: "User", TokenVersion: 3}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}

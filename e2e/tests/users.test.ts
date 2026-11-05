@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_NAME } from "./const.ts";
+import { ADMIN_EMAIL, ADMIN_NAME, ADMIN_ROLE_ID } from "./const.ts";
 import { api } from "./helpers/api.ts";
 import { gotoApp } from "./helpers/navigation.ts";
 import { listUsers, uniqueId } from "./helpers/oidc.ts";
@@ -12,6 +12,7 @@ import {
 	expectToast,
 	fillPasswords,
 	openSession,
+	roleKeys,
 	signInUi,
 	signOutUi,
 	trackUser,
@@ -51,7 +52,12 @@ async function fillUserForm(
 		await dialog.getByLabel("Email", { exact: true }).fill(values.email);
 	}
 	if (values.role !== undefined) {
-		await dialog.getByRole("radio", { name: values.role, exact: true }).click();
+		// Picks exactly the given built-in role
+		for (const role of ["Admin", "User"] as const) {
+			await dialog
+				.getByRole("checkbox", { name: new RegExp(`^${role}\\b`) })
+				.setChecked(role === values.role);
+		}
 	}
 }
 
@@ -94,7 +100,8 @@ test.describe("Creating users", () => {
 		await expect(row.getByText("User", { exact: true })).toBeVisible();
 		await expect(row.getByText("Password", { exact: true })).toBeVisible();
 		const created = await findUser(page, email);
-		expect(created).toMatchObject({ name, role: "user", providers: ["password"] });
+		expect(created).toMatchObject({ name, providers: ["password"] });
+		expect(roleKeys(created)).toEqual(["user"]);
 		trackUser(created!.id);
 
 		const { page: userPage } = await openSession(browser);
@@ -173,7 +180,7 @@ test.describe("Creating users", () => {
 			.click();
 		await expect(rowOf(page, email).getByText("Admin", { exact: true })).toBeVisible();
 		const created = await findUser(page, email);
-		expect(created?.role).toBe("admin");
+		expect(roleKeys(created)).toEqual(["admin"]);
 		trackUser(created!.id);
 	});
 
@@ -234,7 +241,7 @@ test.describe("Creating users", () => {
 });
 
 test.describe("Editing users", () => {
-	test("changes name, email and role", async ({ page }) => {
+	test("changes name, email and roles", async ({ page }) => {
 		const user = await createUser(page);
 		const id = uniqueId("edit");
 		const name = `Edited ${id}`;
@@ -254,7 +261,8 @@ test.describe("Editing users", () => {
 		await expect(row).toContainText(name);
 		await expect(row.getByText("Admin", { exact: true })).toBeVisible();
 		await expect(rowOf(page, user.email)).toHaveCount(0);
-		expect(await findUser(page, email)).toMatchObject({ id: user.id, name, role: "admin" });
+		expect(await findUser(page, email)).toMatchObject({ id: user.id, name });
+		expect(roleKeys(await findUser(page, email))).toEqual(["admin"]);
 
 		await chooseAction(page, email, "Edit");
 		await fillUserForm(dialog, { role: "User" });
@@ -262,7 +270,7 @@ test.describe("Editing users", () => {
 
 		await expectToast(page, "User updated");
 		await expect(row.getByText("User", { exact: true })).toBeVisible();
-		expect((await findUser(page, email))?.role).toBe("user");
+		expect(roleKeys(await findUser(page, email))).toEqual(["user"]);
 	});
 
 	test("cancelling keeps the user as it is", async ({ page }) => {
@@ -307,7 +315,7 @@ test.describe("Editing users", () => {
 
 		await chooseAction(page, user.email, "Edit");
 		const dialog = page.getByRole("dialog", { name: "Edit User" });
-		await dialog.getByRole("checkbox").check();
+		await dialog.getByRole("checkbox", { name: /Reset password/ }).check();
 		await dialog.getByRole("button", { name: "Update User" }).click();
 
 		await expectToast(page, "User updated and password reset");
@@ -328,7 +336,7 @@ test.describe("Editing users", () => {
 	});
 
 	test("the last admin can't be demoted", async ({ page }) => {
-		const admins = (await listUsers(page)).filter((user) => user.role === "admin");
+		const admins = (await listUsers(page)).filter((user) => roleKeys(user).includes("admin"));
 		expect(admins.map((admin) => admin.email)).toEqual([ADMIN_EMAIL]);
 		await openUsers(page);
 
@@ -339,11 +347,11 @@ test.describe("Editing users", () => {
 
 		await expectToast(page, "cannot demote the last admin user");
 		await expect(dialog).toBeVisible();
-		expect((await findUser(page, ADMIN_EMAIL))?.role).toBe("admin");
+		expect(roleKeys(await findUser(page, ADMIN_EMAIL))).toEqual(["admin"]);
 	});
 
 	test("an admin can be demoted while another admin exists", async ({ page }) => {
-		const other = await createUser(page, { role: "admin" });
+		const other = await createUser(page, { roleIds: [ADMIN_ROLE_ID] });
 		await openUsers(page);
 
 		await chooseAction(page, other.email, "Edit");
@@ -352,7 +360,7 @@ test.describe("Editing users", () => {
 		await dialog.getByRole("button", { name: "Update User" }).click();
 
 		await expectToast(page, "User updated");
-		expect((await findUser(page, other.email))?.role).toBe("user");
+		expect(roleKeys(await findUser(page, other.email))).toEqual(["user"]);
 	});
 });
 
@@ -387,7 +395,7 @@ test.describe("Deleting users", () => {
 	});
 
 	test("an admin can be deleted while another admin exists", async ({ page }) => {
-		const other = await createUser(page, { role: "admin" });
+		const other = await createUser(page, { roleIds: [ADMIN_ROLE_ID] });
 		await openUsers(page);
 
 		await chooseAction(page, other.email, "Delete");
@@ -399,7 +407,7 @@ test.describe("Deleting users", () => {
 	});
 
 	test("the last admin can't be deleted", async ({ page }) => {
-		const admins = (await listUsers(page)).filter((user) => user.role === "admin");
+		const admins = (await listUsers(page)).filter((user) => roleKeys(user).includes("admin"));
 		expect(admins.map((admin) => admin.email)).toEqual([ADMIN_EMAIL]);
 		await openUsers(page);
 
@@ -423,7 +431,7 @@ test.describe("User list", () => {
 	test("marks the own account and shows all columns", async ({ page }) => {
 		await openUsers(page);
 
-		for (const column of ["Name", "Email", "Role", "Providers"]) {
+		for (const column of ["Name", "Email", "Roles", "Providers"]) {
 			await expect(page.getByRole("columnheader", { name: column })).toBeVisible();
 		}
 		const row = rowOf(page, ADMIN_EMAIL);
@@ -442,7 +450,7 @@ test.describe("User list", () => {
 		const bravo = await createUser(page, {
 			name: `Bravo ${tag}`,
 			email: `bravo-${tag}@example.com`,
-			role: "admin",
+			roleIds: [ADMIN_ROLE_ID],
 		});
 		await openUsers(page);
 		const search = page.getByPlaceholder("Search users...");
@@ -530,7 +538,7 @@ test.describe("Access", () => {
 				await api(user.page, "POST", "/admin/users", {
 					name: "Sneaky Admin",
 					email: `sneaky-${user.id}@example.com`,
-					role: "admin",
+					roleIds: [ADMIN_ROLE_ID],
 				})
 			).status,
 		).toBe(403);
@@ -539,7 +547,7 @@ test.describe("Access", () => {
 				await api(user.page, "PUT", `/admin/users/${user.id}`, {
 					name: user.name,
 					email: user.email,
-					role: "admin",
+					roleIds: [ADMIN_ROLE_ID],
 				})
 			).status,
 		).toBe(403);
@@ -547,6 +555,6 @@ test.describe("Access", () => {
 
 		await user.page.goto("/admin/users");
 		await user.page.waitForURL("/");
-		expect((await findUser(page, user.email))?.role).toBe("user");
+		expect(roleKeys(await findUser(page, user.email))).toEqual(["user"]);
 	});
 });
