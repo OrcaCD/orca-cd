@@ -499,7 +499,7 @@ export default function UpsertApplicationDialog({
 																	field.state.meta.isTouched && !field.state.meta.isValid;
 																return (
 																	<Field data-invalid={isInvalid}>
-																		<Label htmlFor={field.name}>{m.name()}</Label>
+																		<FieldLabel htmlFor={field.name}>{m.name()}</FieldLabel>
 																		<Input
 																			id={field.name}
 																			value={field.state.value}
@@ -519,7 +519,7 @@ export default function UpsertApplicationDialog({
 															validators={{ onSubmit: applicationSchema.shape.icon }}
 															children={(field) => (
 																<Field>
-																	<Label>{m.icon()}</Label>
+																	<FieldLabel>{m.icon()}</FieldLabel>
 																	<LucideIconPicker
 																		value={field.state.value as LucideIconName}
 																		onValueChange={field.handleChange}
@@ -731,7 +731,7 @@ export default function UpsertApplicationDialog({
 																	field.state.meta.isTouched && !field.state.meta.isValid;
 																return (
 																	<Field data-invalid={isInvalid}>
-																		<Label htmlFor={field.name}>{m.composeFile()}</Label>
+																		<FieldLabel htmlFor={field.name}>{m.composeFile()}</FieldLabel>
 																		<div className="max-h-64 overflow-auto rounded-md border p-1">
 																			{!repositoryId ? (
 																				<div className="p-2 text-sm text-muted-foreground">
