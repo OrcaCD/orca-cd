@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
@@ -219,7 +220,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
 		} else {
-			h.SendAgentSettings(claims.Subject, apps)
+			h.SendAgentSettings(c.Request.Context(), claims.Subject, apps)
 		}
 
 		for {
@@ -341,6 +342,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
+		client.recordHealthReport(status.ApplicationId, health, time.Now())
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)
@@ -557,6 +559,8 @@ func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, lo
 			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventRollback},
 			agentID,
 		).
+		// Deployments under a health gate already reported their result.
+		Where(applicationevents.NotVerifyingCondition, models.DeploymentVerifying).
 		Select("Status", "ErrorMessage", "CompletedAt").
 		Updates(ctx, models.ApplicationEvent{
 			Status:       models.ApplicationEventFailed,

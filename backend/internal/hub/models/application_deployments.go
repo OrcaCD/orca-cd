@@ -12,6 +12,9 @@ const (
 	// DeploymentPending is a deployment that was dispatched to the agent and
 	// has not reported a result yet.
 	DeploymentPending ApplicationDeploymentStatus = "pending"
+	// DeploymentVerifying is a deployment that runs but is rolled back if it
+	// becomes unhealthy before VerifyUntil.
+	DeploymentVerifying ApplicationDeploymentStatus = "verifying"
 	// DeploymentSucceeded is a deployment the application can be rolled back to.
 	DeploymentSucceeded ApplicationDeploymentStatus = "succeeded"
 )
@@ -38,6 +41,10 @@ type ApplicationDeployment struct {
 	ComposeFile   crypto.EncryptedString      `gorm:"type:text;not null"`
 	Images        []DeployedImage             `gorm:"type:text;not null;serializer:json"`
 	DeployedAt    *time.Time                  `gorm:"type:timestamp;index:idx_application_deployments_app_deployed,priority:2"`
+	// PreviousDeploymentId is what the application ran before, which an
+	// automatic rollback restores.
+	PreviousDeploymentId *string    `gorm:"type:text"`
+	VerifyUntil          *time.Time `gorm:"type:timestamp"`
 }
 
 func (ApplicationDeployment) TableName() string { return "application_deployments" }

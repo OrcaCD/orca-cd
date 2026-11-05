@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -76,7 +77,8 @@ func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger, interva
 }
 
 // ApplySettings replaces the poller state with the given snapshot.
-// Apps absent from the snapshot are stopped and removed.
+// Apps absent from the snapshot are stopped and removed, apps whose settings
+// did not change keep their ticker.
 func (p *ImagePoller) ApplySettings(apps []AppPollConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -92,16 +94,22 @@ func (p *ImagePoller) ApplySettings(apps []AppPollConfig) {
 		}
 	}
 	for _, app := range apps {
-		if existing, ok := p.apps[app.AppID]; ok {
+		settings := app.Settings
+		if settings.IntervalSeconds < minPollIntervalSeconds {
+			settings.IntervalSeconds = minPollIntervalSeconds
+		}
+		existing, ok := p.apps[app.AppID]
+		// The hub resends the settings after deployments. Restarting an unchanged
+		// ticker would postpone its next poll by a full interval every time.
+		if ok && settings.Enabled && existing.settings == settings && existing.appName == app.AppName {
+			continue
+		}
+		if ok {
 			close(existing.stop)
 			delete(p.apps, app.AppID)
 		}
-		settings := app.Settings
 		if !settings.Enabled {
 			continue
-		}
-		if settings.IntervalSeconds < minPollIntervalSeconds {
-			settings.IntervalSeconds = minPollIntervalSeconds
 		}
 		state := &appPollState{
 			settings: settings,
@@ -197,6 +205,7 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+		result.RedeployFailed = errors.Is(err, ErrRedeployFailed)
 
 		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to check/pull images")
 	} else {

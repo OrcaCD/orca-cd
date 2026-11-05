@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	cerrdefs "github.com/containerd/errdefs"
 	containerapi "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -168,5 +169,77 @@ func TestRemoveReplacedImages_ContinuesOnRemoveErrors(t *testing.T) {
 	want := []string{"sha256:broken", "sha256:missing", "sha256:old", "sha256:shared"}
 	if !slices.Equal(removed, want) {
 		t.Errorf("expected every replaced image to be attempted despite errors, got %v", removed)
+	}
+}
+
+func TestRemoveReplacedImages_Retention(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.SetImageRetention("app-123", &messages.ImageRetention{
+		KeepImageIds:   []string{"sha256:rollback-target", "sha256:kept-older"},
+		RemoveImageIds: []string{"sha256:older", "sha256:current", "sha256:kept-older"},
+	})
+	c.SetImageRetention("other-app", &messages.ImageRetention{KeepImageIds: []string{"sha256:replaced"}})
+
+	listApplicationImageIDs = func(_ context.Context, _ client.APIClient, _ string) (map[string]struct{}, error) {
+		return map[string]struct{}{"sha256:current": {}}, nil
+	}
+	var removed []string
+	removeImage = func(_ context.Context, _ client.APIClient, imageID string) error {
+		removed = append(removed, imageID)
+		return nil
+	}
+
+	c.removeReplacedImages(t.Context(), "app-123", map[string]struct{}{
+		"sha256:rollback-target": {},
+		"sha256:replaced":        {},
+		"sha256:current":         {},
+	})
+
+	slices.Sort(removed)
+	want := []string{"sha256:older", "sha256:replaced"}
+	if !slices.Equal(removed, want) {
+		t.Errorf("removed = %v, want %v", removed, want)
+	}
+}
+
+func TestRemoveReplacedImages_RetentionWithoutPreviousImages(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.SetImageRetention("app-123", &messages.ImageRetention{RemoveImageIds: []string{"sha256:older"}})
+
+	listApplicationImageIDs = func(_ context.Context, _ client.APIClient, _ string) (map[string]struct{}, error) {
+		return map[string]struct{}{"sha256:current": {}}, nil
+	}
+	var removed []string
+	removeImage = func(_ context.Context, _ client.APIClient, imageID string) error {
+		removed = append(removed, imageID)
+		return nil
+	}
+
+	c.removeReplacedImages(t.Context(), "app-123", map[string]struct{}{})
+	if !slices.Equal(removed, []string{"sha256:older"}) {
+		t.Errorf("expected images of earlier deployments to be removed, got %v", removed)
+	}
+}
+
+func TestSetImageRetention_NilClearsRetention(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.SetImageRetention("app-123", &messages.ImageRetention{KeepImageIds: []string{"sha256:old"}})
+	c.SetImageRetention("app-123", nil)
+
+	listApplicationImageIDs = func(_ context.Context, _ client.APIClient, _ string) (map[string]struct{}, error) {
+		return map[string]struct{}{}, nil
+	}
+	var removed []string
+	removeImage = func(_ context.Context, _ client.APIClient, imageID string) error {
+		removed = append(removed, imageID)
+		return nil
+	}
+
+	c.removeReplacedImages(t.Context(), "app-123", map[string]struct{}{"sha256:old": {}})
+	if !slices.Equal(removed, []string{"sha256:old"}) {
+		t.Errorf("expected the replaced image to be removed without retention, got %v", removed)
 	}
 }

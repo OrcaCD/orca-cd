@@ -181,10 +181,16 @@ func SourceForRequest(ctx context.Context, requestID string, applicationID strin
 	return event.Source, true, nil
 }
 
+// NotVerifyingCondition excludes events whose deployment is under a health
+// gate: the agent reported their result, and the gate completes them.
+const NotVerifyingCondition = "(deployment_id IS NULL OR deployment_id NOT IN (SELECT id FROM application_deployments WHERE status = ?))"
+
+// RecoverRunning fails events whose result can no longer arrive.
 func RecoverRunning(ctx context.Context, message string) (int64, error) {
 	now := time.Now()
 	rowsAffected, err := gorm.G[models.ApplicationEvent](db.DB).
 		Where("status = ?", models.ApplicationEventRunning).
+		Where(NotVerifyingCondition, models.DeploymentVerifying).
 		Select("Status", "ErrorMessage", "CompletedAt").
 		Updates(ctx, models.ApplicationEvent{
 			Status:       models.ApplicationEventFailed,

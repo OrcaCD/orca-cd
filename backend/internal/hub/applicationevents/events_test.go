@@ -41,6 +41,7 @@ func setupEventTestDB(t *testing.T) (models.Application, models.Application) {
 		&models.Agent{},
 		&models.Application{},
 		&models.ApplicationEvent{},
+		&models.ApplicationDeployment{},
 	); err != nil {
 		t.Fatalf("migrate test db: %v", err)
 	}
@@ -477,5 +478,43 @@ func TestSourceForRequestReturnsDatabaseError(t *testing.T) {
 	}
 	if found || source != "" {
 		t.Fatalf("SourceForRequest() = (%q, %v), want (\"\", false) on error", source, found)
+	}
+}
+
+func seedDeployment(t *testing.T, appID string, status models.ApplicationDeploymentStatus) models.ApplicationDeployment {
+	t.Helper()
+	deployment := models.ApplicationDeployment{ApplicationId: appID, Status: status, Images: []models.DeployedImage{}}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployment); err != nil {
+		t.Fatalf("seed deployment: %v", err)
+	}
+	return deployment
+}
+
+func TestRecoverRunningKeepsEventsUnderHealthCheck(t *testing.T) {
+	app, _ := setupEventTestDB(t)
+	ctx := t.Context()
+	verifying := seedDeployment(t, app.Id, models.DeploymentVerifying)
+	pending := seedDeployment(t, app.Id, models.DeploymentPending)
+	gated, err := Start(ctx, Params{ApplicationID: app.Id, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual, DeploymentID: &verifying.Id})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	interrupted, err := Start(ctx, Params{ApplicationID: app.Id, Type: models.ApplicationEventDeployment, Source: models.ApplicationEventSourceManual, DeploymentID: &pending.Id})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if affected, err := RecoverRunning(ctx, "hub restarted"); err != nil || affected != 1 {
+		t.Fatalf("RecoverRunning = %d, %v; want 1", affected, err)
+	}
+
+	for id, want := range map[string]models.ApplicationEventStatus{gated.Id: models.ApplicationEventRunning, interrupted.Id: models.ApplicationEventFailed} {
+		event, err := gorm.G[models.ApplicationEvent](db.DB).Where("id = ?", id).First(ctx)
+		if err != nil {
+			t.Fatalf("load event: %v", err)
+		}
+		if event.Status != want {
+			t.Errorf("event %s status = %q, want %q", id, event.Status, want)
+		}
 	}
 }

@@ -21,6 +21,9 @@ const (
 	ApplicationEventSourceGitHubActions      ApplicationEventSource = "github_actions"
 	ApplicationEventSourceImagePolling       ApplicationEventSource = "image_polling"
 	ApplicationEventSourceImageWebhook       ApplicationEventSource = "image_webhook"
+	// Automatic rollbacks, by what failed.
+	ApplicationEventSourceDeploymentFailure ApplicationEventSource = "deployment_failure"
+	ApplicationEventSourceHealthCheck       ApplicationEventSource = "health_check"
 )
 
 // IsAutomatic reports whether the source triggers syncs without a user, which
