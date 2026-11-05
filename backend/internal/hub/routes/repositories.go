@@ -425,7 +425,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "repository", repo.Id)
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(repo.Id))
 }
 
 type testConnectionRequest struct {
@@ -786,7 +786,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, newWebhookSecret, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(c.Param("id")))
 }
 
 func SyncRepositoryHandler(c *gin.Context) {

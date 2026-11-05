@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -60,6 +61,32 @@ func sessionRevoked(ctx context.Context, claims *auth.UserClaims) bool {
 	return user.TokenVersion != claims.TokenVersion
 }
 
+// topicVisible reports whether the user may see updates of the topic.
+func topicVisible(perms *rbac.Permissions, topic sse.Topic) bool {
+	if topic.AdminOnly() {
+		return perms.IsAdmin()
+	}
+	resource, id := topic.Resource()
+	if resource == "" {
+		return true
+	}
+	if id == "" {
+		return perms.CanAny(resource, models.ActionRead)
+	}
+	return perms.Can(resource, models.ActionRead, id)
+}
+
+// reloadPermissions picks up role changes of a long-lived stream. On failure the
+// previous permissions are kept, the next attempt is at the latest after a keep-alive.
+func reloadPermissions(ctx context.Context, userID string, current *rbac.Permissions) *rbac.Permissions {
+	perms, err := rbac.Load(ctx, db.DB, userID)
+	if err != nil {
+		permissionsLog.Warn().Err(err).Str("userId", userID).Msg("failed to reload permissions of event stream")
+		return current
+	}
+	return perms
+}
+
 func writeUnauthorizedEvent(c *gin.Context) {
 	if _, err := fmt.Fprint(c.Writer, "event: unauthorized\ndata: {}\n\n"); err != nil {
 		return
@@ -71,6 +98,11 @@ func SSEHandler(c *gin.Context) {
 	claims, ok := auth.GetClaims(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	perms, ok := currentPermissions(c)
+	if !ok {
 		return
 	}
 
@@ -113,6 +145,14 @@ func SSEHandler(c *gin.Context) {
 			if !open {
 				return
 			}
+			// Role changes publish the profile topic, so filter with the new permissions.
+			if event.Has(sse.TopicProfile) {
+				perms = reloadPermissions(c.Request.Context(), claims.Subject, perms)
+			}
+			event, visible := event.Filter(func(topic sse.Topic) bool { return topicVisible(perms, topic) })
+			if !visible {
+				continue
+			}
 			data, err := json.Marshal(event)
 			if err != nil {
 				continue
@@ -126,6 +166,7 @@ func SSEHandler(c *gin.Context) {
 				writeUnauthorizedEvent(c)
 				return
 			}
+			perms = reloadPermissions(c.Request.Context(), claims.Subject, perms)
 			if _, err := fmt.Fprint(c.Writer, ": ping\n\n"); err != nil {
 				return
 			}
