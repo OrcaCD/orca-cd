@@ -10,10 +10,15 @@ import {
 	ItemDescription,
 	ItemGroup,
 	ItemMedia,
-	ItemTitle,
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApplicationEventType, eventSourceLabel, eventTitle } from "@/lib/application-events";
+import {
+	ApplicationEventStatus,
+	ApplicationEventType,
+	eventSourceLabel,
+	eventTitle,
+} from "@/lib/application-events";
+import { cn } from "@/lib/utils";
 import type { ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { RelativeTime } from "@/components/relative-time";
@@ -65,47 +70,50 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 	const details = [
 		eventTitle(deployment),
 		deployment.actorName ?? eventSourceLabel(deployment.source),
-		// Rollback titles name their commit already.
-		deployment.type === ApplicationEventType.Rollback ? null : deployment.commitHash?.slice(0, 7),
 	].filter(Boolean);
 	const description = deployment.errorMessage ?? deployment.commitMessage;
-
+	const failed = deployment.status === ApplicationEventStatus.Failed;
 	return (
-		<Item size="xs" className="relative hover:bg-muted/40">
+		<Item size="xs" className="relative items-start hover:bg-muted/40">
 			<Link
 				to="/applications/$id/history"
 				params={{ id: deployment.applicationId }}
 				aria-label={deployment.applicationName}
-				className="absolute inset-0 rounded-lg"
+				className="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
-			<ItemMedia className="size-8 rounded-md bg-primary/10">
+			<ItemMedia className="mt-0.5 size-8 rounded-md bg-muted ring-1 ring-foreground/5 ring-inset">
 				<StaticLucideIcon name={deployment.applicationIcon} className="size-4 text-primary" />
 			</ItemMedia>
 			<ItemContent className="min-w-0">
-				<ItemTitle className="w-full">
-					<span className="truncate">{deployment.applicationName}</span>
-					<span className="truncate text-xs font-normal text-muted-foreground">
-						{details.join(" · ")}
+				<div className="flex min-w-0 items-start justify-between gap-2">
+					<span className="min-w-0 truncate text-sm leading-5 font-medium">
+						{deployment.applicationName}
 					</span>
-				</ItemTitle>
+					<ItemActions className="shrink-0 gap-3">
+						<ApplicationEventStatusBadge
+							status={deployment.status}
+							type={deployment.type}
+							deploymentStatus={deployment.deploymentStatus}
+							waitingForAgent={deployment.waitingForAgent}
+						/>
+					</ItemActions>
+				</div>
+				<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+					{deployment.commitHash && deployment.type !== ApplicationEventType.Rollback ? (
+						<span className="shrink-0 font-mono">{deployment.commitHash.slice(0, 7)}</span>
+					) : null}
+					<span>{details.join(" · ")}</span>
+					<RelativeTime value={deployment.createdAt} className="relative" />
+				</div>
 				{description ? (
-					<ItemDescription className="truncate" title={description}>
+					<ItemDescription
+						className={cn("mt-1", failed ? "line-clamp-2 wrap-break-word" : "truncate")}
+						title={description}
+					>
 						{description}
 					</ItemDescription>
 				) : null}
 			</ItemContent>
-			<ItemActions className="gap-3">
-				<RelativeTime
-					value={deployment.createdAt}
-					className="relative text-xs text-muted-foreground"
-				/>
-				<ApplicationEventStatusBadge
-					status={deployment.status}
-					type={deployment.type}
-					deploymentStatus={deployment.deploymentStatus}
-					waitingForAgent={deployment.waitingForAgent}
-				/>
-			</ItemActions>
 		</Item>
 	);
 }

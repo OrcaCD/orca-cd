@@ -192,6 +192,19 @@
   z-index: 60;
 }
 
+/* Loops such as spinners, pings and pulses stop and transitions become instant when the operating
+   system asks for less motion. Every state stays visible without them. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 [data-show-whitespace] [data-whitespace] {
   position: relative;
   &::before {

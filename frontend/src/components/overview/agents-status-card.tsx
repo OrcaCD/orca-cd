@@ -65,14 +65,14 @@ export function AgentsStatusCard({ agents }: { agents: Agent[] | undefined }) {
 										/>
 										{/* The detail wraps below the name when space runs out instead of being cut off,
 										    it is the reason the agent is listed. */}
-										<div className="flex min-w-0 flex-1 items-baseline justify-between gap-x-3">
+										<div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-3">
 											<Link
 												to="/agents"
 												className="max-w-full truncate font-medium hover:underline"
 											>
 												{agent.name}
 											</Link>
-											<span className="min-w-0 truncate text-xs text-muted-foreground">
+											<span className="text-xs text-pretty text-muted-foreground">
 												<AgentStatusDetail agent={agent} />
 											</span>
 										</div>
