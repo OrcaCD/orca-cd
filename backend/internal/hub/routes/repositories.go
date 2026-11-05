@@ -265,7 +265,14 @@ func normalizeRepositoryURL(rawURL string) string {
 func ListRepositoriesHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	repos, err := gorm.G[models.Repository](db.DB).Find(ctx)
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
+	repos, err := gorm.G[models.Repository](db.DB).
+		Scopes(perms.Scope(models.ResourceRepository, models.ActionRead, "id")).
+		Find(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -430,6 +437,16 @@ type testConnectionRequest struct {
 }
 
 func TestConnectionHandler(c *gin.Context) {
+	// Testing a connection is part of adding a repository or changing its credentials.
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	if !perms.CanAll(models.ResourceRepository, models.ActionCreate) && !perms.CanAny(models.ResourceRepository, models.ActionUpdate) {
+		respondForbidden(c, "insufficient permissions")
+		return
+	}
+
 	var req testConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: url, provider, and authMethod are required"})
@@ -534,6 +551,9 @@ func ListRepositoryTreeHandler(c *gin.Context) {
 
 func DeleteRepositoryHandler(c *gin.Context) {
 	id := c.Param("id")
+	if !canDeleteApplicationsOf(c, "repository_id", id) {
+		return
+	}
 
 	// Applications cascade with the repository, so undeploy them first. Rows are
 	// dropped one by one after agent confirmation to stay in sync on partial failure.
@@ -549,6 +569,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		if !removedApps {
 			return
 		}
+		pruneGrants(c.Request.Context())
 		sse.PublishUpdate(sse.TopicApplications)
 		for agentID := range agentIDs {
 			sendAgentSettings(c, agentID)
@@ -580,6 +601,9 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "repository", id)
+	if !removedApps {
+		pruneGrants(c.Request.Context())
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 	sse.PublishUpdate(sse.TopicRepositories)

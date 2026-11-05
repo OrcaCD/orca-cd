@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
@@ -80,7 +81,13 @@ type notificationResponse struct {
 }
 
 func ListNotificationsHandler(c *gin.Context) {
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
 	items, err := gorm.G[models.Notification](db.DB).
+		Scopes(perms.Scope(models.ResourceNotification, models.ActionRead, "id")).
 		Preload("Applications", selectNotificationResourceId).
 		Preload("Agents", selectNotificationResourceId).
 		Preload("Repositories", selectNotificationResourceId).
@@ -93,7 +100,7 @@ func ListNotificationsHandler(c *gin.Context) {
 
 	response := make([]notificationResponse, 0, len(items))
 	for i := range items {
-		response = append(response, toNotificationResponse(&items[i]))
+		response = append(response, toNotificationResponse(perms, &items[i]))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -147,10 +154,22 @@ func CreateNotificationHandler(c *gin.Context) {
 	allRepositories := req.AllRepositories != nil && *req.AllRepositories
 
 	ctx := c.Request.Context()
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	applicationIds, agentIds, repositoryIds, ok := authorizeNotificationTargets(c, perms, nil, notificationScope{
+		allApplications: allApplications, allAgents: allAgents, allRepositories: allRepositories,
+		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
+	})
+	if !ok {
+		return
+	}
+
 	targets, ok := loadNotificationTargets(c,
-		scopedNotificationResourceIds(allApplications, req.ApplicationIds),
-		scopedNotificationResourceIds(allAgents, req.AgentIds),
-		scopedNotificationResourceIds(allRepositories, req.RepositoryIds),
+		scopedNotificationResourceIds(allApplications, applicationIds),
+		scopedNotificationResourceIds(allAgents, agentIds),
+		scopedNotificationResourceIds(allRepositories, repositoryIds),
 	)
 	if !ok {
 		return
@@ -194,7 +213,7 @@ func CreateNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, toNotificationResponse(&createdNotification))
+	c.JSON(http.StatusCreated, toNotificationResponse(perms, &createdNotification))
 	sse.PublishUpdate(sse.TopicNotifications)
 }
 
@@ -225,10 +244,22 @@ func UpdateNotificationHandler(c *gin.Context) {
 		return
 	}
 
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	applicationIds, agentIds, repositoryIds, ok := authorizeNotificationTargets(c, perms, &notification, notificationScope{
+		allApplications: *req.AllApplications, allAgents: *req.AllAgents, allRepositories: *req.AllRepositories,
+		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
+	})
+	if !ok {
+		return
+	}
+
 	targets, ok := loadNotificationTargets(c,
-		scopedNotificationResourceIds(*req.AllApplications, req.ApplicationIds),
-		scopedNotificationResourceIds(*req.AllAgents, req.AgentIds),
-		scopedNotificationResourceIds(*req.AllRepositories, req.RepositoryIds),
+		scopedNotificationResourceIds(*req.AllApplications, applicationIds),
+		scopedNotificationResourceIds(*req.AllAgents, agentIds),
+		scopedNotificationResourceIds(*req.AllRepositories, repositoryIds),
 	)
 	if !ok {
 		return
@@ -274,7 +305,7 @@ func UpdateNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toNotificationResponse(&updatedNotification))
+	c.JSON(http.StatusOK, toNotificationResponse(perms, &updatedNotification))
 	sse.PublishUpdate(sse.TopicNotifications)
 }
 
@@ -312,7 +343,11 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toNotificationResponse(&notification))
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
 	sse.PublishUpdate(sse.TopicNotifications)
 }
 
@@ -328,6 +363,8 @@ func DeleteNotificationHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 		return
 	}
+
+	pruneGrants(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
 	sse.PublishUpdate(sse.TopicNotifications)
@@ -420,7 +457,8 @@ func selectNotificationResourceId(db gorm.PreloadBuilder) error {
 	return nil
 }
 
-func toNotificationResponse(notification *models.Notification) notificationResponse {
+// toNotificationResponse leaves out the targets the user cannot read.
+func toNotificationResponse(perms *rbac.Permissions, notification *models.Notification) notificationResponse {
 	response := notificationResponse{
 		Id:              notification.Id,
 		Name:            notification.Name.String(),
@@ -431,9 +469,9 @@ func toNotificationResponse(notification *models.Notification) notificationRespo
 		Events:          notification.Events,
 		Status:          string(notification.Status),
 		Type:            string(notification.Type),
-		ApplicationIds:  sortedIds(notification.Applications, applicationIdOf),
-		AgentIds:        sortedIds(notification.Agents, agentIdOf),
-		RepositoryIds:   sortedIds(notification.Repositories, repositoryIdOf),
+		ApplicationIds:  readableIds(perms, models.ResourceApplication, sortedIds(notification.Applications, applicationIdOf)),
+		AgentIds:        readableIds(perms, models.ResourceAgent, sortedIds(notification.Agents, agentIdOf)),
+		RepositoryIds:   readableIds(perms, models.ResourceRepository, sortedIds(notification.Repositories, repositoryIdOf)),
 		CreatedAt:       notification.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:       notification.UpdatedAt.Format(time.RFC3339),
 	}
@@ -632,6 +670,66 @@ func normalizeNotificationResourceIds(ids []string) []string {
 	}
 
 	return normalized
+}
+
+type notificationScope struct {
+	allApplications, allAgents, allRepositories bool
+	applicationIds, agentIds, repositoryIds     []string
+}
+
+// authorizeNotificationTargets makes sure users only subscribe notifications to
+// resources they can read, since the notification tells about them. Targets of an
+// existing notification the user cannot see are kept, as they were not sent back.
+func authorizeNotificationTargets(c *gin.Context, perms *rbac.Permissions, existing *models.Notification, scope notificationScope) ([]string, []string, []string, bool) {
+	var wasAll [3]bool
+	var existingIds [3][]string
+	if existing != nil {
+		wasAll = [3]bool{existing.AllApplications, existing.AllAgents, existing.AllRepositories}
+		existingIds = [3][]string{
+			sortedIds(existing.Applications, applicationIdOf),
+			sortedIds(existing.Agents, agentIdOf),
+			sortedIds(existing.Repositories, repositoryIdOf),
+		}
+	}
+
+	resources := [3]models.PermissionResource{models.ResourceApplication, models.ResourceAgent, models.ResourceRepository}
+	all := [3]bool{scope.allApplications, scope.allAgents, scope.allRepositories}
+	requested := [3][]string{scope.applicationIds, scope.agentIds, scope.repositoryIds}
+	var result [3][]string
+
+	for i, resource := range resources {
+		if all[i] && !wasAll[i] && !perms.CanAll(resource, models.ActionRead) {
+			respondForbidden(c, "insufficient permissions to subscribe to all "+string(resource)+"s")
+			return nil, nil, nil, false
+		}
+
+		ids := make([]string, 0, len(requested[i]))
+		for _, id := range normalizeNotificationResourceIds(requested[i]) {
+			if !perms.Can(resource, models.ActionRead, id) && !slices.Contains(existingIds[i], id) {
+				respondForbidden(c, "insufficient permissions for "+string(resource)+": "+id)
+				return nil, nil, nil, false
+			}
+			ids = append(ids, id)
+		}
+		for _, id := range existingIds[i] {
+			if !perms.Can(resource, models.ActionRead, id) && !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		result[i] = ids
+	}
+
+	return result[0], result[1], result[2], true
+}
+
+func readableIds(perms *rbac.Permissions, resource models.PermissionResource, ids []string) []string {
+	readable := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if perms.Can(resource, models.ActionRead, id) {
+			readable = append(readable, id)
+		}
+	}
+	return readable
 }
 
 func applicationIdOf(a *models.Application) string { return a.Id }
