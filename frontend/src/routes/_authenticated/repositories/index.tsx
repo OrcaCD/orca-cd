@@ -1,3 +1,4 @@
+import { PageContainer, PageHeader } from "@/components/page-header";
 import { columns } from "@/components/tables/repositories/columns";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
 import CreateRepositoryDialog from "@/components/dialogs/create-repository";
@@ -89,14 +90,12 @@ function RepositoriesPage() {
 	}, [data, searchQuery]);
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageRepositories()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.repositoriesPageDescription()}</p>
-				</div>
-				<CreateRepositoryDialog />
-			</div>
+		<PageContainer>
+			<PageHeader
+				title={m.pageRepositories()}
+				description={m.repositoriesPageDescription()}
+				actions={<CreateRepositoryDialog />}
+			/>
 
 			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingRepositories()}</p>}
 
@@ -190,6 +189,6 @@ function RepositoriesPage() {
 					<RepositoryDataTable columns={columns} data={filteredRepositories} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }

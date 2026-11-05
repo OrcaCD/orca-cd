@@ -1,3 +1,4 @@
+import { PageContainer, PageHeader } from "@/components/page-header";
 import type { ApplicationListItem } from "@/lib/applications";
 import type { Agent } from "@/lib/agents";
 import { createFileRoute } from "@tanstack/react-router";
@@ -89,14 +90,12 @@ function ApplicationsPage() {
 		}) ?? [];
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
-				</div>
-				<UpsertApplicationDialog application={null} />
-			</div>
+		<PageContainer>
+			<PageHeader
+				title={m.pageApplications()}
+				description={m.applicationsPageDescription()}
+				actions={<UpsertApplicationDialog application={null} />}
+			/>
 			<div>
 				<div className="flex flex-col sm:flex-row gap-4">
 					<div className="relative flex-1">
@@ -193,6 +192,6 @@ function ApplicationsPage() {
 					<ApplicationsDataTable columns={columns} data={filteredApps} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }

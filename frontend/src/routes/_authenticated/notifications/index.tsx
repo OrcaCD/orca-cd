@@ -1,3 +1,4 @@
+import { PageContainer, PageHeader } from "@/components/page-header";
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisVertical, Search, Send, Trash2 } from "lucide-react";
@@ -78,14 +79,12 @@ function NotificationsPage() {
 	}, [data, searchQuery]);
 
 	return (
-		<div className="space-y-6 p-6">
-			<div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageNotifications()}</h1>
-					<p className="mt-1 text-sm text-muted-foreground">{m.notificationsPageDescription()}</p>
-				</div>
-				<CreateNotificationDialog />
-			</div>
+		<PageContainer>
+			<PageHeader
+				title={m.pageNotifications()}
+				description={m.notificationsPageDescription()}
+				actions={<CreateNotificationDialog />}
+			/>
 
 			{isLoading && <p className="text-sm text-muted-foreground">{m.loadingNotifications()}</p>}
 
@@ -173,6 +172,6 @@ function NotificationsPage() {
 					<NotificationsDataTable columns={columns} data={filteredNotifications} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }

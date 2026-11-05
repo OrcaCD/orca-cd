@@ -4,6 +4,7 @@ import {
 	Container,
 	FileText,
 	GitBranch,
+	LayoutDashboard,
 	LogOut,
 	Menu,
 	Server,
@@ -38,9 +39,10 @@ import { Kbd, KbdGroup } from "./ui/kbd";
 import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
 import "blobatar/motion.css";
 
-type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
+type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
 
 const navItems = [
+	{ key: "overview" as NavKey, href: "/", icon: LayoutDashboard },
 	{ key: "applications" as NavKey, href: "/applications", icon: Container },
 	{ key: "agents" as NavKey, href: "/agents", icon: Server },
 	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
@@ -49,6 +51,8 @@ const navItems = [
 
 function getNavLabel(key: NavKey): string {
 	switch (key) {
+		case "overview":
+			return m.pageOverview();
 		case "applications":
 			return m.navApplications();
 		case "agents":
@@ -64,7 +68,15 @@ function getNavLabel(key: NavKey): string {
 	}
 }
 
-function NavHotkeys({ navKey }: { navKey: NavKey | "overview" }) {
+// The overview lives at the root, which every other path starts with, so it only matches exactly.
+function isNavActive(pathname: string, href: string): boolean {
+	if (href === "/") {
+		return pathname === "/";
+	}
+	return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function NavHotkeys({ navKey }: { navKey: NavKey }) {
 	const sequence =
 		HOTKEY_SEQUENCES[
 			("navigate" +
@@ -100,15 +112,25 @@ export default function Navbar() {
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 	return (
-		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
-			<div className="flex h-14 items-center justify-between px-4">
-				<div className="flex items-center gap-6">
+		<header className="relative border-b bg-chrome backdrop-blur-xl backdrop-saturate-150">
+			<div
+				aria-hidden="true"
+				className="waterline pointer-events-none absolute inset-x-0 -bottom-px h-px"
+			/>
+			<div className="flex h-14 items-center justify-between gap-4 px-4 lg:px-6">
+				<div className="flex min-w-0 items-center gap-5">
 					<Tooltip>
 						<TooltipTrigger
 							render={
-								<Link to="/" className="flex items-center gap-3">
-									<img src="/assets/logo-dark.svg" alt={m.appLogoAlt()} className="h-8 w-8" />
-									<span className="font-semibold text-md hidden sm:inline">OrcaCD</span>
+								<Link
+									to="/"
+									activeOptions={{ exact: true }}
+									className="flex items-center gap-2.5 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+								>
+									<img src="/assets/logo-dark.svg" alt={m.appLogoAlt()} className="size-7" />
+									<span className="hidden text-[0.9375rem] font-semibold tracking-tight sm:inline">
+										OrcaCD
+									</span>
 								</Link>
 							}
 						></TooltipTrigger>
@@ -118,8 +140,10 @@ export default function Navbar() {
 						</TooltipContent>
 					</Tooltip>
 
+					<span aria-hidden="true" className="hidden h-5 w-px bg-border md:block" />
+
 					<NavigationMenu className="hidden md:flex">
-						<NavigationMenuList className="gap-6">
+						<NavigationMenuList className="gap-0.5">
 							{navItems.map((item) => (
 								<Tooltip key={item.key}>
 									<TooltipTrigger
@@ -130,13 +154,16 @@ export default function Navbar() {
 														<Link
 															key={item.key}
 															to={item.href}
+															activeOptions={{ exact: item.href === "/" }}
 															className={cn(
-																"relative h-14 rounded-none px-1 text-muted-foreground hover:bg-transparent hover:text-foreground focus:bg-transparent after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors",
-																location.pathname.startsWith(item.href) &&
-																	"text-foreground after:bg-foreground",
+																"h-8 gap-2 rounded-md px-2.5 text-[0.8125rem] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus:bg-transparent xl:px-3",
+																isNavActive(location.pathname, item.href) &&
+																	"bg-accent text-accent-foreground hover:bg-accent focus:bg-accent [&_svg]:text-primary",
 															)}
 														>
-															<item.icon className="h-4 w-4" /> {getNavLabel(item.key)}
+															<item.icon className="size-4" />
+															{/* Tablets only get the icons, the tooltip names them. */}
+															<span className="max-lg:sr-only">{getNavLabel(item.key)}</span>
 														</Link>
 													}
 												></NavigationMenuLink>
@@ -153,7 +180,7 @@ export default function Navbar() {
 					</NavigationMenu>
 				</div>
 
-				<div className="flex items-center gap-3">
+				<div className="flex items-center gap-1">
 					{auth.isAdmin ? (
 						<Tooltip>
 							<TooltipTrigger
@@ -163,12 +190,13 @@ export default function Navbar() {
 										size="icon"
 										aria-label={m.navAdmin()}
 										className={cn(
-											location.pathname.startsWith("/admin") && "bg-muted text-foreground",
+											"text-muted-foreground",
+											location.pathname.startsWith("/admin") && "bg-accent text-primary",
 										)}
 										nativeButton={false}
 										render={<Link to="/admin" />}
 									>
-										<Settings className="h-5 w-5" />
+										<Settings />
 									</Button>
 								}
 							></TooltipTrigger>
@@ -182,16 +210,19 @@ export default function Navbar() {
 					<Button
 						variant="ghost"
 						size="icon"
-						className="hidden sm:flex"
+						className="hidden text-muted-foreground sm:flex"
+						aria-label={m.navDocumentation()}
 						nativeButton={false}
 						render={
 							<a href="https://orcacd.dev" target="_blank" rel="noopener noreferrer">
-								<FileText className="h-5 w-5 text-muted-foreground" />
+								<FileText />
 							</a>
 						}
 					></Button>
 
 					<ModeToggle
+						buttonVariant="ghost"
+						className="text-muted-foreground"
 						theme={theme === "dark" ? "dark" : "light"}
 						onClick={handleThemeToggle}
 						variant="circle"
@@ -201,21 +232,36 @@ export default function Navbar() {
 					<DropdownMenu>
 						<DropdownMenuTrigger
 							render={
-								<Button variant="ghost" className="relative h-10 w-10 rounded-full">
-									<Avatar className="h-10 w-10 after:pointer-events-none">
+								<Button
+									variant="ghost"
+									className="relative ml-1.5 size-9 rounded-full p-0 ring-1 ring-border hover:ring-primary/40"
+									aria-label={m.userSettings()}
+								>
+									<Avatar className="size-8 after:pointer-events-none">
 										<AvatarImage src={auth.profile?.picture} alt={auth.profile?.name} />
 										<AvatarFallback>
 											<Blobatar
 												name={auth.profile?.id || "User"}
 												animate="hover"
-												className="pointer-events-auto! size-10"
+												className="pointer-events-auto! size-8"
 											/>
 										</AvatarFallback>
 									</Avatar>
 								</Button>
 							}
 						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-full">
+						<DropdownMenuContent align="end" className="min-w-56">
+							{auth.profile ? (
+								<>
+									<div className="flex flex-col px-2 py-1.5">
+										<span className="truncate text-sm font-medium">{auth.profile.name}</span>
+										<span className="truncate text-xs text-muted-foreground">
+											{auth.profile.email}
+										</span>
+									</div>
+									<DropdownMenuSeparator />
+								</>
+							) : null}
 							<DropdownMenuItem
 								render={
 									<Link to="/settings" className="flex items-center">
@@ -252,12 +298,12 @@ export default function Navbar() {
 
 			<div
 				className={cn(
-					"md:hidden grid transition-[grid-template-rows] duration-300 ease-in-out",
+					"grid transition-[grid-template-rows] duration-300 ease-in-out md:hidden",
 					mobileMenuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
 				)}
 			>
 				<div className="overflow-hidden">
-					<NavigationMenu className="border-t border-border p-4 max-w-full w-full [&>div]:w-full">
+					<NavigationMenu className="w-full max-w-full border-t p-3 [&>div]:w-full">
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
 							{navItems.map((item) => (
 								<NavigationMenuItem key={item.key} className="w-full">
@@ -266,9 +312,11 @@ export default function Navbar() {
 											<Link
 												key={item.key}
 												to={item.href}
+												activeOptions={{ exact: item.href === "/" }}
 												className={cn(
-													"h-8 w-full text-muted-foreground hover:text-foreground",
-													location.pathname.startsWith(item.href) && "bg-muted text-foreground",
+													"h-10 w-full px-3 font-medium text-muted-foreground hover:text-foreground",
+													isNavActive(location.pathname, item.href) &&
+														"bg-accent text-accent-foreground [&_svg]:text-primary",
 												)}
 												onClick={() => setMobileMenuOpen(false)}
 											>
