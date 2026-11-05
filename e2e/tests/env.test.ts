@@ -543,6 +543,7 @@ test.describe("Editing in the UI", () => {
 			'IMP_QUOTED="line1\\nline2"',
 			"# orcacd:public",
 			"IMP_PUBLIC=visible-e2e",
+			"# orcacd:public",
 			"OPT_E2E=present",
 			"IMP_DUP=first",
 			"IMP_DUP=second",
