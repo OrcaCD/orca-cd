@@ -31,6 +31,7 @@ import {
 	type EnvEntry,
 	type EnvImportRow,
 	type EnvImportStatus,
+	type EnvRow,
 	type ParsedEnvEntry,
 } from "@/lib/application-env";
 import { m } from "@/lib/paraglide/messages";
@@ -77,12 +78,12 @@ function StatusBadge({ status }: { status: EnvImportStatus }) {
 
 export function ImportEnvDialog({
 	entries,
-	activeKeys,
+	envRows,
 	disabled,
 	onImport,
 }: {
 	entries: EnvEntry[];
-	activeKeys: ReadonlySet<string>;
+	envRows: EnvRow[];
 	disabled: boolean;
 	onImport: (items: ParsedEnvEntry[]) => void;
 }) {
@@ -94,6 +95,7 @@ export function ImportEnvDialog({
 	const [secrets, setSecrets] = useState<ReadonlySet<string>>(new Set());
 	const fileInput = useRef<HTMLInputElement>(null);
 
+	const activeKeys = new Set(envRows.filter((row) => !row.deleted).map((row) => row.key));
 	const rows = parsed?.rows ?? [];
 	const selectableCount = rows.filter((row) => !row.error).length;
 	const selectedRows = rows.filter((row) => included.has(row.key));
@@ -129,7 +131,7 @@ export function ImportEnvDialog({
 				setError(m.envImportErrorNoEntries());
 				return;
 			}
-			const importRows = buildEnvImportRows(entries, result.entries);
+			const importRows = buildEnvImportRows(entries, envRows, result.entries);
 			setParsed({ rows: importRows, ignoredLines: result.ignoredLines });
 			setIncluded(
 				new Set(

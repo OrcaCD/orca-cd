@@ -61,7 +61,7 @@ export function EnvFileCard({
 				<CardAction className="flex gap-2">
 					<ImportEnvDialog
 						entries={file.entries}
-						activeKeys={new Set(rows.filter((row) => !row.deleted).map((row) => row.key))}
+						envRows={rows}
 						disabled={disabled}
 						onImport={(items) => {
 							for (const { key, value, isSecret } of items) {

@@ -243,22 +243,26 @@ export interface EnvImportRow {
 	isSecret: boolean;
 	// An existing secret cannot become a variable
 	secretLocked: boolean;
-	current: EnvEntry | undefined;
+	current: Pick<EnvRow, "isSecret" | "value" | "deleted"> | undefined;
 	error: EnvImportError | null;
 }
 
-export function buildEnvImportRows(entries: EnvEntry[], parsed: ParsedEnvEntry[]): EnvImportRow[] {
-	const existing = new Map(entries.map((entry) => [entry.key, entry]));
+export function buildEnvImportRows(
+	entries: EnvEntry[],
+	rows: EnvRow[],
+	parsed: ParsedEnvEntry[],
+): EnvImportRow[] {
+	const saved = new Map(entries.map((entry) => [entry.key, entry]));
+	const shown = new Map(rows.map((row) => [row.key, row]));
 
 	return parsed.map((entry) => {
-		const current = existing.get(entry.key);
-		const secretLocked = current?.isSecret ?? false;
+		const secretLocked = saved.get(entry.key)?.isSecret ?? false;
 		return {
 			key: entry.key,
 			value: entry.value,
 			isSecret: secretLocked || entry.isSecret,
 			secretLocked,
-			current,
+			current: shown.get(entry.key),
 			error:
 				validateEnvKey(entry.key) ??
 				validateEnvValue(entry.value) ??
@@ -271,10 +275,15 @@ export function envImportStatus(row: EnvImportRow, isSecret: boolean): EnvImport
 	if (!row.current) {
 		return "new";
 	}
-	if (row.current.isSecret) {
+	if (row.current.deleted) {
+		return "changed";
+	}
+	if (row.secretLocked) {
 		return "replacesSecret";
 	}
-	return !isSecret && row.current.value === row.value ? "unchanged" : "changed";
+	return row.current.isSecret === isSecret && row.current.value === row.value
+		? "unchanged"
+		: "changed";
 }
 
 export function envImportErrorMessage(error: EnvImportError): string {
