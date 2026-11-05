@@ -359,3 +359,28 @@ func TestDoc_KeyCountCountsDistinctKeys(t *testing.T) {
 		t.Fatalf("expected 2 keys, got %d", got)
 	}
 }
+
+func TestDoc_IgnoredCount(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want int
+	}{
+		{"empty", "", 0},
+		{"only assignments", "A=1\nexport B=2\nC: 3\n", 0},
+		{"blank lines and comments", "\n# note\n   \n# orcacd:public\nA=1\n", 0},
+		{"line without separator", "A=1\njust some text\n", 1},
+		{"invalid key", "A=1\nBAD KEY=2\n$X=3\n", 2},
+		{"unterminated quote", "A=\"open\nB=2\n", 1},
+		{"junk after closing quote", "A=\"x\" junk\n", 1},
+		{"statement after closing quote", "A=\"x\" B=2\n", 0},
+		{"duplicate keys are not ignored", "A=1\nA=2\n", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Parse(tt.text).IgnoredCount(); got != tt.want {
+				t.Fatalf("IgnoredCount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

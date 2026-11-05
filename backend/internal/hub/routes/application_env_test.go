@@ -617,6 +617,162 @@ func TestUpdateApplicationEnvHandler_ExtendsWriteDeadline(t *testing.T) {
 	}
 }
 
+func parseEnvRequest(t *testing.T, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/env/parse", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	ParseEnvHandler(c)
+	return w
+}
+
+func decodeParseEnvResponse(t *testing.T, w *httptest.ResponseRecorder) parseEnvResponse {
+	t.Helper()
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp parseEnvResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return resp
+}
+
+func TestParseEnvHandler_ParsesComposeSyntax(t *testing.T) {
+	content := strings.Join([]string{
+		"# a comment",
+		"PLAIN=value # trailing comment",
+		"export EXPORTED=1",
+		"COLON: yes",
+		`DOUBLE="line1\nline2"`,
+		`SINGLE='no \n escape'`,
+		"MULTI=\"first",
+		"second\"",
+		"DUP=old",
+		"DUP=new",
+		"EMPTY=",
+		"",
+	}, "\n")
+
+	resp := decodeParseEnvResponse(t, parseEnvRequest(t, gin.H{"content": content}))
+
+	want := []parsedEnvEntry{
+		{Key: "PLAIN", Value: "value", IsSecret: true},
+		{Key: "EXPORTED", Value: "1", IsSecret: true},
+		{Key: "COLON", Value: "yes", IsSecret: true},
+		{Key: "DOUBLE", Value: "line1\nline2", IsSecret: true},
+		{Key: "SINGLE", Value: `no \n escape`, IsSecret: true},
+		{Key: "MULTI", Value: "first\nsecond", IsSecret: true},
+		{Key: "DUP", Value: "new", IsSecret: true},
+		{Key: "EMPTY", Value: "", IsSecret: true},
+	}
+	if len(resp.Entries) != len(want) {
+		t.Fatalf("expected %d entries, got %d: %+v", len(want), len(resp.Entries), resp.Entries)
+	}
+	for i, entry := range want {
+		if resp.Entries[i] != entry {
+			t.Errorf("entry %d: expected %+v, got %+v", i, entry, resp.Entries[i])
+		}
+	}
+	if resp.IgnoredLines != 0 {
+		t.Errorf("expected no ignored lines, got %d", resp.IgnoredLines)
+	}
+}
+
+func TestParseEnvHandler_PublicMarkerMakesVariable(t *testing.T) {
+	content := "# orcacd:public\nLOG_LEVEL=debug\nTOKEN=abc\n"
+
+	resp := decodeParseEnvResponse(t, parseEnvRequest(t, gin.H{"content": content}))
+
+	if len(resp.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %+v", resp.Entries)
+	}
+	if resp.Entries[0].Key != "LOG_LEVEL" || resp.Entries[0].IsSecret {
+		t.Errorf("marked key must be a variable, got %+v", resp.Entries[0])
+	}
+	if resp.Entries[1].Key != "TOKEN" || !resp.Entries[1].IsSecret {
+		t.Errorf("unmarked key must be a secret, got %+v", resp.Entries[1])
+	}
+}
+
+func TestParseEnvHandler_CountsIgnoredLines(t *testing.T) {
+	content := "A=1\nnot an assignment\nBAD KEY=2\n\n# comment\n"
+
+	resp := decodeParseEnvResponse(t, parseEnvRequest(t, gin.H{"content": content}))
+
+	if len(resp.Entries) != 1 || resp.Entries[0].Key != "A" {
+		t.Fatalf("expected only A, got %+v", resp.Entries)
+	}
+	if resp.IgnoredLines != 2 {
+		t.Errorf("expected 2 ignored lines, got %d", resp.IgnoredLines)
+	}
+}
+
+func TestParseEnvHandler_EmptyContentIsEmptyArray(t *testing.T) {
+	w := parseEnvRequest(t, gin.H{"content": ""})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"entries":[]`) {
+		t.Fatalf("expected an empty entries array, got %s", w.Body.String())
+	}
+}
+
+func TestParseEnvHandler_InvalidBody(t *testing.T) {
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/env/parse", strings.NewReader("{nope"))
+	c.Request.Header.Set("Content-Type", "application/json")
+	ParseEnvHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestParseEnvHandler_RejectsOversizedContent(t *testing.T) {
+	content := strings.Repeat("a", envrules.MaxFileBytes+1)
+
+	w := parseEnvRequest(t, gin.H{"content": content})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestParseEnvHandler_RejectsOversizedBody(t *testing.T) {
+	content := strings.Repeat("\x01", envrules.MaxFileBytes)
+	raw, err := json.Marshal(gin.H{"content": content, "padding": strings.Repeat("a", 1<<20)})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	c, w := makeAuthContext(t, "user-1")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/env/parse", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	ParseEnvHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestParseEnvHandler_ErrorsContainNoValues(t *testing.T) {
+	content := strings.Repeat("a", envrules.MaxFileBytes+1) + "=hunter2"
+
+	w := parseEnvRequest(t, gin.H{"content": content})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "hunter2") {
+		t.Fatalf("error leaked the content: %s", w.Body.String())
+	}
+}
+
 func TestListApplicationEnvHandler_KeepsWriteDeadline(t *testing.T) {
 	app := setupEnvTest(t, "v0.6.0")
 	withEnvAgent(t, app.AgentId, &messages.EnvListResult{Success: true}, nil)

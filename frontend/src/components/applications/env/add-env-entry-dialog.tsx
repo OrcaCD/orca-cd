@@ -136,7 +136,7 @@ export function AddEnvEntryDialog({
 						<p className="text-xs text-muted-foreground">{m.envAddStorageNote()}</p>
 
 						<DialogFooter>
-							<Button type="button" variant="secondary" onClick={() => handleOpenChange(false)}>
+							<Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
 								{m.cancel()}
 							</Button>
 							<Button type="submit">{m.envAddConfirm()}</Button>

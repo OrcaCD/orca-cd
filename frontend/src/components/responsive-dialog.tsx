@@ -85,17 +85,22 @@ function ResponsiveDialogTrigger(
 function ResponsiveDialogContent({
 	className,
 	showCloseButton,
+	onPaste,
 	children,
 }: {
 	className?: string;
 	showCloseButton?: boolean;
+	onPaste?: React.ClipboardEventHandler<HTMLElement>;
 	children: React.ReactNode;
 }) {
 	if (useIsDrawer()) {
 		return (
 			<DrawerPrimitive.VirtualKeyboardProvider>
 				<DrawerContent>
-					<div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+					<div
+						className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+						onPaste={onPaste}
+					>
 						{children}
 					</div>
 				</DrawerContent>
@@ -104,7 +109,7 @@ function ResponsiveDialogContent({
 	}
 
 	return (
-		<DialogContent className={className} showCloseButton={showCloseButton}>
+		<DialogContent className={className} showCloseButton={showCloseButton} onPaste={onPaste}>
 			{children}
 		</DialogContent>
 	);

@@ -82,7 +82,7 @@ export function ReplaceEnvSecretDialog({
 						</Field>
 
 						<DialogFooter>
-							<Button type="button" variant="secondary" onClick={() => handleOpenChange(false)}>
+							<Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
 								{m.cancel()}
 							</Button>
 							<Button type="submit">{m.envReplaceConfirm()}</Button>
