@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef } from "react";
 import { API_BASE, fetcher, useFetch } from "./api";
 import { connect, disconnect } from "./sse";
+import type { PermissionAction, PermissionResource, UserRole } from "./roles";
 
 const AUTH_BROADCAST_CHANNEL = "orca-auth";
 
@@ -19,12 +20,21 @@ interface AuthContextValue {
 	refreshAuth: () => Promise<void>;
 }
 
+export interface ResourceGrant {
+	// Actions allowed on every resource of the type
+	all: PermissionAction[];
+	// Actions allowed on single resources, by resource ID
+	resources: Record<string, PermissionAction[]>;
+}
+
 export interface Profile {
 	id: string;
 	name: string;
 	email: string;
 	picture?: string;
-	role: string;
+	isAdmin: boolean;
+	roles: UserRole[];
+	permissions: Record<PermissionResource, ResourceGrant>;
 	passwordChangeRequired: boolean;
 	isLocal: boolean;
 	demo?: boolean;
@@ -43,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		isLoading,
 		profile: data || null,
 		isAuthenticated: !!data,
-		isAdmin: data?.role === "admin",
+		isAdmin: data?.isAdmin ?? false,
 		passwordChangeRequired: data?.passwordChangeRequired ?? false,
 	};
 

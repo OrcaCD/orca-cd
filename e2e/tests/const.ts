@@ -4,6 +4,10 @@ export const ADMIN_NAME = "Testadmin";
 export const ADMIN_EMAIL = "testadmin@example.com";
 export const ADMIN_PASSWORD = "TestPassword123!";
 
+// IDs of the built-in roles created by the hub's migrations
+export const ADMIN_ROLE_ID = "00000000-0000-7000-8000-000000000001";
+export const USER_ROLE_ID = "00000000-0000-7000-8000-000000000002";
+
 export const DEMO_URL = "http://127.0.0.1:8091";
 export const DEMO_EMAIL = "demo@orcacd.dev";
 export const DEMO_PASSWORD = "demo-password";

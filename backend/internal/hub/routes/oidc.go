@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -153,9 +154,11 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 			user = models.User{
 				Email: oidcUser.Email,
 				Name:  oidcUser.Name,
-				Role:  models.UserRoleUser,
 			}
 			if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
+				return errOIDCAccountCreationFailed
+			}
+			if err := rbac.AssignBuiltInRole(ctx, tx, user.Id, models.RoleBuiltInUser); err != nil {
 				return errOIDCAccountCreationFailed
 			}
 		} else {

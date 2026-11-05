@@ -9,6 +9,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -33,6 +34,9 @@ func setupAuthTest(t *testing.T, users ...*models.User) {
 	}
 	if err := testDB.AutoMigrate(&models.User{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
+	}
+	if err := rbac.MigrateForTest(testDB); err != nil {
+		t.Fatalf("failed to migrate roles: %v", err)
 	}
 	for _, user := range users {
 		if err := gorm.G[models.User](testDB).Create(t.Context(), user); err != nil {
@@ -174,14 +178,13 @@ func TestRequireAuth_RejectsOutdatedTokenVersion(t *testing.T) {
 }
 
 func TestRequireAuth_SetsUserFromDatabase(t *testing.T) {
-	user := &models.User{Id: "user-123", Name: "Old Name", Email: "old@example.com", Role: models.UserRoleAdmin}
+	user := &models.User{Id: "user-123", Name: "Old Name", Email: "old@example.com"}
 	setupAuthTest(t, user)
 	token := generateToken(t, user)
 
 	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Updates(t.Context(), models.User{
 		Name:  "New Name",
 		Email: "new@example.com",
-		Role:  models.UserRoleUser,
 	}); err != nil {
 		t.Fatalf("failed to update user: %v", err)
 	}
@@ -198,7 +201,7 @@ func TestRequireAuth_SetsUserFromDatabase(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if got == nil || got.Name != "New Name" || got.Email != "new@example.com" || got.Role != models.UserRoleUser {
+	if got == nil || got.Name != "New Name" || got.Email != "new@example.com" {
 		t.Errorf("expected current user from database, got %+v", got)
 	}
 }

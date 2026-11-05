@@ -49,7 +49,7 @@ func setupTestDB(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	if err := gorm.G[models.User](testDB).Create(ctx, &models.User{Id: "user-1", Email: "alex@example.com", Name: "Alex", Role: models.UserRoleAdmin}); err != nil {
+	if err := gorm.G[models.User](testDB).Create(ctx, &models.User{Id: "user-1", Email: "alex@example.com", Name: "Alex"}); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	if err := gorm.G[models.Repository](testDB).Create(ctx, &models.Repository{
