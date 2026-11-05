@@ -66,7 +66,7 @@ async function openCardMenu(page: Page, name: string) {
 
 async function openNotifications(page: Page) {
 	await gotoApp(page, "/notifications");
-	await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Notifications", level: 1 })).toBeVisible();
 }
 
 async function selectType(dialog: Locator, label: string) {

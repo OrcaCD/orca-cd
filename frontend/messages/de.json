@@ -916,5 +916,6 @@
 	"applicationsAttentionRolledBack": "Auf {commit} zurückgerollt",
 	"applicationsRolledBack": "Zurückgerollt",
 	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
-	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit."
+	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit.",
+	"searchClear": "Suche leeren"
 }
