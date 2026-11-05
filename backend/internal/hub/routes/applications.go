@@ -129,7 +129,13 @@ type rollbackSettingsResponse struct {
 }
 
 func ListApplicationsHandler(c *gin.Context) {
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
 	applications, err := gorm.G[models.Application](db.DB).
+		Scopes(perms.Scope(models.ResourceApplication, models.ActionRead, "id")).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Order("created_at ASC").
@@ -175,6 +181,9 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
+		return
+	}
+	if !canUseApplicationSources(c, req.RepositoryId, req.AgentId) {
 		return
 	}
 
@@ -281,6 +290,9 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
+		return
+	}
+	if !canUseApplicationSources(c, req.RepositoryId, req.AgentId) {
 		return
 	}
 
@@ -400,6 +412,24 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 }
 
+// canUseApplicationSources checks that the user can read the repository and the
+// agent an application is deployed from, since it exposes their files and names.
+func canUseApplicationSources(c *gin.Context, repositoryId, agentId string) bool {
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return false
+	}
+	if !perms.Can(models.ResourceRepository, models.ActionRead, repositoryId) {
+		respondForbidden(c, "insufficient permissions for the repository")
+		return false
+	}
+	if !perms.Can(models.ResourceAgent, models.ActionRead, agentId) {
+		respondForbidden(c, "insufficient permissions for the agent")
+		return false
+	}
+	return true
+}
+
 // composeProjectChanged reports whether renaming an application changes the
 // compose project name the agent deploys it under.
 func composeProjectChanged(oldName, newName string) bool {
@@ -465,6 +495,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "application", id)
+	pruneGrants(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(sse.TopicApplications)

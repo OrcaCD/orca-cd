@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
@@ -39,7 +40,18 @@ func makeAuthContext(t *testing.T, userID string) (*gin.Context, *httptest.Respo
 	c, _ := gin.CreateTestContext(w)
 	auth.SetClaims(c, &auth.UserClaims{Subject: userID})
 	auth.SetUser(c, &models.User{Id: userID, Name: "Test User", Email: "test@example.com"})
+	rbac.Set(c, rbac.Admin())
 	return c, w
+}
+
+// newAdminRouter returns a router whose requests have all permissions.
+func newAdminRouter() *gin.Engine {
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		rbac.Set(c, rbac.Admin())
+		c.Next()
+	})
+	return router
 }
 
 func TestListRepositoriesHandler_Empty(t *testing.T) {
