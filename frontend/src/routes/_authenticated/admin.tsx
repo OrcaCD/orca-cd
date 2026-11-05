@@ -13,7 +13,7 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, Logs, Users } from "lucide-react";
+import { IdCard, Info, Logs, ShieldUser, Users } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -51,6 +51,11 @@ const adminPages = [
 		title: () => m.adminUserManagement(),
 		icon: Users,
 		path: "/admin/users",
+	},
+	{
+		title: () => m.adminRoles(),
+		icon: ShieldUser,
+		path: "/admin/roles",
 	},
 	{
 		title: () => m.adminAuditLog(),
