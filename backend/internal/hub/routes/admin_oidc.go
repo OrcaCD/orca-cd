@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -26,6 +27,8 @@ type createOIDCProviderRequest struct {
 	Enabled              *bool  `json:"enabled"`
 	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail"`
 	AutoSignup           *bool  `json:"autoSignup"`
+	// GroupsClaim defaults to "groups", an empty string disables syncing roles.
+	GroupsClaim *string `json:"groupsClaim" binding:"omitempty,max=255"`
 }
 
 type updateOIDCProviderRequest struct {
@@ -37,6 +40,7 @@ type updateOIDCProviderRequest struct {
 	Enabled              *bool   `json:"enabled"`
 	RequireVerifiedEmail *bool   `json:"requireVerifiedEmail"`
 	AutoSignup           *bool   `json:"autoSignup"`
+	GroupsClaim          *string `json:"groupsClaim" binding:"omitempty,max=255"`
 }
 
 type oidcProviderResponse struct {
@@ -48,10 +52,13 @@ type oidcProviderResponse struct {
 	Enabled              bool   `json:"enabled"`
 	RequireVerifiedEmail bool   `json:"requireVerifiedEmail"`
 	AutoSignup           bool   `json:"autoSignup"`
+	GroupsClaim          string `json:"groupsClaim"`
 	CallbackURL          string `json:"callbackUrl"`
 	CreatedAt            string `json:"createdAt"`
 	UpdatedAt            string `json:"updatedAt"`
 }
+
+const defaultGroupsClaim = "groups"
 
 // oidcDiscoveryClient is the HTTP client used to validate issuer URLs.
 // Replaced with an unrestricted client in tests.
@@ -76,6 +83,7 @@ func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 		Enabled:              p.Enabled,
 		RequireVerifiedEmail: p.RequireVerifiedEmail,
 		AutoSignup:           p.AutoSignup,
+		GroupsClaim:          p.GroupsClaim,
 		CallbackURL:          fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", OIDCAppURL, p.Id),
 		CreatedAt:            p.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:            p.UpdatedAt.Format(time.RFC3339),
@@ -146,6 +154,10 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		Enabled:              enabled,
 		RequireVerifiedEmail: requireVerifiedEmail,
 		AutoSignup:           autoSignup,
+		GroupsClaim:          defaultGroupsClaim,
+	}
+	if req.GroupsClaim != nil {
+		provider.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
 	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&provider).Error; err != nil {
@@ -195,6 +207,9 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	}
 	if req.AutoSignup != nil {
 		existing.AutoSignup = *req.AutoSignup
+	}
+	if req.GroupsClaim != nil {
+		existing.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
 	}
 	if req.ClientSecret != nil && *req.ClientSecret != "" {
 		existing.ClientSecret = crypto.EncryptedString(*req.ClientSecret)

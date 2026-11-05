@@ -256,3 +256,76 @@ func TestSetUserRoles_KeepsOtherSources(t *testing.T) {
 		t.Fatalf("expected only the oidc role to remain, got %+v", assignments)
 	}
 }
+
+func TestSyncOIDCRoles(t *testing.T) {
+	tx := openTestDB(t)
+	devs := models.Role{Name: "Devs", OIDCGroups: []string{"devs", "engineering"}}
+	ops := models.Role{Name: "Ops", OIDCGroups: []string{"ops"}}
+	for _, role := range []*models.Role{&devs, &ops} {
+		if err := gorm.G[models.Role](tx).Create(t.Context(), role); err != nil {
+			t.Fatalf("failed to create role: %v", err)
+		}
+	}
+	if _, err := gorm.G[models.Role](tx).Where("id = ?", AdminRoleID).Update(t.Context(), "oidc_groups", `["admins"]`); err != nil {
+		t.Fatalf("failed to map admin role: %v", err)
+	}
+	createUser(t, tx, "alice", UserRoleID)
+
+	rolesOf := func(source models.UserRoleSource) []string {
+		t.Helper()
+		assignments, err := gorm.G[models.UserRole](tx).Where("user_id = ? AND source = ?", "alice", source).Order("role_id").Find(t.Context())
+		if err != nil {
+			t.Fatalf("failed to load roles: %v", err)
+		}
+		ids := []string{}
+		for _, a := range assignments {
+			ids = append(ids, a.RoleId)
+		}
+		slices.Sort(ids)
+		return ids
+	}
+	sorted := func(ids ...string) []string { slices.Sort(ids); return ids }
+
+	changed, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{"engineering", "ops", "unknown"})
+	if err != nil || !changed {
+		t.Fatalf("expected roles to change, changed=%v err=%v", changed, err)
+	}
+	if got := rolesOf(models.UserRoleSourceOIDC); !slices.Equal(got, sorted(devs.Id, ops.Id)) {
+		t.Fatalf("expected devs and ops, got %v", got)
+	}
+
+	changed, err = SyncOIDCRoles(t.Context(), tx, "alice", []string{"devs", "ops"})
+	if err != nil || changed {
+		t.Fatalf("expected no change, changed=%v err=%v", changed, err)
+	}
+
+	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", nil); err != nil {
+		t.Fatalf("SyncOIDCRoles() error: %v", err)
+	}
+	if got := rolesOf(models.UserRoleSourceOIDC); len(got) != 0 {
+		t.Fatalf("expected the oidc roles to be removed, got %v", got)
+	}
+	if got := rolesOf(models.UserRoleSourceManual); !slices.Equal(got, []string{UserRoleID}) {
+		t.Fatalf("expected the manual role to stay, got %v", got)
+	}
+
+	// Alice becomes the only admin through her group and keeps the role after leaving it.
+	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{"admins"}); err != nil {
+		t.Fatalf("SyncOIDCRoles() error: %v", err)
+	}
+	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{}); err != nil {
+		t.Fatalf("SyncOIDCRoles() error: %v", err)
+	}
+	if isAdmin, err := IsAdmin(t.Context(), tx, "alice"); err != nil || !isAdmin {
+		t.Fatalf("expected the last admin to keep the admin role, err=%v", err)
+	}
+
+	// With another admin around, leaving the group removes it.
+	createUser(t, tx, "bob", AdminRoleID)
+	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{}); err != nil {
+		t.Fatalf("SyncOIDCRoles() error: %v", err)
+	}
+	if isAdmin, err := IsAdmin(t.Context(), tx, "alice"); err != nil || isAdmin {
+		t.Fatalf("expected alice to lose the admin role, err=%v", err)
+	}
+}

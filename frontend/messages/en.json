@@ -972,5 +972,13 @@
 	"permissionNoResourcesLeft": "Nothing left to add",
 	"permissionDependencyTitle": "Missing view access",
 	"permissionDependencyDescription": "Creating and editing applications needs view access to their repository and agent, but this role can't view any {resources}.",
-	"permissionDependencyFix": "Allow viewing them all"
+	"permissionDependencyFix": "Allow viewing them all",
+	"add": "Add",
+	"groupsClaim": "Groups claim",
+	"groupsClaimDescription": "The claim that lists the groups of a user. Use dots for nested claims, like realm_access.roles. Users get the roles mapped to their groups on every login. Leave empty to not sync roles.",
+	"oidcErrorRoleSyncFailed": "Your roles could not be updated from your groups. Please try again.",
+	"roleOidcGroups": "OIDC groups",
+	"roleOidcGroupsDescription": "Members of these groups at an OIDC provider get this role when they sign in, and lose it when they leave the group.",
+	"roleOidcGroupPlaceholder": "Group name, e.g. developers",
+	"roleRemoveOidcGroup": "Remove group {group}"
 }
