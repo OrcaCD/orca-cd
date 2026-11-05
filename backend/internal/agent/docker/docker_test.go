@@ -329,6 +329,7 @@ func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]s
 	waitForDaemonStateNotifierIdle(t, c)
 	// Tests must not depend on the containers of the host's Docker daemon.
 	stubProjectContainers(t, nil, nil)
+	stubServiceImageLookups(t, nil, nil)
 	return c
 }
 

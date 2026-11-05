@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -59,7 +60,15 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 		},
 	}
 
+	// A deployment that can't be recorded can't be rolled back to, but still runs.
+	if _, err := deployments.Start(ctx, app, composeFile, requestID); err != nil {
+		d.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record deployment")
+	}
+
 	if !d.hub.Send(app.AgentId, msg) {
+		if err := deployments.Discard(ctx, app.Id, requestID); err != nil {
+			d.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to discard undispatched deployment")
+		}
 		errMsg := "could not connect to agent: " + app.Agent.Name.String()
 		_ = updateApplicationStatus(ctx, app.Id, models.Application{
 			SyncStatus:    models.OutOfSync,

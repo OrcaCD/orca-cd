@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -37,6 +38,10 @@ type applicationEventResponse struct {
 	CommitHash    *string `json:"commitHash"`
 	CommitMessage *string `json:"commitMessage"`
 	ErrorMessage  *string `json:"errorMessage"`
+	// DeploymentId is set while the deployment the event deployed or rolled
+	// back to is still recorded.
+	DeploymentId     *string `json:"deploymentId"`
+	DeploymentStatus *string `json:"deploymentStatus"`
 }
 
 func ListApplicationEventsHandler(c *gin.Context) {
@@ -84,12 +89,52 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	if hasMore {
 		events = events[:limit]
 	}
+	statuses, err := deploymentStatuses(ctx, events)
+	if err != nil {
+		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
+			Msg("failed to load deployments of application events")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
 	items := make([]applicationEventResponse, 0, len(events))
 	for i := range events {
-		items = append(items, toApplicationEventResponse(&events[i]))
+		item := toApplicationEventResponse(&events[i])
+		if id := events[i].DeploymentId; id != nil {
+			if status, ok := statuses[*id]; ok {
+				item.DeploymentId = id
+				item.DeploymentStatus = &status
+			}
+		}
+		items = append(items, item)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": items, "hasMore": hasMore})
+}
+
+// deploymentStatuses returns the status of every deployment the events
+// reference that is still recorded.
+func deploymentStatuses(ctx context.Context, events []models.ApplicationEvent) (map[string]string, error) {
+	ids := make([]string, 0, len(events))
+	for i := range events {
+		if events[i].DeploymentId != nil {
+			ids = append(ids, *events[i].DeploymentId)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	deployments, err := gorm.G[models.ApplicationDeployment](db.DB).
+		Select("id", "status").
+		Where("id IN ?", ids).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]string, len(deployments))
+	for i := range deployments {
+		statuses[deployments[i].Id] = string(deployments[i].Status)
+	}
+	return statuses, nil
 }
 
 func applicationEventPagination(c *gin.Context) (int, int, bool) {

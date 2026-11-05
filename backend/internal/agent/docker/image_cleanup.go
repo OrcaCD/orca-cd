@@ -8,15 +8,12 @@ import (
 )
 
 var listApplicationImageIDs = func(ctx context.Context, cli client.APIClient, appID string) (map[string]struct{}, error) {
-	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", labelApplicationID+"="+appID),
-	})
+	containers, err := listApplicationContainers(ctx, cli, appID)
 	if err != nil {
 		return nil, err
 	}
-	ids := make(map[string]struct{}, len(result.Items))
-	for _, item := range result.Items {
+	ids := make(map[string]struct{}, len(containers))
+	for _, item := range containers {
 		if item.ImageID != "" {
 			ids[item.ImageID] = struct{}{}
 		}

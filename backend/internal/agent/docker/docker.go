@@ -11,6 +11,7 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 	"github.com/rs/zerolog"
@@ -445,4 +446,17 @@ func (c *Client) waitForDaemon() {
 			}
 		}
 	}
+}
+
+// listApplicationContainers lists every container of the application,
+// including stopped ones.
+var listApplicationContainers = func(ctx context.Context, cli client.APIClient, appID string) ([]container.Summary, error) {
+	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
+		All:     true,
+		Filters: make(client.Filters).Add("label", labelApplicationID+"="+appID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.Items, nil
 }
