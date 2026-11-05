@@ -10,6 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
@@ -65,14 +66,16 @@ type setupResponse struct {
 }
 
 type profileResponse struct {
-	Id                     string `json:"id"`
-	Name                   string `json:"name"`
-	Email                  string `json:"email"`
-	Picture                string `json:"picture,omitempty"`
-	Role                   string `json:"role"`
-	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
-	IsLocal                bool   `json:"isLocal"`
-	Demo                   bool   `json:"demo"`
+	Id                     string                                           `json:"id"`
+	Name                   string                                           `json:"name"`
+	Email                  string                                           `json:"email"`
+	Picture                string                                           `json:"picture,omitempty"`
+	IsAdmin                bool                                             `json:"isAdmin"`
+	Roles                  []userRoleResponse                               `json:"roles"`
+	Permissions            map[models.PermissionResource]rbac.ResourceGrant `json:"permissions"`
+	PasswordChangeRequired bool                                             `json:"passwordChangeRequired"`
+	IsLocal                bool                                             `json:"isLocal"`
+	Demo                   bool                                             `json:"demo"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -81,12 +84,34 @@ func ProfileHandler(c *gin.Context) {
 		return
 	}
 
+	writeProfile(c, claims, user)
+}
+
+// writeProfile responds with the profile of the current user, including what they are allowed to do.
+func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
+	perms, err := rbac.For(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), []string{user.Id})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	roles := rolesByUserId[user.Id]
+	if roles == nil {
+		roles = []userRoleResponse{}
+	}
+
 	c.JSON(http.StatusOK, profileResponse{
 		Id:                     user.Id,
 		Name:                   user.Name,
 		Email:                  user.Email,
 		Picture:                profilePictureURL(claims.Picture),
-		Role:                   string(user.Role),
+		IsAdmin:                perms.IsAdmin(),
+		Roles:                  roles,
+		Permissions:            perms.Grants(),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		IsLocal:                user.PasswordHash != nil,
 		Demo:                   DemoMode,
@@ -149,15 +174,7 @@ func UpdateOwnProfileHandler(c *gin.Context) {
 	}
 
 	auth.SetAuthCookie(c, token)
-	c.JSON(http.StatusOK, profileResponse{
-		Id:                     user.Id,
-		Name:                   user.Name,
-		Email:                  user.Email,
-		Picture:                profilePictureURL(claims.Picture),
-		Role:                   string(user.Role),
-		PasswordChangeRequired: user.PasswordChangeRequired,
-		IsLocal:                true,
-	})
+	writeProfile(c, claims, user)
 }
 
 func SetupHandler(c *gin.Context) {
@@ -238,9 +255,11 @@ func RegisterHandler(c *gin.Context) {
 			Email:        req.Email,
 			Name:         req.Name,
 			PasswordHash: &hash,
-			Role:         models.UserRoleAdmin,
 		}
-		return gorm.G[models.User](tx).Create(c.Request.Context(), &user)
+		if err := gorm.G[models.User](tx).Create(c.Request.Context(), &user); err != nil {
+			return err
+		}
+		return rbac.AssignBuiltInRole(c.Request.Context(), tx, user.Id, models.RoleBuiltInAdmin)
 	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
 
 	if txErr != nil {

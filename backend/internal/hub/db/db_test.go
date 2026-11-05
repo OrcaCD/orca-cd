@@ -75,6 +75,9 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"repository_notifications",
 		"application_events",
 		"application_deployments",
+		"roles",
+		"role_permissions",
+		"user_roles",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -145,10 +148,9 @@ func TestRunMigrations_UsersTableSchema(t *testing.T) {
 	}
 	cols := columnNames(t, sqlDB, "users")
 
-	// migration 002: base; 004: role; 006: oidc fields; 007: auth_provider dropped; 010: password_change_required
+	// migration 002: base; 006: oidc fields; 007: auth_provider dropped; 010: password_change_required
 	required := []string{
 		"id", "email", "name", "password_hash",
-		"role",
 		"oidc_subject", "oidc_issuer",
 		"password_change_required",
 		"created_at", "updated_at",
@@ -160,6 +162,91 @@ func TestRunMigrations_UsersTableSchema(t *testing.T) {
 	}
 	if cols["auth_provider"] {
 		t.Error("users table should not have column 'auth_provider' (dropped by migration 007)")
+	}
+	if cols["role"] {
+		t.Error("users table should not have column 'role' (replaced by user_roles in migration 041)")
+	}
+}
+
+func newTestMigrator(t *testing.T, sqlDB *sql.DB) *migrate.Migrate {
+	t.Helper()
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		t.Fatalf("failed to create migrate driver: %v", err)
+	}
+	src, err := iofs.New(migrationFiles, "migrations")
+	if err != nil {
+		t.Fatalf("failed to open migration source: %v", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	if err != nil {
+		t.Fatalf("failed to create migrator: %v", err)
+	}
+	return m
+}
+
+func TestRunMigrations_RolesKeepExistingAccess(t *testing.T) {
+	gormDB := openTestDB(t)
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	m := newTestMigrator(t, sqlDB)
+	if err := m.Migrate(40); err != nil {
+		t.Fatalf("failed to migrate to version 40: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO users (id, email, name, role, password_change_required)
+		VALUES ('admin', 'admin@example.com', 'Admin', 'admin', 0), ('user', 'user@example.com', 'User', 'user', 0)`); err != nil {
+		t.Fatalf("failed to seed users: %v", err)
+	}
+
+	if err := m.Migrate(41); err != nil {
+		t.Fatalf("failed to migrate to version 41: %v", err)
+	}
+
+	roleOf := func(userID string) string {
+		t.Helper()
+		var builtIn string
+		if err := sqlDB.QueryRow(`SELECT roles.built_in FROM user_roles JOIN roles ON roles.id = user_roles.role_id
+			WHERE user_roles.user_id = ? AND user_roles.source = 'manual'`, userID).Scan(&builtIn); err != nil {
+			t.Fatalf("failed to query role of %s: %v", userID, err)
+		}
+		return builtIn
+	}
+	if got := roleOf("admin"); got != "admin" {
+		t.Errorf("expected admin to get the admin role, got %q", got)
+	}
+	if got := roleOf("user"); got != "user" {
+		t.Errorf("expected user to get the user role, got %q", got)
+	}
+
+	// The user role must allow every action on every resource, like before roles existed.
+	var grants int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM role_permissions JOIN roles ON roles.id = role_permissions.role_id
+		WHERE roles.built_in = 'user' AND role_permissions.resource_id IS NULL`).Scan(&grants); err != nil {
+		t.Fatalf("failed to count grants: %v", err)
+	}
+	want := 0
+	for _, actions := range models.PermissionActions {
+		want += len(actions)
+	}
+	if grants != want {
+		t.Errorf("expected the user role to have %d grants, got %d", want, grants)
+	}
+
+	if err := m.Migrate(40); err != nil {
+		t.Fatalf("failed to migrate down to version 40: %v", err)
+	}
+	var role string
+	if err := sqlDB.QueryRow(`SELECT role FROM users WHERE id = 'admin'`).Scan(&role); err != nil {
+		t.Fatalf("failed to query role: %v", err)
+	}
+	if role != "admin" {
+		t.Errorf("expected the admin to keep the admin role after migrating down, got %q", role)
+	}
+	if gormDB.Migrator().HasTable("roles") {
+		t.Error("expected roles table to be dropped")
 	}
 }
 
@@ -832,8 +919,8 @@ func TestSeedDemoData_RefusesDatabaseWithRealUsers(t *testing.T) {
 	}
 
 	users := []models.User{
-		{Email: "first@orcacd.dev", Name: "First", Role: models.UserRoleAdmin, PasswordChangeRequired: false},
-		{Email: "second@orcacd.dev", Name: "Second", Role: models.UserRoleUser, PasswordChangeRequired: false},
+		{Email: "first@orcacd.dev", Name: "First", PasswordChangeRequired: false},
+		{Email: "second@orcacd.dev", Name: "Second", PasswordChangeRequired: false},
 	}
 	if err := gormDB.Create(&users).Error; err != nil {
 		t.Fatalf("failed to create initial users: %v", err)

@@ -1,10 +1,11 @@
 import { fetcher } from "./api";
+import type { UserRole } from "./roles";
 
 export interface UserDetail {
 	id: string;
 	name: string;
 	email: string;
-	role: string;
+	roles: UserRole[];
 	providers: string[];
 	passwordChangeRequired: boolean;
 	createdAt: string;
@@ -22,13 +23,13 @@ export interface UserDetailWithOptionalGeneratedPassword extends UserDetail {
 export interface CreateUserRequest {
 	name: string;
 	email: string;
-	role: string;
+	roleIds: string[];
 }
 
 export interface UpdateUserRequest {
 	name: string;
 	email: string;
-	role: string;
+	roleIds: string[];
 	resetPassword?: boolean;
 }
 

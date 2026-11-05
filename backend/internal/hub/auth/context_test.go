@@ -65,13 +65,13 @@ func TestSetUser_And_GetUser(t *testing.T) {
 		t.Error("expected no user before SetUser")
 	}
 
-	SetUser(c, &models.User{Id: "user-123", Role: models.UserRoleAdmin})
+	SetUser(c, &models.User{Id: "user-123"})
 
 	user, exists := GetUser(c)
 	if !exists || user == nil {
 		t.Fatal("expected user after SetUser")
 	}
-	if user.Id != "user-123" || user.Role != models.UserRoleAdmin {
+	if user.Id != "user-123" {
 		t.Errorf("unexpected user %+v", user)
 	}
 

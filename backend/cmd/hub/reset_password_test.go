@@ -50,7 +50,6 @@ func createLocalTestUser(t *testing.T, email string, password string) models.Use
 		Name:                   "Test User",
 		Email:                  email,
 		PasswordHash:           &hash,
-		Role:                   models.UserRoleUser,
 		PasswordChangeRequired: false,
 	}
 
@@ -126,7 +125,6 @@ func TestResetUserPasswordRejectsManagedUser(t *testing.T) {
 		Name:                   "OIDC User",
 		Email:                  "oidc@example.com",
 		PasswordHash:           nil,
-		Role:                   models.UserRoleUser,
 		PasswordChangeRequired: false,
 	}
 

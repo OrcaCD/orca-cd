@@ -117,7 +117,7 @@ test.describe("signed in", () => {
 		expect(body).toMatchObject({
 			email: DEMO_EMAIL,
 			name: "Demo User",
-			role: "admin",
+			isAdmin: true,
 			demo: true,
 			passwordChangeRequired: false,
 		});
@@ -271,8 +271,8 @@ test.describe("signed in", () => {
 			["POST", "/notifications", { name: "New", type: "slack" }],
 			["DELETE", "/notifications/demo-notification-slack"],
 			["POST", "/notifications/demo-notification-slack/test"],
-			["POST", "/admin/users", { name: "New", email: "new@example.com", role: "user" }],
-			["PUT", "/admin/users/demo-member", { role: "admin" }],
+			["POST", "/admin/users", { name: "New", email: "new@example.com", roleIds: [] }],
+			["PUT", "/admin/users/demo-member", { roleIds: [] }],
 			["DELETE", "/admin/users/demo-member"],
 			["POST", "/admin/oidc-providers", { name: "SSO" }],
 			["PUT", "/auth/profile", { name: "Changed" }],

@@ -139,11 +139,12 @@ test.describe("Signing in", () => {
 		expect(profile).toMatchObject({
 			name: user.name,
 			email: user.email!.toLowerCase(),
-			role: "user",
+			isAdmin: false,
+			roles: [expect.objectContaining({ builtIn: "user", sources: ["manual"] })],
 			isLocal: false,
 		});
 		expect(await findUsers(admin, user.email!.toLowerCase())).toEqual([
-			expect.objectContaining({ id: profile.id, role: "user", providers: [provider.name] }),
+			expect.objectContaining({ id: profile.id, providers: [provider.name] }),
 		]);
 	});
 

@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
@@ -17,14 +20,14 @@ import (
 )
 
 type adminUserResponse struct {
-	Id                     string   `json:"id"`
-	Name                   string   `json:"name"`
-	Email                  string   `json:"email"`
-	Role                   string   `json:"role"`
-	Providers              []string `json:"providers"`
-	PasswordChangeRequired bool     `json:"passwordChangeRequired"`
-	CreatedAt              string   `json:"createdAt"`
-	UpdatedAt              string   `json:"updatedAt"`
+	Id                     string             `json:"id"`
+	Name                   string             `json:"name"`
+	Email                  string             `json:"email"`
+	Roles                  []userRoleResponse `json:"roles"`
+	Providers              []string           `json:"providers"`
+	PasswordChangeRequired bool               `json:"passwordChangeRequired"`
+	CreatedAt              string             `json:"createdAt"`
+	UpdatedAt              string             `json:"updatedAt"`
 }
 
 type adminUserWithGeneratedPasswordResponse struct {
@@ -33,16 +36,25 @@ type adminUserWithGeneratedPasswordResponse struct {
 }
 
 type adminCreateUserRequest struct {
-	Name  string `json:"name" binding:"required,min=3,max=64"`
-	Email string `json:"email" binding:"required,email"`
-	Role  string `json:"role" binding:"required,oneof=admin user"`
+	Name    string   `json:"name" binding:"required,min=3,max=64"`
+	Email   string   `json:"email" binding:"required,email"`
+	RoleIds []string `json:"roleIds" binding:"max=100"`
 }
 
 type adminUpdateUserRequest struct {
-	Name          string `json:"name" binding:"required,min=3,max=64"`
-	Email         string `json:"email" binding:"required,email"`
-	Role          string `json:"role" binding:"required,oneof=admin user"`
-	ResetPassword bool   `json:"resetPassword"`
+	Name          string   `json:"name" binding:"required,min=3,max=64"`
+	Email         string   `json:"email" binding:"required,email"`
+	RoleIds       []string `json:"roleIds" binding:"max=100"`
+	ResetPassword bool     `json:"resetPassword"`
+}
+
+// userRoleResponse is a role of a user. Sources tells whether an admin assigned
+// it, it comes from an OIDC group, or both.
+type userRoleResponse struct {
+	Id      string                  `json:"id"`
+	Name    string                  `json:"name"`
+	BuiltIn *models.RoleBuiltIn     `json:"builtIn"`
+	Sources []models.UserRoleSource `json:"sources"`
 }
 
 type adminUserProviderRow struct {
@@ -50,12 +62,15 @@ type adminUserProviderRow struct {
 	ProviderName string `gorm:"column:provider_name"`
 }
 
-func toAdminUserResponse(user *models.User, oidcProviderNames []string) adminUserResponse {
+func toAdminUserResponse(user *models.User, oidcProviderNames []string, roles []userRoleResponse) adminUserResponse {
+	if roles == nil {
+		roles = []userRoleResponse{}
+	}
 	return adminUserResponse{
 		Id:                     user.Id,
 		Name:                   user.Name,
 		Email:                  user.Email,
-		Role:                   string(user.Role),
+		Roles:                  roles,
 		Providers:              buildAuthProviderNames(user.PasswordHash, oidcProviderNames),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		CreatedAt:              user.CreatedAt.Format(time.RFC3339),
@@ -63,9 +78,9 @@ func toAdminUserResponse(user *models.User, oidcProviderNames []string) adminUse
 	}
 }
 
-func toAdminUserWithGeneratedPasswordResponse(user *models.User, oidcProviderNames []string, generatedPassword string) adminUserWithGeneratedPasswordResponse {
+func toAdminUserWithGeneratedPasswordResponse(user *models.User, oidcProviderNames []string, roles []userRoleResponse, generatedPassword string) adminUserWithGeneratedPasswordResponse {
 	return adminUserWithGeneratedPasswordResponse{
-		adminUserResponse: toAdminUserResponse(user, oidcProviderNames),
+		adminUserResponse: toAdminUserResponse(user, oidcProviderNames, roles),
 		GeneratedPassword: generatedPassword,
 	}
 }
@@ -88,9 +103,15 @@ func AdminListUsersHandler(c *gin.Context) {
 		return
 	}
 
+	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), userIds)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	response := make([]adminUserResponse, 0, len(users))
 	for i := range users {
-		response = append(response, toAdminUserResponse(&users[i], oidcProviderNamesByUserId[users[i].Id]))
+		response = append(response, toAdminUserResponse(&users[i], oidcProviderNamesByUserId[users[i].Id], rolesByUserId[users[i].Id]))
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -109,23 +130,28 @@ func AdminGetUserHandler(c *gin.Context) {
 		return
 	}
 
-	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+	response, err := buildAdminUserResponse(c, &user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toAdminUserResponse(&user, oidcProviderNamesByUserId[user.Id]))
+	c.JSON(http.StatusOK, response)
 }
 
 func AdminCreateUserHandler(c *gin.Context) {
 	var req adminCreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, email and role are required and must be valid"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
 		return
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+
+	roleIds, ok := validateRoleIds(c, req.RoleIds)
+	if !ok {
+		return
+	}
 
 	generatedPassword, err := auth.GenerateRandomPassword()
 	if err != nil {
@@ -144,10 +170,17 @@ func AdminCreateUserHandler(c *gin.Context) {
 		Email:                  req.Email,
 		PasswordHash:           &hash,
 		PasswordChangeRequired: true,
-		Role:                   models.UserRole(req.Role),
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Create(&user).Error; err != nil {
+	ctx := c.Request.Context()
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
+			return err
+		}
+		_, err := rbac.SetUserRoles(ctx, tx, user.Id, models.UserRoleSourceManual, roleIds)
+		return err
+	})
+	if err != nil {
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
 			return
@@ -156,10 +189,16 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return
 	}
 
+	rolesByUserId, err := loadRolesByUserId(ctx, []string{user.Id})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	utils.RecordAuditLog(c, "created", "user", user.Id)
 
-	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, generatedPassword))
-	sse.PublishUpdate(sse.TopicAdminUsers)
+	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, rolesByUserId[user.Id], generatedPassword))
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles)
 }
 
 func AdminUpdateUserHandler(c *gin.Context) {
@@ -167,14 +206,21 @@ func AdminUpdateUserHandler(c *gin.Context) {
 
 	var req adminUpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, email and role are required and must be valid"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
 		return
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
+	roleIds, ok := validateRoleIds(c, req.RoleIds)
+	if !ok {
+		return
+	}
+
+	ctx := c.Request.Context()
+
 	var user models.User
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).First(&user).Error; err != nil {
+	if err := db.DB.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			return
@@ -183,21 +229,11 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	if user.PasswordHash == nil {
+	// The profile of users without a password is managed by their OIDC provider,
+	// only their roles can be changed.
+	if user.PasswordHash == nil && (user.Name != req.Name || user.Email != req.Email || req.ResetPassword) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
 		return
-	}
-
-	if user.Role == models.UserRoleAdmin && req.Role != string(models.UserRoleAdmin) {
-		count, err := countAdminUsers(c)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-		if count <= 1 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin user"})
-			return
-		}
 	}
 
 	if user.Email != req.Email {
@@ -205,7 +241,6 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	}
 	user.Name = req.Name
 	user.Email = req.Email
-	user.Role = models.UserRole(req.Role)
 
 	generatedPassword := ""
 	if req.ResetPassword {
@@ -226,7 +261,22 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		user.TokenVersion++
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Save(&user).Error; err != nil {
+	rolesChanged := false
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		return keepLastAdmin(ctx, tx, func() error {
+			var err error
+			rolesChanged, err = rbac.SetUserRoles(ctx, tx, user.Id, models.UserRoleSourceManual, roleIds)
+			return err
+		})
+	})
+	if err != nil {
+		if errors.Is(err, errLastAdmin) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin user"})
+			return
+		}
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
 			return
@@ -235,58 +285,166 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+	response, err := buildAdminUserResponse(c, &user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	utils.RecordAuditLog(c, "updated", "user", id)
+	if rolesChanged {
+		utils.RecordAuditLog(c, "roles-updated", "user", id)
+	}
 
-	c.JSON(http.StatusOK, toAdminUserWithGeneratedPasswordResponse(&user, oidcProviderNamesByUserId[user.Id], generatedPassword))
-	sse.PublishUpdate(sse.TopicAdminUsers)
+	c.JSON(http.StatusOK, adminUserWithGeneratedPasswordResponse{adminUserResponse: response, GeneratedPassword: generatedPassword})
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
 	id := c.Param("id")
+	ctx := c.Request.Context()
 
-	var user models.User
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return keepLastAdmin(ctx, tx, func() error {
+			rowsAffected, err := gorm.G[models.User](tx).Where("id = ?", id).Delete(ctx)
+			if err != nil {
+				return err
+			}
+			if rowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	if user.Role == models.UserRoleAdmin {
-		count, err := countAdminUsers(c)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-		if count <= 1 {
+		case errors.Is(err, errLastAdmin):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete the last admin user"})
-			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		}
-	}
-
-	if err := db.DB.WithContext(c.Request.Context()).Delete(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
-	sse.PublishUpdate(sse.TopicAdminUsers)
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles)
 }
 
-func countAdminUsers(c *gin.Context) (int64, error) {
-	var count int64
-	err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("role = ?", models.UserRoleAdmin).Count(&count).Error
-	return count, err
+var errLastAdmin = errors.New("at least one admin user is required")
+
+// keepLastAdmin runs a change that can remove admins and fails it when it would
+// leave the hub without anyone who can manage it.
+func keepLastAdmin(ctx context.Context, tx *gorm.DB, change func() error) error {
+	before, err := rbac.CountAdmins(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := change(); err != nil {
+		return err
+	}
+	after, err := rbac.CountAdmins(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if before > 0 && after == 0 {
+		return errLastAdmin
+	}
+	return nil
+}
+
+// validateRoleIds deduplicates the role IDs and checks that every role exists.
+func validateRoleIds(c *gin.Context, roleIds []string) ([]string, bool) {
+	unique := make([]string, 0, len(roleIds))
+	for _, id := range roleIds {
+		if !slices.Contains(unique, id) {
+			unique = append(unique, id)
+		}
+	}
+	if len(unique) == 0 {
+		return unique, true
+	}
+
+	count, err := gorm.G[models.Role](db.DB).Where("id IN ?", unique).Count(c.Request.Context(), "*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return nil, false
+	}
+	if int(count) != len(unique) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role not found"})
+		return nil, false
+	}
+	return unique, true
+}
+
+func buildAdminUserResponse(c *gin.Context, user *models.User) (adminUserResponse, error) {
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+	if err != nil {
+		return adminUserResponse{}, err
+	}
+	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), []string{user.Id})
+	if err != nil {
+		return adminUserResponse{}, err
+	}
+	return toAdminUserResponse(user, oidcProviderNamesByUserId[user.Id], rolesByUserId[user.Id]), nil
+}
+
+// loadRolesByUserId returns the roles of the users, sorted with the built-in roles first.
+func loadRolesByUserId(ctx context.Context, userIds []string) (map[string][]userRoleResponse, error) {
+	rolesByUserId := make(map[string][]userRoleResponse, len(userIds))
+	if len(userIds) == 0 {
+		return rolesByUserId, nil
+	}
+
+	assignments, err := gorm.G[models.UserRole](db.DB).
+		Preload("Role", nil).
+		Where("user_id IN ?", userIds).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range assignments {
+		a := &assignments[i]
+		if a.Role == nil {
+			continue
+		}
+		roles := rolesByUserId[a.UserId]
+		idx := slices.IndexFunc(roles, func(r userRoleResponse) bool { return r.Id == a.RoleId })
+		if idx == -1 {
+			roles = append(roles, userRoleResponse{Id: a.RoleId, Name: a.Role.Name, BuiltIn: a.Role.BuiltIn})
+			idx = len(roles) - 1
+		}
+		roles[idx].Sources = append(roles[idx].Sources, a.Source)
+		rolesByUserId[a.UserId] = roles
+	}
+
+	for userId, roles := range rolesByUserId {
+		for i := range roles {
+			slices.Sort(roles[i].Sources)
+		}
+		slices.SortFunc(roles, compareUserRoles)
+		rolesByUserId[userId] = roles
+	}
+
+	return rolesByUserId, nil
+}
+
+func compareUserRoles(a, b userRoleResponse) int {
+	if (a.BuiltIn != nil) != (b.BuiltIn != nil) {
+		if a.BuiltIn != nil {
+			return -1
+		}
+		return 1
+	}
+	if a.BuiltIn != nil && *a.BuiltIn != *b.BuiltIn {
+		// Admin before user
+		return strings.Compare(string(*a.BuiltIn), string(*b.BuiltIn))
+	}
+	return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 }
 
 func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string][]string, error) {

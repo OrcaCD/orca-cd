@@ -521,7 +521,6 @@
 	"editUserDescription": "Update user details and permissions. Optionally reset the password.",
 	"addUserDescription": "Create a new local user account. A temporary password will be generated.",
 	"fullNamePlaceholder": "Full name",
-	"role": "Role",
 	"roleAdmin": "Admin",
 	"roleUser": "User",
 	"resetPassword": "Reset password",
@@ -569,7 +568,6 @@
 	"columnApps": "Apps",
 	"columnCreatedAt": "Created At",
 	"columnEmail": "Email",
-	"columnRole": "Role",
 	"columnProviders": "Providers",
 	"columnTime": "Timestamp",
 	"columnEvent": "Event",
@@ -899,5 +897,13 @@
 	"applicationsAttentionRolledBack": "Rolled back to {commit}",
 	"applicationsRolledBack": "Rolled back",
 	"rolledBackImages": "Running {commit} with the images from before the failed update.",
-	"rolledBackAutoSyncWaits": "Auto-sync waits for a new commit."
+	"rolledBackAutoSyncWaits": "Auto-sync waits for a new commit.",
+	"roles": "Roles",
+	"columnRoles": "Roles",
+	"noRoles": "No roles",
+	"roleAdminDescription": "Full access to everything, including the admin pages.",
+	"roleUserDescription": "Given to new users. Starts with full access to all resources.",
+	"roleFromOidcGroup": "Assigned by an OIDC group",
+	"oidcGroup": "OIDC group",
+	"userRolesDescription": "The user can do everything any of their roles allows."
 }
