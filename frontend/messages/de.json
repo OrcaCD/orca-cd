@@ -917,5 +917,8 @@
 	"applicationsRolledBack": "Zurückgerollt",
 	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
 	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit.",
-	"searchClear": "Suche leeren"
+	"searchClear": "Suche leeren",
+	"applicationsFleetNotHealthy": "Nicht gesund",
+	"healthHistoryEmptyDescription": "Es wurden noch keine Statusänderungen aufgezeichnet. Der Verlauf beginnt mit der nächsten Änderung. Den Live-Status siehst du oben.",
+	"healthHistoryEmptyTitle": "Noch kein Gesundheitsverlauf"
 }

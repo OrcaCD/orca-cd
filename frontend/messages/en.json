@@ -917,5 +917,8 @@
 	"applicationsRolledBack": "Rolled back",
 	"rolledBackImages": "Running {commit} with the images from before the failed update.",
 	"rolledBackAutoSyncWaits": "Auto-sync waits for a new commit.",
-	"searchClear": "Clear search"
+	"searchClear": "Clear search",
+	"applicationsFleetNotHealthy": "Not healthy",
+	"healthHistoryEmptyDescription": "No health changes have been recorded yet. The timeline starts with the next status change. Live status is shown above.",
+	"healthHistoryEmptyTitle": "No health history yet"
 }
