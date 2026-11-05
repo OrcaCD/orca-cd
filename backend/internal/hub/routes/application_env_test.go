@@ -488,6 +488,100 @@ func TestUpdateApplicationEnvHandler_BlockedInDemoMode(t *testing.T) {
 	}
 }
 
+func TestListApplicationEnvHandler_DemoModeServesSeededEntries(t *testing.T) {
+	app := setupEnvTest(t, "")
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Update(context.Background(), "id", demoEnvWebAppID); err != nil {
+		t.Fatalf("rename application: %v", err)
+	}
+
+	// No hub and no connected agent, like in a real demo
+	w := envRequest(t, ListApplicationEnvHandler, http.MethodGet, demoEnvWebAppID, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body envListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.Files) == 0 {
+		t.Fatal("expected demo env files")
+	}
+
+	var secrets, variables int
+	for _, file := range body.Files {
+		if file.Revision == "" {
+			t.Errorf("file %q has no revision", file.Path)
+		}
+		for _, entry := range file.Entries {
+			if entry.IsSecret {
+				secrets++
+				if entry.Value != nil || !entry.IsSet {
+					t.Errorf("secret %q must be set and must not expose a value", entry.Key)
+				}
+			} else {
+				variables++
+				if entry.Value == nil {
+					t.Errorf("variable %q has no value", entry.Key)
+				}
+			}
+		}
+	}
+	if secrets == 0 || variables == 0 {
+		t.Fatalf("expected secrets and variables, got %d and %d", secrets, variables)
+	}
+}
+
+func TestDemoEnvFiles_MonitoringUsesOneFilePerService(t *testing.T) {
+	files := demoEnvFiles(demoEnvMonitoringAppID)
+
+	got := map[string][]string{}
+	for _, file := range files {
+		got[file.Path] = file.Services
+	}
+	want := map[string][]string{"prometheus.env": {"prometheus"}, "grafana.env": {"grafana"}}
+	if len(got) != len(want) {
+		t.Fatalf("expected files %v, got %v", want, got)
+	}
+	for path, services := range want {
+		if len(got[path]) != 1 || got[path][0] != services[0] {
+			t.Errorf("file %q: expected services %v, got %v", path, services, got[path])
+		}
+	}
+}
+
+func TestListApplicationEnvHandler_DemoModeWithoutSeededEntries(t *testing.T) {
+	app := setupEnvTest(t, "")
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+
+	w := envRequest(t, ListApplicationEnvHandler, http.MethodGet, app.Id, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body envListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Files == nil || len(body.Files) != 0 {
+		t.Fatalf("expected an empty file list, got %+v", body.Files)
+	}
+}
+
+func TestListApplicationEnvHandler_DemoModeUnknownApplication(t *testing.T) {
+	setupEnvTest(t, "")
+	DemoMode = true
+	t.Cleanup(func() { DemoMode = false })
+
+	w := envRequest(t, ListApplicationEnvHandler, http.MethodGet, "missing", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 type deadlineRecorder struct {
 	*httptest.ResponseRecorder
 	deadline time.Time

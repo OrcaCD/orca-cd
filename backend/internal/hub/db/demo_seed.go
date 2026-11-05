@@ -64,6 +64,7 @@ const demoWebComposeFile = `services:
     image: ghcr.io/orcacd/demo-app:1.4.2
     ports:
       - "8080:80"
+    env_file: .env
     restart: unless-stopped
 `
 
@@ -72,6 +73,7 @@ const demoWebPreviousComposeFile = `services:
     image: ghcr.io/orcacd/demo-app:1.4.1
     ports:
       - "8080:80"
+    env_file: .env
     restart: unless-stopped
 `
 
@@ -80,11 +82,13 @@ const demoMonitoringComposeFile = `services:
     image: prom/prometheus:v3.5.0
     ports:
       - "9090:9090"
+    env_file: prometheus.env
     restart: unless-stopped
   grafana:
     image: grafana/grafana:12.1.0
     ports:
       - "3000:3000"
+    env_file: grafana.env
     depends_on:
       - prometheus
     restart: unless-stopped
