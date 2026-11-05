@@ -1024,5 +1024,13 @@
 	"permissionDependencyTitle": "Ansichtszugriff fehlt",
 	"permissionDependencyDescription": "Zum Erstellen und Bearbeiten von Anwendungen ist Ansichtszugriff auf Repository und Agent nötig, diese Rolle kann aber keine {resources} ansehen.",
 	"permissionDependencyFix": "Ansehen aller erlauben",
-	"loadingRoles": "Rollen werden geladen..."
+	"loadingRoles": "Rollen werden geladen...",
+	"add": "Hinzufügen",
+	"groupsClaim": "Gruppen-Claim",
+	"groupsClaimDescription": "Der Claim mit den Gruppen eines Benutzers. Verschachtelte Claims mit Punkten trennen, z. B. realm_access.roles. Benutzer erhalten bei jeder Anmeldung die Rollen ihrer Gruppen. Leer lassen, um keine Rollen zu synchronisieren.",
+	"oidcErrorRoleSyncFailed": "Deine Rollen konnten nicht aus deinen Gruppen aktualisiert werden. Bitte versuche es erneut.",
+	"roleOidcGroups": "OIDC-Gruppen",
+	"roleOidcGroupsDescription": "Mitglieder dieser Gruppen bei einem OIDC-Anbieter erhalten diese Rolle bei der Anmeldung und verlieren sie, wenn sie die Gruppe verlassen.",
+	"roleOidcGroupPlaceholder": "Gruppenname, z. B. developers",
+	"roleRemoveOidcGroup": "Gruppe {group} entfernen"
 }

@@ -44,6 +44,7 @@ const LOGIN_ERRORS = {
 	provider_email_conflict:
 		"Another account is already linked to this identity provider with the same email. Please contact an administrator.",
 	token_generation_failed: "Sign-in failed while creating your session. Please try again.",
+	role_sync_failed: "Your roles could not be updated from your groups. Please try again.",
 } as const;
 
 // Providers are managed through the API as admin, the tests themselves sign in without a session
@@ -619,4 +620,41 @@ test.describe("Callback validation", () => {
 		const cookies = await page.context().cookies(APP_URL);
 		expect(cookies.map((cookie) => cookie.name)).not.toContain("orcacd_oidc_state");
 	});
+});
+
+test.describe("Roles from groups", () => {
+	for (const profileSource of ["id_token", "userinfo"] as ProfileSource[]) {
+		test(`syncs the roles of the groups on every login from the ${profileSource}`, async ({
+			page,
+		}) => {
+			const group = `e2e-group-${Date.now()}-${profileSource}`;
+			const created = await api(admin, "POST", "/admin/roles", {
+				name: `Group role ${group}`,
+				description: "",
+				permissions: [{ resource: "application", action: "read", resourceId: null }],
+				userIds: [],
+				oidcGroups: [group],
+			});
+			expect(created.status, JSON.stringify(created.body)).toBe(201);
+			const roleId = (created.body as { id: string }).id;
+
+			try {
+				const provider = await makeProvider({ scopes: "groups", profileSource });
+				const user = await createMockUser({ groups: ["unrelated", group] });
+
+				await signIn(page, provider, user.sub);
+				// A mapped group replaces the default role of new users
+				expect((await expectSignedIn(page)).roles).toEqual([
+					expect.objectContaining({ id: roleId, sources: ["oidc"] }),
+				]);
+
+				await signOut(page);
+				await setMockUser(user.sub, { ...user, groups: ["unrelated"] });
+				await signIn(page, provider, user.sub);
+				expect((await expectSignedIn(page)).roles).toEqual([]);
+			} finally {
+				await api(admin, "DELETE", `/admin/roles/${roleId}`);
+			}
+		});
+	}
 });

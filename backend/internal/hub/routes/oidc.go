@@ -13,6 +13,8 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -99,6 +101,19 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	if provider.GroupsClaim != "" {
+		changed, err := rbac.SyncOIDCRoles(c.Request.Context(), db.DB, user.Id, oidcUser.Groups)
+		if err != nil {
+			oidcLog.Error().Err(err).Str("userId", user.Id).Str("providerId", provider.Id).Msg("failed to sync roles from OIDC groups")
+			c.Redirect(http.StatusFound, "/login?error=role_sync_failed")
+			return
+		}
+		if changed {
+			utils.RecordAuditLog(c, "roles-synced", "user", user.Id)
+			sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
+		}
+	}
+
 	token, err := auth.GenerateUserTokenWithPicture(user, oidcUser.Picture)
 	if err != nil {
 		c.Redirect(http.StatusFound, "/login?error=token_generation_failed")
@@ -158,7 +173,7 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 			if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
 				return errOIDCAccountCreationFailed
 			}
-			if err := rbac.AssignBuiltInRole(ctx, tx, user.Id, models.RoleBuiltInUser); err != nil {
+			if err := assignDefaultRole(ctx, tx, provider, oidcUser, user.Id); err != nil {
 				return errOIDCAccountCreationFailed
 			}
 		} else {
@@ -219,6 +234,21 @@ func resolveOIDCUser(ctx context.Context, provider *models.OIDCProvider, oidcUse
 	default:
 		return nil, "internal_error"
 	}
+}
+
+// assignDefaultRole gives new users the default role, unless their groups already
+// map to a role. They get those roles when their groups are synced.
+func assignDefaultRole(ctx context.Context, tx *gorm.DB, provider *models.OIDCProvider, oidcUser *oidc.OIDCUser, userID string) error {
+	if provider.GroupsClaim != "" {
+		roles, err := rbac.OIDCRoles(ctx, tx, oidcUser.Groups)
+		if err != nil {
+			return err
+		}
+		if len(roles) > 0 {
+			return nil
+		}
+	}
+	return rbac.AssignBuiltInRole(ctx, tx, userID, models.RoleBuiltInUser)
 }
 
 func hasProviderEmailConflict(tx *gorm.DB, providerId string, email string, currentUserId string) (bool, error) {

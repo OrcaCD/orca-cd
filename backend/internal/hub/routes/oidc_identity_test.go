@@ -1,11 +1,13 @@
 package routes
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"gorm.io/gorm"
 )
 
@@ -264,5 +266,48 @@ func TestResolveOIDCUser_LinkedLoginConfirmsSyncedEmail(t *testing.T) {
 	}
 	if reloaded.Email != claims.Email || reloaded.EmailUnconfirmed {
 		t.Fatalf("expected the provider email to be synced and confirmed, got %q (unconfirmed=%v)", reloaded.Email, reloaded.EmailUnconfirmed)
+	}
+}
+
+func TestResolveOIDCUser_DefaultRoleUnlessGroupsMapToARole(t *testing.T) {
+	setupTestDB(t)
+
+	devs := models.Role{Name: "Devs", OIDCGroups: []string{"devs"}}
+	if err := gorm.G[models.Role](db.DB).Create(t.Context(), &devs); err != nil {
+		t.Fatalf("failed to create role: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		groupsClaim string
+		groups      []string
+		wantDefault bool
+	}{
+		{"no mapped group", "groups", []string{"other"}, true},
+		{"mapped group", "groups", []string{"devs"}, false},
+		{"sync disabled", "", []string{"devs"}, true},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := models.OIDCProvider{Id: "provider-1", AutoSignup: true, GroupsClaim: tt.groupsClaim}
+			email := fmt.Sprintf("user-%d@example.com", i)
+			user, redirectError := resolveOIDCUser(t.Context(), &provider, &oidc.OIDCUser{
+				Subject: "subject-" + tt.name,
+				Email:   email,
+				Name:    "User",
+				Groups:  tt.groups,
+			})
+			if redirectError != "" {
+				t.Fatalf("expected no redirect error, got %q", redirectError)
+			}
+
+			count, err := gorm.G[models.UserRole](db.DB).Where("user_id = ? AND role_id = ?", user.Id, rbac.UserRoleID).Count(t.Context(), "*")
+			if err != nil {
+				t.Fatalf("failed to count roles: %v", err)
+			}
+			if (count == 1) != tt.wantDefault {
+				t.Fatalf("expected default role=%v, got %d assignments", tt.wantDefault, count)
+			}
+		})
 	}
 }

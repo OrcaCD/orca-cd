@@ -416,6 +416,9 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	if body.Scopes != "groups" {
 		t.Errorf("expected scopes %q, got %q", "groups", body.Scopes)
 	}
+	if body.GroupsClaim != "groups" {
+		t.Errorf("expected the default groups claim, got %q", body.GroupsClaim)
+	}
 	if !body.Enabled {
 		t.Error("expected enabled=true")
 	}

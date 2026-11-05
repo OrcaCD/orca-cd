@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
 import { z } from "zod";
-import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +31,7 @@ const providerSchema = z.object({
 	clientId: z.string().trim().min(1, m.validationClientIdRequired()),
 	clientSecret: z.string().trim(),
 	scopes: z.string().trim(),
+	groupsClaim: z.string().trim().max(255),
 	enabled: z.boolean(),
 	requireVerifiedEmail: z.boolean(),
 	autoSignup: z.boolean(),
@@ -54,6 +55,7 @@ export default function UpsertOIDCProviderDialog({
 			clientId: provider?.clientId ?? "",
 			clientSecret: "",
 			scopes: provider?.scopes ?? "",
+			groupsClaim: provider?.groupsClaim ?? "groups",
 			enabled: provider?.enabled ?? true,
 			requireVerifiedEmail: provider?.requireVerifiedEmail ?? true,
 			autoSignup: provider?.autoSignup ?? true,
@@ -76,6 +78,7 @@ export default function UpsertOIDCProviderDialog({
 						clientId: value.clientId,
 						clientSecret: value.clientSecret || undefined,
 						scopes: value.scopes,
+						groupsClaim: value.groupsClaim,
 						enabled: value.enabled,
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
@@ -88,6 +91,7 @@ export default function UpsertOIDCProviderDialog({
 						clientId: value.clientId,
 						clientSecret: value.clientSecret!,
 						scopes: value.scopes,
+						groupsClaim: value.groupsClaim,
 						enabled: value.enabled,
 						requireVerifiedEmail: value.requireVerifiedEmail,
 						autoSignup: value.autoSignup,
@@ -244,6 +248,25 @@ export default function UpsertOIDCProviderDialog({
 										onChange={(e) => field.handleChange(e.target.value)}
 										placeholder={m.additionalScopesPlaceholder()}
 									/>
+								</Field>
+							)}
+						/>
+						<form.Field
+							name="groupsClaim"
+							children={(field) => (
+								<Field>
+									<Label htmlFor={field.name}>
+										{m.groupsClaim()}{" "}
+										<span className="text-muted-foreground font-normal">{m.optional()}</span>
+									</Label>
+									<Input
+										id={field.name}
+										value={field.state.value}
+										onBlur={field.handleBlur}
+										onChange={(e) => field.handleChange(e.target.value)}
+										placeholder="groups"
+									/>
+									<FieldDescription>{m.groupsClaimDescription()}</FieldDescription>
 								</Field>
 							)}
 						/>

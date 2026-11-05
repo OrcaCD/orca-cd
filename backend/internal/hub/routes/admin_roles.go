@@ -27,6 +27,8 @@ type upsertRoleRequest struct {
 	Name        string                  `json:"name" binding:"required,min=1,max=64"`
 	Description string                  `json:"description" binding:"max=256"`
 	Permissions []rolePermissionRequest `json:"permissions" binding:"max=5000,dive"`
+	// OIDCGroups give the role to users in any of these groups at their OIDC provider.
+	OIDCGroups []string `json:"oidcGroups" binding:"max=100,dive,max=255"`
 	// UserIds are the members an admin assigned by hand. Members from OIDC groups are not affected.
 	UserIds []string `json:"userIds" binding:"max=10000"`
 }
@@ -49,6 +51,7 @@ type roleResponse struct {
 	Name        string                   `json:"name"`
 	Description string                   `json:"description"`
 	BuiltIn     *models.RoleBuiltIn      `json:"builtIn"`
+	OIDCGroups  []string                 `json:"oidcGroups"`
 	Permissions []rolePermissionResponse `json:"permissions"`
 	Members     []roleMemberResponse     `json:"members"`
 	CreatedAt   string                   `json:"createdAt"`
@@ -105,6 +108,7 @@ func AdminCreateRoleHandler(c *gin.Context) {
 	role := models.Role{
 		Name:        req.Name,
 		Description: req.Description,
+		OIDCGroups:  req.OIDCGroups,
 	}
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -161,12 +165,14 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 
 		// The names of the built-in roles are translated by clients, and the
 		// permissions of the admin role are implicit.
+		columns := []any{"updated_at"}
 		if role.BuiltIn == nil {
-			if _, err := gorm.G[models.Role](tx).Where("id = ?", id).
-				Select("name", "description", "updated_at").
-				Updates(ctx, models.Role{Name: req.Name, Description: req.Description, UpdatedAt: time.Now()}); err != nil {
-				return err
-			}
+			columns = append(columns, "name", "description")
+		}
+		if _, err := gorm.G[models.Role](tx).Where("id = ?", id).
+			Select("oidc_groups", columns...).
+			Updates(ctx, models.Role{Name: req.Name, Description: req.Description, OIDCGroups: req.OIDCGroups, UpdatedAt: time.Now()}); err != nil {
+			return err
 		}
 		if !role.IsBuiltIn(models.RoleBuiltInAdmin) {
 			if err := replaceRolePermissions(ctx, tx, id, permissions); err != nil {
@@ -271,6 +277,7 @@ func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
+	req.OIDCGroups = normalizeOIDCGroups(req.OIDCGroups)
 	if req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name is required and must be at most 64 characters"})
 		return req, nil, false
@@ -284,6 +291,14 @@ func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission
 	req.UserIds = uniqueIds(req.UserIds)
 
 	return req, permissions, true
+}
+
+func normalizeOIDCGroups(groups []string) []string {
+	trimmed := make([]string, 0, len(groups))
+	for _, group := range groups {
+		trimmed = append(trimmed, strings.TrimSpace(group))
+	}
+	return uniqueIds(trimmed)
 }
 
 func normalizeRolePermissions(items []rolePermissionRequest) ([]models.RolePermission, error) {
@@ -506,12 +521,17 @@ func toRoleResponse(role *models.Role, members []roleMemberResponse) roleRespons
 	if members == nil {
 		members = []roleMemberResponse{}
 	}
+	oidcGroups := role.OIDCGroups
+	if oidcGroups == nil {
+		oidcGroups = []string{}
+	}
 
 	return roleResponse{
 		Id:          role.Id,
 		Name:        role.Name,
 		Description: role.Description,
 		BuiltIn:     role.BuiltIn,
+		OIDCGroups:  oidcGroups,
 		Permissions: permissions,
 		Members:     members,
 		CreatedAt:   role.CreatedAt.Format(time.RFC3339),

@@ -285,3 +285,28 @@ func TestAdminUpdateRoleHandler_KeepsGrantsOnDeletedResources(t *testing.T) {
 		t.Fatalf("expected a new grant on a missing agent to fail, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestAdminRoles_OIDCGroups(t *testing.T) {
+	setupRolesTestDB(t)
+
+	w := serveRoleRequest(t, http.MethodPost, "/api/v1/admin/roles", map[string]any{
+		"name":       "Devs",
+		"oidcGroups": []string{" devs ", "devs", "", "engineering"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	role := decodeRole(t, w)
+	if !slices.Equal(role.OIDCGroups, []string{"devs", "engineering"}) {
+		t.Fatalf("expected normalized groups, got %v", role.OIDCGroups)
+	}
+
+	// Built-in roles can be mapped to groups too.
+	w = serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+rbac.AdminRoleID, map[string]any{"name": "Admin", "oidcGroups": []string{"admins"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := decodeRole(t, w).OIDCGroups; !slices.Equal(got, []string{"admins"}) {
+		t.Fatalf("expected the admin role to be mapped, got %v", got)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,71 @@ type OIDCUser struct {
 	Name    string
 	Picture string
 	Issuer  string
+	// Groups the user is a member of. Only read when the provider has a groups claim.
+	Groups []string
+}
+
+const maxGroups = 1000
+
+// groupsFromClaims reads the groups at the claim path, where dots separate nested
+// claims like Keycloak's "realm_access.roles". A single string counts as one group.
+// found is false when the claim does not exist.
+func groupsFromClaims(claims map[string]any, path string) (groups []string, found bool) {
+	var value any = claims
+	for part := range strings.SplitSeq(path, ".") {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		if value, ok = object[part]; !ok {
+			return nil, false
+		}
+	}
+
+	switch v := value.(type) {
+	case string:
+		groups = []string{v}
+	case []any:
+		for _, item := range v {
+			if group, ok := item.(string); ok {
+				groups = append(groups, group)
+			}
+		}
+	}
+
+	unique := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group != "" && !slices.Contains(unique, group) && len(unique) < maxGroups {
+			unique = append(unique, group)
+		}
+	}
+	return unique, true
+}
+
+// readGroups reads the groups from the id_token and falls back to the userinfo
+// endpoint, which some providers use for large claims. A missing claim means no groups.
+func readGroups(ctx context.Context, provider *gooidc.Provider, token *oauth2.Token, idToken *gooidc.IDToken, path string) []string {
+	var claims map[string]any
+	if err := idToken.Claims(&claims); err == nil {
+		if groups, found := groupsFromClaims(claims, path); found {
+			return groups
+		}
+	}
+
+	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+	if err != nil || userInfo.Subject != idToken.Subject {
+		return []string{}
+	}
+	var info map[string]any
+	if err := userInfo.Claims(&info); err != nil {
+		return []string{}
+	}
+	groups, _ := groupsFromClaims(info, path)
+	if groups == nil {
+		return []string{}
+	}
+	return groups
 }
 
 func normalizePictureURL(raw string) string {
@@ -282,12 +348,18 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 
 	picture := normalizePictureURL(claims.Picture)
 
+	var groups []string
+	if provider.GroupsClaim != "" {
+		groups = readGroups(ctx, oidcProvider, oauth2Token, idToken, provider.GroupsClaim)
+	}
+
 	return &OIDCUser{
 		Subject: idToken.Subject,
 		Email:   email,
 		Name:    name,
 		Picture: picture,
 		Issuer:  idToken.Issuer,
+		Groups:  groups,
 	}, nil
 }
 
