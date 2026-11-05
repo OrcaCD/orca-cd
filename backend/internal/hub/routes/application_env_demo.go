@@ -37,16 +37,26 @@ func demoEnvFiles(applicationID string) []envFileResponse {
 			},
 		}}
 	case demoEnvMonitoringAppID:
-		return []envFileResponse{{
-			Path:     "monitoring/.env",
-			Services: []string{"prometheus", "grafana"},
-			Revision: "demo-revision-monitoring",
-			Entries: []envEntryResponse{
-				variable("GF_SERVER_ROOT_URL", "https://grafana.example.com"),
-				variable("PROMETHEUS_RETENTION", "15d"),
-				secret("GF_SECURITY_ADMIN_PASSWORD"),
+		return []envFileResponse{
+			{
+				Path:     "prometheus.env",
+				Services: []string{"prometheus"},
+				Revision: "demo-revision-prometheus",
+				Entries: []envEntryResponse{
+					variable("PROMETHEUS_RETENTION", "15d"),
+					secret("PROMETHEUS_REMOTE_WRITE_TOKEN"),
+				},
 			},
-		}}
+			{
+				Path:     "grafana.env",
+				Services: []string{"grafana"},
+				Revision: "demo-revision-grafana",
+				Entries: []envEntryResponse{
+					variable("GF_SERVER_ROOT_URL", "https://grafana.example.com"),
+					secret("GF_SECURITY_ADMIN_PASSWORD"),
+				},
+			},
+		}
 	default:
 		return []envFileResponse{}
 	}

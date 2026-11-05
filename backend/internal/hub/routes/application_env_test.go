@@ -535,6 +535,24 @@ func TestListApplicationEnvHandler_DemoModeServesSeededEntries(t *testing.T) {
 	}
 }
 
+func TestDemoEnvFiles_MonitoringUsesOneFilePerService(t *testing.T) {
+	files := demoEnvFiles(demoEnvMonitoringAppID)
+
+	got := map[string][]string{}
+	for _, file := range files {
+		got[file.Path] = file.Services
+	}
+	want := map[string][]string{"prometheus.env": {"prometheus"}, "grafana.env": {"grafana"}}
+	if len(got) != len(want) {
+		t.Fatalf("expected files %v, got %v", want, got)
+	}
+	for path, services := range want {
+		if len(got[path]) != 1 || got[path][0] != services[0] {
+			t.Errorf("file %q: expected services %v, got %v", path, services, got[path])
+		}
+	}
+}
+
 func TestListApplicationEnvHandler_DemoModeWithoutSeededEntries(t *testing.T) {
 	app := setupEnvTest(t, "")
 	DemoMode = true
