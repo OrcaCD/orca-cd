@@ -64,9 +64,11 @@ const (
 
 type Role struct {
 	Base
-	BuiltIn     *RoleBuiltIn     `gorm:"column:built_in;type:text"`
-	Name        string           `gorm:"type:text;not null"`
-	Description string           `gorm:"type:text;not null;default:''"`
+	BuiltIn     *RoleBuiltIn `gorm:"column:built_in;type:text"`
+	Name        string       `gorm:"type:text;not null"`
+	Description string       `gorm:"type:text;not null;default:''"`
+	// OIDCGroups gives the role to users who are in any of these groups at their OIDC provider.
+	OIDCGroups  []string         `gorm:"column:oidc_groups;type:text;not null;default:'[]';serializer:json"`
 	Permissions []RolePermission `gorm:"foreignKey:RoleId"`
 }
 

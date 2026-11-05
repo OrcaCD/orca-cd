@@ -38,6 +38,7 @@ function getOidcErrorMessages(): Record<string, string> {
 		account_update_failed: m.oidcErrorAccountUpdateFailed(),
 		provider_email_conflict: m.oidcErrorProviderEmailConflict(),
 		token_generation_failed: m.oidcErrorTokenGenerationFailed(),
+		role_sync_failed: m.oidcErrorRoleSyncFailed(),
 	};
 }
 
