@@ -81,7 +81,7 @@ export function OnboardingChecklist({ agents }: { agents: Agent[] | undefined })
 									className={cn(
 										"size-7 rounded-full border text-xs font-medium",
 										step.done
-											? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+											? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
 											: isNext
 												? "border-primary text-primary"
 												: "text-muted-foreground",
