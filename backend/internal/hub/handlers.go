@@ -5,6 +5,7 @@ import (
 
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
@@ -65,47 +66,61 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/auth/logout", routes.LogoutHandler)
 			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
 
+			// List endpoints filter by what the user can read, the others check the
+			// permission on the resource of the :id parameter.
+			app := func(action models.PermissionAction) gin.HandlerFunc {
+				return middleware.RequirePermission(models.ResourceApplication, action)
+			}
 			protected.GET("/applications", routes.ListApplicationsHandler)
 			protected.GET("/activity", routes.ApplicationActivityHandler)
-			protected.GET("/applications/:id", routes.GetApplicationHandler)
-			protected.GET("/applications/:id/events", routes.ListApplicationEventsHandler)
-			protected.GET("/applications/:id/health", routes.GetApplicationHealthHandler)
-			protected.GET("/applications/:id/env", routes.ListApplicationEnvHandler)
-			protected.PUT("/applications/:id/env", routes.UpdateApplicationEnvHandler)
-			protected.POST("/applications", routes.CreateApplicationHandler)
-			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
-			protected.POST("/applications/:id/pull-images", routes.PullApplicationImagesHandler)
-			protected.POST("/applications/:id/deployments/:deploymentId/rollback", routes.RollbackApplicationHandler)
-			protected.POST("/applications/:id/resume-auto-sync", routes.ResumeApplicationAutoSyncHandler)
-			protected.PUT("/applications/:id/rollback", routes.UpdateRollbackSettingsHandler)
-			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
-			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
-			protected.POST("/applications/:id/image-webhook", routes.GenerateImagePullWebhookHandler)
-			protected.DELETE("/applications/:id/image-webhook", routes.RevokeImagePullWebhookHandler)
+			protected.GET("/applications/:id", app(models.ActionRead), routes.GetApplicationHandler)
+			protected.GET("/applications/:id/events", app(models.ActionRead), routes.ListApplicationEventsHandler)
+			protected.GET("/applications/:id/health", app(models.ActionRead), routes.GetApplicationHealthHandler)
+			protected.GET("/applications/:id/env", app(models.ActionRead), routes.ListApplicationEnvHandler)
+			protected.PUT("/applications/:id/env", app(models.ActionUpdate), routes.UpdateApplicationEnvHandler)
+			protected.POST("/applications", app(models.ActionCreate), routes.CreateApplicationHandler)
+			protected.POST("/applications/:id/deploy", app(models.ActionDeploy), routes.DeployApplicationHandler)
+			protected.POST("/applications/:id/pull-images", app(models.ActionPullImages), routes.PullApplicationImagesHandler)
+			protected.POST("/applications/:id/deployments/:deploymentId/rollback", app(models.ActionRollback), routes.RollbackApplicationHandler)
+			protected.POST("/applications/:id/resume-auto-sync", app(models.ActionRollback), routes.ResumeApplicationAutoSyncHandler)
+			protected.PUT("/applications/:id/rollback", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
+			protected.PUT("/applications/:id", app(models.ActionUpdate), routes.UpdateApplicationHandler)
+			protected.DELETE("/applications/:id", app(models.ActionDelete), routes.DeleteApplicationHandler)
+			protected.POST("/applications/:id/image-webhook", app(models.ActionUpdate), routes.GenerateImagePullWebhookHandler)
+			protected.DELETE("/applications/:id/image-webhook", app(models.ActionUpdate), routes.RevokeImagePullWebhookHandler)
 
+			repo := func(action models.PermissionAction) gin.HandlerFunc {
+				return middleware.RequirePermission(models.ResourceRepository, action)
+			}
 			protected.GET("/repositories", routes.ListRepositoriesHandler)
-			protected.GET("/repositories/:id", routes.GetRepositoryHandler)
-			protected.POST("/repositories", routes.CreateRepositoryHandler)
-			protected.DELETE("/repositories/:id", routes.DeleteRepositoryHandler)
+			protected.GET("/repositories/:id", repo(models.ActionRead), routes.GetRepositoryHandler)
+			protected.POST("/repositories", repo(models.ActionCreate), routes.CreateRepositoryHandler)
+			protected.DELETE("/repositories/:id", repo(models.ActionDelete), routes.DeleteRepositoryHandler)
 			protected.POST("/repositories/test-connection", routes.TestConnectionHandler)
-			protected.PUT("/repositories/:id", routes.UpdateRepositoryHandler)
-			protected.GET("/repositories/:id/branches", routes.ListRepositoryBranchesHandler)
-			protected.GET("/repositories/:id/tree", routes.ListRepositoryTreeHandler)
-			protected.POST("/repositories/:id/sync", routes.SyncRepositoryHandler)
+			protected.PUT("/repositories/:id", repo(models.ActionUpdate), routes.UpdateRepositoryHandler)
+			protected.GET("/repositories/:id/branches", repo(models.ActionRead), routes.ListRepositoryBranchesHandler)
+			protected.GET("/repositories/:id/tree", repo(models.ActionRead), routes.ListRepositoryTreeHandler)
+			protected.POST("/repositories/:id/sync", repo(models.ActionSync), routes.SyncRepositoryHandler)
 
+			agent := func(action models.PermissionAction) gin.HandlerFunc {
+				return middleware.RequirePermission(models.ResourceAgent, action)
+			}
 			protected.GET("/agents", routes.ListAgentsHandler)
-			protected.POST("/agents", routes.CreateAgentHandler)
-			protected.GET("/agents/:id", routes.GetAgentHandler)
-			protected.PUT("/agents/:id", routes.UpdateAgentHandler)
-			protected.POST("/agents/:id/rotate-token", routes.RotateAgentTokenHandler)
-			protected.DELETE("/agents/:id", routes.DeleteAgentHandler)
+			protected.POST("/agents", agent(models.ActionCreate), routes.CreateAgentHandler)
+			protected.GET("/agents/:id", agent(models.ActionRead), routes.GetAgentHandler)
+			protected.PUT("/agents/:id", agent(models.ActionUpdate), routes.UpdateAgentHandler)
+			protected.POST("/agents/:id/rotate-token", agent(models.ActionUpdate), routes.RotateAgentTokenHandler)
+			protected.DELETE("/agents/:id", agent(models.ActionDelete), routes.DeleteAgentHandler)
 
-			protected.POST("/notifications", routes.CreateNotificationHandler)
+			notification := func(action models.PermissionAction) gin.HandlerFunc {
+				return middleware.RequirePermission(models.ResourceNotification, action)
+			}
+			protected.POST("/notifications", notification(models.ActionCreate), routes.CreateNotificationHandler)
 			protected.GET("/notifications", routes.ListNotificationsHandler)
-			protected.PUT("/notifications/:id", routes.UpdateNotificationHandler)
-			protected.PUT("/notifications/:id/enabled", routes.SetNotificationEnabledHandler)
-			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
-			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
+			protected.PUT("/notifications/:id", notification(models.ActionUpdate), routes.UpdateNotificationHandler)
+			protected.PUT("/notifications/:id/enabled", notification(models.ActionUpdate), routes.SetNotificationEnabledHandler)
+			protected.DELETE("/notifications/:id", notification(models.ActionDelete), routes.DeleteNotificationHandler)
+			protected.POST("/notifications/:id/test", notification(models.ActionUpdate), routes.TestNotificationHandler)
 
 			// The demo data never changes, so there is nothing to stream, and the
 			// per-user connection cap would let one visitor block the others

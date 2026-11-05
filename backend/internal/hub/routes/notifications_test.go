@@ -17,7 +17,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -729,7 +728,7 @@ func TestUpdateNotificationHandler_Success(t *testing.T) {
 		"repositoryIds":   []string{repo.Id},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -810,7 +809,7 @@ func TestUpdateNotificationHandler_AllApplicationsClearsAssociations(t *testing.
 		"applicationIds":  []string{app.Id},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -847,7 +846,7 @@ func TestUpdateNotificationHandler_UnknownApplication(t *testing.T) {
 		"applicationIds":  []string{"missing-app"},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -872,7 +871,7 @@ func TestUpdateNotificationHandler_NotFound(t *testing.T) {
 		"applicationIds":  []string{},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -894,7 +893,7 @@ func TestUpdateNotificationHandler_InvalidRequest(t *testing.T) {
 		"applicationIds": []string{},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -934,7 +933,7 @@ func TestUpdateNotificationHandler_RejectsInvalidEvents(t *testing.T) {
 			}
 			reqBody, _ := json.Marshal(payload)
 
-			router := gin.New()
+			router := newAdminRouter()
 			router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 			w := httptest.NewRecorder()
@@ -953,7 +952,7 @@ func setNotificationEnabled(t *testing.T, id string, body any) *httptest.Respons
 	t.Helper()
 
 	reqBody, _ := json.Marshal(body)
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id/enabled", SetNotificationEnabledHandler)
 
 	w := httptest.NewRecorder()
@@ -1030,7 +1029,7 @@ func TestDeleteNotificationHandler_Success(t *testing.T) {
 
 	notification := createNotificationRecord(t, nil)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.DELETE("/api/v1/notifications/:id", DeleteNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1050,7 +1049,7 @@ func TestDeleteNotificationHandler_Success(t *testing.T) {
 func TestDeleteNotificationHandler_NotFound(t *testing.T) {
 	setupTestDBWithNotifications(t)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.DELETE("/api/v1/notifications/:id", DeleteNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1090,7 +1089,7 @@ func TestTestNotificationHandler_Success(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{"message": "ping"})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1141,7 +1140,7 @@ func TestTestNotificationHandler_BindsChunkedJSONBody(t *testing.T) {
 		return nil
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1170,7 +1169,7 @@ func TestTestNotificationHandler_NotFound(t *testing.T) {
 		return nil
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1196,7 +1195,7 @@ func TestTestNotificationHandler_InvalidRequest(t *testing.T) {
 		return nil
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1222,7 +1221,7 @@ func TestTestNotificationHandler_DispatchFailure(t *testing.T) {
 		return fmt.Errorf("%w: discord: unexpected response status code: 401 Unauthorized", hubnotifications.ErrNotificationDispatch)
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1300,7 +1299,7 @@ func TestTestNotificationHandler_InvalidConfigFailure(t *testing.T) {
 		return fmt.Errorf("%w: invalid discord payload", hubnotifications.ErrInvalidNotificationConfig)
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1333,7 +1332,7 @@ func TestTestNotificationHandler_UnexpectedFailure(t *testing.T) {
 		return errors.New("boom")
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1373,7 +1372,7 @@ func TestTestNotificationHandler_StatusUpdateNotFound(t *testing.T) {
 		return nil
 	}
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/notifications/:id/test", TestNotificationHandler)
 
 	w := httptest.NewRecorder()
@@ -1610,7 +1609,7 @@ func TestNotificationHandlers_RejectUnknownAgentsAndRepositories(t *testing.T) {
 				tt.field:          []string{"missing"},
 			})
 
-			router := gin.New()
+			router := newAdminRouter()
 			router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 			w := httptest.NewRecorder()
@@ -1641,7 +1640,7 @@ func TestUpdateNotificationHandler_RequiresScopeFlags(t *testing.T) {
 			delete(payload, missing)
 			reqBody, _ := json.Marshal(payload)
 
-			router := gin.New()
+			router := newAdminRouter()
 			router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 			w := httptest.NewRecorder()
@@ -1678,7 +1677,7 @@ func TestUpdateNotificationHandler_ClearsAgentAndRepositoryAssignments(t *testin
 		"events":          []string{string(models.NotificationEventAgentOffline)},
 	})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
 
 	w := httptest.NewRecorder()
