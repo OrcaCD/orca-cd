@@ -236,3 +236,34 @@ drain:
 		t.Error("expected at least some events to be received")
 	}
 }
+
+func TestEventFilter(t *testing.T) {
+	b := NewBroker(newTestLogger())
+	connID, ch := b.Subscribe()
+	defer b.Unsubscribe(connID)
+
+	b.PublishUpdate(TopicApplications.For("a"), TopicApplications.For("b"), TopicAdminUsers)
+	event := <-ch
+
+	if !event.Has(TopicAdminUsers) || event.Has(TopicAgents) {
+		t.Fatal("unexpected Has result")
+	}
+
+	filtered, ok := event.Filter(func(topic Topic) bool {
+		_, id := topic.Resource()
+		return id == "b"
+	})
+	if !ok || !slices.Equal(filtered.URLs, []string{TopicApplications.URL()}) {
+		t.Fatalf("expected only the applications URL, got %v (ok=%v)", filtered.URLs, ok)
+	}
+
+	if _, ok := event.Filter(func(Topic) bool { return false }); ok {
+		t.Fatal("expected an event without visible topics to be dropped")
+	}
+
+	// Events published without topics are sent as they are.
+	raw := Event{Type: EventTypeUpdate, URLs: []string{"/x"}}
+	if got, ok := raw.Filter(func(Topic) bool { return false }); !ok || !slices.Equal(got.URLs, raw.URLs) {
+		t.Fatalf("expected raw events to pass, got %v", got.URLs)
+	}
+}

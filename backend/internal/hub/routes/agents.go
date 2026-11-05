@@ -252,7 +252,7 @@ func CreateAgentHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func UpdateAgentHandler(c *gin.Context) {
@@ -299,7 +299,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(c.Param("id")))
 }
 
 func RotateAgentTokenHandler(c *gin.Context) {
@@ -354,7 +354,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func DeleteAgentHandler(c *gin.Context) {

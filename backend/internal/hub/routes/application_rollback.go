@@ -71,7 +71,7 @@ func RollbackApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "rolled-back", "application", id)
 	c.JSON(http.StatusAccepted, gin.H{"message": "rollback started"})
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(c.Param("id")))
 }
 
 // ResumeApplicationAutoSyncHandler resumes automatic syncs of a rolled back
@@ -104,7 +104,7 @@ func ResumeApplicationAutoSyncHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "resumed-auto-sync", "application", id)
 	c.JSON(http.StatusOK, gin.H{"message": "auto-sync resumed"})
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(c.Param("id")))
 }
 
 const (
@@ -169,7 +169,7 @@ func UpdateRollbackSettingsHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "updated", "application", id)
 	c.JSON(http.StatusOK, toApplicationResponse(&application))
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(c.Param("id")))
 	// The images kept for rollbacks depend on the settings.
 	sendAgentSettings(c, application.AgentId)
 }
