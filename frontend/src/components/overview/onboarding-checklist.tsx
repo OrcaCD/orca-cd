@@ -17,6 +17,7 @@ import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
 import type { Notification } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import type { Repository } from "@/lib/repositories";
 import { cn } from "@/lib/utils";
 
@@ -28,10 +29,11 @@ interface OnboardingStep {
 	action: ReactNode;
 }
 
-// Shown instead of the dashboard until the first application exists.
+// Shown instead of the dashboard until the first application exists, if the user can create one.
 export function OnboardingChecklist({ agents }: { agents: Agent[] | undefined }) {
 	const { data: repositories } = useFetch<Repository[]>("/repositories");
 	const { data: notifications } = useFetch<Notification[]>("/notifications");
+	const { can } = usePermissions();
 
 	const steps: OnboardingStep[] = [
 		{
@@ -39,28 +41,32 @@ export function OnboardingChecklist({ agents }: { agents: Agent[] | undefined })
 			title: m.overviewOnboardingAgentTitle(),
 			description: m.overviewOnboardingAgentDescription(),
 			done: agents && agents.length > 0,
-			action: <StepLink to="/agents" label={m.navAgents()} />,
+			action: can("agent", "create") && <StepLink to="/agents" label={m.navAgents()} />,
 		},
 		{
 			key: "repository",
 			title: m.overviewOnboardingRepositoryTitle(),
 			description: m.overviewOnboardingRepositoryDescription(),
 			done: repositories && repositories.length > 0,
-			action: <StepLink to="/repositories" label={m.navRepositories()} />,
+			action: can("repository", "create") && (
+				<StepLink to="/repositories" label={m.navRepositories()} />
+			),
 		},
 		{
 			key: "application",
 			title: m.overviewOnboardingApplicationTitle(),
 			description: m.overviewOnboardingApplicationDescription(),
 			done: false,
-			action: <UpsertApplicationDialog application={null} />,
+			action: can("application", "create") && <UpsertApplicationDialog application={null} />,
 		},
 		{
 			key: "notification",
 			title: m.overviewOnboardingNotificationTitle(),
 			description: m.overviewOnboardingNotificationDescription(),
 			done: notifications && notifications.length > 0,
-			action: <StepLink to="/notifications" label={m.navNotifications()} />,
+			action: can("notification", "create") && (
+				<StepLink to="/notifications" label={m.navNotifications()} />
+			),
 		},
 	];
 	const nextStep = steps.find((step) => step.done === false);
@@ -95,7 +101,7 @@ export function OnboardingChecklist({ agents }: { agents: Agent[] | undefined })
 									</ItemTitle>
 									<ItemDescription>{step.description}</ItemDescription>
 								</ItemContent>
-								{!step.done ? <ItemActions>{step.action}</ItemActions> : null}
+								{!step.done && step.action ? <ItemActions>{step.action}</ItemActions> : null}
 							</Item>
 						);
 					})}

@@ -17,6 +17,7 @@ import { columns } from "@/components/tables/applications/columns";
 import { ApplicationCard } from "@/components/cards/application-card";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
@@ -67,6 +68,8 @@ function ApplicationsPage() {
 		openFrom: openAddApplication,
 		dialogProps: addApplicationDialog,
 	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canCreate = can("application", "create");
 	const { status, agent } = Route.useSearch();
 	const navigate = Route.useNavigate();
 
@@ -117,13 +120,15 @@ function ApplicationsPage() {
 				title={m.pageApplications()}
 				description={m.applicationsPageDescription()}
 				actions={
-					<Button {...addApplicationTrigger} ref={addApplicationRef} onClick={openAddApplication}>
-						<Plus />
-						{m.newApplication()}
-					</Button>
+					canCreate && (
+						<Button {...addApplicationTrigger} ref={addApplicationRef} onClick={openAddApplication}>
+							<Plus />
+							{m.newApplication()}
+						</Button>
+					)
 				}
 			/>
-			<UpsertApplicationDialog application={null} {...addApplicationDialog} />
+			{canCreate && <UpsertApplicationDialog application={null} {...addApplicationDialog} />}
 			{(data?.length !== 0 || hasFilters || searchQuery.length > 0) && (
 				<div>
 					<div className="flex flex-col gap-3 sm:flex-row">
@@ -215,10 +220,12 @@ function ApplicationsPage() {
 					title={m.noApplicationsYet()}
 					description={m.noApplicationsYetDescription()}
 					action={
-						<Button {...addApplicationTrigger} onClick={openAddApplication}>
-							<Plus />
-							{m.newApplication()}
-						</Button>
+						canCreate && (
+							<Button {...addApplicationTrigger} onClick={openAddApplication}>
+								<Plus />
+								{m.newApplication()}
+							</Button>
+						)
 					}
 				/>
 			) : data && filteredApps.length === 0 ? (

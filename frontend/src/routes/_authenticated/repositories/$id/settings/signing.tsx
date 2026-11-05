@@ -18,6 +18,7 @@ import ErrorAlert from "@/components/alerts/error-alert";
 import { updateRepository, type CommitSigningKey, type Repository } from "@/lib/repositories";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/repositories/$id/settings/signing")({
 	component: RepositorySigningPage,
@@ -54,6 +55,8 @@ function RepositorySigningPage() {
 	const [error, setError] = useState<string | undefined>();
 	const [newKey, setNewKey] = useState("");
 	const [newKeyError, setNewKeyError] = useState<string | undefined>();
+	const { can } = usePermissions();
+	const canUpdate = can("repository", "update", id);
 	const supported = repository?.commitSigningSupported ?? false;
 	const savedKeys = new Map(repository?.commitSigningKeys?.map((key) => [key.key, key]));
 
@@ -135,7 +138,7 @@ function RepositorySigningPage() {
 											id={field.name}
 											checked={field.state.value}
 											onCheckedChange={field.handleChange}
-											disabled={!supported}
+											disabled={!supported || !canUpdate}
 										/>
 									</div>
 								)}
@@ -170,12 +173,16 @@ function RepositorySigningPage() {
 															keys={field.state.value}
 															savedKeys={savedKeys}
 															disabled={!editable}
-															onRemove={(index) => {
-																setError(undefined);
-																field.removeValue(index);
-															}}
+															onRemove={
+																canUpdate
+																	? (index) => {
+																			setError(undefined);
+																			field.removeValue(index);
+																		}
+																	: undefined
+															}
 														/>
-														{supported && !enabled && (
+														{canUpdate && supported && !enabled && (
 															<p className="text-muted-foreground text-xs">
 																{m.signingKeysDisabledHint()}
 															</p>
@@ -183,40 +190,42 @@ function RepositorySigningPage() {
 														{isInvalid && <FieldError errors={field.state.meta.errors} />}
 													</Field>
 
-													<Field data-invalid={!!newKeyError}>
-														<Label htmlFor="newSigningKey">{m.newSigningKey()}</Label>
-														<Textarea
-															id="newSigningKey"
-															value={newKey}
-															onChange={(e) => {
-																setNewKeyError(undefined);
-																setNewKey(e.target.value);
-															}}
-															placeholder={m.trustedSigningKeysPlaceholder()}
-															className="min-h-28 font-mono text-xs"
-															spellCheck={false}
-															disabled={!editable}
-														/>
-														<p className="text-muted-foreground text-xs">
-															{m.trustedSigningKeysHint()}
-														</p>
-														{repository?.provider === "gitlab" && (
+													{canUpdate && (
+														<Field data-invalid={!!newKeyError}>
+															<Label htmlFor="newSigningKey">{m.newSigningKey()}</Label>
+															<Textarea
+																id="newSigningKey"
+																value={newKey}
+																onChange={(e) => {
+																	setNewKeyError(undefined);
+																	setNewKey(e.target.value);
+																}}
+																placeholder={m.trustedSigningKeysPlaceholder()}
+																className="min-h-28 font-mono text-xs"
+																spellCheck={false}
+																disabled={!editable}
+															/>
 															<p className="text-muted-foreground text-xs">
-																{m.trustedSigningKeysGitLabHint()}
+																{m.trustedSigningKeysHint()}
 															</p>
-														)}
-														{newKeyError && <FieldError errors={[{ message: newKeyError }]} />}
-														<div>
-															<Button
-																type="button"
-																variant="outline"
-																onClick={addKey}
-																disabled={!editable || newKey.trim() === ""}
-															>
-																{m.addSigningKey()}
-															</Button>
-														</div>
-													</Field>
+															{repository?.provider === "gitlab" && (
+																<p className="text-muted-foreground text-xs">
+																	{m.trustedSigningKeysGitLabHint()}
+																</p>
+															)}
+															{newKeyError && <FieldError errors={[{ message: newKeyError }]} />}
+															<div>
+																<Button
+																	type="button"
+																	variant="outline"
+																	onClick={addKey}
+																	disabled={!editable || newKey.trim() === ""}
+																>
+																	{m.addSigningKey()}
+																</Button>
+															</div>
+														</Field>
+													)}
 												</>
 											);
 										}}
@@ -226,25 +235,27 @@ function RepositorySigningPage() {
 
 							{error && <ErrorAlert description={error} />}
 							<form.Subscribe selector={(state) => state.isDefaultValue}>
-								{(unchanged) => (
-									<div className="flex flex-wrap gap-2 pt-2">
-										<Button type="submit" disabled={isLoading || unchanged || !supported}>
-											{m.updateRepository()}
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											onClick={() => {
-												setError(undefined);
-												resetNewKey();
-												form.reset();
-											}}
-											disabled={isLoading}
-										>
-											{m.cancel()}
-										</Button>
-									</div>
-								)}
+								{(unchanged) =>
+									canUpdate && (
+										<div className="flex flex-wrap gap-2 pt-2">
+											<Button type="submit" disabled={isLoading || unchanged || !supported}>
+												{m.updateRepository()}
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												onClick={() => {
+													setError(undefined);
+													resetNewKey();
+													form.reset();
+												}}
+												disabled={isLoading}
+											>
+												{m.cancel()}
+											</Button>
+										</div>
+									)
+								}
 							</form.Subscribe>
 						</FieldGroup>
 					</form>
@@ -263,7 +274,7 @@ function SigningKeyList({
 	keys: string[];
 	savedKeys: Map<string, CommitSigningKey>;
 	disabled: boolean;
-	onRemove: (index: number) => void;
+	onRemove?: (index: number) => void;
 }) {
 	if (keys.length === 0) {
 		return <p className="text-muted-foreground text-sm">{m.noSigningKeys()}</p>;
@@ -297,16 +308,18 @@ function SigningKeyList({
 								</>
 							)}
 						</div>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-sm"
-							aria-label={m.removeSigningKey()}
-							onClick={() => onRemove(index)}
-							disabled={disabled}
-						>
-							<Trash2 />
-						</Button>
+						{onRemove && (
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								aria-label={m.removeSigningKey()}
+								onClick={() => onRemove(index)}
+								disabled={disabled}
+							>
+								<Trash2 />
+							</Button>
+						)}
 					</li>
 				);
 			})}

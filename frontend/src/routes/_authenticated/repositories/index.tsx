@@ -14,6 +14,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { useMemo, useRef, useState } from "react";
 import { EllipsisVertical, GitBranch, Plus, RefreshCw, Settings, Trash2 } from "lucide-react";
 
@@ -62,6 +63,8 @@ function RepositoriesPage() {
 		openFrom: openAddRepository,
 		dialogProps: addRepositoryDialog,
 	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canCreate = can("repository", "create");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
 	async function handleDeleteRepo(repository: Repository) {
@@ -109,13 +112,15 @@ function RepositoriesPage() {
 				title={m.pageRepositories()}
 				description={m.repositoriesPageDescription()}
 				actions={
-					<Button {...addRepositoryTrigger} ref={addRepositoryRef} onClick={openAddRepository}>
-						<Plus />
-						{m.addRepository()}
-					</Button>
+					canCreate && (
+						<Button {...addRepositoryTrigger} ref={addRepositoryRef} onClick={openAddRepository}>
+							<Plus />
+							{m.addRepository()}
+						</Button>
+					)
 				}
 			/>
-			<CreateRepositoryDialog {...addRepositoryDialog} />
+			{canCreate && <CreateRepositoryDialog {...addRepositoryDialog} />}
 
 			<div className="space-y-4">
 				{(data?.length !== 0 || searchQuery.length > 0) && (
@@ -151,10 +156,12 @@ function RepositoriesPage() {
 						title={m.noRepositoriesYet()}
 						description={m.noRepositoriesYetDescription()}
 						action={
-							<Button {...addRepositoryTrigger} onClick={openAddRepository}>
-								<Plus />
-								{m.addRepository()}
-							</Button>
+							canCreate && (
+								<Button {...addRepositoryTrigger} onClick={openAddRepository}>
+									<Plus />
+									{m.addRepository()}
+								</Button>
+							)
 						}
 					/>
 				) : filteredRepositories.length === 0 ? (
@@ -198,11 +205,15 @@ function RepositoriesPage() {
 											<DropdownMenuContent align="end" className="w-fit" keepMounted>
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
-														<RefreshCw className="h-4 w-4" />
-														{m.sync()}
-													</DropdownMenuItem>
-													<DropdownMenuSeparator />
+													{can("repository", "sync", repository.id) && (
+														<>
+															<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+																<RefreshCw className="h-4 w-4" />
+																{m.sync()}
+															</DropdownMenuItem>
+															<DropdownMenuSeparator />
+														</>
+													)}
 													<DropdownMenuItem
 														render={
 															<Link
@@ -214,19 +225,25 @@ function RepositoriesPage() {
 															</Link>
 														}
 													/>
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteRepo(repository)}
-														title={m.deleteRepositoryTitle()}
-														description={m.deleteRepositoryDescription({ name: repository.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
-														}
-														asDropdownItem
-													/>
+													{can("repository", "delete", repository.id) && (
+														<>
+															<DropdownMenuSeparator />
+															<ConfirmationDialog
+																onConfirm={() => handleDeleteRepo(repository)}
+																title={m.deleteRepositoryTitle()}
+																description={m.deleteRepositoryDescription({
+																	name: repository.name,
+																})}
+																triggerText={
+																	<>
+																		<Trash2 className="h-4 w-4" />
+																		{m.delete()}
+																	</>
+																}
+																asDropdownItem
+															/>
+														</>
+													)}
 												</DropdownMenuGroup>
 											</DropdownMenuContent>
 										</DropdownMenu>

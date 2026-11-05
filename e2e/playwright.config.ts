@@ -13,9 +13,9 @@ const authenticated = {
 	storageState: "playwright/.auth/user.json",
 };
 
-// These files share the single agent container and restart the hub, so they must not overlap
-// with other tests and run one after another after everything else
-const sharedInfrastructure = /(agent|applications|images|env|users)\.test\.ts$/;
+// These files share the single agent container, restart the hub or change data other tests
+// count, so they must not overlap with other tests and run one after another after everything else
+const sharedInfrastructure = /(agent|applications|images|env|users|roles)\.test\.ts$/;
 // Starts its own hub in demo mode and doesn't use the login of the setup project
 const demoTests = /demo\.test\.ts$/;
 // CI runs them in a separate job with its own hub, so they don't have to wait for the other tests

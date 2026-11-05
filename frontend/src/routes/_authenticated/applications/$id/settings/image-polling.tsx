@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,6 +73,8 @@ function ImagePollingPage() {
 	const [, setOpen] = useState(false);
 	const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
 	const [webhookSecretOpen, setWebhookSecretOpen] = useState(false);
+	const { can } = usePermissions();
+	const canUpdate = can("application", "update", id);
 
 	const form = useForm({
 		defaultValues: {
@@ -159,6 +162,7 @@ function ImagePollingPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
+												disabled={!canUpdate}
 											/>
 											<div className="space-y-1">
 												<Label htmlFor={field.name}>{m.imagePollEnabled()}</Label>
@@ -184,6 +188,7 @@ function ImagePollingPage() {
 													value={field.state.value}
 													onBlur={field.handleBlur}
 													onChange={(e) => field.handleChange(Number(e.target.value))}
+													disabled={!canUpdate}
 												/>
 												<p className="text-muted-foreground text-xs">{m.imagePollIntervalHint()}</p>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -193,22 +198,24 @@ function ImagePollingPage() {
 								</form.Field>
 							)}
 
-							<div className="flex flex-wrap gap-2 pt-2">
-								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting ? m.savingDots() : m.saveChanges()}
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => {
-										setOpen(false);
-										form.reset();
-									}}
-									disabled={isSubmitting}
-								>
-									{m.cancel()}
-								</Button>
-							</div>
+							{canUpdate && (
+								<div className="flex flex-wrap gap-2 pt-2">
+									<Button type="submit" disabled={isSubmitting}>
+										{isSubmitting ? m.savingDots() : m.saveChanges()}
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => {
+											setOpen(false);
+											form.reset();
+										}}
+										disabled={isSubmitting}
+									>
+										{m.cancel()}
+									</Button>
+								</div>
+							)}
 						</FieldGroup>
 					</form>
 				</CardContent>
@@ -249,19 +256,21 @@ function ImagePollingPage() {
 						</div>
 					) : null}
 
-					<div className="flex items-center gap-2">
-						<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
-							{application?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
-						</Button>
-						{application?.imageWebhookEnabled && (
-							<ConfirmationDialog
-								onConfirm={handleRevokeWebhook}
-								description={m.revokeWebhookConfirmDescription()}
-								triggerText={m.revokeWebhook()}
-								triggerProps={{ variant: "destructive", size: "sm" }}
-							/>
-						)}
-					</div>
+					{canUpdate && (
+						<div className="flex items-center gap-2">
+							<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+								{application?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+							</Button>
+							{application?.imageWebhookEnabled && (
+								<ConfirmationDialog
+									onConfirm={handleRevokeWebhook}
+									description={m.revokeWebhookConfirmDescription()}
+									triggerText={m.revokeWebhook()}
+									triggerProps={{ variant: "destructive", size: "sm" }}
+								/>
+							)}
+						</div>
+					)}
 				</CardContent>
 			</Card>
 

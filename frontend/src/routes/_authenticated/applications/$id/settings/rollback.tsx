@@ -21,6 +21,7 @@ import {
 	type NotificationEvent,
 } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/rollback")({
 	component: RollbackSettingsPage,
@@ -100,6 +101,8 @@ function RollbackSettingsPage() {
 	} = useFetch<Application>(`/applications/${id}`);
 	const { data: notifications } = useFetch<Notification[]>("/notifications");
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const { can, canAny } = usePermissions();
+	const canUpdate = can("application", "update", id);
 
 	const settings = application?.rollback;
 	const form = useForm({
@@ -183,6 +186,7 @@ function RollbackSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
+												disabled={!canUpdate}
 											/>
 											<FieldLabel htmlFor={field.name}>{m.automaticRollback()}</FieldLabel>
 										</div>
@@ -202,6 +206,7 @@ function RollbackSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onChange={field.handleChange}
+												disabled={!canUpdate}
 												label={m.rollbackOnDeployFailure()}
 												description={m.rollbackOnDeployFailureDescription()}
 											/>
@@ -213,6 +218,7 @@ function RollbackSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onChange={field.handleChange}
+												disabled={!canUpdate}
 												label={m.rollbackOnUnhealthy()}
 												description={m.rollbackOnUnhealthyDescription()}
 												errors={field.state.meta.errors}
@@ -236,6 +242,7 @@ function RollbackSettingsPage() {
 																value={field.state.value}
 																onBlur={field.handleBlur}
 																onChange={(e) => field.handleChange(Number(e.target.value))}
+																disabled={!canUpdate}
 															/>
 															<span className="text-sm text-muted-foreground">
 																{m.rollbackMinutes()}
@@ -258,6 +265,7 @@ function RollbackSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onChange={field.handleChange}
+												disabled={!canUpdate}
 												label={m.rollbackPauseAutoSync()}
 												description={m.rollbackPauseAutoSyncDescription()}
 											/>
@@ -271,19 +279,21 @@ function RollbackSettingsPage() {
 								{m.rollbackVolumesNote()}
 							</p>
 
-							<div className="flex flex-wrap gap-2 pt-2">
-								<Button type="submit" disabled={isSubmitting || !application}>
-									{isSubmitting ? m.savingDots() : m.saveChanges()}
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => form.reset()}
-									disabled={isSubmitting}
-								>
-									{m.cancel()}
-								</Button>
-							</div>
+							{canUpdate && (
+								<div className="flex flex-wrap gap-2 pt-2">
+									<Button type="submit" disabled={isSubmitting || !application}>
+										{isSubmitting ? m.savingDots() : m.saveChanges()}
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={() => form.reset()}
+										disabled={isSubmitting}
+									>
+										{m.cancel()}
+									</Button>
+								</div>
+							)}
 						</FieldGroup>
 					</form>
 				</CardContent>
@@ -322,15 +332,17 @@ function RollbackSettingsPage() {
 					) : subscribed ? (
 						<p className="text-sm text-muted-foreground">{m.rollbackNotifyEmpty()}</p>
 					) : null}
-					<Button
-						variant="outline"
-						size="sm"
-						nativeButton={false}
-						render={<Link to="/notifications" />}
-					>
-						{m.manageNotifications()}
-						<ArrowRight />
-					</Button>
+					{canAny("notification", "read") && (
+						<Button
+							variant="outline"
+							size="sm"
+							nativeButton={false}
+							render={<Link to="/notifications" />}
+						>
+							{m.manageNotifications()}
+							<ArrowRight />
+						</Button>
+					)}
 				</CardContent>
 			</Card>
 		</div>
@@ -343,11 +355,13 @@ function CheckboxField({
 	onChange,
 	label,
 	description,
+	disabled,
 	errors = [],
 }: {
 	id: string;
 	checked: boolean;
 	onChange: (checked: boolean) => void;
+	disabled: boolean;
 	label: string;
 	description: string;
 	errors?: ({ message?: string } | undefined)[];
@@ -355,7 +369,12 @@ function CheckboxField({
 	return (
 		<Field data-invalid={errors.length > 0}>
 			<div className="flex items-start gap-2">
-				<Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
+				<Checkbox
+					id={id}
+					checked={checked}
+					disabled={disabled}
+					onCheckedChange={(value) => onChange(value === true)}
+				/>
 				<div className="space-y-1">
 					<FieldLabel htmlFor={id}>{label}</FieldLabel>
 					<p className="text-muted-foreground text-xs">{description}</p>
