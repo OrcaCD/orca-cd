@@ -535,6 +535,93 @@ test.describe("Editing in the UI", () => {
 		expectOnlyRecreated(before, "web");
 		expect(serviceEnv("web").OPT_E2E).toBe("present");
 	});
+
+	test("imports a .env file as drafts and writes only the selected entries", async ({ page }) => {
+		const imported = [
+			"# a comment",
+			"export IMP_PLAIN=plain value # inline comment",
+			'IMP_QUOTED="line1\\nline2"',
+			"# orcacd:public",
+			"IMP_PUBLIC=visible-e2e",
+			"# orcacd:public",
+			"OPT_E2E=present",
+			"IMP_DUP=first",
+			"IMP_DUP=second",
+			"IMP_SKIPPED=skipped-e2e",
+			"not an assignment",
+			"",
+		].join("\n");
+
+		await openEnvironment(page);
+		await envCard(page, "optional.env").getByRole("button", { name: "Import" }).click();
+		const dialog = page.getByRole("dialog");
+		await dialog
+			.locator("#env-import-file")
+			.setInputFiles({ name: ".env", mimeType: "text/plain", buffer: Buffer.from(imported) });
+
+		const row = (key: string) => dialog.getByRole("row").filter({ hasText: key });
+		const secretSwitch = (key: string) => row(key).getByRole("switch", { name: "Store as secret" });
+		const select = (key: string) => dialog.getByRole("checkbox", { name: `Import ${key}` });
+
+		await expect(dialog.getByText("1 lines were ignored")).toBeVisible();
+		await expect(dialog.getByText("5 of 6 selected")).toBeVisible();
+
+		// Unmarked keys are secrets, marked ones are variables
+		await expect(secretSwitch("IMP_PLAIN")).toBeChecked();
+		await expect(secretSwitch("IMP_PUBLIC")).not.toBeChecked();
+		await expect(row("IMP_PUBLIC").getByText("visible-e2e")).toBeVisible();
+		await expect(row("IMP_PLAIN").getByText("plain value")).toHaveCount(0);
+
+		// The value of an existing variable is the same, so there is nothing to change
+		await expect(row("OPT_E2E").getByText("Unchanged")).toBeVisible();
+		await expect(select("OPT_E2E")).not.toBeChecked();
+
+		// The last assignment of a duplicated key wins and the type can be changed per row
+		await expect(row("IMP_DUP").getByText("second")).toHaveCount(0);
+		await secretSwitch("IMP_DUP").click();
+		await expect(row("IMP_DUP").getByText("second")).toBeVisible();
+
+		await select("IMP_SKIPPED").click();
+		await expect(dialog.getByText("4 of 6 selected")).toBeVisible();
+		await dialog.getByRole("button", { name: "Add to changes" }).click();
+		await expect(dialog).toBeHidden();
+
+		const card = (key: string) => envRow(page, "optional.env", key);
+		await expect(card("IMP_PLAIN").getByText("New")).toBeVisible();
+		await expect(card("IMP_PUBLIC").getByRole("textbox", { name: "IMP_PUBLIC" })).toHaveValue(
+			"visible-e2e",
+		);
+		await expect(card("IMP_SKIPPED")).toHaveCount(0);
+		await expect(card("OPT_E2E").getByText("Changed")).toHaveCount(0);
+		expect(deploymentFile("optional.env")).not.toContain("IMP_");
+
+		const before = serviceContainers();
+		await saveInUi(page);
+
+		const content = deploymentFile("optional.env")!;
+		expect(lineOf(content, "IMP_PUBLIC")).toMatchObject({
+			line: "IMP_PUBLIC=visible-e2e",
+			previous: MARKER,
+		});
+		expect(lineOf(content, "IMP_PLAIN").line).toBe('IMP_PLAIN="plain value"');
+		expect(lineOf(content, "IMP_PLAIN").previous).not.toBe(MARKER);
+		expect(lineOf(content, "IMP_QUOTED").line).toBe('IMP_QUOTED="line1\\nline2"');
+		expect(lineOf(content, "IMP_DUP").line).toBe("IMP_DUP=second");
+		expect(content).not.toContain("IMP_SKIPPED");
+		expect(await entry(page, "optional.env", "IMP_PLAIN")).toEqual({
+			key: "IMP_PLAIN",
+			isSecret: true,
+			isSet: true,
+		});
+		expectOnlyRecreated(before, "web");
+		expect(serviceEnv("web")).toMatchObject({
+			IMP_PLAIN: "plain value",
+			IMP_PUBLIC: "visible-e2e",
+			IMP_DUP: "second",
+			OPT_E2E: "present",
+		});
+		await expectNoSecretInPage(page, "plain value");
+	});
 });
 
 test.describe("Rejected updates", () => {

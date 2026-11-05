@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import { AddEnvEntryDialog } from "./add-env-entry-dialog";
+import { ImportEnvDialog } from "./import-env-dialog";
 import { ReplaceEnvSecretDialog } from "./replace-env-secret-dialog";
 
 export function EnvFileCard({
@@ -57,7 +58,17 @@ export function EnvFileCard({
 						))
 					)}
 				</CardDescription>
-				<CardAction>
+				<CardAction className="flex gap-2">
+					<ImportEnvDialog
+						entries={file.entries}
+						envRows={rows}
+						disabled={disabled}
+						onImport={(items) => {
+							for (const { key, value, isSecret } of items) {
+								onDraftChange(key, entries.get(key), { delete: false, value, isSecret });
+							}
+						}}
+					/>
 					<AddEnvEntryDialog
 						path={file.path}
 						existingKeys={new Set(rows.map((row) => row.key))}

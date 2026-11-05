@@ -14,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/dotenv"
 	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -159,6 +160,50 @@ func UpdateApplicationEnvHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to update the environment files.")})
+}
+
+type parseEnvPayload struct {
+	Content string `json:"content"`
+}
+
+type parsedEnvEntry struct {
+	Key      string `json:"key"`
+	Value    string `json:"value"`
+	IsSecret bool   `json:"isSecret"`
+}
+
+type parseEnvResponse struct {
+	Entries      []parsedEnvEntry `json:"entries"`
+	IgnoredLines int              `json:"ignoredLines"`
+}
+
+// maxParseEnvBodyBytes leaves room for JSON escaping, which grows a control
+// character to six bytes.
+const maxParseEnvBodyBytes = 6*envrules.MaxFileBytes + 1024
+
+func ParseEnvHandler(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxParseEnvBodyBytes)
+
+	var req parseEnvPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if len(req.Content) > envrules.MaxFileBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("the file is larger than %d bytes", envrules.MaxFileBytes)})
+		return
+	}
+
+	doc := dotenv.Parse(req.Content)
+	entries := doc.Entries()
+	response := parseEnvResponse{
+		Entries:      make([]parsedEnvEntry, 0, len(entries)),
+		IgnoredLines: doc.IgnoredCount(),
+	}
+	for _, entry := range entries {
+		response.Entries = append(response.Entries, parsedEnvEntry{Key: entry.Key, Value: entry.Value, IsSecret: !entry.Public})
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {

@@ -3,6 +3,7 @@ import { m } from "./paraglide/messages";
 
 export const MAX_ENV_VALUE_BYTES = 16 * 1024;
 export const MAX_ENV_KEYS_PER_FILE = 1000;
+export const MAX_ENV_FILE_BYTES = 1024 * 1024;
 
 const keyPattern = /^[\p{L}\p{N}_.\-[\]]+$/u;
 // Control characters except tab, CR and LF
@@ -216,6 +217,85 @@ export function buildEnvFileExample(composeFile: string): EnvFileExample {
 
 export function updateApplicationEnv(id: string, files: EnvFileChanges[]): Promise<void> {
 	return fetcher(`/applications/${id}/env`, "PUT", { files });
+}
+
+export interface ParsedEnvEntry {
+	key: string;
+	value: string;
+	isSecret: boolean;
+}
+
+export interface ParsedEnvFile {
+	entries: ParsedEnvEntry[];
+	ignoredLines: number;
+}
+
+export function parseEnvFile(content: string): Promise<ParsedEnvFile> {
+	return fetcher<ParsedEnvFile>("/env/parse", "POST", { content });
+}
+
+export type EnvImportStatus = "new" | "changed" | "unchanged" | "replacesSecret";
+export type EnvImportError = EnvKeyError | EnvValueError | "emptyValue";
+
+export interface EnvImportRow {
+	key: string;
+	value: string;
+	isSecret: boolean;
+	// An existing secret cannot become a variable
+	secretLocked: boolean;
+	current: Pick<EnvRow, "isSecret" | "value" | "deleted"> | undefined;
+	error: EnvImportError | null;
+}
+
+export function buildEnvImportRows(
+	entries: EnvEntry[],
+	rows: EnvRow[],
+	parsed: ParsedEnvEntry[],
+): EnvImportRow[] {
+	const saved = new Map(entries.map((entry) => [entry.key, entry]));
+	const shown = new Map(rows.map((row) => [row.key, row]));
+
+	return parsed.map((entry) => {
+		const secretLocked = saved.get(entry.key)?.isSecret ?? false;
+		return {
+			key: entry.key,
+			value: entry.value,
+			isSecret: secretLocked || entry.isSecret,
+			secretLocked,
+			current: shown.get(entry.key),
+			error:
+				validateEnvKey(entry.key) ??
+				validateEnvValue(entry.value) ??
+				(entry.value === "" ? "emptyValue" : null),
+		};
+	});
+}
+
+export function envImportStatus(row: EnvImportRow, isSecret: boolean): EnvImportStatus {
+	if (!row.current) {
+		return "new";
+	}
+	if (row.current.deleted) {
+		return "changed";
+	}
+	if (row.secretLocked) {
+		return "replacesSecret";
+	}
+	return row.current.isSecret === isSecret && row.current.value === row.value
+		? "unchanged"
+		: "changed";
+}
+
+export function envImportErrorMessage(error: EnvImportError): string {
+	switch (error) {
+		case "empty":
+		case "invalid":
+			return envKeyErrorMessage(error);
+		case "emptyValue":
+			return m.envErrorValueEmpty();
+		default:
+			return envValueErrorMessage(error);
+	}
 }
 
 export function isEnvConflict(err: unknown): boolean {

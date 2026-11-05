@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrcaCD/orca-cd/internal/agent/dotenv"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/dotenv"
 	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"

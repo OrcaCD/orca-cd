@@ -110,6 +110,22 @@ func (d *Doc) Entries() []Entry {
 	return entries
 }
 
+// IgnoredCount returns the number of lines Compose would not read as an
+// assignment, leaving out blank lines and comments.
+func (d *Doc) IgnoredCount() int {
+	count := 0
+	for _, item := range d.items {
+		if item.key != "" || item.markerLine {
+			continue
+		}
+		text := strings.TrimSpace(strings.Join(item.raw, "\n"))
+		if text != "" && !strings.HasPrefix(text, "#") {
+			count++
+		}
+	}
+	return count
+}
+
 func (d *Doc) KeyCount() int {
 	seen := make(map[string]struct{})
 	for _, item := range d.items {
