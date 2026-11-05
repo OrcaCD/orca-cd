@@ -4,6 +4,11 @@ export const ADMIN_NAME = "Testadmin";
 export const ADMIN_EMAIL = "testadmin@example.com";
 export const ADMIN_PASSWORD = "TestPassword123!";
 
+export const DEMO_URL = "http://127.0.0.1:8091";
+export const DEMO_EMAIL = "demo@orcacd.dev";
+export const DEMO_PASSWORD = "demo-password";
+export const DEMO_COMPOSE_PROJECT = "orca-e2e-demo";
+
 export const HUB_CONTAINER = "orca-hub-e2e-test";
 export const AGENT_CONTAINER = "orca-agent-e2e-test";
 export const AGENT_IMAGE = "orca-agent-e2e-test";
