@@ -46,11 +46,11 @@ const (
 	// application cannot make the statistics arbitrarily expensive. When the
 	// range has more changes, only the latest ones are used.
 	maxChanges = 10_000
-	// deployIncidentGrace is how long after a deployment or image update an
-	// incident is still attributed to it.
+	// deployIncidentGrace is how long after a deployment, image update or
+	// rollback an incident is still attributed to it.
 	deployIncidentGrace = 5 * time.Minute
-	// maxRunningEventAge bounds the attribution to a deployment or image update
-	// that is still running, so a stuck one is not blamed forever.
+	// maxRunningEventAge bounds the attribution to a deployment, image update
+	// or rollback that is still running, so a stuck one is not blamed forever.
 	maxRunningEventAge = 30 * time.Minute
 	// eventQueryMargin widens the database filter for application events. Their
 	// timestamps are stored in the hub's local time, so the exact comparison
@@ -116,8 +116,8 @@ type Incident struct {
 	Trigger         *IncidentTrigger           `json:"trigger,omitempty"`
 }
 
-// IncidentTrigger is the deployment or image update an incident started
-// during or shortly after.
+// IncidentTrigger is the deployment, image update or rollback an incident
+// started during or shortly after.
 type IncidentTrigger struct {
 	Type       models.ApplicationEventType `json:"type"`
 	CommitHash *string                     `json:"commitHash,omitempty"`
@@ -350,8 +350,8 @@ func buildIncidents(segments []segment, now time.Time) []Incident {
 	return incidents
 }
 
-// attachTriggers links failing incidents to the deployment or image update
-// they started during or shortly after. Events that changed nothing are
+// attachTriggers links failing incidents to the deployment, image update or
+// rollback they started during or shortly after. Events that changed nothing are
 // ignored.
 func attachTriggers(ctx context.Context, applicationID string, incidents []Incident, now time.Time) error {
 	earliest := now
@@ -367,7 +367,7 @@ func attachTriggers(ctx context.Context, applicationID string, incidents []Incid
 	events, err := gorm.G[models.ApplicationEvent](db.DB).
 		Where("application_id = ? AND type IN ? AND status <> ? AND created_at >= ?",
 			applicationID,
-			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventImageUpdate},
+			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventImageUpdate, models.ApplicationEventRollback},
 			models.ApplicationEventNoChange,
 			earliest.Add(-eventQueryMargin),
 		).

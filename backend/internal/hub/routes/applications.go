@@ -79,6 +79,7 @@ type applicationListResponse struct {
 	AgentId        string  `json:"agentId"`
 	AgentName      string  `json:"agentName"`
 	RepositoryId   string  `json:"repositoryId"`
+	RolledBackAt   *string `json:"rolledBackAt"`
 	RepositoryName string  `json:"repositoryName"`
 }
 
@@ -109,6 +110,9 @@ type applicationResponse struct {
 	ImagePollIntervalSeconds int64   `json:"imagePollIntervalSeconds"`
 	DeleteOldImages          bool    `json:"deleteOldImages"`
 	CurrentDeploymentId      *string `json:"currentDeploymentId"`
+	RolledBackAt             *string `json:"rolledBackAt"`
+	RolledBackCommit         *string `json:"rolledBackCommit"`
+	AutoSyncPaused           bool    `json:"autoSyncPaused"`
 	ImageWebhookEnabled      bool    `json:"imageWebhookEnabled"`
 	ImageWebhookUrl          *string `json:"imageWebhookUrl,omitempty"`
 }
@@ -349,7 +353,8 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
-		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource", "CurrentDeploymentId").
+		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
+			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "AutoSyncPaused").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
@@ -517,6 +522,11 @@ func PullApplicationImagesHandler(c *gin.Context) {
 		return
 	}
 
+	if application.RolledBackAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "application is rolled back; deploy it again before pulling images"})
+		return
+	}
+
 	actorUserID, actorName := eventActor(c)
 	accepted := hubApplications.TriggerImagePull(&application, hubApplications.SyncOrigin{
 		Source:      models.ApplicationEventSourceManual,
@@ -547,6 +557,7 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 		RepositoryName: app.Repository.Name,
 		AgentId:        app.AgentId,
 		AgentName:      app.Agent.Name.String(),
+		RolledBackAt:   formatTimestamp(app.RolledBackAt),
 	}
 }
 
@@ -597,6 +608,9 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		DeleteOldImages:          app.DeleteOldImages,
 		CurrentDeploymentId:      app.CurrentDeploymentId,
+		RolledBackAt:             formatTimestamp(app.RolledBackAt),
+		RolledBackCommit:         app.RolledBackCommit,
+		AutoSyncPaused:           app.AutoSyncPaused,
 		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
 	}
 	if app.ImageWebhookSecret != nil {

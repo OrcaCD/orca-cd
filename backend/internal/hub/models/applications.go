@@ -60,8 +60,16 @@ type Application struct {
 	DeleteOldImages          bool                    `gorm:"not null;default:false"`
 	ImageWebhookSecret       *crypto.EncryptedString `gorm:"type:text;"`
 	// CurrentDeploymentId is the deployment the agent runs, if it is known.
-	CurrentDeploymentId *string        `gorm:"type:text;"`
-	Notifications       []Notification `gorm:"many2many:application_notifications;"`
+	CurrentDeploymentId *string `gorm:"type:text;"`
+	// RolledBackAt is set while the application runs an earlier deployment it
+	// was rolled back to, which drifts from its commit in Git.
+	RolledBackAt *time.Time `gorm:"type:timestamp;"`
+	// RolledBackCommit is the commit of the deployment it was rolled back to.
+	RolledBackCommit *string `gorm:"type:text;"`
+	// AutoSyncPaused stops automatic syncs of a rolled back application until
+	// they are resumed or the application is deployed again.
+	AutoSyncPaused bool           `gorm:"not null;default:false"`
+	Notifications  []Notification `gorm:"many2many:application_notifications;"`
 }
 
 func (Application) TableName() string {

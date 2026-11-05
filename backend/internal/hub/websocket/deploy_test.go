@@ -198,6 +198,7 @@ func TestFailRunningDeploymentEventsForAgent(t *testing.T) {
 		{"deployment", app.Id, models.ApplicationEventDeployment, models.ApplicationEventFailed},
 		{"commit-sync", app.Id, models.ApplicationEventCommitSync, models.ApplicationEventRunning},
 		{"image-update", app.Id, models.ApplicationEventImageUpdate, models.ApplicationEventRunning},
+		{"rollback", app.Id, models.ApplicationEventRollback, models.ApplicationEventFailed},
 		{"other-agent", other.Id, models.ApplicationEventDeployment, models.ApplicationEventRunning},
 	}
 	for _, test := range tests {
@@ -213,6 +214,7 @@ func TestFailRunningDeploymentEventsForAgent(t *testing.T) {
 	}
 
 	nop := zerolog.Nop()
+	expectAsyncNotification(t)
 	failRunningDeploymentEventsForAgent(t.Context(), "agent-1", &nop)
 
 	for _, test := range tests {
@@ -352,6 +354,42 @@ func TestHandleDeployResult_RecordsDeployment(t *testing.T) {
 	}
 	if updated.CurrentDeploymentId == nil || *updated.CurrentDeploymentId != recorded.Id {
 		t.Errorf("current deployment = %v, want %q", updated.CurrentDeploymentId, recorded.Id)
+	}
+}
+
+// A result whose event can't be loaded must still complete the deployment
+// instead of leaving the application syncing.
+func TestHandleDeployResult_EventLookupFailureStillAppliesResult(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+	if _, err := deployments.Start(t.Context(), &app, "services: {}\n", "req-1"); err != nil {
+		t.Fatalf("start deployment: %v", err)
+	}
+	if err := db.DB.Migrator().DropTable(&models.ApplicationEvent{}); err != nil {
+		t.Fatalf("drop events table: %v", err)
+	}
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		RequestId:     "req-1",
+		ApplicationId: app.Id,
+		Success:       true,
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.SyncStatus != models.Synced {
+		t.Errorf("expected SyncStatus %q, got %q", models.Synced, updated.SyncStatus)
+	}
+	recorded, err := gorm.G[models.ApplicationDeployment](db.DB).Where("application_id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load deployment: %v", err)
+	}
+	if recorded.Status != models.DeploymentSucceeded {
+		t.Errorf("deployment status = %q, want succeeded", recorded.Status)
 	}
 }
 
