@@ -1,9 +1,8 @@
+import { SearchField } from "@/components/search-field";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
 import useSWRInfinite from "swr/infinite";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { HistoryLayoutToggle } from "@/components/applications/history-layout-toggle";
@@ -68,18 +67,16 @@ function ApplicationHistoryPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<h1 className="text-2xl font-bold">{m.applicationHistory()}</h1>
+			<h1 className="text-2xl leading-8 font-semibold tracking-tight">{m.applicationHistory()}</h1>
 			{application ? <RolledBackBanner application={application} /> : null}
 			<div className="flex items-center justify-between gap-4">
-				<div className="relative w-md max-w-full">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-					<Input
-						placeholder={m.searchApplicationHistory()}
-						className="pl-9 bg-muted border-border"
-						value={search}
-						onChange={(event) => setSearch(event.target.value)}
-					/>
-				</div>
+				<SearchField
+					value={search}
+					onChange={setSearch}
+					label={m.searchApplicationHistoryLabel()}
+					placeholder={m.searchApplicationHistory()}
+					className="w-md max-w-full"
+				/>
 				<HistoryLayoutToggle layout={historyLayout} setLayout={setHistoryLayout} />
 			</div>
 

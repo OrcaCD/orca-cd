@@ -3,6 +3,8 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { ArrowRight, Bell, Info, WebhookIcon } from "lucide-react";
 import { useState } from "react";
 import z from "zod";
+import { CardStackSkeleton } from "@/components/collection-states";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -92,9 +94,11 @@ function notifiesAboutRollbacks(notification: Notification, applicationId: strin
 
 function RollbackSettingsPage() {
 	const { id } = Route.useParams();
-	const { data: application, mutate: mutateApplication } = useFetch<Application>(
-		`/applications/${id}`,
-	);
+	const {
+		data: application,
+		mutate: mutateApplication,
+		error: applicationError,
+	} = useFetch<Application>(`/applications/${id}`);
 	const { data: notifications } = useFetch<Notification[]>("/notifications");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -143,6 +147,18 @@ function RollbackSettingsPage() {
 	const subscribed = notifications?.filter((notification) =>
 		notifiesAboutRollbacks(notification, id),
 	);
+
+	if (applicationError) {
+		return (
+			<ErrorAlert
+				title={m.somethingWentWrong()}
+				description={(applicationError as Error).message}
+			/>
+		);
+	}
+	if (!application) {
+		return <CardStackSkeleton label={m.loadingDots()} heights={["h-64", "h-48"]} />;
+	}
 
 	return (
 		<div className="flex flex-col gap-6">
