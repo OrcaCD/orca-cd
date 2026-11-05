@@ -9,6 +9,7 @@ import {
 	type Application,
 } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 function shortCommit(commit: string | null | undefined): string {
@@ -20,6 +21,7 @@ function shortCommit(commit: string | null | undefined): string {
 export function RolledBackBanner({ application }: { application: Application }) {
 	const [deploying, setDeploying] = useState(false);
 	const [resuming, setResuming] = useState(false);
+	const { can } = usePermissions();
 
 	if (!application.rolledBackAt) {
 		return null;
@@ -39,6 +41,8 @@ export function RolledBackBanner({ application }: { application: Application }) 
 	}
 	const description = `${running} ${autoSync}`;
 	const deploymentInProgress = deploying || application.syncStatus === SyncStatus.Syncing;
+	const canDeploy = can("application", "deploy", application.id);
+	const canResume = application.autoSyncPaused && can("application", "rollback", application.id);
 
 	const handleRetry = async () => {
 		setDeploying(true);
@@ -90,17 +94,21 @@ export function RolledBackBanner({ application }: { application: Application }) 
 					</p>
 				) : null}
 			</div>
-			<div className="flex shrink-0 flex-wrap gap-2">
-				<Button variant="outline" disabled={deploymentInProgress} onClick={handleRetry}>
-					<RotateCw className={cn(deploymentInProgress && "animate-spin")} />
-					{m.retryDeploy()}
-				</Button>
-				{application.autoSyncPaused ? (
-					<Button variant="outline" disabled={resuming} onClick={handleResume}>
-						{m.resumeAutoSync()}
-					</Button>
-				) : null}
-			</div>
+			{canDeploy || canResume ? (
+				<div className="flex shrink-0 flex-wrap gap-2">
+					{canDeploy ? (
+						<Button variant="outline" disabled={deploymentInProgress} onClick={handleRetry}>
+							<RotateCw className={cn(deploymentInProgress && "animate-spin")} />
+							{m.retryDeploy()}
+						</Button>
+					) : null}
+					{canResume ? (
+						<Button variant="outline" disabled={resuming} onClick={handleResume}>
+							{m.resumeAutoSync()}
+						</Button>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 }

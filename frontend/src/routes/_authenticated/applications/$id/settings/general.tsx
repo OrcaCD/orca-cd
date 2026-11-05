@@ -31,6 +31,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import {
 	Card,
@@ -99,6 +101,8 @@ function GeneralSettingsPage() {
 	);
 
 	const navigate = useNavigate();
+	const { can } = usePermissions();
+	const canUpdate = can("application", "update", id);
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -128,7 +132,7 @@ function GeneralSettingsPage() {
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);
-				if (affectsDeployment(previous, updated)) {
+				if (affectsDeployment(previous, updated) && can("application", "deploy", id)) {
 					const toastId = toast.add({
 						type: "success",
 						title: m.applicationUpdated(),
@@ -169,7 +173,7 @@ function GeneralSettingsPage() {
 	);
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
-		branch ? `/repositories/${repositoryId}/tree?branch=${branch}` : null,
+		branch && canUpdate ? `/repositories/${repositoryId}/tree?branch=${branch}` : null,
 	);
 
 	const fileTree = useMemo(() => {
@@ -226,6 +230,7 @@ function GeneralSettingsPage() {
 													onChange={(e) => field.handleChange(e.target.value)}
 													placeholder={m.applicationNamePlaceholder()}
 													aria-invalid={isInvalid}
+													disabled={!canUpdate}
 												/>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
 											</Field>
@@ -242,6 +247,7 @@ function GeneralSettingsPage() {
 												onValueChange={field.handleChange}
 												placeholder={m.selectIcon()}
 												emptyMessage={m.noIconsFound()}
+												disabled={!canUpdate}
 											/>
 										</Field>
 									)}
@@ -260,6 +266,7 @@ function GeneralSettingsPage() {
 												onValueChange={(value) => {
 													field.handleChange(value ?? "");
 												}}
+												disabled={!canUpdate}
 												items={
 													agents?.map((agent) => ({
 														label: agent.name,
@@ -320,6 +327,7 @@ function GeneralSettingsPage() {
 														form.setFieldValue("branch", "");
 														form.setFieldValue("path", "");
 													}}
+													disabled={!canUpdate}
 													items={
 														repos?.map((repo) => ({
 															label: repo.name,
@@ -365,7 +373,7 @@ function GeneralSettingsPage() {
 														field.handleChange(value ?? "");
 														form.setFieldValue("path", "");
 													}}
-													disabled={!repositoryId || isBranchesLoading}
+													disabled={!canUpdate || !repositoryId || isBranchesLoading}
 													items={
 														branches?.map((branch) => ({
 															label: branch,
@@ -415,7 +423,12 @@ function GeneralSettingsPage() {
 												aria-invalid={isInvalid}
 												className="overflow-hidden rounded-lg border border-input aria-invalid:border-destructive"
 											>
-												<div className="flex min-w-0 items-center gap-2 border-b bg-muted/50 px-3 py-2 font-mono text-xs">
+												<div
+													className={cn(
+														"flex min-w-0 items-center gap-2 bg-muted/50 px-3 py-2 font-mono text-xs",
+														canUpdate && "border-b",
+													)}
+												>
 													<FileCode className="size-3.5 shrink-0 text-muted-foreground" />
 													{field.state.value ? (
 														<span className="truncate" title={field.state.value}>
@@ -427,26 +440,28 @@ function GeneralSettingsPage() {
 														</span>
 													)}
 												</div>
-												<div className="max-h-72 overflow-auto p-1">
-													{!repositoryId ? (
-														<TreePlaceholder>{m.selectRepositoryFirst()}</TreePlaceholder>
-													) : !branch ? (
-														<TreePlaceholder>{m.selectBranchFirst()}</TreePlaceholder>
-													) : isFileTreeLoading ? (
-														<TreePlaceholder>{m.loadingRepositoryTreeDots()}</TreePlaceholder>
-													) : fileTree.length === 0 ? (
-														<TreePlaceholder>{m.noFilesFoundInBranch()}</TreePlaceholder>
-													) : (
-														<div className="flex flex-col gap-0.5">
-															<TreeNodeList
-																nodes={fileTree}
-																depth={0}
-																selectedPath={field.state.value}
-																onSelectPath={(path) => field.handleChange(path)}
-															/>
-														</div>
-													)}
-												</div>
+												{canUpdate && (
+													<div className="max-h-72 overflow-auto p-1">
+														{!repositoryId ? (
+															<TreePlaceholder>{m.selectRepositoryFirst()}</TreePlaceholder>
+														) : !branch ? (
+															<TreePlaceholder>{m.selectBranchFirst()}</TreePlaceholder>
+														) : isFileTreeLoading ? (
+															<TreePlaceholder>{m.loadingRepositoryTreeDots()}</TreePlaceholder>
+														) : fileTree.length === 0 ? (
+															<TreePlaceholder>{m.noFilesFoundInBranch()}</TreePlaceholder>
+														) : (
+															<div className="flex flex-col gap-0.5">
+																<TreeNodeList
+																	nodes={fileTree}
+																	depth={0}
+																	selectedPath={field.state.value}
+																	onSelectPath={(path) => field.handleChange(path)}
+																/>
+															</div>
+														)}
+													</div>
+												)}
 											</div>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
@@ -472,6 +487,7 @@ function GeneralSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
+												disabled={!canUpdate}
 											/>
 										</Field>
 									</FieldLabel>
@@ -479,41 +495,45 @@ function GeneralSettingsPage() {
 							</form.Field>
 						</FormSection>
 					</CardContent>
-					<CardFooter className="mt-(--card-spacing) justify-end gap-2">
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => form.reset()}
-							disabled={isSubmitting || isPristine}
-						>
-							{m.cancel()}
-						</Button>
-						<Button type="submit" disabled={isSubmitting || isPristine}>
-							{isSubmitting ? m.savingDots() : m.saveChanges()}
-						</Button>
-					</CardFooter>
+					{canUpdate && (
+						<CardFooter className="mt-(--card-spacing) justify-end gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => form.reset()}
+								disabled={isSubmitting || isPristine}
+							>
+								{m.cancel()}
+							</Button>
+							<Button type="submit" disabled={isSubmitting || isPristine}>
+								{isSubmitting ? m.savingDots() : m.saveChanges()}
+							</Button>
+						</CardFooter>
+					)}
 				</form>
 			</Card>
 
-			<Card className="ring-destructive/30">
-				<CardHeader>
-					<CardTitle className="text-destructive">{m.dangerZone()}</CardTitle>
-					<CardDescription>{m.deleteApplicationHint()}</CardDescription>
-					<CardAction className="self-center">
-						<ConfirmationDialog
-							onConfirm={async () => await deleteApp()}
-							triggerProps={{ variant: "destructive" }}
-							triggerText={
-								<>
-									<Trash2 />
-									{m.delete()}
-								</>
-							}
-							description={m.deleteApplicationDescription()}
-						/>
-					</CardAction>
-				</CardHeader>
-			</Card>
+			{can("application", "delete", id) && (
+				<Card className="ring-destructive/30">
+					<CardHeader>
+						<CardTitle className="text-destructive">{m.dangerZone()}</CardTitle>
+						<CardDescription>{m.deleteApplicationHint()}</CardDescription>
+						<CardAction className="self-center">
+							<ConfirmationDialog
+								onConfirm={async () => await deleteApp()}
+								triggerProps={{ variant: "destructive" }}
+								triggerText={
+									<>
+										<Trash2 />
+										{m.delete()}
+									</>
+								}
+								description={m.deleteApplicationDescription()}
+							/>
+						</CardAction>
+					</CardHeader>
+				</Card>
+			)}
 		</div>
 	);
 }

@@ -17,6 +17,7 @@ export enum TargetType {
 	Repository = "repository",
 	User = "user",
 	OidcProvider = "oidc-provider",
+	Role = "role",
 }
 
 export enum EventType {
@@ -28,4 +29,7 @@ export enum EventType {
 	DisabledImageWebhook = "disabled-image-webhook",
 	RevokedSessions = "revoked-sessions",
 	UpdatedEnvironment = "updated-environment",
+	RolesUpdated = "roles-updated",
+	RolesSynced = "roles-synced",
+	MembersUpdated = "members-updated",
 }

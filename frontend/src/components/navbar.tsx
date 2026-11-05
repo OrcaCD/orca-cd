@@ -10,6 +10,7 @@ import {
 	Settings,
 	User,
 	XIcon,
+	type LucideIcon,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Blobatar } from "@blobatar/react";
@@ -25,6 +26,8 @@ import { cn } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
+import type { PermissionResource } from "@/lib/roles";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { m } from "@/lib/paraglide/messages";
 import {
@@ -40,11 +43,11 @@ import "blobatar/motion.css";
 
 type NavKey = "applications" | "agents" | "repositories" | "notifications" | "admin";
 
-const navItems = [
-	{ key: "applications" as NavKey, href: "/applications", icon: Container },
-	{ key: "agents" as NavKey, href: "/agents", icon: Server },
-	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
-	{ key: "notifications" as NavKey, href: "/notifications", icon: Bell },
+const navItems: { key: NavKey; href: string; icon: LucideIcon; resource: PermissionResource }[] = [
+	{ key: "applications", href: "/applications", icon: Container, resource: "application" },
+	{ key: "agents", href: "/agents", icon: Server, resource: "agent" },
+	{ key: "repositories", href: "/repositories", icon: GitBranch, resource: "repository" },
+	{ key: "notifications", href: "/notifications", icon: Bell, resource: "notification" },
 ];
 
 function getNavLabel(key: NavKey): string {
@@ -84,6 +87,7 @@ function NavHotkeys({ navKey }: { navKey: NavKey | "overview" }) {
 export default function Navbar() {
 	useApplicationHotkeys();
 	const { auth, logout } = useAuth();
+	const { canAny } = usePermissions();
 	const navigate = useNavigate();
 	const { theme, setTheme } = useTheme();
 	const { startTransition } = useThemeTransition();
@@ -98,6 +102,7 @@ export default function Navbar() {
 
 	const location = useLocation();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+	const visibleNavItems = navItems.filter((item) => canAny(item.resource, "read"));
 
 	return (
 		<header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">
@@ -120,7 +125,7 @@ export default function Navbar() {
 
 					<NavigationMenu className="hidden md:flex">
 						<NavigationMenuList className="gap-6">
-							{navItems.map((item) => (
+							{visibleNavItems.map((item) => (
 								<Tooltip key={item.key}>
 									<TooltipTrigger
 										render={
@@ -259,7 +264,7 @@ export default function Navbar() {
 				<div className="overflow-hidden">
 					<NavigationMenu className="border-t border-border p-4 max-w-full w-full [&>div]:w-full">
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
-							{navItems.map((item) => (
+							{visibleNavItems.map((item) => (
 								<NavigationMenuItem key={item.key} className="w-full">
 									<NavigationMenuLink
 										render={

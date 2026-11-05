@@ -6,6 +6,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { useMemo, useState } from "react";
 import { EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
 
@@ -47,6 +48,7 @@ function RepositoriesPage() {
 	);
 
 	const [searchQuery, setSearchQuery] = useState("");
+	const { can } = usePermissions();
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
 	async function handleDeleteRepo(repository: Repository) {
@@ -95,7 +97,7 @@ function RepositoriesPage() {
 					<h1 className="text-2xl font-bold">{m.pageRepositories()}</h1>
 					<p className="text-muted-foreground text-sm mt-1">{m.repositoriesPageDescription()}</p>
 				</div>
-				<CreateRepositoryDialog />
+				{can("repository", "create") && <CreateRepositoryDialog />}
 			</div>
 
 			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingRepositories()}</p>}
@@ -149,11 +151,15 @@ function RepositoriesPage() {
 											<DropdownMenuContent align="end" className="w-fit" keepMounted>
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
-														<RefreshCw className="h-4 w-4" />
-														{m.sync()}
-													</DropdownMenuItem>
-													<DropdownMenuSeparator />
+													{can("repository", "sync", repository.id) && (
+														<>
+															<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+																<RefreshCw className="h-4 w-4" />
+																{m.sync()}
+															</DropdownMenuItem>
+															<DropdownMenuSeparator />
+														</>
+													)}
 													<DropdownMenuItem
 														render={
 															<Link
@@ -165,19 +171,25 @@ function RepositoriesPage() {
 															</Link>
 														}
 													/>
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteRepo(repository)}
-														title={m.deleteRepositoryTitle()}
-														description={m.deleteRepositoryDescription({ name: repository.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
-														}
-														asDropdownItem
-													/>
+													{can("repository", "delete", repository.id) && (
+														<>
+															<DropdownMenuSeparator />
+															<ConfirmationDialog
+																onConfirm={() => handleDeleteRepo(repository)}
+																title={m.deleteRepositoryTitle()}
+																description={m.deleteRepositoryDescription({
+																	name: repository.name,
+																})}
+																triggerText={
+																	<>
+																		<Trash2 className="h-4 w-4" />
+																		{m.delete()}
+																	</>
+																}
+																asDropdownItem
+															/>
+														</>
+													)}
 												</DropdownMenuGroup>
 											</DropdownMenuContent>
 										</DropdownMenu>

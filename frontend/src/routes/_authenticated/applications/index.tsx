@@ -10,6 +10,7 @@ import { columns } from "@/components/tables/applications/columns";
 import { ApplicationCard } from "@/components/cards/application-card";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
@@ -53,6 +54,7 @@ function ApplicationsPage() {
 	const [searchQuery, setSearchQuery] = useState("");
 	const { status, agent } = Route.useSearch();
 	const navigate = Route.useNavigate();
+	const { can } = usePermissions();
 
 	const { data, isLoading } = useFetch<ApplicationListItem[]>("/applications");
 	const { data: agents } = useFetch<Agent[]>("/agents");
@@ -95,7 +97,7 @@ function ApplicationsPage() {
 					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
 					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
 				</div>
-				<UpsertApplicationDialog application={null} />
+				{can("application", "create") && <UpsertApplicationDialog application={null} />}
 			</div>
 			<div>
 				<div className="flex flex-col sm:flex-row gap-4">
