@@ -622,5 +622,5 @@ func ToServiceImages(images []models.DeployedImage) []*messages.ServiceImage {
 }
 
 func publishUpdate(applicationID string) {
-	sse.PublishUpdate(sse.TopicApplications, sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity)
+	sse.PublishUpdate(sse.TopicApplications.For(applicationID), sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity.For(applicationID))
 }

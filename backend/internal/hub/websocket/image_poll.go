@@ -90,7 +90,7 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 		sendRetentionSettings(ctx, &app, log)
 	}
 
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(r.ApplicationId))
 
 	if r.Success {
 		if gate == 0 {

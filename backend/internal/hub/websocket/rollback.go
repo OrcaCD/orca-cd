@@ -32,7 +32,7 @@ func handleRollbackResult(ctx context.Context, agentID string, app *models.Appli
 			Updates(ctx, models.Application{SyncStatus: models.OutOfSync, LastSyncError: &lastSyncError}); err != nil {
 			log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to update application after failed rollback")
 		}
-		sse.PublishUpdate(sse.TopicApplications)
+		sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 		if ctx.Err() == nil {
 			go notifications.SendForApplication(app.Id, models.NotificationEventRollbackFailed, "Error: rollback failed for "+app.Name.String()+": "+errMsg, log)
 		}
@@ -64,7 +64,7 @@ func handleRollbackResult(ctx context.Context, agentID string, app *models.Appli
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to mark application as rolled back")
 		return
 	}
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 	sendAgentSettings(ctx, agentID, log)
 
 	message := "Warning: " + app.Name.String() + " was rolled back"
@@ -87,7 +87,7 @@ func clearRollbackState(ctx context.Context, agentID string, app *models.Applica
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to clear rollback state")
 		return
 	}
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 	sendAgentSettings(ctx, agentID, log)
 }
 

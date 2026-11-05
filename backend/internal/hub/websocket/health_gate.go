@@ -168,7 +168,7 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 		Updates(ctx, models.Application{SyncStatus: models.OutOfSync, LastSyncError: &reason}); err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to update application after failed health check")
 	}
-	sse.PublishUpdate(sse.TopicApplications)
+	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 
 	event, message := models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String()+": "+reason
 	if eventType == models.ApplicationEventImageUpdate {

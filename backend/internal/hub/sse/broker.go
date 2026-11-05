@@ -19,6 +19,32 @@ const (
 type Event struct {
 	Type EventType `json:"type"`
 	URLs []string  `json:"urls,omitempty"`
+	// topics the URLs were built from, used to filter the event per client
+	topics []Topic
+}
+
+// Has reports whether the event was published for the topic.
+func (e Event) Has(topic Topic) bool {
+	return slices.Contains(e.topics, topic)
+}
+
+// Filter keeps the topics the client may see. Events without topics are kept as
+// they are. Returns false when nothing is left to send.
+func (e Event) Filter(visible func(Topic) bool) (Event, bool) {
+	if len(e.topics) == 0 {
+		return e, true
+	}
+	filtered := Event{Type: e.Type}
+	for _, topic := range e.topics {
+		if !visible(topic) {
+			continue
+		}
+		filtered.topics = append(filtered.topics, topic)
+		if !slices.Contains(filtered.URLs, topic.url) {
+			filtered.URLs = append(filtered.URLs, topic.url)
+		}
+	}
+	return filtered, len(filtered.URLs) > 0
 }
 
 type Broker struct {
@@ -74,17 +100,20 @@ func PublishUpdate(topics ...Topic) {
 }
 
 func (b *Broker) PublishUpdate(topics ...Topic) {
-	urls := make([]string, 0, len(topics))
+	event := Event{Type: EventTypeUpdate}
 	for i, topic := range topics {
 		if topic.url == "" || slices.Contains(topics[:i], topic) {
 			continue
 		}
-		urls = append(urls, topic.url)
+		event.topics = append(event.topics, topic)
+		if !slices.Contains(event.URLs, topic.url) {
+			event.URLs = append(event.URLs, topic.url)
+		}
 	}
-	if len(urls) == 0 {
+	if len(event.URLs) == 0 {
 		return
 	}
-	b.Publish(Event{Type: EventTypeUpdate, URLs: urls})
+	b.Publish(event)
 }
 
 // Shutdown closes all client channels, causing their SSE handlers to return.
