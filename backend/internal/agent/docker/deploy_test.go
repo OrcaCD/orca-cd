@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
@@ -95,6 +96,49 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 	if !gotUpOptions.Create.SkipProviders {
 		t.Fatal("expected compose up to skip provider services")
+	}
+}
+
+func TestDeployWithWarningsRejectsUnresolvedLocalComposeReferences(t *testing.T) {
+	tests := []struct {
+		name        string
+		composeFile string
+		wantError   string
+	}{
+		{
+			name:        "include",
+			composeFile: "include:\n  - shared/compose.yaml\nservices:\n  app:\n    image: test:1\n",
+			wantError:   `unsupported Compose feature "include"`,
+		},
+		{
+			name:        "extends",
+			composeFile: "services:\n  app:\n    image: test:1\n    extends:\n      service: base\n",
+			wantError:   `unsupported Compose feature "extends" in service "app"`,
+		},
+		{
+			name:        "label_file",
+			composeFile: "services:\n  app:\n    image: test:1\n    label_file: labels.env\n",
+			wantError:   `unsupported Compose feature "label_file" in service "app"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t)
+			c.deploymentsDir = t.TempDir()
+
+			_, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+				ApplicationID:   "app-123",
+				ApplicationName: "billing",
+				ComposeFile:     tt.composeFile,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("DeployWithWarnings() error = %v, want it to contain %q", err, tt.wantError)
+			}
+			if _, err := os.Stat(filepath.Join(c.deploymentsDir, "billing")); !os.IsNotExist(err) {
+				t.Fatalf("expected rejected compose file not to create deployment directory, stat err = %v", err)
+			}
+		})
 	}
 }
 

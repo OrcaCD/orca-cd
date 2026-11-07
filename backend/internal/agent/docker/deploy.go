@@ -118,6 +118,9 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 	if req.ComposeFile == "" {
 		return nil, errors.New("compose file is empty")
 	}
+	if err := validateComposeFeatures(req.ComposeFile); err != nil {
+		return nil, err
+	}
 
 	// Validate application name to prevent path traversal
 	if err := utils.DoesNotLookLikeFilePath(req.ApplicationName); err != nil {

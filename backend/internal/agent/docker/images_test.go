@@ -105,6 +105,35 @@ func TestCheckAndPullImages_MissingComposeFile(t *testing.T) {
 	}
 }
 
+func TestCheckAndPullImagesRejectsUnresolvedLocalComposeReferences(t *testing.T) {
+	saveRestoreVars(t)
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	appDir := filepath.Join(c.deploymentsDir, "myapp")
+	if err := os.MkdirAll(appDir, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	composeFile := "services:\n  app:\n    image: test:1\n    extends:\n      file: ../shared/compose.yaml\n      service: base\n"
+	if err := os.WriteFile(filepath.Join(appDir, composeFileName), []byte(composeFile), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	loadCalled := false
+	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		loadCalled = true
+		return makeProject("test:1"), nil
+	}
+
+	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	if err == nil || !strings.Contains(err.Error(), `unsupported Compose feature "extends" in service "app"`) {
+		t.Fatalf("CheckAndPullImages() error = %v, want unsupported extends error", err)
+	}
+	if loadCalled {
+		t.Fatal("expected image polling to reject local references before loading the project")
+	}
+}
+
 func TestCheckAndPullImages_UnsafeAppName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
