@@ -10,8 +10,8 @@ export default function DemoBanner() {
 	}
 
 	return (
-		<div className="flex items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
-			<FlaskConicalIcon className="size-4 shrink-0" />
+		<div className="flex items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-[0.8125rem] text-amber-900 dark:border-amber-400/15 dark:bg-[oklch(0.23_0.04_68)] dark:text-amber-100">
+			<FlaskConicalIcon className="size-3.5 shrink-0" />
 			<span>{m.demoBannerMessage()}</span>
 		</div>
 	);
