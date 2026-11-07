@@ -166,6 +166,31 @@ func TestHandleDeployResultPersistsWarningsForMatchingComposeFile(t *testing.T) 
 	}
 }
 
+func TestHandleDeployResultWithoutComposeAnalysisPreservesWarnings(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	const existingWarnings = `[{"code":"privileged_container","service":"api"}]`
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
+		Update("warnings", existingWarnings).Error; err != nil {
+		t.Fatalf("seed application warnings: %v", err)
+	}
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId: app.Id,
+		ErrorMessage:  "docker daemon is not ready",
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != existingWarnings {
+		t.Errorf("Warnings = %q, want unchanged %q after failure before analysis", updated.Warnings, existingWarnings)
+	}
+}
+
 func TestHandleDeployResultDoesNotPersistStaleWarnings(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)

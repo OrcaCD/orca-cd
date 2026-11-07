@@ -316,9 +316,8 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	Log.Info().Str("application_id", req.ApplicationId).Str("request_id", req.RequestId).Msg("starting deployment")
 
 	result := &messages.DeployResult{
-		RequestId:         req.RequestId,
-		ApplicationId:     req.ApplicationId,
-		ComposeFileSha256: composewarnings.Hash(req.ComposeFile),
+		RequestId:     req.RequestId,
+		ApplicationId: req.ApplicationId,
 	}
 
 	if deployer == nil {
@@ -340,6 +339,9 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ComposeFile:     req.ComposeFile,
 		DeleteOldImages: req.DeleteOldImages,
 	})
+	if warnings != nil {
+		result.ComposeFileSha256 = composewarnings.Hash(req.ComposeFile)
+	}
 	for _, warning := range warnings {
 		result.Warnings = append(result.Warnings, &messages.ComposeWarning{
 			Code:    warning.Code,

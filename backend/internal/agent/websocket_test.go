@@ -1107,12 +1107,13 @@ func TestExecutePullImages_NilPoller(t *testing.T) {
 func TestExecuteDeployment_NilDeployer(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 
-	executeDeployment(context.Background(), sender, nil, &messages.DeployRequest{
+	req := &messages.DeployRequest{
 		RequestId:       "req-1",
 		ApplicationId:   "app-1",
 		ApplicationName: "billing",
 		ComposeFile:     "services: {}\n",
-	})
+	}
+	executeDeployment(context.Background(), sender, nil, req)
 
 	select {
 	case msg := <-sender.sent:
@@ -1126,8 +1127,61 @@ func TestExecuteDeployment_NilDeployer(t *testing.T) {
 		if result.ErrorMessage == "" {
 			t.Error("expected non-empty error message")
 		}
+		if result.ComposeFileSha256 != "" {
+			t.Errorf("expected no compose hash before analysis, got %q", result.ComposeFileSha256)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy result")
+	}
+}
+
+func TestExecuteDeploymentOnlyHashesComposeAfterAnalysis(t *testing.T) {
+	tests := []struct {
+		name     string
+		warnings []composewarnings.Warning
+		err      error
+		wantHash bool
+	}{
+		{
+			name: "failure before analysis",
+			err:  errors.New("docker daemon is not ready"),
+		},
+		{
+			name:     "analysis found no warnings",
+			warnings: []composewarnings.Warning{},
+			err:      errors.New("compose up failed"),
+			wantHash: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const composeFile = "services:\n  app:\n    image: test:1\n"
+			sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+			deployer := &stubDeployer{warnings: tt.warnings, err: tt.err}
+			executeDeployment(context.Background(), sender, deployer, &messages.DeployRequest{
+				RequestId:       "req-1",
+				ApplicationId:   "app-1",
+				ApplicationName: "billing",
+				ComposeFile:     composeFile,
+			})
+
+			select {
+			case msg := <-sender.sent:
+				result := msg.GetDeployResult()
+				if result == nil {
+					t.Fatal("expected deploy result payload")
+				}
+				if got := result.ComposeFileSha256 != ""; got != tt.wantHash {
+					t.Errorf("ComposeFileSha256 present = %t, want %t (value %q)", got, tt.wantHash, result.ComposeFileSha256)
+				}
+				if tt.wantHash && result.ComposeFileSha256 != composewarnings.Hash(composeFile) {
+					t.Errorf("ComposeFileSha256 = %q, want hash of analyzed compose file", result.ComposeFileSha256)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for deploy result")
+			}
+		})
 	}
 }
 
