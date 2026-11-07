@@ -76,7 +76,7 @@ async function selectType(dialog: Locator, label: string) {
 
 async function startWizard(page: Page, name: string, type: string) {
 	await openNotifications(page);
-	await page.getByRole("button", { name: "Add Notification" }).click();
+	await page.getByRole("button", { name: "Add Notification" }).first().click();
 	const dialog = page
 		.getByRole("dialog")
 		.filter({ hasText: "Create a new notification endpoint." });
@@ -196,7 +196,7 @@ test.describe("Adding a notification", () => {
 	test("the list is empty at first", async ({ page }) => {
 		await openNotifications(page);
 		expect(await listNotifications(page)).toEqual([]);
-		await expect(page.getByText("No notifications found")).toBeVisible();
+		await expect(page.getByText("No notifications yet")).toBeVisible();
 	});
 
 	test("requires a name and at least one event", async ({ page }) => {
@@ -272,7 +272,7 @@ test.describe("Adding a notification", () => {
 		expect(await listNotifications(page)).toEqual([]);
 
 		await dialog.getByRole("button", { name: "Cancel" }).click();
-		await expect(page.getByText("No notifications found")).toBeVisible();
+		await expect(page.getByText("No notifications yet")).toBeVisible();
 		await setStatus(FAILING_HOOK, 200);
 	});
 
@@ -307,7 +307,7 @@ test.describe("Adding a notification", () => {
 		await expect(card.getByText("Success", { exact: true })).toBeVisible();
 		await expect(card.getByText("Webhook", { exact: true })).toBeVisible();
 		await expect(card.getByText("Enabled", { exact: true })).toBeVisible();
-		await expect(page.getByText("No notifications found")).toHaveCount(0);
+		await expect(page.getByText("No notifications yet")).toHaveCount(0);
 	});
 
 	test("creates a custom notification with only some events", async ({ page }) => {
@@ -640,7 +640,7 @@ test.describe("Listing and removing notifications", () => {
 		await page.getByRole("dialog").getByRole("button", { name: "Proceed" }).click();
 
 		await expect(page.getByText(`Notification ${WEBHOOK_NAME} deleted successfully`)).toBeVisible();
-		await expect(page.getByText("No notifications found")).toBeVisible();
+		await expect(page.getByText("No notifications yet")).toBeVisible();
 		expect((await listNotifications(page)).map((item) => item.name)).not.toContain(WEBHOOK_NAME);
 	});
 });

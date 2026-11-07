@@ -1,10 +1,16 @@
-import { PageContainer, PageHeader } from "@/components/page-header";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
+import { PageContainer, PageHeader } from "@/components/page-header";
+import {
+	EmptyState,
+	ResourceGridSkeleton,
+	ResourceTableSkeleton,
+} from "@/components/collection-states";
+import { SearchField } from "@/components/search-field";
 import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
-import { useMemo, useState } from "react";
-import { EllipsisVertical, Search, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { EllipsisVertical, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { AgentCard } from "@/components/cards/agent-card";
@@ -16,7 +22,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
 import { groupBy, toSearchableText } from "@/lib/utils";
@@ -49,6 +54,7 @@ function RouteComponent() {
 
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
+	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	async function handleDeleteCard(agent: Agent) {
 		try {
@@ -90,35 +96,62 @@ function RouteComponent() {
 				actions={<UpsertAgentDialog agent={null} />}
 			/>
 
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingAgents()}</p>}
-
 			<OutdatedAgentsAlert agents={data ?? []} />
 
 			<div className="space-y-4">
-				<div className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div className="relative flex-1 ">
-						<Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-						<Input
+				{(data?.length !== 0 || searchQuery.length > 0) && (
+					<div className="flex items-center gap-2 sm:gap-3">
+						<SearchField
 							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
+							onChange={setSearchQuery}
+							inputRef={searchInputRef}
+							label={m.searchAgentsLabel()}
 							placeholder={m.searchAgents()}
-							className="pl-9 bg-muted border-border"
+							className="flex-1"
 						/>
-					</div>
 
-					<div className="flex gap-2 ">
-						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						<div className="flex shrink-0 gap-2">
+							<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						</div>
 					</div>
-				</div>
+				)}
 
-				{viewMode === "grid" ? (
+				{isLoading ? (
+					viewMode === "grid" ? (
+						<ResourceGridSkeleton
+							kind="agent"
+							label={m.loadingAgents()}
+							className="sm:grid-cols-2 xl:grid-cols-3"
+						/>
+					) : (
+						<ResourceTableSkeleton label={m.loadingAgents()} />
+					)
+				) : data?.length === 0 ? (
+					<EmptyState
+						icon={Server}
+						title={m.noAgentsYet()}
+						description={m.noAgentsYetDescription()}
+						action={<UpsertAgentDialog agent={null} />}
+					/>
+				) : filteredAgents.length === 0 ? (
+					<EmptyState
+						variant="noMatches"
+						title={m.noAgentsFound()}
+						description={m.noAgentsFoundDescription()}
+						action={
+							<Button
+								variant="outline"
+								onClick={() => {
+									setSearchQuery("");
+									searchInputRef.current?.focus();
+								}}
+							>
+								{m.searchClear()}
+							</Button>
+						}
+					/>
+				) : viewMode === "grid" ? (
 					<>
-						{filteredAgents.length === 0 && !isLoading ? (
-							<div className="rounded-xl border border-dashed p-10 text-center">
-								<p className="text-sm font-medium">{m.noAgentsFound()}</p>
-								<p className="mt-1 text-sm text-muted-foreground">{m.noAgentsFoundDescription()}</p>
-							</div>
-						) : null}
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredAgents.map((agent) => (
 								<AgentCard
