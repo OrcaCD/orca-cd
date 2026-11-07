@@ -160,7 +160,7 @@
 	"overviewOnboardingNotificationDescription": "Optional: Werde benachrichtigt, wenn ein Deployment fehlschlägt oder ein Agent offline geht.",
 	"applicationsFleetTitle": "Status",
 	"applicationsFleetCount": "Anwendungen: {count}",
-	"applicationsFleetHealthyCount": "{healthy} / {total} synchron & gesund",
+	"applicationsFleetHealthyCount": "/ {total} synchron & gesund",
 	"applicationsFleetNothingToDo": "Alles läuft wie erwartet",
 	"applicationsFleetOk": "OK",
 	"applicationsActivityTitle": "Deployments",
@@ -921,5 +921,6 @@
 	"navDocumentation": "Dokumentation",
 	"applicationsFleetNotHealthy": "Nicht gesund",
 	"healthHistoryEmptyDescription": "Es wurden noch keine Statusänderungen aufgezeichnet. Der Verlauf beginnt mit der nächsten Änderung. Den Live-Status siehst du oben.",
+	"applicationsAgentsAffectedApp": "1 betroffene App",
 	"healthHistoryEmptyTitle": "Noch kein Gesundheitsverlauf"
 }

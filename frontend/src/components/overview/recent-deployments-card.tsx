@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { History } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import {
 	Item,
 	ItemActions,
@@ -17,21 +18,33 @@ import type { ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { RelativeTime } from "@/components/relative-time";
 import { useApplicationActivity } from "./activity";
+import { OverviewCardHeader } from "./overview-card";
 
 export function RecentDeploymentsCard() {
 	const { data } = useApplicationActivity();
 
 	return (
 		<Card>
-			<CardHeader>
-				<CardTitle>{m.overviewRecentDeploymentsTitle()}</CardTitle>
-				<CardDescription>{m.overviewRecentDeploymentsDescription()}</CardDescription>
-			</CardHeader>
+			<OverviewCardHeader
+				icon={History}
+				title={m.overviewRecentDeploymentsTitle()}
+				description={m.overviewRecentDeploymentsDescription()}
+			/>
 			<CardContent>
 				{!data ? (
 					<div className="space-y-2">
 						{Array.from({ length: 4 }, (_, index) => (
-							<Skeleton key={index} className="h-12 w-full" />
+							<div key={index} className="flex items-start gap-2.5 px-2.5 py-2" aria-hidden="true">
+								<Skeleton className="mt-1 size-8 shrink-0 rounded-md" />
+								<div className="flex flex-1 flex-col gap-2">
+									<div className="flex justify-between gap-4">
+										<Skeleton className="h-4 w-1/3" />
+										<Skeleton className="h-5 w-16 rounded-full" />
+									</div>
+									<Skeleton className="h-3 w-3/4" />
+									<Skeleton className="h-3 w-2/3" />
+								</div>
+							</div>
 						))}
 					</div>
 				) : data.recentDeployments.length === 0 ? (
