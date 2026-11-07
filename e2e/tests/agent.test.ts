@@ -123,7 +123,7 @@ test.describe("Agent setup", () => {
 	test("add agent in the UI", async ({ page }) => {
 		await gotoApp(page, "/agents");
 
-		await page.getByRole("button", { name: "Add Agent" }).click();
+		await page.getByRole("button", { name: "Add Agent" }).first().click();
 		const dialog = page.getByRole("dialog");
 		await dialog.getByRole("textbox", { name: "Name" }).fill(AGENT_NAME);
 		await dialog.getByRole("button", { name: "Add Agent" }).click();
