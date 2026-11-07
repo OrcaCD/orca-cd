@@ -83,7 +83,7 @@ export function UserDataTable<TData extends RowData>({
 
 				<UpsertUserDialog user={null} />
 			</div>
-			<div className="overflow-hidden rounded-md border">
+			<div className="overflow-hidden rounded-xl border bg-card">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (

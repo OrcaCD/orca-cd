@@ -45,7 +45,7 @@ export function AgentsDataTable<TData extends RowData>({ columns, data }: Agents
 
 	return (
 		<div>
-			<div className="overflow-hidden rounded-md border">
+			<div className="overflow-hidden rounded-xl border bg-card">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (

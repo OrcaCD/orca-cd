@@ -33,7 +33,7 @@ test("relative dates expose exact timestamps on hover and keyboard focus", async
 	await mockApplications(page);
 	await page.goto("/applications");
 	const time = page.locator("time");
-	await expect(time).toHaveText("4 days ago");
+	await expect(time).toHaveText("synced 4 days ago");
 	await expect(time).toHaveAttribute("datetime", new Date(timestamp).toISOString());
 	await time.hover();
 	const tooltip = page.locator('[data-slot="tooltip-content"]');
@@ -56,9 +56,9 @@ test("relative dates refresh while the page stays open", async ({ page }) => {
 		}),
 	);
 	await page.goto("/applications");
-	await expect(page.locator("time")).toHaveText("2 minutes ago");
+	await expect(page.locator("time")).toHaveText("synced 2 minutes ago");
 	await page.clock.fastForward(60_000);
-	await expect(page.locator("time")).toHaveText("3 minutes ago");
+	await expect(page.locator("time")).toHaveText("synced 3 minutes ago");
 });
 
 test("fresh events never appear to be in the future", async ({ page }) => {
@@ -69,7 +69,7 @@ test("fresh events never appear to be in the future", async ({ page }) => {
 		}),
 	);
 	await page.goto("/applications");
-	await expect(page.locator("time")).toHaveText("now");
+	await expect(page.locator("time")).toHaveText("synced now");
 });
 
 test("relative dates refresh immediately when a background tab becomes visible", async ({
@@ -82,18 +82,18 @@ test("relative dates refresh immediately when a background tab becomes visible",
 		}),
 	);
 	await page.goto("/applications");
-	await expect(page.locator("time")).toHaveText("2 minutes ago");
+	await expect(page.locator("time")).toHaveText("synced 2 minutes ago");
 	await page.clock.setSystemTime(new Date(now.getTime() + 300_000));
 	await page.evaluate(() => {
 		Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
 		document.dispatchEvent(new Event("visibilitychange"));
 	});
-	await expect(page.locator("time")).toHaveText("2 minutes ago");
+	await expect(page.locator("time")).toHaveText("synced 2 minutes ago");
 	await page.evaluate(() => {
 		Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
 		document.dispatchEvent(new Event("visibilitychange"));
 	});
-	await expect(page.locator("time")).toHaveText("7 minutes ago");
+	await expect(page.locator("time")).toHaveText("synced 7 minutes ago");
 });
 
 test("table dates are relative and missing or invalid dates stay readable", async ({ page }) => {
@@ -135,7 +135,7 @@ test("relative and exact dates follow the selected language", async ({ page }) =
 	await mockApplications(page);
 	await page.goto("/applications");
 	const time = page.locator("time");
-	await expect(time).toHaveText("vor 4 Tagen");
+	await expect(time).toHaveText("synchronisiert vor 4 Tagen");
 	await time.hover();
 	await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
 		await exactDate(page, "de"),
