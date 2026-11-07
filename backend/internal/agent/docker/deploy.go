@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
@@ -18,11 +17,10 @@ import (
 )
 
 const (
-	composeFileName        = "compose.yaml"
-	labelManagedBy         = "managed_by"
-	labelApplicationID     = "orca-cd.application-id"
-	managedByValue         = "orca-cd"
-	composeAnalysisTimeout = 10 * time.Second
+	composeFileName    = "compose.yaml"
+	labelManagedBy     = "managed_by"
+	labelApplicationID = "orca-cd.application-id"
+	managedByValue     = "orca-cd"
 )
 
 func orcaLabels(appID string) map[string]string {
@@ -152,19 +150,14 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 		return nil, fmt.Errorf("write compose file: %w", err)
 	}
 
-	analysisCtx, cancelAnalysis := context.WithTimeout(ctx, composeAnalysisTimeout)
-	project, err := loadProject(analysisCtx, c.compose, composeProjectLoadOptions(projectName, composePath, applicationDir))
-	analysisErr := analysisCtx.Err()
-	cancelAnalysis()
+	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, applicationDir))
 	if err != nil {
-		err = fmt.Errorf("load compose project: %w", err)
-		warningCode := "invalid_compose"
-		if analysisErr != nil {
-			warningCode = "analysis_timeout"
-		}
-		warnings := []composewarnings.Warning{{Code: warningCode}}
 		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
-		return warnings, err
+		err = fmt.Errorf("load compose project: %w", err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		return []composewarnings.Warning{{Code: "invalid_compose"}}, err
 	} else {
 		err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir)
 	}

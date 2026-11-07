@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -898,6 +899,9 @@ func TestDeploy_RejectedComposeFileRestoresPreviousDeployment(t *testing.T) {
 func TestDeploy_LoadErrorReportsWarningAndRestoresPreviousDeployment(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	deployDeadline, _ := ctx.Deadline()
 
 	appDir := filepath.Join(c.deploymentsDir, "billing")
 	if err := os.MkdirAll(appDir, 0o750); err != nil {
@@ -912,13 +916,14 @@ func TestDeploy_LoadErrorReportsWarningAndRestoresPreviousDeployment(t *testing.
 	originalLoadProject := loadProject
 	t.Cleanup(func() { loadProject = originalLoadProject })
 	loadProject = func(ctx context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
-		if _, ok := ctx.Deadline(); !ok {
-			t.Fatal("expected compose analysis to have a deadline")
+		gotDeadline, ok := ctx.Deadline()
+		if !ok || !gotDeadline.Equal(deployDeadline) {
+			t.Fatalf("load project deadline = %v, want deployment deadline %v", gotDeadline, deployDeadline)
 		}
 		return nil, errors.New("invalid compose")
 	}
 
-	warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+	warnings, err := c.DeployWithWarnings(ctx, DeployRequest{
 		ApplicationID:   "app-123",
 		ApplicationName: "billing",
 		ComposeFile:     "services:\n  app:\n    image: img:2.0.0\n",
@@ -940,7 +945,7 @@ func TestDeploy_LoadErrorReportsWarningAndRestoresPreviousDeployment(t *testing.
 	}
 }
 
-func TestDeploy_LoadTimeoutReportsWarning(t *testing.T) {
+func TestDeploy_CanceledLoadDoesNotReportAnalysisWarning(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
@@ -961,8 +966,11 @@ func TestDeploy_LoadTimeoutReportsWarning(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected canceled compose loading to abort deployment")
 	}
-	if !reflect.DeepEqual(warnings, []composewarnings.Warning{{Code: "analysis_timeout"}}) {
-		t.Fatalf("DeployWithWarnings() warnings = %#v, want analysis_timeout warning", warnings)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("DeployWithWarnings() error = %v, want context.Canceled", err)
+	}
+	if warnings != nil {
+		t.Fatalf("DeployWithWarnings() warnings = %#v, want no warnings for canceled load", warnings)
 	}
 }
 
