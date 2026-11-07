@@ -521,7 +521,6 @@
 	"editUserDescription": "Aktualisiere Benutzerdetails und Berechtigungen. Optional kann das Passwort zurückgesetzt werden.",
 	"addUserDescription": "Erstelle ein neues lokales Benutzerkonto. Ein temporäres Passwort wird generiert.",
 	"fullNamePlaceholder": "Vollständiger Name",
-	"role": "Rolle",
 	"roleAdmin": "Admin",
 	"roleUser": "Benutzer",
 	"resetPassword": "Passwort zurücksetzen",
@@ -569,7 +568,6 @@
 	"columnApps": "Apps",
 	"columnCreatedAt": "Erstellt am",
 	"columnEmail": "E-Mail",
-	"columnRole": "Rolle",
 	"columnProviders": "Anbieter",
 	"columnTime": "Zeitpunkt",
 	"columnEvent": "Ereignis",
@@ -916,5 +914,13 @@
 	"applicationsAttentionRolledBack": "Auf {commit} zurückgerollt",
 	"applicationsRolledBack": "Zurückgerollt",
 	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
-	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit."
+	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit.",
+	"roles": "Rollen",
+	"columnRoles": "Rollen",
+	"noRoles": "Keine Rollen",
+	"roleAdminDescription": "Vollzugriff auf alles, einschließlich der Admin-Seiten.",
+	"roleUserDescription": "Wird neuen Benutzern zugewiesen. Startet mit Vollzugriff auf alle Ressourcen.",
+	"roleFromOidcGroup": "Über eine OIDC-Gruppe zugewiesen",
+	"oidcGroup": "OIDC-Gruppe",
+	"userRolesDescription": "Der Benutzer darf alles, was eine seiner Rollen erlaubt."
 }

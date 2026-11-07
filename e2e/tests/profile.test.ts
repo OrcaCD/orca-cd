@@ -80,7 +80,7 @@ test.describe("Profile", () => {
 			id: user.id,
 			name,
 			email: email.toLowerCase(),
-			role: "user",
+			isAdmin: false,
 			isLocal: true,
 		});
 		expect((await listUsers(page)).find((item) => item.id === user.id)).toMatchObject({

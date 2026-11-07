@@ -73,7 +73,7 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		var userResp *adminUserResponse
 
 		if log.User != nil {
-			u := toAdminUserResponse(log.User, nil)
+			u := toAdminUserResponse(log.User, nil, nil)
 			userResp = &u
 		}
 

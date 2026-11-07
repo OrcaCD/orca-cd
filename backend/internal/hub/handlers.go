@@ -128,6 +128,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			admin.PUT("/users/:id", routes.AdminUpdateUserHandler)
 			admin.DELETE("/users/:id", routes.AdminDeleteUserHandler)
 
+			admin.GET("/roles", routes.AdminListRolesHandler)
+			admin.POST("/roles", routes.AdminCreateRoleHandler)
+			admin.GET("/roles/:id", routes.AdminGetRoleHandler)
+			admin.PUT("/roles/:id", routes.AdminUpdateRoleHandler)
+			admin.DELETE("/roles/:id", routes.AdminDeleteRoleHandler)
+
 			admin.GET("/oidc-providers", routes.AdminListOIDCProvidersHandler)
 			admin.POST("/oidc-providers", routes.AdminCreateOIDCProviderHandler)
 			admin.GET("/oidc-providers/:id", routes.AdminGetOIDCProviderHandler)
