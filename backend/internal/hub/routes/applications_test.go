@@ -391,8 +391,16 @@ func TestGetApplicationHandler_InvalidWarnings(t *testing.T) {
 
 	GetApplicationHandler(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 despite invalid warnings, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Warnings == nil || len(body.Warnings) != 0 {
+		t.Errorf("expected empty warnings fallback, got %#v", body.Warnings)
 	}
 }
 
@@ -603,6 +611,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 
 func TestCreateApplicationHandler_InvalidWarnings(t *testing.T) {
 	setupTestDBWithApplications(t)
+	deployer := &stubRouteDeployer{}
+	application_deployer.DefaultApplicationDeployer = deployer
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = nil })
 
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-invalid-warnings")
 	agent := seedTestAgent(t, "agent-create-invalid-warnings")
@@ -621,8 +632,18 @@ func TestCreateApplicationHandler_InvalidWarnings(t *testing.T) {
 
 	CreateApplicationHandler(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 despite invalid warnings, got %d: %s", w.Code, w.Body.String())
+	}
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Warnings == nil || len(body.Warnings) != 0 {
+		t.Errorf("expected empty warnings fallback, got %#v", body.Warnings)
+	}
+	if deployer.startedApp != body.Id {
+		t.Fatalf("expected deployment trigger for created application %q, got %q", body.Id, deployer.startedApp)
 	}
 }
 
@@ -993,8 +1014,22 @@ func TestUpdateApplicationHandler_InvalidWarnings(t *testing.T) {
 
 	UpdateApplicationHandler(c)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 despite invalid warnings, got %d: %s", w.Code, w.Body.String())
+	}
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Warnings == nil || len(body.Warnings) != 0 {
+		t.Errorf("expected empty warnings fallback, got %#v", body.Warnings)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load updated application: %v", err)
+	}
+	if updated.Name.String() != "Billing Service" {
+		t.Errorf("expected saved application update, got name %q", updated.Name.String())
 	}
 }
 

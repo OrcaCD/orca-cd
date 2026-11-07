@@ -150,12 +150,7 @@ func GetApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	response, err := toApplicationResponse(&application)
-	if err != nil {
-		hubApplications.Log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to decode application warnings")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	response := toApplicationResponse(&application)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -243,12 +238,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "created", "application", application.Id)
 
-	response, err := toApplicationResponse(&createdApplication)
-	if err != nil {
-		hubApplications.Log.Error().Err(err).Str("applicationId", createdApplication.Id).Msg("failed to decode application warnings")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	response := toApplicationResponse(&createdApplication)
 	c.JSON(http.StatusCreated, response)
 	sse.PublishUpdate(sse.TopicApplications)
 
@@ -395,12 +385,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "updated", "application", id)
 
-	response, err := toApplicationResponse(&updatedApplication)
-	if err != nil {
-		hubApplications.Log.Error().Err(err).Str("applicationId", updatedApplication.Id).Msg("failed to decode application warnings")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	response := toApplicationResponse(&updatedApplication)
 	c.JSON(http.StatusOK, response)
 	sse.PublishUpdate(sse.TopicApplications)
 	sendAgentSettings(c, req.AgentId)
@@ -594,10 +579,11 @@ func normalizeSyncSource(source *models.ApplicationEventSource) *string {
 	return &s
 }
 
-func toApplicationResponse(app *models.Application) (applicationResponse, error) {
+func toApplicationResponse(app *models.Application) applicationResponse {
 	var warnings []composewarnings.Warning
 	if err := json.Unmarshal([]byte(app.Warnings), &warnings); err != nil {
-		return applicationResponse{}, fmt.Errorf("decode application warnings: %w", err)
+		hubApplications.Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to decode application warnings")
+		warnings = []composewarnings.Warning{}
 	}
 	if warnings == nil {
 		warnings = []composewarnings.Warning{}
@@ -636,7 +622,7 @@ func toApplicationResponse(app *models.Application) (applicationResponse, error)
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)
 		resp.ImageWebhookUrl = &webhookUrl
 	}
-	return resp, nil
+	return resp
 }
 
 // sendAgentSettings fetches all applications for agentID and pushes an
