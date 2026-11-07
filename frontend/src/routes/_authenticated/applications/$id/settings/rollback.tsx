@@ -8,9 +8,8 @@ import ErrorAlert from "@/components/alerts/error-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
@@ -185,7 +184,7 @@ function RollbackSettingsPage() {
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
 											/>
-											<Label htmlFor={field.name}>{m.automaticRollback()}</Label>
+											<FieldLabel htmlFor={field.name}>{m.automaticRollback()}</FieldLabel>
 										</div>
 									</Field>
 								)}
@@ -358,7 +357,7 @@ function CheckboxField({
 			<div className="flex items-start gap-2">
 				<Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
 				<div className="space-y-1">
-					<Label htmlFor={id}>{label}</Label>
+					<FieldLabel htmlFor={id}>{label}</FieldLabel>
 					<p className="text-muted-foreground text-xs">{description}</p>
 				</div>
 			</div>
