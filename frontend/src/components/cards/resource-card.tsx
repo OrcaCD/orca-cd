@@ -120,7 +120,7 @@ export function CardError({ message, className }: { message: string; className?:
 			title={message}
 		>
 			<CircleAlert className="mt-px size-3.5 shrink-0" />
-			<span className="truncate">{message}</span>
+			<span className="line-clamp-2 wrap-break-word">{message}</span>
 		</p>
 	);
 }
