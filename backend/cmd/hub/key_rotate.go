@@ -123,6 +123,7 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		return nil
 	}
 
+	crypto.SetDefault(secrets.oldCipher)
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
@@ -142,11 +143,17 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		)
 	}
 
-	// The application name_hash blind index is keyed off APP_SECRET, so rotation
-	// invalidates every stored hash. Recompute them under the new key.
+	// These application blind indexes are keyed off APP_SECRET, so rotation
+	// invalidates them. Recompute them under the new key.
 	if err := db.BackfillNameHashes(ctx, db.DB); err != nil {
 		return fmt.Errorf(
 			"key rotation re-encrypted the database but failed to recompute application name hashes: %w. Restart the hub with the new APP_SECRET to retry the backfill",
+			err,
+		)
+	}
+	if err := db.BackfillComposeFileHashes(ctx, db.DB); err != nil {
+		return fmt.Errorf(
+			"key rotation re-encrypted the database but failed to recompute application compose file hashes: %w. Restart the hub with the new APP_SECRET to retry the backfill",
 			err,
 		)
 	}

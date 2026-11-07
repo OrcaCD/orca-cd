@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/rs/zerolog"
@@ -59,6 +60,10 @@ func runResetPasswordCommand(ctx context.Context, out io.Writer, target resetPas
 
 	if cfg.Demo {
 		return fmt.Errorf("password reset is not available in demo mode")
+	}
+
+	if err := crypto.Init(cfg.AppSecret); err != nil {
+		return fmt.Errorf("failed to initialize crypto: %w", err)
 	}
 
 	dbLogger := zerolog.New(io.Discard)

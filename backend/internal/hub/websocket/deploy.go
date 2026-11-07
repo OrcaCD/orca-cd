@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
@@ -95,7 +96,7 @@ func storeComposeWarnings(ctx context.Context, agentID string, app *models.Appli
 	updated, err := gorm.G[models.Application](db.DB).
 		Where("id = ? AND agent_id = ? AND compose_file_hash = ?", app.Id, agentID, app.ComposeFileHash).
 		Updates(ctx, models.Application{
-			ComposeFileHash: result.ComposeFileSha256,
+			ComposeFileHash: crypto.BlindIndex(app.ComposeFile.String()),
 			Warnings:        string(encoded),
 		})
 	if err != nil {

@@ -563,6 +563,9 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if stored.Name.String() != "Billing Service" {
 		t.Errorf("expected encrypted/decrypted name %q, got %q", "Billing Service", stored.Name.String())
 	}
+	if stored.ComposeFileHash != crypto.BlindIndex(stored.ComposeFile.String()) {
+		t.Error("expected compose file hash to be a keyed blind index")
+	}
 	if stored.Icon != "badge-dollar-sign" {
 		t.Errorf("expected stored icon %q, got %q", "badge-dollar-sign", stored.Icon)
 	}
@@ -926,6 +929,9 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	if updated.Name.String() != "New Name" {
 		t.Errorf("expected name %q, got %q", "New Name", updated.Name.String())
+	}
+	if updated.ComposeFileHash != crypto.BlindIndex(updated.ComposeFile.String()) {
+		t.Error("expected compose file hash to be a keyed blind index")
 	}
 	if updated.Icon != "rocket" {
 		t.Errorf("expected icon %q, got %q", "rocket", updated.Icon)

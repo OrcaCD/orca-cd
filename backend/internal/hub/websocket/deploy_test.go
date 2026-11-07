@@ -161,8 +161,8 @@ func TestHandleDeployResultPersistsWarningsForMatchingComposeFile(t *testing.T) 
 	if updated.Warnings != `[{"code":"missing_restart_policy","service":"api"}]` {
 		t.Fatalf("Warnings = %q", updated.Warnings)
 	}
-	if updated.ComposeFileHash != composewarnings.Hash(app.ComposeFile.String()) {
-		t.Fatalf("ComposeFileHash = %q", updated.ComposeFileHash)
+	if updated.ComposeFileHash != crypto.BlindIndex(app.ComposeFile.String()) {
+		t.Fatalf("ComposeFileHash = %q, want keyed hash", updated.ComposeFileHash)
 	}
 }
 
@@ -254,7 +254,7 @@ func TestStoreComposeWarnings_StaleDatabaseHashLogsAndSkipsUpdate(t *testing.T) 
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
 	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
-		Update("compose_file_hash", "newer-compose-hash").Error; err != nil {
+		Update("compose_file_hash", crypto.BlindIndex("newer compose file")).Error; err != nil {
 		t.Fatalf("update application compose hash: %v", err)
 	}
 
