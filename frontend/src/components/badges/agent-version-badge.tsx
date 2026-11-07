@@ -12,7 +12,7 @@ const statusConfig: Record<
 	[AgentVersionStatus.Outdated]: {
 		label: () => m.agentVersionOutdated(),
 		description: () => m.agentVersionOutdatedDescription(),
-		className: "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30",
+		className: "bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30",
 		Icon: AlertTriangle,
 	},
 	[AgentVersionStatus.Incompatible]: {
