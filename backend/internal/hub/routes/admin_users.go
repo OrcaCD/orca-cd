@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 )
 
@@ -36,16 +37,24 @@ type adminUserWithGeneratedPasswordResponse struct {
 }
 
 type adminCreateUserRequest struct {
-	Name    string   `json:"name" binding:"required,min=3,max=64"`
-	Email   string   `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required,min=3,max=64"`
+	Email string `json:"email" binding:"required,email"`
+	// Without roleIds, the user gets the default role
 	RoleIds []string `json:"roleIds" binding:"max=100"`
 }
 
 type adminUpdateUserRequest struct {
-	Name          string   `json:"name" binding:"required,min=3,max=64"`
-	Email         string   `json:"email" binding:"required,email"`
+	// Name and email are validated by adminUserProfile, unless the profile is
+	// managed by an OIDC provider.
+	Name          string   `json:"name"`
+	Email         string   `json:"email"`
 	RoleIds       []string `json:"roleIds" binding:"max=100"`
 	ResetPassword bool     `json:"resetPassword"`
+}
+
+type adminUserProfile struct {
+	Name  string `binding:"required,min=3,max=64"`
+	Email string `binding:"required,email"`
 }
 
 // userRoleResponse is a role of a user. Sources tells whether an admin assigned
@@ -147,11 +156,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-
-	roleIds, ok := validateRoleIds(c, req.RoleIds)
-	if !ok {
-		return
-	}
+	roleIds := uniqueIds(req.RoleIds)
 
 	generatedPassword, err := auth.GenerateRandomPassword()
 	if err != nil {
@@ -174,6 +179,15 @@ func AdminCreateUserHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if req.RoleIds == nil {
+			role, err := rbac.BuiltInRole(ctx, tx, models.RoleBuiltInUser)
+			if err != nil {
+				return err
+			}
+			roleIds = []string{role.Id}
+		} else if err := checkRolesExist(ctx, tx, roleIds); err != nil {
+			return err
+		}
 		if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
 			return err
 		}
@@ -181,6 +195,10 @@ func AdminCreateUserHandler(c *gin.Context) {
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, errUnknownRole) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
 			return
@@ -211,11 +229,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	}
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-
-	roleIds, ok := validateRoleIds(c, req.RoleIds)
-	if !ok {
-		return
-	}
+	roleIds := uniqueIds(req.RoleIds)
 
 	ctx := c.Request.Context()
 
@@ -230,17 +244,24 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	}
 
 	// The profile of users without a password is managed by their OIDC provider,
-	// only their roles can be changed.
-	if user.PasswordHash == nil && (user.Name != req.Name || user.Email != req.Email || req.ResetPassword) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
-		return
+	// only their roles can be changed. Their name and email don't have to be
+	// sent, and the provider may have set values the validation would reject.
+	if user.PasswordHash == nil {
+		if (req.Name != "" && req.Name != user.Name) || (req.Email != "" && !strings.EqualFold(req.Email, user.Email)) || req.ResetPassword {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
+			return
+		}
+	} else {
+		if err := binding.Validator.ValidateStruct(adminUserProfile{Name: req.Name, Email: req.Email}); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
+			return
+		}
+		if user.Email != req.Email {
+			user.EmailUnconfirmed = false
+		}
+		user.Name = req.Name
+		user.Email = req.Email
 	}
-
-	if user.Email != req.Email {
-		user.EmailUnconfirmed = false
-	}
-	user.Name = req.Name
-	user.Email = req.Email
 
 	generatedPassword := ""
 	if req.ResetPassword {
@@ -263,6 +284,9 @@ func AdminUpdateUserHandler(c *gin.Context) {
 
 	rolesChanged := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := checkRolesExist(ctx, tx, roleIds); err != nil {
+			return err
+		}
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -275,6 +299,10 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, errLastAdmin) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin user"})
+			return
+		}
+		if errors.Is(err, errUnknownRole) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		if isUniqueConstraintError(err) {
@@ -356,28 +384,20 @@ func keepLastAdmin(ctx context.Context, tx *gorm.DB, change func() error) error 
 	return nil
 }
 
-// validateRoleIds deduplicates the role IDs and checks that every role exists.
-func validateRoleIds(c *gin.Context, roleIds []string) ([]string, bool) {
-	unique := make([]string, 0, len(roleIds))
-	for _, id := range roleIds {
-		if !slices.Contains(unique, id) {
-			unique = append(unique, id)
-		}
-	}
-	if len(unique) == 0 {
-		return unique, true
-	}
+var errUnknownRole = errors.New("role not found")
 
-	count, err := gorm.G[models.Role](db.DB).Where("id IN ?", unique).Count(c.Request.Context(), "*")
+func checkRolesExist(ctx context.Context, tx *gorm.DB, roleIds []string) error {
+	if len(roleIds) == 0 {
+		return nil
+	}
+	count, err := gorm.G[models.Role](tx).Where("id IN ?", roleIds).Count(ctx, "*")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return nil, false
+		return err
 	}
-	if int(count) != len(unique) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "role not found"})
-		return nil, false
+	if int(count) != len(roleIds) {
+		return errUnknownRole
 	}
-	return unique, true
+	return nil
 }
 
 func buildAdminUserResponse(c *gin.Context, user *models.User) (adminUserResponse, error) {
@@ -407,19 +427,23 @@ func loadRolesByUserId(ctx context.Context, userIds []string) (map[string][]user
 		return nil, err
 	}
 
+	// A user can have a role from several sources, which are merged into one role.
+	type roleKey struct{ userId, roleId string }
+	indexOf := make(map[roleKey]int, len(assignments))
 	for i := range assignments {
 		a := &assignments[i]
 		if a.Role == nil {
 			continue
 		}
-		roles := rolesByUserId[a.UserId]
-		idx := slices.IndexFunc(roles, func(r userRoleResponse) bool { return r.Id == a.RoleId })
-		if idx == -1 {
-			roles = append(roles, userRoleResponse{Id: a.RoleId, Name: a.Role.Name, BuiltIn: a.Role.BuiltIn})
-			idx = len(roles) - 1
+		key := roleKey{a.UserId, a.RoleId}
+		idx, ok := indexOf[key]
+		if !ok {
+			idx = len(rolesByUserId[a.UserId])
+			indexOf[key] = idx
+			rolesByUserId[a.UserId] = append(rolesByUserId[a.UserId], userRoleResponse{Id: a.RoleId, Name: a.Role.Name, BuiltIn: a.Role.BuiltIn})
 		}
+		roles := rolesByUserId[a.UserId]
 		roles[idx].Sources = append(roles[idx].Sources, a.Source)
-		rolesByUserId[a.UserId] = roles
 	}
 
 	for userId, roles := range rolesByUserId {

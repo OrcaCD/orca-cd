@@ -3,6 +3,7 @@ package rbac
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -254,5 +255,117 @@ func TestSetUserRoles_KeepsOtherSources(t *testing.T) {
 	}
 	if len(assignments) != 1 || assignments[0].RoleId != AdminRoleID || assignments[0].Source != models.UserRoleSourceOIDC {
 		t.Fatalf("expected only the oidc role to remain, got %+v", assignments)
+	}
+}
+
+func TestLoad_ReturnsRolesWithSources(t *testing.T) {
+	tx := openTestDB(t)
+	createUser(t, tx, "alice", UserRoleID)
+	if _, err := SetUserRoles(t.Context(), tx, "alice", models.UserRoleSourceOIDC, []string{UserRoleID, AdminRoleID}); err != nil {
+		t.Fatalf("SetUserRoles() error: %v", err)
+	}
+
+	p, err := Load(t.Context(), tx, "alice")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !p.IsAdmin() {
+		t.Fatal("expected the admin role from OIDC to make alice an admin")
+	}
+	roles := p.Roles()
+	slices.SortFunc(roles, func(a, b AssignedRole) int { return strings.Compare(a.Id, b.Id) })
+	want := []AssignedRole{
+		{Id: AdminRoleID, Name: "Admin", BuiltIn: new(models.RoleBuiltInAdmin), Sources: []models.UserRoleSource{models.UserRoleSourceOIDC}},
+		{Id: UserRoleID, Name: "User", BuiltIn: new(models.RoleBuiltInUser), Sources: []models.UserRoleSource{models.UserRoleSourceManual, models.UserRoleSourceOIDC}},
+	}
+	if len(roles) != len(want) {
+		t.Fatalf("expected %d roles, got %+v", len(want), roles)
+	}
+	for i := range want {
+		if roles[i].Id != want[i].Id || roles[i].Name != want[i].Name || *roles[i].BuiltIn != *want[i].BuiltIn || !slices.Equal(roles[i].Sources, want[i].Sources) {
+			t.Errorf("role %d: expected %+v, got %+v", i, want[i], roles[i])
+		}
+	}
+
+	createUser(t, tx, "nobody")
+	nobody, err := Load(t.Context(), tx, "nobody")
+	if err != nil || len(nobody.Roles()) != 0 {
+		t.Fatalf("expected no roles, got %+v (err=%v)", nobody.Roles(), err)
+	}
+}
+
+func TestSetUserRoles_AddsAndRemoves(t *testing.T) {
+	tx := openTestDB(t)
+	role := models.Role{Name: "Deployers"}
+	if err := gorm.G[models.Role](tx).Create(t.Context(), &role); err != nil {
+		t.Fatalf("failed to create role: %v", err)
+	}
+	createUser(t, tx, "alice", UserRoleID)
+
+	changed, err := SetUserRoles(t.Context(), tx, "alice", models.UserRoleSourceManual, []string{role.Id, UserRoleID})
+	if err != nil || !changed {
+		t.Fatalf("expected a role to be added, changed=%v err=%v", changed, err)
+	}
+	changed, err = SetUserRoles(t.Context(), tx, "alice", models.UserRoleSourceManual, []string{role.Id})
+	if err != nil || !changed {
+		t.Fatalf("expected a role to be removed, changed=%v err=%v", changed, err)
+	}
+
+	assignments, err := gorm.G[models.UserRole](tx).Where("user_id = ?", "alice").Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load roles: %v", err)
+	}
+	if len(assignments) != 1 || assignments[0].RoleId != role.Id {
+		t.Fatalf("expected only the custom role, got %+v", assignments)
+	}
+}
+
+func TestSetRoleMembers(t *testing.T) {
+	tx := openTestDB(t)
+	createUser(t, tx, "alice", UserRoleID)
+	createUser(t, tx, "bob")
+	createUser(t, tx, "carol")
+	if _, err := SetUserRoles(t.Context(), tx, "carol", models.UserRoleSourceOIDC, []string{UserRoleID}); err != nil {
+		t.Fatalf("SetUserRoles() error: %v", err)
+	}
+
+	changed, err := SetRoleMembers(t.Context(), tx, UserRoleID, models.UserRoleSourceManual, []string{"bob"})
+	if err != nil || !changed {
+		t.Fatalf("expected the members to change, changed=%v err=%v", changed, err)
+	}
+	changed, err = SetRoleMembers(t.Context(), tx, UserRoleID, models.UserRoleSourceManual, []string{"bob"})
+	if err != nil || changed {
+		t.Fatalf("expected no change, changed=%v err=%v", changed, err)
+	}
+
+	assignments, err := gorm.G[models.UserRole](tx).Where("role_id = ?", UserRoleID).Order("user_id").Find(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load members: %v", err)
+	}
+	got := make([]string, 0, len(assignments))
+	for i := range assignments {
+		got = append(got, assignments[i].UserId+":"+string(assignments[i].Source))
+	}
+	// Members from OIDC groups are kept
+	if want := []string{"bob:manual", "carol:oidc"}; !slices.Equal(got, want) {
+		t.Fatalf("expected members %v, got %v", want, got)
+	}
+}
+
+func TestAssignBuiltInRole(t *testing.T) {
+	tx := openTestDB(t)
+	createUser(t, tx, "alice")
+
+	for range 2 {
+		if err := AssignBuiltInRole(t.Context(), tx, "alice", models.RoleBuiltInAdmin); err != nil {
+			t.Fatalf("AssignBuiltInRole() error: %v", err)
+		}
+	}
+	count, err := CountAdmins(t.Context(), tx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected alice to be the only admin, got %d (err=%v)", count, err)
+	}
+	if _, err := BuiltInRole(t.Context(), tx, "missing"); err == nil {
+		t.Fatal("expected an error for an unknown built-in role")
 	}
 }

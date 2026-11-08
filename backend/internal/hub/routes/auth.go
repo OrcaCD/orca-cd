@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -94,15 +95,11 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
-	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), []string{user.Id})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+	roles := make([]userRoleResponse, 0, len(perms.Roles()))
+	for _, role := range perms.Roles() {
+		roles = append(roles, userRoleResponse{Id: role.Id, Name: role.Name, BuiltIn: role.BuiltIn, Sources: role.Sources})
 	}
-	roles := rolesByUserId[user.Id]
-	if roles == nil {
-		roles = []userRoleResponse{}
-	}
+	slices.SortFunc(roles, compareUserRoles)
 
 	c.JSON(http.StatusOK, profileResponse{
 		Id:                     user.Id,

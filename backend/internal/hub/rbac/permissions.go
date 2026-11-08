@@ -24,6 +24,7 @@ type Permissions struct {
 	admin  bool
 	global map[models.PermissionResource]actionSet
 	scoped map[models.PermissionResource]map[string]actionSet
+	roles  []AssignedRole
 }
 
 // Admin returns permissions that allow everything.
@@ -186,36 +187,82 @@ func (p *Permissions) Grants() map[models.PermissionResource]ResourceGrant {
 	return grants
 }
 
-// Load resolves the permissions of a user from their roles.
+// AssignedRole is a role of a user. Sources tells whether an admin assigned it,
+// it comes from an OIDC group, or both.
+type AssignedRole struct {
+	Id      string
+	Name    string
+	BuiltIn *models.RoleBuiltIn
+	Sources []models.UserRoleSource
+}
+
+// Roles returns the roles the permissions were loaded from.
+func (p *Permissions) Roles() []AssignedRole {
+	if p == nil {
+		return nil
+	}
+	return p.roles
+}
+
+type grantRow struct {
+	RoleId     string
+	RoleName   string
+	BuiltIn    *models.RoleBuiltIn
+	Source     models.UserRoleSource
+	Resource   *models.PermissionResource
+	Action     *models.PermissionAction
+	ResourceId *string
+}
+
+// Load resolves the permissions of a user from their roles. It runs on every
+// authenticated request, so roles and grants are loaded with a single query.
 func Load(ctx context.Context, tx *gorm.DB, userID string) (*Permissions, error) {
-	assignments, err := gorm.G[models.UserRole](tx).
-		Preload("Role", nil).
-		Where("user_id = ?", userID).
-		Find(ctx)
+	rows, err := gorm.G[grantRow](tx).Raw(`
+		SELECT roles.id AS role_id, roles.name AS role_name, roles.built_in, user_roles.source,
+			role_permissions.resource, role_permissions.action, role_permissions.resource_id
+		FROM user_roles
+		JOIN roles ON roles.id = user_roles.role_id
+		LEFT JOIN role_permissions ON role_permissions.role_id = roles.id
+		WHERE user_roles.user_id = ?`, userID).Find(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	roleIDs := make([]string, 0, len(assignments))
-	for i := range assignments {
-		role := assignments[i].Role
-		if role == nil {
-			continue
+	var (
+		roles   []AssignedRole
+		indexOf = make(map[string]int)
+		grants  = make([]models.RolePermission, 0, len(rows))
+		admin   bool
+	)
+	for i := range rows {
+		row := &rows[i]
+		idx, ok := indexOf[row.RoleId]
+		if !ok {
+			idx = len(roles)
+			indexOf[row.RoleId] = idx
+			roles = append(roles, AssignedRole{Id: row.RoleId, Name: row.RoleName, BuiltIn: row.BuiltIn})
 		}
-		if role.IsBuiltIn(models.RoleBuiltInAdmin) {
-			return Admin(), nil
+		// A role has at most one assignment per source
+		if !slices.Contains(roles[idx].Sources, row.Source) {
+			roles[idx].Sources = append(roles[idx].Sources, row.Source)
 		}
-		roleIDs = append(roleIDs, role.Id)
+		if row.BuiltIn != nil && *row.BuiltIn == models.RoleBuiltInAdmin {
+			admin = true
+		}
+		if row.Resource != nil && row.Action != nil {
+			grants = append(grants, models.RolePermission{Resource: *row.Resource, Action: *row.Action, ResourceId: row.ResourceId})
+		}
 	}
-	if len(roleIDs) == 0 {
-		return New(nil), nil
+	for i := range roles {
+		slices.Sort(roles[i].Sources)
 	}
 
-	grants, err := gorm.G[models.RolePermission](tx).Where("role_id IN ?", roleIDs).Find(ctx)
-	if err != nil {
-		return nil, err
+	p := Admin()
+	if !admin {
+		p = New(grants)
 	}
-	return New(grants), nil
+	p.roles = roles
+	return p, nil
 }
 
 // Set stores the permissions for the current request.

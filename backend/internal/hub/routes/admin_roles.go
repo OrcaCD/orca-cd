@@ -108,6 +108,9 @@ func AdminCreateRoleHandler(c *gin.Context) {
 	}
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := checkRoleReferences(ctx, tx, permissions, req.UserIds); err != nil {
+			return err
+		}
 		if err := gorm.G[models.Role](tx).Create(ctx, &role); err != nil {
 			return err
 		}
@@ -150,6 +153,9 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errRoleNotFound
 			}
+			return err
+		}
+		if err := checkRoleReferences(ctx, tx, permissions, req.UserIds); err != nil {
 			return err
 		}
 
@@ -245,7 +251,7 @@ func writeRoleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errRoleNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
-	case errors.Is(err, errBuiltInRole):
+	case errors.Is(err, errBuiltInRole), errors.Is(err, errUnknownResource), errors.Is(err, errUnknownUser):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case isUniqueConstraintError(err):
 		c.JSON(http.StatusConflict, gin.H{"error": "a role with this name already exists"})
@@ -254,7 +260,9 @@ func writeRoleError(c *gin.Context, err error) {
 	}
 }
 
-// bindRoleRequest parses and validates a role, returning its deduplicated permissions.
+// bindRoleRequest parses and validates a role, returning its deduplicated
+// permissions. Whether the referenced users and resources exist is checked by
+// checkRoleReferences in the write transaction.
 func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission, bool) {
 	var req upsertRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -268,32 +276,17 @@ func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission
 		return req, nil, false
 	}
 
-	ctx := c.Request.Context()
-
-	permissions, err := normalizeRolePermissions(ctx, req.Permissions)
+	permissions, err := normalizeRolePermissions(req.Permissions)
 	if err != nil {
-		if errors.Is(err, errInvalidPermission) || errors.Is(err, errUnknownResource) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return req, nil, false
 	}
-
-	req.UserIds, err = normalizeRoleMembers(ctx, req.UserIds)
-	if err != nil {
-		if errors.Is(err, errUnknownUser) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		}
-		return req, nil, false
-	}
+	req.UserIds = uniqueIds(req.UserIds)
 
 	return req, permissions, true
 }
 
-func normalizeRolePermissions(ctx context.Context, items []rolePermissionRequest) ([]models.RolePermission, error) {
+func normalizeRolePermissions(items []rolePermissionRequest) ([]models.RolePermission, error) {
 	type key struct {
 		resource   models.PermissionResource
 		action     models.PermissionAction
@@ -301,27 +294,19 @@ func normalizeRolePermissions(ctx context.Context, items []rolePermissionRequest
 	}
 
 	seen := make(map[key]struct{}, len(items))
-	idsByResource := make(map[models.PermissionResource][]string)
 	permissions := make([]models.RolePermission, 0, len(items))
 
 	for _, item := range items {
 		if !models.IsValidPermission(item.Resource, item.Action) {
 			return nil, errInvalidPermission
 		}
+		k := key{item.Resource, item.Action, ""}
 		var resourceId *string
 		if item.ResourceId != nil && *item.ResourceId != "" {
 			if item.Action == models.ActionCreate {
 				return nil, errInvalidPermission
 			}
-			id := *item.ResourceId
-			resourceId = &id
-			if !slices.Contains(idsByResource[item.Resource], id) {
-				idsByResource[item.Resource] = append(idsByResource[item.Resource], id)
-			}
-		}
-
-		k := key{item.Resource, item.Action, ""}
-		if resourceId != nil {
+			resourceId = new(*item.ResourceId)
 			k.resourceId = *resourceId
 		}
 		if _, ok := seen[k]; ok {
@@ -336,53 +321,68 @@ func normalizeRolePermissions(ctx context.Context, items []rolePermissionRequest
 		})
 	}
 
-	for resource, ids := range idsByResource {
-		count, err := countResources(ctx, resource, ids)
-		if err != nil {
-			return nil, err
-		}
-		if int(count) != len(ids) {
-			return nil, errUnknownResource
-		}
-	}
-
 	return permissions, nil
 }
 
-func countResources(ctx context.Context, resource models.PermissionResource, ids []string) (int64, error) {
+// checkRoleReferences checks that the users and resources a role refers to exist.
+func checkRoleReferences(ctx context.Context, tx *gorm.DB, permissions []models.RolePermission, userIds []string) error {
+	idsByResource := make(map[models.PermissionResource][]string)
+	for i := range permissions {
+		if id := permissions[i].ResourceId; id != nil {
+			idsByResource[permissions[i].Resource] = append(idsByResource[permissions[i].Resource], *id)
+		}
+	}
+	for resource, ids := range idsByResource {
+		ids = uniqueIds(ids)
+		count, err := countResources(ctx, tx, resource, ids)
+		if err != nil {
+			return err
+		}
+		if int(count) != len(ids) {
+			return errUnknownResource
+		}
+	}
+
+	if len(userIds) == 0 {
+		return nil
+	}
+	count, err := gorm.G[models.User](tx).Where("id IN ?", userIds).Count(ctx, "*")
+	if err != nil {
+		return err
+	}
+	if int(count) != len(userIds) {
+		return errUnknownUser
+	}
+	return nil
+}
+
+func countResources(ctx context.Context, tx *gorm.DB, resource models.PermissionResource, ids []string) (int64, error) {
 	switch resource {
 	case models.ResourceApplication:
-		return gorm.G[models.Application](db.DB).Where("id IN ?", ids).Count(ctx, "*")
+		return gorm.G[models.Application](tx).Where("id IN ?", ids).Count(ctx, "*")
 	case models.ResourceRepository:
-		return gorm.G[models.Repository](db.DB).Where("id IN ?", ids).Count(ctx, "*")
+		return gorm.G[models.Repository](tx).Where("id IN ?", ids).Count(ctx, "*")
 	case models.ResourceAgent:
-		return gorm.G[models.Agent](db.DB).Where("id IN ?", ids).Count(ctx, "*")
+		return gorm.G[models.Agent](tx).Where("id IN ?", ids).Count(ctx, "*")
 	case models.ResourceNotification:
-		return gorm.G[models.Notification](db.DB).Where("id IN ?", ids).Count(ctx, "*")
+		return gorm.G[models.Notification](tx).Where("id IN ?", ids).Count(ctx, "*")
 	default:
 		return 0, errInvalidPermission
 	}
 }
 
-func normalizeRoleMembers(ctx context.Context, userIds []string) ([]string, error) {
-	unique := make([]string, 0, len(userIds))
-	for _, id := range userIds {
-		if id != "" && !slices.Contains(unique, id) {
-			unique = append(unique, id)
+// uniqueIds removes empty and duplicate IDs, keeping the order.
+func uniqueIds(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok || id == "" {
+			continue
 		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
 	}
-	if len(unique) == 0 {
-		return unique, nil
-	}
-
-	count, err := gorm.G[models.User](db.DB).Where("id IN ?", unique).Count(ctx, "*")
-	if err != nil {
-		return nil, err
-	}
-	if int(count) != len(unique) {
-		return nil, errUnknownUser
-	}
-	return unique, nil
+	return unique
 }
 
 func replaceRolePermissions(ctx context.Context, tx *gorm.DB, roleId string, permissions []models.RolePermission) error {
@@ -428,10 +428,9 @@ func loadMembersByRoleId(ctx context.Context, roleIds []string) (map[string][]ro
 
 	userIds := make([]string, 0, len(assignments))
 	for i := range assignments {
-		if !slices.Contains(userIds, assignments[i].UserId) {
-			userIds = append(userIds, assignments[i].UserId)
-		}
+		userIds = append(userIds, assignments[i].UserId)
 	}
+	userIds = uniqueIds(userIds)
 	users := map[string]models.User{}
 	if len(userIds) > 0 {
 		found, err := gorm.G[models.User](db.DB).Where("id IN ?", userIds).Find(ctx)
@@ -443,20 +442,24 @@ func loadMembersByRoleId(ctx context.Context, roleIds []string) (map[string][]ro
 		}
 	}
 
+	// A user can have a role from several sources, which are merged into one member.
+	type memberKey struct{ roleId, userId string }
+	indexOf := make(map[memberKey]int, len(assignments))
 	for i := range assignments {
 		a := &assignments[i]
 		user, ok := users[a.UserId]
 		if !ok {
 			continue
 		}
-		members := membersByRoleId[a.RoleId]
-		idx := slices.IndexFunc(members, func(m roleMemberResponse) bool { return m.Id == a.UserId })
-		if idx == -1 {
-			members = append(members, roleMemberResponse{Id: user.Id, Name: user.Name, Email: user.Email})
-			idx = len(members) - 1
+		key := memberKey{a.RoleId, a.UserId}
+		idx, ok := indexOf[key]
+		if !ok {
+			idx = len(membersByRoleId[a.RoleId])
+			indexOf[key] = idx
+			membersByRoleId[a.RoleId] = append(membersByRoleId[a.RoleId], roleMemberResponse{Id: user.Id, Name: user.Name, Email: user.Email})
 		}
+		members := membersByRoleId[a.RoleId]
 		members[idx].Sources = append(members[idx].Sources, a.Source)
-		membersByRoleId[a.RoleId] = members
 	}
 
 	for roleId, members := range membersByRoleId {

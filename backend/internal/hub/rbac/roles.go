@@ -39,14 +39,6 @@ func CountAdmins(ctx context.Context, tx *gorm.DB) (int64, error) {
 	return gorm.G[models.User](tx).Where("id IN (?)", adminUserIDs(tx.WithContext(ctx))).Count(ctx, "*")
 }
 
-// IsAdmin reports whether the user has the admin role.
-func IsAdmin(ctx context.Context, tx *gorm.DB, userID string) (bool, error) {
-	count, err := gorm.G[models.User](tx).
-		Where("id = ? AND id IN (?)", userID, adminUserIDs(tx.WithContext(ctx))).
-		Count(ctx, "*")
-	return count > 0, err
-}
-
 // SetUserRoles replaces the roles a user got from the given source. Roles from
 // other sources are kept. Returns whether anything changed.
 func SetUserRoles(ctx context.Context, tx *gorm.DB, userID string, source models.UserRoleSource, roleIDs []string) (bool, error) {

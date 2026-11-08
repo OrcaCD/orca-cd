@@ -1029,7 +1029,7 @@ func TestRegisterHandler_AssignsAdminRole(t *testing.T) {
 	if err := db.DB.Where("email = ?", "admin@example.com").First(&user).Error; err != nil {
 		t.Fatalf("failed to find user: %v", err)
 	}
-	isAdmin, err := rbac.IsAdmin(t.Context(), db.DB, user.Id)
+	isAdmin, err := userIsAdmin(t, user.Id)
 	if err != nil {
 		t.Fatalf("failed to check admin role: %v", err)
 	}

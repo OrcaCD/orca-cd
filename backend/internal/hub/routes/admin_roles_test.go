@@ -206,7 +206,7 @@ func TestAdminUpdateRoleHandler_RejectsRemovingLastAdmin(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
-	isAdmin, err := rbac.IsAdmin(t.Context(), db.DB, admin.Id)
+	isAdmin, err := userIsAdmin(t, admin.Id)
 	if err != nil || !isAdmin {
 		t.Fatalf("expected the admin to keep the role, err=%v", err)
 	}
