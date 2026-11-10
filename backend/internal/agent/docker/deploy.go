@@ -154,12 +154,7 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 		return nil, fmt.Errorf("write compose file: %w", err)
 	}
 
-	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName:       projectName,
-		ConfigPaths:       []string{composePath},
-		WorkingDir:        applicationDir,
-		ProjectOptionsFns: []cli.ProjectOptionsFn{cli.WithoutEnvironmentResolution},
-	})
+	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, applicationDir, cli.WithoutEnvironmentResolution))
 	if err != nil {
 		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
 		err = fmt.Errorf("load compose project: %w", err)
@@ -167,10 +162,12 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 			return nil, err
 		}
 		return []composewarnings.Warning{{Code: "invalid_compose"}}, err
-	} else if err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir); err == nil {
+	}
+	// Analyze before resolveEnvFiles, which returns a nil project on error.
+	warnings := analyzeComposeWarnings(project)
+	if err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir); err == nil {
 		project, err = resolveEnvFiles(applicationDir, project)
 	}
-	warnings := analyzeComposeWarnings(project)
 	if err != nil {
 		// Image pulls redeploy the compose file on disk, so a rejected file must
 		// not stay there.

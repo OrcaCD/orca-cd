@@ -87,39 +87,39 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id                       string                                     `json:"id"`
-	Icon                     string                                     `json:"icon"`
-	Name                     string                                     `json:"name"`
-	RepositoryId             string                                     `json:"repositoryId"`
-	RepositoryName           string                                     `json:"repositoryName"`
-	RepositoryUrl            string                                     `json:"repositoryUrl"`
-	RepositorySyncType       string                                     `json:"repositorySyncType"`
-	AgentId                  string                                     `json:"agentId"`
-	AgentName                string                                     `json:"agentName"`
-	SyncStatus               string                                     `json:"syncStatus"`
-	HealthStatus             string                                     `json:"healthStatus"`
-	Branch                   string                                     `json:"branch"`
-	Commit                   string                                     `json:"commit"`
-	CommitMessage            string                                     `json:"commitMessage"`
-	LastSyncedAt             *string                                    `json:"lastSyncedAt"`
-	LastSyncError            *string                                    `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string                                    `json:"lastSyncSource,omitempty"`
-	Path                     string                                     `json:"path"`
-	CreatedAt                string                                     `json:"createdAt"`
-	UpdatedAt                string                                     `json:"updatedAt"`
-	ComposeFile              string                                     `json:"composeFile"`
-	PreviousComposeFile      string                                     `json:"previousComposeFile,omitempty"`
-	ImagePollEnabled         bool                                       `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64                                      `json:"imagePollIntervalSeconds"`
-	DeleteOldImages          bool                                       `json:"deleteOldImages"`
-	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
-	RolledBackAt             *string                  `json:"rolledBackAt"`
-	RolledBackCommit         *string                  `json:"rolledBackCommit"`
-	RolledBackReason         *string                  `json:"rolledBackReason"`
-	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
-	Rollback                 rollbackSettingsResponse `json:"rollback"`
-	ImageWebhookEnabled      bool                                       `json:"imageWebhookEnabled"`
-	ImageWebhookUrl          *string                                    `json:"imageWebhookUrl,omitempty"`
+	Id                       string                    `json:"id"`
+	Icon                     string                    `json:"icon"`
+	Name                     string                    `json:"name"`
+	RepositoryId             string                    `json:"repositoryId"`
+	RepositoryName           string                    `json:"repositoryName"`
+	RepositoryUrl            string                    `json:"repositoryUrl"`
+	RepositorySyncType       string                    `json:"repositorySyncType"`
+	AgentId                  string                    `json:"agentId"`
+	AgentName                string                    `json:"agentName"`
+	SyncStatus               string                    `json:"syncStatus"`
+	HealthStatus             string                    `json:"healthStatus"`
+	Branch                   string                    `json:"branch"`
+	Commit                   string                    `json:"commit"`
+	CommitMessage            string                    `json:"commitMessage"`
+	LastSyncedAt             *string                   `json:"lastSyncedAt"`
+	LastSyncError            *string                   `json:"lastSyncError,omitempty"`
+	LastSyncSource           *string                   `json:"lastSyncSource,omitempty"`
+	Path                     string                    `json:"path"`
+	CreatedAt                string                    `json:"createdAt"`
+	UpdatedAt                string                    `json:"updatedAt"`
+	ComposeFile              string                    `json:"composeFile"`
+	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty"`
+	ImagePollEnabled         bool                      `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds"`
+	DeleteOldImages          bool                      `json:"deleteOldImages"`
+	CurrentDeploymentId      *string                   `json:"currentDeploymentId"`
+	RolledBackAt             *string                   `json:"rolledBackAt"`
+	RolledBackCommit         *string                   `json:"rolledBackCommit"`
+	RolledBackReason         *string                   `json:"rolledBackReason"`
+	AutoSyncPaused           bool                      `json:"autoSyncPaused"`
+	Rollback                 rollbackSettingsResponse  `json:"rollback"`
+	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
 	Warnings                 []composewarnings.Warning `json:"warnings"`
 }
 
@@ -652,7 +652,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 			PauseAutoSync:        app.RollbackPauseAutoSync,
 		},
 		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
-		Warnings:                 warnings,
+		Warnings:            warnings,
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)

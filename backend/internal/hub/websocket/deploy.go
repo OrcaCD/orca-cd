@@ -127,50 +127,7 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 func forgetCurrentDeployment(ctx context.Context, applicationID string, log *zerolog.Logger) {
 	if err := deployments.ClearCurrent(ctx, applicationID); err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to clear current deployment")
-
-func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {
-	if result.ComposeFileSha256 == "" || result.ComposeFileSha256 != composewarnings.Hash(app.ComposeFile.String()) {
-		return nil
 	}
-
-	warnings := make([]composewarnings.Warning, 0, len(result.Warnings))
-	for _, warning := range result.Warnings {
-		if warning == nil {
-			continue
-		}
-		warnings = append(warnings, composewarnings.Warning{
-			Code:    warning.Code,
-			Service: warning.Service,
-			Field:   warning.Field,
-		})
-	}
-	encoded, err := json.Marshal(warnings)
-	if err != nil {
-		return err
-	}
-
-	// Re-read the compose file in the same transaction as the write, so a sync
-	// or edit that lands while the deployment ran is not paired with warnings
-	// computed for the previous compose file.
-	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		current, err := gorm.G[models.Application](tx).
-			Select("Id", "ComposeFile").
-			Where("id = ? AND agent_id = ?", app.Id, agentID).
-			First(ctx)
-		if err != nil {
-			return err
-		}
-		if composewarnings.Hash(current.ComposeFile.String()) != result.ComposeFileSha256 {
-			log.Debug().Str("applicationId", app.Id).Msg("compose warnings are stale; application compose file changed")
-			return nil
-		}
-
-		_, err = gorm.G[models.Application](tx).
-			Where("id = ?", app.Id).
-			Select("Warnings").
-			Updates(ctx, models.Application{Warnings: string(encoded)})
-		return err
-	})
 }
 
 func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {

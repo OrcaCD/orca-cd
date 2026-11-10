@@ -818,7 +818,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 	deployedImages := []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new", PinnedRef: "ghcr.io/orcacd/billing@sha256:new"}}
 	deployer := &stubDeployer{
-		reqCh:    make(chan agentdocker.DeployRequest, 1), images: deployedImages,
+		reqCh: make(chan agentdocker.DeployRequest, 1), images: deployedImages,
 		warnings: []composewarnings.Warning{{Code: "missing_restart_policy", Service: "app"}},
 	}
 	const composeFile = "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n"

@@ -86,18 +86,18 @@ func composeValidationWarnings(err error) []composewarnings.Warning {
 	return []composewarnings.Warning{{Code: "invalid_compose"}}
 }
 
-func composeProjectLoadOptions(projectName, composePath, workingDir string) api.ProjectLoadOptions {
+func composeProjectLoadOptions(projectName, composePath, workingDir string, extraOptions ...cli.ProjectOptionsFn) api.ProjectLoadOptions {
 	return api.ProjectLoadOptions{
 		ProjectName: projectName,
 		ConfigPaths: []string{composePath},
 		WorkingDir:  workingDir,
-		ProjectOptionsFns: []cli.ProjectOptionsFn{
+		ProjectOptionsFns: append([]cli.ProjectOptionsFn{
 			cli.WithLoadOptions(func(options *loader.Options) {
 				// Local file references are rejected by validateComposeFeatures.
 				options.SkipInclude = true
 				options.SkipExtends = true
 				options.SkipResolveLabels = true
 			}),
-		},
+		}, extraOptions...),
 	}
 }
