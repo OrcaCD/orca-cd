@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,6 +92,23 @@ func notificationBarrier(t *testing.T) (wait func()) {
 		}
 		t.Error("async notification did not finish")
 	}
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
@@ -221,7 +239,9 @@ func TestHandleDeployResultLogsComposeWarningsPersistenceError(t *testing.T) {
 		t.Fatalf("create warning failure trigger: %v", err)
 	}
 
-	var logOutput bytes.Buffer
+	// handleDeployResult hands the logger to an async notification goroutine,
+	// so the buffer must be safe for concurrent use.
+	var logOutput lockedBuffer
 	logger := zerolog.New(&logOutput)
 	expectAsyncNotification(t)
 
