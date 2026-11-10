@@ -246,8 +246,13 @@ function getApplicationWarningMessage(warning: Application["warnings"][number]) 
 	switch (warning.code) {
 		case "invalid_compose":
 			return m.applicationWarningInvalidCompose();
-		case "analysis_timeout":
-			return m.applicationWarningAnalysisTimeout();
+		case "unsupported_compose_feature":
+			return warning.service
+				? m.applicationWarningUnsupportedServiceFeature({
+						service: warning.service,
+						field: warning.field ?? "",
+					})
+				: m.applicationWarningUnsupportedFeature({ field: warning.field ?? "" });
 		case "missing_restart_policy":
 			return m.applicationWarningMissingRestart({ service: warning.service ?? "" });
 		case "database_without_volume":

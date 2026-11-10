@@ -26,6 +26,11 @@ func TestValidateComposeFeaturesRejectsUnresolvedLocalReferences(t *testing.T) {
 			composeFile: "services:\n  app:\n    image: test:1\n    label_file: ../shared/labels.env\n",
 			wantError:   `unsupported Compose feature "label_file" in service "app"`,
 		},
+		{
+			name:        "extends in second YAML document",
+			composeFile: "services:\n  app:\n    image: test:1\n---\nservices:\n  app:\n    extends:\n      service: base\n",
+			wantError:   `unsupported Compose feature "extends" in service "app"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -54,5 +59,12 @@ func TestValidateComposeFeaturesRejectsInvalidYAML(t *testing.T) {
 	err := validateComposeFeatures("services:\n  app: [")
 	if err == nil || !strings.Contains(err.Error(), "parse compose file:") {
 		t.Fatalf("validateComposeFeatures() error = %v, want YAML parse error", err)
+	}
+}
+
+func TestValidateComposeFeaturesAllowsMultipleDocumentsWithoutLocalReferences(t *testing.T) {
+	composeFile := "services:\n  app:\n    image: test:1\n---\nservices:\n  worker:\n    image: test:1\n"
+	if err := validateComposeFeatures(composeFile); err != nil {
+		t.Fatalf("validateComposeFeatures() error = %v", err)
 	}
 }

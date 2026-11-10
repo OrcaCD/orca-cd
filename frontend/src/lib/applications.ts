@@ -42,7 +42,7 @@ export interface ApplicationWarning {
 		| "privileged_container"
 		| "host_network"
 		| "host_namespace"
-		| "analysis_timeout";
+		| "unsupported_compose_feature";
 	service?: string;
 	field?: string;
 }

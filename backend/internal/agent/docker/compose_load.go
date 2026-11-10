@@ -1,8 +1,13 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"sort"
+	"strings"
+
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -10,13 +15,39 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func validateComposeFeatures(composeFile string) error {
-	var document map[string]any
-	if err := yaml.Unmarshal([]byte(composeFile), &document); err != nil {
-		return fmt.Errorf("parse compose file: %w", err)
+type unsupportedComposeFeatureError struct {
+	Feature string
+	Service string
+}
+
+func (e *unsupportedComposeFeatureError) Error() string {
+	if e.Service == "" {
+		return fmt.Sprintf(`unsupported Compose feature "%s": local Compose references are not resolved; deployment was rejected`, e.Feature)
 	}
+	return fmt.Sprintf(`unsupported Compose feature "%s" in service "%s": local Compose references are not resolved; deployment was rejected`, e.Feature, e.Service)
+}
+
+
+func validateComposeFeatures(composeFile string) error {
+	decoder := yaml.NewDecoder(strings.NewReader(composeFile))
+	for {
+		var document map[string]any
+		err := decoder.Decode(&document)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("parse compose file: %w", err)
+		}
+		if err := validateComposeDocument(document); err != nil {
+			return err
+		}
+	}
+}
+
+func validateComposeDocument(document map[string]any) error {
 	if _, ok := document["include"]; ok {
-		return fmt.Errorf(`unsupported Compose feature "include": local Compose references are not resolved; deployment was rejected`)
+		return &unsupportedComposeFeatureError{Feature: "include"}
 	}
 
 	services, ok := document["services"].(map[string]any)
@@ -36,11 +67,24 @@ func validateComposeFeatures(composeFile string) error {
 		}
 		for _, feature := range []string{"extends", "label_file"} {
 			if _, ok := service[feature]; ok {
-				return fmt.Errorf(`unsupported Compose feature "%s" in service "%s": local Compose references are not resolved; deployment was rejected`, feature, name)
+				return &unsupportedComposeFeatureError{Feature: feature, Service: name}
 			}
 		}
 	}
 	return nil
+}
+
+// composeValidationWarnings turns a validateComposeFeatures error into the
+// warning shown in the hub UI.
+func composeValidationWarnings(err error) []composewarnings.Warning {
+	if unsupported, ok := errors.AsType[*unsupportedComposeFeatureError](err); ok {
+		return []composewarnings.Warning{{
+			Code:    "unsupported_compose_feature",
+			Service: unsupported.Service,
+			Field:   unsupported.Feature,
+		}}
+	}
+	return []composewarnings.Warning{{Code: "invalid_compose"}}
 }
 
 func composeProjectLoadOptions(projectName, composePath, workingDir string) api.ProjectLoadOptions {

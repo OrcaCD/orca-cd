@@ -100,26 +100,42 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 }
 
-func TestDeployWithWarningsRejectsUnresolvedLocalComposeReferences(t *testing.T) {
+func TestDeployWithWarningsRejectsInvalidOrUnsupportedComposeFiles(t *testing.T) {
 	tests := []struct {
 		name        string
 		composeFile string
 		wantError   string
+		wantWarning composewarnings.Warning
 	}{
 		{
 			name:        "include",
 			composeFile: "include:\n  - shared/compose.yaml\nservices:\n  app:\n    image: test:1\n",
 			wantError:   `unsupported Compose feature "include"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Field: "include"},
 		},
 		{
 			name:        "extends",
 			composeFile: "services:\n  app:\n    image: test:1\n    extends:\n      service: base\n",
 			wantError:   `unsupported Compose feature "extends" in service "app"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Service: "app", Field: "extends"},
 		},
 		{
 			name:        "label_file",
 			composeFile: "services:\n  app:\n    image: test:1\n    label_file: labels.env\n",
 			wantError:   `unsupported Compose feature "label_file" in service "app"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Service: "app", Field: "label_file"},
+		},
+		{
+			name:        "include in second YAML document",
+			composeFile: "services:\n  app:\n    image: test:1\n---\ninclude:\n  - shared/compose.yaml\n",
+			wantError:   `unsupported Compose feature "include"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Field: "include"},
+		},
+		{
+			name:        "invalid YAML",
+			composeFile: "services:\n  app: [\n",
+			wantError:   "parse compose file:",
+			wantWarning: composewarnings.Warning{Code: "invalid_compose"},
 		},
 	}
 
@@ -128,13 +144,16 @@ func TestDeployWithWarningsRejectsUnresolvedLocalComposeReferences(t *testing.T)
 			c := newTestClient(t)
 			c.deploymentsDir = t.TempDir()
 
-			_, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+			warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
 				ApplicationID:   "app-123",
 				ApplicationName: "billing",
 				ComposeFile:     tt.composeFile,
 			})
 			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
 				t.Fatalf("DeployWithWarnings() error = %v, want it to contain %q", err, tt.wantError)
+			}
+			if !reflect.DeepEqual(warnings, []composewarnings.Warning{tt.wantWarning}) {
+				t.Fatalf("DeployWithWarnings() warnings = %#v, want %#v", warnings, tt.wantWarning)
 			}
 			if _, err := os.Stat(filepath.Join(c.deploymentsDir, "billing")); !os.IsNotExist(err) {
 				t.Fatalf("expected rejected compose file not to create deployment directory, stat err = %v", err)
