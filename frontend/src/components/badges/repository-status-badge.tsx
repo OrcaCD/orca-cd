@@ -15,7 +15,7 @@ function getSyncStatusColor(syncStatus: RepositorySyncStatus): string {
 	}
 }
 
-function getSyncStatusLabel(syncStatus: RepositorySyncStatus): string {
+export function getRepositorySyncStatusLabel(syncStatus: RepositorySyncStatus): string {
 	switch (syncStatus) {
 		case "syncing":
 			return m.repoSyncStatusSyncing();
@@ -29,7 +29,7 @@ function getSyncStatusLabel(syncStatus: RepositorySyncStatus): string {
 }
 
 export function RepositoryStatusBadge({ status }: { status: RepositorySyncStatus }) {
-	const statusLabel = getSyncStatusLabel(status);
+	const statusLabel = getRepositorySyncStatusLabel(status);
 	const statusDotClass = getSyncStatusColor(status);
 	const badgeVariant =
 		status === "success" ? "success" : status === "failed" ? "destructive" : "secondary";

@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowRight } from "lucide-react";
 import { DataTableColumnHeader } from "../data-table-column-header";
@@ -92,7 +93,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, ApplicationListItem>[]
 		},
 		cell: ({ row }) => {
 			const app = row.original;
-			return app.lastSyncedAt ? new Date(app.lastSyncedAt).toLocaleString() : m.never();
+			return <RelativeTime value={app.lastSyncedAt} />;
 		},
 	},
 	{

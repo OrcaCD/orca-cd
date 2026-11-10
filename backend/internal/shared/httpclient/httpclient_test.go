@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -386,5 +387,29 @@ func TestIsPrivateIP_EmbeddedIPv4(t *testing.T) {
 		if IsPrivateIP(ip) {
 			t.Errorf("expected %q to be public", ip)
 		}
+	}
+}
+
+func TestDisable_BlocksOutboundRequests(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	t.Cleanup(func() { disabled.Store(false) })
+
+	Disable()
+
+	resp, err := Get(context.Background(), ts.URL)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("expected request to fail when disabled")
+	}
+	if !errors.Is(err, ErrDisabled) {
+		t.Errorf("expected ErrDisabled, got %v", err)
+	}
+
+	if _, err := DialContext(context.Background(), "tcp", ts.Listener.Addr().String()); !errors.Is(err, ErrDisabled) {
+		t.Errorf("expected DialContext to return ErrDisabled, got %v", err)
 	}
 }

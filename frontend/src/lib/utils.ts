@@ -73,6 +73,17 @@ export function formatRelativeTime(value: string | Date, now = Date.now()): stri
 	return formatter.format(seconds, "second");
 }
 
+/** Formats an interval in its largest whole unit, e.g. 300 → "5m", 7200 → "2h", 90 → "90s". */
+export function formatInterval(seconds: number): string {
+	if (seconds > 0 && seconds % 3600 === 0) {
+		return `${seconds / 3600}h`;
+	}
+	if (seconds > 0 && seconds % 60 === 0) {
+		return `${seconds / 60}m`;
+	}
+	return `${seconds}s`;
+}
+
 export function formatDuration(ms: number): string {
 	const seconds = Math.max(0, Math.round(ms / 1000));
 	if (seconds < 60) {
@@ -86,3 +97,17 @@ export function formatDuration(ms: number): string {
 }
 
 export const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+
+export function groupBy<T, K>(items: T[], getKey: (item: T) => K): Map<K, T[]> {
+	const groups = new Map<K, T[]>();
+	for (const item of items) {
+		const key = getKey(item);
+		const group = groups.get(key);
+		if (group) {
+			group.push(item);
+		} else {
+			groups.set(key, [item]);
+		}
+	}
+	return groups;
+}

@@ -50,12 +50,25 @@ const healthConfig: Record<
 		className: "bg-red-500/20 text-red-400 border-red-500/30",
 		dotClass: "bg-red-400",
 	},
+	degraded: {
+		label: () => m.statusDegraded(),
+		className: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+		dotClass: "bg-yellow-300",
+	},
 	unknown: {
 		label: () => m.unknown(),
 		className: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 		dotClass: "bg-zinc-400",
 	},
 };
+
+export function getSyncStatusLabel(status: SyncStatus): string {
+	return syncConfig[status].label();
+}
+
+export function getHealthStatusLabel(status: HealthStatus): string {
+	return healthConfig[status].label();
+}
 
 export function ApplicationStatusBadge(props: StatusBadgeProps) {
 	let config =

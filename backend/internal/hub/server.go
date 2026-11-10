@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,12 +15,16 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -29,29 +32,30 @@ import (
 )
 
 type Config struct {
-	Host             string
-	Port             string
-	LogLevel         zerolog.Level
-	LogJSON          bool
-	TrustedProxies   []string
-	AllowedIPs       []string
-	AppURL           string
-	AppSecret        string
-	DisableLocalAuth bool
-	Demo             bool
-	DisableUI        bool
+	Host                  string
+	Port                  string
+	LogLevel              zerolog.Level
+	LogJSON               bool
+	TrustedProxies        []string
+	AllowedIPs            []string
+	AppURL                string
+	AppSecret             string
+	DisableLocalAuth      bool
+	Demo                  bool
+	DisableUI             bool
+	SkipAgentVersionCheck bool
 }
 
 func DefaultConfig() (Config, error) {
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	logLevelStr := os.Getenv("LOG_LEVEL")
-	logJSONStr := os.Getenv("LOG_JSON")
 	appSecret := os.Getenv("APP_SECRET")
 
-	disableLocalAuth, _ := strconv.ParseBool(os.Getenv("DISABLE_LOCAL_AUTH"))
-	demo, _ := strconv.ParseBool(os.Getenv("DEMO"))
-	disableUI, _ := strconv.ParseBool(os.Getenv("DISABLE_UI"))
+	disableLocalAuth := utils.EnvBool("DISABLE_LOCAL_AUTH")
+	demo := utils.EnvBool("DEMO")
+	disableUI := utils.EnvBool("DISABLE_UI")
+	skipAgentVersionCheck := utils.EnvBool("SKIP_AGENT_VERSION_CHECK")
 	if port == "" {
 		port = "8080"
 	}
@@ -61,7 +65,7 @@ func DefaultConfig() (Config, error) {
 		logLevel = zerolog.InfoLevel
 	}
 
-	logJSON := strings.EqualFold(logJSONStr, "true")
+	logJSON := utils.EnvBool("LOG_JSON")
 
 	var trustedProxies []string
 	for entry := range strings.SplitSeq(os.Getenv("TRUSTED_PROXIES"), ",") {
@@ -87,19 +91,23 @@ func DefaultConfig() (Config, error) {
 	}
 
 	return Config{
-		Host:             host,
-		Port:             port,
-		LogLevel:         logLevel,
-		LogJSON:          logJSON,
-		TrustedProxies:   trustedProxies,
-		AllowedIPs:       allowedIPs,
-		AppURL:           appURL,
-		AppSecret:        appSecret,
-		DisableLocalAuth: disableLocalAuth,
-		Demo:             demo,
-		DisableUI:        disableUI,
+		Host:                  host,
+		Port:                  port,
+		LogLevel:              logLevel,
+		LogJSON:               logJSON,
+		TrustedProxies:        trustedProxies,
+		AllowedIPs:            allowedIPs,
+		AppURL:                appURL,
+		AppSecret:             appSecret,
+		DisableLocalAuth:      disableLocalAuth,
+		Demo:                  demo,
+		DisableUI:             disableUI,
+		SkipAgentVersionCheck: skipAgentVersionCheck,
 	}, nil
 }
+
+// Must not be lower than the webhook body limit in routes.
+const maxRequestBodyBytes = 10 << 20 // 10 MiB
 
 var Log = logger.New("hub", false)
 
@@ -107,6 +115,15 @@ func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 	applications.Log = Log
+
+	if cfg.Demo {
+		httpclient.Disable()
+	}
+
+	version.SkipMinAgentVersion = cfg.SkipAgentVersionCheck
+	if cfg.SkipAgentVersionCheck {
+		Log.Warn().Msg("SKIP_AGENT_VERSION_CHECK is set, the minimum agent version is not enforced, do not use in production")
+	}
 
 	if err := crypto.Init(cfg.AppSecret); err != nil {
 		Log.Error().Err(err).Msg("failed to init crypto")
@@ -138,29 +155,29 @@ func Run(cfg Config) error {
 		return err
 	}
 
-	recoverInterruptedState(context.Background(), &Log)
-
-	applications.DefaultQueue = applications.NewQueue(&Log)
-	applications.DefaultQueue.Start()
-
-	applications.DefaultPoller = applications.NewPoller(&Log)
-	applications.DefaultPoller.Start()
-	defer applications.DefaultPoller.Stop()
-
-	applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
-	defer applications.DefaultImagePullDebouncer.Stop()
-
+	// The demo database is read-only and no agents or git providers are reachable,
+	// so none of the background workers can do anything useful.
 	if !cfg.Demo {
+		recoverInterruptedState(context.Background(), &Log)
+
+		applications.DefaultQueue = applications.NewQueue(&Log)
+		applications.DefaultQueue.Start()
+
+		applications.DefaultPoller = applications.NewPoller(&Log)
+		applications.DefaultPoller.Start()
+		defer applications.DefaultPoller.Stop()
+
+		applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
+		defer applications.DefaultImagePullDebouncer.Stop()
+
 		defer db.StartVacuumScheduler()()
+		defer healthhistory.StartPruner(&Log)()
+		defer websocket.StartHealthGate(&Log)()
 	}
 
 	router := gin.New()
 
 	router.Use(middleware.RequestLogger(Log))
-
-	if cfg.Demo {
-		router.Use(middleware.DemoBlocking())
-	}
 
 	router.Use(middleware.Recovery(Log))
 	if err := router.SetTrustedProxies(cfg.TrustedProxies); err != nil {
@@ -171,7 +188,11 @@ func Run(cfg Config) error {
 	}
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.IPLock(cfg.AllowedIPs))
+	if cfg.Demo {
+		router.Use(middleware.DemoBlocking())
+	}
 	router.Use(middleware.ValidateOrigin(cfg.AppURL))
+	router.Use(middleware.MaxBodySize(maxRequestBodyBytes))
 	router.Use(middleware.TimeoutMiddleware(30 * time.Second))
 
 	err = RegisterRoutes(router, cfg)
@@ -186,8 +207,8 @@ func Run(cfg Config) error {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		MaxHeaderBytes:    22 << 10, // 22 KB
+		WriteTimeout:      35 * time.Second, // above the 30s request timeout, so timeout errors can still be written
+		MaxHeaderBytes:    22 << 10,         // 22 KB
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -275,6 +296,8 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		log.Warn().Err(resetAppSyncStatus.Error).Msg("failed to reset applications stuck in syncing status")
 	}
 
+	recoverApplicationHealth(ctx, log)
+
 	// No agent is connected yet, mark all agents as offline
 	if _, err := gorm.G[models.Agent](db.DB).
 		Where("status <> ?", models.AgentStatusOffline).
@@ -287,5 +310,29 @@ func recoverInterruptedState(ctx context.Context, log *zerolog.Logger) {
 		log.Warn().Err(err).Msg("failed to recover interrupted application events")
 	} else if recovered > 0 {
 		log.Info().Int64("count", recovered).Msg("marked interrupted application events as failed")
+	}
+
+	if err := deployments.DiscardAllPending(ctx); err != nil {
+		log.Warn().Err(err).Msg("failed to discard interrupted deployments")
+	}
+}
+
+// recoverApplicationHealth marks each agent offline in the health history from
+// when it was last seen, as no agent is connected yet. The time the hub was
+// down then shows up as a gap. The applications keep their last health so a
+// change while the hub was down still notifies once the agent reconnects.
+func recoverApplicationHealth(ctx context.Context, log *zerolog.Logger) {
+	agents, err := gorm.G[models.Agent](db.DB).Select("id", "last_seen").Find(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to load agents to recover application health")
+	}
+	for _, agent := range agents {
+		offlineSince := time.Now()
+		if agent.LastSeen != nil {
+			offlineSince = *agent.LastSeen
+		}
+		if err := healthhistory.RecordAgentOffline(ctx, agent.Id, offlineSince); err != nil {
+			log.Warn().Err(err).Str("agent_id", agent.Id).Msg("failed to record application health history for offline agent")
+		}
 	}
 }

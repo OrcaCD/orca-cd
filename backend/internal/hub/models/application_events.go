@@ -8,6 +8,7 @@ const (
 	ApplicationEventDeployment  ApplicationEventType = "deployment"
 	ApplicationEventCommitSync  ApplicationEventType = "commit_sync"
 	ApplicationEventImageUpdate ApplicationEventType = "image_update"
+	ApplicationEventRollback    ApplicationEventType = "rollback"
 )
 
 type ApplicationEventSource string
@@ -20,7 +21,21 @@ const (
 	ApplicationEventSourceGitHubActions      ApplicationEventSource = "github_actions"
 	ApplicationEventSourceImagePolling       ApplicationEventSource = "image_polling"
 	ApplicationEventSourceImageWebhook       ApplicationEventSource = "image_webhook"
+	// Automatic rollbacks, by what failed.
+	ApplicationEventSourceDeploymentFailure ApplicationEventSource = "deployment_failure"
+	ApplicationEventSourceHealthCheck       ApplicationEventSource = "health_check"
 )
+
+// IsAutomatic reports whether the source triggers syncs without a user, which
+// a rollback pauses.
+func (s ApplicationEventSource) IsAutomatic() bool {
+	switch s {
+	case ApplicationEventSourceRepositoryPolling, ApplicationEventSourceRepositoryWebhook,
+		ApplicationEventSourceGitHubActions, ApplicationEventSourceImagePolling, ApplicationEventSourceImageWebhook:
+		return true
+	}
+	return false
+}
 
 type ApplicationEventStatus string
 
@@ -46,6 +61,8 @@ type ApplicationEvent struct {
 	CommitMessage *string                `gorm:"type:text"`
 	ErrorMessage  *string                `gorm:"type:text"`
 	CompletedAt   *time.Time             `gorm:"type:timestamp"`
+	// DeploymentId is the deployment the event deployed, or rolled back to.
+	DeploymentId *string `gorm:"type:text;index"`
 }
 
 func (ApplicationEvent) TableName() string { return "application_events" }

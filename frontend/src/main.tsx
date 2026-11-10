@@ -1,4 +1,5 @@
-import { createRouter, Link, RouterProvider } from "@tanstack/react-router";
+import { createRouter, RouterProvider } from "@tanstack/react-router";
+import { CompassIcon, TriangleAlertIcon } from "lucide-react";
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -6,7 +7,7 @@ import ReactDOM from "react-dom/client";
 import { routeTree } from "./routeTree.gen";
 
 import "./styles.css";
-import { Button } from "./components/ui/button";
+import { ErrorPage } from "./components/error-page";
 import { AuthProvider, useAuth } from "./lib/auth";
 import type { RouterContext } from "./routes/__root";
 import { m } from "@/lib/paraglide/messages";
@@ -24,27 +25,23 @@ const router = createRouter({
 	defaultPreloadStaleTime: 0,
 	defaultNotFoundComponent: () => {
 		return (
-			<div className="text-center">
-				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>{m.pageNotFound()}</p>
-					<Link to="/">
-						<Button size="lg">{m.goHome()}</Button>
-					</Link>
-				</div>
-			</div>
+			<ErrorPage
+				icon={<CompassIcon />}
+				code="404"
+				title={m.pageNotFound()}
+				description={m.pageNotFoundDescription()}
+			/>
 		);
 	},
-	defaultErrorComponent: ({ error }) => {
+	defaultErrorComponent: ({ error, reset }) => {
 		return (
-			<div className="text-center">
-				<div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground text-[calc(10px+2vmin)]">
-					<p>{m.somethingWentWrong()}</p>
-					<pre>{error instanceof Error ? error.message : String(error)}</pre>
-					<Link to="/">
-						<Button size="lg">{m.goHome()}</Button>
-					</Link>
-				</div>
-			</div>
+			<ErrorPage
+				icon={<TriangleAlertIcon />}
+				title={m.somethingWentWrong()}
+				description={m.somethingWentWrongDescription()}
+				details={error instanceof Error ? error.message : String(error)}
+				onRetry={reset}
+			/>
 		);
 	},
 });

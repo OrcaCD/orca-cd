@@ -2,7 +2,7 @@ import { AgentVersionStatus } from "@/lib/agents";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, CircleHelp, OctagonAlert } from "lucide-react";
 import { Badge } from "../ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { m } from "@/lib/paraglide/messages";
 
 const statusConfig: Record<
@@ -48,12 +48,12 @@ export function AgentVersionBadge({
 	const text = version ? `${version} · ${label()}` : label();
 
 	return (
-		<Tooltip>
-			<TooltipTrigger render={<Badge tabIndex={0} className={cn("cursor-help", className)} />}>
+		<InfoTooltip>
+			<InfoTooltipTrigger render={<Badge tabIndex={0} className={cn("cursor-help", className)} />}>
 				<Icon aria-hidden="true" />
 				{text}
-			</TooltipTrigger>
-			<TooltipContent>{description()}</TooltipContent>
-		</Tooltip>
+			</InfoTooltipTrigger>
+			<InfoTooltipContent>{description()}</InfoTooltipContent>
+		</InfoTooltip>
 	);
 }

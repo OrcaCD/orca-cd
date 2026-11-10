@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import {
+	DEMO_URL,
 	GITEA_MOCK_CONTROL_URL,
 	OIDC_MOCK_CONTROL_URL,
 	RECEIVER_MOCK_CONTROL_URL,
@@ -14,11 +15,16 @@ const authenticated = {
 
 // These files share the single agent container and restart the hub, so they must not overlap
 // with other tests and run one after another after everything else
-const sharedInfrastructure = /(agent|applications|images|users)\.test\.ts$/;
+const sharedInfrastructure = /(agent|applications|images|env|users)\.test\.ts$/;
+// Starts its own hub in demo mode and doesn't use the login of the setup project
+const demoTests = /demo\.test\.ts$/;
+// CI runs them in a separate job with its own hub, so they don't have to wait for the other tests
+const separateSharedInfrastructure = ["1", "true"].includes(
+	process.env.E2E_SEPARATE_SHARED_INFRASTRUCTURE ?? "",
+);
 const compose = "docker compose -f docker-compose.e2e.yml";
 // CI loads cached images before Playwright starts; local runs still build them.
 const buildImages = skipBuild ? "" : `${compose} --profile agent build && `;
-
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
@@ -49,15 +55,20 @@ export default defineConfig({
 		// Test on Chromium with authenticated state
 		{
 			name: "chromium",
-			testIgnore: sharedInfrastructure,
+			testIgnore: [sharedInfrastructure, demoTests],
 			use: authenticated,
 			dependencies: ["setup"],
+		},
+		{
+			name: "demo",
+			testMatch: demoTests,
+			use: { ...devices["Desktop Chrome"], baseURL: DEMO_URL },
 		},
 		{
 			name: "agent",
 			testMatch: /agent\.test\.ts$/,
 			use: authenticated,
-			dependencies: ["chromium"],
+			dependencies: [separateSharedInfrastructure ? "setup" : "chromium"],
 		},
 		{
 			name: "applications",
@@ -72,10 +83,16 @@ export default defineConfig({
 			dependencies: ["applications"],
 		},
 		{
+			name: "env",
+			testMatch: /env\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["images"],
+		},
+		{
 			name: "users",
 			testMatch: /users\.test\.ts$/,
 			use: authenticated,
-			dependencies: ["images"],
+			dependencies: [separateSharedInfrastructure ? "chromium" : "env"],
 		},
 	],
 

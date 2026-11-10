@@ -8,12 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"syscall"
 
 	"github.com/OrcaCD/orca-cd/internal/agent"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ func main() {
 			cfg, err := agent.DefaultConfig()
 			if err != nil {
 				if _, ok := errors.AsType[*agent.FatalConfigError](err); ok {
-					logJSON := strings.EqualFold(os.Getenv("LOG_JSON"), "true")
+					logJSON := utils.EnvBool("LOG_JSON")
 					agent.Log = logger.New("agent", logJSON)
 					agent.Log.Error().Msg(err.Error())
 					quit := make(chan os.Signal, 1)

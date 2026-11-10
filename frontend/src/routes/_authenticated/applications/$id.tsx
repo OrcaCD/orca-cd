@@ -28,7 +28,7 @@ import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { History, Info, Settings, ImageDown } from "lucide-react";
+import { Activity, History, Info, Settings, ImageDown, Braces, RotateCcw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -53,6 +53,11 @@ const sidebarGroups: SidebarGroup[] = [
 				to: "/applications/$id/details",
 			},
 			{
+				title: () => m.healthTitle(),
+				icon: Activity,
+				to: "/applications/$id/health",
+			},
+			{
 				title: () => m.applicationHistory(),
 				icon: History,
 				to: "/applications/$id/history",
@@ -71,6 +76,16 @@ const sidebarGroups: SidebarGroup[] = [
 				title: () => m.imageUpdatesSectionTitle(),
 				icon: ImageDown,
 				to: "/applications/$id/settings/image-polling",
+			},
+			{
+				title: () => m.envTitle(),
+				icon: Braces,
+				to: "/applications/$id/settings/environment",
+			},
+			{
+				title: () => m.rollbackSettingsTitle(),
+				icon: RotateCcw,
+				to: "/applications/$id/settings/rollback",
 			},
 		],
 	},
@@ -132,7 +147,8 @@ function ApplicationsLayout() {
 									</BreadcrumbItem>
 									<BreadcrumbSeparator />
 									{location.pathname.includes("/settings") ||
-									location.pathname.includes("/history") ? (
+									location.pathname.includes("/history") ||
+									location.pathname.includes("/health") ? (
 										<>
 											<BreadcrumbItem>
 												<BreadcrumbLink
@@ -148,7 +164,9 @@ function ApplicationsLayout() {
 												<BreadcrumbPage>
 													{location.pathname.includes("/history")
 														? m.applicationHistory()
-														: m.settings()}
+														: location.pathname.includes("/health")
+															? m.healthTitle()
+															: m.settings()}
 												</BreadcrumbPage>
 											</BreadcrumbItem>
 										</>

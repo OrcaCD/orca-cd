@@ -13,12 +13,18 @@ export interface RecordedRequest {
 	authorized: boolean;
 }
 
+export interface CommitSignature {
+	payload: string;
+	signature: string;
+}
+
 export interface Repo {
 	key: string;
 	branches: Map<string, Branch>;
 	token?: string;
 	requests: RecordedRequest[];
 	snapshots: Map<string, Map<string, string>>;
+	signatures: Map<string, CommitSignature>;
 }
 
 export type BranchDefinitions = Record<string, { files?: Record<string, string> }>;
@@ -45,7 +51,14 @@ export function createRepo(
 	key: string,
 	{ branches = DEFAULT_BRANCHES, token }: { branches?: BranchDefinitions; token?: string },
 ) {
-	const repo: Repo = { key, branches: new Map(), token, requests: [], snapshots: new Map() };
+	const repo: Repo = {
+		key,
+		branches: new Map(),
+		token,
+		requests: [],
+		snapshots: new Map(),
+		signatures: new Map(),
+	};
 	for (const [name, { files = {} }] of Object.entries(branches)) {
 		const branch = {
 			sha: commitSha(repo, name, 1),
@@ -82,6 +95,33 @@ export function commitFiles(
 	branch.message = message ?? `Commit ${branch.commits}`;
 	repo.snapshots.set(branch.sha, new Map(branch.files));
 	return { sha: branch.sha, message: branch.message };
+}
+
+/**
+ * Makes a real signed commit the branch head. The hash is the one of the signed commit
+ * object, so the hub can verify the signature against it.
+ */
+export function pushSignedCommit(
+	repo: Repo,
+	branchName: string,
+	{
+		sha,
+		message,
+		files,
+		...signature
+	}: { sha: string; message: string; files: Record<string, string> } & CommitSignature,
+) {
+	const branch = repo.branches.get(branchName);
+	if (!branch) {
+		return undefined;
+	}
+	branch.files = new Map(Object.entries(files));
+	branch.commits++;
+	branch.sha = sha;
+	branch.message = message;
+	repo.snapshots.set(sha, new Map(branch.files));
+	repo.signatures.set(sha, signature);
+	return { sha, message };
 }
 
 export function treeEntries(files: Map<string, string>) {

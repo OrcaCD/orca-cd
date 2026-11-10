@@ -41,7 +41,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
 			</div>
 			<div className="relative hidden bg-muted lg:block">
 				<img
-					src="/assets/wallpaper/lachlan-gowen-lleHA3cpZXo-unsplash.jpg"
+					src="/assets/wallpaper/lachlan-gowen-lleHA3cpZXo-unsplash.webp"
 					alt={m.loginWallpaperAlt()}
 					title={m.loginWallpaperAlt()}
 					className="absolute inset-0 h-full w-full object-cover"

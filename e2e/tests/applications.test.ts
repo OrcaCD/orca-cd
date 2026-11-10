@@ -6,7 +6,9 @@ import {
 	appContainers,
 	BUSYBOX_IMAGE,
 	composeProject,
+	containerImageId,
 	containerMounts,
+	createLocalImage,
 	deployedComposeFile,
 	deploymentDirExists,
 	execInContainer,
@@ -14,7 +16,9 @@ import {
 	projectContainers,
 	pullImage,
 	removeApplicationContainers,
+	removeImages,
 	removeVolumes,
+	runWithAgentVolumes,
 	startContainer,
 	stopContainer,
 } from "./helpers/docker.ts";
@@ -130,7 +134,7 @@ const SAFE_VOLUME = `${SAFE_PROJECT}_data`;
 const safeCompose = policyComposeFile(
 	`    volumes:
       - data:/named
-      - ./bound:/bound
+      - ./bound/data:/bound
 `,
 	`volumes:
   data:
@@ -139,6 +143,11 @@ const safeCompose = policyComposeFile(
 );
 
 const policyPath = (name: string) => `${name.toLowerCase().replaceAll(" ", "-")}/compose.yaml`;
+
+/** Starts without the healthy file, so its healthcheck fails right away. */
+function unhealthyComposeFile(version: number) {
+	return composeFile(version).replace(`touch ${HEALTHY_FILE}; `, "");
+}
 
 function composeFile(version: number, image = IMAGE) {
 	return `services:
@@ -259,7 +268,9 @@ async function fillApplicationWizard(page: Page, name: string) {
 
 /** The application's card in the list, not the overview's last deployment link. */
 function applicationListEntry(page: Page, name: string) {
-	return page.getByRole("link", { name }).filter({ has: page.locator("[data-slot='card']") });
+	return page
+		.locator("[data-slot='card']")
+		.filter({ has: page.getByRole("heading", { name, exact: true }) });
 }
 
 function repositoryCard(page: Page) {
@@ -693,7 +704,7 @@ test.describe("Runtime health", () => {
 
 			await gotoApp(page, "/applications");
 			await expect(
-				page.getByRole("link", { name: APP_NAME }).getByText("Unhealthy", { exact: true }),
+				applicationListEntry(page, APP_NAME).getByText("Unhealthy", { exact: true }),
 			).toBeVisible();
 		} finally {
 			execInContainer(container.id, ["touch", HEALTHY_FILE]);
@@ -744,6 +755,296 @@ test.describe("Runtime health", () => {
 
 		await expect(healthBadge(page, "Healthy")).toBeVisible({ timeout: 30_000 });
 		await expect(healthBadge(page, "Stopped")).toHaveCount(0);
+	});
+
+	test("the health page shows the availability and the runtime incidents", async ({ page }) => {
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+
+		// The previous tests made the application unhealthy and stopped it
+		const { status, body } = await api(page, "GET", `/applications/${appId}/health?range=24h`);
+		expect(status).toBe(200);
+		const stats = body as { availability: number | null; incidentCount: number };
+		expect(stats.incidentCount).toBeGreaterThanOrEqual(3);
+		expect(stats.availability).not.toBeNull();
+		expect(stats.availability).toBeLessThan(100);
+
+		await gotoApp(page, `/applications/${appId}/health?range=24h`);
+		await expect(page.getByRole("heading", { name: "Health" })).toBeVisible();
+		// The availability legend also contains "Healthy", so match the status badge only
+		await expect(
+			page.locator("[data-slot='badge']").filter({ hasText: /^Healthy$/ }),
+		).toBeVisible();
+		await expect(page.getByText(/^\d{1,3}\.\d{2}%$/)).toBeVisible();
+		await expect(page.getByRole("row").filter({ hasText: "Unhealthy" }).first()).toBeVisible();
+		await expect(
+			page.getByRole("row").filter({ hasText: "All containers are stopped" }),
+		).toBeVisible();
+	});
+});
+
+test.describe("Rollback", () => {
+	const shortSha = (sha: string) => sha.slice(0, 7);
+	let goodSha = "";
+
+	async function rolledBackTo(page: Page, sha: string, source: string) {
+		await waitForApplication(
+			page,
+			appId,
+			(app) => !!app.rolledBackAt && app.syncStatus === "out_of_sync" && app.commit === sha,
+		);
+		await expect
+			.poll(
+				async () =>
+					(await applicationEvents(page, appId)).find(
+						(event) => event.type === "rollback" && event.source === source,
+					)?.status,
+				{ timeout: 60_000 },
+			)
+			.toBe("succeeded");
+		await waitForApplication(page, appId, (app) => app.syncStatus === "out_of_sync");
+	}
+
+	test("enable automatic rollback on its settings page", async ({ page }) => {
+		goodSha = (await getApplication(page, appId)).commit;
+		await gotoApp(page, `/applications/${appId}/settings/rollback`);
+		const toggle = page.getByRole("switch", { name: "Automatic rollback" });
+		await expect(toggle).not.toBeChecked();
+
+		await toggle.click();
+		await expect(page.getByRole("checkbox", { name: "Deploy fails" })).toBeChecked();
+		await expect(page.getByRole("checkbox", { name: "Unhealthy within" })).toBeChecked();
+		await expect(
+			page.getByRole("checkbox", { name: "Pause auto-sync after rollback" }),
+		).toBeChecked();
+		await page.locator("#healthTimeoutMinutes").fill("1");
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Application updated")).toBeVisible();
+
+		const { rollback } = await getApplication(page, appId);
+		expect(rollback).toEqual({
+			enabled: true,
+			onDeployFailure: true,
+			onUnhealthy: true,
+			healthTimeoutSeconds: 60,
+			pauseAutoSync: true,
+		});
+	});
+
+	test("a failed deployment is rolled back", async ({ page }) => {
+		const broken = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(7, UNPULLABLE_IMAGE) },
+			message: "Break the image again",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await rolledBackTo(page, broken.sha, "deployment_failure");
+		await expectEvent(page, "manual", broken.sha, "failed");
+		await expect.poll(runningVersion, { timeout: 30_000 }).toBe("6");
+		const app = await getApplication(page, appId);
+		expect(app.rolledBackCommit).toBe(goodSha);
+		expect(app.autoSyncPaused).toBe(true);
+
+		await gotoApp(page, `/applications/${appId}/details`);
+		await expect(page.getByText("Rolled back — out of sync with Git")).toBeVisible();
+		await expect(
+			page.getByText(`Running ${shortSha(goodSha)}, desired ${shortSha(broken.sha)}.`),
+		).toBeVisible();
+		await expect(page.getByText(/^Rolled back after: /)).toBeVisible();
+
+		await gotoApp(page, `/applications/${appId}/history`);
+		const rollback = page
+			.getByRole("listitem")
+			.filter({ hasText: `Automatic rollback to ${shortSha(goodSha)}` })
+			.first();
+		await expect(rollback).toContainText("Rolled back");
+		await expect(rollback).toContainText("Failed deployment");
+		await expect(page.getByText("Current", { exact: true })).toBeVisible();
+
+		await gotoApp(page, "/");
+		await expect(page.getByText(`Rolled back to ${shortSha(goodSha)}`)).toBeVisible();
+	});
+
+	test("resume auto-sync from the banner", async ({ page }) => {
+		const { commit: desired } = await getApplication(page, appId);
+		await gotoApp(page, `/applications/${appId}/history`);
+		await expect(page.getByText("Auto-sync is paused until you resume it.")).toBeVisible();
+
+		await page.getByRole("button", { name: "Resume auto-sync" }).click();
+
+		await expect(
+			page.getByText(`Auto-sync skips ${shortSha(desired)} until a new commit arrives.`),
+		).toBeVisible();
+		await expect(page.getByRole("button", { name: "Resume auto-sync" })).toHaveCount(0);
+		const app = await getApplication(page, appId);
+		expect(app.autoSyncPaused).toBe(false);
+		expect(app.rolledBackAt).toBeTruthy();
+	});
+
+	test("an unhealthy deployment is rolled back", async ({ page }) => {
+		const unhealthy = await commit(REPO, {
+			files: { [COMPOSE_PATH]: unhealthyComposeFile(8) },
+			message: "Never become healthy",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await rolledBackTo(page, unhealthy.sha, "health_check");
+		const failed = eventFor(await applicationEvents(page, appId), "manual", unhealthy.sha);
+		expect(failed?.status).toBe("failed");
+		expect(failed?.errorMessage).toMatch(/^health check failed: application was unhealthy/);
+		await expect.poll(runningVersion, { timeout: 30_000 }).toBe("6");
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+	});
+
+	test("deploying a fix ends the rollback", async ({ page }) => {
+		const fixed = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(9) },
+			message: "Become healthy again",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("9");
+		await waitForApplication(
+			page,
+			appId,
+			(app) => app.commit === fixed.sha && !app.rolledBackAt && app.syncStatus === "synced",
+		);
+		// The deployment completes once it stayed healthy for the configured minute
+		await gotoApp(page, `/applications/${appId}/history`);
+		await expect(
+			page
+				.getByRole("listitem")
+				.filter({ hasText: shortSha(fixed.sha) })
+				.first(),
+		).toContainText("Verifying health");
+		await expect(page.getByText("Rolled back — out of sync with Git")).toHaveCount(0);
+	});
+
+	test("roll back manually from the history", async ({ page }) => {
+		const { commit: desired } = await getApplication(page, appId);
+		await gotoApp(page, `/applications/${appId}/history`);
+		const target = page
+			.getByRole("listitem")
+			.filter({ has: page.getByRole("button", { name: "Roll back" }) })
+			.first();
+		await target.getByRole("button", { name: "Roll back" }).click();
+		await page.getByRole("dialog").getByRole("button", { name: "Roll back" }).click();
+		await expect(page.getByText("Rollback started")).toBeVisible();
+
+		await waitForApplication(page, appId, (app) => !!app.rolledBackAt && app.autoSyncPaused);
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("6");
+		const rollback = (await applicationEvents(page, appId)).find(
+			(event) => event.type === "rollback",
+		);
+		expect(rollback).toMatchObject({ source: "manual", status: "succeeded" });
+
+		await gotoApp(page, `/applications/${appId}/details`);
+		await expect(page.getByText(`desired ${shortSha(desired)}`)).toBeVisible();
+		// The earlier failure is not the reason for a manual rollback
+		await expect(page.getByText(/^Rolled back after: /)).toHaveCount(0);
+		await page.getByRole("button", { name: "Retry deploy" }).click();
+		await expect.poll(runningVersion, { timeout: 60_000 }).toBe("9");
+		await waitForApplication(page, appId, (app) => !app.rolledBackAt && app.commit === desired);
+		await expect(page.getByText("Rolled back — out of sync with Git")).toHaveCount(0);
+	});
+
+	test("disable automatic rollback", async ({ page }) => {
+		await gotoApp(page, `/applications/${appId}/settings/rollback`);
+		await expect(page.getByRole("switch", { name: "Automatic rollback" })).toBeChecked();
+		// Enabled, it needs a reason to roll back
+		await page.getByRole("checkbox", { name: "Deploy fails" }).click();
+		await page.getByRole("checkbox", { name: "Unhealthy within" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Choose at least one reason to roll back.")).toBeVisible();
+		expect((await getApplication(page, appId)).rollback.onDeployFailure).toBe(true);
+
+		await page.getByRole("switch", { name: "Automatic rollback" }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText("Application updated")).toBeVisible();
+		expect((await getApplication(page, appId)).rollback.enabled).toBe(false);
+	});
+
+	test("a failed deployment is not rolled back while automatic rollback is off", async ({
+		page,
+	}) => {
+		const rollbacks = async () =>
+			(await applicationEvents(page, appId)).filter((event) => event.type === "rollback").length;
+		const rollbacksBefore = await rollbacks();
+		const broken = await commit(REPO, {
+			files: { [COMPOSE_PATH]: composeFile(13, UNPULLABLE_IMAGE) },
+			message: "Break the image without automatic rollback",
+		});
+
+		await syncRepositoryInUi(page);
+
+		await expectEvent(page, "manual", broken.sha, "failed");
+		const app = await waitForApplication(
+			page,
+			appId,
+			(app) => app.commit === broken.sha && app.syncStatus === "out_of_sync",
+		);
+		expect(app.rolledBackAt).toBeNull();
+		expect(await rollbacks()).toBe(rollbacksBefore);
+		expect(runningVersion()).toBe("9");
+	});
+
+	test("a rollback restores a local image by its ID", async ({ page }) => {
+		// A local image has no registry digest, so the rollback pins it by ID
+		const localImage = "orca-e2e-local/rollback:latest";
+		const runningImage = () => {
+			const containers = appContainers(appId);
+			return containers.length === 1 ? containerImageId(containers[0].id) : undefined;
+		};
+		try {
+			const firstId = createLocalImage(IMAGE, localImage, "orca-e2e=first");
+			const first = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(10, localImage) },
+				message: "Run a local image",
+			});
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 10, first.sha);
+			expect(runningImage()).toBe(firstId);
+
+			// The tag moves to another image, which the next deployment runs
+			const secondId = createLocalImage(IMAGE, localImage, "orca-e2e=second");
+			expect(secondId).not.toBe(firstId);
+			const second = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(11, localImage) },
+				message: "Run the retagged local image",
+			});
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 11, second.sha);
+			expect(runningImage()).toBe(secondId);
+
+			await gotoApp(page, `/applications/${appId}/history`);
+			const target = page
+				.getByRole("listitem")
+				.filter({ hasText: shortSha(first.sha) })
+				.filter({ has: page.getByRole("button", { name: "Roll back" }) })
+				.first();
+			await target.getByRole("button", { name: "Roll back" }).click();
+			await page.getByRole("dialog").getByRole("button", { name: "Roll back" }).click();
+			await expect(page.getByText("Rollback started")).toBeVisible();
+
+			await waitForApplication(page, appId, (app) => !!app.rolledBackAt);
+			await expect.poll(runningVersion, { timeout: 60_000 }).toBe("10");
+			expect(runningImage()).toBe(firstId);
+
+			// Back to the regular image, so the local one can be removed
+			const regular = await commit(REPO, {
+				files: { [COMPOSE_PATH]: composeFile(12) },
+				message: "Run the regular image again",
+			});
+			await gotoApp(page, `/applications/${appId}/details`);
+			await page.getByRole("button", { name: "Resume auto-sync" }).click();
+			await syncRepositoryInUi(page);
+			await expectRedeployed(page, 12, regular.sha);
+			await waitForApplication(page, appId, (app) => !app.rolledBackAt);
+		} finally {
+			removeImages(localImage);
+		}
 	});
 });
 
@@ -920,7 +1221,7 @@ test.describe("Compose security policy", () => {
 		const bind = mounts.find((mount) => mount.Destination === "/bound");
 		expect(bind?.Type).toBe("bind");
 		// The agent translates the path inside its container to the one on the Docker host
-		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound$`));
+		expect(bind?.Source).toMatch(new RegExp(`/${SAFE_PROJECT}/bound/data$`));
 
 		await expect
 			.poll(() => execInContainer(container.id, ["cat", "/named/file"]), { timeout: 15_000 })
@@ -930,6 +1231,35 @@ test.describe("Compose security policy", () => {
 		const events = await applicationEvents(page, id);
 		expect(events).toHaveLength(1);
 		expect(events[0]).toMatchObject({ type: "deployment", status: "succeeded" });
+	});
+
+	test("redeploys through a directory restricted to an application user", async ({ page }) => {
+		const id = policyAppIds.get(SAFE_NAME)!;
+		const parent = `/deployments/${SAFE_PROJECT}/bound`;
+		const restrict = runWithAgentVolumes([
+			"sh",
+			"-ec",
+			`chown 1234:1234 ${parent}; chmod 700 ${parent}`,
+		]);
+		expect(restrict.status, restrict.stderr).toBe(0);
+		try {
+			const before = (await applicationEvents(page, id)).length;
+			expect((await api(page, "POST", `/applications/${id}/deploy`)).status).toBe(202);
+			await expect
+				.poll(async () => (await applicationEvents(page, id)).length, { timeout: 60_000 })
+				.toBe(before + 1);
+			await expect
+				.poll(async () => (await applicationEvents(page, id))[0].status, { timeout: 60_000 })
+				.toBe("succeeded");
+			expect((await getApplication(page, id)).lastSyncError).toBeUndefined();
+		} finally {
+			const restore = runWithAgentVolumes([
+				"sh",
+				"-ec",
+				`chmod 755 ${parent}; chown 0:0 ${parent}`,
+			]);
+			expect(restore.status, restore.stderr).toBe(0);
+		}
 	});
 });
 

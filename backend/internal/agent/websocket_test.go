@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"errors"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -68,6 +69,16 @@ type stubDeployer struct {
 	reqCh    chan agentdocker.DeployRequest
 	deleteCh chan agentdocker.DeleteRequest
 	warnings []composewarnings.Warning
+	images   []*messages.ServiceImage
+	retained sync.Map
+}
+
+func (d *stubDeployer) SetImageRetention(appID string, retention *messages.ImageRetention) {
+	d.retained.Store(appID, retention)
+}
+
+func (d *stubDeployer) ServiceImages(context.Context, string) ([]*messages.ServiceImage, error) {
+	return d.images, nil
 }
 
 func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) error {
@@ -805,8 +816,9 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 	}
 
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+	deployedImages := []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new", PinnedRef: "ghcr.io/orcacd/billing@sha256:new"}}
 	deployer := &stubDeployer{
-		reqCh:    make(chan agentdocker.DeployRequest, 1),
+		reqCh:    make(chan agentdocker.DeployRequest, 1), images: deployedImages,
 		warnings: []composewarnings.Warning{{Code: "missing_restart_policy", Service: "app"}},
 	}
 	const composeFile = "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n"
@@ -819,6 +831,11 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 				ApplicationName: "billing",
 				ComposeFile:     composeFile,
 				DeleteOldImages: true,
+				PinnedImages: []*messages.ServiceImage{
+					{Service: "app", ImageId: "sha256:old", PinnedRef: "ghcr.io/orcacd/billing@sha256:old"},
+					{Service: "worker", ImageId: "sha256:worker"},
+				},
+				ImageRetention: &messages.ImageRetention{KeepImageIds: []string{"sha256:old"}},
 			},
 		},
 	}
@@ -844,6 +861,13 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		if !req.DeleteOldImages {
 			t.Fatal("expected DeleteOldImages=true to be passed through from the request")
 		}
+		if retained, _ := deployer.retained.Load("app-1"); retained == nil || retained.(*messages.ImageRetention).KeepImageIds[0] != "sha256:old" {
+			t.Fatalf("expected the image retention to be stored before deploying, got %v", retained)
+		}
+		wantPins := map[string]string{"app": "ghcr.io/orcacd/billing@sha256:old", "worker": "sha256:worker"}
+		if !maps.Equal(req.PinnedImages, wantPins) {
+			t.Fatalf("expected pinned images %v, got %v", wantPins, req.PinnedImages)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy request")
 	}
@@ -859,6 +883,9 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if result.RequestId != "req-1" {
 			t.Fatalf("expected request id %q, got %q", "req-1", result.RequestId)
+		}
+		if len(result.Images) != 1 || result.Images[0].ImageId != "sha256:new" {
+			t.Fatalf("expected the deployed images in the result, got %v", result.Images)
 		}
 		if result.ComposeFileSha256 != composewarnings.Hash(composeFile) {
 			t.Fatalf("unexpected compose file hash: %q", result.ComposeFileSha256)

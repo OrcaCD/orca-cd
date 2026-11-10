@@ -2,13 +2,13 @@
 import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
@@ -17,10 +17,10 @@ import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "../ui/field";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
-import { createAgent, updateAgent, type Agent } from "@/lib/agents";
-import CopyValueDialog from "./copy-value-dialog";
+import { createAgent, updateAgent, type Agent, type AgentWithTokenResponse } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
+import AgentSetupDialog from "./agent-setup-dialog";
 
 const agentSchema = z.object({
 	name: z
@@ -43,8 +43,8 @@ export default function UpsertAgentDialog({
 	const isEditing = !!agent;
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [open, setOpen] = useState(false);
-	const [authToken, setAuthToken] = useState<string | null>(null);
-	const [isAuthTokenOpen, setIsAuthTokenOpen] = useState(false);
+	const [createdAgent, setCreatedAgent] = useState<AgentWithTokenResponse | null>(null);
+	const [isAgentSetupOpen, setIsAgentSetupOpen] = useState(false);
 
 	const form = useForm({
 		defaultValues: {
@@ -68,11 +68,8 @@ export default function UpsertAgentDialog({
 						name: value.name,
 						icon: value.icon,
 					});
-					if (response.authToken) {
-						setAuthToken(response.authToken);
-						setIsAuthTokenOpen(true);
-					}
-					toast.add({ type: "success", title: m.agentConnected() });
+					setCreatedAgent(response);
+					setIsAgentSetupOpen(true);
 				}
 				setOpen(false);
 				form.reset();
@@ -89,8 +86,8 @@ export default function UpsertAgentDialog({
 
 	return (
 		<>
-			<Dialog open={open} onOpenChange={(open) => setOpen(open)}>
-				<DialogTrigger
+			<ResponsiveDialog open={open} onOpenChange={(open) => setOpen(open)}>
+				<ResponsiveDialogTrigger
 					nativeButton={!asDropdownItem}
 					render={
 						asDropdownItem ? (
@@ -109,16 +106,16 @@ export default function UpsertAgentDialog({
 							</Button>
 						)
 					}
-				></DialogTrigger>
-				<DialogContent className="sm:max-w-106.25">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2">
+				></ResponsiveDialogTrigger>
+				<ResponsiveDialogContent className="sm:max-w-106.25">
+					<ResponsiveDialogHeader>
+						<ResponsiveDialogTitle className="flex items-center gap-2">
 							{isEditing ? m.editAgent() : m.addAgent()}
-						</DialogTitle>
-						<DialogDescription className="py-2">
+						</ResponsiveDialogTitle>
+						<ResponsiveDialogDescription className="py-2">
 							{isEditing ? m.editAgentDescription() : m.addAgentDescription()}
-						</DialogDescription>
-					</DialogHeader>
+						</ResponsiveDialogDescription>
+					</ResponsiveDialogHeader>
 
 					<form
 						onSubmit={async (e) => {
@@ -181,23 +178,19 @@ export default function UpsertAgentDialog({
 							</div>
 						</FieldGroup>
 					</form>
-				</DialogContent>
-			</Dialog>
+				</ResponsiveDialogContent>
+			</ResponsiveDialog>
 
-			<CopyValueDialog
-				open={isAuthTokenOpen}
-				onOpenChange={(nextOpen) => {
-					setIsAuthTokenOpen(nextOpen);
+			<AgentSetupDialog
+				agent={createdAgent}
+				open={isAgentSetupOpen}
+				onOpenChange={setIsAgentSetupOpen}
+				onOpenChangeComplete={(nextOpen) => {
+					// Keep the token in memory only while the dialog is shown.
 					if (!nextOpen) {
-						setAuthToken(null);
+						setCreatedAgent(null);
 					}
 				}}
-				title={m.agentAuthTokenTitle()}
-				description={m.copyTokenNow()}
-				label={m.authToken()}
-				value={authToken ?? ""}
-				inputId="agent-auth-token"
-				copyTitle={m.copyAgentAuthToken()}
 			/>
 		</>
 	);

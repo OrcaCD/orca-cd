@@ -1,12 +1,25 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { eventSourceLabel, eventTypeLabel, type ApplicationEvent } from "@/lib/application-events";
+import {
+	canRollBackTo,
+	eventSourceLabel,
+	eventTitle,
+	isCurrentDeployment,
+	type ApplicationEvent,
+} from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
+import { getLocale } from "@/lib/paraglide/runtime";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
+import { RollbackButton } from "@/components/applications/rollback-button";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { applicationEventsTableFeatures } from "./table-features";
 
-export const columns: ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[] = [
+export const getColumns = (
+	applicationId: string,
+	currentDeploymentId?: string | null,
+	deploying = false,
+): ColumnDef<typeof applicationEventsTableFeatures, ApplicationEvent>[] => [
 	{
 		accessorKey: "createdAt",
 		header: () => m.applicationHistoryTimestamp(),
@@ -15,7 +28,11 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 			if (isNaN(date.getTime())) {
 				return <span className="text-muted-foreground">-</span>;
 			}
-			return <span className="text-sm whitespace-nowrap">{date.toLocaleString()}</span>;
+			return (
+				<time dateTime={date.toISOString()} className="text-sm whitespace-nowrap">
+					{date.toLocaleString(getLocale())}
+				</time>
+			);
 		},
 	},
 	{
@@ -23,7 +40,14 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 		header: () => m.applicationHistoryTrigger(),
 		cell: ({ row }) => (
 			<div>
-				<div className="font-medium">{eventTypeLabel(row.original.type)}</div>
+				<div className="flex items-center gap-2 font-medium">
+					{eventTitle(row.original)}
+					{isCurrentDeployment(row.original, currentDeploymentId) ? (
+						<Badge variant="outline" className="border-blue-500/40 text-blue-500">
+							{m.historyCurrentDeployment()}
+						</Badge>
+					) : null}
+				</div>
 				<span className="text-xs text-muted-foreground">
 					{eventSourceLabel(row.original.source)}
 				</span>
@@ -64,7 +88,12 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 		header: () => m.applicationHistoryResult(),
 		cell: ({ row }) => (
 			<div className="flex items-center gap-1">
-				<ApplicationEventStatusBadge status={row.original.status} />
+				<ApplicationEventStatusBadge
+					status={row.original.status}
+					type={row.original.type}
+					deploymentStatus={row.original.deploymentStatus}
+					waitingForAgent={row.original.waitingForAgent}
+				/>
 				{row.original.errorMessage && (
 					<Button
 						variant="ghost"
@@ -81,5 +110,19 @@ export const columns: ColumnDef<typeof applicationEventsTableFeatures, Applicati
 				)}
 			</div>
 		),
+	},
+	{
+		id: "actions",
+		header: () => null,
+		cell: ({ row }) =>
+			canRollBackTo(row.original, currentDeploymentId) ? (
+				<div className="flex justify-end">
+					<RollbackButton
+						applicationId={applicationId}
+						event={row.original}
+						deploying={deploying}
+					/>
+				</div>
+			) : null,
 	},
 ];

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
 import { cn } from "@/lib/utils";
@@ -44,8 +44,9 @@ export function DeploymentActivityCard() {
 							{data.days.map((day) => {
 								const dayTotal = day.succeeded + day.failed;
 								return (
-									<Tooltip key={day.date}>
-										<TooltipTrigger
+									<InfoTooltip key={day.date}>
+										<InfoTooltipTrigger
+											aria-label={dayFormatter.format(new Date(`${day.date}T00:00`))}
 											render={
 												<div className="flex h-full flex-1 flex-col justify-end gap-px rounded-sm hover:bg-muted/50" />
 											}
@@ -63,8 +64,8 @@ export function DeploymentActivityCard() {
 													style={{ height: `${(day.succeeded / maxPerDay) * 100}%` }}
 												/>
 											) : null}
-										</TooltipTrigger>
-										<TooltipContent>
+										</InfoTooltipTrigger>
+										<InfoTooltipContent>
 											<p className="font-medium">
 												{dayFormatter.format(new Date(`${day.date}T00:00`))}
 											</p>
@@ -74,8 +75,8 @@ export function DeploymentActivityCard() {
 													failed: day.failed,
 												})}
 											</p>
-										</TooltipContent>
-									</Tooltip>
+										</InfoTooltipContent>
+									</InfoTooltip>
 								);
 							})}
 						</div>

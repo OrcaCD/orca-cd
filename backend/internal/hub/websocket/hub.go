@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
@@ -27,6 +29,45 @@ type Client struct {
 
 	closeOnce sync.Once
 	closing   atomic.Bool
+
+	// healthSynced holds the applications whose health history was synced on
+	// this connection. Only the connection's message handler accesses it.
+	healthSynced map[string]struct{}
+	// reportedHealth holds the last healthReport of each application this
+	// connection reported the health of. Only the message handler writes it.
+	reportedHealth sync.Map
+}
+
+// healthReport is the last health a connection reported for an application.
+type healthReport struct {
+	health models.HealthStatus
+	at     time.Time
+	// failingSince is when the reports started failing, while they do.
+	failingSince time.Time
+}
+
+// recordHealthReport remembers the health reported for the application at now.
+func (c *Client) recordHealthReport(applicationID string, health models.HealthStatus, now time.Time) {
+	report := healthReport{health: health, at: now}
+	if isFailingHealth(health) {
+		report.failingSince = now
+		if previous, ok := c.reportedHealth.Load(applicationID); ok && isFailingHealth(previous.(healthReport).health) {
+			report.failingSince = previous.(healthReport).failingSince
+		}
+	}
+	c.reportedHealth.Store(applicationID, report)
+}
+
+func (c *Client) healthHistorySynced(applicationID string) bool {
+	_, synced := c.healthSynced[applicationID]
+	return synced
+}
+
+func (c *Client) markHealthHistorySynced(applicationID string) {
+	if c.healthSynced == nil {
+		c.healthSynced = make(map[string]struct{})
+	}
+	c.healthSynced[applicationID] = struct{}{}
 }
 
 // Close signals the WritePump to stop.
@@ -45,6 +86,10 @@ type Hub struct {
 	deleteMu       sync.Mutex
 	pendingDeletes map[string]pendingDelete
 
+	envMu             sync.Mutex
+	pendingEnvLists   map[string]pendingEnv[*messages.EnvListResult]
+	pendingEnvUpdates map[string]pendingEnv[*messages.EnvUpdateResult]
+
 	presence *agentPresenceNotifier
 }
 
@@ -53,6 +98,9 @@ func NewHub(log *zerolog.Logger) *Hub {
 		clients:        make(map[string]*Client),
 		log:            log,
 		pendingDeletes: make(map[string]pendingDelete),
+
+		pendingEnvLists:   make(map[string]pendingEnv[*messages.EnvListResult]),
+		pendingEnvUpdates: make(map[string]pendingEnv[*messages.EnvUpdateResult]),
 		presence: newAgentPresenceNotifier(agentOfflineGracePeriod, func(agentId string, event models.NotificationEvent) {
 			notifyAgentPresence(agentId, event, log)
 		}),
@@ -114,6 +162,7 @@ func (h *Hub) FinishDisconnect(c *Client) {
 		delete(h.clients, c.Id)
 	}
 	h.mu.Unlock()
+	h.abortPendingEnv(c)
 	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
 }
 
@@ -126,6 +175,22 @@ func (h *Hub) GetClient(id string) (*Client, bool) {
 	}
 	h.mu.RUnlock()
 	return c, ok
+}
+
+// lastHealthReport returns the health the agent's current connection last
+// reported for the application. Without one, its stored health may be stale.
+func (h *Hub) lastHealthReport(agentID, applicationID string) (healthReport, bool) {
+	h.mu.RLock()
+	c, ok := h.clients[agentID]
+	h.mu.RUnlock()
+	if !ok || c.closing.Load() {
+		return healthReport{}, false
+	}
+	report, ok := c.reportedHealth.Load(applicationID)
+	if !ok {
+		return healthReport{}, false
+	}
+	return report.(healthReport), true
 }
 
 // IsRegistered reports whether an ID is reserved by an active or closing
@@ -141,11 +206,20 @@ func (h *Hub) IsRegistered(id string) bool {
 // Send sends a message to a specific client by Id.
 // Returns false if the client doesn't exist or the buffer is full.
 func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
+	return h.send(id, msg, nil)
+}
+
+// send queues msg for the client, calling beforeSend with the target client
+// while the hub lock is held.
+func (h *Hub) send(id string, msg *messages.ServerMessage, beforeSend func(*Client)) bool {
 	h.mu.RLock()
 	c, ok := h.clients[id]
 	defer h.mu.RUnlock()
 	if !ok || c.closing.Load() {
 		return false
+	}
+	if beforeSend != nil {
+		beforeSend(c)
 	}
 	select {
 	case c.Send <- msg:
@@ -175,15 +249,21 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 // SendAgentSettings builds an AgentSettings message from the given applications
 // and sends it to the specified agent. Returns false if the agent is not connected
 // or the send buffer is full.
-func (h *Hub) SendAgentSettings(agentID string, apps []models.Application) bool {
+func (h *Hub) SendAgentSettings(ctx context.Context, agentID string, apps []models.Application) bool {
+	retentions, err := deployments.ImageRetentions(ctx, apps)
+	if err != nil {
+		h.log.Error().Err(err).Str("agent_id", agentID).Msg("failed to determine images to keep for rollbacks")
+	}
 	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
 	for i := range apps {
 		pollSettings = append(pollSettings, &messages.ImagePollSettings{
 			ApplicationId:   apps[i].Id,
 			ApplicationName: apps[i].Name.String(),
-			Enabled:         apps[i].ImagePollEnabled,
+			// A rolled back application runs pinned images until it is deployed again.
+			Enabled:         apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
 			DeleteOldImages: apps[i].DeleteOldImages,
+			ImageRetention:  retentions[apps[i].Id],
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{

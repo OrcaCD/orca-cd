@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -27,14 +28,36 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		return
 	}
 
+	event, err := applicationevents.ForRequest(ctx, result.RequestId, result.ApplicationId)
+	// Without the event a rollback can't be told apart from a deployment. The
+	// result is still applied as a deployment's, so nothing stays running, but
+	// the rolled back state is kept.
+	lookupFailed := err != nil
+	if lookupFailed {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to look up deployment event")
+	}
+	if event != nil && event.Type == models.ApplicationEventRollback {
+		handleRollbackResult(ctx, agentID, app, event, result, log)
+		return
+	}
+
 	if err := storeComposeWarnings(ctx, agentID, app, result, log); err != nil {
 		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to store compose warnings")
 	}
 
 	if result.Success {
-		// History reflects the Agent's deployment result independently of whether
-		// persisting the application's summary status succeeds.
-		completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
+		deployment, err := deployments.Succeed(ctx, result.ApplicationId, result.RequestId, result.Images, app.HealthGate())
+		if err != nil {
+			log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to record deployment")
+			forgetCurrentDeployment(ctx, result.ApplicationId, log)
+		}
+		// A deployment under a health gate completes once the gate decided.
+		verifying := deployment != nil && deployment.Status == models.DeploymentVerifying
+		if !verifying {
+			// History reflects the Agent's deployment result independently of whether
+			// persisting the application's summary status succeeds.
+			completeDeployEvent(ctx, result, models.ApplicationEventSucceeded, nil, log)
+		}
 
 		// A successful deploy means the compose project was applied, not that the
 		// application is healthy: the agent observes runtime health after the
@@ -42,8 +65,12 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		// health stays "unknown" here until that report arrives.
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
-		source := eventSource(ctx, result.RequestId, result.ApplicationId, "", log)
-		err := updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
+		// An empty source clears the stored one when the result has no event.
+		var source models.ApplicationEventSource
+		if event != nil {
+			source = event.Source
+		}
+		err = updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 			SyncStatus:     models.Synced,
 			LastSyncedAt:   &now,
 			LastSyncError:  &cleared,
@@ -52,7 +79,13 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		if err != nil {
 			return
 		}
-		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
+		if !lookupFailed {
+			clearRollbackState(ctx, agentID, app, log)
+		}
+		sendRetentionSettings(ctx, app, log)
+		if !verifying {
+			go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentSucceeded, "Success: deployment succeeded for "+app.Name.String(), log)
+		}
 		return
 	}
 
@@ -60,15 +93,84 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	if errMsg == "" {
 		errMsg = "deployment failed"
 	}
+	discarded, err := deployments.Discard(ctx, result.ApplicationId, result.RequestId)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to discard failed deployment")
+	}
 
 	_ = updateApplicationStatus(ctx, agentID, result.ApplicationId, models.Application{
 		SyncStatus:    models.OutOfSync,
 		LastSyncError: &errMsg,
 	}, log)
 	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
-	if ctx.Err() == nil {
-		go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
+	if ctx.Err() != nil {
+		return
 	}
+	go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
+
+	// Only deployments the hub dispatched are rolled back.
+	if event == nil {
+		return
+	}
+	var previous *string
+	if discarded != nil {
+		previous = discarded.PreviousDeploymentId
+	}
+	if target := automaticRollbackTarget(ctx, app, previous, log); target != nil {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, log)
+	}
+}
+
+// forgetCurrentDeployment clears the current deployment of an application
+// that runs a deployment that couldn't be recorded. Otherwise the earlier
+// deployment would still count as running.
+func forgetCurrentDeployment(ctx context.Context, applicationID string, log *zerolog.Logger) {
+	if err := deployments.ClearCurrent(ctx, applicationID); err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to clear current deployment")
+
+func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {
+	if result.ComposeFileSha256 == "" || result.ComposeFileSha256 != composewarnings.Hash(app.ComposeFile.String()) {
+		return nil
+	}
+
+	warnings := make([]composewarnings.Warning, 0, len(result.Warnings))
+	for _, warning := range result.Warnings {
+		if warning == nil {
+			continue
+		}
+		warnings = append(warnings, composewarnings.Warning{
+			Code:    warning.Code,
+			Service: warning.Service,
+			Field:   warning.Field,
+		})
+	}
+	encoded, err := json.Marshal(warnings)
+	if err != nil {
+		return err
+	}
+
+	// Re-read the compose file in the same transaction as the write, so a sync
+	// or edit that lands while the deployment ran is not paired with warnings
+	// computed for the previous compose file.
+	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := gorm.G[models.Application](tx).
+			Select("Id", "ComposeFile").
+			Where("id = ? AND agent_id = ?", app.Id, agentID).
+			First(ctx)
+		if err != nil {
+			return err
+		}
+		if composewarnings.Hash(current.ComposeFile.String()) != result.ComposeFileSha256 {
+			log.Debug().Str("applicationId", app.Id).Msg("compose warnings are stale; application compose file changed")
+			return nil
+		}
+
+		_, err = gorm.G[models.Application](tx).
+			Where("id = ?", app.Id).
+			Select("Warnings").
+			Updates(ctx, models.Application{Warnings: string(encoded)})
+		return err
+	})
 }
 
 func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {

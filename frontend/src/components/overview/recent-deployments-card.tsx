@@ -12,10 +12,10 @@ import {
 	ItemTitle,
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
-import { eventSourceLabel, eventTypeLabel } from "@/lib/application-events";
+import { ApplicationEventType, eventSourceLabel, eventTitle } from "@/lib/application-events";
 import type { ApplicationActivityDeployment } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { formatRelativeTime } from "@/lib/utils";
+import { RelativeTime } from "@/components/relative-time";
 import { useApplicationActivity } from "./activity";
 
 export function RecentDeploymentsCard() {
@@ -50,17 +50,21 @@ export function RecentDeploymentsCard() {
 
 function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDeployment }) {
 	const details = [
-		eventTypeLabel(deployment.type),
+		eventTitle(deployment),
 		deployment.actorName ?? eventSourceLabel(deployment.source),
-		deployment.commitHash?.slice(0, 7),
+		// Rollback titles name their commit already.
+		deployment.type === ApplicationEventType.Rollback ? null : deployment.commitHash?.slice(0, 7),
 	].filter(Boolean);
 	const description = deployment.errorMessage ?? deployment.commitMessage;
 
 	return (
-		<Item
-			size="xs"
-			render={<Link to="/applications/$id/history" params={{ id: deployment.applicationId }} />}
-		>
+		<Item size="xs" className="relative hover:bg-muted/40">
+			<Link
+				to="/applications/$id/history"
+				params={{ id: deployment.applicationId }}
+				aria-label={deployment.applicationName}
+				className="absolute inset-0 rounded-lg"
+			/>
 			<ItemMedia className="size-8 rounded-md bg-primary/10">
 				<StaticLucideIcon name={deployment.applicationIcon} className="size-4 text-primary" />
 			</ItemMedia>
@@ -78,10 +82,16 @@ function RecentDeploymentRow({ deployment }: { deployment: ApplicationActivityDe
 				) : null}
 			</ItemContent>
 			<ItemActions className="gap-3">
-				<span className="text-xs whitespace-nowrap text-muted-foreground">
-					{formatRelativeTime(deployment.createdAt)}
-				</span>
-				<ApplicationEventStatusBadge status={deployment.status} />
+				<RelativeTime
+					value={deployment.createdAt}
+					className="relative text-xs text-muted-foreground"
+				/>
+				<ApplicationEventStatusBadge
+					status={deployment.status}
+					type={deployment.type}
+					deploymentStatus={deployment.deploymentStatus}
+					waitingForAgent={deployment.waitingForAgent}
+				/>
 			</ItemActions>
 		</Item>
 	);

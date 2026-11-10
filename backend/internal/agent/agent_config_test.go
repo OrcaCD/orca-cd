@@ -282,7 +282,10 @@ func TestDefaultConfig_RestrictBindMountsToDeployDir(t *testing.T) {
 	}{
 		{"true", true},
 		{"TRUE", true},
+		{"1", true},
+		{"yes", true},
 		{"false", false},
+		{"0", false},
 		{"invalid", false},
 		{"", false},
 	}
@@ -300,6 +303,47 @@ func TestDefaultConfig_RestrictBindMountsToDeployDir(t *testing.T) {
 			}
 			if cfg.RestrictBindMountsToDeployDir != tt.want {
 				t.Errorf("RestrictBindMountsToDeployDir = %v, want %v", cfg.RestrictBindMountsToDeployDir, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultConfig_ImagePollIntervalOverride(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"", 0, false},
+		{"5s", 5 * time.Second, false},
+		{"1m30s", 90 * time.Second, false},
+		{"1s", time.Second, false},
+		{"999ms", 0, true},
+		{"0s", 0, true},
+		{"-5s", 0, true},
+		{"5", 0, true},
+		{"invalid", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			token, _, _ := makeTestAuthToken(t)
+			t.Setenv("HUB_URL", "https://hub.example.com")
+			t.Setenv("AUTH_TOKEN", token)
+			t.Setenv("IMAGE_POLL_INTERVAL_OVERRIDE", tt.input)
+
+			cfg, err := DefaultConfig()
+			if tt.wantErr {
+				if _, ok := errors.AsType[*FatalConfigError](err); !ok {
+					t.Fatalf("expected FatalConfigError, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.ImagePollIntervalOverride != tt.want {
+				t.Errorf("ImagePollIntervalOverride = %v, want %v", cfg.ImagePollIntervalOverride, tt.want)
 			}
 		})
 	}

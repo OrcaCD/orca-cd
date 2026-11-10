@@ -1,5 +1,5 @@
 // oxlint-disable react/no-children-prop
-import { Plus } from "lucide-react";
+import { Plus, WebhookIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
@@ -8,26 +8,28 @@ import { defineStepper } from "@stepperize/react";
 import { type StepStatus } from "@stepperize/react/primitives";
 import { Button } from "@/components/ui/button";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+	ResponsiveDialog,
+	ResponsiveDialogContent,
+	ResponsiveDialogDescription,
+	ResponsiveDialogHeader,
+	ResponsiveDialogTitle,
+	ResponsiveDialogTrigger,
+} from "@/components/responsive-dialog";
 import { Switch } from "@/components/ui/switch";
-import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import {
+	Field,
+	FieldContent,
+	FieldError,
+	FieldGroup,
+	FieldLabel,
+	FieldTitle,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
 	createNotification,
+	getNotificationTypeIconPath,
 	isHttpUrl,
 	normalizeNotificationSubscription,
 	notificationEvents,
@@ -97,7 +99,12 @@ import {
 	notificationSubscriptionSchema,
 } from "./notification-subscription-fields";
 
-const { Stepper } = defineStepper([{ id: "config" }, { id: "events" }, { id: "provider" }]);
+const { Stepper } = defineStepper([
+	{ id: "type" },
+	{ id: "config" },
+	{ id: "events" },
+	{ id: "provider" },
+]);
 
 const notificationBaseSchema = z.object({
 	name: z
@@ -528,6 +535,53 @@ const StepperSeparatorWithStatus = ({
 	);
 };
 
+function NotificationTypeStepContent({ form }: { form: NotificationFormApi }) {
+	return (
+		<form.Field name="type" validators={{ onSubmit: notificationBaseSchema.shape.type }}>
+			{(field) => (
+				<>
+					<p className="text-muted-foreground text-sm mb-4">
+						{m.selectNotificationTypeDescription()}
+					</p>
+					<RadioGroup
+						value={field.state.value}
+						onValueChange={(value) => field.handleChange(value as NotificationType)}
+						className="grid grid-cols-3 gap-3"
+					>
+						{notificationTypes.map((type) => {
+							const inputId = `notification-type-${type}`;
+							const label = type.charAt(0).toUpperCase() + type.slice(1);
+							return (
+								<FieldLabel
+									key={type}
+									htmlFor={inputId}
+									className="cursor-pointer transition-colors"
+								>
+									<Field className="relative aspect-square items-center justify-center p-4 text-center">
+										<RadioGroupItem value={type} id={inputId} className="hidden" />
+										<FieldContent className="items-center justify-center gap-2">
+											{type === "webhook" ? (
+												<WebhookIcon className="h-10 w-10" />
+											) : (
+												<img
+													src={getNotificationTypeIconPath(type)}
+													alt={label}
+													className="h-10 w-10"
+												/>
+											)}
+											<FieldTitle className="justify-center text-base">{label}</FieldTitle>
+										</FieldContent>
+									</Field>
+								</FieldLabel>
+							);
+						})}
+					</RadioGroup>
+				</>
+			)}
+		</form.Field>
+	);
+}
+
 function NotificationConfigStepContent({ form }: { form: NotificationFormApi }) {
 	return (
 		<FieldGroup>
@@ -550,33 +604,6 @@ function NotificationConfigStepContent({ form }: { form: NotificationFormApi }) 
 						</Field>
 					);
 				}}
-			</form.Field>
-
-			<form.Field name="type" validators={{ onSubmit: notificationBaseSchema.shape.type }}>
-				{(field) => (
-					<Field>
-						<Label htmlFor={field.name}>{m.columnType()}</Label>
-						<Select
-							value={field.state.value}
-							onValueChange={(value) => field.handleChange(value as NotificationType)}
-							items={notificationTypes.map((type) => ({
-								label: type.charAt(0).toUpperCase() + type.slice(1),
-								value: type,
-							}))}
-						>
-							<SelectTrigger id={field.name} className="w-full">
-								<SelectValue placeholder={m.selectType()} />
-							</SelectTrigger>
-							<SelectContent alignItemWithTrigger={false}>
-								{notificationTypes.map((type) => (
-									<SelectItem key={type} value={type}>
-										{type.charAt(0).toUpperCase() + type.slice(1)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</Field>
-				)}
 			</form.Field>
 
 			<form.Field name="enabled">
@@ -795,8 +822,8 @@ function StepperNavigation({
 	handleClose,
 	isSubmitting,
 }: {
-	stepper: { index: number; isLast: boolean };
-	onNext: (advance: () => void) => void;
+	stepper: { index: number; id: string; isLast: boolean };
+	onNext: (stepId: string, advance: () => void) => void;
 	handleClose: () => void;
 	isSubmitting: boolean;
 }) {
@@ -828,7 +855,7 @@ function StepperNavigation({
 								{...domProps}
 								type="button"
 								disabled={isSubmitting || domProps.disabled}
-								onClick={(e) => onNext(() => domProps.onClick?.(e))}
+								onClick={(e) => onNext(stepper.id, () => domProps.onClick?.(e))}
 							>
 								{m.next()}
 							</Button>
@@ -908,40 +935,45 @@ export default function CreateNotificationDialog() {
 		form.reset();
 	};
 
-	async function handleNext(advance: () => void) {
-		const [nameErrors, typeErrors, subscriptionErrors] = await Promise.all([
-			form.validateField("name", "submit"),
-			form.validateField("type", "submit"),
-			form.validateField("subscription", "submit"),
-		]);
-
-		if (nameErrors?.length || typeErrors?.length || subscriptionErrors?.length) {
-			return;
+	async function handleNext(stepId: string, advance: () => void) {
+		const stepFields: Partial<Record<string, keyof NotificationFormValues>> = {
+			type: "type",
+			config: "name",
+			events: "subscription",
+		};
+		const field = stepFields[stepId];
+		if (field) {
+			const errors = await form.validateField(field, "submit");
+			if (errors.length) {
+				return;
+			}
 		}
 
 		advance();
 	}
 
 	return (
-		<Dialog
+		<ResponsiveDialog
 			open={open}
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			modal={false}
 		>
-			<DialogTrigger
+			<ResponsiveDialogTrigger
 				render={
 					<Button>
 						<Plus className="h-4 w-4" />
 						{m.addNotification()}
 					</Button>
 				}
-			></DialogTrigger>
+			></ResponsiveDialogTrigger>
 
-			<DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
-				<DialogHeader>
-					<DialogTitle>{m.addNotification()}</DialogTitle>
-					<DialogDescription>{m.addNotificationDescription()}</DialogDescription>
-				</DialogHeader>
+			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
+				<ResponsiveDialogHeader>
+					<ResponsiveDialogTitle>{m.addNotification()}</ResponsiveDialogTitle>
+					<ResponsiveDialogDescription>
+						{m.addNotificationDescription()}
+					</ResponsiveDialogDescription>
+				</ResponsiveDialogHeader>
 
 				<form
 					className="min-h-0 min-w-0 flex-1 overflow-y-auto"
@@ -985,6 +1017,16 @@ export default function CreateNotificationDialog() {
 									</Stepper.List>
 
 									{stepper.match({
+										type: () => (
+											<Stepper.Content
+												step="type"
+												render={(props) => (
+													<div {...props}>
+														<NotificationTypeStepContent form={form} />
+													</div>
+												)}
+											/>
+										),
 										config: () => (
 											<Stepper.Content
 												step="config"
@@ -1028,7 +1070,7 @@ export default function CreateNotificationDialog() {
 						}}
 					</Stepper.Root>
 				</form>
-			</DialogContent>
-		</Dialog>
+			</ResponsiveDialogContent>
+		</ResponsiveDialog>
 	);
 }

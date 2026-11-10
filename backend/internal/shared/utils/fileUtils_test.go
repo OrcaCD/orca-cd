@@ -208,6 +208,41 @@ func TestIsPathWithinBase(t *testing.T) {
 	}
 }
 
+func TestRelativePathInDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	dir := filepath.Join(tmpDir, "app")
+
+	tests := []struct {
+		name   string
+		path   string
+		want   string
+		wantOK bool
+	}{
+		{name: "relative file", path: ".env", want: ".env", wantOK: true},
+		{name: "relative file in subdirectory", path: filepath.Join("config", "app.env"), want: "config/app.env", wantOK: true},
+		{name: "relative path with dot segments", path: "./a/../b.env", want: "b.env", wantOK: true},
+		{name: "absolute file inside", path: filepath.Join(dir, "sub", "app.env"), want: "sub/app.env", wantOK: true},
+		{name: "absolute path with parent reference staying inside", path: filepath.Join(dir, "a", "..", "b.env"), want: "b.env", wantOK: true},
+		{name: "directory itself", path: dir},
+		{name: "dot", path: "."},
+		{name: "relative parent", path: ".."},
+		{name: "relative path traversing out", path: filepath.Join("..", "other", ".env")},
+		{name: "relative path traversing out after descending", path: filepath.Join("sub", "..", "..", ".env")},
+		{name: "absolute file outside", path: filepath.Join(tmpDir, "other", ".env")},
+		{name: "absolute parent directory", path: tmpDir},
+		{name: "sibling sharing a name prefix", path: filepath.Join(tmpDir, "app-other", ".env")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := RelativePathInDir(dir, tt.path)
+			if ok != tt.wantOK || got != tt.want {
+				t.Errorf("RelativePathInDir(%q, %q) = (%q, %v), want (%q, %v)", dir, tt.path, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestIsPathWithinBaseInvalidInput(t *testing.T) {
 	tests := []struct {
 		name     string

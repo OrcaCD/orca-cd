@@ -46,8 +46,13 @@ export const fleetCategoryConfig: Record<
 };
 
 export function getFleetCategory(app: ApplicationListItem): FleetCategory {
-	// Stopped apps are not running anything, so they need the same attention.
-	if (app.healthStatus === HealthStatus.Unhealthy || app.healthStatus === HealthStatus.Stopped) {
+	// Stopped and degraded apps are (partially) not running, so they need the
+	// same attention.
+	if (
+		app.healthStatus === HealthStatus.Unhealthy ||
+		app.healthStatus === HealthStatus.Stopped ||
+		app.healthStatus === HealthStatus.Degraded
+	) {
 		return "unhealthy";
 	}
 	if (app.syncStatus === SyncStatus.OutOfSync) {
@@ -99,13 +104,20 @@ export function getAttentionItems(
 			category !== "unhealthy" &&
 			category !== "outOfSync" &&
 			!app.lastSyncError &&
+			!app.rolledBackAt &&
 			agentStatus === AgentStatus.Online
 		) {
 			continue;
 		}
 
 		let reason: string;
-		if (app.lastSyncError) {
+		if (app.rolledBackAt) {
+			// The error is why the application was rolled back.
+			const rolledBack = m.applicationsAttentionRolledBack({
+				commit: app.rolledBackCommit?.slice(0, 7) ?? "—",
+			});
+			reason = app.lastSyncError ? `${rolledBack}: ${app.lastSyncError}` : rolledBack;
+		} else if (app.lastSyncError) {
 			reason = app.lastSyncError;
 		} else if (agentStatus === AgentStatus.Offline) {
 			reason = m.applicationsAttentionAgentOffline({ agent: app.agentName });
@@ -113,6 +125,8 @@ export function getAttentionItems(
 			reason = m.applicationsAttentionAgentError({ agent: app.agentName });
 		} else if (app.healthStatus === HealthStatus.Stopped) {
 			reason = m.applicationsAttentionStopped();
+		} else if (app.healthStatus === HealthStatus.Degraded) {
+			reason = m.applicationsAttentionDegraded();
 		} else if (category === "unhealthy") {
 			reason = m.applicationsAttentionUnhealthy();
 		} else {

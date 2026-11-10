@@ -16,6 +16,9 @@ import { m } from "@/lib/paraglide/messages";
 import { AuthErrorBanner, AuthLayout } from "@/components/auth/auth-layout";
 import { PasswordInput } from "@/components/auth/password-input";
 
+// Public credentials of the user seeded by the hub in demo mode
+const DEMO_CREDENTIALS = { email: "demo@orcacd.dev", password: "demo-password" };
+
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
 });
@@ -58,12 +61,12 @@ export const Route = createFileRoute("/login")({
 		}
 	},
 	loader: async () => {
-		const { needsSetup, providers, localAuthEnabled } = await getSetupStatus();
+		const { needsSetup, providers, localAuthEnabled, demo } = await getSetupStatus();
 		if (needsSetup) {
 			throw redirect({ to: "/register" });
 		}
 
-		return { providers, localAuthEnabled };
+		return { providers, localAuthEnabled, demo };
 	},
 	component: LoginComponent,
 	head: () => ({
@@ -76,7 +79,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginComponent() {
-	const { providers, localAuthEnabled } = Route.useLoaderData();
+	const { providers, localAuthEnabled, demo } = Route.useLoaderData();
 	const { error } = Route.useSearch();
 	const loginErrorMessage = getLoginErrorMessage(error);
 
@@ -85,6 +88,7 @@ function LoginComponent() {
 			<LoginForm
 				providers={providers}
 				localAuthEnabled={localAuthEnabled}
+				demo={demo}
 				loginErrorMessage={loginErrorMessage}
 			/>
 		</AuthLayout>
@@ -94,10 +98,12 @@ function LoginComponent() {
 function LoginForm({
 	providers,
 	localAuthEnabled,
+	demo,
 	loginErrorMessage,
 }: {
 	providers: AuthProviderInfo[];
 	localAuthEnabled: boolean;
+	demo: boolean;
 	loginErrorMessage: string | null;
 }) {
 	const navigate = useNavigate();
@@ -119,7 +125,7 @@ function LoginForm({
 	}
 
 	const form = useForm({
-		defaultValues: { email: "", password: "" },
+		defaultValues: demo ? DEMO_CREDENTIALS : { email: "", password: "" },
 		validators: { onSubmit: loginSchema },
 		onSubmit: async ({ value }) => {
 			setIsLoading(true);

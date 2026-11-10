@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -93,7 +94,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 		},
 		cell: ({ row }) => {
 			const agent = row.original;
-			return agent.lastSeen ? new Date(agent.lastSeen).toLocaleString() : m.never();
+			return <RelativeTime value={agent.lastSeen} />;
 		},
 	},
 	{
@@ -103,7 +104,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 		},
 		cell: ({ row }) => {
 			const agent = row.original;
-			return agent.createdAt ? new Date(agent.createdAt).toLocaleString() : m.never();
+			return <RelativeTime value={agent.createdAt} />;
 		},
 	},
 	{
@@ -113,7 +114,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 		},
 		cell: ({ row }) => {
 			const agent = row.original;
-			return agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : m.never();
+			return <RelativeTime value={agent.updatedAt} />;
 		},
 	},
 	{

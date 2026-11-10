@@ -2,7 +2,7 @@ import type { NotificationStatus } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import { Badge } from "../ui/badge";
 
-function getStatusLabel(status: NotificationStatus): string {
+export function getNotificationStatusLabel(status: NotificationStatus): string {
 	switch (status) {
 		case "success":
 			return m.successAlertTitle();
@@ -44,7 +44,7 @@ export function NotificationStatusBadge({ status }: { status: NotificationStatus
 		<div className="flex items-center gap-2">
 			<Badge variant={badgeVariant}>
 				<span className={`h-2 w-2 rounded-full ${getStatusDotClass(status)}`} aria-hidden="true" />
-				{getStatusLabel(status)}
+				{getNotificationStatusLabel(status)}
 			</Badge>
 		</div>
 	);

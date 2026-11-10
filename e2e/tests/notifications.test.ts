@@ -69,9 +69,9 @@ async function openNotifications(page: Page) {
 	await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
 }
 
-async function selectType(page: Page, dialog: Locator, label: string) {
-	await dialog.locator("#type").click();
-	await page.getByRole("option", { name: label, exact: true }).click();
+async function selectType(dialog: Locator, label: string) {
+	await dialog.getByText(label, { exact: true }).click();
+	await dialog.getByRole("button", { name: "Next" }).click();
 }
 
 async function startWizard(page: Page, name: string, type: string) {
@@ -80,8 +80,8 @@ async function startWizard(page: Page, name: string, type: string) {
 	const dialog = page
 		.getByRole("dialog")
 		.filter({ hasText: "Create a new notification endpoint." });
+	await selectType(dialog, type);
 	await dialog.locator("#name").fill(name);
-	await selectType(page, dialog, type);
 	await dialog.getByRole("button", { name: "Next" }).click();
 	return dialog;
 }
@@ -96,7 +96,7 @@ async function submitWizard(dialog: Locator) {
 }
 
 async function deselectAllEvents(dialog: Locator) {
-	const tabs = { Applications: 7, Agents: 2, Repositories: 2 };
+	const tabs = { Applications: 9, Agents: 2, Repositories: 2 };
 	for (const [tab, count] of Object.entries(tabs)) {
 		await dialog.getByRole("tab", { name: new RegExp(tab) }).click();
 		await expect(dialog.getByRole("checkbox")).toHaveCount(count);
@@ -295,7 +295,7 @@ test.describe("Adding a notification", () => {
 			allApplications: false,
 			applicationIds: [],
 		});
-		expect(notification.events).toHaveLength(11);
+		expect(notification.events).toHaveLength(13);
 
 		const [request] = await receivedRequests(WEBHOOK_HOOK);
 		expect(request.method).toBe("POST");
@@ -323,7 +323,7 @@ test.describe("Adding a notification", () => {
 		const notification = (await getNotification(page, CUSTOM_NAME))!;
 		createdIds.push(notification.id);
 		expect(notification).toMatchObject({ type: "custom", enabled: true, status: "success" });
-		expect(notification.events).toHaveLength(9);
+		expect(notification.events).toHaveLength(11);
 		expect(notification.events).not.toContain("application.deployment.succeeded");
 		expect(notification.events).not.toContain("agent.online");
 

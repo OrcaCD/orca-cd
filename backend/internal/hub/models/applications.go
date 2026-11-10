@@ -30,6 +30,9 @@ const (
 	Unhealthy     HealthStatus = "unhealthy"
 	Stopped       HealthStatus = "stopped"
 	UnknownHealth HealthStatus = "unknown"
+	// Degraded means some services of the application are healthy while
+	// others are unhealthy or stopped.
+	Degraded HealthStatus = "degraded"
 )
 
 type Application struct {
@@ -57,7 +60,38 @@ type Application struct {
 	ImagePollIntervalSeconds int64                   `gorm:"not null;default:120"`
 	DeleteOldImages          bool                    `gorm:"not null;default:false"`
 	ImageWebhookSecret       *crypto.EncryptedString `gorm:"type:text;"`
-	Notifications            []Notification          `gorm:"many2many:application_notifications;"`
+	// CurrentDeploymentId is the deployment the agent runs, if it is known.
+	CurrentDeploymentId *string `gorm:"type:text;"`
+	// RolledBackAt is set while the application runs an earlier deployment it
+	// was rolled back to, which drifts from its commit in Git.
+	RolledBackAt *time.Time `gorm:"type:timestamp;"`
+	// RolledBackCommit is the commit of the deployment it was rolled back to.
+	RolledBackCommit *string `gorm:"type:text;"`
+	// RolledBackReason is why it was rolled back automatically: the error of
+	// the deployment the rollback replaced. It is empty for manual rollbacks.
+	RolledBackReason *string `gorm:"type:text;"`
+	// AutoSyncPaused stops automatic syncs of a rolled back application until
+	// they are resumed or the application is deployed again.
+	AutoSyncPaused bool `gorm:"not null;default:false"`
+	// Automatic rollback to the previous deployment, off by default since it
+	// diverges from the state in Git.
+	RollbackEnabled         bool `gorm:"not null;default:false"`
+	RollbackOnDeployFailure bool `gorm:"not null;default:true"`
+	// RollbackOnUnhealthy rolls back deployments that become unhealthy, or
+	// don't become healthy, within RollbackHealthTimeoutSeconds.
+	RollbackOnUnhealthy          bool           `gorm:"not null;default:true"`
+	RollbackHealthTimeoutSeconds int64          `gorm:"not null;default:300"`
+	RollbackPauseAutoSync        bool           `gorm:"not null;default:true"`
+	Notifications                []Notification `gorm:"many2many:application_notifications;"`
+}
+
+// HealthGate returns how long a new deployment is watched before it counts as
+// succeeded, or 0 when its health doesn't decide whether to roll back.
+func (a *Application) HealthGate() time.Duration {
+	if !a.RollbackEnabled || !a.RollbackOnUnhealthy {
+		return 0
+	}
+	return time.Duration(a.RollbackHealthTimeoutSeconds) * time.Second
 }
 
 func (Application) TableName() string {

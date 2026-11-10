@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import { Link } from "@tanstack/react-router";
 import { CircleCheck, RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -16,7 +17,7 @@ import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { syncRepository, type Repository, type RepositorySyncStatus } from "@/lib/repositories";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const maxListedRepositories = 4;
 
@@ -113,11 +114,16 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 	};
 
 	const detail =
-		repo.syncStatus === "failed" && repo.lastSyncError
-			? repo.lastSyncError
-			: repo.lastSyncedAt
-				? m.overviewRepositoriesLastSynced({ time: formatRelativeTime(repo.lastSyncedAt) })
-				: m.never();
+		repo.syncStatus === "failed" && repo.lastSyncError ? (
+			repo.lastSyncError
+		) : repo.lastSyncedAt ? (
+			<RelativeTime
+				value={repo.lastSyncedAt}
+				format={(time) => m.overviewRepositoriesLastSynced({ time })}
+			/>
+		) : (
+			m.never()
+		);
 
 	return (
 		<Item size="xs" className="hover:bg-muted/40">
@@ -134,7 +140,7 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 				</ItemTitle>
 				<ItemDescription
 					className={cn("truncate text-xs", repo.syncStatus === "failed" && "text-red-400")}
-					title={detail}
+					title={typeof detail === "string" ? detail : undefined}
 				>
 					{detail}
 				</ItemDescription>

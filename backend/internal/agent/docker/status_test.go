@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/rs/zerolog"
@@ -17,7 +18,7 @@ func TestApplicationHealth_NoContainersIsUnknown(t *testing.T) {
 
 	// No application has ever been deployed with this id, so no containers carry
 	// its label.
-	if got := c.ApplicationHealth(t.Context(), "no-such-application-id"); got != HealthUnknown {
+	if got := c.ApplicationHealth(t.Context(), "no-such-application-id"); got.State != HealthUnknown {
 		t.Errorf("expected HealthUnknown for an app with no containers, got %v", got)
 	}
 }
@@ -31,7 +32,7 @@ func TestApplicationHealth_DaemonUnreachableIsUnknown(t *testing.T) {
 	}
 	t.Cleanup(c.Close)
 
-	if got := c.ApplicationHealth(t.Context(), "any"); got != HealthUnknown {
+	if got := c.ApplicationHealth(t.Context(), "any"); got.State != HealthUnknown {
 		t.Errorf("expected HealthUnknown when daemon is unreachable, got %v", got)
 	}
 }
@@ -108,6 +109,60 @@ func TestAggregateHealth(t *testing.T) {
 				t.Errorf("aggregateHealth() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestServicesHealth(t *testing.T) {
+	service := func(name string, state container.ContainerState, health *container.HealthSummary) container.Summary {
+		return container.Summary{State: state, Health: health, Labels: map[string]string{api.ServiceLabel: name}}
+	}
+	items := []container.Summary{
+		service("web", container.StateRunning, &container.HealthSummary{Status: container.Healthy}),
+		service("web", container.StateRunning, &container.HealthSummary{Status: container.Unhealthy}),
+		service("db", container.StateRunning, nil),
+		service("worker", container.StateExited, nil),
+		{State: container.StateRunning, Names: []string{"/standalone"}},
+	}
+
+	got := servicesHealth(items)
+	want := []ServiceHealth{
+		{Name: "db", State: HealthHealthy},
+		{Name: "standalone", State: HealthHealthy},
+		{Name: "web", State: HealthUnhealthy},
+		{Name: "worker", State: HealthStopped},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("servicesHealth() = %v, want %v", got, want)
+	}
+}
+
+func TestHealthReport_Proto(t *testing.T) {
+	report := HealthReport{
+		State:    HealthUnhealthy,
+		Services: []ServiceHealth{{Name: "db", State: HealthHealthy}, {Name: "web", State: HealthUnhealthy}},
+	}
+
+	status := report.Proto("app-1")
+	if status.ApplicationId != "app-1" || status.Health != messages.HealthStatus_HEALTH_STATUS_UNHEALTHY {
+		t.Fatalf("unexpected status %v", status)
+	}
+	if len(status.Services) != 2 ||
+		status.Services[0].Name != "db" || status.Services[0].Health != messages.HealthStatus_HEALTH_STATUS_HEALTHY ||
+		status.Services[1].Name != "web" || status.Services[1].Health != messages.HealthStatus_HEALTH_STATUS_UNHEALTHY {
+		t.Errorf("unexpected services %v", status.Services)
+	}
+}
+
+func TestHealthReport_Equal(t *testing.T) {
+	base := HealthReport{State: HealthUnhealthy, Services: []ServiceHealth{{Name: "web", State: HealthUnhealthy}}}
+	if !base.Equal(HealthReport{State: HealthUnhealthy, Services: []ServiceHealth{{Name: "web", State: HealthUnhealthy}}}) {
+		t.Error("identical reports must be equal")
+	}
+	if base.Equal(HealthReport{State: HealthUnhealthy, Services: []ServiceHealth{{Name: "db", State: HealthUnhealthy}}}) {
+		t.Error("a different failing service must not be equal")
+	}
+	if base.Equal(HealthReport{State: HealthUnhealthy}) {
+		t.Error("missing services must not be equal")
 	}
 }
 

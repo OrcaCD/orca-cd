@@ -1,6 +1,10 @@
 import useSWR, { type SWRConfiguration } from "swr";
+import { m } from "@/lib/paraglide/messages";
 
 export const API_BASE = "/api/v1";
+
+// Plain text body returned by the hub for blocked requests in demo mode
+const DEMO_BLOCKED_MESSAGE = "This action is not allowed in demo mode.";
 
 export interface ErrorResponse {
 	error: string;
@@ -44,6 +48,10 @@ function parseErrorMessage(body: string): string | null {
 
 export async function getErrorMessage(res: Response): Promise<string> {
 	const body = await res.text().catch(() => "");
+	if (res.status === 403 && body.trim() === DEMO_BLOCKED_MESSAGE) {
+		return m.demoActionNotAllowed();
+	}
+
 	const parsedError = parseErrorMessage(body);
 	if (parsedError) {
 		return parsedError;
@@ -52,10 +60,30 @@ export async function getErrorMessage(res: Response): Promise<string> {
 	return fallbackErrorMessage(res);
 }
 
+export class ApiError extends Error {
+	status: number;
+	body: Record<string, unknown>;
+
+	constructor(message: string, status: number, body: Record<string, unknown> = {}) {
+		super(message);
+		this.name = "ApiError";
+		this.status = status;
+		this.body = body;
+	}
+}
+
 async function fetchWrapper<JSON = any>(input: RequestInfo, init?: RequestInit): Promise<JSON> {
 	const res = await fetch(input, { ...init });
 	if (!res.ok) {
-		throw new Error(await getErrorMessage(res));
+		const body = await res
+			.clone()
+			.json()
+			.catch(() => null);
+		throw new ApiError(
+			await getErrorMessage(res),
+			res.status,
+			body && typeof body === "object" ? body : {},
+		);
 	}
 	return (await res.json()) as JSON;
 }
@@ -80,5 +108,6 @@ export const useFetch = <JSON extends Record<string, any> = any>(
 	url: string | null,
 	config?: SWRConfiguration,
 ) => {
-	return useSWR<JSON>(url ? API_BASE + url : null, fetchWrapper, config);
+	const requestURL = url && !/^https?:\/\//.test(url) ? API_BASE + url : url;
+	return useSWR<JSON>(requestURL, fetchWrapper, config);
 };

@@ -43,6 +43,21 @@ export async function commit(
 	return (await response.json()) as { sha: string; message: string };
 }
 
+/** Makes a real signed commit the head of the branch, see pushSignedCommit in the mock */
+export async function pushSignedCommit(
+	name: string,
+	signedCommit: {
+		branch?: string;
+		sha: string;
+		message: string;
+		payload: string;
+		signature: string;
+		files: Record<string, string>;
+	},
+) {
+	await control(`${name}/signed-commit`, "PUT", { branch: "main", ...signedCommit });
+}
+
 export async function requireToken(name: string, token: string | null) {
 	await control(`${name}/token`, "PUT", { token });
 }

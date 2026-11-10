@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -37,6 +38,13 @@ type applicationEventResponse struct {
 	CommitHash    *string `json:"commitHash"`
 	CommitMessage *string `json:"commitMessage"`
 	ErrorMessage  *string `json:"errorMessage"`
+	// DeploymentId is set while the deployment the event deployed or rolled
+	// back to is still recorded.
+	DeploymentId     *string `json:"deploymentId"`
+	DeploymentStatus *string `json:"deploymentStatus"`
+	// WaitingForAgent is set while the health of the deployment is checked
+	// but its agent is not connected to report it.
+	WaitingForAgent bool `json:"waitingForAgent,omitempty"`
 }
 
 func ListApplicationEventsHandler(c *gin.Context) {
@@ -84,12 +92,103 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	if hasMore {
 		events = events[:limit]
 	}
-	items := make([]applicationEventResponse, 0, len(events))
-	for i := range events {
-		items = append(items, toApplicationEventResponse(&events[i]))
+	items, err := toApplicationEventResponses(ctx, events)
+	if err != nil {
+		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
+			Msg("failed to load deployments of application events")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"items": items, "hasMore": hasMore})
+}
+
+// toApplicationEventResponses converts events and adds the deployments they
+// reference that are still recorded.
+func toApplicationEventResponses(ctx context.Context, events []models.ApplicationEvent) ([]applicationEventResponse, error) {
+	states, err := deploymentStates(ctx, events)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]applicationEventResponse, 0, len(events))
+	for i := range events {
+		item := toApplicationEventResponse(&events[i])
+		if id := events[i].DeploymentId; id != nil {
+			if state, ok := states[*id]; ok {
+				status := string(state.status)
+				item.DeploymentId = id
+				item.DeploymentStatus = &status
+				item.WaitingForAgent = state.waitingForAgent
+			}
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+type deploymentState struct {
+	status          models.ApplicationDeploymentStatus
+	waitingForAgent bool
+}
+
+// deploymentStates returns the state of every deployment the events
+// reference that is still recorded.
+func deploymentStates(ctx context.Context, events []models.ApplicationEvent) (map[string]deploymentState, error) {
+	ids := make([]string, 0, len(events))
+	for i := range events {
+		if events[i].DeploymentId != nil {
+			ids = append(ids, *events[i].DeploymentId)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	deployments, err := gorm.G[models.ApplicationDeployment](db.DB).
+		Select("id", "application_id", "status").
+		Where("id IN ?", ids).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	offline, err := offlineApplications(ctx, deployments)
+	if err != nil {
+		return nil, err
+	}
+	states := make(map[string]deploymentState, len(deployments))
+	for i := range deployments {
+		states[deployments[i].Id] = deploymentState{
+			status:          deployments[i].Status,
+			waitingForAgent: deployments[i].Status == models.DeploymentVerifying && offline[deployments[i].ApplicationId],
+		}
+	}
+	return states, nil
+}
+
+// offlineApplications returns the applications of the verifying deployments
+// whose agent is not connected and healthy, so it can't report their health.
+func offlineApplications(ctx context.Context, deployments []models.ApplicationDeployment) (map[string]bool, error) {
+	var appIDs []string
+	for i := range deployments {
+		if deployments[i].Status == models.DeploymentVerifying {
+			appIDs = append(appIDs, deployments[i].ApplicationId)
+		}
+	}
+	if len(appIDs) == 0 {
+		return nil, nil
+	}
+	onlineAgents := gorm.G[models.Agent](db.DB).Select("id").Where("status = ?", models.AgentStatusOnline)
+	apps, err := gorm.G[models.Application](db.DB).
+		Select("id").
+		Where("id IN ? AND agent_id NOT IN (?)", appIDs, onlineAgents).
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	offline := make(map[string]bool, len(apps))
+	for i := range apps {
+		offline[apps[i].Id] = true
+	}
+	return offline, nil
 }
 
 func applicationEventPagination(c *gin.Context) (int, int, bool) {

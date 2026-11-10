@@ -14,6 +14,8 @@ message ClientMessage {
     DeleteResult delete_result = 6;
     ApplicationStatusReport application_status_report = 7;
     AgentInfo agent_info = 8;
+    EnvListResult env_list_result = 9;
+    EnvUpdateResult env_update_result = 10;
   }
 }
 
@@ -26,6 +28,8 @@ message ServerMessage {
     AgentSettings agent_settings = 5;
     PullImagesRequest pull_images_request = 6;
     DeleteRequest delete_request = 7;
+    EnvListRequest env_list_request = 8;
+    EnvUpdateRequest env_update_request = 9;
   }
 }
 
@@ -60,6 +64,30 @@ message DeployRequest {
   string application_name = 3;
   string compose_file = 4;
   bool delete_old_images = 5;
+  // Images to run instead of the ones the compose file names, so a rollback
+  // runs the exact images of an earlier deployment.
+  repeated ServiceImage pinned_images = 6;
+  ImageRetention image_retention = 7;
+}
+
+// ImageRetention adjusts which old images are deleted for an application that
+// can be rolled back. Unset, the images replaced by an update are deleted.
+message ImageRetention {
+  // Images of the deployment a rollback would restore. They are kept.
+  repeated string keep_image_ids = 1;
+  // Images of earlier deployments that were kept before. They are deleted
+  // too, unless a container still uses them.
+  repeated string remove_image_ids = 2;
+}
+
+// ServiceImage is the image the containers of a compose service run.
+message ServiceImage {
+  string service = 1;
+  // Local image ID (sha256:…).
+  string image_id = 2;
+  // Registry reference pinned by digest (repo@sha256:…). Empty for images that
+  // did not come from a registry, e.g. built locally.
+  string pinned_ref = 3;
 }
 
 message DeleteRequest {
@@ -80,8 +108,10 @@ message DeployResult {
   string application_id = 2;
   bool success = 3;
   string error_message = 4;
-  repeated ComposeWarning warnings = 5;
-  string compose_file_sha256 = 6;
+  // Images the services run after a successful deployment.
+  repeated ServiceImage images = 5;
+  repeated ComposeWarning warnings = 6;
+  string compose_file_sha256 = 7;
 }
 
 message ComposeWarning {
@@ -100,6 +130,7 @@ message ImagePollSettings {
   int64 interval_seconds = 3;
   bool delete_old_images = 4;
   string application_name = 5;
+  ImageRetention image_retention = 6;
 }
 
 message PullImagesRequest {
@@ -107,6 +138,7 @@ message PullImagesRequest {
   string application_id = 2;
   string application_name = 3;
   bool delete_old_images = 4;
+  ImageRetention image_retention = 5;
 }
 
 message PullImagesResult {
@@ -115,6 +147,11 @@ message PullImagesResult {
   bool success = 3;
   bool images_updated = 4;
   string error_message = 5;
+  // Images the services run after a successful update.
+  repeated ServiceImage images = 6;
+  // Set when new images were pulled but recreating the containers failed,
+  // which leaves the application in an unknown state.
+  bool redeploy_failed = 7;
 }
 
 enum HealthStatus {
@@ -124,9 +161,19 @@ enum HealthStatus {
   HEALTH_STATUS_STOPPED = 3;
 }
 
+message ServiceStatus {
+  string name = 1;
+  HealthStatus health = 2;
+}
+
 message ApplicationStatus {
   string application_id = 1;
+  // Aggregate health of all containers. A mix of healthy and failing services
+  // is reported as unhealthy; the hub derives the degraded state from services.
   HealthStatus health = 2;
+  // Health per compose service, sorted by name. Empty for agents that predate
+  // per-service reporting.
+  repeated ServiceStatus services = 3;
 }
 
 // ApplicationStatusReport carries the health of every application managed by an
@@ -139,4 +186,60 @@ message AgentInfo {
   string version = 1;
   string docker_version = 2;
   bool docker_unreachable = 3;
+}
+
+message EnvListRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+}
+
+message EnvEntry {
+  string key = 1;
+  bool is_secret = 2;
+  string value = 3;
+  bool is_set = 4;
+}
+
+message EnvFile {
+  string path = 1;
+  repeated string services = 2;
+  repeated EnvEntry entries = 3;
+  string revision = 4;
+}
+
+message EnvListResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  repeated EnvFile env_files = 5;
+}
+
+message EnvChange {
+  string key = 1;
+  bool delete = 2;
+  string value = 3;
+  bool is_secret = 4;
+}
+
+message EnvFileChanges {
+  string path = 1;
+  repeated EnvChange changes = 2;
+  string expected_revision = 3;
+}
+
+message EnvUpdateRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string application_name = 3;
+  repeated EnvFileChanges files = 4;
+}
+
+message EnvUpdateResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  bool conflict = 5;
 }

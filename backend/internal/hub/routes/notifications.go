@@ -39,6 +39,10 @@ type createNotificationRequest struct {
 	RepositoryIds   []string                   `json:"repositoryIds"`
 }
 
+type setNotificationEnabledRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
 type updateNotificationRequest struct {
 	Enabled         *bool                      `json:"enabled"`
 	AllApplications *bool                      `json:"allApplications"`
@@ -271,6 +275,44 @@ func UpdateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toNotificationResponse(&updatedNotification))
+	sse.PublishUpdate(sse.TopicNotifications)
+}
+
+// SetNotificationEnabledHandler only toggles the enabled flag, so it cannot overwrite a concurrent
+// edit of the subscription.
+func SetNotificationEnabledHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var req setNotificationEnabledRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled is required"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	rowsAffected, err := gorm.G[models.Notification](db.DB).
+		Where("id = ?", id).
+		Update(ctx, "enabled", *req.Enabled)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+		return
+	}
+
+	notification, err := getNotificationById(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, toNotificationResponse(&notification))
 	sse.PublishUpdate(sse.TopicNotifications)
 }
 

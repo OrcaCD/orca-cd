@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
+	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
@@ -177,6 +180,9 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			if applicationErr != nil {
 				log.Error().Err(applicationErr).Str("agent_id", claims.Subject).Msg("Failed to update application status to offline")
 			}
+			if historyErr := healthhistory.RecordAgentOffline(ctx, claims.Subject, time.Now()); historyErr != nil {
+				log.Error().Err(historyErr).Str("agent_id", claims.Subject).Msg("Failed to record application health history for offline agent")
+			}
 			// Fail any deploy still in progress: the agent that owned it is gone, so
 			// no result will arrive and the app would otherwise spin in syncing.
 			_, syncErr := gorm.G[models.Application](db.DB).
@@ -186,6 +192,9 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				log.Error().Err(syncErr).Str("agent_id", claims.Subject).Msg("Failed to reset applications stuck in syncing status")
 			}
 			failRunningDeploymentEventsForAgent(ctx, claims.Subject, log)
+			if pendingErr := deployments.DiscardPendingForAgent(ctx, claims.Subject); pendingErr != nil {
+				log.Error().Err(pendingErr).Str("agent_id", claims.Subject).Msg("Failed to discard pending deployments after disconnect")
+			}
 			h.presence.Disconnected(claims.Subject)
 			sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
 		}()
@@ -211,7 +220,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("failed to fetch applications for AgentSettings")
 		} else {
-			h.SendAgentSettings(claims.Subject, apps)
+			h.SendAgentSettings(c.Request.Context(), claims.Subject, apps)
 		}
 
 		for {
@@ -278,6 +287,14 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		if DefaultHub == nil || !DefaultHub.ResolveDeleteResult(client.Id, p.DeleteResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.DeleteResult.RequestId).Msg("received delete result for unknown request")
 		}
+	case *messages.ClientMessage_EnvListResult:
+		if DefaultHub == nil || !DefaultHub.ResolveEnvListResult(client.Id, p.EnvListResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.EnvListResult.RequestId).Msg("received env list result for unknown request")
+		}
+	case *messages.ClientMessage_EnvUpdateResult:
+		if DefaultHub == nil || !DefaultHub.ResolveEnvUpdateResult(client.Id, p.EnvUpdateResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.EnvUpdateResult.RequestId).Msg("received env update result for unknown request")
+		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ApplicationStatusReport:
@@ -304,8 +321,11 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if ctx.Err() != nil {
 			return
 		}
-		health := protoHealthToModel(status.Health)
-		event, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
+		if status == nil {
+			continue
+		}
+		health := reportedApplicationHealth(status)
+		event, changed, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
@@ -313,9 +333,16 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 				Msg("failed to update application health from status report")
 			continue
 		}
+		if err := recordHealthHistory(ctx, client, status, health, changed); err != nil {
+			log.Error().Err(err).
+				Str("agent_id", client.Id).
+				Str("applicationId", status.ApplicationId).
+				Msg("failed to record application health history")
+		}
 		if event != "" {
 			notifyHealthChange(ctx, status.ApplicationId, event, health, log)
 		}
+		client.recordHealthReport(status.ApplicationId, health, time.Now())
 	}
 
 	sse.PublishUpdate(sse.TopicApplications)
@@ -382,40 +409,69 @@ func sanitizeReportedVersion(v string) string {
 }
 
 // applyReportedHealth stores the reported health and returns the health event
-// the change triggers, if any. Transitions are detected with conditional
-// updates so concurrent reports cannot notify twice.
+// the change triggers, if any, and whether the health of one of the agent's
+// applications changed. Transitions are detected with conditional updates so
+// concurrent reports cannot notify twice.
 //
-// Only Healthy→Unhealthy/Stopped and Unhealthy/Stopped→Healthy notify; a
-// stopped application counts as unhealthy for notifications. Unknown→Unhealthy
+// Only Healthy→Unhealthy/Stopped/Degraded and back to Healthy notify; stopped
+// and degraded applications count as unhealthy for notifications. Unknown→Unhealthy
 // is deliberately silent: health is reset to Unknown on every disconnect, so it
 // would re-announce unhealthy apps after each agent reconnect. Apps that are
 // currently deploying are skipped, as the deployment reports its own outcome.
-func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, error) {
+func applyReportedHealth(ctx context.Context, agentId, applicationId string, health models.HealthStatus) (models.NotificationEvent, bool, error) {
 	var event models.NotificationEvent
 	transition := gorm.G[models.Application](db.DB).Where("id = ? AND agent_id = ?", applicationId, agentId)
 	switch health {
-	case models.Unhealthy, models.Stopped:
+	case models.Unhealthy, models.Stopped, models.Degraded:
 		event = models.NotificationEventHealthUnhealthy
 		transition = transition.Where("health_status = ? AND sync_status <> ?", models.Healthy, models.Syncing)
 	case models.Healthy:
 		event = models.NotificationEventHealthRecovered
-		transition = transition.Where("health_status IN ?", []models.HealthStatus{models.Unhealthy, models.Stopped})
+		transition = transition.Where("health_status IN ?", []models.HealthStatus{models.Unhealthy, models.Stopped, models.Degraded})
 	}
 
 	if event != "" {
 		rowsAffected, err := transition.Update(ctx, "health_status", health)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if rowsAffected > 0 {
-			return event, nil
+			return event, true, nil
 		}
 	}
 
-	_, err := gorm.G[models.Application](db.DB).
-		Where("id = ? AND agent_id = ?", applicationId, agentId).
+	rowsAffected, err := gorm.G[models.Application](db.DB).
+		Where("id = ? AND agent_id = ? AND health_status <> ?", applicationId, agentId, health).
 		Update(ctx, "health_status", health)
-	return "", err
+	return "", rowsAffected > 0, err
+}
+
+// recordHealthHistory adds a reported health to the application's health
+// history. Reports that do not change the application's health are only
+// recorded once per connection: the history can lag behind the stored health
+// after a hub restart, which records the agent as offline but keeps the health.
+func recordHealthHistory(ctx context.Context, client *Client, status *messages.ApplicationStatus, health models.HealthStatus, changed bool) error {
+	if !changed {
+		if client.healthHistorySynced(status.ApplicationId) {
+			return nil
+		}
+		// Unchanged reports update no row, so ownership is checked separately.
+		owned, err := gorm.G[models.Application](db.DB).
+			Where("id = ? AND agent_id = ?", status.ApplicationId, client.Id).
+			Count(ctx, "*")
+		if err != nil || owned == 0 {
+			return err
+		}
+	}
+	if _, err := healthhistory.Record(ctx, models.ApplicationHealthChange{
+		ApplicationId: status.ApplicationId,
+		Status:        health,
+		Services:      failingServices(status.Services),
+	}); err != nil {
+		return err
+	}
+	client.markHealthHistorySynced(status.ApplicationId)
+	return nil
 }
 
 func notifyHealthChange(ctx context.Context, applicationId string, event models.NotificationEvent, health models.HealthStatus, log *zerolog.Logger) {
@@ -431,8 +487,39 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 		message = "Application " + app.Name.String() + " is unhealthy"
 	case models.Stopped:
 		message = "Application " + app.Name.String() + " is stopped"
+	case models.Degraded:
+		message = "Application " + app.Name.String() + " is degraded"
 	}
 	go notifications.SendForApplication(applicationId, event, message, log)
+}
+
+// reportedApplicationHealth derives the application health from a status
+// report. Agents report a partially failing application as unhealthy; when at
+// least one of its services is still healthy, the hub records it as degraded.
+func reportedApplicationHealth(status *messages.ApplicationStatus) models.HealthStatus {
+	health := protoHealthToModel(status.GetHealth())
+	if health != models.Unhealthy {
+		return health
+	}
+	for _, service := range status.Services {
+		if service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+			return models.Degraded
+		}
+	}
+	return health
+}
+
+// failingServices returns the services of a status report that are not
+// healthy, which give context to incidents in the health history.
+func failingServices(services []*messages.ServiceStatus) []models.ServiceHealth {
+	var failing []models.ServiceHealth
+	for _, service := range services {
+		if service == nil || service.GetHealth() == messages.HealthStatus_HEALTH_STATUS_HEALTHY {
+			continue
+		}
+		failing = append(failing, models.ServiceHealth{Name: service.GetName(), Status: protoHealthToModel(service.GetHealth())})
+	}
+	return failing
 }
 
 func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
@@ -449,15 +536,31 @@ func protoHealthToModel(h messages.HealthStatus) models.HealthStatus {
 }
 
 func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, log *zerolog.Logger) {
-	now := time.Now()
-	errorMessage := "agent disconnected before the deployment result was received"
-	_, err := gorm.G[models.ApplicationEvent](db.DB).
+	// A rollback is not retried, so its failure is announced like any other.
+	rollbacks, err := gorm.G[models.ApplicationEvent](db.DB).
+		Select("id", "application_id").
 		Where(
 			"status = ? AND type = ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
 			models.ApplicationEventRunning,
-			models.ApplicationEventDeployment,
+			models.ApplicationEventRollback,
 			agentID,
 		).
+		Find(ctx)
+	if err != nil {
+		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to load running rollbacks after disconnect")
+	}
+
+	now := time.Now()
+	errorMessage := "agent disconnected before the deployment result was received"
+	_, err = gorm.G[models.ApplicationEvent](db.DB).
+		Where(
+			"status = ? AND type IN ? AND application_id IN (SELECT id FROM applications WHERE agent_id = ?)",
+			models.ApplicationEventRunning,
+			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventRollback},
+			agentID,
+		).
+		// Deployments under a health gate already reported their result.
+		Where(applicationevents.NotVerifyingCondition, models.DeploymentVerifying).
 		Select("Status", "ErrorMessage", "CompletedAt").
 		Updates(ctx, models.ApplicationEvent{
 			Status:       models.ApplicationEventFailed,
@@ -466,6 +569,16 @@ func failRunningDeploymentEventsForAgent(ctx context.Context, agentID string, lo
 		})
 	if err != nil {
 		log.Error().Err(err).Str("agent_id", agentID).Msg("Failed to complete running deployment events after disconnect")
+		return
+	}
+
+	for i := range rollbacks {
+		app, err := gorm.G[models.Application](db.DB).Select("id", "name").Where("id = ?", rollbacks[i].ApplicationId).First(ctx)
+		if err != nil {
+			log.Error().Err(err).Str("applicationId", rollbacks[i].ApplicationId).Msg("Failed to load application for rollback notification")
+			continue
+		}
+		go notifications.SendForApplication(app.Id, models.NotificationEventRollbackFailed, "Error: rollback failed for "+app.Name.String()+": "+errorMessage, log)
 	}
 }
 

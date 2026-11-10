@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.5.0](https://github.com/OrcaCD/orca-cd/compare/v0.4.0...v0.5.0) (2026-10-28)
+
+
+### Features
+
+* Add applications overview dashboard with activity and agent status ([#338](https://github.com/OrcaCD/orca-cd/issues/338)) ([8395b6a](https://github.com/OrcaCD/orca-cd/commit/8395b6ab2e4150a551dc500ac37c710f73e4c62c))
+* Add minimal setup guide in UI on agent creation ([#413](https://github.com/OrcaCD/orca-cd/issues/413)) ([ae29c22](https://github.com/OrcaCD/orca-cd/commit/ae29c2290e39aaa4ec0a3a89acb3cd732b75485b))
+* Add nicer error pages ([#418](https://github.com/OrcaCD/orca-cd/issues/418)) ([8d4c50e](https://github.com/OrcaCD/orca-cd/commit/8d4c50e0e87cc6f3e0966ed9e25703489ef709c5))
+* Add repository sync option to application deploy button ([#346](https://github.com/OrcaCD/orca-cd/issues/346)) ([c50c9d7](https://github.com/OrcaCD/orca-cd/commit/c50c9d721e14a901f1f09a715076b9374ea250f2))
+* Add search to audit log and application history ([#356](https://github.com/OrcaCD/orca-cd/issues/356)) ([307a7e0](https://github.com/OrcaCD/orca-cd/commit/307a7e0589c4b6731693e4273c7bfadeabcea5f9))
+* Add timeline view for application history ([#376](https://github.com/OrcaCD/orca-cd/issues/376)) ([d31cd13](https://github.com/OrcaCD/orca-cd/commit/d31cd130e7664a85c80c8cf5aa77f53efdbf3454))
+* **agent:** redesign setup dialog with live connection status ([#416](https://github.com/OrcaCD/orca-cd/issues/416)) ([4275220](https://github.com/OrcaCD/orca-cd/commit/427522048f0865f86b3110a3328f49230ed84dae))
+* **agent:** report and display agent/Docker versions ([#308](https://github.com/OrcaCD/orca-cd/issues/308)) ([75690f0](https://github.com/OrcaCD/orca-cd/commit/75690f0529d34b81bbcad961e9e2edac15aeb616))
+* **agent:** support custom CA cert for hub TLS connections ([#337](https://github.com/OrcaCD/orca-cd/issues/337)) ([ce57cb9](https://github.com/OrcaCD/orca-cd/commit/ce57cb9f1860edf7aedbd7706ae063c18d608f37))
+* Extend OIDC provider support ([#390](https://github.com/OrcaCD/orca-cd/issues/390)) ([70ead04](https://github.com/OrcaCD/orca-cd/commit/70ead0426ff4be7024e6ac3dde0e68b0ff649f3e))
+* **health:** add stopped health status for fully stopped apps ([#355](https://github.com/OrcaCD/orca-cd/issues/355)) ([6e2b5e1](https://github.com/OrcaCD/orca-cd/commit/6e2b5e13e8644ddb55cd9cab215380d1583bc256))
+* **notifications:** add agent and repository event subscriptions ([#313](https://github.com/OrcaCD/orca-cd/issues/313)) ([5d9b458](https://github.com/OrcaCD/orca-cd/commit/5d9b45895f6001fdb9cfdbbc115810b131739450))
+* **notifications:** add per-event subscriptions ([#312](https://github.com/OrcaCD/orca-cd/issues/312)) ([1fecb18](https://github.com/OrcaCD/orca-cd/commit/1fecb18811bdc89f7555166f02abc1d6f690371f))
+* **notifications:** Send test before saving and redact credentials from errors ([#336](https://github.com/OrcaCD/orca-cd/issues/336)) ([4a5bc5e](https://github.com/OrcaCD/orca-cd/commit/4a5bc5e37dc893b70e068afe4b11df7d769b2180))
+* Prompt to deploy after deployment-affecting edits ([#354](https://github.com/OrcaCD/orca-cd/issues/354)) ([c59068e](https://github.com/OrcaCD/orca-cd/commit/c59068e3e97bdbcb46d324e7a2b2515e2115c0ba))
+* pull images dropdown ([#362](https://github.com/OrcaCD/orca-cd/issues/362)) ([37dc5ff](https://github.com/OrcaCD/orca-cd/commit/37dc5ff7c8476a799d3619e62fdfe54bee186608))
+* Redesign application details info cards UI ([#375](https://github.com/OrcaCD/orca-cd/issues/375)) ([2dad428](https://github.com/OrcaCD/orca-cd/commit/2dad4281993b2c36be5a1f061442a4537bc8fc3a))
+* Redesign application general settings form ([#378](https://github.com/OrcaCD/orca-cd/issues/378)) ([0e5a1cc](https://github.com/OrcaCD/orca-cd/commit/0e5a1cc2ac725655855a01feac48df1528e91a6b))
+* Replace deploy spin with rocket launch animation ([#368](https://github.com/OrcaCD/orca-cd/issues/368)) ([5986909](https://github.com/OrcaCD/orca-cd/commit/59869091e01f0c99fabadb0acecd3ca8ab0e6314))
+* **repositories:** require signed commits for application sync ([#414](https://github.com/OrcaCD/orca-cd/issues/414)) ([cfefec8](https://github.com/OrcaCD/orca-cd/commit/cfefec822731b93845b470597a3c49f045bedb1f))
+* Secure initial admin creation with code ([#380](https://github.com/OrcaCD/orca-cd/issues/380)) ([72f045d](https://github.com/OrcaCD/orca-cd/commit/72f045d3c5397a5a1be92874b94bb34ac912cad2))
+* Show file path and diff stats on manifest tabs ([#377](https://github.com/OrcaCD/orca-cd/issues/377)) ([f8b7d95](https://github.com/OrcaCD/orca-cd/commit/f8b7d953dcc4c53abb1083c79e8359ee81ecbd29))
+* Show last sync source on application details ([#343](https://github.com/OrcaCD/orca-cd/issues/343)) ([22983c0](https://github.com/OrcaCD/orca-cd/commit/22983c0ed3d0bfb79bcddd52b58a544a6c896e22))
+* Switch body font to Geist and restyle navbar active state ([#417](https://github.com/OrcaCD/orca-cd/issues/417)) ([93547c2](https://github.com/OrcaCD/orca-cd/commit/93547c2de1edc1864c1d558ebde74808d2522dff))
+* Use blobatar for default navbar avatar ([#381](https://github.com/OrcaCD/orca-cd/issues/381)) ([b0a2bbe](https://github.com/OrcaCD/orca-cd/commit/b0a2bbe83c26827c2c15204b97fff20bffc505f9))
+* Use shadcn code block for manifest and diff tabs ([#379](https://github.com/OrcaCD/orca-cd/issues/379)) ([b2a8d4b](https://github.com/OrcaCD/orca-cd/commit/b2a8d4bdeb51bee269de66588434e9c35ac96d10))
+
+
+### Bug Fixes
+
+* **agent:** Create compose.override.yaml ([#317](https://github.com/OrcaCD/orca-cd/issues/317)) ([39975c6](https://github.com/OrcaCD/orca-cd/commit/39975c6f418d2e7a6db4669f42cb8924acc1e5a4))
+* **agent:** report Docker daemon reachability to hub ([#335](https://github.com/OrcaCD/orca-cd/issues/335)) ([c8702df](https://github.com/OrcaCD/orca-cd/commit/c8702df9c20c260fe62a058e06112882b503a022))
+* Apply bind mount rules to secret and config files ([#400](https://github.com/OrcaCD/orca-cd/issues/400)) ([c6ba9f2](https://github.com/OrcaCD/orca-cd/commit/c6ba9f2ff4caf6ac18c26d89c438fe7281b4c8c9))
+* Apply the deploy policy to lifecycle hooks and jobs ([#409](https://github.com/OrcaCD/orca-cd/issues/409)) ([aaea68a](https://github.com/OrcaCD/orca-cd/commit/aaea68a60a7c4a17e1a1cb9e15e68cb628b080b0))
+* Balance card layout and spacing on dashboard ([#383](https://github.com/OrcaCD/orca-cd/issues/383)) ([038247e](https://github.com/OrcaCD/orca-cd/commit/038247efd8b88a3b5f10bbf5b0b81932084544d6))
+* Clean up replaced images by ID on deploy and manual pulls ([#309](https://github.com/OrcaCD/orca-cd/issues/309)) ([8e0fc2c](https://github.com/OrcaCD/orca-cd/commit/8e0fc2cf4c99f66bdd06fc1793f4edc45ce736b0))
+* Compose diff always displays scrollbar ([#359](https://github.com/OrcaCD/orca-cd/issues/359)) ([6affc99](https://github.com/OrcaCD/orca-cd/commit/6affc99fe6bb9e168ef0d4cd452b7522e59e5790))
+* Disable outgoing http client in demo mode ([#423](https://github.com/OrcaCD/orca-cd/issues/423)) ([85f2f3c](https://github.com/OrcaCD/orca-cd/commit/85f2f3c6d556dd262e206c91f456bdbdb5110689))
+* Do not link OIDC logins to self-changed emails ([#405](https://github.com/OrcaCD/orca-cd/issues/405)) ([b00ef64](https://github.com/OrcaCD/orca-cd/commit/b00ef644be4e7e5ce4c184619b24b08fd7532056))
+* Enforce deploy policy on image pull redeploys ([#399](https://github.com/OrcaCD/orca-cd/issues/399)) ([e6ef8d8](https://github.com/OrcaCD/orca-cd/commit/e6ef8d85f0d335b5257b4fd5cf84522cbf332417))
+* Handle image polling auth errors instead of hiding them ([#411](https://github.com/OrcaCD/orca-cd/issues/411)) ([df0c88d](https://github.com/OrcaCD/orca-cd/commit/df0c88d89971faa3dc8c45ac7b1264923bbd7214))
+* Harden security ([#373](https://github.com/OrcaCD/orca-cd/issues/373)) ([f633744](https://github.com/OrcaCD/orca-cd/commit/f633744a4e458153d0be1ba62085a8c138b743f5))
+* Increase e2e workflow timeout ([#415](https://github.com/OrcaCD/orca-cd/issues/415)) ([6f7a3c6](https://github.com/OrcaCD/orca-cd/commit/6f7a3c6512b386120ed848a7034a997389defc3f))
+* Keep the hub's secrets out of the agent environment ([#410](https://github.com/OrcaCD/orca-cd/issues/410)) ([86c8afa](https://github.com/OrcaCD/orca-cd/commit/86c8afa013bcd3b95454c637d0c354f473bc7366))
+* Make agent online status more accurate ([#331](https://github.com/OrcaCD/orca-cd/issues/331)) ([b8a6352](https://github.com/OrcaCD/orca-cd/commit/b8a63529fe76c760217a2a77ea5cfd5a4d226381))
+* Missing profile picture ([#382](https://github.com/OrcaCD/orca-cd/issues/382)) ([21a4107](https://github.com/OrcaCD/orca-cd/commit/21a410756c9609b1222b16963172adf3c068f140))
+* Multiple application health status issues ([#351](https://github.com/OrcaCD/orca-cd/issues/351)) ([d75bb58](https://github.com/OrcaCD/orca-cd/commit/d75bb58d08026e7f48249c7fa4205970d917c6d5))
+* Multiple security issues ([#369](https://github.com/OrcaCD/orca-cd/issues/369)) ([bed20b2](https://github.com/OrcaCD/orca-cd/commit/bed20b25daa0745d1fe7a4034d28a2a263c43ba2))
+* Normalize host paths and reject symlinks in the deploy policy ([#401](https://github.com/OrcaCD/orca-cd/issues/401)) ([5dbdca8](https://github.com/OrcaCD/orca-cd/commit/5dbdca8fa02846b0539313d9492e795aa402c036))
+* **overview:** Follow-ups for the overview dashboard ([#364](https://github.com/OrcaCD/orca-cd/issues/364)) ([cb81557](https://github.com/OrcaCD/orca-cd/commit/cb815579aebcbefb1f77cd3b523598d9bdae6d2a))
+* Prevent adding the same repository with and without .git suffix ([#318](https://github.com/OrcaCD/orca-cd/issues/318)) ([e4cfe13](https://github.com/OrcaCD/orca-cd/commit/e4cfe1317e0c0012998574ade4eb60b9d25bbd63))
+* Reject compose provider services ([#402](https://github.com/OrcaCD/orca-cd/issues/402)) ([fa9a17e](https://github.com/OrcaCD/orca-cd/commit/fa9a17e27456a23808b8c966f630fa0ece09117e))
+* Reject joining other containers' namespaces ([#403](https://github.com/OrcaCD/orca-cd/issues/403)) ([a76db8e](https://github.com/OrcaCD/orca-cd/commit/a76db8e555981ae72fa988920537cd4a1824d864))
+* Remove AUTH_TOKEN from the agent environment after startup ([#404](https://github.com/OrcaCD/orca-cd/issues/404)) ([204fa2a](https://github.com/OrcaCD/orca-cd/commit/204fa2ab3d2db65cc07f9c1bd1ae73229da8dd5f))
+* Remove horizontal scrollbar in app dialog ([#334](https://github.com/OrcaCD/orca-cd/issues/334)) ([d7f4bba](https://github.com/OrcaCD/orca-cd/commit/d7f4bbae66d83ff9057640fcefef5077525ae66a))
+* Revoke OIDC provider sessions and check NAT64/6to4 addresses ([#406](https://github.com/OrcaCD/orca-cd/issues/406)) ([5b091f5](https://github.com/OrcaCD/orca-cd/commit/5b091f5adb7c9c0682400102692eea9103b84fd2))
+* Show actual repository sync type in application details ([#341](https://github.com/OrcaCD/orca-cd/issues/341)) ([0211a4e](https://github.com/OrcaCD/orca-cd/commit/0211a4ee69a7ca5bb773e0500f5f6a31f0145cb6))
+* Skip duplicate GHCR webhook deliveries for untagged/signature manifests ([#307](https://github.com/OrcaCD/orca-cd/issues/307)) ([b7bb92f](https://github.com/OrcaCD/orca-cd/commit/b7bb92f7387f0d5cc7d2b3cbd672b8e3a2fb4d96))
+* Undeploy applications from agents when deleting a repository ([#332](https://github.com/OrcaCD/orca-cd/issues/332)) ([1284a76](https://github.com/OrcaCD/orca-cd/commit/1284a764cad27d2f744e711c3c335ad50c9d809f))
+* Undeploy stale agent containers on application move/rename ([#358](https://github.com/OrcaCD/orca-cd/issues/358)) ([03bafbd](https://github.com/OrcaCD/orca-cd/commit/03bafbd68f5e1108805be7f4c9a0d0468737c8c8))
+* Use Node.js v26 everywhere ([#366](https://github.com/OrcaCD/orca-cd/issues/366)) ([bedb0c2](https://github.com/OrcaCD/orca-cd/commit/bedb0c2e6feee300821ab11398d4bea949302fd5))
+* Webhooks reveal resource existence ([#387](https://github.com/OrcaCD/orca-cd/issues/387)) ([2d324a1](https://github.com/OrcaCD/orca-cd/commit/2d324a1e4cbccdfc7b979cf49e670451065bc44a))
+
 ## [0.4.0](https://github.com/OrcaCD/orca-cd/compare/v0.3.2...v0.4.0) (2026-07-27)
 
 

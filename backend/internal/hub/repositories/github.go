@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 )
@@ -39,6 +40,14 @@ type githubCommitResponse struct {
 	Commit struct {
 		Message string `json:"message"`
 	} `json:"commit"`
+}
+
+type githubGitCommitResponse struct {
+	SHA          string `json:"sha"`
+	Verification struct {
+		Signature *string `json:"signature"`
+		Payload   *string `json:"payload"`
+	} `json:"verification"`
 }
 
 func init() {
@@ -480,6 +489,30 @@ func (githubProvider) GetBranchesForCommit(ctx context.Context, repo *models.Rep
 	default:
 		return nil, fmt.Errorf("GitHub API returned unexpected status: %d", resp.StatusCode)
 	}
+}
+
+func (githubProvider) VerifyCommitSignature(ctx context.Context, repo *models.Repository, sha string, keys *commitsigning.TrustedKeys) (commitsigning.Signer, error) {
+	owner, repoName, err := parseGitHubURL(repo.Url)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf("%s/repos/%s/%s/git/commits/%s", githubAPIBase, owner, repoName, url.PathEscape(sha))
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("failed to build GitHub request: %w", err)
+	}
+	addGitHubHeaders(req, repo)
+
+	var parsed githubGitCommitResponse
+	found, err := fetchCommitSignatureJSON(req, "GitHub", &parsed)
+	if err != nil {
+		return commitsigning.Signer{}, err
+	}
+	if !found {
+		return commitsigning.Signer{}, errors.New("commit not found or access denied")
+	}
+	return verifyRawCommitSignature(keys, sha, parsed.SHA, parsed.Verification.Signature, parsed.Verification.Payload)
 }
 
 func addGitHubHeaders(req *http.Request, repo *models.Repository) {

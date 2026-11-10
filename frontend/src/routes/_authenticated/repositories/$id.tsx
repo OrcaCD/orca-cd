@@ -28,7 +28,7 @@ import type { Repository } from "@/lib/repositories";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { KeyRound, RefreshCw } from "lucide-react";
+import { FileKey, KeyRound, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/repositories/$id")({
 	component: RepositorySettingsLayout,
@@ -44,6 +44,11 @@ const sidebarItems = [
 		title: () => m.editRepositorySyncShort(),
 		icon: RefreshCw,
 		to: "/repositories/$id/settings/sync",
+	},
+	{
+		title: () => m.editRepositorySigningShort(),
+		icon: FileKey,
+		to: "/repositories/$id/settings/signing",
 	},
 ];
 

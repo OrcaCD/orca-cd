@@ -1,3 +1,4 @@
+import { RelativeTime } from "@/components/relative-time";
 import {
 	deleteRepository,
 	getGitProviderIconPath,
@@ -122,7 +123,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 		cell: ({ row }) => {
 			const lastSyncedAt = row.original.lastSyncedAt;
 
-			return <span>{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : m.never()}</span>;
+			return <RelativeTime value={lastSyncedAt} />;
 		},
 	},
 	{
@@ -145,7 +146,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 		},
 		cell: ({ row }) => {
 			const createdAt = row.original.createdAt;
-			return <span>{new Date(createdAt).toLocaleString()}</span>;
+			return <RelativeTime value={createdAt} />;
 		},
 	},
 	{

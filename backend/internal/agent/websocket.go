@@ -35,9 +35,23 @@ type deployExecutor interface {
 	Remove(ctx context.Context, req docker.DeleteRequest) error
 }
 
+type envManager interface {
+	ListEnv(ctx context.Context, appName string) ([]*messages.EnvFile, error)
+	UpdateEnv(ctx context.Context, appName string, files []*messages.EnvFileChanges) error
+	Redeploy(ctx context.Context, appID, appName string) error
+}
+
 type pollerHandler interface {
 	ApplySettings(apps []docker.AppPollConfig)
 	TriggerNow(appID, appName, requestID string, deleteOld bool)
+}
+
+type serviceImageReporter interface {
+	ServiceImages(ctx context.Context, appID string) ([]*messages.ServiceImage, error)
+}
+
+type imageRetentionSetter interface {
+	SetImageRetention(appID string, retention *messages.ImageRetention)
 }
 
 type statusReporter interface {
@@ -212,10 +226,14 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 			Log.Error().Err(err).Msg("failed to send Pong response")
 		}
 	case *messages.ServerMessage_DeployRequest:
+		setImageRetention(deployer, p.DeployRequest.ApplicationId, p.DeployRequest.ImageRetention)
 		go executeDeployment(ctx, sender, deployer, p.DeployRequest)
 	case *messages.ServerMessage_DeleteRequest:
 		go executeDelete(ctx, sender, deployer, p.DeleteRequest)
 	case *messages.ServerMessage_AgentSettings:
+		for _, settings := range p.AgentSettings.ImagePollSettings {
+			setImageRetention(deployer, settings.ApplicationId, settings.ImageRetention)
+		}
 		go applyAgentSettings(poller, p.AgentSettings)
 		// The hub sends AgentSettings right after connect, carrying the agent's
 		// full app list. Use it to report the real health of every application in
@@ -224,7 +242,12 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 			go reportApplicationStatus(ctx, sender, reporter, p.AgentSettings)
 		}
 	case *messages.ServerMessage_PullImagesRequest:
+		setImageRetention(deployer, p.PullImagesRequest.ApplicationId, p.PullImagesRequest.ImageRetention)
 		go executePullImages(poller, p.PullImagesRequest)
+	case *messages.ServerMessage_EnvListRequest:
+		go executeEnvList(ctx, sender, deployer, p.EnvListRequest)
+	case *messages.ServerMessage_EnvUpdateRequest:
+		go executeEnvUpdate(ctx, sender, deployer, p.EnvUpdateRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
@@ -244,6 +267,14 @@ func sendAgentInfo(sender outboundSender, dockerState dockerStateProvider) {
 		Payload: &messages.ClientMessage_AgentInfo{AgentInfo: info},
 	}); err != nil {
 		Log.Error().Err(err).Msg("failed to send agent info")
+	}
+}
+
+// setImageRetention stores the hub's latest image retention for an
+// application before the request that may delete old images runs.
+func setImageRetention(deployer deployExecutor, appID string, retention *messages.ImageRetention) {
+	if setter, ok := deployer.(imageRetentionSetter); ok {
+		setter.SetImageRetention(appID, retention)
 	}
 }
 
@@ -338,6 +369,7 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 		DeleteOldImages: req.DeleteOldImages,
+		PinnedImages:    pinnedImages(req.PinnedImages),
 	})
 	if warnings != nil {
 		result.ComposeFileSha256 = composewarnings.Hash(req.ComposeFile)
@@ -357,9 +389,45 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	}
 
 	result.Success = true
+	result.Images = reportServiceImages(deployCtx, deployer, req.ApplicationId)
 	sendDeployResult(sender, result)
 	// The deploy does not block on healthchecks; the docker client observes the
 	// application's health via daemon events and reports it once it settles.
+}
+
+// pinnedImages maps services to the image they are pinned to, preferring the
+// registry digest so a removed image can be pulled again.
+func pinnedImages(images []*messages.ServiceImage) map[string]string {
+	if len(images) == 0 {
+		return nil
+	}
+	pins := make(map[string]string, len(images))
+	for _, image := range images {
+		ref := image.GetPinnedRef()
+		if ref == "" {
+			ref = image.GetImageId()
+		}
+		if image.GetService() != "" && ref != "" {
+			pins[image.GetService()] = ref
+		}
+	}
+	return pins
+}
+
+// reportServiceImages returns the images the application runs after a
+// deployment. Failing to list them doesn't fail the deployment; the hub then
+// can't pin the images when rolling back to it.
+func reportServiceImages(ctx context.Context, deployer deployExecutor, appID string) []*messages.ServiceImage {
+	reporter, ok := deployer.(serviceImageReporter)
+	if !ok {
+		return nil
+	}
+	images, err := reporter.ServiceImages(ctx, appID)
+	if err != nil {
+		Log.Warn().Err(err).Str("application_id", appID).Msg("could not list service images")
+		return nil
+	}
+	return images
 }
 
 func executeDelete(ctx context.Context, sender outboundSender, deployer deployExecutor, req *messages.DeleteRequest) {

@@ -69,7 +69,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -317,6 +317,10 @@ type stubDeployer struct {
 	err       error
 }
 
+func (s *stubDeployer) TriggerRollback(context.Context, *models.Application, *models.ApplicationDeployment, string) error {
+	return nil
+}
+
 func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, requestID string) error {
 	s.called = true
 	s.compose = composeFile
@@ -496,11 +500,19 @@ func TestQueue_Start_ProcessesJobs(t *testing.T) {
 	}
 	q.Enqueue(&repo, provider, []models.Application{app}, "sha", "", SyncOrigin{Source: models.ApplicationEventSourceManual})
 
-	// Compose is unchanged, so the worker records the new commit without redeploying.
+	// Compose is unchanged, so the worker records the new commit without
+	// redeploying. Completing the event is its last write, which must finish
+	// before the test database is removed.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
-		if err == nil && updated.Commit == "sha" {
+		events, err := gorm.G[models.ApplicationEvent](db.DB).
+			Where("application_id = ? AND status = ?", app.Id, models.ApplicationEventNoChange).
+			Find(t.Context())
+		if err == nil && len(events) == 1 {
+			updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+			if err != nil || updated.Commit != "sha" {
+				t.Errorf("expected the new commit to be recorded, got %+v, %v", updated, err)
+			}
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

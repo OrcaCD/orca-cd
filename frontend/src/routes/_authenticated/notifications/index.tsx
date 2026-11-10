@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisVertical, Search, Send, Trash2, WebhookIcon } from "lucide-react";
+import { EllipsisVertical, Search, Send, Trash2 } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 
-import { NotificationStatusBadge } from "@/components/badges/notification-status-badge";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CreateNotificationDialog from "@/components/dialogs/create-notification";
 import UpdateNotificationDialog from "@/components/dialogs/update-notification";
@@ -11,7 +10,7 @@ import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import { columns } from "@/components/tables/notifications/columns";
 import { NotificationsDataTable } from "@/components/tables/notifications/data-table";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { NotificationCard } from "@/components/cards/notification-card";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -24,12 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useFetch } from "@/lib/api";
 import { usePreferredLayout } from "@/lib/layout-preference";
-import {
-	deleteNotification,
-	getNotificationTypeIconPath,
-	type Notification,
-	testNotification,
-} from "@/lib/notifications";
+import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
 import { toSearchableText } from "@/lib/utils";
 
@@ -125,107 +119,53 @@ function NotificationsPage() {
 
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredNotifications.map((notification) => (
-								<Card
+								<NotificationCard
 									key={notification.id}
-									className="h-full border duration-300 hover:border-primary"
-								>
-									<CardHeader>
-										<CardAction>
-											<DropdownMenu>
-												<DropdownMenuTrigger
-													render={
-														<Button variant="ghost" size="icon" className="h-8 w-8">
-															<EllipsisVertical className="h-4 w-4" />
-															<span className="sr-only">{m.cardActions()}</span>
-														</Button>
-													}
-												></DropdownMenuTrigger>
-												<DropdownMenuContent align="end" keepMounted>
-													<DropdownMenuGroup>
-														<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-														<UpdateNotificationDialog notification={notification} asDropdownItem />
-														<DropdownMenuItem
-															onClick={() => {
-																void handleTest(notification);
-															}}
-														>
-															<Send className="h-4 w-4" />
-															{m.sendTest()}
-														</DropdownMenuItem>
-														<DropdownMenuSeparator />
-														<ConfirmationDialog
-															onConfirm={() => {
-																void handleDelete(notification);
-															}}
-															title={m.deleteNotificationTitle()}
-															description={m.deleteNotificationDescription({
-																name: notification.name,
-															})}
-															triggerText={
-																<>
-																	<Trash2 className="h-4 w-4" />
-																	{m.delete()}
-																</>
-															}
-															asDropdownItem
-														/>
-													</DropdownMenuGroup>
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</CardAction>
-
-										<div className="flex min-w-0 items-center gap-3">
-											<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-muted/50">
-												{notification.type === "webhook" ? (
-													<WebhookIcon className="h-7 w-7" />
-												) : (
-													<img
-														src={getNotificationTypeIconPath(notification.type)}
-														alt={m.notificationProviderAlt()}
-														className={`h-7 w-7`}
+									notification={notification}
+									action={
+										<DropdownMenu>
+											<DropdownMenuTrigger
+												render={
+													<Button variant="ghost" size="icon" className="h-8 w-8">
+														<EllipsisVertical className="h-4 w-4" />
+														<span className="sr-only">{m.cardActions()}</span>
+													</Button>
+												}
+											></DropdownMenuTrigger>
+											<DropdownMenuContent align="end" keepMounted>
+												<DropdownMenuGroup>
+													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+													<UpdateNotificationDialog notification={notification} asDropdownItem />
+													<DropdownMenuItem
+														onClick={() => {
+															void handleTest(notification);
+														}}
+													>
+														<Send className="h-4 w-4" />
+														{m.sendTest()}
+													</DropdownMenuItem>
+													<DropdownMenuSeparator />
+													<ConfirmationDialog
+														onConfirm={() => {
+															void handleDelete(notification);
+														}}
+														title={m.deleteNotificationTitle()}
+														description={m.deleteNotificationDescription({
+															name: notification.name,
+														})}
+														triggerText={
+															<>
+																<Trash2 className="h-4 w-4" />
+																{m.delete()}
+															</>
+														}
+														asDropdownItem
 													/>
-												)}
-											</div>
-											<div className="min-w-0 space-y-1">
-												<CardTitle className="truncate" title={notification.name}>
-													{notification.name}
-												</CardTitle>
-											</div>
-										</div>
-									</CardHeader>
-
-									<hr className="mx-4" />
-
-									<CardContent className="space-y-3">
-										<NotificationStatusBadge status={notification.status} />
-
-										<div className="grid grid-cols-1 gap-2 text-xs">
-											<div className="rounded-lg border bg-muted/50 p-2">
-												<p className="text-muted-foreground">{m.columnType()}</p>
-												<p className="mt-1 font-medium">
-													{notification.type.charAt(0).toUpperCase() + notification.type.slice(1)}
-												</p>
-											</div>
-											<div className="rounded-lg border bg-muted/50 p-2">
-												<p className="text-muted-foreground">{m.appsCount()}</p>
-												<p className="mt-1 font-medium">
-													{notification.allApplications
-														? m.allApplications()
-														: notification.applicationIds.length}
-												</p>
-											</div>
-										</div>
-
-										<div className="flex items-center justify-between text-sm">
-											<span className="text-muted-foreground">
-												{notification.enabled ? m.enabled() : m.disabled()}
-											</span>
-											<span className="text-muted-foreground">
-												{new Date(notification.updatedAt).toLocaleString()}
-											</span>
-										</div>
-									</CardContent>
-								</Card>
+												</DropdownMenuGroup>
+											</DropdownMenuContent>
+										</DropdownMenu>
+									}
+								/>
 							))}
 						</div>
 					</>

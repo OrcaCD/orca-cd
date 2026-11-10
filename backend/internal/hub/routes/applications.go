@@ -68,50 +68,67 @@ type updateApplicationRequest struct {
 }
 
 type applicationListResponse struct {
-	Id             string  `json:"id"`
-	Icon           string  `json:"icon"`
-	Name           string  `json:"name"`
-	HealthStatus   string  `json:"healthStatus"`
-	SyncStatus     string  `json:"syncStatus"`
-	Branch         string  `json:"branch"`
-	Commit         string  `json:"commit"`
-	LastSyncedAt   *string `json:"lastSyncedAt"`
-	Path           string  `json:"path"`
-	LastSyncError  *string `json:"lastSyncError,omitempty"`
-	AgentId        string  `json:"agentId"`
-	AgentName      string  `json:"agentName"`
-	RepositoryName string  `json:"repositoryName"`
+	Id               string  `json:"id"`
+	Icon             string  `json:"icon"`
+	Name             string  `json:"name"`
+	HealthStatus     string  `json:"healthStatus"`
+	SyncStatus       string  `json:"syncStatus"`
+	Branch           string  `json:"branch"`
+	Commit           string  `json:"commit"`
+	LastSyncedAt     *string `json:"lastSyncedAt"`
+	Path             string  `json:"path"`
+	LastSyncError    *string `json:"lastSyncError,omitempty"`
+	AgentId          string  `json:"agentId"`
+	AgentName        string  `json:"agentName"`
+	RepositoryId     string  `json:"repositoryId"`
+	RolledBackAt     *string `json:"rolledBackAt"`
+	RolledBackCommit *string `json:"rolledBackCommit"`
+	RepositoryName   string  `json:"repositoryName"`
 }
 
 type applicationResponse struct {
-	Id                       string                    `json:"id"`
-	Icon                     string                    `json:"icon"`
-	Name                     string                    `json:"name"`
-	RepositoryId             string                    `json:"repositoryId"`
-	RepositoryName           string                    `json:"repositoryName"`
-	RepositoryUrl            string                    `json:"repositoryUrl"`
-	RepositorySyncType       string                    `json:"repositorySyncType"`
-	AgentId                  string                    `json:"agentId"`
-	AgentName                string                    `json:"agentName"`
-	SyncStatus               string                    `json:"syncStatus"`
-	HealthStatus             string                    `json:"healthStatus"`
-	Branch                   string                    `json:"branch"`
-	Commit                   string                    `json:"commit"`
-	CommitMessage            string                    `json:"commitMessage"`
-	LastSyncedAt             *string                   `json:"lastSyncedAt"`
-	LastSyncError            *string                   `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string                   `json:"lastSyncSource,omitempty"`
-	Path                     string                    `json:"path"`
-	CreatedAt                string                    `json:"createdAt"`
-	UpdatedAt                string                    `json:"updatedAt"`
-	ComposeFile              string                    `json:"composeFile"`
-	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty"`
-	ImagePollEnabled         bool                      `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds"`
-	DeleteOldImages          bool                      `json:"deleteOldImages"`
-	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled"`
-	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
+	Id                       string                                     `json:"id"`
+	Icon                     string                                     `json:"icon"`
+	Name                     string                                     `json:"name"`
+	RepositoryId             string                                     `json:"repositoryId"`
+	RepositoryName           string                                     `json:"repositoryName"`
+	RepositoryUrl            string                                     `json:"repositoryUrl"`
+	RepositorySyncType       string                                     `json:"repositorySyncType"`
+	AgentId                  string                                     `json:"agentId"`
+	AgentName                string                                     `json:"agentName"`
+	SyncStatus               string                                     `json:"syncStatus"`
+	HealthStatus             string                                     `json:"healthStatus"`
+	Branch                   string                                     `json:"branch"`
+	Commit                   string                                     `json:"commit"`
+	CommitMessage            string                                     `json:"commitMessage"`
+	LastSyncedAt             *string                                    `json:"lastSyncedAt"`
+	LastSyncError            *string                                    `json:"lastSyncError,omitempty"`
+	LastSyncSource           *string                                    `json:"lastSyncSource,omitempty"`
+	Path                     string                                     `json:"path"`
+	CreatedAt                string                                     `json:"createdAt"`
+	UpdatedAt                string                                     `json:"updatedAt"`
+	ComposeFile              string                                     `json:"composeFile"`
+	PreviousComposeFile      string                                     `json:"previousComposeFile,omitempty"`
+	ImagePollEnabled         bool                                       `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64                                      `json:"imagePollIntervalSeconds"`
+	DeleteOldImages          bool                                       `json:"deleteOldImages"`
+	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
+	RolledBackAt             *string                  `json:"rolledBackAt"`
+	RolledBackCommit         *string                  `json:"rolledBackCommit"`
+	RolledBackReason         *string                  `json:"rolledBackReason"`
+	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
+	Rollback                 rollbackSettingsResponse `json:"rollback"`
+	ImageWebhookEnabled      bool                                       `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string                                    `json:"imageWebhookUrl,omitempty"`
 	Warnings                 []composewarnings.Warning `json:"warnings"`
+}
+
+type rollbackSettingsResponse struct {
+	Enabled              bool  `json:"enabled"`
+	OnDeployFailure      bool  `json:"onDeployFailure"`
+	OnUnhealthy          bool  `json:"onUnhealthy"`
+	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds"`
+	PauseAutoSync        bool  `json:"pauseAutoSync"`
 }
 
 func ListApplicationsHandler(c *gin.Context) {
@@ -356,7 +373,9 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
-		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource").
+		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
+			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
+			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
@@ -525,6 +544,11 @@ func PullApplicationImagesHandler(c *gin.Context) {
 		return
 	}
 
+	if application.RolledBackAt != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "application is rolled back; deploy it again before pulling images"})
+		return
+	}
+
 	actorUserID, actorName := eventActor(c)
 	accepted := hubApplications.TriggerImagePull(&application, hubApplications.SyncOrigin{
 		Source:      models.ApplicationEventSourceManual,
@@ -541,19 +565,22 @@ func PullApplicationImagesHandler(c *gin.Context) {
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
-		Id:             app.Id,
-		Icon:           app.Icon,
-		Name:           app.Name.String(),
-		HealthStatus:   string(app.HealthStatus),
-		SyncStatus:     string(app.SyncStatus),
-		Branch:         app.Branch,
-		Commit:         app.Commit,
-		LastSyncedAt:   formatTimestamp(app.LastSyncedAt),
-		LastSyncError:  normalizeSyncError(app.LastSyncError),
-		Path:           app.Path,
-		RepositoryName: app.Repository.Name,
-		AgentId:        app.AgentId,
-		AgentName:      app.Agent.Name.String(),
+		Id:               app.Id,
+		Icon:             app.Icon,
+		Name:             app.Name.String(),
+		HealthStatus:     string(app.HealthStatus),
+		SyncStatus:       string(app.SyncStatus),
+		Branch:           app.Branch,
+		Commit:           app.Commit,
+		LastSyncedAt:     formatTimestamp(app.LastSyncedAt),
+		LastSyncError:    normalizeSyncError(app.LastSyncError),
+		Path:             app.Path,
+		RepositoryId:     app.RepositoryId,
+		RepositoryName:   app.Repository.Name,
+		AgentId:          app.AgentId,
+		AgentName:        app.Agent.Name.String(),
+		RolledBackAt:     formatTimestamp(app.RolledBackAt),
+		RolledBackCommit: app.RolledBackCommit,
 	}
 }
 
@@ -612,7 +639,19 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ImagePollEnabled:         app.ImagePollEnabled,
 		ImagePollIntervalSeconds: app.ImagePollIntervalSeconds,
 		DeleteOldImages:          app.DeleteOldImages,
-		ImageWebhookEnabled:      app.ImageWebhookSecret != nil,
+		CurrentDeploymentId:      app.CurrentDeploymentId,
+		RolledBackAt:             formatTimestamp(app.RolledBackAt),
+		RolledBackCommit:         app.RolledBackCommit,
+		RolledBackReason:         app.RolledBackReason,
+		AutoSyncPaused:           app.AutoSyncPaused,
+		Rollback: rollbackSettingsResponse{
+			Enabled:              app.RollbackEnabled,
+			OnDeployFailure:      app.RollbackOnDeployFailure,
+			OnUnhealthy:          app.RollbackOnUnhealthy,
+			HealthTimeoutSeconds: app.RollbackHealthTimeoutSeconds,
+			PauseAutoSync:        app.RollbackPauseAutoSync,
+		},
+		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
 		Warnings:                 warnings,
 	}
 	if app.ImageWebhookSecret != nil {
@@ -628,11 +667,12 @@ func sendAgentSettings(c *gin.Context, agentID string) {
 	if websocket.DefaultHub == nil {
 		return
 	}
-	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(c.Request.Context())
+	ctx := c.Request.Context()
+	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(ctx)
 	if err != nil {
 		return
 	}
-	websocket.DefaultHub.SendAgentSettings(agentID, apps)
+	websocket.DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }
 
 func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {
@@ -651,6 +691,10 @@ func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path
 
 	latestCommit, err := provider.GetLatestCommit(c.Request.Context(), &repo, branch)
 	if err != nil {
+		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+	}
+
+	if err := repositories.VerifyCommit(c.Request.Context(), provider, &repo, latestCommit.Hash); err != nil {
 		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
 	}
 

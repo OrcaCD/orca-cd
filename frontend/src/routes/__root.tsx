@@ -9,8 +9,9 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import Navbar from "@/components/navbar";
+import DemoBanner from "@/components/demo-banner";
 import { Toaster } from "@/components/ui/toast";
-import type { AuthState } from "@/lib/auth";
+import { useAuth, type AuthState } from "@/lib/auth";
 import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -20,7 +21,9 @@ export interface RouterContext {
 
 function RootComponent() {
 	const { location } = useRouterState();
-	const showNavbar = location.pathname !== "/login" && location.pathname !== "/register";
+	const { auth } = useAuth();
+	const showNavbar =
+		auth.isAuthenticated && location.pathname !== "/login" && location.pathname !== "/register";
 
 	return (
 		<>
@@ -28,6 +31,7 @@ function RootComponent() {
 			<ThemeProvider defaultTheme="dark" storageKey="orca-theme">
 				<TooltipProvider>
 					<div className="min-h-screen bg-background">
+						{showNavbar && <DemoBanner />}
 						{showNavbar && <Navbar />}
 						<ForcePasswordChangeDialog />
 						<Outlet />

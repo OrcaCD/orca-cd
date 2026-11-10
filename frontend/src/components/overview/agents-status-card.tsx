@@ -1,10 +1,11 @@
+import { RelativeTime } from "@/components/relative-time";
 import { Link } from "@tanstack/react-router";
 import { CircleCheck } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatus, type Agent } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const maxListedUnavailableAgents = 2;
 
@@ -46,20 +47,25 @@ export function AgentsStatusCard({ agents }: { agents: Agent[] | undefined }) {
 							<ul className="space-y-1 text-xs text-muted-foreground">
 								{unavailableAgents.slice(0, maxListedUnavailableAgents).map((agent) => (
 									<li key={agent.id}>
-										<Link to="/agents" className="block truncate hover:text-foreground">
-											<span className="font-medium text-foreground">{agent.name}</span>
+										<div className="truncate">
+											<Link to="/agents" className="font-medium text-foreground hover:underline">
+												{agent.name}
+											</Link>
 											{" · "}
-											{agent.status === AgentStatus.Error
-												? m.applicationsAgentsDockerUnreachable()
-												: agent.lastSeen
-													? m.applicationsAgentsLastSeen({
-															time: formatRelativeTime(agent.lastSeen),
-														})
-													: m.applicationsAgentsNeverSeen()}
+											{agent.status === AgentStatus.Error ? (
+												m.applicationsAgentsDockerUnreachable()
+											) : agent.lastSeen ? (
+												<RelativeTime
+													value={agent.lastSeen}
+													format={(time) => m.applicationsAgentsLastSeen({ time })}
+												/>
+											) : (
+												m.applicationsAgentsNeverSeen()
+											)}
 											{agent.appsCount
 												? ` · ${m.applicationsAgentsAffectedApps({ count: agent.appsCount })}`
 												: null}
-										</Link>
+										</div>
 									</li>
 								))}
 								{unavailableAgents.length > maxListedUnavailableAgents ? (

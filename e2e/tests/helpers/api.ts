@@ -22,9 +22,15 @@ export interface ApiRepository {
  * Calls the hub API from inside the page, so the session cookie and the Origin header
  * are the same as for the UI.
  */
-export async function api(page: Page, method: string, path: string, body?: unknown) {
-	if (!page.url().startsWith(APP_URL)) {
-		await page.goto(`${APP_URL}/api/v1/health`);
+export async function api(
+	page: Page,
+	method: string,
+	path: string,
+	body?: unknown,
+	baseUrl = APP_URL,
+) {
+	if (!page.url().startsWith(baseUrl)) {
+		await page.goto(`${baseUrl}/api/v1/health`);
 	}
 	return page.evaluate(
 		async ({ method, path, body }) => {

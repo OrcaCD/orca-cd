@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.15.0 AS install-deps
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.18.0 AS install-deps
 
 WORKDIR /app/frontend
 COPY frontend/package.json ./
@@ -42,7 +42,7 @@ COPY backend/ .
 
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
     CC=$( [ "$TARGETARCH" = "arm64" ] && echo aarch64-linux-gnu-gcc || echo gcc ) \
-    go build \
+    go build -tags=nomsgpack \
     -ldflags "-s -w \
     -X github.com/OrcaCD/orca-cd/internal/version.Version=${VERSION} \
     -X github.com/OrcaCD/orca-cd/internal/version.Commit=${COMMIT} \

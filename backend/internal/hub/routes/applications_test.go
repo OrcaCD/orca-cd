@@ -40,6 +40,14 @@ type stubRouteDeployer struct {
 	startedApp  string
 	startedWith string
 	requestID   string
+	rolledBack  *models.ApplicationDeployment
+}
+
+func (d *stubRouteDeployer) TriggerRollback(_ context.Context, app *models.Application, target *models.ApplicationDeployment, requestID string) error {
+	d.startedApp = app.Id
+	d.rolledBack = target
+	d.requestID = requestID
+	return d.startErr
 }
 
 func (d *stubRouteDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error {
@@ -56,7 +64,7 @@ func setupTestDBWithApplications(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
 
-	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("failed to migrate dependencies: %v", err)
 	}
 
@@ -257,6 +265,9 @@ func TestListApplicationsHandler_ReturnsSummaryFields(t *testing.T) {
 	}
 	if item["name"] != "Summary App" {
 		t.Errorf("expected name %q, got %v", "Summary App", item["name"])
+	}
+	if item["repositoryId"] != repo.Id {
+		t.Errorf("expected repositoryId %q, got %v", repo.Id, item["repositoryId"])
 	}
 	if item["repositoryName"] != repo.Name {
 		t.Errorf("expected repositoryName %q, got %v", repo.Name, item["repositoryName"])

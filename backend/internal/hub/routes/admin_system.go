@@ -21,6 +21,8 @@ type AdminSystemInfoConfig struct {
 
 var adminSystemInfoConfig AdminSystemInfoConfig
 
+const demoRedacted = "hidden in demo mode"
+
 type adminSystemInfoResponse struct {
 	Host             string   `json:"host"`
 	Port             string   `json:"port"`
@@ -51,6 +53,13 @@ func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 
 func AdminSystemInfoHandler(c *gin.Context) {
 	cfg := adminSystemInfoConfig
+
+	if DemoMode {
+		cfg.Host = demoRedacted
+		cfg.Port = demoRedacted
+		cfg.TrustedProxies = []string{demoRedacted}
+		cfg.AllowedIPs = []string{demoRedacted}
+	}
 
 	c.JSON(http.StatusOK, adminSystemInfoResponse{
 		Host:             cfg.Host,

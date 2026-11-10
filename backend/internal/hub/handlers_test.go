@@ -43,6 +43,25 @@ func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestRegisterRoutes_EventsEndpointDisabledInDemoMode(t *testing.T) {
+	for _, demo := range []bool{false, true} {
+		router := gin.New()
+		if err := RegisterRoutes(router, Config{DisableUI: true, Demo: demo}); err != nil {
+			t.Fatalf("Failed to register routes: %v", err)
+		}
+
+		registered := false
+		for _, route := range router.Routes() {
+			if route.Method == http.MethodGet && route.Path == "/api/v1/events" {
+				registered = true
+			}
+		}
+		if registered == demo {
+			t.Errorf("demo=%v: events route registered = %v", demo, registered)
+		}
+	}
+}
+
 func TestRegisterRoutes_OIDCEndpointsRateLimited(t *testing.T) {
 	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	if err != nil {

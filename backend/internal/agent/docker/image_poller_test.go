@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func (s *stubMessageSender) received() []*messages.ClientMessage {
 func newTestPoller(t *testing.T, sender MessageSender) *ImagePoller {
 	t.Helper()
 	c := newTestClient(t)
-	return NewImagePoller(c, sender, zerolog.Nop())
+	return NewImagePoller(c, sender, zerolog.Nop(), 0)
 }
 
 func applyOne(p *ImagePoller, appID, appName string, settings PollSettings) {
@@ -146,6 +147,40 @@ func TestImagePoller_ApplySettings_StopsOldTicker(t *testing.T) {
 	p.StopAll()
 }
 
+func TestImagePoller_ApplySettings_KeepsUnchangedTicker(t *testing.T) {
+	p := newTestPoller(t, nil)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 30})
+
+	p.mu.Lock()
+	firstStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+
+	// Normalized to the same minimum interval as before.
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 45})
+
+	p.mu.Lock()
+	secondStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if firstStop != secondStop {
+		t.Error("expected the unchanged ticker to keep running")
+	}
+	select {
+	case <-firstStop:
+		t.Error("expected the unchanged ticker not to be stopped")
+	default:
+	}
+
+	applyOne(p, "app-1", "renamed", PollSettings{Enabled: true, IntervalSeconds: 60})
+	p.mu.Lock()
+	renamedStop := p.apps["app-1"].stop
+	p.mu.Unlock()
+	if renamedStop == firstStop {
+		t.Error("expected a renamed application to get a new ticker")
+	}
+
+	p.StopAll()
+}
+
 func TestImagePoller_ApplySettings_RemovesStaleApp(t *testing.T) {
 	p := newTestPoller(t, nil)
 
@@ -185,8 +220,14 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
+	origListImages := listServiceImages
+	t.Cleanup(func() { listServiceImages = origListImages })
+
 	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
 		return true, nil // images updated
+	}
+	listServiceImages = func(_ context.Context, _ *Client, appID string) ([]*messages.ServiceImage, error) {
+		return []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new-" + appID}}, nil
 	}
 
 	sender := &stubMessageSender{}
@@ -212,6 +253,9 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	}
 	if result.RequestId != "req-1" {
 		t.Errorf("expected request_id %q, got %q", "req-1", result.RequestId)
+	}
+	if len(result.Images) != 1 || result.Images[0].ImageId != "sha256:new-app-1" {
+		t.Errorf("expected the updated images in the result, got %v", result.Images)
 	}
 }
 
@@ -395,11 +439,39 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	}
 
 	c := newTestClient(t)
-	p := NewImagePoller(c, noopSender{}, zerolog.Nop())
+	p := NewImagePoller(c, noopSender{}, zerolog.Nop(), 0)
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
 	p.runOnce("app-1", "myapp", "", false) // must not panic
+}
+
+func TestImagePoller_IntervalOverride(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	called := make(chan struct{}, 1)
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+		return false, nil
+	}
+
+	p := NewImagePoller(newTestClient(t), noopSender{}, zerolog.Nop(), 10*time.Millisecond)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a tick with the overridden interval")
+	}
+	// The configured interval is kept, only the ticker uses the override
+	if got := p.SettingsFor("app-1"); got == nil || got.IntervalSeconds != 60 {
+		t.Errorf("expected stored interval 60, got %+v", got)
+	}
 }
 
 func TestImagePoller_TriggerNow(t *testing.T) {
@@ -530,5 +602,34 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	case <-started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for second pull to run after first completed")
+	}
+}
+
+func TestImagePoller_RunOnce_ReportsFailedRedeploy(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	for _, tt := range []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("%w: container exited", ErrRedeployFailed), true},
+		{errors.New("registry unreachable"), false},
+	} {
+		checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+			return false, tt.err
+		}
+		sender := &stubMessageSender{}
+		p := newTestPoller(t, sender)
+
+		p.runOnce("app-1", "myapp", "req-1", false)
+
+		msgs := sender.received()
+		if len(msgs) != 1 {
+			t.Fatalf("expected 1 message, got %d", len(msgs))
+		}
+		if got := msgs[0].GetPullImagesResult().RedeployFailed; got != tt.want {
+			t.Errorf("%v: redeploy_failed = %v, want %v", tt.err, got, tt.want)
+		}
 	}
 }

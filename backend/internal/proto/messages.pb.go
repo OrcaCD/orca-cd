@@ -85,6 +85,8 @@ type ClientMessage struct {
 	//	*ClientMessage_DeleteResult
 	//	*ClientMessage_ApplicationStatusReport
 	//	*ClientMessage_AgentInfo
+	//	*ClientMessage_EnvListResult
+	//	*ClientMessage_EnvUpdateResult
 	Payload       isClientMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -199,6 +201,24 @@ func (x *ClientMessage) GetAgentInfo() *AgentInfo {
 	return nil
 }
 
+func (x *ClientMessage) GetEnvListResult() *EnvListResult {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_EnvListResult); ok {
+			return x.EnvListResult
+		}
+	}
+	return nil
+}
+
+func (x *ClientMessage) GetEnvUpdateResult() *EnvUpdateResult {
+	if x != nil {
+		if x, ok := x.Payload.(*ClientMessage_EnvUpdateResult); ok {
+			return x.EnvUpdateResult
+		}
+	}
+	return nil
+}
+
 type isClientMessage_Payload interface {
 	isClientMessage_Payload()
 }
@@ -235,6 +255,14 @@ type ClientMessage_AgentInfo struct {
 	AgentInfo *AgentInfo `protobuf:"bytes,8,opt,name=agent_info,json=agentInfo,proto3,oneof"`
 }
 
+type ClientMessage_EnvListResult struct {
+	EnvListResult *EnvListResult `protobuf:"bytes,9,opt,name=env_list_result,json=envListResult,proto3,oneof"`
+}
+
+type ClientMessage_EnvUpdateResult struct {
+	EnvUpdateResult *EnvUpdateResult `protobuf:"bytes,10,opt,name=env_update_result,json=envUpdateResult,proto3,oneof"`
+}
+
 func (*ClientMessage_Pong) isClientMessage_Payload() {}
 
 func (*ClientMessage_KeyExchangeResponse) isClientMessage_Payload() {}
@@ -251,6 +279,10 @@ func (*ClientMessage_ApplicationStatusReport) isClientMessage_Payload() {}
 
 func (*ClientMessage_AgentInfo) isClientMessage_Payload() {}
 
+func (*ClientMessage_EnvListResult) isClientMessage_Payload() {}
+
+func (*ClientMessage_EnvUpdateResult) isClientMessage_Payload() {}
+
 type ServerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -262,6 +294,8 @@ type ServerMessage struct {
 	//	*ServerMessage_AgentSettings
 	//	*ServerMessage_PullImagesRequest
 	//	*ServerMessage_DeleteRequest
+	//	*ServerMessage_EnvListRequest
+	//	*ServerMessage_EnvUpdateRequest
 	Payload       isServerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -367,6 +401,24 @@ func (x *ServerMessage) GetDeleteRequest() *DeleteRequest {
 	return nil
 }
 
+func (x *ServerMessage) GetEnvListRequest() *EnvListRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_EnvListRequest); ok {
+			return x.EnvListRequest
+		}
+	}
+	return nil
+}
+
+func (x *ServerMessage) GetEnvUpdateRequest() *EnvUpdateRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*ServerMessage_EnvUpdateRequest); ok {
+			return x.EnvUpdateRequest
+		}
+	}
+	return nil
+}
+
 type isServerMessage_Payload interface {
 	isServerMessage_Payload()
 }
@@ -399,6 +451,14 @@ type ServerMessage_DeleteRequest struct {
 	DeleteRequest *DeleteRequest `protobuf:"bytes,7,opt,name=delete_request,json=deleteRequest,proto3,oneof"`
 }
 
+type ServerMessage_EnvListRequest struct {
+	EnvListRequest *EnvListRequest `protobuf:"bytes,8,opt,name=env_list_request,json=envListRequest,proto3,oneof"`
+}
+
+type ServerMessage_EnvUpdateRequest struct {
+	EnvUpdateRequest *EnvUpdateRequest `protobuf:"bytes,9,opt,name=env_update_request,json=envUpdateRequest,proto3,oneof"`
+}
+
 func (*ServerMessage_Ping) isServerMessage_Payload() {}
 
 func (*ServerMessage_KeyExchangeInit) isServerMessage_Payload() {}
@@ -412,6 +472,10 @@ func (*ServerMessage_AgentSettings) isServerMessage_Payload() {}
 func (*ServerMessage_PullImagesRequest) isServerMessage_Payload() {}
 
 func (*ServerMessage_DeleteRequest) isServerMessage_Payload() {}
+
+func (*ServerMessage_EnvListRequest) isServerMessage_Payload() {}
+
+func (*ServerMessage_EnvUpdateRequest) isServerMessage_Payload() {}
 
 type PingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -680,8 +744,12 @@ type DeployRequest struct {
 	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	ComposeFile     string                 `protobuf:"bytes,4,opt,name=compose_file,json=composeFile,proto3" json:"compose_file,omitempty"`
 	DeleteOldImages bool                   `protobuf:"varint,5,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Images to run instead of the ones the compose file names, so a rollback
+	// runs the exact images of an earlier deployment.
+	PinnedImages   []*ServiceImage `protobuf:"bytes,6,rep,name=pinned_images,json=pinnedImages,proto3" json:"pinned_images,omitempty"`
+	ImageRetention *ImageRetention `protobuf:"bytes,7,opt,name=image_retention,json=imageRetention,proto3" json:"image_retention,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *DeployRequest) Reset() {
@@ -749,6 +817,141 @@ func (x *DeployRequest) GetDeleteOldImages() bool {
 	return false
 }
 
+func (x *DeployRequest) GetPinnedImages() []*ServiceImage {
+	if x != nil {
+		return x.PinnedImages
+	}
+	return nil
+}
+
+func (x *DeployRequest) GetImageRetention() *ImageRetention {
+	if x != nil {
+		return x.ImageRetention
+	}
+	return nil
+}
+
+// ImageRetention adjusts which old images are deleted for an application that
+// can be rolled back. Unset, the images replaced by an update are deleted.
+type ImageRetention struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Images of the deployment a rollback would restore. They are kept.
+	KeepImageIds []string `protobuf:"bytes,1,rep,name=keep_image_ids,json=keepImageIds,proto3" json:"keep_image_ids,omitempty"`
+	// Images of earlier deployments that were kept before. They are deleted
+	// too, unless a container still uses them.
+	RemoveImageIds []string `protobuf:"bytes,2,rep,name=remove_image_ids,json=removeImageIds,proto3" json:"remove_image_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ImageRetention) Reset() {
+	*x = ImageRetention{}
+	mi := &file_messages_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageRetention) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageRetention) ProtoMessage() {}
+
+func (x *ImageRetention) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageRetention.ProtoReflect.Descriptor instead.
+func (*ImageRetention) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ImageRetention) GetKeepImageIds() []string {
+	if x != nil {
+		return x.KeepImageIds
+	}
+	return nil
+}
+
+func (x *ImageRetention) GetRemoveImageIds() []string {
+	if x != nil {
+		return x.RemoveImageIds
+	}
+	return nil
+}
+
+// ServiceImage is the image the containers of a compose service run.
+type ServiceImage struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Service string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	// Local image ID (sha256:…).
+	ImageId string `protobuf:"bytes,2,opt,name=image_id,json=imageId,proto3" json:"image_id,omitempty"`
+	// Registry reference pinned by digest (repo@sha256:…). Empty for images that
+	// did not come from a registry, e.g. built locally.
+	PinnedRef     string `protobuf:"bytes,3,opt,name=pinned_ref,json=pinnedRef,proto3" json:"pinned_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceImage) Reset() {
+	*x = ServiceImage{}
+	mi := &file_messages_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceImage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceImage) ProtoMessage() {}
+
+func (x *ServiceImage) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceImage.ProtoReflect.Descriptor instead.
+func (*ServiceImage) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ServiceImage) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *ServiceImage) GetImageId() string {
+	if x != nil {
+		return x.ImageId
+	}
+	return ""
+}
+
+func (x *ServiceImage) GetPinnedRef() string {
+	if x != nil {
+		return x.PinnedRef
+	}
+	return ""
+}
+
 type DeleteRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -760,7 +963,7 @@ type DeleteRequest struct {
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_messages_proto_msgTypes[8]
+	mi := &file_messages_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -772,7 +975,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[8]
+	mi := &file_messages_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -785,7 +988,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{8}
+	return file_messages_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DeleteRequest) GetRequestId() string {
@@ -821,7 +1024,7 @@ type DeleteResult struct {
 
 func (x *DeleteResult) Reset() {
 	*x = DeleteResult{}
-	mi := &file_messages_proto_msgTypes[9]
+	mi := &file_messages_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -833,7 +1036,7 @@ func (x *DeleteResult) String() string {
 func (*DeleteResult) ProtoMessage() {}
 
 func (x *DeleteResult) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[9]
+	mi := &file_messages_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -846,7 +1049,7 @@ func (x *DeleteResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResult.ProtoReflect.Descriptor instead.
 func (*DeleteResult) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{9}
+	return file_messages_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DeleteResult) GetRequestId() string {
@@ -878,20 +1081,20 @@ func (x *DeleteResult) GetErrorMessage() string {
 }
 
 type DeployResult struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	RequestId         string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	ApplicationId     string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Success           bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
-	ErrorMessage      string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	Warnings          []*ComposeWarning      `protobuf:"bytes,5,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	ComposeFileSha256 string                 `protobuf:"bytes,6,opt,name=compose_file_sha256,json=composeFileSha256,proto3" json:"compose_file_sha256,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	// Images the services run after a successful deployment.
+	Images        []*ServiceImage `protobuf:"bytes,5,rep,name=images,proto3" json:"images,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployResult) Reset() {
 	*x = DeployResult{}
-	mi := &file_messages_proto_msgTypes[10]
+	mi := &file_messages_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +1106,7 @@ func (x *DeployResult) String() string {
 func (*DeployResult) ProtoMessage() {}
 
 func (x *DeployResult) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[10]
+	mi := &file_messages_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +1119,7 @@ func (x *DeployResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployResult.ProtoReflect.Descriptor instead.
 func (*DeployResult) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{10}
+	return file_messages_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeployResult) GetRequestId() string {
@@ -947,78 +1150,11 @@ func (x *DeployResult) GetErrorMessage() string {
 	return ""
 }
 
-func (x *DeployResult) GetWarnings() []*ComposeWarning {
+func (x *DeployResult) GetImages() []*ServiceImage {
 	if x != nil {
-		return x.Warnings
+		return x.Images
 	}
 	return nil
-}
-
-func (x *DeployResult) GetComposeFileSha256() string {
-	if x != nil {
-		return x.ComposeFileSha256
-	}
-	return ""
-}
-
-type ComposeWarning struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
-	Service       string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
-	Field         string                 `protobuf:"bytes,3,opt,name=field,proto3" json:"field,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ComposeWarning) Reset() {
-	*x = ComposeWarning{}
-	mi := &file_messages_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ComposeWarning) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ComposeWarning) ProtoMessage() {}
-
-func (x *ComposeWarning) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ComposeWarning.ProtoReflect.Descriptor instead.
-func (*ComposeWarning) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ComposeWarning) GetCode() string {
-	if x != nil {
-		return x.Code
-	}
-	return ""
-}
-
-func (x *ComposeWarning) GetService() string {
-	if x != nil {
-		return x.Service
-	}
-	return ""
-}
-
-func (x *ComposeWarning) GetField() string {
-	if x != nil {
-		return x.Field
-	}
-	return ""
 }
 
 type AgentSettings struct {
@@ -1030,7 +1166,7 @@ type AgentSettings struct {
 
 func (x *AgentSettings) Reset() {
 	*x = AgentSettings{}
-	mi := &file_messages_proto_msgTypes[12]
+	mi := &file_messages_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1042,7 +1178,7 @@ func (x *AgentSettings) String() string {
 func (*AgentSettings) ProtoMessage() {}
 
 func (x *AgentSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[12]
+	mi := &file_messages_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1055,7 +1191,7 @@ func (x *AgentSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentSettings.ProtoReflect.Descriptor instead.
 func (*AgentSettings) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{12}
+	return file_messages_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AgentSettings) GetImagePollSettings() []*ImagePollSettings {
@@ -1072,13 +1208,14 @@ type ImagePollSettings struct {
 	IntervalSeconds int64                  `protobuf:"varint,3,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
 	DeleteOldImages bool                   `protobuf:"varint,4,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
 	ApplicationName string                 `protobuf:"bytes,5,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	ImageRetention  *ImageRetention        `protobuf:"bytes,6,opt,name=image_retention,json=imageRetention,proto3" json:"image_retention,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ImagePollSettings) Reset() {
 	*x = ImagePollSettings{}
-	mi := &file_messages_proto_msgTypes[13]
+	mi := &file_messages_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1227,7 @@ func (x *ImagePollSettings) String() string {
 func (*ImagePollSettings) ProtoMessage() {}
 
 func (x *ImagePollSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[13]
+	mi := &file_messages_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,7 +1240,7 @@ func (x *ImagePollSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImagePollSettings.ProtoReflect.Descriptor instead.
 func (*ImagePollSettings) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{13}
+	return file_messages_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ImagePollSettings) GetApplicationId() string {
@@ -1141,19 +1278,27 @@ func (x *ImagePollSettings) GetApplicationName() string {
 	return ""
 }
 
+func (x *ImagePollSettings) GetImageRetention() *ImageRetention {
+	if x != nil {
+		return x.ImageRetention
+	}
+	return nil
+}
+
 type PullImagesRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
 	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	DeleteOldImages bool                   `protobuf:"varint,4,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
+	ImageRetention  *ImageRetention        `protobuf:"bytes,5,opt,name=image_retention,json=imageRetention,proto3" json:"image_retention,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *PullImagesRequest) Reset() {
 	*x = PullImagesRequest{}
-	mi := &file_messages_proto_msgTypes[14]
+	mi := &file_messages_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1165,7 +1310,7 @@ func (x *PullImagesRequest) String() string {
 func (*PullImagesRequest) ProtoMessage() {}
 
 func (x *PullImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[14]
+	mi := &file_messages_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1178,7 +1323,7 @@ func (x *PullImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullImagesRequest.ProtoReflect.Descriptor instead.
 func (*PullImagesRequest) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{14}
+	return file_messages_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PullImagesRequest) GetRequestId() string {
@@ -1209,6 +1354,13 @@ func (x *PullImagesRequest) GetDeleteOldImages() bool {
 	return false
 }
 
+func (x *PullImagesRequest) GetImageRetention() *ImageRetention {
+	if x != nil {
+		return x.ImageRetention
+	}
+	return nil
+}
+
 type PullImagesResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1216,13 +1368,18 @@ type PullImagesResult struct {
 	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
 	ImagesUpdated bool                   `protobuf:"varint,4,opt,name=images_updated,json=imagesUpdated,proto3" json:"images_updated,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Images the services run after a successful update.
+	Images []*ServiceImage `protobuf:"bytes,6,rep,name=images,proto3" json:"images,omitempty"`
+	// Set when new images were pulled but recreating the containers failed,
+	// which leaves the application in an unknown state.
+	RedeployFailed bool `protobuf:"varint,7,opt,name=redeploy_failed,json=redeployFailed,proto3" json:"redeploy_failed,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PullImagesResult) Reset() {
 	*x = PullImagesResult{}
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1234,7 +1391,7 @@ func (x *PullImagesResult) String() string {
 func (*PullImagesResult) ProtoMessage() {}
 
 func (x *PullImagesResult) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[15]
+	mi := &file_messages_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1247,7 +1404,7 @@ func (x *PullImagesResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullImagesResult.ProtoReflect.Descriptor instead.
 func (*PullImagesResult) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{15}
+	return file_messages_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PullImagesResult) GetRequestId() string {
@@ -1285,17 +1442,88 @@ func (x *PullImagesResult) GetErrorMessage() string {
 	return ""
 }
 
+func (x *PullImagesResult) GetImages() []*ServiceImage {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+func (x *PullImagesResult) GetRedeployFailed() bool {
+	if x != nil {
+		return x.RedeployFailed
+	}
+	return false
+}
+
+type ServiceStatus struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Health        HealthStatus           `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceStatus) Reset() {
+	*x = ServiceStatus{}
+	mi := &file_messages_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceStatus) ProtoMessage() {}
+
+func (x *ServiceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceStatus.ProtoReflect.Descriptor instead.
+func (*ServiceStatus) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ServiceStatus) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ServiceStatus) GetHealth() HealthStatus {
+	if x != nil {
+		return x.Health
+	}
+	return HealthStatus_HEALTH_STATUS_UNSPECIFIED
+}
+
 type ApplicationStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApplicationId string                 `protobuf:"bytes,1,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
-	Health        HealthStatus           `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	// Aggregate health of all containers. A mix of healthy and failing services
+	// is reported as unhealthy; the hub derives the degraded state from services.
+	Health HealthStatus `protobuf:"varint,2,opt,name=health,proto3,enum=messages.HealthStatus" json:"health,omitempty"`
+	// Health per compose service, sorted by name. Empty for agents that predate
+	// per-service reporting.
+	Services      []*ServiceStatus `protobuf:"bytes,3,rep,name=services,proto3" json:"services,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApplicationStatus) Reset() {
 	*x = ApplicationStatus{}
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1307,7 +1535,7 @@ func (x *ApplicationStatus) String() string {
 func (*ApplicationStatus) ProtoMessage() {}
 
 func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[16]
+	mi := &file_messages_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1320,7 +1548,7 @@ func (x *ApplicationStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatus.ProtoReflect.Descriptor instead.
 func (*ApplicationStatus) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{16}
+	return file_messages_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ApplicationStatus) GetApplicationId() string {
@@ -1337,6 +1565,13 @@ func (x *ApplicationStatus) GetHealth() HealthStatus {
 	return HealthStatus_HEALTH_STATUS_UNSPECIFIED
 }
 
+func (x *ApplicationStatus) GetServices() []*ServiceStatus {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
 // ApplicationStatusReport carries the health of every application managed by an
 // agent in a single message, sent right after the agent connects.
 type ApplicationStatusReport struct {
@@ -1348,7 +1583,7 @@ type ApplicationStatusReport struct {
 
 func (x *ApplicationStatusReport) Reset() {
 	*x = ApplicationStatusReport{}
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1360,7 +1595,7 @@ func (x *ApplicationStatusReport) String() string {
 func (*ApplicationStatusReport) ProtoMessage() {}
 
 func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[17]
+	mi := &file_messages_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1373,7 +1608,7 @@ func (x *ApplicationStatusReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplicationStatusReport.ProtoReflect.Descriptor instead.
 func (*ApplicationStatusReport) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{17}
+	return file_messages_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ApplicationStatusReport) GetStatuses() []*ApplicationStatus {
@@ -1394,7 +1629,7 @@ type AgentInfo struct {
 
 func (x *AgentInfo) Reset() {
 	*x = AgentInfo{}
-	mi := &file_messages_proto_msgTypes[18]
+	mi := &file_messages_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1406,7 +1641,7 @@ func (x *AgentInfo) String() string {
 func (*AgentInfo) ProtoMessage() {}
 
 func (x *AgentInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_messages_proto_msgTypes[18]
+	mi := &file_messages_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1419,7 +1654,7 @@ func (x *AgentInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfo.ProtoReflect.Descriptor instead.
 func (*AgentInfo) Descriptor() ([]byte, []int) {
-	return file_messages_proto_rawDescGZIP(), []int{18}
+	return file_messages_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentInfo) GetVersion() string {
@@ -1443,11 +1678,555 @@ func (x *AgentInfo) GetDockerUnreachable() bool {
 	return false
 }
 
+type EnvListRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *EnvListRequest) Reset() {
+	*x = EnvListRequest{}
+	mi := &file_messages_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvListRequest) ProtoMessage() {}
+
+func (x *EnvListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvListRequest.ProtoReflect.Descriptor instead.
+func (*EnvListRequest) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *EnvListRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EnvListRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *EnvListRequest) GetApplicationName() string {
+	if x != nil {
+		return x.ApplicationName
+	}
+	return ""
+}
+
+type EnvEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	IsSecret      bool                   `protobuf:"varint,2,opt,name=is_secret,json=isSecret,proto3" json:"is_secret,omitempty"`
+	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	IsSet         bool                   `protobuf:"varint,4,opt,name=is_set,json=isSet,proto3" json:"is_set,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnvEntry) Reset() {
+	*x = EnvEntry{}
+	mi := &file_messages_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvEntry) ProtoMessage() {}
+
+func (x *EnvEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvEntry.ProtoReflect.Descriptor instead.
+func (*EnvEntry) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *EnvEntry) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *EnvEntry) GetIsSecret() bool {
+	if x != nil {
+		return x.IsSecret
+	}
+	return false
+}
+
+func (x *EnvEntry) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *EnvEntry) GetIsSet() bool {
+	if x != nil {
+		return x.IsSet
+	}
+	return false
+}
+
+type EnvFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Services      []string               `protobuf:"bytes,2,rep,name=services,proto3" json:"services,omitempty"`
+	Entries       []*EnvEntry            `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
+	Revision      string                 `protobuf:"bytes,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnvFile) Reset() {
+	*x = EnvFile{}
+	mi := &file_messages_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvFile) ProtoMessage() {}
+
+func (x *EnvFile) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvFile.ProtoReflect.Descriptor instead.
+func (*EnvFile) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *EnvFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *EnvFile) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *EnvFile) GetEntries() []*EnvEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *EnvFile) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+type EnvListResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EnvFiles      []*EnvFile             `protobuf:"bytes,5,rep,name=env_files,json=envFiles,proto3" json:"env_files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnvListResult) Reset() {
+	*x = EnvListResult{}
+	mi := &file_messages_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvListResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvListResult) ProtoMessage() {}
+
+func (x *EnvListResult) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvListResult.ProtoReflect.Descriptor instead.
+func (*EnvListResult) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *EnvListResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EnvListResult) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *EnvListResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *EnvListResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *EnvListResult) GetEnvFiles() []*EnvFile {
+	if x != nil {
+		return x.EnvFiles
+	}
+	return nil
+}
+
+type EnvChange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Delete        bool                   `protobuf:"varint,2,opt,name=delete,proto3" json:"delete,omitempty"`
+	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	IsSecret      bool                   `protobuf:"varint,4,opt,name=is_secret,json=isSecret,proto3" json:"is_secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnvChange) Reset() {
+	*x = EnvChange{}
+	mi := &file_messages_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvChange) ProtoMessage() {}
+
+func (x *EnvChange) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvChange.ProtoReflect.Descriptor instead.
+func (*EnvChange) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *EnvChange) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *EnvChange) GetDelete() bool {
+	if x != nil {
+		return x.Delete
+	}
+	return false
+}
+
+func (x *EnvChange) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *EnvChange) GetIsSecret() bool {
+	if x != nil {
+		return x.IsSecret
+	}
+	return false
+}
+
+type EnvFileChanges struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Path             string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Changes          []*EnvChange           `protobuf:"bytes,2,rep,name=changes,proto3" json:"changes,omitempty"`
+	ExpectedRevision string                 `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *EnvFileChanges) Reset() {
+	*x = EnvFileChanges{}
+	mi := &file_messages_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvFileChanges) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvFileChanges) ProtoMessage() {}
+
+func (x *EnvFileChanges) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvFileChanges.ProtoReflect.Descriptor instead.
+func (*EnvFileChanges) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *EnvFileChanges) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *EnvFileChanges) GetChanges() []*EnvChange {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *EnvFileChanges) GetExpectedRevision() string {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return ""
+}
+
+type EnvUpdateRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	RequestId       string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId   string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	Files           []*EnvFileChanges      `protobuf:"bytes,4,rep,name=files,proto3" json:"files,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *EnvUpdateRequest) Reset() {
+	*x = EnvUpdateRequest{}
+	mi := &file_messages_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvUpdateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvUpdateRequest) ProtoMessage() {}
+
+func (x *EnvUpdateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvUpdateRequest.ProtoReflect.Descriptor instead.
+func (*EnvUpdateRequest) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *EnvUpdateRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EnvUpdateRequest) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *EnvUpdateRequest) GetApplicationName() string {
+	if x != nil {
+		return x.ApplicationName
+	}
+	return ""
+}
+
+func (x *EnvUpdateRequest) GetFiles() []*EnvFileChanges {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+type EnvUpdateResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ApplicationId string                 `protobuf:"bytes,2,opt,name=application_id,json=applicationId,proto3" json:"application_id,omitempty"`
+	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Conflict      bool                   `protobuf:"varint,5,opt,name=conflict,proto3" json:"conflict,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnvUpdateResult) Reset() {
+	*x = EnvUpdateResult{}
+	mi := &file_messages_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnvUpdateResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnvUpdateResult) ProtoMessage() {}
+
+func (x *EnvUpdateResult) ProtoReflect() protoreflect.Message {
+	mi := &file_messages_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnvUpdateResult.ProtoReflect.Descriptor instead.
+func (*EnvUpdateResult) Descriptor() ([]byte, []int) {
+	return file_messages_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *EnvUpdateResult) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EnvUpdateResult) GetApplicationId() string {
+	if x != nil {
+		return x.ApplicationId
+	}
+	return ""
+}
+
+func (x *EnvUpdateResult) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *EnvUpdateResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *EnvUpdateResult) GetConflict() bool {
+	if x != nil {
+		return x.Conflict
+	}
+	return false
+}
+
 var File_messages_proto protoreflect.FileDescriptor
 
 const file_messages_proto_rawDesc = "" +
 	"\n" +
-	"\x0emessages.proto\x12\bmessages\"\xc9\x04\n" +
+	"\x0emessages.proto\x12\bmessages\"\xd5\x05\n" +
 	"\rClientMessage\x12,\n" +
 	"\x04pong\x18\x01 \x01(\v2\x16.messages.PongResponseH\x00R\x04pong\x12S\n" +
 	"\x15key_exchange_response\x18\x02 \x01(\v2\x1d.messages.KeyExchangeResponseH\x00R\x13keyExchangeResponse\x12I\n" +
@@ -1457,8 +2236,11 @@ const file_messages_proto_rawDesc = "" +
 	"\rdelete_result\x18\x06 \x01(\v2\x16.messages.DeleteResultH\x00R\fdeleteResult\x12_\n" +
 	"\x19application_status_report\x18\a \x01(\v2!.messages.ApplicationStatusReportH\x00R\x17applicationStatusReport\x124\n" +
 	"\n" +
-	"agent_info\x18\b \x01(\v2\x13.messages.AgentInfoH\x00R\tagentInfoB\t\n" +
-	"\apayload\"\xf0\x03\n" +
+	"agent_info\x18\b \x01(\v2\x13.messages.AgentInfoH\x00R\tagentInfo\x12A\n" +
+	"\x0fenv_list_result\x18\t \x01(\v2\x17.messages.EnvListResultH\x00R\renvListResult\x12G\n" +
+	"\x11env_update_result\x18\n" +
+	" \x01(\v2\x19.messages.EnvUpdateResultH\x00R\x0fenvUpdateResultB\t\n" +
+	"\apayload\"\x82\x05\n" +
 	"\rServerMessage\x12+\n" +
 	"\x04ping\x18\x01 \x01(\v2\x15.messages.PingRequestH\x00R\x04ping\x12G\n" +
 	"\x11key_exchange_init\x18\x02 \x01(\v2\x19.messages.KeyExchangeInitH\x00R\x0fkeyExchangeInit\x12I\n" +
@@ -1466,7 +2248,9 @@ const file_messages_proto_rawDesc = "" +
 	"\x0edeploy_request\x18\x04 \x01(\v2\x17.messages.DeployRequestH\x00R\rdeployRequest\x12@\n" +
 	"\x0eagent_settings\x18\x05 \x01(\v2\x17.messages.AgentSettingsH\x00R\ragentSettings\x12M\n" +
 	"\x13pull_images_request\x18\x06 \x01(\v2\x1b.messages.PullImagesRequestH\x00R\x11pullImagesRequest\x12@\n" +
-	"\x0edelete_request\x18\a \x01(\v2\x17.messages.DeleteRequestH\x00R\rdeleteRequestB\t\n" +
+	"\x0edelete_request\x18\a \x01(\v2\x17.messages.DeleteRequestH\x00R\rdeleteRequest\x12D\n" +
+	"\x10env_list_request\x18\b \x01(\v2\x18.messages.EnvListRequestH\x00R\x0eenvListRequest\x12J\n" +
+	"\x12env_update_request\x18\t \x01(\v2\x1a.messages.EnvUpdateRequestH\x00R\x10envUpdateRequestB\t\n" +
 	"\apayload\"+\n" +
 	"\vPingRequest\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\",\n" +
@@ -1484,14 +2268,24 @@ const file_messages_proto_rawDesc = "" +
 	"\x05nonce\x18\x01 \x01(\fR\x05nonce\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x02 \x01(\fR\n" +
-	"ciphertext\"\xcf\x01\n" +
+	"ciphertext\"\xcf\x02\n" +
 	"\rDeployRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
 	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12!\n" +
 	"\fcompose_file\x18\x04 \x01(\tR\vcomposeFile\x12*\n" +
-	"\x11delete_old_images\x18\x05 \x01(\bR\x0fdeleteOldImages\"\x80\x01\n" +
+	"\x11delete_old_images\x18\x05 \x01(\bR\x0fdeleteOldImages\x12;\n" +
+	"\rpinned_images\x18\x06 \x03(\v2\x16.messages.ServiceImageR\fpinnedImages\x12A\n" +
+	"\x0fimage_retention\x18\a \x01(\v2\x18.messages.ImageRetentionR\x0eimageRetention\"`\n" +
+	"\x0eImageRetention\x12$\n" +
+	"\x0ekeep_image_ids\x18\x01 \x03(\tR\fkeepImageIds\x12(\n" +
+	"\x10remove_image_ids\x18\x02 \x03(\tR\x0eremoveImageIds\"b\n" +
+	"\fServiceImage\x12\x18\n" +
+	"\aservice\x18\x01 \x01(\tR\aservice\x12\x19\n" +
+	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1d\n" +
+	"\n" +
+	"pinned_ref\x18\x03 \x01(\tR\tpinnedRef\"\x80\x01\n" +
 	"\rDeleteRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -1502,49 +2296,96 @@ const file_messages_proto_rawDesc = "" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\xf9\x01\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\xc3\x01\n" +
 	"\fDeployResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x124\n" +
-	"\bwarnings\x18\x05 \x03(\v2\x18.messages.ComposeWarningR\bwarnings\x12.\n" +
-	"\x13compose_file_sha256\x18\x06 \x01(\tR\x11composeFileSha256\"T\n" +
-	"\x0eComposeWarning\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\aservice\x18\x02 \x01(\tR\aservice\x12\x14\n" +
-	"\x05field\x18\x03 \x01(\tR\x05field\"\\\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12.\n" +
+	"\x06images\x18\x05 \x03(\v2\x16.messages.ServiceImageR\x06images\"\\\n" +
 	"\rAgentSettings\x12K\n" +
-	"\x13image_poll_settings\x18\x01 \x03(\v2\x1b.messages.ImagePollSettingsR\x11imagePollSettings\"\xd6\x01\n" +
+	"\x13image_poll_settings\x18\x01 \x03(\v2\x1b.messages.ImagePollSettingsR\x11imagePollSettings\"\x99\x02\n" +
 	"\x11ImagePollSettings\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12)\n" +
 	"\x10interval_seconds\x18\x03 \x01(\x03R\x0fintervalSeconds\x12*\n" +
 	"\x11delete_old_images\x18\x04 \x01(\bR\x0fdeleteOldImages\x12)\n" +
-	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\"\xb0\x01\n" +
+	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\x12A\n" +
+	"\x0fimage_retention\x18\x06 \x01(\v2\x18.messages.ImageRetentionR\x0eimageRetention\"\xf3\x01\n" +
 	"\x11PullImagesRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
 	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12*\n" +
-	"\x11delete_old_images\x18\x04 \x01(\bR\x0fdeleteOldImages\"\xbe\x01\n" +
+	"\x11delete_old_images\x18\x04 \x01(\bR\x0fdeleteOldImages\x12A\n" +
+	"\x0fimage_retention\x18\x05 \x01(\v2\x18.messages.ImageRetentionR\x0eimageRetention\"\x97\x02\n" +
 	"\x10PullImagesResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
 	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\asuccess\x18\x03 \x01(\bR\asuccess\x12%\n" +
 	"\x0eimages_updated\x18\x04 \x01(\bR\rimagesUpdated\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"j\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\x12.\n" +
+	"\x06images\x18\x06 \x03(\v2\x16.messages.ServiceImageR\x06images\x12'\n" +
+	"\x0fredeploy_failed\x18\a \x01(\bR\x0eredeployFailed\"S\n" +
+	"\rServiceStatus\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
+	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"\x9f\x01\n" +
 	"\x11ApplicationStatus\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12.\n" +
-	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\"R\n" +
+	"\x06health\x18\x02 \x01(\x0e2\x16.messages.HealthStatusR\x06health\x123\n" +
+	"\bservices\x18\x03 \x03(\v2\x17.messages.ServiceStatusR\bservices\"R\n" +
 	"\x17ApplicationStatusReport\x127\n" +
 	"\bstatuses\x18\x01 \x03(\v2\x1b.messages.ApplicationStatusR\bstatuses\"{\n" +
 	"\tAgentInfo\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0edocker_version\x18\x02 \x01(\tR\rdockerVersion\x12-\n" +
-	"\x12docker_unreachable\x18\x03 \x01(\bR\x11dockerUnreachable*\x80\x01\n" +
+	"\x12docker_unreachable\x18\x03 \x01(\bR\x11dockerUnreachable\"\x81\x01\n" +
+	"\x0eEnvListRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
+	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\"f\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1b\n" +
+	"\tis_secret\x18\x02 \x01(\bR\bisSecret\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x12\x15\n" +
+	"\x06is_set\x18\x04 \x01(\bR\x05isSet\"\x83\x01\n" +
+	"\aEnvFile\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1a\n" +
+	"\bservices\x18\x02 \x03(\tR\bservices\x12,\n" +
+	"\aentries\x18\x03 \x03(\v2\x12.messages.EnvEntryR\aentries\x12\x1a\n" +
+	"\brevision\x18\x04 \x01(\tR\brevision\"\xc4\x01\n" +
+	"\rEnvListResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\asuccess\x18\x03 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12.\n" +
+	"\tenv_files\x18\x05 \x03(\v2\x11.messages.EnvFileR\benvFiles\"h\n" +
+	"\tEnvChange\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
+	"\x06delete\x18\x02 \x01(\bR\x06delete\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x12\x1b\n" +
+	"\tis_secret\x18\x04 \x01(\bR\bisSecret\"\x80\x01\n" +
+	"\x0eEnvFileChanges\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12-\n" +
+	"\achanges\x18\x02 \x03(\v2\x13.messages.EnvChangeR\achanges\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\tR\x10expectedRevision\"\xb3\x01\n" +
+	"\x10EnvUpdateRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12)\n" +
+	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12.\n" +
+	"\x05files\x18\x04 \x03(\v2\x18.messages.EnvFileChangesR\x05files\"\xb2\x01\n" +
+	"\x0fEnvUpdateResult\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0eapplication_id\x18\x02 \x01(\tR\rapplicationId\x12\x18\n" +
+	"\asuccess\x18\x03 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12\x1a\n" +
+	"\bconflict\x18\x05 \x01(\bR\bconflict*\x80\x01\n" +
 	"\fHealthStatus\x12\x1d\n" +
 	"\x19HEALTH_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15HEALTH_STATUS_HEALTHY\x10\x01\x12\x1b\n" +
@@ -1565,7 +2406,7 @@ func file_messages_proto_rawDescGZIP() []byte {
 }
 
 var file_messages_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_messages_proto_goTypes = []any{
 	(HealthStatus)(0),               // 0: messages.HealthStatus
 	(*ClientMessage)(nil),           // 1: messages.ClientMessage
@@ -1576,43 +2417,68 @@ var file_messages_proto_goTypes = []any{
 	(*KeyExchangeResponse)(nil),     // 6: messages.KeyExchangeResponse
 	(*EncryptedPayload)(nil),        // 7: messages.EncryptedPayload
 	(*DeployRequest)(nil),           // 8: messages.DeployRequest
-	(*DeleteRequest)(nil),           // 9: messages.DeleteRequest
-	(*DeleteResult)(nil),            // 10: messages.DeleteResult
-	(*DeployResult)(nil),            // 11: messages.DeployResult
-	(*ComposeWarning)(nil),          // 12: messages.ComposeWarning
-	(*AgentSettings)(nil),           // 13: messages.AgentSettings
-	(*ImagePollSettings)(nil),       // 14: messages.ImagePollSettings
-	(*PullImagesRequest)(nil),       // 15: messages.PullImagesRequest
-	(*PullImagesResult)(nil),        // 16: messages.PullImagesResult
-	(*ApplicationStatus)(nil),       // 17: messages.ApplicationStatus
-	(*ApplicationStatusReport)(nil), // 18: messages.ApplicationStatusReport
-	(*AgentInfo)(nil),               // 19: messages.AgentInfo
+	(*ImageRetention)(nil),          // 9: messages.ImageRetention
+	(*ServiceImage)(nil),            // 10: messages.ServiceImage
+	(*DeleteRequest)(nil),           // 11: messages.DeleteRequest
+	(*DeleteResult)(nil),            // 12: messages.DeleteResult
+	(*DeployResult)(nil),            // 13: messages.DeployResult
+	(*AgentSettings)(nil),           // 14: messages.AgentSettings
+	(*ImagePollSettings)(nil),       // 15: messages.ImagePollSettings
+	(*PullImagesRequest)(nil),       // 16: messages.PullImagesRequest
+	(*PullImagesResult)(nil),        // 17: messages.PullImagesResult
+	(*ServiceStatus)(nil),           // 18: messages.ServiceStatus
+	(*ApplicationStatus)(nil),       // 19: messages.ApplicationStatus
+	(*ApplicationStatusReport)(nil), // 20: messages.ApplicationStatusReport
+	(*AgentInfo)(nil),               // 21: messages.AgentInfo
+	(*EnvListRequest)(nil),          // 22: messages.EnvListRequest
+	(*EnvEntry)(nil),                // 23: messages.EnvEntry
+	(*EnvFile)(nil),                 // 24: messages.EnvFile
+	(*EnvListResult)(nil),           // 25: messages.EnvListResult
+	(*EnvChange)(nil),               // 26: messages.EnvChange
+	(*EnvFileChanges)(nil),          // 27: messages.EnvFileChanges
+	(*EnvUpdateRequest)(nil),        // 28: messages.EnvUpdateRequest
+	(*EnvUpdateResult)(nil),         // 29: messages.EnvUpdateResult
 }
 var file_messages_proto_depIdxs = []int32{
 	4,  // 0: messages.ClientMessage.pong:type_name -> messages.PongResponse
 	6,  // 1: messages.ClientMessage.key_exchange_response:type_name -> messages.KeyExchangeResponse
 	7,  // 2: messages.ClientMessage.encrypted_payload:type_name -> messages.EncryptedPayload
-	11, // 3: messages.ClientMessage.deploy_result:type_name -> messages.DeployResult
-	16, // 4: messages.ClientMessage.pull_images_result:type_name -> messages.PullImagesResult
-	10, // 5: messages.ClientMessage.delete_result:type_name -> messages.DeleteResult
-	18, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
-	19, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
-	3,  // 8: messages.ServerMessage.ping:type_name -> messages.PingRequest
-	5,  // 9: messages.ServerMessage.key_exchange_init:type_name -> messages.KeyExchangeInit
-	7,  // 10: messages.ServerMessage.encrypted_payload:type_name -> messages.EncryptedPayload
-	8,  // 11: messages.ServerMessage.deploy_request:type_name -> messages.DeployRequest
-	13, // 12: messages.ServerMessage.agent_settings:type_name -> messages.AgentSettings
-	15, // 13: messages.ServerMessage.pull_images_request:type_name -> messages.PullImagesRequest
-	9,  // 14: messages.ServerMessage.delete_request:type_name -> messages.DeleteRequest
-	12, // 15: messages.DeployResult.warnings:type_name -> messages.ComposeWarning
-	14, // 16: messages.AgentSettings.image_poll_settings:type_name -> messages.ImagePollSettings
-	0,  // 17: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
-	17, // 18: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	13, // 3: messages.ClientMessage.deploy_result:type_name -> messages.DeployResult
+	17, // 4: messages.ClientMessage.pull_images_result:type_name -> messages.PullImagesResult
+	12, // 5: messages.ClientMessage.delete_result:type_name -> messages.DeleteResult
+	20, // 6: messages.ClientMessage.application_status_report:type_name -> messages.ApplicationStatusReport
+	21, // 7: messages.ClientMessage.agent_info:type_name -> messages.AgentInfo
+	25, // 8: messages.ClientMessage.env_list_result:type_name -> messages.EnvListResult
+	29, // 9: messages.ClientMessage.env_update_result:type_name -> messages.EnvUpdateResult
+	3,  // 10: messages.ServerMessage.ping:type_name -> messages.PingRequest
+	5,  // 11: messages.ServerMessage.key_exchange_init:type_name -> messages.KeyExchangeInit
+	7,  // 12: messages.ServerMessage.encrypted_payload:type_name -> messages.EncryptedPayload
+	8,  // 13: messages.ServerMessage.deploy_request:type_name -> messages.DeployRequest
+	14, // 14: messages.ServerMessage.agent_settings:type_name -> messages.AgentSettings
+	16, // 15: messages.ServerMessage.pull_images_request:type_name -> messages.PullImagesRequest
+	11, // 16: messages.ServerMessage.delete_request:type_name -> messages.DeleteRequest
+	22, // 17: messages.ServerMessage.env_list_request:type_name -> messages.EnvListRequest
+	28, // 18: messages.ServerMessage.env_update_request:type_name -> messages.EnvUpdateRequest
+	10, // 19: messages.DeployRequest.pinned_images:type_name -> messages.ServiceImage
+	9,  // 20: messages.DeployRequest.image_retention:type_name -> messages.ImageRetention
+	10, // 21: messages.DeployResult.images:type_name -> messages.ServiceImage
+	15, // 22: messages.AgentSettings.image_poll_settings:type_name -> messages.ImagePollSettings
+	9,  // 23: messages.ImagePollSettings.image_retention:type_name -> messages.ImageRetention
+	9,  // 24: messages.PullImagesRequest.image_retention:type_name -> messages.ImageRetention
+	10, // 25: messages.PullImagesResult.images:type_name -> messages.ServiceImage
+	0,  // 26: messages.ServiceStatus.health:type_name -> messages.HealthStatus
+	0,  // 27: messages.ApplicationStatus.health:type_name -> messages.HealthStatus
+	18, // 28: messages.ApplicationStatus.services:type_name -> messages.ServiceStatus
+	19, // 29: messages.ApplicationStatusReport.statuses:type_name -> messages.ApplicationStatus
+	23, // 30: messages.EnvFile.entries:type_name -> messages.EnvEntry
+	24, // 31: messages.EnvListResult.env_files:type_name -> messages.EnvFile
+	26, // 32: messages.EnvFileChanges.changes:type_name -> messages.EnvChange
+	27, // 33: messages.EnvUpdateRequest.files:type_name -> messages.EnvFileChanges
+	34, // [34:34] is the sub-list for method output_type
+	34, // [34:34] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -1629,6 +2495,8 @@ func file_messages_proto_init() {
 		(*ClientMessage_DeleteResult)(nil),
 		(*ClientMessage_ApplicationStatusReport)(nil),
 		(*ClientMessage_AgentInfo)(nil),
+		(*ClientMessage_EnvListResult)(nil),
+		(*ClientMessage_EnvUpdateResult)(nil),
 	}
 	file_messages_proto_msgTypes[1].OneofWrappers = []any{
 		(*ServerMessage_Ping)(nil),
@@ -1638,6 +2506,8 @@ func file_messages_proto_init() {
 		(*ServerMessage_AgentSettings)(nil),
 		(*ServerMessage_PullImagesRequest)(nil),
 		(*ServerMessage_DeleteRequest)(nil),
+		(*ServerMessage_EnvListRequest)(nil),
+		(*ServerMessage_EnvUpdateRequest)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1645,7 +2515,7 @@ func file_messages_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_messages_proto_rawDesc), len(file_messages_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   19,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

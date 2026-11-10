@@ -116,6 +116,10 @@ func digestMatchesLocal(localDigests []string, remoteDigest string) bool {
 	return false
 }
 
+// ErrRedeployFailed reports that new images were pulled but recreating the
+// containers with them failed.
+var ErrRedeployFailed = errors.New("compose up after pull")
+
 // CheckAndPullImages checks whether any service image in the deployed compose
 // project for appName is stale compared to its registry. If any are stale, it
 // pulls all images and redeploys. Returns true if at least one image
@@ -136,6 +140,14 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, fmt.Errorf("compose file not found at expected path %s: %w", composePath, err)
 	}
 
+	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
+		return false, fmt.Errorf("resolve host deployments directory: %w", err)
+	}
+
+	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
+		return false, fmt.Errorf("resolve host deployments directory: %w", err)
+	}
+
 	composeFile, ok := readDeploymentFile(filepath.Dir(composePath), filepath.Base(composePath))
 	if !ok {
 		return false, fmt.Errorf("failed to safely read compose file at expected path %s", composePath)
@@ -144,7 +156,11 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return false, err
 	}
 
-	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, filepath.Dir(composePath)))
+	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
+		ProjectName: projectName,
+		ConfigPaths: []string{composePath},
+		WorkingDir:  filepath.Dir(composePath),
+	})
 	if err != nil {
 		return false, fmt.Errorf("load compose project: %w", err)
 	}
@@ -152,9 +168,6 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	// deployment directory, so it is checked again before every redeploy.
 	if err := c.enforceDeployPolicy(appID, project, filepath.Dir(composePath)); err != nil {
 		return false, err
-	}
-	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
-		return false, fmt.Errorf("resolve host deployments directory: %w", err)
 	}
 	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
 		return false, fmt.Errorf("translate bind mount sources: %w", err)
@@ -213,7 +226,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 			SkipProviders:        !c.isPrivilegedApp(appID),
 		},
 	}); err != nil {
-		return false, fmt.Errorf("compose up after pull: %w", err)
+		return false, fmt.Errorf("%w: %w", ErrRedeployFailed, err)
 	}
 
 	if deleteOldImages {

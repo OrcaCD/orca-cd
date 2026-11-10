@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -35,6 +36,11 @@ var checkAndPullImages = func(ctx context.Context, c *Client, appID, appName str
 	return c.CheckAndPullImages(ctx, appID, appName, deleteOld)
 }
 
+// listServiceImages is a package-level var so tests can override it.
+var listServiceImages = func(ctx context.Context, c *Client, appID string) ([]*messages.ServiceImage, error) {
+	return c.ServiceImages(ctx, appID)
+}
+
 type appPollState struct {
 	settings PollSettings
 	appName  string
@@ -50,23 +56,29 @@ type ImagePoller struct {
 	failing  map[string]struct{} // applications whose last run failed
 	client   *Client
 	sender   MessageSender
+	// intervalOverride replaces every application's interval when set, so the
+	// E2E tests don't have to wait for the 60 second minimum.
+	intervalOverride time.Duration
 }
 
 // NewImagePoller creates a new ImagePoller. sender is used to report results to the hub;
-// SendMessage is a no-op when the agent is disconnected.
-func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger) *ImagePoller {
+// SendMessage is a no-op when the agent is disconnected. A non-zero intervalOverride
+// is used instead of the configured interval of every application.
+func NewImagePoller(c *Client, sender MessageSender, log zerolog.Logger, intervalOverride time.Duration) *ImagePoller {
 	return &ImagePoller{
-		log:      log,
-		apps:     make(map[string]*appPollState),
-		runLocks: make(map[string]*sync.Mutex),
-		failing:  make(map[string]struct{}),
-		client:   c,
-		sender:   sender,
+		log:              log,
+		apps:             make(map[string]*appPollState),
+		runLocks:         make(map[string]*sync.Mutex),
+		failing:          make(map[string]struct{}),
+		client:           c,
+		sender:           sender,
+		intervalOverride: intervalOverride,
 	}
 }
 
 // ApplySettings replaces the poller state with the given snapshot.
-// Apps absent from the snapshot are stopped and removed.
+// Apps absent from the snapshot are stopped and removed, apps whose settings
+// did not change keep their ticker.
 func (p *ImagePoller) ApplySettings(apps []AppPollConfig) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -82,16 +94,22 @@ func (p *ImagePoller) ApplySettings(apps []AppPollConfig) {
 		}
 	}
 	for _, app := range apps {
-		if existing, ok := p.apps[app.AppID]; ok {
+		settings := app.Settings
+		if settings.IntervalSeconds < minPollIntervalSeconds {
+			settings.IntervalSeconds = minPollIntervalSeconds
+		}
+		existing, ok := p.apps[app.AppID]
+		// The hub resends the settings after deployments. Restarting an unchanged
+		// ticker would postpone its next poll by a full interval every time.
+		if ok && settings.Enabled && existing.settings == settings && existing.appName == app.AppName {
+			continue
+		}
+		if ok {
 			close(existing.stop)
 			delete(p.apps, app.AppID)
 		}
-		settings := app.Settings
 		if !settings.Enabled {
 			continue
-		}
-		if settings.IntervalSeconds < minPollIntervalSeconds {
-			settings.IntervalSeconds = minPollIntervalSeconds
 		}
 		state := &appPollState{
 			settings: settings,
@@ -133,6 +151,9 @@ func (p *ImagePoller) StopAll() {
 
 func (p *ImagePoller) runTicker(appID, appName string, settings PollSettings, stop <-chan struct{}) {
 	interval := time.Duration(settings.IntervalSeconds) * time.Second
+	if p.intervalOverride > 0 {
+		interval = p.intervalOverride
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -184,10 +205,14 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	if err != nil {
 		result.Success = false
 		result.ErrorMessage = err.Error()
+		result.RedeployFailed = errors.Is(err, ErrRedeployFailed)
 
 		p.log.Error().Err(err).Str("application_id", appID).Msg("image poll: failed to check/pull images")
 	} else {
 		result.Success = true
+		if updated {
+			result.Images = p.serviceImages(ctx, appID)
+		}
 	}
 
 	if sendErr := p.sender.SendMessage(&messages.ClientMessage{
@@ -197,6 +222,20 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool) 
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Str("application_id", appID).Msg("image poll: failed to send result")
 	}
+}
+
+// serviceImages lists the images the application runs after an update, so
+// the hub can roll back to them. Failing to list them doesn't fail the update.
+func (p *ImagePoller) serviceImages(ctx context.Context, appID string) []*messages.ServiceImage {
+	if p.client == nil {
+		return nil
+	}
+	images, err := listServiceImages(ctx, p.client, appID)
+	if err != nil {
+		p.log.Warn().Err(err).Str("application_id", appID).Msg("image poll: could not list service images")
+		return nil
+	}
+	return images
 }
 
 // markRun records the outcome of a run and reports whether the previous run

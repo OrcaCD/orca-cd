@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/commitsigning"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 )
@@ -42,6 +43,16 @@ type giteaCommit struct {
 	SHA    string `json:"sha"`
 	Commit struct {
 		Message string `json:"message"`
+	} `json:"commit"`
+}
+
+type giteaGitCommitResponse struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Verification struct {
+			Signature *string `json:"signature"`
+			Payload   *string `json:"payload"`
+		} `json:"verification"`
 	} `json:"commit"`
 }
 
@@ -448,6 +459,36 @@ func (giteaProvider) GetLatestCommit(ctx context.Context, repo *models.Repositor
 	default:
 		return CommitInfo{}, fmt.Errorf("gitea API returned unexpected status: %d", resp.StatusCode)
 	}
+}
+
+func (giteaProvider) VerifyCommitSignature(ctx context.Context, repo *models.Repository, sha string, keys *commitsigning.TrustedKeys) (commitsigning.Signer, error) {
+	parsedRepoURL, err := parseGiteaRepositoryURL(repo.Url)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	apiURL := fmt.Sprintf(
+		"%s/api/v1/repos/%s/%s/git/commits/%s?stat=false&verification=true&files=false",
+		parsedRepoURL.baseURL,
+		url.PathEscape(parsedRepoURL.owner),
+		url.PathEscape(parsedRepoURL.repo),
+		url.PathEscape(sha),
+	)
+	req, err := httpclient.NewRequest(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return commitsigning.Signer{}, fmt.Errorf("failed to build Gitea request: %w", err)
+	}
+	addGiteaHeaders(req, repo)
+
+	var parsed giteaGitCommitResponse
+	found, err := fetchCommitSignatureJSON(req, "Gitea", &parsed)
+	if err != nil {
+		return commitsigning.Signer{}, err
+	}
+	if !found {
+		return commitsigning.Signer{}, errors.New("commit not found or access denied")
+	}
+	return verifyRawCommitSignature(keys, sha, parsed.SHA, parsed.Commit.Verification.Signature, parsed.Commit.Verification.Payload)
 }
 
 func addGiteaHeaders(req *http.Request, repo *models.Repository) {

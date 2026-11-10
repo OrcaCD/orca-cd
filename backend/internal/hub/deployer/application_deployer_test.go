@@ -45,7 +45,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.AuditLog{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -156,5 +156,66 @@ func TestTriggerApplicationDeploy_AgentNotConnected_MarksOutOfSync(t *testing.T)
 	}
 	if event.Status != models.ApplicationEventFailed || event.CompletedAt == nil {
 		t.Fatalf("offline event not failed: %+v", event)
+	}
+}
+
+func TestTriggerRollback_SendsTargetComposeAndPinnedImages(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t)
+	nop := zerolog.Nop()
+
+	sender := &mockSender{connected: true}
+	d := NewApplicationDeployer(sender, &nop)
+	target := &models.ApplicationDeployment{
+		ComposeFile: crypto.EncryptedString("services:\n  web:\n    image: nginx:1.27\n"),
+		Images:      []models.DeployedImage{{Service: "web", ImageId: "sha256:web", PinnedRef: "nginx@sha256:web"}},
+	}
+
+	if err := d.TriggerRollback(context.Background(), &app, target, "request-rollback"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req := sender.sent.GetDeployRequest()
+	if req == nil {
+		t.Fatal("expected a DeployRequest to be sent")
+	}
+	if req.ComposeFile != target.ComposeFile.String() || req.RequestId != "request-rollback" {
+		t.Errorf("unexpected request: %+v", req)
+	}
+	if len(req.PinnedImages) != 1 || req.PinnedImages[0].Service != "web" || req.PinnedImages[0].PinnedRef != "nginx@sha256:web" {
+		t.Errorf("expected the target's images to be pinned, got %v", req.PinnedImages)
+	}
+	count, err := gorm.G[models.ApplicationDeployment](db.DB).Count(context.Background(), "*")
+	if err != nil {
+		t.Fatalf("count deployments: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("a rollback must not record a new deployment, got %d", count)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(context.Background())
+	if err != nil {
+		t.Fatalf("failed to load application: %v", err)
+	}
+	if updated.SyncStatus != models.Syncing {
+		t.Errorf("expected SyncStatus %q, got %q", models.Syncing, updated.SyncStatus)
+	}
+}
+
+func TestTriggerApplicationDeploy_AgentNotConnected_DiscardsDeployment(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t)
+	nop := zerolog.Nop()
+
+	d := NewApplicationDeployer(&mockSender{connected: false}, &nop)
+	if err := d.TriggerApplicationDeploy(context.Background(), &app, "services: {}\n", "request-offline"); err == nil {
+		t.Fatal("expected an error for a disconnected agent")
+	}
+
+	count, err := gorm.G[models.ApplicationDeployment](db.DB).Count(context.Background(), "*")
+	if err != nil {
+		t.Fatalf("count deployments: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected the undispatched deployment to be discarded, got %d", count)
 	}
 }

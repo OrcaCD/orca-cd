@@ -719,7 +719,7 @@ func TestCheckDeployPolicy_ComposeFieldsAreReviewed(t *testing.T) {
 			"LogOpt", "MemLimit", "MemReservation", "MemSwapLimit", "MemSwappiness", "MacAddress", "Models",
 			"NetworkMode", "Networks", "OomKillDisable", "OomScoreAdj", "Pid", "PidsLimit", "Platform",
 			"Privileged", "PullPolicy", "PullRefreshAfter", "ReadOnly", "Runtime", "Secrets", "SecurityOpt",
-			"ShmSize", "StopGracePeriod", "StopSignal", "StorageOpt", "Sysctls", "Tmpfs", "Ulimits",
+			"ShmSize", "StopGracePeriod", "StopSignal", "StorageOpt", "Sysctls", "Tmpfs", "Ulimits", "Umask",
 			"UseAPISocket", "User", "UserNSMode", "Uts", "VolumeDriver", "Volumes", "VolumesFrom", "WorkingDir",
 		},
 		reflect.TypeFor[composetypes.WorkloadSpec](): {

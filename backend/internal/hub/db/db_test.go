@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -73,6 +74,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"agent_notifications",
 		"repository_notifications",
 		"application_events",
+		"application_deployments",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -769,7 +771,59 @@ func TestSeedDemoData_IsIdempotent(t *testing.T) {
 	assertDemoSeedCounts(t, gormDB)
 }
 
-func TestSeedDemoData_SkipsWhenMoreThanOneUserExists(t *testing.T) {
+func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
+	initTestCrypto(t)
+
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	if err := seedDemoData(gormDB); err != nil {
+		t.Fatalf("seedDemoData() error: %v", err)
+	}
+
+	counts := map[string]struct {
+		model any
+		want  int64
+	}{
+		"users":              {&models.User{}, 2},
+		"agents":             {&models.Agent{}, 2},
+		"repositories":       {&models.Repository{}, 2},
+		"applications":       {&models.Application{}, 3},
+		"application events": {&models.ApplicationEvent{}, 8},
+		"deployments":        {&models.ApplicationDeployment{}, 4},
+		"notifications":      {&models.Notification{}, 2},
+		"audit logs":         {&models.AuditLog{}, 7},
+	}
+	for name, c := range counts {
+		var got int64
+		if err := gormDB.Model(c.model).Count(&got).Error; err != nil {
+			t.Fatalf("failed to count %s: %v", name, err)
+		}
+		if got != c.want {
+			t.Errorf("expected %d %s, got %d", c.want, name, got)
+		}
+	}
+
+	var signedRepo models.Repository
+	if err := gormDB.Where("id = ?", demoSeedSignedRepositoryID).First(&signedRepo).Error; err != nil {
+		t.Fatalf("failed to fetch signed demo repository: %v", err)
+	}
+	if !signedRepo.RequireSignedCommits || len(signedRepo.CommitSigningKeys) != 1 {
+		t.Errorf("expected signed commits to be required with one key, got %v / %d keys", signedRepo.RequireSignedCommits, len(signedRepo.CommitSigningKeys))
+	}
+
+	var agent models.Agent
+	if err := gormDB.Where("id = ?", demoSeedAgentID).First(&agent).Error; err != nil {
+		t.Fatalf("failed to fetch demo agent: %v", err)
+	}
+	if agent.Status != models.AgentStatusOnline || agent.LastSeen == nil || agent.Version == "" || agent.DockerVersion == "" {
+		t.Errorf("expected demo agent to look connected, got %+v", agent)
+	}
+}
+
+func TestSeedDemoData_RefusesDatabaseWithRealUsers(t *testing.T) {
 	initTestCrypto(t)
 
 	gormDB := openTestDB(t)
@@ -785,8 +839,8 @@ func TestSeedDemoData_SkipsWhenMoreThanOneUserExists(t *testing.T) {
 		t.Fatalf("failed to create initial users: %v", err)
 	}
 
-	if err := seedDemoData(gormDB); err != nil {
-		t.Fatalf("seedDemoData() error: %v", err)
+	if err := seedDemoData(gormDB); !errors.Is(err, ErrDemoOnExistingDatabase) {
+		t.Fatalf("seedDemoData() error = %v, want %v", err, ErrDemoOnExistingDatabase)
 	}
 
 	var demoUserCount int64
@@ -869,8 +923,23 @@ func TestSqliteDSN_ReadOnlyParams(t *testing.T) {
 	if got := q.Get("mode"); got != "ro" {
 		t.Errorf("sqliteDSN(true): mode = %q, want %q", got, "ro")
 	}
+	if got := q.Get("_query_only"); got != "1" {
+		t.Errorf("sqliteDSN(true): _query_only = %q, want %q", got, "1")
+	}
 	if got := q.Get("_cache_size"); got != "-12000" {
 		t.Errorf("sqliteDSN(true): _cache_size = %q, want %q", got, "-12000")
+	}
+	// go-sqlite3 ignores URI parameters of DSNs without the file: prefix
+	if !strings.HasPrefix(dsn, "file:") {
+		t.Errorf("sqliteDSN(true) = %q, want file: prefix", dsn)
+	}
+}
+
+func TestSqliteDSN_AlwaysUsesFileURI(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		if dsn := sqliteDSN(readOnly); !strings.HasPrefix(dsn, "file:"+sqliteFilePath+"?") {
+			t.Errorf("sqliteDSN(%v) = %q, want file: prefix", readOnly, dsn)
+		}
 	}
 }
 
@@ -954,12 +1023,62 @@ func TestConnect_DemoModeSeedsDataOnce(t *testing.T) {
 	}
 	assertDemoSeedCounts(t, DB)
 
+	if err := DB.Exec("DELETE FROM users").Error; err == nil {
+		t.Fatal("expected write to the demo database to fail")
+	}
+	if err := DB.Create(&models.AuditLog{EventType: "created", TargetType: "agent"}).Error; err == nil {
+		t.Fatal("expected insert into the demo database to fail")
+	}
+	assertDemoSeedCounts(t, DB)
+
 	closeGlobalDB(t)
 
 	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
 		t.Fatalf("second Connect() error: %v", err)
 	}
 	assertDemoSeedCounts(t, DB)
+}
+
+func TestConnect_RefusesNonDemoStartOnDemoDatabase(t *testing.T) {
+	initTestCrypto(t)
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to read current working directory: %v", err)
+	}
+
+	workDir := t.TempDir()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("failed to change working directory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, "data"), 0750); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+		if DB != nil {
+			if sqlDB, err := DB.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+			DB = nil
+		}
+	})
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
+		t.Fatalf("demo Connect() error: %v", err)
+	}
+	closeGlobalDB(t)
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, false); !errors.Is(err, ErrNonDemoOnDemoDatabase) {
+		t.Fatalf("non-demo Connect() error = %v, want %v", err, ErrNonDemoOnDemoDatabase)
+	}
+	if DB != nil {
+		t.Fatal("expected the global DB to stay unset when the start is refused")
+	}
+
+	if err := Connect(zerolog.Nop(), zerolog.InfoLevel, true); err != nil {
+		t.Fatalf("demo Connect() after refused start error: %v", err)
+	}
 }
 
 func TestSqliteFilePath_ReturnsExpectedPath(t *testing.T) {

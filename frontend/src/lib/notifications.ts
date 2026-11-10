@@ -20,6 +20,8 @@ export const notificationEvents = [
 	"application.sync.failed",
 	"application.health.unhealthy",
 	"application.health.recovered",
+	"application.rollback.succeeded",
+	"application.rollback.failed",
 	"agent.offline",
 	"agent.online",
 	"repository.sync.failed",
@@ -104,6 +106,10 @@ export function updateNotification(
 	data: UpdateNotificationRequest,
 ): Promise<Notification> {
 	return fetcher<Notification>(`/notifications/${id}`, "PUT", data);
+}
+
+export function setNotificationEnabled(id: string, enabled: boolean): Promise<Notification> {
+	return fetcher<Notification>(`/notifications/${id}/enabled`, "PUT", { enabled });
 }
 
 export function deleteNotification(id: string): Promise<void> {

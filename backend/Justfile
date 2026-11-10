@@ -44,20 +44,20 @@ proto:
 [group('test')]
 [env("CGO_ENABLED", "1")]
 test:
-   gotestsum -- -race -failfast ./...
+   gotestsum -- -tags=nomsgpack -race -failfast ./...
 
 # Run all tests with race detection and coverage report
 [group('test')]
 [env("CGO_ENABLED", "1")]
 test-coverage:
-    gotestsum -- -race -coverprofile coverage.txt -covermode atomic ./...
+    gotestsum -- -tags=nomsgpack -race -coverprofile coverage.txt -covermode atomic ./...
     go tool cover -html coverage.txt
 
 # Build the hub binary to bin/hub
 [group('hub')]
 [env("CGO_ENABLED", "1")]
 build-hub: proto
-    go build -ldflags '{{ LDFLAGS }}' -o bin/hub{{ EXT }} ./cmd/hub
+    go build -tags=nomsgpack -ldflags '{{ LDFLAGS }}' -o bin/hub{{ EXT }} ./cmd/hub
 
 # Build the agent binary to bin/agent
 [group('agent')]
@@ -73,7 +73,7 @@ build: build-hub build-agent
 [group('hub')]
 [env("CGO_ENABLED", "1")]
 run-hub cmd=defaultCommand: proto
-    go run -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
+    go run -tags=nomsgpack -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
 
 # Run the agent (use the help command to get a list of commands)
 [group('agent')]

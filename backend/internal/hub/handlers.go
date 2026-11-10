@@ -16,6 +16,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
+	routes.DemoMode = cfg.Demo
 	routes.SetAdminSystemInfoConfig(routes.AdminSystemInfoConfig{
 		Host:             cfg.Host,
 		Port:             cfg.Port,
@@ -68,9 +69,16 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.GET("/activity", routes.ApplicationActivityHandler)
 			protected.GET("/applications/:id", routes.GetApplicationHandler)
 			protected.GET("/applications/:id/events", routes.ListApplicationEventsHandler)
+			protected.GET("/applications/:id/health", routes.GetApplicationHealthHandler)
+			protected.GET("/applications/:id/env", routes.ListApplicationEnvHandler)
+			protected.PUT("/applications/:id/env", routes.UpdateApplicationEnvHandler)
+			protected.POST("/env/parse", routes.ParseEnvHandler)
 			protected.POST("/applications", routes.CreateApplicationHandler)
 			protected.POST("/applications/:id/deploy", routes.DeployApplicationHandler)
 			protected.POST("/applications/:id/pull-images", routes.PullApplicationImagesHandler)
+			protected.POST("/applications/:id/deployments/:deploymentId/rollback", routes.RollbackApplicationHandler)
+			protected.POST("/applications/:id/resume-auto-sync", routes.ResumeApplicationAutoSyncHandler)
+			protected.PUT("/applications/:id/rollback", routes.UpdateRollbackSettingsHandler)
 			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
 			protected.POST("/applications/:id/image-webhook", routes.GenerateImagePullWebhookHandler)
@@ -96,10 +104,15 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/notifications", routes.CreateNotificationHandler)
 			protected.GET("/notifications", routes.ListNotificationsHandler)
 			protected.PUT("/notifications/:id", routes.UpdateNotificationHandler)
+			protected.PUT("/notifications/:id/enabled", routes.SetNotificationEnabledHandler)
 			protected.DELETE("/notifications/:id", routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", routes.TestNotificationHandler)
 
-			protected.GET("/events", routes.SSEHandler)
+			// The demo data never changes, so there is nothing to stream, and the
+			// per-user connection cap would let one visitor block the others
+			if !cfg.Demo {
+				protected.GET("/events", routes.SSEHandler)
+			}
 		}
 
 		// Admin routes (authentication + admin role required)
@@ -128,12 +141,16 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		websocket.DefaultHub = h
 		d := application_deployer.NewApplicationDeployer(h, &Log)
 		application_deployer.DefaultApplicationDeployer = d
-		w := websocket.NewWorker(h, &Log)
-		w.Start()
 
-		// Rate-limit reconnects: 20 req/min per IP, burst of 5
-		wsRateLimit := middleware.RateLimit(3*time.Second, 5)
-		api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
+		// Agents cannot connect in demo mode, as the seeded data is read-only
+		if !cfg.Demo {
+			w := websocket.NewWorker(h, &Log)
+			w.Start()
+
+			// Rate-limit reconnects: 20 req/min per IP, burst of 5
+			wsRateLimit := middleware.RateLimit(3*time.Second, 5)
+			api.GET("/ws", wsRateLimit, websocket.WsHandler(h, &Log))
+		}
 	}
 
 	if !cfg.DisableUI {

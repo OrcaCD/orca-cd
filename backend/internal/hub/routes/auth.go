@@ -23,6 +23,9 @@ const errInvalidSetupCode = "invalid setup code"
 // LocalAuthDisabled is set by the server config to gate local auth endpoints.
 var LocalAuthDisabled bool
 
+// DemoMode is set by the server config and exposed to the frontend.
+var DemoMode bool
+
 type registerRequest struct {
 	Name      string `json:"name" binding:"required,min=3,max=64"`
 	Email     string `json:"email" binding:"required,email"`
@@ -58,6 +61,7 @@ type setupResponse struct {
 	NeedsSetup       bool           `json:"needsSetup"`
 	Providers        []providerInfo `json:"providers"`
 	LocalAuthEnabled bool           `json:"localAuthEnabled"`
+	Demo             bool           `json:"demo"`
 }
 
 type profileResponse struct {
@@ -68,6 +72,7 @@ type profileResponse struct {
 	Role                   string `json:"role"`
 	PasswordChangeRequired bool   `json:"passwordChangeRequired"`
 	IsLocal                bool   `json:"isLocal"`
+	Demo                   bool   `json:"demo"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -84,6 +89,7 @@ func ProfileHandler(c *gin.Context) {
 		Role:                   string(user.Role),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		IsLocal:                user.PasswordHash != nil,
+		Demo:                   DemoMode,
 	})
 }
 
@@ -176,6 +182,7 @@ func SetupHandler(c *gin.Context) {
 		NeedsSetup:       count == 0,
 		Providers:        infos,
 		LocalAuthEnabled: !LocalAuthDisabled,
+		Demo:             DemoMode,
 	})
 }
 
@@ -285,6 +292,11 @@ func LoginHandler(c *gin.Context) {
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
+	if DemoMode {
+		demoLogin(c, req)
+		return
+	}
+
 	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -315,6 +327,30 @@ func LoginHandler(c *gin.Context) {
 	}
 	if !match {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	token, err := auth.GenerateUserToken(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	auth.SetAuthCookie(c, token)
+	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
+}
+
+// demoLogin only accepts the public demo credentials and never hashes the password,
+// so anonymous visitors cannot use up argon2 time and memory.
+func demoLogin(c *gin.Context, req loginRequest) {
+	if !db.IsDemoLogin(req.Email, req.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
