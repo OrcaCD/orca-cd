@@ -205,7 +205,6 @@ func CreateApplicationHandler(c *gin.Context) {
 		LastSyncedAt:             nil,
 		Path:                     req.Path,
 		ComposeFile:              crypto.EncryptedString(composeFile),
-		ComposeFileHash:          crypto.BlindIndex(composeFile),
 		Warnings:                 "[]",
 		PreviousComposeFile:      crypto.EncryptedString(""),
 		ImagePollEnabled:         req.ImagePollEnabled,
@@ -346,13 +345,11 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Commit = latestCommit.Hash
 	application.CommitMessage = latestCommit.Message
 	application.Path = req.Path
-	application.PreviousComposeFile = application.ComposeFile
-	application.ComposeFile = crypto.EncryptedString(composeFile)
-	composeFileHash := crypto.BlindIndex(composeFile)
-	if application.ComposeFileHash != composeFileHash {
+	if application.ComposeFile.String() != composeFile {
 		application.Warnings = "[]"
 	}
-	application.ComposeFileHash = composeFileHash
+	application.PreviousComposeFile = application.ComposeFile
+	application.ComposeFile = crypto.EncryptedString(composeFile)
 	application.ImagePollEnabled = req.ImagePollEnabled
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages

@@ -93,10 +93,9 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", job.Application.Id).
-		Select("ComposeFile", "ComposeFileHash", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage").
+		Select("ComposeFile", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage").
 		Updates(context.Background(), models.Application{
 			ComposeFile:         crypto.EncryptedString(content),
-			ComposeFileHash:     crypto.BlindIndex(content),
 			Warnings:            "[]",
 			PreviousComposeFile: job.Application.ComposeFile,
 			Commit:              job.Commit,

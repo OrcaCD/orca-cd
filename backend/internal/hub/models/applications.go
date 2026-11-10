@@ -51,7 +51,6 @@ type Application struct {
 	LastSyncSource           *ApplicationEventSource `gorm:"type:text;"`
 	Path                     string                  `gorm:"type:text;not null"`
 	ComposeFile              crypto.EncryptedString  `gorm:"type:text;not null"`
-	ComposeFileHash          string                  `gorm:"type:text;not null;default:''"`
 	Warnings                 string                  `gorm:"type:text;not null;default:'[]'"`
 	PreviousComposeFile      crypto.EncryptedString  `gorm:"type:text;not null"`
 	ImagePollEnabled         bool                    `gorm:"not null;default:false"`

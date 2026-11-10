@@ -10,7 +10,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub"
-	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/rs/zerolog"
@@ -63,10 +62,6 @@ func runExportCommand(out io.Writer, outputPath string) error {
 
 	if cfg.Demo {
 		return fmt.Errorf("backup is not available in demo mode")
-	}
-
-	if err := crypto.Init(cfg.AppSecret); err != nil {
-		return fmt.Errorf("failed to initialize crypto: %w", err)
 	}
 
 	dbLogger := zerolog.New(io.Discard)

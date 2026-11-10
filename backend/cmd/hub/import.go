@@ -9,7 +9,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub"
-	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -52,10 +51,6 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 
 	if cfg.Demo {
 		return fmt.Errorf("import is not available in demo mode")
-	}
-
-	if err := crypto.Init(cfg.AppSecret); err != nil {
-		return fmt.Errorf("failed to initialize crypto: %w", err)
 	}
 
 	warningPoints := []string{

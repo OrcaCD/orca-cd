@@ -161,9 +161,6 @@ func TestHandleDeployResultPersistsWarningsForMatchingComposeFile(t *testing.T) 
 	if updated.Warnings != `[{"code":"missing_restart_policy","service":"api"}]` {
 		t.Fatalf("Warnings = %q", updated.Warnings)
 	}
-	if updated.ComposeFileHash != crypto.BlindIndex(app.ComposeFile.String()) {
-		t.Fatalf("ComposeFileHash = %q, want keyed hash", updated.ComposeFileHash)
-	}
 }
 
 func TestHandleDeployResultWithoutComposeAnalysisPreservesWarnings(t *testing.T) {
@@ -250,12 +247,14 @@ func TestHandleDeployResultLogsComposeWarningsPersistenceError(t *testing.T) {
 	}
 }
 
-func TestStoreComposeWarnings_StaleDatabaseHashLogsAndSkipsUpdate(t *testing.T) {
+func TestStoreComposeWarnings_ComposeFileChangedDuringDeployLogsAndSkipsUpdate(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := seedDeployApp(t, models.Syncing)
-	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
-		Update("compose_file_hash", crypto.BlindIndex("newer compose file")).Error; err != nil {
-		t.Fatalf("update application compose hash: %v", err)
+	// app still holds the compose file the agent deployed; the stored one is newer.
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("ComposeFile").
+		Updates(t.Context(), models.Application{ComposeFile: crypto.EncryptedString("newer compose file")}); err != nil {
+		t.Fatalf("update application compose file: %v", err)
 	}
 
 	var logOutput bytes.Buffer

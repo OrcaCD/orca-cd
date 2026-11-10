@@ -101,13 +101,10 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 		return err
 	}
 
-	// Populate keyed application indexes and upgrade any legacy unkeyed hashes.
-	// Skipped in demo mode where the database is read-only.
+	// Populate the application name_hash blind index for rows created before the
+	// column existed. Skipped in demo mode where the database is read-only.
 	if !demo {
 		if err := BackfillNameHashes(context.Background(), db); err != nil {
-			return err
-		}
-		if err := BackfillComposeFileHashes(context.Background(), db); err != nil {
 			return err
 		}
 	}

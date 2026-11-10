@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
-	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
@@ -93,19 +92,28 @@ func storeComposeWarnings(ctx context.Context, agentID string, app *models.Appli
 		return err
 	}
 
-	updated, err := gorm.G[models.Application](db.DB).
-		Where("id = ? AND agent_id = ? AND compose_file_hash = ?", app.Id, agentID, app.ComposeFileHash).
-		Updates(ctx, models.Application{
-			ComposeFileHash: crypto.BlindIndex(app.ComposeFile.String()),
-			Warnings:        string(encoded),
-		})
-	if err != nil {
+	// Re-read the compose file in the same transaction as the write, so a sync
+	// or edit that lands while the deployment ran is not paired with warnings
+	// computed for the previous compose file.
+	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := gorm.G[models.Application](tx).
+			Select("Id", "ComposeFile").
+			Where("id = ? AND agent_id = ?", app.Id, agentID).
+			First(ctx)
+		if err != nil {
+			return err
+		}
+		if composewarnings.Hash(current.ComposeFile.String()) != result.ComposeFileSha256 {
+			log.Debug().Str("applicationId", app.Id).Msg("compose warnings are stale; application compose file changed")
+			return nil
+		}
+
+		_, err = gorm.G[models.Application](tx).
+			Where("id = ?", app.Id).
+			Select("Warnings").
+			Updates(ctx, models.Application{Warnings: string(encoded)})
 		return err
-	}
-	if updated == 0 {
-		log.Debug().Str("applicationId", app.Id).Msg("compose warnings are stale; application compose file changed")
-	}
-	return nil
+	})
 }
 
 func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {

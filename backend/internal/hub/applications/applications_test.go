@@ -365,9 +365,6 @@ func TestProcessSyncJob_ComposeChanged_PersistsComposeAndCommit(t *testing.T) {
 	if updated.ComposeFile.String() != newCompose {
 		t.Errorf("expected ComposeFile %q, got %q", newCompose, updated.ComposeFile.String())
 	}
-	if updated.ComposeFileHash != crypto.BlindIndex(newCompose) {
-		t.Error("expected compose file hash to be a keyed blind index")
-	}
 	if updated.PreviousComposeFile.String() != oldCompose {
 		t.Errorf("expected PreviousComposeFile %q, got %q", oldCompose, updated.PreviousComposeFile.String())
 	}

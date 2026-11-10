@@ -27,7 +27,6 @@ func (e *unsupportedComposeFeatureError) Error() string {
 	return fmt.Sprintf(`unsupported Compose feature "%s" in service "%s": local Compose references are not resolved; deployment was rejected`, e.Feature, e.Service)
 }
 
-
 func validateComposeFeatures(composeFile string) error {
 	decoder := yaml.NewDecoder(strings.NewReader(composeFile))
 	for {

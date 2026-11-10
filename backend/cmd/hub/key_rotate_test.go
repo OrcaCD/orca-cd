@@ -269,6 +269,7 @@ func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 		application.ImageWebhookSecret.String() != "image-webhook-secret" {
 		t.Fatalf("unexpected application values after rotation: %+v", application)
 	}
+
 	repository, err := gorm.G[models.Repository](db.DB).Where("id = ?", fixture.RepositoryID).First(t.Context())
 	if err != nil {
 		t.Fatalf("failed to load repository with new key: %v", err)
@@ -419,13 +420,6 @@ func TestRunKeyRotateCommandSucceeds(t *testing.T) {
 	if agent.KeyId.String() != "agent-key-id" {
 		t.Fatalf("expected rotated agent key id, got %q", agent.KeyId.String())
 	}
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", fixture.ApplicationID).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load rotated application: %v", err)
-	}
-	if application.ComposeFileHash != crypto.BlindIndex(application.ComposeFile.String()) {
-		t.Error("expected compose file hash to be re-keyed after key rotation")
-	}
 }
 
 func TestRunKeyRotateCommandRejectsInvalidConfiguration(t *testing.T) {
@@ -522,11 +516,12 @@ func TestRunKeyRotateCommandReturnsRotationError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runKeyRotateCommandWithInput() expected rotation error, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to connect to database") {
-		t.Fatalf("expected invalid old key to fail database backfill, got %v", err)
+	if !strings.Contains(err.Error(), "key rotation failed") {
+		t.Fatalf("expected key rotation error, got %v", err)
 	}
 	for _, want := range []string{
-		"message authentication failed",
+		"Restore the database export",
+		"keep the old APP_SECRET configured",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected rotation error to contain %q, got %v", want, err)

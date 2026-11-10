@@ -571,9 +571,6 @@ func TestCreateApplicationHandler_Success(t *testing.T) {
 	if stored.Name.String() != "Billing Service" {
 		t.Errorf("expected encrypted/decrypted name %q, got %q", "Billing Service", stored.Name.String())
 	}
-	if stored.ComposeFileHash != crypto.BlindIndex(stored.ComposeFile.String()) {
-		t.Error("expected compose file hash to be a keyed blind index")
-	}
 	if stored.Icon != "badge-dollar-sign" {
 		t.Errorf("expected stored icon %q, got %q", "badge-dollar-sign", stored.Icon)
 	}
@@ -950,9 +947,6 @@ func TestUpdateApplicationHandler_Success(t *testing.T) {
 
 	if updated.Name.String() != "New Name" {
 		t.Errorf("expected name %q, got %q", "New Name", updated.Name.String())
-	}
-	if updated.ComposeFileHash != crypto.BlindIndex(updated.ComposeFile.String()) {
-		t.Error("expected compose file hash to be a keyed blind index")
 	}
 	if updated.Icon != "rocket" {
 		t.Errorf("expected icon %q, got %q", "rocket", updated.Icon)
@@ -1929,4 +1923,46 @@ func TestSendAgentSettings_WithHub(t *testing.T) {
 	// Agent is not connected — Send returns false, but the query+SendAgentSettings call
 	// path is covered. Must not panic.
 	sendAgentSettings(c, "nonexistent-agent-id")
+}
+
+func TestUpdateApplicationHandler_ResetsWarningsOnlyWhenComposeFileChanges(t *testing.T) {
+	const existingWarnings = `[{"code":"missing_restart_policy","service":"app"}]`
+	tests := []struct {
+		name          string
+		storedCompose string
+		wantWarnings  string
+	}{
+		{name: "compose file changed", storedCompose: seedComposeFileContent, wantWarnings: "[]"},
+		{name: "compose file unchanged", storedCompose: mockComposeFileContent, wantWarnings: existingWarnings},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupTestDBWithApplications(t)
+			repo := seedTestRepository(t, "https://github.com/owner/repo-update-warnings")
+			agent := seedTestAgent(t, "agent-update-warnings")
+			app := seedTestApplication(t, repo.Id, agent.Id, "Warnings App")
+			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+				Select("ComposeFile", "Warnings").
+				Updates(t.Context(), models.Application{
+					ComposeFile: crypto.EncryptedString(tt.storedCompose),
+					Warnings:    existingWarnings,
+				}); err != nil {
+				t.Fatalf("seed application compose file and warnings: %v", err)
+			}
+
+			w := updateApplicationAgent(t, app, agent.Id, "Warnings App")
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+
+			updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+			if err != nil {
+				t.Fatalf("failed to load updated application: %v", err)
+			}
+			if updated.Warnings != tt.wantWarnings {
+				t.Errorf("Warnings = %q, want %q", updated.Warnings, tt.wantWarnings)
+			}
+		})
+	}
 }
