@@ -261,9 +261,9 @@ func TestEventFilter(t *testing.T) {
 		t.Fatal("expected an event without visible topics to be dropped")
 	}
 
-	// Events published without topics are sent as they are.
+	// Nobody may see events published without topics.
 	raw := Event{Type: EventTypeUpdate, URLs: []string{"/x"}}
-	if got, ok := raw.Filter(func(Topic) bool { return false }); !ok || !slices.Equal(got.URLs, raw.URLs) {
-		t.Fatalf("expected raw events to pass, got %v", got.URLs)
+	if got, ok := raw.Filter(func(Topic) bool { return true }); ok {
+		t.Fatalf("expected events without topics to be dropped, got %v", got.URLs)
 	}
 }

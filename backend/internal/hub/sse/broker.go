@@ -28,12 +28,10 @@ func (e Event) Has(topic Topic) bool {
 	return slices.Contains(e.topics, topic)
 }
 
-// Filter keeps the topics the client may see. Events without topics are kept as
-// they are. Returns false when nothing is left to send.
+// Filter keeps the topics the client may see. Events without topics are
+// dropped, since it's unknown who may see them. Returns false when nothing is
+// left to send.
 func (e Event) Filter(visible func(Topic) bool) (Event, bool) {
-	if len(e.topics) == 0 {
-		return e, true
-	}
 	filtered := Event{Type: e.Type}
 	for _, topic := range e.topics {
 		if !visible(topic) {
@@ -101,12 +99,16 @@ func PublishUpdate(topics ...Topic) {
 
 func (b *Broker) PublishUpdate(topics ...Topic) {
 	event := Event{Type: EventTypeUpdate}
-	for i, topic := range topics {
-		if topic.url == "" || slices.Contains(topics[:i], topic) {
+	seenTopics := make(map[Topic]struct{}, len(topics))
+	seenURLs := make(map[string]struct{}, len(topics))
+	for _, topic := range topics {
+		if _, ok := seenTopics[topic]; ok || topic.url == "" {
 			continue
 		}
+		seenTopics[topic] = struct{}{}
 		event.topics = append(event.topics, topic)
-		if !slices.Contains(event.URLs, topic.url) {
+		if _, ok := seenURLs[topic.url]; !ok {
+			seenURLs[topic.url] = struct{}{}
 			event.URLs = append(event.URLs, topic.url)
 		}
 	}

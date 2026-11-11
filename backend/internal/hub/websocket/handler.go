@@ -327,7 +327,6 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if status == nil {
 			continue
 		}
-		topics = append(topics, sse.TopicApplications.For(status.ApplicationId))
 		health := reportedApplicationHealth(status)
 		event, changed, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
@@ -337,6 +336,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 				Msg("failed to update application health from status report")
 			continue
 		}
+		topics = append(topics, sse.TopicApplications.For(status.ApplicationId))
 		if err := recordHealthHistory(ctx, client, status, health, changed); err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).

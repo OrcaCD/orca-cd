@@ -366,10 +366,10 @@ func DeleteNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	pruneGrants(c.Request.Context())
-
 	c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
 	sse.PublishUpdate(sse.TopicNotifications)
+	// After the update, so clients still get it before losing access
+	pruneGrants(c.Request.Context())
 }
 
 func TestNotificationHandler(c *gin.Context) {

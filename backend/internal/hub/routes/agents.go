@@ -380,8 +380,10 @@ func DeleteAgentHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "agent", id)
-	pruneGrants(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
-	sse.PublishUpdate(sse.TopicAgents)
+	// Its applications were deleted with it
+	sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
+	// After the update, so clients still get it before losing access
+	pruneGrants(c.Request.Context())
 }

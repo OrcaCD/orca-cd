@@ -569,8 +569,8 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		if !removedApps {
 			return
 		}
-		pruneGrants(c.Request.Context())
 		sse.PublishUpdate(sse.TopicApplications)
+		pruneGrants(c.Request.Context())
 		for agentID := range agentIDs {
 			sendAgentSettings(c, agentID)
 		}
@@ -601,12 +601,14 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "repository", id)
-	if !removedApps {
-		pruneGrants(c.Request.Context())
-	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 	sse.PublishUpdate(sse.TopicRepositories)
+	// After the update, so clients still get it before losing access. With
+	// removed applications, the deferred function prunes them.
+	if !removedApps {
+		pruneGrants(c.Request.Context())
+	}
 }
 
 type updateRepositoryRequest struct {
