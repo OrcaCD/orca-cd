@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SidebarLayout, sidebarMenuButtonClass } from "@/components/sidebar-layout";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, KeyRound, Logs, ShieldUser, Users } from "lucide-react";
+import { Hourglass, IdCard, Info, KeyRound, Logs, ShieldUser, Users } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { BreadcrumbItem, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -52,6 +52,11 @@ const adminPages = [
 		title: () => m.adminAuditLog(),
 		icon: Logs,
 		path: "/admin/audit-log",
+	},
+	{
+		title: () => m.adminReleaseAge(),
+		icon: Hourglass,
+		path: "/admin/release-age",
 	},
 ];
 
