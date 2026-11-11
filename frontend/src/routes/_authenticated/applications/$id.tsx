@@ -28,7 +28,16 @@ import type { Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { isApple } from "@/lib/utils";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Activity, History, Info, Settings, ImageDown, Braces, RotateCcw } from "lucide-react";
+import {
+	Activity,
+	History,
+	Info,
+	Settings,
+	ImageDown,
+	Braces,
+	RotateCcw,
+	PackageSearch,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
@@ -61,6 +70,11 @@ const sidebarGroups: SidebarGroup[] = [
 				title: () => m.applicationHistory(),
 				icon: History,
 				to: "/applications/$id/history",
+			},
+			{
+				title: () => m.upcomingUpdatesTitle(),
+				icon: PackageSearch,
+				to: "/applications/$id/image-updates",
 			},
 		],
 	},

@@ -36,6 +36,17 @@ export interface Application {
 	rolledBackReason: string | null;
 	autoSyncPaused: boolean;
 	rollback: RollbackSettings;
+	releaseAge: ReleaseAgeSettings;
+}
+
+export interface ReleaseAgeSettings {
+	// minimumSeconds is how long ago an image has to be pushed before it is updated to.
+	// 0 disables it, null uses the global default.
+	minimumSeconds: number | null;
+	// allowedRegistries skip the check, in addition to the global ones.
+	allowedRegistries: string[];
+	// serviceOverrides overrides minimumSeconds per compose service.
+	serviceOverrides: Record<string, number>;
 }
 
 export interface RollbackSettings {
@@ -184,4 +195,24 @@ export function resumeApplicationAutoSync(id: string): Promise<DeployApplication
 
 export function updateRollbackSettings(id: string, data: RollbackSettings): Promise<Application> {
 	return fetcher<Application>(`/applications/${id}/rollback`, "PUT", data);
+}
+
+export function updateReleaseAgeSettings(
+	id: string,
+	data: Omit<ReleaseAgeSettings, "serviceOverrides">,
+): Promise<Application> {
+	return fetcher<Application>(`/applications/${id}/release-age`, "PUT", data);
+}
+
+// updateServiceReleaseAge overrides the minimum release age of one compose service, null removes the override.
+export function updateServiceReleaseAge(
+	id: string,
+	service: string,
+	minimumSeconds: number | null,
+): Promise<Application> {
+	return fetcher<Application>(
+		`/applications/${id}/release-age/services/${encodeURIComponent(service)}`,
+		"PUT",
+		{ minimumSeconds },
+	);
 }

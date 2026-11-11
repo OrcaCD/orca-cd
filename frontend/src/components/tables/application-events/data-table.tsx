@@ -7,7 +7,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { ApplicationEvent } from "@/lib/application-events";
+import { type ApplicationEvent, ApplicationEventStatus } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
 
 import { type ColumnDef, useTable } from "@tanstack/react-table";
@@ -60,8 +60,18 @@ export function ApplicationEventsDataTable({
 								{row.getIsExpanded() && (
 									<TableRow>
 										<TableCell colSpan={row.getVisibleCells().length} className="px-4 py-3">
-											<Alert variant="destructive">
-												<AlertTitle>{m.applicationHistoryErrorDetails()}</AlertTitle>
+											<Alert
+												variant={
+													row.original.status === ApplicationEventStatus.HeldBack
+														? "default"
+														: "destructive"
+												}
+											>
+												<AlertTitle>
+													{row.original.status === ApplicationEventStatus.HeldBack
+														? m.applicationHistoryHeldBackDetails()
+														: m.applicationHistoryErrorDetails()}
+												</AlertTitle>
 												<AlertDescription className="font-mono text-xs whitespace-pre-wrap break-all">
 													{row.original.errorMessage}
 												</AlertDescription>

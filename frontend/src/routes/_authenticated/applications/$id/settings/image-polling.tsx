@@ -22,6 +22,7 @@ import { useFetch } from "@/lib/api";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import CopyValueDialog from "@/components/dialogs/copy-value-dialog";
 import CopyButton from "@/components/copy-btn";
+import { ReleaseAgeSettings } from "@/components/release-age/release-age-settings";
 
 const webhookDocsUrl = "https://orcacd.dev/docs/configuration/webhooks";
 
@@ -213,6 +214,12 @@ function ImagePollingPage() {
 					</form>
 				</CardContent>
 			</Card>
+
+			<ReleaseAgeSettings
+				key={application?.id}
+				application={application}
+				onUpdated={(updated) => mutateApplication(updated, { revalidate: false })}
+			/>
 
 			<Card>
 				<CardHeader>
