@@ -6,6 +6,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
 	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/google/uuid"
@@ -44,6 +45,10 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 		failImagePullEvent(ctx, requestID, app.Id, "hub not initialized")
 		return false
 	}
+	global, err := releaseage.Global(ctx)
+	if err != nil {
+		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load the global release age settings")
+	}
 	sent := hubws.DefaultHub.Send(app.AgentId, &messages.ServerMessage{
 		Payload: &messages.ServerMessage_PullImagesRequest{
 			PullImagesRequest: &messages.PullImagesRequest{
@@ -52,6 +57,8 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 				ApplicationName: app.Name.String(),
 				DeleteOldImages: app.DeleteOldImages,
 				ImageRetention:  imageRetention(ctx, app),
+				ReleaseAge:      releaseage.Policy(app, global),
+				WebhookImages:   origin.WebhookImages,
 			},
 		},
 	})
