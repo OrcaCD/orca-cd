@@ -1,5 +1,6 @@
 // oxlint-disable react/no-children-prop
 import { Pencil, Plus, ShieldCheck, Users } from "lucide-react";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { Button } from "@/components/ui/button";
 import {
 	ResponsiveDialog,
@@ -137,8 +138,11 @@ function UserForm(props: {
 	onClose: () => void;
 	onPasswordGenerated: (password: string) => void;
 }) {
-	const { data: roles } = useFetch<Role[]>("/admin/roles");
+	const { data: roles, error } = useFetch<Role[]>("/admin/roles");
 
+	if (error) {
+		return <ErrorAlert title={m.rolesLoadFailed()} description={(error as Error).message} />;
+	}
 	// The default role of new users is only known once the roles are loaded
 	if (!roles) {
 		return (
@@ -170,13 +174,14 @@ function UserFormFields({
 	const oidcRoleIds = new Set(
 		user?.roles.filter((role) => role.sources.includes("oidc")).map((role) => role.id) ?? [],
 	);
+	const initialRoleIds = manualRoleIds(user, roles);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const form = useForm({
 		defaultValues: {
 			name: user?.name ?? "",
 			email: user?.email ?? "",
-			roleIds: manualRoleIds(user, roles),
+			roleIds: initialRoleIds,
 			resetPassword: false,
 		},
 		validators: {
@@ -282,16 +287,18 @@ function UserFormFields({
 							<Label>{m.roles()}</Label>
 							<FieldDescription>{m.userRolesDescription()}</FieldDescription>
 							<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
-								{roles?.map((role) => {
+								{roles.map((role) => {
 									const fromOIDC = oidcRoleIds.has(role.id);
-									const checked = fromOIDC || field.state.value.includes(role.id);
+									// A role that was also assigned by hand can still be unassigned
+									const locked = fromOIDC && !initialRoleIds.includes(role.id);
+									const checked = locked || field.state.value.includes(role.id);
 									return (
 										<FieldLabel key={role.id} htmlFor={`user-role-${role.id}`}>
-											<Field orientation="horizontal" data-disabled={fromOIDC || undefined}>
+											<Field orientation="horizontal" data-disabled={locked || undefined}>
 												<Checkbox
 													id={`user-role-${role.id}`}
 													checked={checked}
-													disabled={fromOIDC}
+													disabled={locked}
 													onCheckedChange={(next) =>
 														field.handleChange(
 															next

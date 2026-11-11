@@ -46,8 +46,9 @@ type adminCreateUserRequest struct {
 type adminUpdateUserRequest struct {
 	// Name and email are validated by adminUserProfile, unless the profile is
 	// managed by an OIDC provider.
-	Name          string   `json:"name"`
-	Email         string   `json:"email"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	// Without roleIds, the roles are left unchanged
 	RoleIds       []string `json:"roleIds" binding:"max=100"`
 	ResetPassword bool     `json:"resetPassword"`
 }
@@ -284,10 +285,24 @@ func AdminUpdateUserHandler(c *gin.Context) {
 
 	rolesChanged := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := checkRolesExist(ctx, tx, roleIds); err != nil {
-			return err
+		if user.PasswordHash != nil {
+			user.UpdatedAt = time.Now()
+			// Only the columns this handler changes, so a concurrent change of
+			// other columns is not overwritten and a deleted user is not recreated.
+			rows, err := gorm.G[models.User](tx).Where("id = ?", user.Id).
+				Select("name", "email", "email_unconfirmed", "password_hash", "password_change_required", "token_version", "updated_at").
+				Updates(ctx, user)
+			if err != nil {
+				return err
+			}
+			if rows == 0 {
+				return gorm.ErrRecordNotFound
+			}
 		}
-		if err := tx.Save(&user).Error; err != nil {
+		if req.RoleIds == nil {
+			return nil
+		}
+		if err := checkRolesExist(ctx, tx, roleIds); err != nil {
 			return err
 		}
 		return keepLastAdmin(ctx, tx, func() error {
@@ -297,6 +312,10 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		})
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
 		if errors.Is(err, errLastAdmin) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin user"})
 			return
@@ -359,7 +378,7 @@ func AdminDeleteUserHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
-	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles)
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
 }
 
 var errLastAdmin = errors.New("at least one admin user is required")

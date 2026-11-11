@@ -954,5 +954,6 @@
 	"roleUserDescription": "Given to new users. Starts with full access to all resources.",
 	"roleFromOidcGroup": "Assigned by an OIDC group",
 	"oidcGroup": "OIDC group",
-	"userRolesDescription": "The user can do everything any of their roles allows."
+	"userRolesDescription": "The user can do everything any of their roles allows.",
+	"rolesLoadFailed": "Failed to load roles"
 }

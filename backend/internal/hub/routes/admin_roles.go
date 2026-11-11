@@ -108,7 +108,7 @@ func AdminCreateRoleHandler(c *gin.Context) {
 	}
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := checkRoleReferences(ctx, tx, permissions, req.UserIds); err != nil {
+		if err := checkRoleReferences(ctx, tx, "", permissions, req.UserIds); err != nil {
 			return err
 		}
 		if err := gorm.G[models.Role](tx).Create(ctx, &role); err != nil {
@@ -155,7 +155,7 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 			}
 			return err
 		}
-		if err := checkRoleReferences(ctx, tx, permissions, req.UserIds); err != nil {
+		if err := checkRoleReferences(ctx, tx, id, permissions, req.UserIds); err != nil {
 			return err
 		}
 
@@ -324,13 +324,35 @@ func normalizeRolePermissions(items []rolePermissionRequest) ([]models.RolePermi
 	return permissions, nil
 }
 
-// checkRoleReferences checks that the users and resources a role refers to exist.
-func checkRoleReferences(ctx context.Context, tx *gorm.DB, permissions []models.RolePermission, userIds []string) error {
+// checkRoleReferences checks that the users and resources a role refers to
+// exist. Resources the role already has grants on are not checked, so a role
+// with a grant on a deleted resource can still be saved.
+func checkRoleReferences(ctx context.Context, tx *gorm.DB, roleId string, permissions []models.RolePermission, userIds []string) error {
+	type resourceKey struct {
+		resource models.PermissionResource
+		id       string
+	}
+	known := make(map[resourceKey]struct{})
+	if roleId != "" {
+		current, err := gorm.G[models.RolePermission](tx).Where("role_id = ? AND resource_id IS NOT NULL", roleId).Find(ctx)
+		if err != nil {
+			return err
+		}
+		for i := range current {
+			known[resourceKey{current[i].Resource, *current[i].ResourceId}] = struct{}{}
+		}
+	}
+
 	idsByResource := make(map[models.PermissionResource][]string)
 	for i := range permissions {
-		if id := permissions[i].ResourceId; id != nil {
-			idsByResource[permissions[i].Resource] = append(idsByResource[permissions[i].Resource], *id)
+		id := permissions[i].ResourceId
+		if id == nil {
+			continue
 		}
+		if _, ok := known[resourceKey{permissions[i].Resource, *id}]; ok {
+			continue
+		}
+		idsByResource[permissions[i].Resource] = append(idsByResource[permissions[i].Resource], *id)
 	}
 	for resource, ids := range idsByResource {
 		ids = uniqueIds(ids)

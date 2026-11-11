@@ -954,5 +954,6 @@
 	"roleUserDescription": "Wird neuen Benutzern zugewiesen. Startet mit Vollzugriff auf alle Ressourcen.",
 	"roleFromOidcGroup": "Über eine OIDC-Gruppe zugewiesen",
 	"oidcGroup": "OIDC-Gruppe",
-	"userRolesDescription": "Der Benutzer darf alles, was eine seiner Rollen erlaubt."
+	"userRolesDescription": "Der Benutzer darf alles, was eine seiner Rollen erlaubt.",
+	"rolesLoadFailed": "Rollen konnten nicht geladen werden"
 }

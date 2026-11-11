@@ -564,6 +564,32 @@ func TestAdminUpdateUserHandler_ManagedUserRolesOnly(t *testing.T) {
 	}
 }
 
+func TestAdminUpdateUserHandler_KeepsRolesWithoutRoleIds(t *testing.T) {
+	setupTestDB(t)
+
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	local := createTestUser(t, "Local", "local@example.com", rbac.UserRoleID, "password123")
+
+	reqBody, _ := json.Marshal(map[string]any{"name": "Renamed", "email": "local@example.com"})
+	router := gin.New()
+	router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+local.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body adminUserResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Name != "Renamed" || len(body.Roles) != 1 || body.Roles[0].Id != rbac.UserRoleID {
+		t.Fatalf("expected the name to change and the roles to stay, got %+v", body)
+	}
+}
+
 func TestAdminUpdateUserHandler_ValidatesLocalProfile(t *testing.T) {
 	setupTestDB(t)
 

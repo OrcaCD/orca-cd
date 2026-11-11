@@ -258,3 +258,30 @@ func TestAdminDeleteRoleHandler(t *testing.T) {
 		t.Fatalf("expected permissions to be removed, count=%d err=%v", grants, err)
 	}
 }
+
+func TestAdminUpdateRoleHandler_KeepsGrantsOnDeletedResources(t *testing.T) {
+	setupRolesTestDB(t)
+	agent := createTestAgentRecord(t, "Agent", "key-1", models.AgentStatusOffline, nil)
+	permissions := []map[string]any{{"resource": "agent", "action": "read", "resourceId": agent.Id}}
+
+	w := serveRoleRequest(t, http.MethodPost, "/api/v1/admin/roles", map[string]any{"name": "Viewers", "permissions": permissions})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	role := decodeRole(t, w)
+	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Delete(t.Context()); err != nil {
+		t.Fatalf("failed to delete agent: %v", err)
+	}
+
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+role.Id, map[string]any{"name": "Renamed", "permissions": permissions}); w.Code != http.StatusOK {
+		t.Fatalf("expected a role with a grant on a deleted agent to be saved, got %d: %s", w.Code, w.Body.String())
+	}
+	other := []map[string]any{{"resource": "agent", "action": "update", "resourceId": agent.Id}}
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+role.Id, map[string]any{"name": "Renamed", "permissions": other}); w.Code != http.StatusOK {
+		t.Fatalf("expected another action on a known resource to be accepted, got %d: %s", w.Code, w.Body.String())
+	}
+	missing := []map[string]any{{"resource": "agent", "action": "read", "resourceId": "missing"}}
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+role.Id, map[string]any{"name": "Renamed", "permissions": missing}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected a new grant on a missing agent to fail, got %d: %s", w.Code, w.Body.String())
+	}
+}
