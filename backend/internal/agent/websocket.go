@@ -42,7 +42,7 @@ type envManager interface {
 
 type pollerHandler interface {
 	ApplySettings(apps []docker.AppPollConfig)
-	TriggerNow(appID, appName, requestID string, deleteOld bool)
+	TriggerNow(appID, appName, requestID string, deleteOld bool, policy docker.ReleaseAgePolicy)
 }
 
 type serviceImageReporter interface {
@@ -290,6 +290,7 @@ func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) 
 				Enabled:         s.Enabled,
 				IntervalSeconds: s.IntervalSeconds,
 				DeleteOldImages: s.DeleteOldImages,
+				ReleaseAge:      docker.ReleaseAgePolicyFromProto(s.ReleaseAge, nil),
 			},
 		})
 	}
@@ -317,7 +318,8 @@ func executePullImages(poller pollerHandler, req *messages.PullImagesRequest) {
 	if poller == nil {
 		return
 	}
-	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId, req.DeleteOldImages)
+	poller.TriggerNow(req.ApplicationId, req.ApplicationName, req.RequestId, req.DeleteOldImages,
+		docker.ReleaseAgePolicyFromProto(req.ReleaseAge, req.WebhookImages))
 }
 
 // appExecLocks serializes Deploy/Remove calls per application ID. The hub has
