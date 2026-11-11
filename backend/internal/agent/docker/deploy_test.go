@@ -115,7 +115,7 @@ func TestDeployWithWarningsRejectsInvalidOrUnsupportedComposeFiles(t *testing.T)
 		},
 		{
 			name:        "extends",
-			composeFile: "services:\n  app:\n    image: test:1\n    extends:\n      service: base\n",
+			composeFile: "services:\n  app:\n    image: test:1\n    extends:\n      file: shared/compose.yaml\n      service: base\n",
 			wantError:   `unsupported Compose feature "extends" in service "app"`,
 			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Service: "app", Field: "extends"},
 		},

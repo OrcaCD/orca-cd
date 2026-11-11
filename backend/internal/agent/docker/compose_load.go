@@ -64,17 +64,25 @@ func validateComposeDocument(document map[string]any) error {
 		if !ok {
 			continue
 		}
-		for _, feature := range []string{"extends", "label_file"} {
-			if _, ok := service[feature]; ok {
-				return &unsupportedComposeFeatureError{Feature: feature, Service: name}
-			}
+		if extendsOtherFile(service["extends"]) {
+			return &unsupportedComposeFeatureError{Feature: "extends", Service: name}
+		}
+		if _, ok := service["label_file"]; ok {
+			return &unsupportedComposeFeatureError{Feature: "label_file", Service: name}
 		}
 	}
 	return nil
 }
 
-// composeValidationWarnings turns a validateComposeFeatures error into the
-// warning shown in the hub UI.
+func extendsOtherFile(extends any) bool {
+	options, ok := extends.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = options["file"]
+	return ok
+}
+
 func composeValidationWarnings(err error) []composewarnings.Warning {
 	if unsupported, ok := errors.AsType[*unsupportedComposeFeatureError](err); ok {
 		return []composewarnings.Warning{{
@@ -93,9 +101,7 @@ func composeProjectLoadOptions(projectName, composePath, workingDir string, extr
 		WorkingDir:  workingDir,
 		ProjectOptionsFns: append([]cli.ProjectOptionsFn{
 			cli.WithLoadOptions(func(options *loader.Options) {
-				// Local file references are rejected by validateComposeFeatures.
 				options.SkipInclude = true
-				options.SkipExtends = true
 				options.SkipResolveLabels = true
 			}),
 		}, extraOptions...),
