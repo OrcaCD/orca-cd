@@ -14,7 +14,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
-	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
@@ -109,7 +108,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	}
 	if rolesChanged {
 		utils.RecordAuditLog(c, "roles-synced", "user", user.Id)
-		sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
+		publishRolesChanged([]string{user.Id})
 	}
 
 	token, err := auth.GenerateUserTokenWithPicture(user, oidcUser.Picture)

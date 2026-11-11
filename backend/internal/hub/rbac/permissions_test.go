@@ -495,3 +495,39 @@ func TestSyncOIDCRoles(t *testing.T) {
 		t.Fatalf("expected alice to be synced after mapping changes, got %v (err=%v)", ids, err)
 	}
 }
+
+func TestSyncOIDCRoles_KeepsOneAdminWhenAllLeave(t *testing.T) {
+	tx := openTestDB(t)
+	createOIDCTables(t, tx)
+	mapping := models.RoleOIDCGroup{RoleId: AdminRoleID, ProviderId: "corp", Group: "admins"}
+	if err := gorm.G[models.RoleOIDCGroup](tx).Create(t.Context(), &mapping); err != nil {
+		t.Fatalf("failed to map group: %v", err)
+	}
+	users := []string{"alice", "bob"}
+	setAdmins := func(groups string) {
+		t.Helper()
+		for _, user := range users {
+			if err := tx.Exec(`INSERT INTO user_oidc_identities (id, user_id, provider_id, group_names) VALUES (?, ?, 'corp', ?)
+				ON CONFLICT(id) DO UPDATE SET group_names = excluded.group_names`, user, user, groups).Error; err != nil {
+				t.Fatalf("failed to set groups: %v", err)
+			}
+		}
+	}
+	for _, user := range users {
+		createUser(t, tx, user)
+	}
+
+	setAdmins(`["admins"]`)
+	if changed, err := SyncOIDCRoles(t.Context(), tx, users); err != nil || len(changed) != 2 {
+		t.Fatalf("expected both users to become admins, got %v, %v", changed, err)
+	}
+
+	setAdmins(`[]`)
+	changed, err := SyncOIDCRoles(t.Context(), tx, users)
+	if err != nil || len(changed) != 1 {
+		t.Fatalf("expected one user to lose the admin role, got %v, %v", changed, err)
+	}
+	if admins, err := CountAdmins(t.Context(), tx); err != nil || admins != 1 {
+		t.Fatalf("expected one admin to remain, got %d, %v", admins, err)
+	}
+}

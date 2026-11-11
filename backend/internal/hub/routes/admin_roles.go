@@ -195,7 +195,7 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 			}
 			// Members from groups follow the new groups right away
 			if groupsChanged {
-				if err := syncAllOIDCRoles(ctx, tx); err != nil {
+				if _, err := syncAllOIDCRoles(ctx, tx); err != nil {
 					return err
 				}
 			}
@@ -371,14 +371,25 @@ func replaceRoleOIDCGroups(ctx context.Context, tx *gorm.DB, roleId string, grou
 }
 
 // syncAllOIDCRoles updates the roles every user gets from OIDC groups, after the
-// groups of a role or a provider changed.
-func syncAllOIDCRoles(ctx context.Context, tx *gorm.DB) error {
+// groups of a role or a provider changed. Returns the users whose roles changed.
+func syncAllOIDCRoles(ctx context.Context, tx *gorm.DB) ([]string, error) {
 	userIds, err := rbac.OIDCUserIDs(ctx, tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = rbac.SyncOIDCRoles(ctx, tx, userIds)
-	return err
+	return rbac.SyncOIDCRoles(ctx, tx, userIds)
+}
+
+// publishRolesChanged tells admins and the users whose roles changed.
+func publishRolesChanged(userIds []string) {
+	if len(userIds) == 0 {
+		return
+	}
+	topics := []sse.Topic{sse.TopicAdminUsers, sse.TopicAdminRoles}
+	for _, id := range userIds {
+		topics = append(topics, sse.TopicProfileOf(id))
+	}
+	sse.PublishUpdate(topics...)
 }
 
 func normalizeRolePermissions(items []rolePermissionRequest) ([]models.RolePermission, error) {

@@ -1027,7 +1027,7 @@
 	"loadingRoles": "Rollen werden geladen...",
 	"add": "Hinzufügen",
 	"groupsClaim": "Gruppen-Claim",
-	"groupsClaimDescription": "Setze ihn, um Rollen aus den Gruppen der Benutzer zu übernehmen, z. B. groups oder realm_access.roles bei Keycloak. Benutzer bekommen bei jeder Anmeldung die Rollen ihrer Gruppen bei diesem Anbieter.",
+	"groupsClaimDescription": "Wenn gesetzt, werden Rollen aus den Gruppen der Benutzer übernommen, z. B. groups oder realm_access.roles bei Keycloak. Benutzer bekommen bei jeder Anmeldung die Rollen ihrer Gruppen bei diesem Anbieter. Nach einer Änderung gelten Gruppen erst wieder ab der nächsten Anmeldung.",
 	"oidcErrorRoleSyncFailed": "Deine Rollen konnten nicht aus deinen Gruppen aktualisiert werden. Bitte versuche es erneut.",
 	"roleOidcGroups": "OIDC-Gruppen",
 	"roleOidcGroupsDescription": "Mitglieder dieser Gruppen bekommen die Rolle, wenn sie sich über den Anbieter anmelden, und verlieren sie, wenn sie die Gruppe verlassen. Gruppennamen müssen genau übereinstimmen, auch bei Groß- und Kleinschreibung und einem führenden Schrägstrich.",

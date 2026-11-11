@@ -213,14 +213,23 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		existing.ClientSecret = crypto.EncryptedString(*req.ClientSecret)
 	}
 
+	var rolesChanged []string
 	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&existing).Error; err != nil {
 			return err
 		}
+		// Groups read from another claim no longer apply. Users get the groups
+		// of the new claim on their next login.
+		if previousGroupsClaim != existing.GroupsClaim {
+			if _, err := gorm.G[models.UserOIDCIdentity](tx).Where("provider_id = ?", id).
+				Update(c.Request.Context(), "group_names", gorm.Expr("'[]'")); err != nil {
+				return err
+			}
+		}
 		// Roles from the groups of a disabled provider, or one that stopped
 		// syncing them, are removed
 		if wasEnabled != existing.Enabled || previousGroupsClaim != existing.GroupsClaim {
-			if err := syncAllOIDCRoles(c.Request.Context(), tx); err != nil {
+			if rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx); err != nil {
 				return err
 			}
 		}
@@ -238,12 +247,14 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
+	publishRolesChanged(rolesChanged)
 }
 
 func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 	id := c.Param("id")
 
 	var deleted int
+	var rolesChanged []string
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := revokeOIDCProviderSessions(c.Request.Context(), tx, id); err != nil {
 			return err
@@ -255,7 +266,8 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 		if deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context()); err != nil {
 			return err
 		}
-		return syncAllOIDCRoles(c.Request.Context(), tx)
+		rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx)
+		return err
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -270,6 +282,7 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
+	publishRolesChanged(rolesChanged)
 }
 
 // revokeOIDCProviderSessions signs out every user linked to the provider, so

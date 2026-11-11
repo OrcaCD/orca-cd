@@ -334,4 +334,27 @@ func TestAdminRoles_OIDCGroups(t *testing.T) {
 	if isAdmin, err := userIsAdmin(t, member.Id); err != nil || isAdmin {
 		t.Fatalf("expected the group member to lose admin, err=%v", err)
 	}
+
+	// Groups read from the previous claim stop counting once the claim changes.
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+rbac.AdminRoleID, map[string]any{"name": "Admin", "userIds": []string{admin.Id}, "oidcGroups": []map[string]any{group("admins")}}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	claim := "roles"
+	router := gin.New()
+	router.PUT("/api/v1/admin/oidc-providers/:id", AdminUpdateOIDCProviderHandler)
+	body, _ := json.Marshal(updateOIDCProviderRequest{Name: corp.Name, IssuerURL: corp.IssuerURL, ClientId: corp.ClientId, GroupsClaim: &claim}) //nolint:gosec // test data
+	w = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/oidc-providers/"+corp.Id, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if isAdmin, err := userIsAdmin(t, member.Id); err != nil || isAdmin {
+		t.Fatalf("expected the group member to lose admin after the claim changed, err=%v", err)
+	}
+	identity, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", member.Id).First(t.Context())
+	if err != nil || len(identity.Groups) != 0 {
+		t.Fatalf("expected the stored groups to be cleared, got %v, %v", identity.Groups, err)
+	}
 }

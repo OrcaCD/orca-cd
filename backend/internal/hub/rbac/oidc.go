@@ -61,18 +61,31 @@ func SyncOIDCRoles(ctx context.Context, tx *gorm.DB, userIDs []string) ([]string
 	if err != nil {
 		return nil, err
 	}
+	admins, err := CountAdmins(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	adminSources, err := adminSourcesOf(ctx, tx, userIDs, admin.Id)
+	if err != nil {
+		return nil, err
+	}
 
 	var changed []string
 	for _, userID := range userIDs {
 		wanted := roleIDs[userID]
-		if !slices.Contains(wanted, admin.Id) {
-			keep, err := isLastAdminFromOIDC(ctx, tx, userID, admin.Id)
-			if err != nil {
-				return nil, err
+		sources := adminSources[userID]
+		switch {
+		case slices.Contains(wanted, admin.Id):
+			if len(sources) == 0 {
+				admins++
 			}
-			if keep {
+		// Users with only an OIDC admin assignment lose the admin role
+		case slices.Equal(sources, []models.UserRoleSource{models.UserRoleSourceOIDC}):
+			if admins == 1 {
 				oidcLog.Warn().Str("userId", userID).Msg("keeping the admin role of a user who left its OIDC group, since they are the last admin")
 				wanted = append(wanted, admin.Id)
+			} else {
+				admins--
 			}
 		}
 		userChanged, err := SetUserRoles(ctx, tx, userID, models.UserRoleSourceOIDC, wanted)
@@ -86,16 +99,15 @@ func SyncOIDCRoles(ctx context.Context, tx *gorm.DB, userIDs []string) ([]string
 	return changed, nil
 }
 
-// isLastAdminFromOIDC reports whether the user is the only admin and only got
-// the admin role from an OIDC group.
-func isLastAdminFromOIDC(ctx context.Context, tx *gorm.DB, userID, adminID string) (bool, error) {
-	assignments, err := gorm.G[models.UserRole](tx).Where("user_id = ? AND role_id = ?", userID, adminID).Find(ctx)
+// adminSourcesOf returns the sources of the admin role of the users.
+func adminSourcesOf(ctx context.Context, tx *gorm.DB, userIDs []string, adminID string) (map[string][]models.UserRoleSource, error) {
+	assignments, err := gorm.G[models.UserRole](tx).Where("role_id = ? AND user_id IN ?", adminID, userIDs).Find(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if len(assignments) != 1 || assignments[0].Source != models.UserRoleSourceOIDC {
-		return false, nil
+	sources := make(map[string][]models.UserRoleSource, len(assignments))
+	for _, assignment := range assignments {
+		sources[assignment.UserId] = append(sources[assignment.UserId], assignment.Source)
 	}
-	admins, err := CountAdmins(ctx, tx)
-	return admins == 1, err
+	return sources, nil
 }
