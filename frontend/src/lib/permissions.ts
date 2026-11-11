@@ -8,6 +8,10 @@ export interface Permissions {
 	can: (resource: PermissionResource, action: PermissionAction, id?: string) => boolean;
 	// Whether the action is allowed on at least one resource of the type
 	canAny: (resource: PermissionResource, action: PermissionAction) => boolean;
+	// Whether the action is allowed on all applications of a repository or agent,
+	// which the hub checks when syncing or deleting it. Some of them may be hidden
+	// from the user, so only their count is known.
+	canOnApplicationsOf: (action: PermissionAction, appCount?: number) => boolean;
 }
 
 // Mirrors rbac.Permissions in the hub, which enforces them. The UI only uses them
@@ -38,7 +42,10 @@ export function permissionsOf(profile: Profile | null): Permissions {
 		);
 	};
 
-	return { can, canAny };
+	const canOnApplicationsOf: Permissions["canOnApplicationsOf"] = (action, appCount) =>
+		appCount === 0 || can("application", action);
+
+	return { can, canAny, canOnApplicationsOf };
 }
 
 export function usePermissions(): Permissions {

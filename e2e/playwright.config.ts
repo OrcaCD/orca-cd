@@ -94,6 +94,12 @@ export default defineConfig({
 			use: authenticated,
 			dependencies: [separateSharedInfrastructure ? "chromium" : "env"],
 		},
+		{
+			name: "roles",
+			testMatch: /roles\.test\.ts$/,
+			use: authenticated,
+			dependencies: ["users"],
+		},
 	],
 
 	globalTeardown: "./global-teardown.ts",

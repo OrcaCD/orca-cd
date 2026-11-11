@@ -287,10 +287,12 @@ function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
 	const { data } = useFetch<Application>("/applications/" + id);
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 	const canDeploy = can("application", "deploy", id);
 	const canPullImages = can("application", "pull_images", id);
-	const canSyncRepository = !!data && can("repository", "sync", data.repositoryId);
+	// Syncing redeploys every application of the repository
+	const canSyncRepository =
+		!!data && can("repository", "sync", data.repositoryId) && canOnApplicationsOf("deploy");
 
 	const [deploying, setDeploying] = useState(false);
 

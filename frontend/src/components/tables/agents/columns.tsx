@@ -125,9 +125,11 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 ];
 
 function AgentActions({ agent }: { agent: Agent }) {
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 	const canUpdate = can("agent", "update", agent.id);
-	const canDelete = can("agent", "delete", agent.id);
+	// Its applications are deleted with it
+	const canDelete =
+		can("agent", "delete", agent.id) && canOnApplicationsOf("delete", agent.appsCount);
 
 	if (!canUpdate && !canDelete) {
 		return null;

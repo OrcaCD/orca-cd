@@ -64,7 +64,7 @@ function RouteComponent() {
 		openFrom: openAddAgent,
 		dialogProps: addAgentDialog,
 	} = useSharedDialog();
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 	const canCreate = can("agent", "create");
 
 	async function handleDeleteCard(agent: Agent) {
@@ -181,7 +181,9 @@ function RouteComponent() {
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredAgents.map((agent) => {
 								const canUpdate = can("agent", "update", agent.id);
-								const canDelete = can("agent", "delete", agent.id);
+								const canDelete =
+									can("agent", "delete", agent.id) &&
+									canOnApplicationsOf("delete", agent.appsCount);
 								return (
 									<AgentCard
 										key={agent.id}

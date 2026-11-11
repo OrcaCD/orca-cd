@@ -78,7 +78,7 @@ export function RepositoryCard({
 	action?: ReactNode;
 }) {
 	const [triggering, setTriggering] = useState(false);
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 	const failed = repository.syncStatus === "failed";
 
 	const handleSync = async () => {
@@ -134,7 +134,8 @@ export function RepositoryCard({
 				<div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-muted-foreground">
 					{getSyncTypeIcon(repository.syncType, "size-3.5 shrink-0")}
 					<span className="truncate">{getTriggerLabel(repository)}</span>
-					{can("repository", "sync", repository.id) ? (
+					{can("repository", "sync", repository.id) &&
+					canOnApplicationsOf("deploy", repository.appCount) ? (
 						<Button
 							variant="outline"
 							size="xs"

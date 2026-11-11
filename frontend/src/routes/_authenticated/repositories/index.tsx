@@ -63,7 +63,7 @@ function RepositoriesPage() {
 		openFrom: openAddRepository,
 		dialogProps: addRepositoryDialog,
 	} = useSharedDialog();
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 	const canCreate = can("repository", "create");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
@@ -205,15 +205,16 @@ function RepositoriesPage() {
 											<DropdownMenuContent align="end" className="w-fit" keepMounted>
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													{can("repository", "sync", repository.id) && (
-														<>
-															<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
-																<RefreshCw className="h-4 w-4" />
-																{m.sync()}
-															</DropdownMenuItem>
-															<DropdownMenuSeparator />
-														</>
-													)}
+													{can("repository", "sync", repository.id) &&
+														canOnApplicationsOf("deploy", repository.appCount) && (
+															<>
+																<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+																	<RefreshCw className="h-4 w-4" />
+																	{m.sync()}
+																</DropdownMenuItem>
+																<DropdownMenuSeparator />
+															</>
+														)}
 													<DropdownMenuItem
 														render={
 															<Link
@@ -225,25 +226,26 @@ function RepositoriesPage() {
 															</Link>
 														}
 													/>
-													{can("repository", "delete", repository.id) && (
-														<>
-															<DropdownMenuSeparator />
-															<ConfirmationDialog
-																onConfirm={() => handleDeleteRepo(repository)}
-																title={m.deleteRepositoryTitle()}
-																description={m.deleteRepositoryDescription({
-																	name: repository.name,
-																})}
-																triggerText={
-																	<>
-																		<Trash2 className="h-4 w-4" />
-																		{m.delete()}
-																	</>
-																}
-																asDropdownItem
-															/>
-														</>
-													)}
+													{can("repository", "delete", repository.id) &&
+														canOnApplicationsOf("delete", repository.appCount) && (
+															<>
+																<DropdownMenuSeparator />
+																<ConfirmationDialog
+																	onConfirm={() => handleDeleteRepo(repository)}
+																	title={m.deleteRepositoryTitle()}
+																	description={m.deleteRepositoryDescription({
+																		name: repository.name,
+																	})}
+																	triggerText={
+																		<>
+																			<Trash2 className="h-4 w-4" />
+																			{m.delete()}
+																		</>
+																	}
+																	asDropdownItem
+																/>
+															</>
+														)}
 												</DropdownMenuGroup>
 											</DropdownMenuContent>
 										</DropdownMenu>

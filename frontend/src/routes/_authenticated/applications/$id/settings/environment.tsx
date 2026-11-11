@@ -128,7 +128,8 @@ function EnvSkeleton() {
 function EnvironmentPage() {
 	const { id } = Route.useParams();
 	const { can } = usePermissions();
-	const canUpdate = can("application", "update", id);
+	// Saving redeploys the application
+	const canUpdate = can("application", "update", id) && can("application", "deploy", id);
 	// Revalidating while the user edits would only hand out revisions that conflict with the form state
 	const {
 		data,

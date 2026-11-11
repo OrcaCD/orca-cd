@@ -157,9 +157,13 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 ];
 
 function RepositoryActions({ repository }: { repository: Repository }) {
-	const { can } = usePermissions();
-	const canSync = can("repository", "sync", repository.id);
-	const canDelete = can("repository", "delete", repository.id);
+	const { can, canOnApplicationsOf } = usePermissions();
+	// Syncing redeploys its applications, deleting deletes them
+	const canSync =
+		can("repository", "sync", repository.id) && canOnApplicationsOf("deploy", repository.appCount);
+	const canDelete =
+		can("repository", "delete", repository.id) &&
+		canOnApplicationsOf("delete", repository.appCount);
 
 	async function handleDelete() {
 		try {

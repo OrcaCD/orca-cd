@@ -168,13 +168,26 @@ function GeneralSettingsPage() {
 	const branch = useStore(form.store, (state) => state.values.branch);
 	const isPristine = useStore(form.store, (state) => state.isDefaultValue);
 
+	// Without read access to the repository, its branches and files can't be loaded
+	const canReadRepository = !!repositoryId && can("repository", "read", repositoryId);
 	const { data: branches, isLoading: isBranchesLoading } = useFetch<string[]>(
-		repositoryId ? `/repositories/${repositoryId}/branches` : null,
+		canReadRepository ? `/repositories/${repositoryId}/branches` : null,
 	);
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
-		branch && canUpdate ? `/repositories/${repositoryId}/tree?branch=${branch}` : null,
+		branch && canUpdate && canReadRepository
+			? `/repositories/${repositoryId}/tree?branch=${branch}`
+			: null,
 	);
+
+	// The current agent, repository and branch are shown even when the user can't read them
+	const agentOptions = optionsWithCurrent(agents, application?.agentId, application?.agentName);
+	const repositoryOptions = optionsWithCurrent(
+		repos,
+		application?.repositoryId,
+		application?.repositoryName,
+	);
+	const branchOptions = branches ?? (branch ? [branch] : []);
 
 	const fileTree = useMemo(() => {
 		return buildFileTree(fileTreeEntries ?? []);
@@ -267,12 +280,7 @@ function GeneralSettingsPage() {
 													field.handleChange(value ?? "");
 												}}
 												disabled={!canUpdate}
-												items={
-													agents?.map((agent) => ({
-														label: agent.name,
-														value: agent.id,
-													})) ?? []
-												}
+												items={agentOptions}
 											>
 												<SelectTrigger
 													id="agent-select"
@@ -285,9 +293,9 @@ function GeneralSettingsPage() {
 													{isAgentsLoading ? (
 														<div className="p-2">{m.loadingDots()}</div>
 													) : (
-														agents?.map((agent) => (
-															<SelectItem key={agent.id} value={agent.id}>
-																{agent.name}
+														agentOptions.map((option) => (
+															<SelectItem key={option.value} value={option.value}>
+																{option.label}
 															</SelectItem>
 														))
 													)}
@@ -328,12 +336,7 @@ function GeneralSettingsPage() {
 														form.setFieldValue("path", "");
 													}}
 													disabled={!canUpdate}
-													items={
-														repos?.map((repo) => ({
-															label: repo.name,
-															value: repo.id,
-														})) ?? []
-													}
+													items={repositoryOptions}
 												>
 													<SelectTrigger
 														id="repository-select"
@@ -346,9 +349,9 @@ function GeneralSettingsPage() {
 														{isReposLoading ? (
 															<div className="p-2">{m.loadingDots()}</div>
 														) : (
-															repos?.map((repo) => (
-																<SelectItem key={repo.id} value={repo.id}>
-																	{repo.name}
+															repositoryOptions.map((option) => (
+																<SelectItem key={option.value} value={option.value}>
+																	{option.label}
 																</SelectItem>
 															))
 														)}
@@ -374,12 +377,10 @@ function GeneralSettingsPage() {
 														form.setFieldValue("path", "");
 													}}
 													disabled={!canUpdate || !repositoryId || isBranchesLoading}
-													items={
-														branches?.map((branch) => ({
-															label: branch,
-															value: branch,
-														})) ?? []
-													}
+													items={branchOptions.map((branch) => ({
+														label: branch,
+														value: branch,
+													}))}
 												>
 													<SelectTrigger
 														id="branch-select"
@@ -396,7 +397,7 @@ function GeneralSettingsPage() {
 														{isBranchesLoading ? (
 															<div className="p-2">{m.loadingBranchesDots()}</div>
 														) : (
-															branches?.map((branch) => (
+															branchOptions.map((branch) => (
 																<SelectItem key={branch} value={branch}>
 																	{branch}
 																</SelectItem>
@@ -565,4 +566,16 @@ function FormSection({
 
 function TreePlaceholder({ children }: { children: React.ReactNode }) {
 	return <div className="p-2 text-sm text-muted-foreground">{children}</div>;
+}
+
+function optionsWithCurrent(
+	items: { id: string; name: string }[] | undefined,
+	currentId: string | undefined,
+	currentName: string | undefined,
+) {
+	const options = items?.map((item) => ({ label: item.name, value: item.id })) ?? [];
+	if (currentId && currentName && !options.some((option) => option.value === currentId)) {
+		options.push({ label: currentName, value: currentId });
+	}
+	return options;
 }

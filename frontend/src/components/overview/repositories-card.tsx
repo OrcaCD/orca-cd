@@ -97,7 +97,7 @@ export function RepositoriesCard() {
 
 function RepositoryRow({ repo }: { repo: Repository }) {
 	const [syncing, setSyncing] = useState(false);
-	const { can } = usePermissions();
+	const { can, canOnApplicationsOf } = usePermissions();
 
 	const handleSync = async () => {
 		setSyncing(true);
@@ -149,7 +149,9 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 					{detail}
 				</ItemDescription>
 			</ItemContent>
-			{repo.syncStatus !== "syncing" && can("repository", "sync", repo.id) ? (
+			{repo.syncStatus !== "syncing" &&
+			can("repository", "sync", repo.id) &&
+			canOnApplicationsOf("deploy", repo.appCount) ? (
 				<ItemActions>
 					<Button
 						variant="ghost"
