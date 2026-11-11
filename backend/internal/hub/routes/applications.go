@@ -292,9 +292,6 @@ func UpdateApplicationHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
 		return
 	}
-	if !canUseApplicationSources(c, req.RepositoryId, req.AgentId) {
-		return
-	}
 
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
@@ -303,6 +300,19 @@ func UpdateApplicationHandler(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	// Only a new source needs read access, so the settings of an application
+	// can be changed without access to its repository and agent.
+	repositoryId, agentId := req.RepositoryId, req.AgentId
+	if repositoryId == application.RepositoryId && req.Branch == application.Branch && req.Path == application.Path {
+		repositoryId = ""
+	}
+	if agentId == application.AgentId {
+		agentId = ""
+	}
+	if !canUseApplicationSources(c, repositoryId, agentId) {
 		return
 	}
 
@@ -414,16 +424,17 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 // canUseApplicationSources checks that the user can read the repository and the
 // agent an application is deployed from, since it exposes their files and names.
+// An empty ID is not checked.
 func canUseApplicationSources(c *gin.Context, repositoryId, agentId string) bool {
 	perms, ok := currentPermissions(c)
 	if !ok {
 		return false
 	}
-	if !perms.Can(models.ResourceRepository, models.ActionRead, repositoryId) {
+	if repositoryId != "" && !perms.Can(models.ResourceRepository, models.ActionRead, repositoryId) {
 		respondForbidden(c, "insufficient permissions for the repository")
 		return false
 	}
-	if !perms.Can(models.ResourceAgent, models.ActionRead, agentId) {
+	if agentId != "" && !perms.Can(models.ResourceAgent, models.ActionRead, agentId) {
 		respondForbidden(c, "insufficient permissions for the agent")
 		return false
 	}

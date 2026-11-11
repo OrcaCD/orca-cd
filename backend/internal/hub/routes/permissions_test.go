@@ -287,3 +287,65 @@ func TestNotificationTargets_RequireReadAccess(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateApplicationHandler_OnlyChangedSourcesNeedRead(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-update")
+	agent := seedTestAgent(t, "agent-update")
+	other := seedTestAgent(t, "agent-other")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Scoped")
+	update := grantOn(models.ResourceApplication, models.ActionUpdate, app.Id)
+
+	body := func(agentId, path string) map[string]any {
+		return map[string]any{"name": "Renamed", "repositoryId": repo.Id, "agentId": agentId, "branch": "main", "path": path}
+	}
+	tests := []struct {
+		name      string
+		body      map[string]any
+		want      string
+		forbidden bool
+	}{
+		{"same sources", body(agent.Id, app.Path), "", false},
+		{"other agent", body(other.Id, app.Path), "insufficient permissions for the agent", true},
+		{"other path", body(agent.Id, "other.yml"), "insufficient permissions for the repository", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := makePermissionContext(t, http.MethodPut, "/api/v1/applications/"+app.Id, tt.body, update)
+			c.Params = gin.Params{{Key: "id", Value: app.Id}}
+			UpdateApplicationHandler(c)
+
+			// Without a reachable repository the update fails later, but not on permissions
+			if tt.forbidden != (w.Code == http.StatusForbidden) || !bytes.Contains(w.Body.Bytes(), []byte(tt.want)) {
+				t.Fatalf("expected forbidden=%v %q, got %d: %s", tt.forbidden, tt.want, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestSyncRepositoryHandler_RequiresDeployOnItsApplications(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-sync")
+	agent := seedTestAgent(t, "agent-sync")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Synced")
+	sync := grantOn(models.ResourceRepository, models.ActionSync, repo.Id)
+
+	for _, tt := range []struct {
+		name      string
+		grants    []models.RolePermission
+		forbidden bool
+	}{
+		{"without deploy", []models.RolePermission{sync}, true},
+		{"with deploy", []models.RolePermission{sync, grantOn(models.ResourceApplication, models.ActionDeploy, app.Id)}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := makePermissionContext(t, http.MethodPost, "/api/v1/repositories/"+repo.Id+"/sync", nil, tt.grants...)
+			c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+			SyncRepositoryHandler(c)
+
+			if tt.forbidden != (w.Code == http.StatusForbidden) {
+				t.Fatalf("expected forbidden=%v, got %d: %s", tt.forbidden, w.Code, w.Body.String())
+			}
+		})
+	}
+}

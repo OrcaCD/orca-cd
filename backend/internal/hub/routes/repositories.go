@@ -806,6 +806,11 @@ func SyncRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	// A sync redeploys every application of the repository that changed
+	if !canOnApplicationsOf(c, models.ActionDeploy, "repository_id", repo.Id, "insufficient permissions to deploy its applications") {
+		return
+	}
+
 	if applications.DefaultPoller == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "application poller not initialized"})
 		return

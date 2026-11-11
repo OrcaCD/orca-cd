@@ -77,7 +77,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.GET("/applications/:id/events", app(models.ActionRead), routes.ListApplicationEventsHandler)
 			protected.GET("/applications/:id/health", app(models.ActionRead), routes.GetApplicationHealthHandler)
 			protected.GET("/applications/:id/env", app(models.ActionRead), routes.ListApplicationEnvHandler)
-			protected.PUT("/applications/:id/env", app(models.ActionUpdate), routes.UpdateApplicationEnvHandler)
+			// Saving the env redeploys the application
+			protected.PUT("/applications/:id/env", app(models.ActionUpdate), app(models.ActionDeploy), routes.UpdateApplicationEnvHandler)
 			protected.POST("/env/parse", routes.ParseEnvHandler)
 			protected.POST("/applications", app(models.ActionCreate), routes.CreateApplicationHandler)
 			protected.POST("/applications/:id/deploy", app(models.ActionDeploy), routes.DeployApplicationHandler)
@@ -87,7 +88,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.PUT("/applications/:id/rollback", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
 			protected.PUT("/applications/:id", app(models.ActionUpdate), routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", app(models.ActionDelete), routes.DeleteApplicationHandler)
-			protected.POST("/applications/:id/image-webhook", app(models.ActionUpdate), routes.GenerateImagePullWebhookHandler)
+			// Anyone with the webhook URL can pull the images of the application
+			protected.POST("/applications/:id/image-webhook", app(models.ActionUpdate), app(models.ActionPullImages), routes.GenerateImagePullWebhookHandler)
 			protected.DELETE("/applications/:id/image-webhook", app(models.ActionUpdate), routes.RevokeImagePullWebhookHandler)
 
 			repo := func(action models.PermissionAction) gin.HandlerFunc {

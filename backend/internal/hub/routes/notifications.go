@@ -319,6 +319,10 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled is required"})
 		return
 	}
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
 
 	ctx := c.Request.Context()
 	rowsAffected, err := gorm.G[models.Notification](db.DB).
@@ -343,10 +347,6 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 		return
 	}
 
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
-	}
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
 	sse.PublishUpdate(sse.TopicNotifications)
 }

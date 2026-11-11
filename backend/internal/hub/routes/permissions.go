@@ -34,11 +34,17 @@ func currentPermissions(c *gin.Context) (*rbac.Permissions, bool) {
 // canDeleteApplicationsOf checks that the user may delete every application
 // that is deleted together with its repository or agent.
 func canDeleteApplicationsOf(c *gin.Context, column, id string) bool {
+	return canOnApplicationsOf(c, models.ActionDelete, column, id, "insufficient permissions to delete its applications")
+}
+
+// canOnApplicationsOf checks that the action is allowed on every application
+// of a repository or agent, including the ones the user can't see.
+func canOnApplicationsOf(c *gin.Context, action models.PermissionAction, column, id, message string) bool {
 	perms, ok := currentPermissions(c)
 	if !ok {
 		return false
 	}
-	if perms.CanAll(models.ResourceApplication, models.ActionDelete) {
+	if perms.CanAll(models.ResourceApplication, action) {
 		return true
 	}
 
@@ -48,8 +54,8 @@ func canDeleteApplicationsOf(c *gin.Context, column, id string) bool {
 		return false
 	}
 	for i := range apps {
-		if !perms.Can(models.ResourceApplication, models.ActionDelete, apps[i].Id) {
-			respondForbidden(c, "insufficient permissions to delete its applications")
+		if !perms.Can(models.ResourceApplication, action, apps[i].Id) {
+			respondForbidden(c, message)
 			return false
 		}
 	}
