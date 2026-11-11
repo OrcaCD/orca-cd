@@ -297,6 +297,8 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
+	case *messages.ClientMessage_ImageUpdatesReport:
+		handleImageUpdatesReport(ctx, client, p.ImageUpdatesReport, log)
 	case *messages.ClientMessage_ApplicationStatusReport:
 		handleApplicationStatusReport(ctx, client, p.ApplicationStatusReport, log)
 	case *messages.ClientMessage_AgentInfo:

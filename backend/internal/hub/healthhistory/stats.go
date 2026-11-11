@@ -365,10 +365,10 @@ func attachTriggers(ctx context.Context, applicationID string, incidents []Incid
 	}
 
 	events, err := gorm.G[models.ApplicationEvent](db.DB).
-		Where("application_id = ? AND type IN ? AND status <> ? AND created_at >= ?",
+		Where("application_id = ? AND type IN ? AND status NOT IN ? AND created_at >= ?",
 			applicationID,
 			[]models.ApplicationEventType{models.ApplicationEventDeployment, models.ApplicationEventImageUpdate, models.ApplicationEventRollback},
-			models.ApplicationEventNoChange,
+			[]models.ApplicationEventStatus{models.ApplicationEventNoChange, models.ApplicationEventHeldBack},
 			earliest.Add(-eventQueryMargin),
 		).
 		Order("created_at DESC, id DESC").

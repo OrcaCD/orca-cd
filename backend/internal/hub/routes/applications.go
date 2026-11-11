@@ -116,6 +116,7 @@ type applicationResponse struct {
 	RolledBackReason         *string                  `json:"rolledBackReason"`
 	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
 	Rollback                 rollbackSettingsResponse `json:"rollback"`
+	ReleaseAge               releaseAgeSettings       `json:"releaseAge"`
 	ImageWebhookEnabled      bool                     `json:"imageWebhookEnabled"`
 	ImageWebhookUrl          *string                  `json:"imageWebhookUrl,omitempty"`
 }
@@ -366,7 +367,8 @@ func UpdateApplicationHandler(c *gin.Context) {
 		Select("*").
 		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
 			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
-			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
+			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync",
+			"MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries", "ReleaseAgeServiceOverrides").
 		Updates(c.Request.Context(), application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
@@ -632,6 +634,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 			HealthTimeoutSeconds: app.RollbackHealthTimeoutSeconds,
 			PauseAutoSync:        app.RollbackPauseAutoSync,
 		},
+		ReleaseAge:          toReleaseAgeSettings(app),
 		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
 	}
 	if app.ImageWebhookSecret != nil {

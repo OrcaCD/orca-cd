@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
@@ -93,7 +94,8 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	sse.PublishUpdate(sse.TopicApplications)
 
 	if r.Success {
-		if gate == 0 {
+		heldBack := !r.ImagesUpdated && len(r.HeldBackImages) > 0
+		if gate == 0 && !heldBack {
 			go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
 		}
 		return
@@ -159,14 +161,21 @@ func isRepeatedPeriodicFailure(ctx context.Context, r *messages.PullImagesResult
 // ID of the event, if one was recorded.
 func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, gated bool, log *zerolog.Logger) string {
 	status := models.ApplicationEventFailed
-	if r.Success && r.ImagesUpdated {
+	switch {
+	case r.Success && r.ImagesUpdated:
 		status = models.ApplicationEventSucceeded
-	} else if r.Success {
+	case r.Success && len(r.HeldBackImages) > 0:
+		status = models.ApplicationEventHeldBack
+	case r.Success:
 		status = models.ApplicationEventNoChange
 	}
 	var errMsg *string
 	if !r.Success && r.ErrorMessage != "" {
 		errMsg = &r.ErrorMessage
+	}
+	if status == models.ApplicationEventHeldBack {
+		msg := heldBackMessage(r.HeldBackImages)
+		errMsg = &msg
 	}
 	if gated {
 		return startGatedImageUpdateEvent(ctx, r, log)
@@ -180,7 +189,7 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, g
 	if matched {
 		return r.RequestId
 	}
-	if r.Success && !r.ImagesUpdated {
+	if status == models.ApplicationEventNoChange {
 		return ""
 	}
 
@@ -203,4 +212,14 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, g
 		return ""
 	}
 	return requestID
+}
+
+// heldBackMessage explains in the history why image updates were held back.
+func heldBackMessage(images []*messages.HeldBackImage) string {
+	var msg strings.Builder
+	msg.WriteString("Held back by the minimum release age:")
+	for _, image := range images {
+		msg.WriteString("\n" + image.Image + ": " + image.Reason)
+	}
+	return msg.String()
 }

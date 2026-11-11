@@ -22,6 +22,8 @@ type SyncOrigin struct {
 	Source      models.ApplicationEventSource
 	ActorUserID *string
 	ActorName   *string
+	// WebhookImages are the images an image pull webhook announced.
+	WebhookImages []string
 }
 
 type syncJob struct {

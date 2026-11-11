@@ -79,6 +79,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/applications/:id/deployments/:deploymentId/rollback", routes.RollbackApplicationHandler)
 			protected.POST("/applications/:id/resume-auto-sync", routes.ResumeApplicationAutoSyncHandler)
 			protected.PUT("/applications/:id/rollback", routes.UpdateRollbackSettingsHandler)
+			protected.PUT("/applications/:id/release-age", routes.UpdateReleaseAgeSettingsHandler)
+			protected.PUT("/applications/:id/release-age/services/:service", routes.UpdateServiceReleaseAgeHandler)
+			protected.GET("/applications/:id/image-updates", routes.ListApplicationImageUpdatesHandler)
+			protected.GET("/settings/release-age", routes.GetReleaseAgeSettingsHandler)
 			protected.PUT("/applications/:id", routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", routes.DeleteApplicationHandler)
 			protected.POST("/applications/:id/image-webhook", routes.GenerateImagePullWebhookHandler)
@@ -119,6 +123,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		admin := api.Group("/admin", middleware.RequireAuth(), middleware.RequireAdmin())
 		{
 			admin.GET("/system-info", routes.AdminSystemInfoHandler)
+			admin.PUT("/settings/release-age", routes.AdminUpdateReleaseAgeSettingsHandler)
 
 			admin.GET("/audit-logs", routes.AdminListAuditLogsHandler)
 

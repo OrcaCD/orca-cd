@@ -45,7 +45,8 @@ func RecordCompleted(
 func isCompletedStatus(status models.ApplicationEventStatus) bool {
 	return status == models.ApplicationEventSucceeded ||
 		status == models.ApplicationEventFailed ||
-		status == models.ApplicationEventNoChange
+		status == models.ApplicationEventNoChange ||
+		status == models.ApplicationEventHeldBack
 }
 
 func create(
@@ -84,9 +85,9 @@ func create(
 		return nil, err
 	}
 
-	// The activity endpoint never includes no_change events, so recording one
-	// does not change it.
-	publishUpdate(p.ApplicationID, status != models.ApplicationEventNoChange)
+	// The activity endpoint never includes events that changed nothing, so
+	// recording one does not change it.
+	publishUpdate(p.ApplicationID, status != models.ApplicationEventNoChange && status != models.ApplicationEventHeldBack)
 	return &event, nil
 }
 

@@ -78,10 +78,20 @@ type Application struct {
 	RollbackOnDeployFailure bool `gorm:"not null;default:true"`
 	// RollbackOnUnhealthy rolls back deployments that become unhealthy, or
 	// don't become healthy, within RollbackHealthTimeoutSeconds.
-	RollbackOnUnhealthy          bool           `gorm:"not null;default:true"`
-	RollbackHealthTimeoutSeconds int64          `gorm:"not null;default:300"`
-	RollbackPauseAutoSync        bool           `gorm:"not null;default:true"`
-	Notifications                []Notification `gorm:"many2many:application_notifications;"`
+	RollbackOnUnhealthy          bool  `gorm:"not null;default:true"`
+	RollbackHealthTimeoutSeconds int64 `gorm:"not null;default:300"`
+	RollbackPauseAutoSync        bool  `gorm:"not null;default:true"`
+	// MinimumReleaseAgeSeconds holds back image updates until the new image was
+	// pushed to its registry at least this long ago. 0 disables it, nil uses
+	// the global default.
+	MinimumReleaseAgeSeconds *int64 `gorm:"type:integer"`
+	// ReleaseAgeAllowedRegistries skip the release age check, in addition to
+	// the global ones.
+	ReleaseAgeAllowedRegistries []string `gorm:"serializer:json;type:text;not null;default:'[]'"`
+	// ReleaseAgeServiceOverrides overrides the minimum release age in seconds
+	// per compose service.
+	ReleaseAgeServiceOverrides map[string]int64 `gorm:"serializer:json;type:text;not null;default:'{}'"`
+	Notifications              []Notification   `gorm:"many2many:application_notifications;"`
 }
 
 // HealthGate returns how long a new deployment is watched before it counts as

@@ -44,6 +44,8 @@ const (
 	ApplicationEventSucceeded ApplicationEventStatus = "succeeded"
 	ApplicationEventFailed    ApplicationEventStatus = "failed"
 	ApplicationEventNoChange  ApplicationEventStatus = "no_change"
+	// ApplicationEventHeldBack is an image update the release age policy held back.
+	ApplicationEventHeldBack ApplicationEventStatus = "held_back"
 )
 
 type ApplicationEvent struct {
