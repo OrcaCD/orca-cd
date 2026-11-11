@@ -260,8 +260,8 @@ func TestNotificationTargets_RequireReadAccess(t *testing.T) {
 		}
 	})
 
-	t.Run("update keeps hidden applications", func(t *testing.T) {
-		notification := createNotificationRecord(t, []string{visible.Id, hidden.Id})
+	t.Run("update a notification about visible applications", func(t *testing.T) {
+		notification := createNotificationRecord(t, []string{visible.Id})
 
 		c, w := makePermissionContext(t, http.MethodPut, "/api/v1/notifications/"+notification.Id, newBody(map[string]any{"applicationIds": []string{}}), grants...)
 		c.Params = gin.Params{{Key: "id", Value: notification.Id}}
@@ -269,21 +269,31 @@ func TestNotificationTargets_RequireReadAccess(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 		}
+	})
 
-		var body notificationResponse
-		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-			t.Fatalf("invalid JSON: %v", err)
+	t.Run("change a notification about a hidden application", func(t *testing.T) {
+		notification := createNotificationRecord(t, []string{visible.Id, hidden.Id})
+
+		c, w := makePermissionContext(t, http.MethodPut, "/api/v1/notifications/"+notification.Id, newBody(map[string]any{"applicationIds": []string{visible.Id}}), grants...)
+		c.Params = gin.Params{{Key: "id", Value: notification.Id}}
+		UpdateNotificationHandler(c)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 on update, got %d: %s", w.Code, w.Body.String())
 		}
-		if len(body.ApplicationIds) != 0 {
-			t.Fatalf("expected the hidden application to be left out of the response, got %v", body.ApplicationIds)
+
+		c, w = makePermissionContext(t, http.MethodPut, "/api/v1/notifications/"+notification.Id+"/enabled", map[string]any{"enabled": false}, grants...)
+		c.Params = gin.Params{{Key: "id", Value: notification.Id}}
+		SetNotificationEnabledHandler(c)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 on enable, got %d: %s", w.Code, w.Body.String())
 		}
 
 		stored, err := getNotificationById(t.Context(), notification.Id)
 		if err != nil {
 			t.Fatalf("failed to load notification: %v", err)
 		}
-		if ids := sortedIds(stored.Applications, applicationIdOf); !slices.Equal(ids, []string{hidden.Id}) {
-			t.Fatalf("expected only the hidden application to stay subscribed, got %v", ids)
+		if ids := sortedIds(stored.Applications, applicationIdOf); len(ids) != 2 || !stored.Enabled {
+			t.Fatalf("expected the notification to be unchanged, got %v enabled=%v", ids, stored.Enabled)
 		}
 	})
 }
@@ -295,23 +305,31 @@ func TestUpdateApplicationHandler_OnlyChangedSourcesNeedRead(t *testing.T) {
 	other := seedTestAgent(t, "agent-other")
 	app := seedTestApplication(t, repo.Id, agent.Id, "Scoped")
 	update := grantOn(models.ResourceApplication, models.ActionUpdate, app.Id)
+	deploy := grantOn(models.ResourceApplication, models.ActionDeploy, app.Id)
+	readAll := []models.RolePermission{update, grantAll(models.ResourceAgent, models.ActionRead), grantAll(models.ResourceRepository, models.ActionRead)}
 
-	body := func(agentId, path string) map[string]any {
-		return map[string]any{"name": "Renamed", "repositoryId": repo.Id, "agentId": agentId, "branch": "main", "path": path}
+	body := func(name, agentId, path string) map[string]any {
+		return map[string]any{"name": name, "repositoryId": repo.Id, "agentId": agentId, "branch": "main", "path": path}
 	}
 	tests := []struct {
 		name      string
 		body      map[string]any
+		grants    []models.RolePermission
 		want      string
 		forbidden bool
 	}{
-		{"same sources", body(agent.Id, app.Path), "", false},
-		{"other agent", body(other.Id, app.Path), "insufficient permissions for the agent", true},
-		{"other path", body(agent.Id, "other.yml"), "insufficient permissions for the repository", true},
+		{"same sources", body(app.Name.String(), agent.Id, app.Path), []models.RolePermission{update}, "", false},
+		{"other agent", body(app.Name.String(), other.Id, app.Path), []models.RolePermission{update}, "insufficient permissions for the agent", true},
+		{"other path", body(app.Name.String(), agent.Id, "other.yml"), []models.RolePermission{update}, "insufficient permissions for the repository", true},
+		{"other agent without deploy", body(app.Name.String(), other.Id, app.Path), readAll, "insufficient permissions to deploy", true},
+		{"other path without deploy", body(app.Name.String(), agent.Id, "other.yml"), readAll, "insufficient permissions to deploy", true},
+		{"new compose project without deploy", body("Renamed", agent.Id, app.Path), []models.RolePermission{update}, "insufficient permissions to deploy", true},
+		{"new compose project with deploy", body("Renamed", agent.Id, app.Path), []models.RolePermission{update, deploy}, "", false},
+		{"other agent with deploy", body(app.Name.String(), other.Id, app.Path), append(readAll, deploy), "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, w := makePermissionContext(t, http.MethodPut, "/api/v1/applications/"+app.Id, tt.body, update)
+			c, w := makePermissionContext(t, http.MethodPut, "/api/v1/applications/"+app.Id, tt.body, tt.grants...)
 			c.Params = gin.Params{{Key: "id", Value: app.Id}}
 			UpdateApplicationHandler(c)
 

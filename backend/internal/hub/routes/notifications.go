@@ -158,18 +158,17 @@ func CreateNotificationHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	applicationIds, agentIds, repositoryIds, ok := authorizeNotificationTargets(c, perms, nil, notificationScope{
+	if !authorizeNotificationTargets(c, perms, notificationScope{
 		allApplications: allApplications, allAgents: allAgents, allRepositories: allRepositories,
 		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
-	})
-	if !ok {
+	}) {
 		return
 	}
 
 	targets, ok := loadNotificationTargets(c,
-		scopedNotificationResourceIds(allApplications, applicationIds),
-		scopedNotificationResourceIds(allAgents, agentIds),
-		scopedNotificationResourceIds(allRepositories, repositoryIds),
+		scopedNotificationResourceIds(allApplications, req.ApplicationIds),
+		scopedNotificationResourceIds(allAgents, req.AgentIds),
+		scopedNotificationResourceIds(allRepositories, req.RepositoryIds),
 	)
 	if !ok {
 		return
@@ -248,18 +247,17 @@ func UpdateNotificationHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	applicationIds, agentIds, repositoryIds, ok := authorizeNotificationTargets(c, perms, &notification, notificationScope{
+	if !canChangeNotification(c, perms, &notification) || !authorizeNotificationTargets(c, perms, notificationScope{
 		allApplications: *req.AllApplications, allAgents: *req.AllAgents, allRepositories: *req.AllRepositories,
 		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
-	})
-	if !ok {
+	}) {
 		return
 	}
 
 	targets, ok := loadNotificationTargets(c,
-		scopedNotificationResourceIds(*req.AllApplications, applicationIds),
-		scopedNotificationResourceIds(*req.AllAgents, agentIds),
-		scopedNotificationResourceIds(*req.AllRepositories, repositoryIds),
+		scopedNotificationResourceIds(*req.AllApplications, req.ApplicationIds),
+		scopedNotificationResourceIds(*req.AllAgents, req.AgentIds),
+		scopedNotificationResourceIds(*req.AllRepositories, req.RepositoryIds),
 	)
 	if !ok {
 		return
@@ -325,6 +323,19 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	notification, err := getNotificationById(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !canChangeNotification(c, perms, &notification) {
+		return
+	}
+
 	rowsAffected, err := gorm.G[models.Notification](db.DB).
 		Where("id = ?", id).
 		Update(ctx, "enabled", *req.Enabled)
@@ -336,16 +347,7 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
 		return
 	}
-
-	notification, err := getNotificationById(ctx, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
+	notification.Enabled = *req.Enabled
 
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
 	sse.PublishUpdate(sse.TopicNotifications)
@@ -677,49 +679,55 @@ type notificationScope struct {
 	applicationIds, agentIds, repositoryIds     []string
 }
 
-// authorizeNotificationTargets makes sure users only subscribe notifications to
-// resources they can read, since the notification tells about them. Targets of an
-// existing notification the user cannot see are kept, as they were not sent back.
-func authorizeNotificationTargets(c *gin.Context, perms *rbac.Permissions, existing *models.Notification, scope notificationScope) ([]string, []string, []string, bool) {
-	var wasAll [3]bool
-	var existingIds [3][]string
-	if existing != nil {
-		wasAll = [3]bool{existing.AllApplications, existing.AllAgents, existing.AllRepositories}
-		existingIds = [3][]string{
-			sortedIds(existing.Applications, applicationIdOf),
-			sortedIds(existing.Agents, agentIdOf),
-			sortedIds(existing.Repositories, repositoryIdOf),
-		}
-	}
-
+// canReadNotificationScope checks that the user can read every resource the
+// notification tells about.
+func canReadNotificationScope(perms *rbac.Permissions, scope notificationScope) (string, bool) {
 	resources := [3]models.PermissionResource{models.ResourceApplication, models.ResourceAgent, models.ResourceRepository}
 	all := [3]bool{scope.allApplications, scope.allAgents, scope.allRepositories}
-	requested := [3][]string{scope.applicationIds, scope.agentIds, scope.repositoryIds}
-	var result [3][]string
+	ids := [3][]string{scope.applicationIds, scope.agentIds, scope.repositoryIds}
 
 	for i, resource := range resources {
-		if all[i] && !wasAll[i] && !perms.CanAll(resource, models.ActionRead) {
-			respondForbidden(c, "insufficient permissions to subscribe to all "+string(resource)+"s")
-			return nil, nil, nil, false
-		}
-
-		ids := make([]string, 0, len(requested[i]))
-		for _, id := range normalizeNotificationResourceIds(requested[i]) {
-			if !perms.Can(resource, models.ActionRead, id) && !slices.Contains(existingIds[i], id) {
-				respondForbidden(c, "insufficient permissions for "+string(resource)+": "+id)
-				return nil, nil, nil, false
+		if all[i] {
+			if !perms.CanAll(resource, models.ActionRead) {
+				return "all " + string(resource) + "s", false
 			}
-			ids = append(ids, id)
+			continue
 		}
-		for _, id := range existingIds[i] {
-			if !perms.Can(resource, models.ActionRead, id) && !slices.Contains(ids, id) {
-				ids = append(ids, id)
+		for _, id := range normalizeNotificationResourceIds(ids[i]) {
+			if !perms.Can(resource, models.ActionRead, id) {
+				return string(resource) + ": " + id, false
 			}
 		}
-		result[i] = ids
 	}
+	return "", true
+}
 
-	return result[0], result[1], result[2], true
+// authorizeNotificationTargets makes sure users only subscribe notifications to
+// resources they can read, since the notification tells about them.
+func authorizeNotificationTargets(c *gin.Context, perms *rbac.Permissions, scope notificationScope) bool {
+	if denied, ok := canReadNotificationScope(perms, scope); !ok {
+		respondForbidden(c, "insufficient permissions for "+denied)
+		return false
+	}
+	return true
+}
+
+// canChangeNotification makes sure users only change notifications about
+// resources they can read. Otherwise they could enable it or add events and
+// learn about resources they cannot see.
+func canChangeNotification(c *gin.Context, perms *rbac.Permissions, notification *models.Notification) bool {
+	if _, ok := canReadNotificationScope(perms, notificationScope{
+		allApplications: notification.AllApplications,
+		allAgents:       notification.AllAgents,
+		allRepositories: notification.AllRepositories,
+		applicationIds:  sortedIds(notification.Applications, applicationIdOf),
+		agentIds:        sortedIds(notification.Agents, agentIdOf),
+		repositoryIds:   sortedIds(notification.Repositories, repositoryIdOf),
+	}); !ok {
+		respondForbidden(c, "insufficient permissions: the notification is about resources you cannot access")
+		return false
+	}
+	return true
 }
 
 func readableIds(perms *rbac.Permissions, resource models.PermissionResource, ids []string) []string {

@@ -315,6 +315,17 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if !canUseApplicationSources(c, repositoryId, agentId) {
 		return
 	}
+	// A new source or compose project replaces what is deployed
+	if repositoryId != "" || agentId != "" || composeProjectChanged(application.Name.String(), req.Name) {
+		perms, ok := currentPermissions(c)
+		if !ok {
+			return
+		}
+		if !perms.Can(models.ResourceApplication, models.ActionDeploy, id) {
+			respondForbidden(c, "insufficient permissions to deploy the application")
+			return
+		}
+	}
 
 	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
