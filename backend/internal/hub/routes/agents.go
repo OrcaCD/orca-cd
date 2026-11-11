@@ -299,7 +299,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-	sse.PublishUpdate(sse.TopicAgents.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicAgents.For(id))
 }
 
 func RotateAgentTokenHandler(c *gin.Context) {

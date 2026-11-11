@@ -705,7 +705,7 @@ func TestWsHandler_PublishesAgentUpdatesOnConnectAndDisconnect(t *testing.T) {
 		for {
 			select {
 			case event := <-events:
-				if slices.Contains(event.URLs, sse.TopicAgents.URL()) {
+				if slices.Contains(event.URLs(), sse.TopicAgents.URL()) {
 					return
 				}
 			case <-timeout:

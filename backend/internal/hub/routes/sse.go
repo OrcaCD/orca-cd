@@ -62,7 +62,10 @@ func sessionRevoked(ctx context.Context, claims *auth.UserClaims) bool {
 }
 
 // topicVisible reports whether the user may see updates of the topic.
-func topicVisible(perms *rbac.Permissions, topic sse.Topic) bool {
+func topicVisible(userID string, perms *rbac.Permissions, topic sse.Topic) bool {
+	if !topic.SentTo(userID) {
+		return false
+	}
 	if topic.AdminOnly() {
 		return perms.IsAdmin()
 	}
@@ -146,18 +149,18 @@ func SSEHandler(c *gin.Context) {
 				return
 			}
 			// Role changes publish the profile topic, so filter with the new permissions.
-			if event.Has(sse.TopicProfile) {
+			if event.ReloadsProfileOf(claims.Subject) {
 				perms = reloadPermissions(c.Request.Context(), claims.Subject, perms)
 			}
-			event, visible := event.Filter(func(topic sse.Topic) bool { return topicVisible(perms, topic) })
+			message, visible := event.Message(func(topic sse.Topic) bool { return topicVisible(claims.Subject, perms, topic) })
 			if !visible {
 				continue
 			}
-			data, err := json.Marshal(event)
+			data, err := json.Marshal(message)
 			if err != nil {
 				continue
 			}
-			if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event.Type, data); err != nil {
+			if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", message.Type, data); err != nil {
 				return
 			}
 			c.Writer.Flush()

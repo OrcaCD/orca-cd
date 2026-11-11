@@ -16,33 +16,41 @@ const (
 	EventTypeUpdate EventType = "update"
 )
 
+// Event is published to every client, which only gets the topics it may see.
 type Event struct {
+	Type   EventType
+	Topics []Topic
+}
+
+// Message is what a client receives: the URLs to refetch.
+type Message struct {
 	Type EventType `json:"type"`
 	URLs []string  `json:"urls,omitempty"`
-	// topics the URLs were built from, used to filter the event per client
-	topics []Topic
 }
 
-// Has reports whether the event was published for the topic.
-func (e Event) Has(topic Topic) bool {
-	return slices.Contains(e.topics, topic)
+// ReloadsProfileOf reports whether the event tells the user to reload their profile.
+func (e Event) ReloadsProfileOf(userID string) bool {
+	return slices.ContainsFunc(e.Topics, func(topic Topic) bool {
+		return topic.url == TopicProfile.url && topic.SentTo(userID)
+	})
 }
 
-// Filter keeps the topics the client may see. Events without topics are
-// dropped, since it's unknown who may see them. Returns false when nothing is
-// left to send.
-func (e Event) Filter(visible func(Topic) bool) (Event, bool) {
-	filtered := Event{Type: e.Type}
-	for _, topic := range e.topics {
-		if !visible(topic) {
-			continue
-		}
-		filtered.topics = append(filtered.topics, topic)
-		if !slices.Contains(filtered.URLs, topic.url) {
-			filtered.URLs = append(filtered.URLs, topic.url)
+// URLs returns the URLs of all topics, as sent to a client that may see them.
+func (e Event) URLs() []string {
+	message, _ := e.Message(func(Topic) bool { return true })
+	return message.URLs
+}
+
+// Message returns what to send to a client that may see the topics visible
+// accepts. Returns false when nothing is left to send.
+func (e Event) Message(visible func(Topic) bool) (Message, bool) {
+	message := Message{Type: e.Type}
+	for _, topic := range e.Topics {
+		if visible(topic) && !slices.Contains(message.URLs, topic.url) {
+			message.URLs = append(message.URLs, topic.url)
 		}
 	}
-	return filtered, len(filtered.URLs) > 0
+	return message, len(message.URLs) > 0
 }
 
 type Broker struct {
@@ -99,20 +107,15 @@ func PublishUpdate(topics ...Topic) {
 
 func (b *Broker) PublishUpdate(topics ...Topic) {
 	event := Event{Type: EventTypeUpdate}
-	seenTopics := make(map[Topic]struct{}, len(topics))
-	seenURLs := make(map[string]struct{}, len(topics))
+	seen := make(map[Topic]struct{}, len(topics))
 	for _, topic := range topics {
-		if _, ok := seenTopics[topic]; ok || topic.url == "" {
+		if _, ok := seen[topic]; ok || topic.url == "" {
 			continue
 		}
-		seenTopics[topic] = struct{}{}
-		event.topics = append(event.topics, topic)
-		if _, ok := seenURLs[topic.url]; !ok {
-			seenURLs[topic.url] = struct{}{}
-			event.URLs = append(event.URLs, topic.url)
-		}
+		seen[topic] = struct{}{}
+		event.Topics = append(event.Topics, topic)
 	}
-	if len(event.URLs) == 0 {
+	if len(event.Topics) == 0 {
 		return
 	}
 	b.Publish(event)

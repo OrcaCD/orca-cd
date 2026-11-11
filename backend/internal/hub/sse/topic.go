@@ -13,6 +13,8 @@ type Topic struct {
 	// sent to everyone who can read at least one resource of the type.
 	resourceID string
 	adminOnly  bool
+	// userID limits the topic to a single user.
+	userID string
 }
 
 const apiPrefix = "/api/v1"
@@ -29,9 +31,17 @@ var (
 	TopicAdminUsers          = Topic{url: apiPrefix + "/admin/users", adminOnly: true}
 	TopicAdminOIDCProvider   = Topic{url: apiPrefix + "/admin/oidc-providers", adminOnly: true}
 	TopicAdminRoles          = Topic{url: apiPrefix + "/admin/roles", adminOnly: true}
-	// TopicProfile makes clients reload their own profile, which holds their permissions.
+	// TopicProfile makes clients reload their own profile, which holds their
+	// permissions. Use TopicProfileOf when only one user is affected.
 	TopicProfile = Topic{url: apiPrefix + "/auth/profile"}
 )
+
+// TopicProfileOf makes only the given user reload their profile.
+func TopicProfileOf(userID string) Topic {
+	topic := TopicProfile
+	topic.userID = userID
+	return topic
+}
 
 func TopicApplicationEvents(applicationID string) Topic {
 	return Topic{
@@ -58,4 +68,9 @@ func (t Topic) Resource() (models.PermissionResource, string) {
 
 func (t Topic) AdminOnly() bool {
 	return t.adminOnly
+}
+
+// SentTo reports whether the topic is meant for the user, ignoring permissions.
+func (t Topic) SentTo(userID string) bool {
+	return t.userID == "" || t.userID == userID
 }

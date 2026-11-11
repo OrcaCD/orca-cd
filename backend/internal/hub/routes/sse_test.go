@@ -65,11 +65,11 @@ func readEventURLs(t *testing.T, scanner *bufio.Scanner) []string {
 	t.Helper()
 	for scanner.Scan() {
 		if data, ok := strings.CutPrefix(scanner.Text(), "data: "); ok {
-			var event sse.Event
-			if err := json.Unmarshal([]byte(data), &event); err != nil {
+			var message sse.Message
+			if err := json.Unmarshal([]byte(data), &message); err != nil {
 				t.Fatalf("failed to unmarshal SSE event data: %v", err)
 			}
-			return event.URLs
+			return message.URLs
 		}
 	}
 	t.Fatal("stream ended before an event was received")
@@ -232,13 +232,13 @@ func TestSSEHandler_ReceivesEvent(t *testing.T) {
 		t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, eventType)
 	}
 
-	var event sse.Event
-	if err := json.Unmarshal([]byte(eventData), &event); err != nil {
+	var message sse.Message
+	if err := json.Unmarshal([]byte(eventData), &message); err != nil {
 		t.Fatalf("failed to unmarshal SSE event data: %v", err)
 	}
 	wantURLs := []string{sse.TopicAgents.URL(), sse.TopicApplications.URL()}
-	if !slices.Equal(event.URLs, wantURLs) {
-		t.Errorf("expected URLs %v, got %v", wantURLs, event.URLs)
+	if !slices.Equal(message.URLs, wantURLs) {
+		t.Errorf("expected URLs %v, got %v", wantURLs, message.URLs)
 	}
 }
 
@@ -354,9 +354,16 @@ func TestSSEHandler_ReloadsPermissionsOnProfileUpdates(t *testing.T) {
 	defer cancel()
 	waitForInitialComment(t, scanner)
 
-	// The stream started with admin permissions. The user has no roles, so the
-	// reload triggered by the profile topic must hide the admin topic.
-	broker.PublishUpdate(sse.TopicProfile, sse.TopicAdminUsers)
+	// The stream started with admin permissions. The profile of another user
+	// neither reloads them nor reaches this user.
+	broker.PublishUpdate(sse.TopicProfileOf("other-user"), sse.TopicAdminUsers)
+	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicAdminUsers.URL()}) {
+		t.Fatalf("expected only the admin topic, got %v", got)
+	}
+
+	// The user has no roles, so the reload triggered by their profile topic
+	// must hide the admin topic.
+	broker.PublishUpdate(sse.TopicProfileOf("test-user"), sse.TopicAdminUsers)
 	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicProfile.URL()}) {
 		t.Fatalf("expected only the profile topic, got %v", got)
 	}

@@ -344,7 +344,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, adminUserWithGeneratedPasswordResponse{adminUserResponse: response, GeneratedPassword: generatedPassword})
-	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfileOf(id))
 }
 
 func AdminDeleteUserHandler(c *gin.Context) {
@@ -378,7 +378,7 @@ func AdminDeleteUserHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "user", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
-	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfile)
+	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfileOf(id))
 }
 
 var errLastAdmin = errors.New("at least one admin user is required")

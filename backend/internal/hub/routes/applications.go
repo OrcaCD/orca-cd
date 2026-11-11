@@ -426,7 +426,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "application", id)
 
 	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
-	sse.PublishUpdate(sse.TopicApplications.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicApplications.For(id))
 	sendAgentSettings(c, req.AgentId)
 	if oldAgentId != req.AgentId {
 		sendAgentSettings(c, oldAgentId)
@@ -571,7 +571,7 @@ func DeployApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
-	sse.PublishUpdate(sse.TopicApplications.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicApplications.For(id))
 }
 
 // PullApplicationImagesHandler asks the agent to pull newer images for the

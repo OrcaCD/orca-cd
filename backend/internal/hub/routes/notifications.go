@@ -304,7 +304,7 @@ func UpdateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &updatedNotification))
-	sse.PublishUpdate(sse.TopicNotifications.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 }
 
 // SetNotificationEnabledHandler only toggles the enabled flag, so it cannot overwrite a concurrent
@@ -350,7 +350,7 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 	notification.Enabled = *req.Enabled
 
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
-	sse.PublishUpdate(sse.TopicNotifications.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 }
 
 func DeleteNotificationHandler(c *gin.Context) {
@@ -408,7 +408,7 @@ func TestNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	sse.PublishUpdate(sse.TopicNotifications.For(c.Param("id")))
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 
 	if sendErr != nil {
 		respondTestNotificationError(c, sendErr)
