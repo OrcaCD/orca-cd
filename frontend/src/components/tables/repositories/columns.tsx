@@ -23,7 +23,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
 import { Link } from "@tanstack/react-router";
@@ -157,13 +157,15 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 ];
 
 function RepositoryActions({ repository }: { repository: Repository }) {
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	// Syncing redeploys its applications, deleting deletes them
 	const canSync =
-		can("repository", "sync", repository.id) && canOnApplicationsOf("deploy", repository.appCount);
+		can("repository", "sync", repository.id) &&
+		canOnApplicationsOf(repository.id, "deploy", repository.appCount);
 	const canDelete =
 		can("repository", "delete", repository.id) &&
-		canOnApplicationsOf("delete", repository.appCount);
+		canOnApplicationsOf(repository.id, "delete", repository.appCount);
 
 	async function handleDelete() {
 		try {

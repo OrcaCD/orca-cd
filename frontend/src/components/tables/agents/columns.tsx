@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -125,11 +125,12 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 ];
 
 function AgentActions({ agent }: { agent: Agent }) {
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("agentId");
 	const canUpdate = can("agent", "update", agent.id);
 	// Its applications are deleted with it
 	const canDelete =
-		can("agent", "delete", agent.id) && canOnApplicationsOf("delete", agent.appsCount);
+		can("agent", "delete", agent.id) && canOnApplicationsOf(agent.id, "delete", agent.appsCount);
 
 	if (!canUpdate && !canDelete) {
 		return null;

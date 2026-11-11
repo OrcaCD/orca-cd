@@ -1034,5 +1034,7 @@
 	"roleOidcGroupPlaceholder": "Gruppenname, z. B. developers",
 	"roleOidcGroupProvider": "OIDC-Anbieter",
 	"roleOidcNoProviders": "Lege bei einem OIDC-Anbieter einen Gruppen-Claim fest, um seine Gruppen Rollen zuzuordnen.",
-	"roleRemoveOidcGroup": "Gruppe {group} entfernen"
+	"roleRemoveOidcGroup": "Gruppe {group} entfernen",
+	"overviewNoAccessTitle": "Du hast noch keinen Zugriff",
+	"overviewNoAccessDescription": "Deine Rollen geben dir keinen Zugriff auf Anwendungen, Agenten, Repositories oder Benachrichtigungen. Bitte einen Admin, dir eine Rolle zuzuweisen."
 }

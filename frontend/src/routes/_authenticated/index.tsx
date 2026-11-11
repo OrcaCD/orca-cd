@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { LockKeyhole } from "lucide-react";
+import { EmptyState } from "@/components/collection-states";
 import { OverviewDashboard } from "@/components/overview/overview-dashboard";
 import { OnboardingChecklist } from "@/components/overview/onboarding-checklist";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,12 +25,21 @@ export const Route = createFileRoute("/_authenticated/")({
 function OverviewPage() {
 	const { data: apps } = useFetch<ApplicationListItem[]>("/applications");
 	const { data: agents } = useFetch<Agent[]>("/agents");
-	const { can } = usePermissions();
+	const { can, canAny } = usePermissions();
+	const hasAccess = (["application", "agent", "repository", "notification"] as const).some(
+		(resource) => canAny(resource, "read"),
+	);
 
 	return (
 		<PageContainer>
 			<PageHeader title={m.pageOverview()} description={m.overviewPageDescription()} />
-			{!apps ? (
+			{!hasAccess ? (
+				<EmptyState
+					icon={LockKeyhole}
+					title={m.overviewNoAccessTitle()}
+					description={m.overviewNoAccessDescription()}
+				/>
+			) : !apps ? (
 				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 					<Skeleton className="h-44 md:col-span-2 xl:col-span-1" />
 					<Skeleton className="h-44" />

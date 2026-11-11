@@ -76,7 +76,7 @@ function ImagePollingPage() {
 	const { can } = usePermissions();
 	const canUpdate = can("application", "update", id);
 	// Anyone with the webhook can pull the images
-	const canManageWebhook = canUpdate && can("application", "pull_images", id);
+	const canGenerateWebhook = canUpdate && can("application", "pull_images", id);
 
 	const form = useForm({
 		defaultValues: {
@@ -258,11 +258,13 @@ function ImagePollingPage() {
 						</div>
 					) : null}
 
-					{canManageWebhook && (
+					{canUpdate && (canGenerateWebhook || application?.imageWebhookEnabled) && (
 						<div className="flex items-center gap-2">
-							<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
-								{application?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
-							</Button>
+							{canGenerateWebhook && (
+								<Button variant="outline" size="sm" onClick={handleGenerateWebhook}>
+									{application?.imageWebhookEnabled ? m.regenerateWebhook() : m.generateWebhook()}
+								</Button>
+							)}
 							{application?.imageWebhookEnabled && (
 								<ConfirmationDialog
 									onConfirm={handleRevokeWebhook}

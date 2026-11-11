@@ -1,4 +1,6 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+import { useFetch } from "./api";
+import type { ApplicationListItem } from "./applications";
 import { useAuth, type Profile } from "./auth";
 import type { PermissionAction, PermissionResource } from "./roles";
 
@@ -8,10 +10,6 @@ export interface Permissions {
 	can: (resource: PermissionResource, action: PermissionAction, id?: string) => boolean;
 	// Whether the action is allowed on at least one resource of the type
 	canAny: (resource: PermissionResource, action: PermissionAction) => boolean;
-	// Whether the action is allowed on all applications of a repository or agent,
-	// which the hub checks when syncing or deleting it. Some of them may be hidden
-	// from the user, so only their count is known.
-	canOnApplicationsOf: (action: PermissionAction, appCount?: number) => boolean;
 }
 
 // Mirrors rbac.Permissions in the hub, which enforces them. The UI only uses them
@@ -42,13 +40,32 @@ export function permissionsOf(profile: Profile | null): Permissions {
 		);
 	};
 
-	const canOnApplicationsOf: Permissions["canOnApplicationsOf"] = (action, appCount) =>
-		appCount === 0 || can("application", action);
-
-	return { can, canAny, canOnApplicationsOf };
+	return { can, canAny };
 }
 
 export function usePermissions(): Permissions {
 	const { auth } = useAuth();
 	return useMemo(() => permissionsOf(auth.profile), [auth.profile]);
+}
+
+// Returns whether an action is allowed on all applications of a repository or
+// agent, which the hub checks when syncing or deleting it. Grants on single
+// applications only count when the user can see all of them.
+export function useCanOnApplicationsOf(by: "repositoryId" | "agentId") {
+	const { can } = usePermissions();
+	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
+	return useCallback(
+		(id: string, action: PermissionAction, appCount: number | undefined) => {
+			if (appCount === 0 || can("application", action)) {
+				return true;
+			}
+			const visible = applications?.filter((app) => app[by] === id) ?? [];
+			return (
+				appCount !== undefined &&
+				visible.length === appCount &&
+				visible.every((app) => can("application", action, app.id))
+			);
+		},
+		[applications, by, can],
+	);
 }

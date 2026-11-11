@@ -47,13 +47,13 @@ import { cn } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
-import { syncRepository } from "@/lib/repositories";
+import { syncRepository, type Repository } from "@/lib/repositories";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	CodeBlock,
@@ -287,12 +287,17 @@ function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
 	const { data } = useFetch<Application>("/applications/" + id);
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	const canDeploy = can("application", "deploy", id);
 	const canPullImages = can("application", "pull_images", id);
+	const maySyncRepository = !!data && can("repository", "sync", data.repositoryId);
 	// Syncing redeploys every application of the repository
+	const { data: repository } = useFetch<Repository>(
+		maySyncRepository ? `/repositories/${data.repositoryId}` : null,
+	);
 	const canSyncRepository =
-		!!data && can("repository", "sync", data.repositoryId) && canOnApplicationsOf("deploy");
+		maySyncRepository && canOnApplicationsOf(data.repositoryId, "deploy", repository?.appCount);
 
 	const [deploying, setDeploying] = useState(false);
 

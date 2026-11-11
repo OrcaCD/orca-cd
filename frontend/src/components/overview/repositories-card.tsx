@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { syncRepository, type Repository, type RepositorySyncStatus } from "@/lib/repositories";
 import { cn } from "@/lib/utils";
 import { Metric, OverviewCardHeader } from "./overview-card";
@@ -97,7 +97,8 @@ export function RepositoriesCard() {
 
 function RepositoryRow({ repo }: { repo: Repository }) {
 	const [syncing, setSyncing] = useState(false);
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 
 	const handleSync = async () => {
 		setSyncing(true);
@@ -151,7 +152,7 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 			</ItemContent>
 			{repo.syncStatus !== "syncing" &&
 			can("repository", "sync", repo.id) &&
-			canOnApplicationsOf("deploy", repo.appCount) ? (
+			canOnApplicationsOf(repo.id, "deploy", repo.appCount) ? (
 				<ItemActions>
 					<Button
 						variant="ghost"

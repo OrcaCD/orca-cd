@@ -103,6 +103,8 @@ function GeneralSettingsPage() {
 	const navigate = useNavigate();
 	const { can } = usePermissions();
 	const canUpdate = can("application", "update", id);
+	// A new source or compose project replaces what is deployed
+	const canChangeSource = canUpdate && can("application", "deploy", id);
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -175,7 +177,7 @@ function GeneralSettingsPage() {
 	);
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
-		branch && canUpdate && canReadRepository
+		branch && canChangeSource && canReadRepository
 			? `/repositories/${repositoryId}/tree?branch=${branch}`
 			: null,
 	);
@@ -243,7 +245,7 @@ function GeneralSettingsPage() {
 													onChange={(e) => field.handleChange(e.target.value)}
 													placeholder={m.applicationNamePlaceholder()}
 													aria-invalid={isInvalid}
-													disabled={!canUpdate}
+													disabled={!canChangeSource}
 												/>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
 											</Field>
@@ -279,7 +281,7 @@ function GeneralSettingsPage() {
 												onValueChange={(value) => {
 													field.handleChange(value ?? "");
 												}}
-												disabled={!canUpdate}
+												disabled={!canChangeSource}
 												items={agentOptions}
 											>
 												<SelectTrigger
@@ -335,7 +337,7 @@ function GeneralSettingsPage() {
 														form.setFieldValue("branch", "");
 														form.setFieldValue("path", "");
 													}}
-													disabled={!canUpdate}
+													disabled={!canChangeSource}
 													items={repositoryOptions}
 												>
 													<SelectTrigger
@@ -376,7 +378,7 @@ function GeneralSettingsPage() {
 														field.handleChange(value ?? "");
 														form.setFieldValue("path", "");
 													}}
-													disabled={!canUpdate || !repositoryId || isBranchesLoading}
+													disabled={!canChangeSource || !repositoryId || isBranchesLoading}
 													items={branchOptions.map((branch) => ({
 														label: branch,
 														value: branch,
@@ -427,7 +429,7 @@ function GeneralSettingsPage() {
 												<div
 													className={cn(
 														"flex min-w-0 items-center gap-2 bg-muted/50 px-3 py-2 font-mono text-xs",
-														canUpdate && "border-b",
+														canChangeSource && "border-b",
 													)}
 												>
 													<FileCode className="size-3.5 shrink-0 text-muted-foreground" />
@@ -441,7 +443,7 @@ function GeneralSettingsPage() {
 														</span>
 													)}
 												</div>
-												{canUpdate && (
+												{canChangeSource && (
 													<div className="max-h-72 overflow-auto p-1">
 														{!repositoryId ? (
 															<TreePlaceholder>{m.selectRepositoryFirst()}</TreePlaceholder>

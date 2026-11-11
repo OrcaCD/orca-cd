@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import {
 	getGitProviderIconClass,
 	getGitProviderIconPath,
@@ -78,7 +78,8 @@ export function RepositoryCard({
 	action?: ReactNode;
 }) {
 	const [triggering, setTriggering] = useState(false);
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	const failed = repository.syncStatus === "failed";
 
 	const handleSync = async () => {
@@ -135,7 +136,7 @@ export function RepositoryCard({
 					{getSyncTypeIcon(repository.syncType, "size-3.5 shrink-0")}
 					<span className="truncate">{getTriggerLabel(repository)}</span>
 					{can("repository", "sync", repository.id) &&
-					canOnApplicationsOf("deploy", repository.appCount) ? (
+					canOnApplicationsOf(repository.id, "deploy", repository.appCount) ? (
 						<Button
 							variant="outline"
 							size="xs"

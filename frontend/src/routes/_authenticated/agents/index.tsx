@@ -9,7 +9,7 @@ import { SearchField } from "@/components/search-field";
 import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { useMemo, useRef, useState } from "react";
 import { EllipsisVertical, Plus, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -64,7 +64,8 @@ function RouteComponent() {
 		openFrom: openAddAgent,
 		dialogProps: addAgentDialog,
 	} = useSharedDialog();
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("agentId");
 	const canCreate = can("agent", "create");
 
 	async function handleDeleteCard(agent: Agent) {
@@ -183,7 +184,7 @@ function RouteComponent() {
 								const canUpdate = can("agent", "update", agent.id);
 								const canDelete =
 									can("agent", "delete", agent.id) &&
-									canOnApplicationsOf("delete", agent.appsCount);
+									canOnApplicationsOf(agent.id, "delete", agent.appsCount);
 								return (
 									<AgentCard
 										key={agent.id}

@@ -13,7 +13,7 @@ import {
 	XIcon,
 	type LucideIcon,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Blobatar } from "@blobatar/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -113,7 +113,10 @@ export default function Navbar() {
 
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
-	const visibleNavItems = navItems.filter((item) => !item.resource || canAny(item.resource, "read"));
+	const visibleNavItems = useMemo(
+		() => navItems.filter((item) => !item.resource || canAny(item.resource, "read")),
+		[canAny],
+	);
 	// On desktop the logo is the link to the overview, so the bar only lists the sections.
 	const sectionNavItems = visibleNavItems.filter((item) => item.key !== "overview");
 

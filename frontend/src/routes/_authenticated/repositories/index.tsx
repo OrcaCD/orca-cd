@@ -14,7 +14,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { usePermissions } from "@/lib/permissions";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { useMemo, useRef, useState } from "react";
 import { EllipsisVertical, GitBranch, Plus, RefreshCw, Settings, Trash2 } from "lucide-react";
 
@@ -63,7 +63,8 @@ function RepositoriesPage() {
 		openFrom: openAddRepository,
 		dialogProps: addRepositoryDialog,
 	} = useSharedDialog();
-	const { can, canOnApplicationsOf } = usePermissions();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	const canCreate = can("repository", "create");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
@@ -206,7 +207,7 @@ function RepositoriesPage() {
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													{can("repository", "sync", repository.id) &&
-														canOnApplicationsOf("deploy", repository.appCount) && (
+														canOnApplicationsOf(repository.id, "deploy", repository.appCount) && (
 															<>
 																<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
 																	<RefreshCw className="h-4 w-4" />
@@ -227,7 +228,7 @@ function RepositoriesPage() {
 														}
 													/>
 													{can("repository", "delete", repository.id) &&
-														canOnApplicationsOf("delete", repository.appCount) && (
+														canOnApplicationsOf(repository.id, "delete", repository.appCount) && (
 															<>
 																<DropdownMenuSeparator />
 																<ConfirmationDialog
