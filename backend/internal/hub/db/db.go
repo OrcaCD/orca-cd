@@ -44,6 +44,12 @@ func sqliteDSN(readOnly bool) string {
 	// https://sqlite.org/pragma.html#pragma_cache_size
 	q.Set("_cache_size", "-12000") // 12 MB page cache; negative value = kibibytes
 
+	// https://sqlite.org/lang_transaction.html#deferred_immediate_and_exclusive_transactions
+	// Transactions take the write lock when they begin, so they wait for other
+	// writers. A deferred transaction that reads before writing fails right away
+	// with SQLITE_BUSY if another connection wrote in between.
+	q.Set("_txlock", "immediate")
+
 	if readOnly {
 		// https://www.sqlite.org/uri.html
 		q.Set("mode", "ro") // Read-only in demo mode
@@ -54,6 +60,7 @@ func sqliteDSN(readOnly bool) string {
 		// Both pragmas write to the database file; WAL mode is persistent and already set
 		q.Del("_journal_mode")
 		q.Del("_auto_vacuum")
+		q.Del("_txlock")
 	}
 
 	// go-sqlite3 handles the _ pragma parameters itself, but only passes URI parameters

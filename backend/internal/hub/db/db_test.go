@@ -988,6 +988,7 @@ func TestSqliteDSN_ReadWriteParams(t *testing.T) {
 		"_synchronous":  "NORMAL",
 		"_auto_vacuum":  "2",
 		"_cache_size":   "-12000",
+		"_txlock":       "immediate",
 	}
 	for param, want := range cases {
 		if got := q.Get(param); got != want {
