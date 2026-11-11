@@ -55,7 +55,7 @@ export default function UpsertOIDCProviderDialog({
 			clientId: provider?.clientId ?? "",
 			clientSecret: "",
 			scopes: provider?.scopes ?? "",
-			groupsClaim: provider?.groupsClaim ?? "groups",
+			groupsClaim: provider?.groupsClaim ?? "",
 			enabled: provider?.enabled ?? true,
 			requireVerifiedEmail: provider?.requireVerifiedEmail ?? true,
 			autoSignup: provider?.autoSignup ?? true,

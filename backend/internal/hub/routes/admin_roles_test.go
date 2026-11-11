@@ -288,25 +288,50 @@ func TestAdminUpdateRoleHandler_KeepsGrantsOnDeletedResources(t *testing.T) {
 
 func TestAdminRoles_OIDCGroups(t *testing.T) {
 	setupRolesTestDB(t)
+	corp := createTestProvider(t, "Corp", true)
+	if _, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", corp.Id).Update(t.Context(), "groups_claim", "groups"); err != nil {
+		t.Fatalf("failed to enable groups: %v", err)
+	}
+	group := func(name string) map[string]any { return map[string]any{"providerId": corp.Id, "group": name} }
 
 	w := serveRoleRequest(t, http.MethodPost, "/api/v1/admin/roles", map[string]any{
 		"name":       "Devs",
-		"oidcGroups": []string{" devs ", "devs", "", "engineering"},
+		"oidcGroups": []map[string]any{group(" devs "), group("devs"), group("engineering")},
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	role := decodeRole(t, w)
-	if !slices.Equal(role.OIDCGroups, []string{"devs", "engineering"}) {
+	want := []roleOIDCGroup{{ProviderId: corp.Id, Group: "devs"}, {ProviderId: corp.Id, Group: "engineering"}}
+	if !slices.Equal(role.OIDCGroups, want) {
 		t.Fatalf("expected normalized groups, got %v", role.OIDCGroups)
 	}
 
-	// Built-in roles can be mapped to groups too.
-	w = serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+rbac.AdminRoleID, map[string]any{"name": "Admin", "oidcGroups": []string{"admins"}})
+	if w := serveRoleRequest(t, http.MethodPost, "/api/v1/admin/roles", map[string]any{
+		"name":       "Unknown",
+		"oidcGroups": []map[string]any{{"providerId": "missing", "group": "devs"}},
+	}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected an unknown provider to fail, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Mapping the admin role gives it to the members of the group right away, and
+	// removing the mapping takes it away again.
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	member := createTestUser(t, "Member", "member@example.com", "", "")
+	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &models.UserOIDCIdentity{UserId: member.Id, ProviderId: corp.Id, Subject: "member", Groups: []string{"admins"}}); err != nil {
+		t.Fatalf("failed to create identity: %v", err)
+	}
+	w = serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+rbac.AdminRoleID, map[string]any{"name": "Admin", "userIds": []string{admin.Id}, "oidcGroups": []map[string]any{group("admins")}})
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if got := decodeRole(t, w).OIDCGroups; !slices.Equal(got, []string{"admins"}) {
-		t.Fatalf("expected the admin role to be mapped, got %v", got)
+	if isAdmin, err := userIsAdmin(t, member.Id); err != nil || !isAdmin {
+		t.Fatalf("expected the group member to become admin, err=%v", err)
+	}
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+rbac.AdminRoleID, map[string]any{"name": "Admin", "userIds": []string{admin.Id}}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if isAdmin, err := userIsAdmin(t, member.Id); err != nil || isAdmin {
+		t.Fatalf("expected the group member to lose admin, err=%v", err)
 	}
 }

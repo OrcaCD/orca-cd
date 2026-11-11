@@ -2,6 +2,7 @@ package routes
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -25,7 +26,7 @@ func TestResolveOIDCUser_CreatesNewUserAndIdentity(t *testing.T) {
 		Name:    "Alice",
 	}
 
-	user, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	user, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
 	if redirectError != "" {
 		t.Fatalf("expected no redirect error, got %q", redirectError)
 	}
@@ -70,12 +71,12 @@ func TestResolveOIDCUser_LinksMultipleProvidersToSameUser(t *testing.T) {
 		Name:    "Alice A.",
 	}
 
-	firstUser, redirectError := resolveOIDCUser(t.Context(), &provider1, firstClaims)
+	firstUser, _, redirectError := resolveOIDCUser(t.Context(), &provider1, firstClaims)
 	if redirectError != "" {
 		t.Fatalf("expected no redirect error on first login, got %q", redirectError)
 	}
 
-	secondUser, redirectError := resolveOIDCUser(t.Context(), &provider2, secondClaims)
+	secondUser, _, redirectError := resolveOIDCUser(t.Context(), &provider2, secondClaims)
 	if redirectError != "" {
 		t.Fatalf("expected no redirect error on second login, got %q", redirectError)
 	}
@@ -143,7 +144,7 @@ func TestResolveOIDCUser_RejectsProviderEmailConflict(t *testing.T) {
 		Name:    "Bob Updated",
 	}
 
-	_, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	_, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
 	if redirectError != "provider_email_conflict" {
 		t.Fatalf("expected provider_email_conflict, got %q", redirectError)
 	}
@@ -174,7 +175,7 @@ func TestResolveOIDCUser_RejectsNewUserWhenSignupDisabled(t *testing.T) {
 		Name:    "Alice",
 	}
 
-	_, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	_, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
 	if redirectError != "signup_disabled" {
 		t.Fatalf("expected signup_disabled, got %q", redirectError)
 	}
@@ -200,7 +201,7 @@ func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
 	provider := models.OIDCProvider{Id: "provider-1"}
 	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice SSO"}
 
-	user, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	user, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
 	if redirectError != "" {
 		t.Fatalf("expected no redirect error, got %q", redirectError)
 	}
@@ -229,7 +230,7 @@ func TestResolveOIDCUser_RefusesToLinkSelfChangedEmail(t *testing.T) {
 	provider := models.OIDCProvider{Id: "provider-1", AutoSignup: true}
 	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice"}
 
-	_, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
+	_, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims)
 	if redirectError != "account_linking_failed" {
 		t.Fatalf("expected account_linking_failed, got %q", redirectError)
 	}
@@ -256,7 +257,7 @@ func TestResolveOIDCUser_LinkedLoginConfirmsSyncedEmail(t *testing.T) {
 
 	provider := models.OIDCProvider{Id: "provider-1"}
 	claims := &oidc.OIDCUser{Subject: "subject-1", Email: "alice@example.com", Name: "Alice"}
-	if _, redirectError := resolveOIDCUser(t.Context(), &provider, claims); redirectError != "" {
+	if _, _, redirectError := resolveOIDCUser(t.Context(), &provider, claims); redirectError != "" {
 		t.Fatalf("expected no redirect error, got %q", redirectError)
 	}
 
@@ -270,11 +271,18 @@ func TestResolveOIDCUser_LinkedLoginConfirmsSyncedEmail(t *testing.T) {
 }
 
 func TestResolveOIDCUser_DefaultRoleUnlessGroupsMapToARole(t *testing.T) {
-	setupTestDB(t)
+	setupRolesTestDB(t)
 
-	devs := models.Role{Name: "Devs", OIDCGroups: []string{"devs"}}
+	provider := createTestProvider(t, "Corp", true)
+	if _, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", provider.Id).Update(t.Context(), "groups_claim", "groups"); err != nil {
+		t.Fatalf("failed to enable groups: %v", err)
+	}
+	devs := models.Role{Name: "Devs"}
 	if err := gorm.G[models.Role](db.DB).Create(t.Context(), &devs); err != nil {
 		t.Fatalf("failed to create role: %v", err)
+	}
+	if err := gorm.G[models.RoleOIDCGroup](db.DB).Create(t.Context(), &models.RoleOIDCGroup{RoleId: devs.Id, ProviderId: provider.Id, Group: "devs"}); err != nil {
+		t.Fatalf("failed to map group: %v", err)
 	}
 
 	tests := []struct {
@@ -282,16 +290,20 @@ func TestResolveOIDCUser_DefaultRoleUnlessGroupsMapToARole(t *testing.T) {
 		groupsClaim string
 		groups      []string
 		wantDefault bool
+		wantDevs    bool
 	}{
-		{"no mapped group", "groups", []string{"other"}, true},
-		{"mapped group", "groups", []string{"devs"}, false},
-		{"sync disabled", "", []string{"devs"}, true},
+		{"no mapped group", "groups", []string{"other"}, true, false},
+		{"mapped group", "groups", []string{"devs"}, false, true},
+		{"sync disabled", "", []string{"devs"}, true, false},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider := models.OIDCProvider{Id: "provider-1", AutoSignup: true, GroupsClaim: tt.groupsClaim}
+			provider.GroupsClaim = tt.groupsClaim
+			if _, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", provider.Id).Update(t.Context(), "groups_claim", tt.groupsClaim); err != nil {
+				t.Fatalf("failed to set groups claim: %v", err)
+			}
 			email := fmt.Sprintf("user-%d@example.com", i)
-			user, redirectError := resolveOIDCUser(t.Context(), &provider, &oidc.OIDCUser{
+			user, rolesChanged, redirectError := resolveOIDCUser(t.Context(), &provider, &oidc.OIDCUser{
 				Subject: "subject-" + tt.name,
 				Email:   email,
 				Name:    "User",
@@ -300,14 +312,35 @@ func TestResolveOIDCUser_DefaultRoleUnlessGroupsMapToARole(t *testing.T) {
 			if redirectError != "" {
 				t.Fatalf("expected no redirect error, got %q", redirectError)
 			}
-
-			count, err := gorm.G[models.UserRole](db.DB).Where("user_id = ? AND role_id = ?", user.Id, rbac.UserRoleID).Count(t.Context(), "*")
-			if err != nil {
-				t.Fatalf("failed to count roles: %v", err)
+			if rolesChanged != tt.wantDevs {
+				t.Fatalf("expected rolesChanged=%v, got %v", tt.wantDevs, rolesChanged)
 			}
-			if (count == 1) != tt.wantDefault {
-				t.Fatalf("expected default role=%v, got %d assignments", tt.wantDefault, count)
+
+			roles, err := gorm.G[models.UserRole](db.DB).Where("user_id = ?", user.Id).Find(t.Context())
+			if err != nil {
+				t.Fatalf("failed to load roles: %v", err)
+			}
+			hasDefault := slices.ContainsFunc(roles, func(r models.UserRole) bool { return r.RoleId == rbac.UserRoleID })
+			hasDevs := slices.ContainsFunc(roles, func(r models.UserRole) bool {
+				return r.RoleId == devs.Id && r.Source == models.UserRoleSourceOIDC
+			})
+			if hasDefault != tt.wantDefault || hasDevs != tt.wantDevs {
+				t.Fatalf("expected default=%v devs=%v, got %+v", tt.wantDefault, tt.wantDevs, roles)
 			}
 		})
+	}
+
+	// Leaving the group removes the role on the next login
+	provider.GroupsClaim = "groups"
+	if _, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", provider.Id).Update(t.Context(), "groups_claim", "groups"); err != nil {
+		t.Fatalf("failed to set groups claim: %v", err)
+	}
+	user, rolesChanged, redirectError := resolveOIDCUser(t.Context(), &provider, &oidc.OIDCUser{Subject: "subject-mapped group", Email: "user-1@example.com", Name: "User", Groups: []string{}})
+	if redirectError != "" || !rolesChanged {
+		t.Fatalf("expected the roles to change, got changed=%v error=%q", rolesChanged, redirectError)
+	}
+	identity, err := gorm.G[models.UserOIDCIdentity](db.DB).Where("user_id = ?", user.Id).First(t.Context())
+	if err != nil || len(identity.Groups) != 0 {
+		t.Fatalf("expected the stored groups to be cleared, got %+v (err=%v)", identity, err)
 	}
 }

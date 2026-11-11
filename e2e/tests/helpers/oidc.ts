@@ -57,6 +57,7 @@ interface ProviderOptions {
 	enabled?: boolean;
 	requireVerifiedEmail?: boolean;
 	autoSignup?: boolean;
+	groupsClaim?: string;
 	// The secret the hub is configured with, the identity provider keeps the correct one
 	wrongSecret?: boolean;
 	profileSource?: ProfileSource;

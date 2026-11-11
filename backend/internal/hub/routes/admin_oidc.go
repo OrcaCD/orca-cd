@@ -27,7 +27,7 @@ type createOIDCProviderRequest struct {
 	Enabled              *bool  `json:"enabled"`
 	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail"`
 	AutoSignup           *bool  `json:"autoSignup"`
-	// GroupsClaim defaults to "groups", an empty string disables syncing roles.
+	// GroupsClaim enables syncing roles from groups, which is off by default.
 	GroupsClaim *string `json:"groupsClaim" binding:"omitempty,max=255"`
 }
 
@@ -57,8 +57,6 @@ type oidcProviderResponse struct {
 	CreatedAt            string `json:"createdAt"`
 	UpdatedAt            string `json:"updatedAt"`
 }
-
-const defaultGroupsClaim = "groups"
 
 // oidcDiscoveryClient is the HTTP client used to validate issuer URLs.
 // Replaced with an unrestricted client in tests.
@@ -154,7 +152,6 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		Enabled:              enabled,
 		RequireVerifiedEmail: requireVerifiedEmail,
 		AutoSignup:           autoSignup,
-		GroupsClaim:          defaultGroupsClaim,
 	}
 	if req.GroupsClaim != nil {
 		provider.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
@@ -195,6 +192,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	}
 
 	wasEnabled := existing.Enabled
+	previousGroupsClaim := existing.GroupsClaim
 	existing.Name = req.Name
 	existing.IssuerURL = req.IssuerURL
 	existing.ClientId = req.ClientId
@@ -218,6 +216,13 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&existing).Error; err != nil {
 			return err
+		}
+		// Roles from the groups of a disabled provider, or one that stopped
+		// syncing them, are removed
+		if wasEnabled != existing.Enabled || previousGroupsClaim != existing.GroupsClaim {
+			if err := syncAllOIDCRoles(c.Request.Context(), tx); err != nil {
+				return err
+			}
 		}
 		if wasEnabled && !existing.Enabled {
 			return revokeOIDCProviderSessions(c.Request.Context(), tx, id)
@@ -243,9 +248,14 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 		if err := revokeOIDCProviderSessions(c.Request.Context(), tx, id); err != nil {
 			return err
 		}
+		if _, err := gorm.G[models.RoleOIDCGroup](tx).Where("provider_id = ?", id).Delete(c.Request.Context()); err != nil {
+			return err
+		}
 		var err error
-		deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context())
-		return err
+		if deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context()); err != nil {
+			return err
+		}
+		return syncAllOIDCRoles(c.Request.Context(), tx)
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})

@@ -370,23 +370,55 @@ func TestAssignBuiltInRole(t *testing.T) {
 	}
 }
 
+// createOIDCTables creates the provider and identity columns the sync reads,
+// without the encrypted provider settings.
+func createOIDCTables(t *testing.T, tx *gorm.DB) {
+	t.Helper()
+	for _, stmt := range []string{
+		`CREATE TABLE oidc_providers (id TEXT PRIMARY KEY, enabled INTEGER NOT NULL, groups_claim TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE user_oidc_identities (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, provider_id TEXT NOT NULL, group_names TEXT NOT NULL DEFAULT '[]')`,
+		`INSERT INTO oidc_providers (id, enabled, groups_claim) VALUES ('corp', 1, 'groups'), ('git', 1, 'groups'), ('off', 1, '')`,
+	} {
+		if err := tx.Exec(stmt).Error; err != nil {
+			t.Fatalf("failed to create oidc tables: %v", err)
+		}
+	}
+}
+
+// setGroups sets the groups alice has at the provider.
+func setGroups(t *testing.T, tx *gorm.DB, providerID, groups string) {
+	t.Helper()
+	if err := tx.Exec(`INSERT INTO user_oidc_identities (id, user_id, provider_id, group_names) VALUES (?, 'alice', ?, ?)
+		ON CONFLICT(id) DO UPDATE SET group_names = excluded.group_names`, "alice-"+providerID, providerID, groups).Error; err != nil {
+		t.Fatalf("failed to set groups: %v", err)
+	}
+}
+
 func TestSyncOIDCRoles(t *testing.T) {
 	tx := openTestDB(t)
-	devs := models.Role{Name: "Devs", OIDCGroups: []string{"devs", "engineering"}}
-	ops := models.Role{Name: "Ops", OIDCGroups: []string{"ops"}}
+	createOIDCTables(t, tx)
+	devs := models.Role{Name: "Devs"}
+	ops := models.Role{Name: "Ops"}
 	for _, role := range []*models.Role{&devs, &ops} {
 		if err := gorm.G[models.Role](tx).Create(t.Context(), role); err != nil {
 			t.Fatalf("failed to create role: %v", err)
 		}
 	}
-	if _, err := gorm.G[models.Role](tx).Where("id = ?", AdminRoleID).Update(t.Context(), "oidc_groups", `["admins"]`); err != nil {
-		t.Fatalf("failed to map admin role: %v", err)
+	mappings := []models.RoleOIDCGroup{
+		{RoleId: devs.Id, ProviderId: "corp", Group: "devs"},
+		{RoleId: devs.Id, ProviderId: "corp", Group: "engineering"},
+		{RoleId: ops.Id, ProviderId: "corp", Group: "ops"},
+		{RoleId: AdminRoleID, ProviderId: "corp", Group: "admins"},
+		{RoleId: ops.Id, ProviderId: "off", Group: "ops"},
+	}
+	if err := gorm.G[models.RoleOIDCGroup](tx).CreateInBatches(t.Context(), &mappings, 10); err != nil {
+		t.Fatalf("failed to map groups: %v", err)
 	}
 	createUser(t, tx, "alice", UserRoleID)
 
 	rolesOf := func(source models.UserRoleSource) []string {
 		t.Helper()
-		assignments, err := gorm.G[models.UserRole](tx).Where("user_id = ? AND source = ?", "alice", source).Order("role_id").Find(t.Context())
+		assignments, err := gorm.G[models.UserRole](tx).Where("user_id = ? AND source = ?", "alice", source).Find(t.Context())
 		if err != nil {
 			t.Fatalf("failed to load roles: %v", err)
 		}
@@ -398,23 +430,31 @@ func TestSyncOIDCRoles(t *testing.T) {
 		return ids
 	}
 	sorted := func(ids ...string) []string { slices.Sort(ids); return ids }
+	sync := func() []string {
+		t.Helper()
+		changed, err := SyncOIDCRoles(t.Context(), tx, []string{"alice"})
+		if err != nil {
+			t.Fatalf("SyncOIDCRoles() error: %v", err)
+		}
+		return changed
+	}
 
-	changed, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{"engineering", "ops", "unknown"})
-	if err != nil || !changed {
-		t.Fatalf("expected roles to change, changed=%v err=%v", changed, err)
+	setGroups(t, tx, "corp", `["engineering", "ops", "unknown"]`)
+	if changed := sync(); !slices.Equal(changed, []string{"alice"}) {
+		t.Fatalf("expected alice's roles to change, got %v", changed)
 	}
 	if got := rolesOf(models.UserRoleSourceOIDC); !slices.Equal(got, sorted(devs.Id, ops.Id)) {
 		t.Fatalf("expected devs and ops, got %v", got)
 	}
-
-	changed, err = SyncOIDCRoles(t.Context(), tx, "alice", []string{"devs", "ops"})
-	if err != nil || changed {
-		t.Fatalf("expected no change, changed=%v err=%v", changed, err)
+	if changed := sync(); len(changed) != 0 {
+		t.Fatalf("expected no change, got %v", changed)
 	}
 
-	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", nil); err != nil {
-		t.Fatalf("SyncOIDCRoles() error: %v", err)
-	}
+	// The same group names at another provider, or one that doesn't sync groups, map to nothing.
+	setGroups(t, tx, "corp", `[]`)
+	setGroups(t, tx, "git", `["admins", "devs"]`)
+	setGroups(t, tx, "off", `["ops"]`)
+	sync()
 	if got := rolesOf(models.UserRoleSourceOIDC); len(got) != 0 {
 		t.Fatalf("expected the oidc roles to be removed, got %v", got)
 	}
@@ -423,11 +463,11 @@ func TestSyncOIDCRoles(t *testing.T) {
 	}
 
 	// Alice becomes the only admin through her group and keeps the role after leaving it.
-	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{"admins"}); err != nil {
-		t.Fatalf("SyncOIDCRoles() error: %v", err)
-	}
-	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{}); err != nil {
-		t.Fatalf("SyncOIDCRoles() error: %v", err)
+	setGroups(t, tx, "corp", `["admins"]`)
+	sync()
+	setGroups(t, tx, "corp", `[]`)
+	if changed := sync(); len(changed) != 0 {
+		t.Fatalf("expected the last admin to keep the role without changes, got %v", changed)
 	}
 	if p, err := Load(t.Context(), tx, "alice"); err != nil || !p.IsAdmin() {
 		t.Fatalf("expected the last admin to keep the admin role, err=%v", err)
@@ -435,10 +475,23 @@ func TestSyncOIDCRoles(t *testing.T) {
 
 	// With another admin around, leaving the group removes it.
 	createUser(t, tx, "bob", AdminRoleID)
-	if _, err := SyncOIDCRoles(t.Context(), tx, "alice", []string{}); err != nil {
-		t.Fatalf("SyncOIDCRoles() error: %v", err)
-	}
+	sync()
 	if p, err := Load(t.Context(), tx, "alice"); err != nil || p.IsAdmin() {
 		t.Fatalf("expected alice to lose the admin role, err=%v", err)
+	}
+
+	// A disabled provider grants nothing.
+	setGroups(t, tx, "corp", `["ops"]`)
+	if err := tx.Exec(`UPDATE oidc_providers SET enabled = 0 WHERE id = 'corp'`).Error; err != nil {
+		t.Fatalf("failed to disable provider: %v", err)
+	}
+	sync()
+	if got := rolesOf(models.UserRoleSourceOIDC); len(got) != 0 {
+		t.Fatalf("expected no roles from a disabled provider, got %v", got)
+	}
+
+	ids, err := OIDCUserIDs(t.Context(), tx)
+	if err != nil || !slices.Contains(ids, "alice") {
+		t.Fatalf("expected alice to be synced after mapping changes, got %v (err=%v)", ids, err)
 	}
 }

@@ -16,7 +16,7 @@ type OIDCProvider struct {
 	AutoSignup           bool                   `gorm:"column:auto_signup;type:integer;not null"`
 	// GroupsClaim names the claim with the groups of a user, nested claims are separated by dots.
 	// Empty disables syncing roles from groups.
-	GroupsClaim string `gorm:"column:groups_claim;type:text;not null;default:'groups'"`
+	GroupsClaim string `gorm:"column:groups_claim;type:text;not null;default:''"`
 }
 
 func (OIDCProvider) TableName() string {

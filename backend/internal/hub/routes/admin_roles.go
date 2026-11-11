@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -28,9 +29,14 @@ type upsertRoleRequest struct {
 	Description string                  `json:"description" binding:"max=256"`
 	Permissions []rolePermissionRequest `json:"permissions" binding:"max=5000,dive"`
 	// OIDCGroups give the role to users in any of these groups at their OIDC provider.
-	OIDCGroups []string `json:"oidcGroups" binding:"max=100,dive,max=255"`
+	OIDCGroups []roleOIDCGroup `json:"oidcGroups" binding:"max=100,dive"`
 	// UserIds are the members an admin assigned by hand. Members from OIDC groups are not affected.
 	UserIds []string `json:"userIds" binding:"max=10000"`
+}
+
+type roleOIDCGroup struct {
+	ProviderId string `json:"providerId" binding:"required"`
+	Group      string `json:"group" binding:"required,max=255"`
 }
 
 type rolePermissionResponse struct {
@@ -51,7 +57,7 @@ type roleResponse struct {
 	Name        string                   `json:"name"`
 	Description string                   `json:"description"`
 	BuiltIn     *models.RoleBuiltIn      `json:"builtIn"`
-	OIDCGroups  []string                 `json:"oidcGroups"`
+	OIDCGroups  []roleOIDCGroup          `json:"oidcGroups"`
 	Permissions []rolePermissionResponse `json:"permissions"`
 	Members     []roleMemberResponse     `json:"members"`
 	CreatedAt   string                   `json:"createdAt"`
@@ -63,7 +69,7 @@ var errRoleNotFound = errors.New("role not found")
 func AdminListRolesHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	roles, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Find(ctx)
+	roles, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Preload("OIDCGroups", nil).Find(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -108,7 +114,6 @@ func AdminCreateRoleHandler(c *gin.Context) {
 	role := models.Role{
 		Name:        req.Name,
 		Description: req.Description,
-		OIDCGroups:  req.OIDCGroups,
 	}
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -119,6 +124,9 @@ func AdminCreateRoleHandler(c *gin.Context) {
 			return err
 		}
 		if err := replaceRolePermissions(ctx, tx, role.Id, permissions); err != nil {
+			return err
+		}
+		if _, err := replaceRoleOIDCGroups(ctx, tx, role.Id, req.OIDCGroups); err != nil {
 			return err
 		}
 		_, err := rbac.SetRoleMembers(ctx, tx, role.Id, models.UserRoleSourceManual, req.UserIds)
@@ -165,13 +173,13 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 
 		// The names of the built-in roles are translated by clients, and the
 		// permissions of the admin role are implicit.
-		columns := []any{"updated_at"}
+		columns := []any{}
 		if role.BuiltIn == nil {
 			columns = append(columns, "name", "description")
 		}
 		if _, err := gorm.G[models.Role](tx).Where("id = ?", id).
-			Select("oidc_groups", columns...).
-			Updates(ctx, models.Role{Name: req.Name, Description: req.Description, OIDCGroups: req.OIDCGroups, UpdatedAt: time.Now()}); err != nil {
+			Select("updated_at", columns...).
+			Updates(ctx, models.Role{Name: req.Name, Description: req.Description, UpdatedAt: time.Now()}); err != nil {
 			return err
 		}
 		if !role.IsBuiltIn(models.RoleBuiltInAdmin) {
@@ -181,7 +189,16 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 		}
 
 		return keepLastAdmin(ctx, tx, func() error {
-			var err error
+			groupsChanged, err := replaceRoleOIDCGroups(ctx, tx, id, req.OIDCGroups)
+			if err != nil {
+				return err
+			}
+			// Members from groups follow the new groups right away
+			if groupsChanged {
+				if err := syncAllOIDCRoles(ctx, tx); err != nil {
+					return err
+				}
+			}
 			membersChanged, err = rbac.SetRoleMembers(ctx, tx, id, models.UserRoleSourceManual, req.UserIds)
 			return err
 		})
@@ -251,13 +268,14 @@ var (
 	errInvalidPermission = errors.New("invalid permission")
 	errUnknownResource   = errors.New("permission refers to a resource that does not exist")
 	errUnknownUser       = errors.New("user not found")
+	errUnknownProvider   = errors.New("OIDC provider not found")
 )
 
 func writeRoleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, errRoleNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
-	case errors.Is(err, errBuiltInRole), errors.Is(err, errUnknownResource), errors.Is(err, errUnknownUser):
+	case errors.Is(err, errBuiltInRole), errors.Is(err, errUnknownResource), errors.Is(err, errUnknownUser), errors.Is(err, errUnknownProvider):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case isUniqueConstraintError(err):
 		c.JSON(http.StatusConflict, gin.H{"error": "a role with this name already exists"})
@@ -272,7 +290,7 @@ func writeRoleError(c *gin.Context, err error) {
 func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission, bool) {
 	var req upsertRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name is required and must be at most 64 characters"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: the name is required and can have up to 64 characters, and a role can have up to 100 OIDC groups"})
 		return req, nil, false
 	}
 	req.Name = strings.TrimSpace(req.Name)
@@ -293,12 +311,74 @@ func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission
 	return req, permissions, true
 }
 
-func normalizeOIDCGroups(groups []string) []string {
-	trimmed := make([]string, 0, len(groups))
+func normalizeOIDCGroups(groups []roleOIDCGroup) []roleOIDCGroup {
+	seen := make(map[roleOIDCGroup]struct{}, len(groups))
+	unique := make([]roleOIDCGroup, 0, len(groups))
 	for _, group := range groups {
-		trimmed = append(trimmed, strings.TrimSpace(group))
+		group.Group = strings.TrimSpace(group.Group)
+		if _, ok := seen[group]; ok || group.Group == "" {
+			continue
+		}
+		seen[group] = struct{}{}
+		unique = append(unique, group)
 	}
-	return uniqueIds(trimmed)
+	return unique
+}
+
+// replaceRoleOIDCGroups sets the OIDC groups of a role. Returns whether they changed.
+func replaceRoleOIDCGroups(ctx context.Context, tx *gorm.DB, roleId string, groups []roleOIDCGroup) (bool, error) {
+	providerIds := make([]string, 0, len(groups))
+	for _, group := range groups {
+		providerIds = append(providerIds, group.ProviderId)
+	}
+	providerIds = uniqueIds(providerIds)
+	if len(providerIds) > 0 {
+		count, err := gorm.G[models.OIDCProvider](tx).Where("id IN ?", providerIds).Count(ctx, "*")
+		if err != nil {
+			return false, err
+		}
+		if int(count) != len(providerIds) {
+			return false, errUnknownProvider
+		}
+	}
+
+	current, err := gorm.G[models.RoleOIDCGroup](tx).Where("role_id = ?", roleId).Find(ctx)
+	if err != nil {
+		return false, err
+	}
+	wanted := make(map[roleOIDCGroup]struct{}, len(groups))
+	for _, group := range groups {
+		wanted[group] = struct{}{}
+	}
+	if len(current) == len(wanted) && !slices.ContainsFunc(current, func(g models.RoleOIDCGroup) bool {
+		_, ok := wanted[roleOIDCGroup{ProviderId: g.ProviderId, Group: g.Group}]
+		return !ok
+	}) {
+		return false, nil
+	}
+
+	if _, err := gorm.G[models.RoleOIDCGroup](tx).Where("role_id = ?", roleId).Delete(ctx); err != nil {
+		return false, err
+	}
+	if len(groups) == 0 {
+		return true, nil
+	}
+	rows := make([]models.RoleOIDCGroup, 0, len(groups))
+	for _, group := range groups {
+		rows = append(rows, models.RoleOIDCGroup{RoleId: roleId, ProviderId: group.ProviderId, Group: group.Group})
+	}
+	return true, gorm.G[models.RoleOIDCGroup](tx).CreateInBatches(ctx, &rows, 100)
+}
+
+// syncAllOIDCRoles updates the roles every user gets from OIDC groups, after the
+// groups of a role or a provider changed.
+func syncAllOIDCRoles(ctx context.Context, tx *gorm.DB) error {
+	userIds, err := rbac.OIDCUserIDs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	_, err = rbac.SyncOIDCRoles(ctx, tx, userIds)
+	return err
 }
 
 func normalizeRolePermissions(items []rolePermissionRequest) ([]models.RolePermission, error) {
@@ -436,7 +516,7 @@ func replaceRolePermissions(ctx context.Context, tx *gorm.DB, roleId string, per
 }
 
 func loadRole(ctx context.Context, id string) (models.Role, error) {
-	role, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Where("id = ?", id).First(ctx)
+	role, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Preload("OIDCGroups", nil).Where("id = ?", id).First(ctx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return role, errRoleNotFound
 	}
@@ -521,10 +601,13 @@ func toRoleResponse(role *models.Role, members []roleMemberResponse) roleRespons
 	if members == nil {
 		members = []roleMemberResponse{}
 	}
-	oidcGroups := role.OIDCGroups
-	if oidcGroups == nil {
-		oidcGroups = []string{}
+	oidcGroups := make([]roleOIDCGroup, 0, len(role.OIDCGroups))
+	for _, group := range role.OIDCGroups {
+		oidcGroups = append(oidcGroups, roleOIDCGroup{ProviderId: group.ProviderId, Group: group.Group})
 	}
+	slices.SortFunc(oidcGroups, func(a, b roleOIDCGroup) int {
+		return cmp.Or(strings.Compare(a.ProviderId, b.ProviderId), strings.Compare(a.Group, b.Group))
+	})
 
 	return roleResponse{
 		Id:          role.Id,

@@ -51,7 +51,7 @@ export interface Role {
 	description: string;
 	builtIn: RoleBuiltIn | null;
 	// Users in any of these groups at their OIDC provider get the role
-	oidcGroups: string[];
+	oidcGroups: RoleOIDCGroup[];
 	permissions: RolePermission[];
 	members: RoleMember[];
 	createdAt: string;
@@ -71,7 +71,13 @@ export interface UpsertRoleRequest {
 	description: string;
 	permissions: RolePermission[];
 	userIds: string[];
-	oidcGroups: string[];
+	oidcGroups: RoleOIDCGroup[];
+}
+
+// Group names are only unique within their provider
+export interface RoleOIDCGroup {
+	providerId: string;
+	group: string;
 }
 
 // The names of the built-in roles are translated instead of using the stored ones.

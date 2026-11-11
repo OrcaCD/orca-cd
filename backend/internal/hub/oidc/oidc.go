@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -41,65 +40,88 @@ type OIDCUser struct {
 
 const maxGroups = 1000
 
-// groupsFromClaims reads the groups at the claim path, where dots separate nested
-// claims like Keycloak's "realm_access.roles". A single string counts as one group.
+// ErrGroupsUnavailable is returned when the groups of a user can't be read, so
+// their roles are not changed based on missing groups.
+var ErrGroupsUnavailable = errors.New("oidc: groups unavailable")
+
+// groupsFromClaims reads the groups at the claim path. A claim with the whole
+// path as name is used first, for namespaced claims like Auth0's
+// "https://example.com/groups". Otherwise dots separate nested claims like
+// Keycloak's "realm_access.roles". A single string counts as one group.
 // found is false when the claim does not exist.
-func groupsFromClaims(claims map[string]any, path string) (groups []string, found bool) {
-	var value any = claims
-	for part := range strings.SplitSeq(path, ".") {
-		object, ok := value.(map[string]any)
-		if !ok {
-			return nil, false
+func groupsFromClaims(claims map[string]any, path string) (groups []string, found bool, err error) {
+	value, ok := claims[path]
+	if !ok {
+		var current any = claims
+		for part := range strings.SplitSeq(path, ".") {
+			object, isObject := current.(map[string]any)
+			if !isObject {
+				return nil, false, nil
+			}
+			if current, ok = object[part]; !ok {
+				return nil, false, nil
+			}
 		}
-		if value, ok = object[part]; !ok {
-			return nil, false
-		}
+		value = current
 	}
 
 	switch v := value.(type) {
+	case nil:
 	case string:
 		groups = []string{v}
 	case []any:
 		for _, item := range v {
-			if group, ok := item.(string); ok {
-				groups = append(groups, group)
+			group, isString := item.(string)
+			if !isString {
+				return nil, true, fmt.Errorf("%w: claim %q contains a %T", ErrGroupsUnavailable, path, item)
 			}
+			groups = append(groups, group)
 		}
+	default:
+		return nil, true, fmt.Errorf("%w: claim %q is a %T, not a list of groups", ErrGroupsUnavailable, path, value)
 	}
 
+	seen := make(map[string]struct{}, len(groups))
 	unique := make([]string, 0, len(groups))
 	for _, group := range groups {
 		group = strings.TrimSpace(group)
-		if group != "" && !slices.Contains(unique, group) && len(unique) < maxGroups {
-			unique = append(unique, group)
+		if _, ok := seen[group]; ok || group == "" || len(unique) >= maxGroups {
+			continue
 		}
+		seen[group] = struct{}{}
+		unique = append(unique, group)
 	}
-	return unique, true
+	return unique, true, nil
 }
 
 // readGroups reads the groups from the id_token and falls back to the userinfo
-// endpoint, which some providers use for large claims. A missing claim means no groups.
-func readGroups(ctx context.Context, provider *gooidc.Provider, token *oauth2.Token, idToken *gooidc.IDToken, path string) []string {
+// endpoint, which some providers use for large claims. A claim missing from
+// both means no groups, since some providers leave out empty claims.
+func readGroups(ctx context.Context, provider *gooidc.Provider, token *oauth2.Token, idToken *gooidc.IDToken, path string) ([]string, error) {
 	var claims map[string]any
-	if err := idToken.Claims(&claims); err == nil {
-		if groups, found := groupsFromClaims(claims, path); found {
-			return groups
-		}
+	if err := idToken.Claims(&claims); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrGroupsUnavailable, err)
+	}
+	if groups, found, err := groupsFromClaims(claims, path); found || err != nil {
+		return groups, err
 	}
 
 	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
-	if err != nil || userInfo.Subject != idToken.Subject {
-		return []string{}
+	if err != nil {
+		return nil, fmt.Errorf("%w: userinfo: %w", ErrGroupsUnavailable, err)
+	}
+	if userInfo.Subject != idToken.Subject {
+		return nil, fmt.Errorf("%w: userinfo is for another subject", ErrGroupsUnavailable)
 	}
 	var info map[string]any
 	if err := userInfo.Claims(&info); err != nil {
-		return []string{}
+		return nil, fmt.Errorf("%w: %w", ErrGroupsUnavailable, err)
 	}
-	groups, _ := groupsFromClaims(info, path)
-	if groups == nil {
-		return []string{}
+	groups, _, err := groupsFromClaims(info, path)
+	if groups == nil && err == nil {
+		groups = []string{}
 	}
-	return groups
+	return groups, err
 }
 
 func normalizePictureURL(raw string) string {
@@ -350,7 +372,9 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 
 	var groups []string
 	if provider.GroupsClaim != "" {
-		groups = readGroups(ctx, oidcProvider, oauth2Token, idToken, provider.GroupsClaim)
+		if groups, err = readGroups(ctx, oidcProvider, oauth2Token, idToken, provider.GroupsClaim); err != nil {
+			return nil, err
+		}
 	}
 
 	return &OIDCUser{

@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -9,7 +10,11 @@ import (
 func TestGroupsFromClaims(t *testing.T) {
 	var claims map[string]any
 	if err := json.Unmarshal([]byte(`{
-		"groups": ["devs", " ops ", "devs", "", 42],
+		"groups": ["devs", " ops ", "devs", ""],
+		"mixed": ["devs", 42],
+		"object": {"devs": true},
+		"https://example.com/groups": ["namespaced"],
+		"null": null,
 		"single": "admins",
 		"realm_access": {"roles": ["deployers"]},
 		"empty": []
@@ -21,20 +26,28 @@ func TestGroupsFromClaims(t *testing.T) {
 		path      string
 		want      []string
 		wantFound bool
+		wantErr   bool
 	}{
-		{"groups", []string{"devs", "ops"}, true},
-		{"single", []string{"admins"}, true},
-		{"realm_access.roles", []string{"deployers"}, true},
-		{"empty", []string{}, true},
-		{"missing", nil, false},
-		{"realm_access.missing", nil, false},
-		{"single.nested", nil, false},
+		{"groups", []string{"devs", "ops"}, true, false},
+		{"single", []string{"admins"}, true, false},
+		{"realm_access.roles", []string{"deployers"}, true, false},
+		{"empty", []string{}, true, false},
+		{"missing", nil, false, false},
+		{"realm_access.missing", nil, false, false},
+		{"single.nested", nil, false, false},
+		{"https://example.com/groups", []string{"namespaced"}, true, false},
+		{"null", []string{}, true, false},
+		{"mixed", nil, true, true},
+		{"object", nil, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			got, found := groupsFromClaims(claims, tt.path)
-			if found != tt.wantFound || !slices.Equal(got, tt.want) {
-				t.Fatalf("groupsFromClaims(%q) = %v, %v; want %v, %v", tt.path, got, found, tt.want, tt.wantFound)
+			got, found, err := groupsFromClaims(claims, tt.path)
+			if found != tt.wantFound || !slices.Equal(got, tt.want) || (err != nil) != tt.wantErr {
+				t.Fatalf("groupsFromClaims(%q) = %v, %v, %v; want %v, %v, err=%v", tt.path, got, found, err, tt.want, tt.wantFound, tt.wantErr)
+			}
+			if err != nil && !errors.Is(err, ErrGroupsUnavailable) {
+				t.Fatalf("expected ErrGroupsUnavailable, got %v", err)
 			}
 		})
 	}

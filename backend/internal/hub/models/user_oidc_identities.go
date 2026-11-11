@@ -5,6 +5,8 @@ type UserOIDCIdentity struct {
 	UserId     string `gorm:"column:user_id;type:text;not null;index;uniqueIndex:idx_user_oidc_identities_user_provider,priority:1"`
 	ProviderId string `gorm:"column:provider_id;type:text;not null;index;uniqueIndex:idx_user_oidc_identities_user_provider,priority:2;uniqueIndex:idx_user_oidc_identities_provider_subject,priority:1"`
 	Subject    string `gorm:"column:subject;type:text;not null;uniqueIndex:idx_user_oidc_identities_provider_subject,priority:2"`
+	// Groups of the user at the provider as of their last login
+	Groups []string `gorm:"column:group_names;type:text;not null;default:'[]';serializer:json"`
 }
 
 func (UserOIDCIdentity) TableName() string {

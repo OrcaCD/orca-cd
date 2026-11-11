@@ -628,20 +628,32 @@ test.describe("Roles from groups", () => {
 			page,
 		}) => {
 			const group = `e2e-group-${Date.now()}-${profileSource}`;
+			const provider = await makeProvider({
+				scopes: "groups",
+				groupsClaim: "groups",
+				profileSource,
+			});
+			// The same group name at another provider must not grant the role
+			const other = await makeProvider({ scopes: "groups", groupsClaim: "groups", profileSource });
 			const created = await api(admin, "POST", "/admin/roles", {
 				name: `Group role ${group}`,
 				description: "",
 				permissions: [{ resource: "application", action: "read", resourceId: null }],
 				userIds: [],
-				oidcGroups: [group],
+				oidcGroups: [{ providerId: provider.id, group }],
 			});
 			expect(created.status, JSON.stringify(created.body)).toBe(201);
 			const roleId = (created.body as { id: string }).id;
 
 			try {
-				const provider = await makeProvider({ scopes: "groups", profileSource });
-				const user = await createMockUser({ groups: ["unrelated", group] });
+				const outsider = await createMockUser({ groups: [group] });
+				await signIn(page, other, outsider.sub);
+				expect((await expectSignedIn(page)).roles).toEqual([
+					expect.objectContaining({ builtIn: "user" }),
+				]);
+				await signOut(page);
 
+				const user = await createMockUser({ groups: ["unrelated", group] });
 				await signIn(page, provider, user.sub);
 				// A mapped group replaces the default role of new users
 				expect((await expectSignedIn(page)).roles).toEqual([

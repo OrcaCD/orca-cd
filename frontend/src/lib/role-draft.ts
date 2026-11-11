@@ -6,6 +6,7 @@ import {
 	type PermissionAction,
 	type PermissionResource,
 	type Role,
+	type RoleOIDCGroup,
 	type RolePermission,
 	type UpsertRoleRequest,
 } from "./roles";
@@ -20,7 +21,7 @@ export interface RoleDraft {
 	description: string;
 	grants: Grants;
 	userIds: string[];
-	oidcGroups: string[];
+	oidcGroups: RoleOIDCGroup[];
 }
 
 export function emptyGrants(): Grants {
@@ -79,7 +80,7 @@ export function draftKey(draft: RoleDraft): string {
 			.map((p) => `${p.resource}:${p.resourceId ?? ALL}:${p.action}`)
 			.sort(),
 		userIds: [...request.userIds].sort(),
-		oidcGroups: [...request.oidcGroups].sort(),
+		oidcGroups: request.oidcGroups.map((g) => `${g.providerId}:${g.group}`).sort(),
 	});
 }
 
