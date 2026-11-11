@@ -115,8 +115,8 @@ export function RoleEditor({
 
 	return (
 		<div className="bg-card flex min-w-0 flex-col rounded-xl border">
-			<div className="flex flex-col gap-4 border-b p-4 sm:flex-row sm:items-start sm:p-6">
-				<div className="min-w-0 flex-1">
+			<div className="border-b p-4 sm:p-6">
+				<div className="min-w-0">
 					{isBuiltIn ? (
 						<div className="flex flex-col gap-1">
 							<div className="flex items-center gap-2">
@@ -157,20 +157,6 @@ export function RoleEditor({
 						</FieldGroup>
 					)}
 				</div>
-				{role && !isBuiltIn && (
-					<ConfirmationDialog
-						onConfirm={() => void remove()}
-						title={m.deleteRoleTitle()}
-						description={m.deleteRoleDescription({ name: role.name, count: role.members.length })}
-						triggerText={
-							<>
-								<Trash2 className="size-4" />
-								{m.deleteRole()}
-							</>
-						}
-						triggerProps={{ variant: "destructive" }}
-					/>
-				)}
 			</div>
 
 			<Tabs defaultValue="permissions" className="p-4 sm:p-6">
@@ -209,9 +195,25 @@ export function RoleEditor({
 				</TabsContent>
 			</Tabs>
 
-			<div className="bg-card/95 sticky bottom-0 mt-auto flex items-center justify-end gap-2 rounded-b-xl border-t px-4 py-3 backdrop-blur sm:px-6">
+			<div className="bg-card/95 sticky bottom-0 mt-auto flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t px-4 py-3 backdrop-blur sm:px-6">
+				{role && !isBuiltIn && (
+					<div className="mr-auto">
+						<ConfirmationDialog
+							onConfirm={() => void remove()}
+							title={m.deleteRoleTitle()}
+							description={m.deleteRoleDescription({ name: role.name, count: role.members.length })}
+							triggerText={
+								<>
+									<Trash2 className="size-4" />
+									{m.deleteRole()}
+								</>
+							}
+							triggerProps={{ variant: "destructive" }}
+						/>
+					</div>
+				)}
 				{role && dirty && (
-					<span className="text-muted-foreground mr-auto flex items-center gap-2 text-sm">
+					<span className="text-muted-foreground flex items-center gap-2 text-sm">
 						<span className="size-2 rounded-full bg-amber-500" />
 						{m.unsavedChanges()}
 					</span>
