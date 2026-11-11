@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Lock, ShieldCheck, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -41,18 +41,34 @@ export function RoleEditor({
 	onDirtyChange: (dirty: boolean) => void;
 }) {
 	const [draft, setDraft] = useState<RoleDraft>(() => toDraft(role));
+	// The saved state the draft is compared with
+	const [baseline, setBaseline] = useState<RoleDraft>(() => toDraft(role));
 	const [saving, setSaving] = useState(false);
 	const [nameError, setNameError] = useState<string | null>(null);
 
 	const isAdmin = role?.builtIn === "admin";
 	const isBuiltIn = role !== null && role.builtIn !== null;
-	const dirty = role === null || draftKey(draft) !== draftKey(toDraft(role));
+	const baselineKey = useMemo(() => draftKey(baseline), [baseline]);
+	const dirty = draftKey(draft) !== baselineKey;
 	const oidcMembers = role?.members.filter((member) => member.sources.includes("oidc")) ?? [];
 	const memberCount = new Set([...draft.userIds, ...oidcMembers.map((member) => member.id)]).size;
 
+	// The role can change while it is open, e.g. by another admin or a deleted
+	// resource. Unchanged drafts follow it, changed ones are kept.
+	const roleKey = useMemo(() => (role ? draftKey(toDraft(role)) : null), [role]);
+	const [syncedRoleKey, setSyncedRoleKey] = useState(roleKey);
+	if (role && roleKey !== syncedRoleKey) {
+		setSyncedRoleKey(roleKey);
+		const next = toDraft(role);
+		if (!dirty) {
+			setDraft(next);
+		}
+		setBaseline(next);
+	}
+
 	useEffect(() => {
-		onDirtyChange(role !== null && dirty);
-	}, [role, dirty, onDirtyChange]);
+		onDirtyChange(dirty);
+	}, [dirty, onDirtyChange]);
 
 	async function save() {
 		const name = isBuiltIn ? role.name : draft.name.trim();
@@ -64,8 +80,14 @@ export function RoleEditor({
 		setSaving(true);
 		try {
 			const request = { ...toRequest(draft), name };
+			// Users deleted while the role was open can't be members
+			if (users) {
+				const userIds = new Set(users.map((user) => user.id));
+				request.userIds = request.userIds.filter((id) => userIds.has(id));
+			}
 			const saved = role ? await updateRole(role.id, request) : await createRole(request);
 			setDraft(toDraft(saved));
+			setBaseline(toDraft(saved));
 			toast.add({ type: "success", title: role ? m.roleSaved() : m.roleCreated() });
 			onSaved(saved);
 		} catch (err) {
@@ -139,7 +161,7 @@ export function RoleEditor({
 					<ConfirmationDialog
 						onConfirm={() => void remove()}
 						title={m.deleteRoleTitle()}
-						description={m.deleteRoleDescription({ name: role.name, count: memberCount })}
+						description={m.deleteRoleDescription({ name: role.name, count: role.members.length })}
 						triggerText={
 							<>
 								<Trash2 className="size-4" />
@@ -195,15 +217,11 @@ export function RoleEditor({
 					</span>
 				)}
 				{role && (
-					<Button
-						variant="outline"
-						disabled={!dirty || saving}
-						onClick={() => setDraft(toDraft(role))}
-					>
+					<Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(baseline)}>
 						{m.discard()}
 					</Button>
 				)}
-				<Button disabled={!dirty || saving} onClick={() => void save()}>
+				<Button disabled={(role !== null && !dirty) || saving} onClick={() => void save()}>
 					{saving ? m.savingDots() : role ? m.saveChanges() : m.createRole()}
 				</Button>
 			</div>

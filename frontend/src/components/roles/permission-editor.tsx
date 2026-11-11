@@ -125,7 +125,9 @@ function ResourcePermissions({
 		allActions.length === actions.length
 			? m.permissionSummaryFull()
 			: allActions.length > 0 || scopedIds.length > 0
-				? m.permissionSummaryPartial({ count: scopedIds.length })
+				? scopedIds.length > 0
+					? m.permissionSummaryPartial({ count: scopedIds.length })
+					: m.permissionSummaryLimited()
 				: m.permissionSummaryNone();
 
 	return (

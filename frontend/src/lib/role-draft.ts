@@ -108,6 +108,16 @@ export function setActions(
 	} else {
 		next[resource][key] = sortActions(resource, actions);
 	}
+	if (key === ALL) {
+		// Actions allowed on all resources don't need to be granted on single ones
+		const redundant = (action: PermissionAction) =>
+			actions.includes(action) || (action === "read" && isReadImplied(actions));
+		for (const id of Object.keys(next[resource])) {
+			if (id !== ALL) {
+				next[resource][id] = next[resource][id].filter((action) => !redundant(action));
+			}
+		}
+	}
 	return next;
 }
 

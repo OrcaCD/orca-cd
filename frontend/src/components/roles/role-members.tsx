@@ -63,7 +63,11 @@ export function RoleMembers({
 					}
 				}}
 			>
-				<ComboboxInput placeholder={m.roleAddMember()} className="sm:max-w-sm" />
+				<ComboboxInput
+					placeholder={m.roleAddMember()}
+					aria-label={m.roleAddMember()}
+					className="sm:max-w-sm"
+				/>
 				<ComboboxContent>
 					<ComboboxEmpty>{m.roleNoUsersLeft()}</ComboboxEmpty>
 					<ComboboxList>

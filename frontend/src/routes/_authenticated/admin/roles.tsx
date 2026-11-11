@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useRef } from "react";
+import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { Lock, Plus, ShieldCheck, Users } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -41,13 +41,20 @@ export const Route = createFileRoute("/_authenticated/admin/roles")({
 function RolesPage() {
 	const { role: selectedId } = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const { data: roles, isLoading } = useFetch<Role[]>("/admin/roles");
+	const { data: roles, isLoading, mutate } = useFetch<Role[]>("/admin/roles");
 	const { data: users } = useFetch<UserDetail[]>("/admin/users");
 	const options = useResourceOptions();
-	const [dirty, setDirty] = useState(false);
-	// A role picked while the current one has unsaved changes, waiting for confirmation
-	const [pending, setPending] = useState<string | null>(null);
-	const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
+	// A ref, so navigating right after saving or deleting is not blocked
+	const dirty = useRef(false);
+	const onDirtyChange = useCallback((value: boolean) => {
+		dirty.current = value;
+	}, []);
+	// Asks before leaving unsaved changes, by picking another role, a link or closing the tab
+	const blocker = useBlocker({
+		shouldBlockFn: () => dirty.current,
+		enableBeforeUnload: () => dirty.current,
+		withResolver: true,
+	});
 
 	const isNew = selectedId === NEW_ROLE;
 	const selected = isNew
@@ -55,20 +62,13 @@ function RolesPage() {
 		: (roles?.find((role) => role.id === selectedId) ?? roles?.[0] ?? null);
 
 	const open = (id: string) => {
-		setDirty(false);
-		setPending(null);
 		void navigate({ search: { role: id }, replace: true });
 	};
 
 	const select = (id: string) => {
-		if (id === (isNew ? NEW_ROLE : selected?.id)) {
-			return;
+		if (id !== (isNew ? NEW_ROLE : selected?.id)) {
+			open(id);
 		}
-		if (dirty) {
-			setPending(id);
-			return;
-		}
-		open(id);
 	};
 
 	return (
@@ -100,7 +100,10 @@ function RolesPage() {
 				</Button>
 			</nav>
 
-			<ResponsiveDialog open={pending !== null} onOpenChange={(next) => !next && setPending(null)}>
+			<ResponsiveDialog
+				open={blocker.status === "blocked"}
+				onOpenChange={(next) => !next && blocker.reset?.()}
+			>
 				<ResponsiveDialogContent className="sm:max-w-106.25">
 					<ResponsiveDialogHeader>
 						<ResponsiveDialogTitle>{m.unsavedChanges()}</ResponsiveDialogTitle>
@@ -109,10 +112,16 @@ function RolesPage() {
 						</ResponsiveDialogDescription>
 					</ResponsiveDialogHeader>
 					<ResponsiveDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
-						<Button variant="secondary" onClick={() => setPending(null)}>
+						<Button variant="secondary" onClick={() => blocker.reset?.()}>
 							{m.cancel()}
 						</Button>
-						<Button variant="destructive" onClick={() => pending && open(pending)}>
+						<Button
+							variant="destructive"
+							onClick={() => {
+								dirty.current = false;
+								blocker.proceed?.();
+							}}
+						>
 							{m.discard()}
 						</Button>
 					</ResponsiveDialogFooter>
@@ -126,9 +135,20 @@ function RolesPage() {
 					users={users}
 					options={options}
 					onDirtyChange={onDirtyChange}
-					onSaved={(role) => open(role.id)}
+					onSaved={(role) => {
+						dirty.current = false;
+						// Show the saved role right away instead of after the live update
+						void mutate(
+							(current) =>
+								current?.some((item) => item.id === role.id)
+									? current.map((item) => (item.id === role.id ? role : item))
+									: [...(current ?? []), role],
+							{ revalidate: false },
+						);
+						open(role.id);
+					}}
 					onDeleted={() => {
-						setDirty(false);
+						dirty.current = false;
 						void navigate({ search: {}, replace: true });
 					}}
 				/>
