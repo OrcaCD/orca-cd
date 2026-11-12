@@ -86,17 +86,20 @@ function ResponsiveDialogContent({
 	className,
 	showCloseButton,
 	onPaste,
+	finalFocus,
 	children,
 }: {
 	className?: string;
 	showCloseButton?: boolean;
 	onPaste?: React.ClipboardEventHandler<HTMLElement>;
+	/** Element that receives focus on close, by default the trigger or the element focused before. */
+	finalFocus?: React.ComponentProps<typeof DialogContent>["finalFocus"];
 	children: React.ReactNode;
 }) {
 	if (useIsDrawer()) {
 		return (
 			<DrawerPrimitive.VirtualKeyboardProvider>
-				<DrawerContent>
+				<DrawerContent finalFocus={finalFocus}>
 					<div
 						className="flex min-h-0 flex-col gap-4 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
 						onPaste={onPaste}
@@ -109,7 +112,12 @@ function ResponsiveDialogContent({
 	}
 
 	return (
-		<DialogContent className={className} showCloseButton={showCloseButton} onPaste={onPaste}>
+		<DialogContent
+			className={className}
+			showCloseButton={showCloseButton}
+			onPaste={onPaste}
+			finalFocus={finalFocus}
+		>
 			{children}
 		</DialogContent>
 	);

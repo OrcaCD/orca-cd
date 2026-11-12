@@ -66,7 +66,7 @@ export function RepositoryDataTable<TData extends RowData>({
 
 	return (
 		<div>
-			<div className="overflow-hidden rounded-md border">
+			<div className="overflow-hidden rounded-xl border bg-card">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (

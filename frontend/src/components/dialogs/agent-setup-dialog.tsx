@@ -28,6 +28,7 @@ import {
 import { CodeBlock, CodeBlockContent, CodeBlockLine } from "@/components/ui/code-block";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { useFetch } from "@/lib/api";
+import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import { AgentStatus, type Agent, type AgentWithTokenResponse } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 
@@ -164,11 +165,13 @@ export default function AgentSetupDialog({
 	open,
 	onOpenChange,
 	onOpenChangeComplete,
+	finalFocus,
 }: {
 	agent: AgentWithTokenResponse | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onOpenChangeComplete?: (open: boolean) => void;
+	finalFocus?: SharedDialogProps["finalFocus"];
 }) {
 	// The SSE connection revalidates this as soon as the agent connects.
 	const { data: liveAgent } = useFetch<Agent>(open && agent ? `/agents/${agent.id}` : null);
@@ -190,7 +193,10 @@ export default function AgentSetupDialog({
 			onOpenChange={onOpenChange}
 			onOpenChangeComplete={onOpenChangeComplete}
 		>
-			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col gap-5 overflow-hidden sm:max-w-2xl">
+			<ResponsiveDialogContent
+				className="flex max-h-[90dvh] flex-col gap-5 overflow-hidden sm:max-w-2xl"
+				finalFocus={finalFocus}
+			>
 				<ResponsiveDialogHeader className="shrink-0">
 					<ResponsiveDialogTitle>
 						{m.agentSetupTitle({ name: agent?.name ?? "" })}

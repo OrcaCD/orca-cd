@@ -1,10 +1,17 @@
 import type { ApplicationListItem } from "@/lib/applications";
+import { PageContainer, PageHeader } from "@/components/page-header";
+import {
+	EmptyState,
+	ResourceGridSkeleton,
+	ResourceTableSkeleton,
+} from "@/components/collection-states";
+import { Button } from "@/components/ui/button";
+import { Container, Plus } from "lucide-react";
+import { SearchField } from "@/components/search-field";
 import type { Agent } from "@/lib/agents";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { z } from "zod";
-import { Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
 import { ApplicationCard } from "@/components/cards/application-card";
@@ -13,6 +20,7 @@ import { m } from "@/lib/paraglide/messages";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import UpsertApplicationDialog from "@/components/dialogs/upsert-application";
+import { useSharedDialog } from "@/hooks/use-shared-dialog";
 import {
 	fleetCategories,
 	fleetCategoryConfig,
@@ -51,6 +59,14 @@ export const Route = createFileRoute("/_authenticated/applications/")({
 function ApplicationsPage() {
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
+	const searchInputRef = useRef<HTMLInputElement>(null);
+	// The list replaces the empty state as soon as an application exists, the dialog has to stay.
+	const {
+		fallbackRef: addApplicationRef,
+		triggerProps: addApplicationTrigger,
+		openFrom: openAddApplication,
+		dialogProps: addApplicationDialog,
+	} = useSharedDialog();
 	const { status, agent } = Route.useSearch();
 	const navigate = Route.useNavigate();
 
@@ -68,6 +84,13 @@ function ApplicationsPage() {
 		{ value: allAgents, label: m.applicationsFilterAllAgents() },
 		...(agents ?? []).map((item) => ({ value: item.id, label: item.name })),
 	];
+
+	const hasFilters = Boolean(status || agent);
+	const clearFilters = () => {
+		setSearchQuery("");
+		void navigate({ search: {}, replace: true });
+		searchInputRef.current?.focus();
+	};
 
 	const query = searchQuery.toLowerCase();
 	const filteredApps =
@@ -89,110 +112,139 @@ function ApplicationsPage() {
 		}) ?? [];
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+		<PageContainer>
+			<PageHeader
+				title={m.pageApplications()}
+				description={m.applicationsPageDescription()}
+				actions={
+					<Button {...addApplicationTrigger} ref={addApplicationRef} onClick={openAddApplication}>
+						<Plus />
+						{m.newApplication()}
+					</Button>
+				}
+			/>
+			<UpsertApplicationDialog application={null} {...addApplicationDialog} />
+			{(data?.length !== 0 || hasFilters || searchQuery.length > 0) && (
 				<div>
-					<h1 className="text-2xl font-bold">{m.pageApplications()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.applicationsPageDescription()}</p>
-				</div>
-				<UpsertApplicationDialog application={null} />
-			</div>
-			<div>
-				<div className="flex flex-col sm:flex-row gap-4">
-					<div className="relative flex-1">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-						<Input
-							placeholder={m.searchApplications()}
-							className="pl-9 bg-muted border-border"
+					<div className="flex flex-col gap-3 sm:flex-row">
+						<SearchField
 							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
+							onChange={setSearchQuery}
+							inputRef={searchInputRef}
+							label={m.searchApplicationsLabel()}
+							placeholder={m.searchApplications()}
+							className="flex-1"
 						/>
-					</div>
 
-					<div className="flex gap-2">
-						<Select
-							value={status ?? allStatuses}
-							onValueChange={(value) => {
-								void navigate({
-									search: (prev) => ({
-										...prev,
-										status: fleetCategories.find((category) => category === value),
-									}),
-									replace: true,
-								});
-							}}
-							items={statusItems}
-						>
-							<SelectTrigger className="w-44" aria-label={m.applicationsFilterStatus()}>
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent alignItemWithTrigger={false}>
-								{statusItems.map((item) => (
-									<SelectItem key={item.value} value={item.value}>
-										{item.value !== allStatuses ? (
-											<span
-												className={cn(
-													"size-1.5 shrink-0 self-center rounded-full",
-													fleetCategoryConfig[item.value].dotClass,
-												)}
-											/>
-										) : null}
-										{item.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						{agents && (agents.length > 1 || agent) ? (
+						<div className="flex gap-2">
 							<Select
-								value={agent ?? allAgents}
+								value={status ?? allStatuses}
 								onValueChange={(value) => {
 									void navigate({
 										search: (prev) => ({
 											...prev,
-											agent: value === allAgents ? undefined : (value ?? undefined),
+											status: fleetCategories.find((category) => category === value),
 										}),
 										replace: true,
 									});
 								}}
-								items={agentItems}
+								items={statusItems}
 							>
-								<SelectTrigger className="w-44" aria-label={m.applicationsFilterAgent()}>
+								<SelectTrigger className="w-44" aria-label={m.applicationsFilterStatus()}>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent alignItemWithTrigger={false}>
-									{agentItems.map((item) => (
+									{statusItems.map((item) => (
 										<SelectItem key={item.value} value={item.value}>
+											{item.value !== allStatuses ? (
+												<span
+													className={cn(
+														"size-1.5 shrink-0 self-center rounded-full",
+														fleetCategoryConfig[item.value].dotClass,
+													)}
+												/>
+											) : null}
 											{item.label}
 										</SelectItem>
 									))}
 								</SelectContent>
 							</Select>
-						) : null}
-						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+							{agents && (agents.length > 1 || agent) ? (
+								<Select
+									value={agent ?? allAgents}
+									onValueChange={(value) => {
+										void navigate({
+											search: (prev) => ({
+												...prev,
+												agent: value === allAgents ? undefined : (value ?? undefined),
+											}),
+											replace: true,
+										});
+									}}
+									items={agentItems}
+								>
+									<SelectTrigger className="w-44" aria-label={m.applicationsFilterAgent()}>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent alignItemWithTrigger={false}>
+										{agentItems.map((item) => (
+											<SelectItem key={item.value} value={item.value}>
+												{item.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							) : null}
+							<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						</div>
 					</div>
 				</div>
-			</div>
-			<div>
-				{viewMode === "grid" ? (
-					<>
-						{data && filteredApps.length === 0 && !isLoading ? (
-							<div className="rounded-xl border border-dashed p-10 text-center">
-								<p className="text-sm font-medium">{m.noApplicationsFound()}</p>
-								<p className="mt-1 text-sm text-muted-foreground">
-									{m.noApplicationsFoundDescription()}
-								</p>
-							</div>
-						) : null}
-						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-							{filteredApps.map((app) => (
-								<ApplicationCard key={app.id} app={app} />
-							))}
-						</div>
-					</>
+			)}
+			{isLoading ? (
+				viewMode === "grid" ? (
+					<ResourceGridSkeleton
+						label={m.loadingApplications()}
+						className="md:grid-cols-2 xl:grid-cols-3"
+					/>
 				) : (
-					<ApplicationsDataTable columns={columns} data={filteredApps} />
-				)}
-			</div>
-		</div>
+					<ResourceTableSkeleton label={m.loadingApplications()} />
+				)
+			) : data?.length === 0 ? (
+				<EmptyState
+					icon={Container}
+					title={m.noApplicationsYet()}
+					description={m.noApplicationsYetDescription()}
+					action={
+						<Button {...addApplicationTrigger} onClick={openAddApplication}>
+							<Plus />
+							{m.newApplication()}
+						</Button>
+					}
+				/>
+			) : data && filteredApps.length === 0 ? (
+				<EmptyState
+					variant="noMatches"
+					title={m.noApplicationsFound()}
+					description={
+						hasFilters
+							? m.noApplicationsFoundFilteredDescription()
+							: m.noApplicationsFoundDescription()
+					}
+					action={
+						<Button variant="outline" onClick={clearFilters}>
+							{hasFilters ? m.filtersClear() : m.searchClear()}
+						</Button>
+					}
+				/>
+			) : viewMode === "grid" ? (
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+					{filteredApps.map((app) => (
+						<ApplicationCard key={app.id} app={app} />
+					))}
+				</div>
+			) : (
+				<ApplicationsDataTable columns={columns} data={filteredApps} />
+			)}
+		</PageContainer>
 	);
 }

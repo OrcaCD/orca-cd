@@ -27,6 +27,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import UpsertOIDCProviderDialog from "@/components/dialogs/upsert-oidc-provider-dialog";
 import CopyButton from "@/components/copy-btn";
 import { m } from "@/lib/paraglide/messages";
+import { CardStackSkeleton } from "@/components/collection-states";
 
 export const Route = createFileRoute("/_authenticated/admin/oidc-providers")({
 	component: OIDCProvidersPage,
@@ -60,7 +61,7 @@ function OIDCProvidersPage() {
 				<UpsertOIDCProviderDialog provider={null} />
 			</div>
 
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingProviders()}</p>}
+			{isLoading ? <CardStackSkeleton label={m.loadingProviders()} heights={["h-36"]} /> : null}
 
 			{providers && providers.length === 0 && (
 				<Card>

@@ -10,7 +10,7 @@ import {
 	ResponsiveDialogTrigger,
 } from "@/components/responsive-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import { Input } from "../ui/input";
 import { createAgent, updateAgent, type Agent, type AgentWithTokenResponse } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
+import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import AgentSetupDialog from "./agent-setup-dialog";
 
 const agentSchema = z.object({
@@ -33,18 +34,30 @@ const agentSchema = z.object({
 
 const defaultAgentIcon: LucideIconName = "server";
 
+/**
+ * Without `open` the dialog brings its own trigger. With `open` it renders none, so the caller can
+ * open one instance from several buttons (see `useSharedDialog`).
+ */
 export default function UpsertAgentDialog({
 	agent,
 	asDropdownItem = false,
+	open: controlledOpen,
+	onOpenChange,
+	finalFocus,
 }: {
 	agent: Agent | null;
 	asDropdownItem?: boolean;
-}) {
+} & Partial<SharedDialogProps>) {
 	const isEditing = !!agent;
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [open, setOpen] = useState(false);
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+	const open = controlledOpen ?? uncontrolledOpen;
+	const setOpen = onOpenChange ?? setUncontrolledOpen;
 	const [createdAgent, setCreatedAgent] = useState<AgentWithTokenResponse | null>(null);
 	const [isAgentSetupOpen, setIsAgentSetupOpen] = useState(false);
+	// After creating, focus moves on to the setup dialog. Returning it to the trigger on the way
+	// would pull it out of that dialog, the setup dialog returns it once it closes.
+	const isHandingOverRef = useRef(false);
 
 	const form = useForm({
 		defaultValues: {
@@ -69,6 +82,7 @@ export default function UpsertAgentDialog({
 						icon: value.icon,
 					});
 					setCreatedAgent(response);
+					isHandingOverRef.current = true;
 					setIsAgentSetupOpen(true);
 				}
 				setOpen(false);
@@ -87,27 +101,32 @@ export default function UpsertAgentDialog({
 	return (
 		<>
 			<ResponsiveDialog open={open} onOpenChange={(open) => setOpen(open)}>
-				<ResponsiveDialogTrigger
-					nativeButton={!asDropdownItem}
-					render={
-						asDropdownItem ? (
-							<DropdownMenuItem>
-								<Pencil className="h-4 w-4" />
-								{m.edit()}
-							</DropdownMenuItem>
-						) : isEditing ? (
-							<Button variant="ghost" size="icon">
-								<Pencil className="h-4 w-4" />
-							</Button>
-						) : (
-							<Button>
-								<Plus className="h-4 w-4" />
-								{m.addAgent()}
-							</Button>
-						)
-					}
-				></ResponsiveDialogTrigger>
-				<ResponsiveDialogContent className="sm:max-w-106.25">
+				{controlledOpen === undefined ? (
+					<ResponsiveDialogTrigger
+						nativeButton={!asDropdownItem}
+						render={
+							asDropdownItem ? (
+								<DropdownMenuItem>
+									<Pencil className="h-4 w-4" />
+									{m.edit()}
+								</DropdownMenuItem>
+							) : isEditing ? (
+								<Button variant="ghost" size="icon">
+									<Pencil className="h-4 w-4" />
+								</Button>
+							) : (
+								<Button>
+									<Plus className="h-4 w-4" />
+									{m.addAgent()}
+								</Button>
+							)
+						}
+					></ResponsiveDialogTrigger>
+				) : null}
+				<ResponsiveDialogContent
+					className="sm:max-w-106.25"
+					finalFocus={finalFocus && (() => !isHandingOverRef.current && finalFocus())}
+				>
 					<ResponsiveDialogHeader>
 						<ResponsiveDialogTitle className="flex items-center gap-2">
 							{isEditing ? m.editAgent() : m.addAgent()}
@@ -185,10 +204,12 @@ export default function UpsertAgentDialog({
 				agent={createdAgent}
 				open={isAgentSetupOpen}
 				onOpenChange={setIsAgentSetupOpen}
+				finalFocus={finalFocus}
 				onOpenChangeComplete={(nextOpen) => {
 					// Keep the token in memory only while the dialog is shown.
 					if (!nextOpen) {
 						setCreatedAgent(null);
+						isHandingOverRef.current = false;
 					}
 				}}
 			/>

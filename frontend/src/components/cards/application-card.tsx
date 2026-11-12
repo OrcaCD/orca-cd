@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Server } from "lucide-react";
+import { ChevronRight, Server } from "lucide-react";
 import {
 	getHealthStatusLabel,
 	getSyncStatusLabel,
@@ -19,7 +19,7 @@ const syncState: Record<SyncStatus, FlowState> = {
 
 const healthState: Record<HealthStatus, FlowState> = {
 	[HealthStatus.Healthy]: "ok",
-	[HealthStatus.Unhealthy]: "warning",
+	[HealthStatus.Unhealthy]: "error",
 	[HealthStatus.Degraded]: "warning",
 	[HealthStatus.Stopped]: "error",
 	[HealthStatus.Unknown]: "unknown",
@@ -37,13 +37,13 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 				className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 			<ResourceCard
-				className="group-hover/application:ring-primary/50"
+				className="group-hover/application:ring-primary/40"
 				icon={<StaticLucideIcon name={app.icon} className="size-5 text-primary" />}
 				title={app.name}
 				subtitle={`${app.repositoryName} @ ${app.branch}`}
 				monoSubtitle
 				action={
-					<ArrowUpRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover/application:translate-x-0.5 group-hover/application:-translate-y-0.5 group-hover/application:text-primary" />
+					<ChevronRight className="m-1.5 size-4 text-muted-foreground transition-transform group-hover/application:translate-x-0.5 group-hover/application:text-primary" />
 				}
 				footer={
 					<>
@@ -51,7 +51,11 @@ export function ApplicationCard({ app }: { app: ApplicationListItem }) {
 							<Server className="size-3.5 shrink-0" />
 							<span className="truncate">{app.agentName}</span>
 						</span>
-						<RelativeTime value={app.lastSyncedAt} className="relative" />
+						<RelativeTime
+							value={app.lastSyncedAt}
+							className="relative"
+							format={(time) => m.overviewRepositoriesLastSynced({ time })}
+						/>
 					</>
 				}
 			>

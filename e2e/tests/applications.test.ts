@@ -249,7 +249,7 @@ async function selectOption(page: Page, trigger: Locator, label: string) {
 
 async function fillApplicationWizard(page: Page, name: string) {
 	await gotoApp(page, "/applications");
-	await page.getByRole("button", { name: "New Application" }).click();
+	await page.getByRole("button", { name: "New Application" }).first().click();
 	const dialog = page.getByRole("dialog");
 
 	await dialog.locator("#name").fill(name);

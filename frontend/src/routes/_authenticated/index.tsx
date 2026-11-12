@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { OverviewDashboard } from "@/components/overview/overview-dashboard";
 import { OnboardingChecklist } from "@/components/overview/onboarding-checklist";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageContainer, PageHeader } from "@/components/page-header";
 import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
@@ -23,13 +24,10 @@ function OverviewPage() {
 	const { data: agents } = useFetch<Agent[]>("/agents");
 
 	return (
-		<div className="p-6 space-y-6">
-			<div>
-				<h1 className="text-2xl font-bold">{m.pageOverview()}</h1>
-				<p className="text-muted-foreground text-sm mt-1">{m.overviewPageDescription()}</p>
-			</div>
+		<PageContainer>
+			<PageHeader title={m.pageOverview()} description={m.overviewPageDescription()} />
 			{!apps ? (
-				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[3fr_2fr_2fr]">
+				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 					<Skeleton className="h-44 md:col-span-2 xl:col-span-1" />
 					<Skeleton className="h-44" />
 					<Skeleton className="h-44" />
@@ -39,6 +37,6 @@ function OverviewPage() {
 			) : (
 				<OverviewDashboard apps={apps} agents={agents} />
 			)}
-		</div>
+		</PageContainer>
 	);
 }

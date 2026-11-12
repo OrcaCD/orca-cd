@@ -3,12 +3,13 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { ArrowRight, Bell, Info, WebhookIcon } from "lucide-react";
 import { useState } from "react";
 import z from "zod";
+import { CardStackSkeleton } from "@/components/collection-states";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldError, FieldGroup } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
@@ -92,9 +93,11 @@ function notifiesAboutRollbacks(notification: Notification, applicationId: strin
 
 function RollbackSettingsPage() {
 	const { id } = Route.useParams();
-	const { data: application, mutate: mutateApplication } = useFetch<Application>(
-		`/applications/${id}`,
-	);
+	const {
+		data: application,
+		mutate: mutateApplication,
+		error: applicationError,
+	} = useFetch<Application>(`/applications/${id}`);
 	const { data: notifications } = useFetch<Notification[]>("/notifications");
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -144,6 +147,18 @@ function RollbackSettingsPage() {
 		notifiesAboutRollbacks(notification, id),
 	);
 
+	if (applicationError) {
+		return (
+			<ErrorAlert
+				title={m.somethingWentWrong()}
+				description={(applicationError as Error).message}
+			/>
+		);
+	}
+	if (!application) {
+		return <CardStackSkeleton label={m.loadingDots()} heights={["h-64", "h-48"]} />;
+	}
+
 	return (
 		<div className="flex flex-col gap-6">
 			<Card>
@@ -169,7 +184,7 @@ function RollbackSettingsPage() {
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
 											/>
-											<Label htmlFor={field.name}>{m.automaticRollback()}</Label>
+											<FieldLabel htmlFor={field.name}>{m.automaticRollback()}</FieldLabel>
 										</div>
 									</Field>
 								)}
@@ -342,7 +357,7 @@ function CheckboxField({
 			<div className="flex items-start gap-2">
 				<Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
 				<div className="space-y-1">
-					<Label htmlFor={id}>{label}</Label>
+					<FieldLabel htmlFor={id}>{label}</FieldLabel>
 					<p className="text-muted-foreground text-xs">{description}</p>
 				</div>
 			</div>

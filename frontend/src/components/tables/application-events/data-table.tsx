@@ -33,7 +33,7 @@ export function ApplicationEventsDataTable({
 	});
 
 	return (
-		<div className="overflow-hidden rounded-md border">
+		<div className="overflow-hidden rounded-xl border bg-card">
 			<Table>
 				<TableHeader>
 					{table.getHeaderGroups().map((headerGroup) => (
