@@ -472,7 +472,7 @@ func TestUpdateApplicationEnvHandler_BlockedInDemoMode(t *testing.T) {
 	agent := withEnvAgent(t, app.AgentId, nil, &messages.EnvUpdateResult{Success: true})
 
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
+	router := newAdminRouter()
 	router.Use(middleware.DemoBlocking())
 	router.PUT("/api/v1/applications/:id/env", UpdateApplicationEnvHandler)
 

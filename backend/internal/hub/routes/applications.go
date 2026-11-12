@@ -129,7 +129,13 @@ type rollbackSettingsResponse struct {
 }
 
 func ListApplicationsHandler(c *gin.Context) {
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
 	applications, err := gorm.G[models.Application](db.DB).
+		Scopes(perms.Scope(models.ResourceApplication, models.ActionRead, "id")).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Order("created_at ASC").
@@ -175,6 +181,9 @@ func CreateApplicationHandler(c *gin.Context) {
 	}
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
+		return
+	}
+	if !canUseApplicationSources(c, req.RepositoryId, req.AgentId) {
 		return
 	}
 
@@ -294,6 +303,30 @@ func UpdateApplicationHandler(c *gin.Context) {
 		return
 	}
 
+	// Only a new source needs read access, so the settings of an application
+	// can be changed without access to its repository and agent.
+	repositoryId, agentId := req.RepositoryId, req.AgentId
+	if repositoryId == application.RepositoryId && req.Branch == application.Branch && req.Path == application.Path {
+		repositoryId = ""
+	}
+	if agentId == application.AgentId {
+		agentId = ""
+	}
+	if !canUseApplicationSources(c, repositoryId, agentId) {
+		return
+	}
+	// A new source or compose project replaces what is deployed
+	if repositoryId != "" || agentId != "" || composeProjectChanged(application.Name.String(), req.Name) {
+		perms, ok := currentPermissions(c)
+		if !ok {
+			return
+		}
+		if !perms.Can(models.ResourceApplication, models.ActionDeploy, id) {
+			respondForbidden(c, "insufficient permissions to deploy the application")
+			return
+		}
+	}
+
 	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -400,6 +433,25 @@ func UpdateApplicationHandler(c *gin.Context) {
 	}
 }
 
+// canUseApplicationSources checks that the user can read the repository and the
+// agent an application is deployed from, since it exposes their files and names.
+// An empty ID is not checked.
+func canUseApplicationSources(c *gin.Context, repositoryId, agentId string) bool {
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return false
+	}
+	if repositoryId != "" && !perms.Can(models.ResourceRepository, models.ActionRead, repositoryId) {
+		respondForbidden(c, "insufficient permissions for the repository")
+		return false
+	}
+	if agentId != "" && !perms.Can(models.ResourceAgent, models.ActionRead, agentId) {
+		respondForbidden(c, "insufficient permissions for the agent")
+		return false
+	}
+	return true
+}
+
 // composeProjectChanged reports whether renaming an application changes the
 // compose project name the agent deploys it under.
 func composeProjectChanged(oldName, newName string) bool {
@@ -465,6 +517,7 @@ func DeleteApplicationHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "application", id)
+	pruneGrants(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(sse.TopicApplications)
