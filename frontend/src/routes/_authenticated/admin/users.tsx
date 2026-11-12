@@ -4,6 +4,7 @@ import { type UserDetail } from "@/lib/users";
 import { UserDataTable } from "@/components/tables/users/data-table";
 import { columns } from "@/components/tables/users/columns";
 import { m } from "@/lib/paraglide/messages";
+import { ResourceTableSkeleton } from "@/components/collection-states";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
 	component: UsersPage,
@@ -21,9 +22,11 @@ function UsersPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingUsers()}</p>}
-
-			<UserDataTable columns={columns} data={users || []} />
+			{isLoading ? (
+				<ResourceTableSkeleton label={m.loadingUsers()} />
+			) : (
+				<UserDataTable columns={columns} data={users || []} />
+			)}
 		</div>
 	);
 }
