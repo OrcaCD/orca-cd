@@ -167,8 +167,7 @@ func GetApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	response := toApplicationResponse(&application)
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, toApplicationResponse(&application))
 }
 
 func CreateApplicationHandler(c *gin.Context) {
@@ -254,8 +253,7 @@ func CreateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "created", "application", application.Id)
 
-	response := toApplicationResponse(&createdApplication)
-	c.JSON(http.StatusCreated, response)
+	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(sse.TopicApplications)
 
 	sendAgentSettings(c, req.AgentId)
@@ -401,8 +399,7 @@ func UpdateApplicationHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "updated", "application", id)
 
-	response := toApplicationResponse(&updatedApplication)
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 	sse.PublishUpdate(sse.TopicApplications)
 	sendAgentSettings(c, req.AgentId)
 	if oldAgentId != req.AgentId {
