@@ -110,6 +110,14 @@ message DeployResult {
   string error_message = 4;
   // Images the services run after a successful deployment.
   repeated ServiceImage images = 5;
+  repeated ComposeWarning warnings = 6;
+  string compose_file_sha256 = 7;
+}
+
+message ComposeWarning {
+  string code = 1;
+  string service = 2;
+  string field = 3;
 }
 
 message AgentSettings {

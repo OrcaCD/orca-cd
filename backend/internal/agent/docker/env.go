@@ -23,7 +23,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/docker/compose/v5/pkg/api"
 )
 
 var (
@@ -101,13 +100,9 @@ func (c *Client) declaredEnvFiles(ctx context.Context, root *os.Root, projectNam
 
 	// Skipping the environment resolution keeps a missing env file from failing
 	// the load.
-	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName:       projectName,
-		ConfigPaths:       []string{filepath.Join(dir, composeFileName)},
-		WorkingDir:        dir,
-		Offline:           true,
-		ProjectOptionsFns: []cli.ProjectOptionsFn{cli.WithoutEnvironmentResolution},
-	})
+	options := composeProjectLoadOptions(projectName, filepath.Join(dir, composeFileName), dir, cli.WithoutEnvironmentResolution)
+	options.Offline = true
+	project, err := loadProject(ctx, c.compose, options)
 	if err != nil {
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}

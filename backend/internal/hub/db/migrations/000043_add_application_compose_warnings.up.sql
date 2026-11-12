@@ -1,0 +1,1 @@
+ALTER TABLE applications ADD COLUMN warnings TEXT NOT NULL DEFAULT '[]';

@@ -264,8 +264,8 @@ func TestListEnv_LoadsOfflineWithoutResolvingEnvironment(t *testing.T) {
 	if !got.Offline {
 		t.Error("expected remote compose resources not to be fetched")
 	}
-	if len(got.ProjectOptionsFns) != 1 {
-		t.Errorf("expected the environment resolution to be skipped, got %d project options", len(got.ProjectOptionsFns))
+	if want := safeComposeLoadOptionCount() + 1; len(got.ProjectOptionsFns) != want {
+		t.Errorf("expected the safe load options plus skipped environment resolution (%d), got %d project options", want, len(got.ProjectOptionsFns))
 	}
 }
 
@@ -978,8 +978,8 @@ func TestDeploy_LoadsProjectWithoutResolvingEnvironment(t *testing.T) {
 	if err := c.Deploy(t.Context(), DeployRequest{ApplicationID: "app-1", ApplicationName: envTestApp, ComposeFile: "services: {}\n"}); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
-	if len(got.ProjectOptionsFns) != 1 {
-		t.Fatalf("expected the environment resolution to be skipped until the env files exist, got %d project options", len(got.ProjectOptionsFns))
+	if want := safeComposeLoadOptionCount() + 1; len(got.ProjectOptionsFns) != want {
+		t.Fatalf("expected the safe load options plus skipped environment resolution until the env files exist (%d), got %d project options", want, len(got.ProjectOptionsFns))
 	}
 }
 
@@ -1283,4 +1283,10 @@ func TestCreateMissingEnvFiles_Errors(t *testing.T) {
 			t.Fatalf("expected resolveEnvFiles to report the error, got %v", err)
 		}
 	})
+}
+
+// safeComposeLoadOptionCount is the number of options every agent-side load
+// carries to skip local Compose references.
+func safeComposeLoadOptionCount() int {
+	return len(composeProjectLoadOptions("", "", "").ProjectOptionsFns)
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -98,33 +99,41 @@ type DeleteRequest struct {
 
 // converts an application name to a valid Docker Compose project name
 func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
+	_, err := c.DeployWithWarnings(ctx, req)
+	return err
+}
+
+func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]composewarnings.Warning, error) {
 	defer c.observeApplicationHealth(req.ApplicationID)
 
 	if c.compose == nil {
-		return errors.New("docker compose service is not initialized")
+		return nil, errors.New("docker compose service is not initialized")
 	}
 	if c.deploymentsDir == "" {
-		return errors.New("deployments directory is not configured")
+		return nil, errors.New("deployments directory is not configured")
 	}
 	if !c.Ready() {
-		return errors.New("docker daemon is not ready")
+		return nil, errors.New("docker daemon is not ready")
 	}
 	if err := c.resolveHostDeploymentsDir(ctx); err != nil {
-		return fmt.Errorf("resolve host deployments directory: %w", err)
+		return nil, fmt.Errorf("resolve host deployments directory: %w", err)
 	}
 
 	if req.ComposeFile == "" {
-		return errors.New("compose file is empty")
+		return nil, errors.New("compose file is empty")
+	}
+	if err := validateComposeFeatures(req.ComposeFile); err != nil {
+		return composeValidationWarnings(err), err
 	}
 
 	// Validate application name to prevent path traversal
 	if err := utils.DoesNotLookLikeFilePath(req.ApplicationName); err != nil {
-		return fmt.Errorf("invalid application name: %w", err)
+		return nil, fmt.Errorf("invalid application name: %w", err)
 	}
 
 	projectName, err := utils.NormalizeProjectName(req.ApplicationName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	applicationDir := filepath.Join(c.deploymentsDir, projectName)
@@ -132,48 +141,51 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 
 	// Verify the final path stays within the deployments directory
 	if err := utils.IsPathWithinBase(c.deploymentsDir, composePath); err != nil {
-		return fmt.Errorf("invalid compose file path: %w", err)
+		return nil, fmt.Errorf("invalid compose file path: %w", err)
 	}
 
 	if err := c.ensureProjectManaged(ctx, projectName); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := ensureDeploymentDir(applicationDir); err != nil {
-		return fmt.Errorf("create deployment directory: %w", err)
+		return nil, fmt.Errorf("create deployment directory: %w", err)
 	}
 	previousComposeFile, hadPreviousComposeFile := readDeploymentFile(applicationDir, composeFileName)
 	if err := writeFileAtomic(composePath, []byte(req.ComposeFile)); err != nil {
-		return fmt.Errorf("write compose file: %w", err)
+		return nil, fmt.Errorf("write compose file: %w", err)
 	}
 
-	project, err := loadProject(ctx, c.compose, api.ProjectLoadOptions{
-		ProjectName:       projectName,
-		ConfigPaths:       []string{composePath},
-		WorkingDir:        applicationDir,
-		ProjectOptionsFns: []cli.ProjectOptionsFn{cli.WithoutEnvironmentResolution},
-	})
+	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, applicationDir, cli.WithoutEnvironmentResolution))
 	if err != nil {
+		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
 		err = fmt.Errorf("load compose project: %w", err)
-	} else if err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir); err == nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		return []composewarnings.Warning{{Code: "invalid_compose"}}, err
+	}
+	// Analyze before resolveEnvFiles, which returns a nil project on error.
+	warnings := analyzeComposeWarnings(project)
+	if err = c.enforceDeployPolicy(req.ApplicationID, project, applicationDir); err == nil {
 		project, err = resolveEnvFiles(applicationDir, project)
 	}
 	if err != nil {
 		// Image pulls redeploy the compose file on disk, so a rejected file must
 		// not stay there.
 		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
-		return err
+		return warnings, err
 	}
 
 	if err := translateBindMountSources(project, c.deploymentsDir, c.hostDeploymentsBase()); err != nil {
-		return fmt.Errorf("translate bind mount sources: %w", err)
+		return warnings, fmt.Errorf("translate bind mount sources: %w", err)
 	}
 
 	pins := preferLocalImageIDs(ctx, c.cli.Client(), req.PinnedImages, req.PinnedImageIDs)
 	pinServiceImages(project, pins)
 	applyOrcaLabels(project, req.ApplicationID)
 	if err := writeComposeOverride(applicationDir, orcaOverride(project, req.ApplicationID, pins)); err != nil {
-		return err
+		return warnings, err
 	}
 
 	var previousImages map[string]struct{}
@@ -194,7 +206,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 			SkipProviders: !c.isPrivilegedApp(req.ApplicationID),
 		},
 	}); err != nil {
-		return fmt.Errorf("compose up: %w", err)
+		return warnings, fmt.Errorf("compose up: %w", err)
 	}
 
 	if req.DeleteOldImages {
@@ -207,7 +219,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		Str("compose_path", composePath).
 		Msg("deployment completed")
 
-	return nil
+	return warnings, nil
 }
 
 // enforceDeployPolicy runs the deployment security policy unless the

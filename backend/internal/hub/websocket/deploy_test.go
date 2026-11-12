@@ -1,10 +1,13 @@
 package websocket
 
 import (
+	"bytes"
 	"context"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -91,6 +95,23 @@ func notificationBarrier(t *testing.T) (wait func()) {
 	}
 }
 
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func seedDeployApp(t *testing.T, syncStatus models.SyncStatus) models.Application {
 	t.Helper()
 	app := models.Application{
@@ -133,6 +154,149 @@ func TestHandleDeployResult_Success_SetsSynced(t *testing.T) {
 	}
 	if updated.LastSyncSource == nil || *updated.LastSyncSource != "" {
 		t.Errorf("expected empty LastSyncSource for a result without an event, got %v", updated.LastSyncSource)
+	}
+}
+
+func TestHandleDeployResultPersistsWarningsForMatchingComposeFile(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId:     app.Id,
+		Success:           true,
+		ComposeFileSha256: composewarnings.Hash(app.ComposeFile.String()),
+		Warnings: []*messages.ComposeWarning{
+			nil,
+			{Code: "missing_restart_policy", Service: "api"},
+		},
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != `[{"code":"missing_restart_policy","service":"api"}]` {
+		t.Fatalf("Warnings = %q", updated.Warnings)
+	}
+}
+
+func TestHandleDeployResultWithoutComposeAnalysisPreservesWarnings(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	const existingWarnings = `[{"code":"privileged_container","service":"api"}]`
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
+		Update("warnings", existingWarnings).Error; err != nil {
+		t.Fatalf("seed application warnings: %v", err)
+	}
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId: app.Id,
+		ErrorMessage:  "docker daemon is not ready",
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != existingWarnings {
+		t.Errorf("Warnings = %q, want unchanged %q after failure before analysis", updated.Warnings, existingWarnings)
+	}
+}
+
+func TestHandleDeployResultDoesNotPersistStaleWarnings(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	nop := zerolog.Nop()
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId:     app.Id,
+		Success:           true,
+		ComposeFileSha256: composewarnings.Hash("a newer compose file"),
+		Warnings:          []*messages.ComposeWarning{{Code: "invalid_compose"}},
+	}, &nop)
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != "[]" {
+		t.Fatalf("stale warnings were persisted: %q", updated.Warnings)
+	}
+}
+
+func TestHandleDeployResultLogsComposeWarningsPersistenceError(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	if err := db.DB.Exec(`CREATE TRIGGER fail_compose_warning_update
+		BEFORE UPDATE OF warnings ON applications
+		BEGIN
+			SELECT RAISE(FAIL, 'warning persistence failed');
+		END`).Error; err != nil {
+		t.Fatalf("create warning failure trigger: %v", err)
+	}
+
+	// handleDeployResult hands the logger to an async notification goroutine,
+	// so the buffer must be safe for concurrent use.
+	var logOutput lockedBuffer
+	logger := zerolog.New(&logOutput)
+	expectAsyncNotification(t)
+
+	handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{
+		ApplicationId:     app.Id,
+		Success:           true,
+		ComposeFileSha256: composewarnings.Hash(app.ComposeFile.String()),
+		Warnings:          []*messages.ComposeWarning{{Code: "invalid_compose"}},
+	}, &logger)
+
+	if !strings.Contains(logOutput.String(), "failed to store compose warnings") {
+		t.Fatalf("expected warning persistence error to be logged, got %q", logOutput.String())
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.SyncStatus != models.Synced {
+		t.Errorf("SyncStatus = %q, want %q after warning persistence failure", updated.SyncStatus, models.Synced)
+	}
+	if updated.Warnings != "[]" {
+		t.Errorf("Warnings = %q, want unchanged warnings after persistence failure", updated.Warnings)
+	}
+}
+
+func TestStoreComposeWarnings_ComposeFileChangedDuringDeployLogsAndSkipsUpdate(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.Syncing)
+	// app still holds the compose file the agent deployed; the stored one is newer.
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("ComposeFile").
+		Updates(t.Context(), models.Application{ComposeFile: crypto.EncryptedString("newer compose file")}); err != nil {
+		t.Fatalf("update application compose file: %v", err)
+	}
+
+	var logOutput bytes.Buffer
+	logger := zerolog.New(&logOutput)
+	err := storeComposeWarnings(t.Context(), app.AgentId, &app, &messages.DeployResult{
+		ApplicationId:     app.Id,
+		ComposeFileSha256: composewarnings.Hash(app.ComposeFile.String()),
+		Warnings:          []*messages.ComposeWarning{{Code: "invalid_compose"}},
+	}, &logger)
+	if err != nil {
+		t.Fatalf("storeComposeWarnings() error = %v", err)
+	}
+	if !strings.Contains(logOutput.String(), "compose warnings are stale; application compose file changed") {
+		t.Fatalf("expected stale warning log, got %q", logOutput.String())
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if updated.Warnings != "[]" {
+		t.Errorf("Warnings = %q, want unchanged warnings for stale result", updated.Warnings)
 	}
 }
 
@@ -288,6 +452,26 @@ func TestUpdateApplicationStatus_UnknownApp_NoError(t *testing.T) {
 	}, &nop)
 	if err != nil {
 		t.Fatalf("expected no error for unknown app, got %v", err)
+	}
+}
+
+func TestUpdateApplicationStatus_ReturnsDatabaseError(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedDeployApp(t, models.UnknownSync)
+	if err := db.DB.Exec(`CREATE TRIGGER fail_application_status_update
+		BEFORE UPDATE OF sync_status ON applications
+		BEGIN
+			SELECT RAISE(FAIL, 'status update failed');
+		END`).Error; err != nil {
+		t.Fatalf("create status failure trigger: %v", err)
+	}
+
+	nop := zerolog.Nop()
+	err := updateApplicationStatus(t.Context(), app.AgentId, app.Id, models.Application{
+		SyncStatus: models.Synced,
+	}, &nop)
+	if err == nil || !strings.Contains(err.Error(), "status update failed") {
+		t.Fatalf("updateApplicationStatus() error = %v, want status update failure", err)
 	}
 }
 

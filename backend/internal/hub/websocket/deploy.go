@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
@@ -11,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -37,6 +39,10 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 	if event != nil && event.Type == models.ApplicationEventRollback {
 		handleRollbackResult(ctx, agentID, app, event, result, log)
 		return
+	}
+
+	if err := storeComposeWarnings(ctx, agentID, app, result, log); err != nil {
+		log.Error().Err(err).Str("applicationId", result.ApplicationId).Msg("failed to store compose warnings")
 	}
 
 	if result.Success {
@@ -122,6 +128,52 @@ func forgetCurrentDeployment(ctx context.Context, applicationID string, log *zer
 	if err := deployments.ClearCurrent(ctx, applicationID); err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to clear current deployment")
 	}
+}
+
+func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {
+	// The agent only sends the hash once it analyzed the compose file.
+	if result.ComposeFileSha256 == "" {
+		return nil
+	}
+
+	warnings := make([]composewarnings.Warning, 0, len(result.Warnings))
+	for _, warning := range result.Warnings {
+		if warning == nil {
+			continue
+		}
+		warnings = append(warnings, composewarnings.Warning{
+			Code:    warning.Code,
+			Service: warning.Service,
+			Field:   warning.Field,
+		})
+	}
+	encoded, err := json.Marshal(warnings)
+	if err != nil {
+		return err
+	}
+
+	// Re-read the compose file in the same transaction as the write, so a sync
+	// or edit that lands while the deployment ran is not paired with warnings
+	// computed for the previous compose file.
+	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := gorm.G[models.Application](tx).
+			Select("Id", "ComposeFile").
+			Where("id = ? AND agent_id = ?", app.Id, agentID).
+			First(ctx)
+		if err != nil {
+			return err
+		}
+		if composewarnings.Hash(current.ComposeFile.String()) != result.ComposeFileSha256 {
+			log.Debug().Str("applicationId", app.Id).Msg("compose warnings are stale; application compose file changed")
+			return nil
+		}
+
+		_, err = gorm.G[models.Application](tx).
+			Where("id = ?", app.Id).
+			Select("Warnings").
+			Updates(ctx, models.Application{Warnings: string(encoded)})
+		return err
+	})
 }
 
 func completeDeployEvent(ctx context.Context, result *messages.DeployResult, status models.ApplicationEventStatus, errorMessage *string, log *zerolog.Logger) {

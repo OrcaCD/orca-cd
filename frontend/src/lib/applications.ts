@@ -36,6 +36,7 @@ export interface Application {
 	rolledBackReason: string | null;
 	autoSyncPaused: boolean;
 	rollback: RollbackSettings;
+	warnings: ApplicationWarning[];
 }
 
 export interface RollbackSettings {
@@ -44,6 +45,20 @@ export interface RollbackSettings {
 	onUnhealthy: boolean;
 	healthTimeoutSeconds: number;
 	pauseAutoSync: boolean;
+}
+
+export interface ApplicationWarning {
+	code:
+		| "invalid_compose"
+		| "missing_restart_policy"
+		| "database_without_volume"
+		| "floating_image_reference"
+		| "privileged_container"
+		| "host_network"
+		| "host_namespace"
+		| "unsupported_compose_feature";
+	service?: string;
+	field?: string;
 }
 
 export interface ApplicationListItem {

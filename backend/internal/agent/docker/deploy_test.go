@@ -5,8 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
@@ -27,7 +31,12 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	var gotLoadOptions api.ProjectLoadOptions
 	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
 		gotLoadOptions = options
-		return &composetypes.Project{Name: options.ProjectName}, nil
+		return &composetypes.Project{
+			Name: options.ProjectName,
+			Services: composetypes.Services{
+				"app": {Image: "ghcr.io/orcacd/app:latest"},
+			},
+		}, nil
 	}
 
 	var gotUpOptions api.UpOptions
@@ -45,8 +54,16 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 		ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/app:1.0.0\n",
 	}
 
-	if err := c.Deploy(t.Context(), req); err != nil {
-		t.Fatalf("Deploy: %v", err)
+	warnings, err := c.DeployWithWarnings(t.Context(), req)
+	if err != nil {
+		t.Fatalf("DeployWithWarnings: %v", err)
+	}
+	wantWarnings := []composewarnings.Warning{
+		{Code: "missing_restart_policy", Service: "app"},
+		{Code: "floating_image_reference", Service: "app"},
+	}
+	if !reflect.DeepEqual(warnings, wantWarnings) {
+		t.Fatalf("DeployWithWarnings() warnings = %#v, want %#v", warnings, wantWarnings)
 	}
 
 	composePath := filepath.Join(c.deploymentsDir, req.ApplicationName, composeFileName)
@@ -80,6 +97,161 @@ func TestDeploy_WritesComposeFileAndRunsComposeUp(t *testing.T) {
 	}
 	if !gotUpOptions.Create.SkipProviders {
 		t.Fatal("expected compose up to skip provider services")
+	}
+}
+
+func TestDeployWithWarningsRejectsInvalidOrUnsupportedComposeFiles(t *testing.T) {
+	tests := []struct {
+		name        string
+		composeFile string
+		wantError   string
+		wantWarning composewarnings.Warning
+	}{
+		{
+			name:        "include",
+			composeFile: "include:\n  - shared/compose.yaml\nservices:\n  app:\n    image: test:1\n",
+			wantError:   `unsupported Compose feature "include"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Field: "include"},
+		},
+		{
+			name:        "extends",
+			composeFile: "services:\n  app:\n    image: test:1\n    extends:\n      file: shared/compose.yaml\n      service: base\n",
+			wantError:   `unsupported Compose feature "extends" in service "app"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Service: "app", Field: "extends"},
+		},
+		{
+			name:        "label_file",
+			composeFile: "services:\n  app:\n    image: test:1\n    label_file: labels.env\n",
+			wantError:   `unsupported Compose feature "label_file" in service "app"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Service: "app", Field: "label_file"},
+		},
+		{
+			name:        "include in second YAML document",
+			composeFile: "services:\n  app:\n    image: test:1\n---\ninclude:\n  - shared/compose.yaml\n",
+			wantError:   `unsupported Compose feature "include"`,
+			wantWarning: composewarnings.Warning{Code: "unsupported_compose_feature", Field: "include"},
+		},
+		{
+			name:        "invalid YAML",
+			composeFile: "services:\n  app: [\n",
+			wantError:   "parse compose file:",
+			wantWarning: composewarnings.Warning{Code: "invalid_compose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestClient(t)
+			c.deploymentsDir = t.TempDir()
+
+			warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+				ApplicationID:   "app-123",
+				ApplicationName: "billing",
+				ComposeFile:     tt.composeFile,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("DeployWithWarnings() error = %v, want it to contain %q", err, tt.wantError)
+			}
+			if !reflect.DeepEqual(warnings, []composewarnings.Warning{tt.wantWarning}) {
+				t.Fatalf("DeployWithWarnings() warnings = %#v, want %#v", warnings, tt.wantWarning)
+			}
+			if _, err := os.Stat(filepath.Join(c.deploymentsDir, "billing")); !os.IsNotExist(err) {
+				t.Fatalf("expected rejected compose file not to create deployment directory, stat err = %v", err)
+			}
+		})
+	}
+}
+
+func TestDeployWithWarnings_PreconditionErrors(t *testing.T) {
+	t.Run("compose service is not initialized", func(t *testing.T) {
+		c := &Client{}
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "docker compose service is not initialized")
+	})
+
+	t.Run("deployments directory is not configured", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = ""
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "deployments directory is not configured")
+	})
+
+	t.Run("docker daemon is not ready", func(t *testing.T) {
+		c := newTestClient(t)
+		c.mu.Lock()
+		c.ready = false
+		c.mu.Unlock()
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{})
+		requireErrorContains(t, err, "docker daemon is not ready")
+	})
+
+	t.Run("host deployments directory resolution fails", func(t *testing.T) {
+		c := newTestClient(t)
+		c.mu.Lock()
+		c.hostDeploymentsDir = ""
+		c.hostDirDetectionComplete = false
+		c.mu.Unlock()
+		ctx, cancel := context.WithCancel(t.Context())
+		c.detectHostDeploymentsDir = func(ctx context.Context) (string, error) {
+			cancel()
+			return "", ctx.Err()
+		}
+
+		_, err := c.DeployWithWarnings(ctx, DeployRequest{})
+		requireErrorContains(t, err, "resolve host deployments directory: context canceled")
+	})
+
+	t.Run("compose file is empty", func(t *testing.T) {
+		c := newTestClient(t)
+		c.deploymentsDir = t.TempDir()
+		_, err := c.DeployWithWarnings(t.Context(), DeployRequest{ApplicationName: "billing"})
+		requireErrorContains(t, err, "compose file is empty")
+	})
+}
+
+func TestDeployWithWarnings_WriteComposeFileError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	composePath := filepath.Join(c.deploymentsDir, "billing", composeFileName)
+	if err := os.MkdirAll(composePath, 0o750); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	_, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+	requireErrorContains(t, err, "write compose file:")
+}
+
+func TestDeployWithWarnings_TranslateBindMountSourcesError(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	c.hostDeploymentsDir = "relative/host/deployments"
+
+	originalLoadProject := loadProject
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		return &composetypes.Project{
+			Name: options.ProjectName,
+			Services: composetypes.Services{
+				"app": {Image: "ghcr.io/orcacd/app:latest"},
+			},
+		}, nil
+	}
+
+	warnings, err := c.DeployWithWarnings(t.Context(), DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services: {}\n",
+	})
+	requireErrorContains(t, err, "translate bind mount sources: host deployments directory")
+	if !reflect.DeepEqual(warnings, []composewarnings.Warning{
+		{Code: "missing_restart_policy", Service: "app"},
+		{Code: "floating_image_reference", Service: "app"},
+	}) {
+		t.Fatalf("DeployWithWarnings() warnings = %#v", warnings)
 	}
 }
 
@@ -743,15 +915,12 @@ func TestDeploy_RejectedComposeFileRestoresPreviousDeployment(t *testing.T) {
 	}
 }
 
-func TestDeploy_LoadErrorRestoresPreviousDeployment(t *testing.T) {
+func TestDeploy_LoadErrorReportsWarningAndRestoresPreviousDeployment(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
-
-	origLoad := loadProject
-	t.Cleanup(func() { loadProject = origLoad })
-	loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
-		return nil, errors.New("load error")
-	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	deployDeadline, _ := ctx.Deadline()
 
 	appDir := filepath.Join(c.deploymentsDir, "billing")
 	if err := os.MkdirAll(appDir, 0o750); err != nil {
@@ -763,17 +932,64 @@ func TestDeploy_LoadErrorRestoresPreviousDeployment(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := c.Deploy(t.Context(), DeployRequest{
+	originalLoadProject := loadProject
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	loadProject = func(ctx context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		gotDeadline, ok := ctx.Deadline()
+		if !ok || !gotDeadline.Equal(deployDeadline) {
+			t.Fatalf("load project deadline = %v, want deployment deadline %v", gotDeadline, deployDeadline)
+		}
+		return nil, errors.New("invalid compose")
+	}
+
+	warnings, err := c.DeployWithWarnings(ctx, DeployRequest{
 		ApplicationID:   "app-123",
 		ApplicationName: "billing",
-		ComposeFile:     "not: [valid",
-	}); err == nil {
-		t.Fatal("expected error when loadProject fails")
+		ComposeFile:     "services:\n  app:\n    image: img:2.0.0\n",
+	})
+	if err == nil {
+		t.Fatal("expected compose loading to fail")
+	}
+	if !reflect.DeepEqual(warnings, []composewarnings.Warning{{Code: "invalid_compose"}}) {
+		t.Fatalf("DeployWithWarnings() warnings = %#v, want invalid_compose warning", warnings)
 	}
 
 	//nolint:gosec // composePath is built from t.TempDir() and a fixed application name
-	if content, _ := os.ReadFile(composePath); string(content) != previous {
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(content) != previous {
 		t.Fatalf("expected the previous compose file to be restored, got %q", content)
+	}
+}
+
+func TestDeploy_CanceledLoadDoesNotReportAnalysisWarning(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+
+	originalLoadProject := loadProject
+	t.Cleanup(func() { loadProject = originalLoadProject })
+	ctx, cancel := context.WithCancel(t.Context())
+	loadProject = func(loadCtx context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+		cancel()
+		<-loadCtx.Done()
+		return nil, loadCtx.Err()
+	}
+
+	warnings, err := c.DeployWithWarnings(ctx, DeployRequest{
+		ApplicationID:   "app-123",
+		ApplicationName: "billing",
+		ComposeFile:     "services:\n  app:\n    image: img:1.0.0\n",
+	})
+	if err == nil {
+		t.Fatal("expected canceled compose loading to abort deployment")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("DeployWithWarnings() error = %v, want context.Canceled", err)
+	}
+	if warnings != nil {
+		t.Fatalf("DeployWithWarnings() warnings = %#v, want no warnings for canceled load", warnings)
 	}
 }
 

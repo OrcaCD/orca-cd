@@ -51,6 +51,7 @@ import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
+import WarningAlert from "@/components/alerts/warning-alert";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
 import { syncRepository, type Repository } from "@/lib/repositories";
@@ -246,6 +247,35 @@ function splitComposeLines(composeFile: string): string[] {
 	return lines;
 }
 
+function getApplicationWarningMessage(warning: Application["warnings"][number]) {
+	switch (warning.code) {
+		case "invalid_compose":
+			return m.applicationWarningInvalidCompose();
+		case "unsupported_compose_feature":
+			return warning.service
+				? m.applicationWarningUnsupportedServiceFeature({
+						service: warning.service,
+						field: warning.field ?? "",
+					})
+				: m.applicationWarningUnsupportedFeature({ field: warning.field ?? "" });
+		case "missing_restart_policy":
+			return m.applicationWarningMissingRestart({ service: warning.service ?? "" });
+		case "database_without_volume":
+			return m.applicationWarningDatabaseWithoutVolume({ service: warning.service ?? "" });
+		case "floating_image_reference":
+			return m.applicationWarningFloatingImage({ service: warning.service ?? "" });
+		case "privileged_container":
+			return m.applicationWarningPrivilegedContainer({ service: warning.service ?? "" });
+		case "host_network":
+			return m.applicationWarningHostNetwork({ service: warning.service ?? "" });
+		case "host_namespace":
+			return m.applicationWarningHostNamespace({
+				service: warning.service ?? "",
+				field: warning.field ?? "",
+			});
+	}
+}
+
 interface ComposeDiffLine {
 	variant: "default" | "added" | "removed";
 	// Index into the previous lines for removed lines, into the current lines otherwise.
@@ -368,6 +398,8 @@ function ApplicationDetailsPage() {
 		[previousComposeFile, composeFile],
 	);
 
+	const applicationWarnings = data?.warnings ?? [];
+
 	const rolledBack = Boolean(data?.rolledBackAt);
 
 	return (
@@ -375,6 +407,17 @@ function ApplicationDetailsPage() {
 			{data && rolledBack ? <RolledBackBanner application={data} /> : null}
 			{data?.lastSyncError && !rolledBack && (
 				<ErrorAlert title={m.syncFailed()} description={data.lastSyncError} />
+			)}
+			{applicationWarnings.length > 0 && (
+				<WarningAlert title={m.applicationWarningsTitle()}>
+					<ul className="list-disc space-y-1 pl-4">
+						{applicationWarnings.map((warning, index) => (
+							<li key={`${warning.code}-${warning.service ?? ""}-${index}`}>
+								{getApplicationWarningMessage(warning)}
+							</li>
+						))}
+					</ul>
+				</WarningAlert>
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex min-w-0 items-start gap-4">

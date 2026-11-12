@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	sharedutils "github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -85,39 +87,40 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id                       string                   `json:"id"`
-	Icon                     string                   `json:"icon"`
-	Name                     string                   `json:"name"`
-	RepositoryId             string                   `json:"repositoryId"`
-	RepositoryName           string                   `json:"repositoryName"`
-	RepositoryUrl            string                   `json:"repositoryUrl"`
-	RepositorySyncType       string                   `json:"repositorySyncType"`
-	AgentId                  string                   `json:"agentId"`
-	AgentName                string                   `json:"agentName"`
-	SyncStatus               string                   `json:"syncStatus"`
-	HealthStatus             string                   `json:"healthStatus"`
-	Branch                   string                   `json:"branch"`
-	Commit                   string                   `json:"commit"`
-	CommitMessage            string                   `json:"commitMessage"`
-	LastSyncedAt             *string                  `json:"lastSyncedAt"`
-	LastSyncError            *string                  `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string                  `json:"lastSyncSource,omitempty"`
-	Path                     string                   `json:"path"`
-	CreatedAt                string                   `json:"createdAt"`
-	UpdatedAt                string                   `json:"updatedAt"`
-	ComposeFile              string                   `json:"composeFile"`
-	PreviousComposeFile      string                   `json:"previousComposeFile,omitempty"`
-	ImagePollEnabled         bool                     `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64                    `json:"imagePollIntervalSeconds"`
-	DeleteOldImages          bool                     `json:"deleteOldImages"`
-	CurrentDeploymentId      *string                  `json:"currentDeploymentId"`
-	RolledBackAt             *string                  `json:"rolledBackAt"`
-	RolledBackCommit         *string                  `json:"rolledBackCommit"`
-	RolledBackReason         *string                  `json:"rolledBackReason"`
-	AutoSyncPaused           bool                     `json:"autoSyncPaused"`
-	Rollback                 rollbackSettingsResponse `json:"rollback"`
-	ImageWebhookEnabled      bool                     `json:"imageWebhookEnabled"`
-	ImageWebhookUrl          *string                  `json:"imageWebhookUrl,omitempty"`
+	Id                       string                    `json:"id"`
+	Icon                     string                    `json:"icon"`
+	Name                     string                    `json:"name"`
+	RepositoryId             string                    `json:"repositoryId"`
+	RepositoryName           string                    `json:"repositoryName"`
+	RepositoryUrl            string                    `json:"repositoryUrl"`
+	RepositorySyncType       string                    `json:"repositorySyncType"`
+	AgentId                  string                    `json:"agentId"`
+	AgentName                string                    `json:"agentName"`
+	SyncStatus               string                    `json:"syncStatus"`
+	HealthStatus             string                    `json:"healthStatus"`
+	Branch                   string                    `json:"branch"`
+	Commit                   string                    `json:"commit"`
+	CommitMessage            string                    `json:"commitMessage"`
+	LastSyncedAt             *string                   `json:"lastSyncedAt"`
+	LastSyncError            *string                   `json:"lastSyncError,omitempty"`
+	LastSyncSource           *string                   `json:"lastSyncSource,omitempty"`
+	Path                     string                    `json:"path"`
+	CreatedAt                string                    `json:"createdAt"`
+	UpdatedAt                string                    `json:"updatedAt"`
+	ComposeFile              string                    `json:"composeFile"`
+	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty"`
+	ImagePollEnabled         bool                      `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds"`
+	DeleteOldImages          bool                      `json:"deleteOldImages"`
+	CurrentDeploymentId      *string                   `json:"currentDeploymentId"`
+	RolledBackAt             *string                   `json:"rolledBackAt"`
+	RolledBackCommit         *string                   `json:"rolledBackCommit"`
+	RolledBackReason         *string                   `json:"rolledBackReason"`
+	AutoSyncPaused           bool                      `json:"autoSyncPaused"`
+	Rollback                 rollbackSettingsResponse  `json:"rollback"`
+	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled"`
+	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
+	Warnings                 []composewarnings.Warning `json:"warnings"`
 }
 
 type rollbackSettingsResponse struct {
@@ -227,6 +230,7 @@ func CreateApplicationHandler(c *gin.Context) {
 		LastSyncedAt:             nil,
 		Path:                     req.Path,
 		ComposeFile:              crypto.EncryptedString(composeFile),
+		Warnings:                 "[]",
 		PreviousComposeFile:      crypto.EncryptedString(""),
 		ImagePollEnabled:         req.ImagePollEnabled,
 		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
@@ -389,6 +393,9 @@ func UpdateApplicationHandler(c *gin.Context) {
 	application.Commit = latestCommit.Hash
 	application.CommitMessage = latestCommit.Message
 	application.Path = req.Path
+	if application.ComposeFile.String() != composeFile {
+		application.Warnings = "[]"
+	}
 	application.PreviousComposeFile = application.ComposeFile
 	application.ComposeFile = crypto.EncryptedString(composeFile)
 	application.ImagePollEnabled = req.ImagePollEnabled
@@ -648,6 +655,15 @@ func normalizeSyncSource(source *models.ApplicationEventSource) *string {
 }
 
 func toApplicationResponse(app *models.Application) applicationResponse {
+	var warnings []composewarnings.Warning
+	if err := json.Unmarshal([]byte(app.Warnings), &warnings); err != nil {
+		hubApplications.Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to decode application warnings")
+		warnings = []composewarnings.Warning{}
+	}
+	if warnings == nil {
+		warnings = []composewarnings.Warning{}
+	}
+
 	resp := applicationResponse{
 		Id:                       app.Id,
 		Icon:                     app.Icon,
@@ -687,6 +703,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 			PauseAutoSync:        app.RollbackPauseAutoSync,
 		},
 		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
+		Warnings:            warnings,
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)

@@ -18,6 +18,7 @@ import (
 
 	agentdocker "github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -67,6 +68,7 @@ type stubDeployer struct {
 	err      error
 	reqCh    chan agentdocker.DeployRequest
 	deleteCh chan agentdocker.DeleteRequest
+	warnings []composewarnings.Warning
 	images   []*messages.ServiceImage
 	retained sync.Map
 }
@@ -86,7 +88,7 @@ func (d *stubDeployer) Remove(_ context.Context, req agentdocker.DeleteRequest) 
 	return d.err
 }
 
-func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest) error {
+func (d *stubDeployer) DeployWithWarnings(ctx context.Context, req agentdocker.DeployRequest) ([]composewarnings.Warning, error) {
 	if d.reqCh != nil {
 		d.reqCh <- req
 	}
@@ -94,11 +96,11 @@ func (d *stubDeployer) Deploy(ctx context.Context, req agentdocker.DeployRequest
 		select {
 		case <-d.block:
 		case <-ctx.Done():
-			return ctx.Err()
+			return d.warnings, ctx.Err()
 		}
 	}
 
-	return d.err
+	return d.warnings, d.err
 }
 
 // newTestServer starts a test WebSocket server. The handler is called for each
@@ -815,7 +817,11 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 	deployedImages := []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new", PinnedRef: "ghcr.io/orcacd/billing@sha256:new"}}
-	deployer := &stubDeployer{reqCh: make(chan agentdocker.DeployRequest, 1), images: deployedImages}
+	deployer := &stubDeployer{
+		reqCh: make(chan agentdocker.DeployRequest, 1), images: deployedImages,
+		warnings: []composewarnings.Warning{{Code: "missing_restart_policy", Service: "app"}},
+	}
+	const composeFile = "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n"
 
 	deployMsg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_DeployRequest{
@@ -823,7 +829,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 				RequestId:       "req-1",
 				ApplicationId:   "app-1",
 				ApplicationName: "billing",
-				ComposeFile:     "services:\n  app:\n    image: ghcr.io/orcacd/billing:1.0.0\n",
+				ComposeFile:     composeFile,
 				DeleteOldImages: true,
 				PinnedImages: []*messages.ServiceImage{
 					{Service: "app", ImageId: "sha256:old", PinnedRef: "ghcr.io/orcacd/billing@sha256:old"},
@@ -884,6 +890,12 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		}
 		if len(result.Images) != 1 || result.Images[0].ImageId != "sha256:new" {
 			t.Fatalf("expected the deployed images in the result, got %v", result.Images)
+		}
+		if result.ComposeFileSha256 != composewarnings.Hash(composeFile) {
+			t.Fatalf("unexpected compose file hash: %q", result.ComposeFileSha256)
+		}
+		if len(result.Warnings) != 1 || result.Warnings[0].Code != "missing_restart_policy" {
+			t.Fatalf("unexpected warnings: %#v", result.Warnings)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy result")
@@ -1126,12 +1138,13 @@ func TestExecutePullImages_NilPoller(t *testing.T) {
 func TestExecuteDeployment_NilDeployer(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 
-	executeDeployment(context.Background(), sender, nil, &messages.DeployRequest{
+	req := &messages.DeployRequest{
 		RequestId:       "req-1",
 		ApplicationId:   "app-1",
 		ApplicationName: "billing",
 		ComposeFile:     "services: {}\n",
-	})
+	}
+	executeDeployment(context.Background(), sender, nil, req)
 
 	select {
 	case msg := <-sender.sent:
@@ -1145,8 +1158,61 @@ func TestExecuteDeployment_NilDeployer(t *testing.T) {
 		if result.ErrorMessage == "" {
 			t.Error("expected non-empty error message")
 		}
+		if result.ComposeFileSha256 != "" {
+			t.Errorf("expected no compose hash before analysis, got %q", result.ComposeFileSha256)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy result")
+	}
+}
+
+func TestExecuteDeploymentOnlyHashesComposeAfterAnalysis(t *testing.T) {
+	tests := []struct {
+		name     string
+		warnings []composewarnings.Warning
+		err      error
+		wantHash bool
+	}{
+		{
+			name: "failure before analysis",
+			err:  errors.New("docker daemon is not ready"),
+		},
+		{
+			name:     "analysis found no warnings",
+			warnings: []composewarnings.Warning{},
+			err:      errors.New("compose up failed"),
+			wantHash: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const composeFile = "services:\n  app:\n    image: test:1\n"
+			sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
+			deployer := &stubDeployer{warnings: tt.warnings, err: tt.err}
+			executeDeployment(context.Background(), sender, deployer, &messages.DeployRequest{
+				RequestId:       "req-1",
+				ApplicationId:   "app-1",
+				ApplicationName: "billing",
+				ComposeFile:     composeFile,
+			})
+
+			select {
+			case msg := <-sender.sent:
+				result := msg.GetDeployResult()
+				if result == nil {
+					t.Fatal("expected deploy result payload")
+				}
+				if got := result.ComposeFileSha256 != ""; got != tt.wantHash {
+					t.Errorf("ComposeFileSha256 present = %t, want %t (value %q)", got, tt.wantHash, result.ComposeFileSha256)
+				}
+				if tt.wantHash && result.ComposeFileSha256 != composewarnings.Hash(composeFile) {
+					t.Errorf("ComposeFileSha256 = %q, want hash of analyzed compose file", result.ComposeFileSha256)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for deploy result")
+			}
+		})
 	}
 }
 
