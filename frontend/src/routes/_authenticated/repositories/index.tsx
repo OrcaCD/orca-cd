@@ -1,13 +1,22 @@
 import { columns } from "@/components/tables/repositories/columns";
+import { PageContainer, PageHeader } from "@/components/page-header";
+import {
+	EmptyState,
+	ResourceGridSkeleton,
+	ResourceTableSkeleton,
+} from "@/components/collection-states";
+import { SearchField } from "@/components/search-field";
 import { RepositoryDataTable } from "@/components/tables/repositories/data-table";
 import CreateRepositoryDialog from "@/components/dialogs/create-repository";
+import { useSharedDialog } from "@/hooks/use-shared-dialog";
 import { deleteRepository, syncRepository, type Repository } from "@/lib/repositories";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
-import { useMemo, useState } from "react";
-import { EllipsisVertical, RefreshCw, Search, Settings, Trash2 } from "lucide-react";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
+import { useMemo, useRef, useState } from "react";
+import { EllipsisVertical, GitBranch, Plus, RefreshCw, Settings, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -21,7 +30,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { groupBy, toSearchableText } from "@/lib/utils";
 import { usePreferredLayout } from "@/lib/layout-preference";
@@ -47,6 +55,17 @@ function RepositoriesPage() {
 	);
 
 	const [searchQuery, setSearchQuery] = useState("");
+	const searchInputRef = useRef<HTMLInputElement>(null);
+	// The empty state disappears as soon as the first repository exists, its webhook summary has to stay.
+	const {
+		fallbackRef: addRepositoryRef,
+		triggerProps: addRepositoryTrigger,
+		openFrom: openAddRepository,
+		dialogProps: addRepositoryDialog,
+	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
+	const canCreate = can("repository", "create");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
 	async function handleDeleteRepo(repository: Repository) {
@@ -89,44 +108,82 @@ function RepositoriesPage() {
 	}, [data, searchQuery]);
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageRepositories()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.repositoriesPageDescription()}</p>
-				</div>
-				<CreateRepositoryDialog />
-			</div>
-
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingRepositories()}</p>}
+		<PageContainer>
+			<PageHeader
+				title={m.pageRepositories()}
+				description={m.repositoriesPageDescription()}
+				actions={
+					canCreate && (
+						<Button {...addRepositoryTrigger} ref={addRepositoryRef} onClick={openAddRepository}>
+							<Plus />
+							{m.addRepository()}
+						</Button>
+					)
+				}
+			/>
+			{canCreate && <CreateRepositoryDialog {...addRepositoryDialog} />}
 
 			<div className="space-y-4">
-				<div className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div className="relative flex-1 ">
-						<Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-						<Input
+				{(data?.length !== 0 || searchQuery.length > 0) && (
+					<div className="flex items-center gap-2 sm:gap-3">
+						<SearchField
 							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
+							onChange={setSearchQuery}
+							inputRef={searchInputRef}
+							label={m.searchRepositoriesLabel()}
 							placeholder={m.searchRepositories()}
-							className="pl-9 bg-muted border-border"
+							className="flex-1"
 						/>
-					</div>
 
-					<div className="flex gap-2 ">
-						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						<div className="flex shrink-0 gap-2">
+							<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						</div>
 					</div>
-				</div>
+				)}
 
-				{viewMode === "grid" ? (
+				{isLoading ? (
+					viewMode === "grid" ? (
+						<ResourceGridSkeleton
+							kind="repository"
+							label={m.loadingRepositories()}
+							className="sm:grid-cols-2 xl:grid-cols-3"
+						/>
+					) : (
+						<ResourceTableSkeleton label={m.loadingRepositories()} />
+					)
+				) : data?.length === 0 ? (
+					<EmptyState
+						icon={GitBranch}
+						title={m.noRepositoriesYet()}
+						description={m.noRepositoriesYetDescription()}
+						action={
+							canCreate && (
+								<Button {...addRepositoryTrigger} onClick={openAddRepository}>
+									<Plus />
+									{m.addRepository()}
+								</Button>
+							)
+						}
+					/>
+				) : filteredRepositories.length === 0 ? (
+					<EmptyState
+						variant="noMatches"
+						title={m.noRepositoriesFound()}
+						description={m.noRepositoriesFoundDescription()}
+						action={
+							<Button
+								variant="outline"
+								onClick={() => {
+									setSearchQuery("");
+									searchInputRef.current?.focus();
+								}}
+							>
+								{m.searchClear()}
+							</Button>
+						}
+					/>
+				) : viewMode === "grid" ? (
 					<>
-						{filteredRepositories.length === 0 && !isLoading ? (
-							<div className="rounded-xl border border-dashed p-10 text-center">
-								<p className="text-sm font-medium">{m.noRepositoriesFound()}</p>
-								<p className="mt-1 text-sm text-muted-foreground">
-									{m.noRepositoriesFoundDescription()}
-								</p>
-							</div>
-						) : null}
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 							{filteredRepositories.map((repository) => (
 								<RepositoryCard
@@ -149,11 +206,16 @@ function RepositoriesPage() {
 											<DropdownMenuContent align="end" className="w-fit" keepMounted>
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
-														<RefreshCw className="h-4 w-4" />
-														{m.sync()}
-													</DropdownMenuItem>
-													<DropdownMenuSeparator />
+													{can("repository", "sync", repository.id) &&
+														canOnApplicationsOf(repository.id, "deploy", repository.appCount) && (
+															<>
+																<DropdownMenuItem onClick={() => handleSyncRepo(repository)}>
+																	<RefreshCw className="h-4 w-4" />
+																	{m.sync()}
+																</DropdownMenuItem>
+																<DropdownMenuSeparator />
+															</>
+														)}
 													<DropdownMenuItem
 														render={
 															<Link
@@ -165,19 +227,26 @@ function RepositoriesPage() {
 															</Link>
 														}
 													/>
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteRepo(repository)}
-														title={m.deleteRepositoryTitle()}
-														description={m.deleteRepositoryDescription({ name: repository.name })}
-														triggerText={
+													{can("repository", "delete", repository.id) &&
+														canOnApplicationsOf(repository.id, "delete", repository.appCount) && (
 															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
+																<DropdownMenuSeparator />
+																<ConfirmationDialog
+																	onConfirm={() => handleDeleteRepo(repository)}
+																	title={m.deleteRepositoryTitle()}
+																	description={m.deleteRepositoryDescription({
+																		name: repository.name,
+																	})}
+																	triggerText={
+																		<>
+																			<Trash2 className="h-4 w-4" />
+																			{m.delete()}
+																		</>
+																	}
+																	asDropdownItem
+																/>
 															</>
-														}
-														asDropdownItem
-													/>
+														)}
 												</DropdownMenuGroup>
 											</DropdownMenuContent>
 										</DropdownMenu>
@@ -190,6 +259,6 @@ function RepositoriesPage() {
 					<RepositoryDataTable columns={columns} data={filteredRepositories} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }

@@ -1,11 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { LockKeyhole } from "lucide-react";
+import { EmptyState } from "@/components/collection-states";
 import { OverviewDashboard } from "@/components/overview/overview-dashboard";
 import { OnboardingChecklist } from "@/components/overview/onboarding-checklist";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageContainer, PageHeader } from "@/components/page-header";
 import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_authenticated/")({
 	component: OverviewPage,
@@ -21,24 +25,31 @@ export const Route = createFileRoute("/_authenticated/")({
 function OverviewPage() {
 	const { data: apps } = useFetch<ApplicationListItem[]>("/applications");
 	const { data: agents } = useFetch<Agent[]>("/agents");
+	const { can, canAny } = usePermissions();
+	const hasAccess = (["application", "agent", "repository", "notification"] as const).some(
+		(resource) => canAny(resource, "read"),
+	);
 
 	return (
-		<div className="p-6 space-y-6">
-			<div>
-				<h1 className="text-2xl font-bold">{m.pageOverview()}</h1>
-				<p className="text-muted-foreground text-sm mt-1">{m.overviewPageDescription()}</p>
-			</div>
-			{!apps ? (
-				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[3fr_2fr_2fr]">
+		<PageContainer>
+			<PageHeader title={m.pageOverview()} description={m.overviewPageDescription()} />
+			{!hasAccess ? (
+				<EmptyState
+					icon={LockKeyhole}
+					title={m.overviewNoAccessTitle()}
+					description={m.overviewNoAccessDescription()}
+				/>
+			) : !apps ? (
+				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 					<Skeleton className="h-44 md:col-span-2 xl:col-span-1" />
 					<Skeleton className="h-44" />
 					<Skeleton className="h-44" />
 				</div>
-			) : apps.length === 0 ? (
+			) : apps.length === 0 && can("application", "create") ? (
 				<OnboardingChecklist agents={agents} />
 			) : (
 				<OverviewDashboard apps={apps} agents={agents} />
 			)}
-		</div>
+		</PageContainer>
 	);
 }

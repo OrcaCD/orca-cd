@@ -868,6 +868,10 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		if !maps.Equal(req.PinnedImages, wantPins) {
 			t.Fatalf("expected pinned images %v, got %v", wantPins, req.PinnedImages)
 		}
+		wantIDs := map[string]string{"app": "sha256:old", "worker": "sha256:worker"}
+		if !maps.Equal(req.PinnedImageIDs, wantIDs) {
+			t.Fatalf("expected local image IDs %v, got %v", wantIDs, req.PinnedImageIDs)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for deploy request")
 	}

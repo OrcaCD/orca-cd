@@ -472,7 +472,7 @@ func TestUpdateApplicationEnvHandler_BlockedInDemoMode(t *testing.T) {
 	agent := withEnvAgent(t, app.AgentId, nil, &messages.EnvUpdateResult{Success: true})
 
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
+	router := newAdminRouter()
 	router.Use(middleware.DemoBlocking())
 	router.PUT("/api/v1/applications/:id/env", UpdateApplicationEnvHandler)
 
@@ -600,7 +600,7 @@ func TestUpdateApplicationEnvHandler_ExtendsWriteDeadline(t *testing.T) {
 	w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	c, _ := gin.CreateTestContext(w)
 	auth.SetClaims(c, &auth.UserClaims{Subject: "user-1"})
-	auth.SetUser(c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com", Role: models.UserRoleAdmin})
+	auth.SetUser(c, &models.User{Id: "user-1", Name: "Test User", Email: "test@example.com"})
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+app.Id+"/env", bytes.NewReader(raw))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: app.Id}}

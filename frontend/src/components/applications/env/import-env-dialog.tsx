@@ -53,7 +53,7 @@ function toggled(set: ReadonlySet<string>, key: string, on: boolean): Set<string
 }
 
 const overwriteBadgeClass =
-	"border-amber-500/30 bg-amber-500/20 text-amber-600 dark:text-amber-400";
+	"border-amber-500/30 bg-amber-500/20 text-amber-700 dark:text-amber-400";
 
 function StatusBadge({ status }: { status: EnvImportStatus }) {
 	switch (status) {
@@ -220,11 +220,11 @@ export function ImportEnvDialog({
 
 					{!parsed ? (
 						<div
-							className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-6 text-center"
+							className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card/40 p-6 text-center"
 							onDragOver={(e) => e.preventDefault()}
 							onDrop={handleDrop}
 						>
-							<p className="text-muted-foreground">{m.envImportDropHint()}</p>
+							<p className="text-sm text-muted-foreground">{m.envImportDropHint()}</p>
 							<div className="flex flex-wrap justify-center gap-2">
 								<Button
 									type="button"
@@ -253,7 +253,7 @@ export function ImportEnvDialog({
 						</div>
 					) : (
 						<>
-							<div className="max-h-[40vh] overflow-auto rounded-lg border sm:max-h-[50vh]">
+							<div className="max-h-[40vh] overflow-auto rounded-xl border bg-card sm:max-h-[50vh]">
 								<Table>
 									<TableHeader>
 										<TableRow>
@@ -327,7 +327,7 @@ export function ImportEnvDialog({
 															</p>
 														) : isSecret ? (
 															<>
-																<span aria-hidden className="text-muted-foreground">
+																<span aria-hidden className="text-sm text-muted-foreground">
 																	••••••••
 																</span>
 																<span className="sr-only">{m.envSecretIsSet()}</span>

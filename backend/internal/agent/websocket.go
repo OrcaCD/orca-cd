@@ -364,12 +364,14 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	deployCtx, cancel := context.WithTimeout(ctx, deploymentTimeout)
 	defer cancel()
 
+	pins, imageIDs := pinnedImages(req.PinnedImages)
 	warnings, err := deployer.DeployWithWarnings(deployCtx, docker.DeployRequest{
 		ApplicationID:   req.ApplicationId,
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
 		DeleteOldImages: req.DeleteOldImages,
-		PinnedImages:    pinnedImages(req.PinnedImages),
+		PinnedImages:    pins,
+		PinnedImageIDs:  imageIDs,
 	})
 	if warnings != nil {
 		result.ComposeFileSha256 = composewarnings.Hash(req.ComposeFile)
@@ -395,13 +397,14 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	// application's health via daemon events and reports it once it settles.
 }
 
-// pinnedImages maps services to the image they are pinned to, preferring the
-// registry digest so a removed image can be pulled again.
-func pinnedImages(images []*messages.ServiceImage) map[string]string {
+// pinnedImages preserves both the pullable reference and the local ID, so the
+// Docker client can choose the local image when it is still available.
+func pinnedImages(images []*messages.ServiceImage) (map[string]string, map[string]string) {
 	if len(images) == 0 {
-		return nil
+		return nil, nil
 	}
 	pins := make(map[string]string, len(images))
+	ids := make(map[string]string, len(images))
 	for _, image := range images {
 		ref := image.GetPinnedRef()
 		if ref == "" {
@@ -409,9 +412,12 @@ func pinnedImages(images []*messages.ServiceImage) map[string]string {
 		}
 		if image.GetService() != "" && ref != "" {
 			pins[image.GetService()] = ref
+			if image.GetImageId() != "" {
+				ids[image.GetService()] = image.GetImageId()
+			}
 		}
 	}
-	return pins
+	return pins, ids
 }
 
 // reportServiceImages returns the images the application runs after a

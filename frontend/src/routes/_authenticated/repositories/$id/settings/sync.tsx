@@ -15,6 +15,7 @@ import { SyncTypeRadioGroup, WebhookSetupDetails } from "@/components/dialogs/re
 import SuccessAlert from "@/components/alerts/success-alert";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { useFetch } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,11 +69,13 @@ function WorkflowsComboboxField({
 	value,
 	onChange,
 	onBlur,
+	disabled,
 }: {
 	id: string;
 	value: string[];
 	onChange: (value: string[]) => void;
 	onBlur: () => void;
+	disabled: boolean;
 }) {
 	const anchor = useComboboxAnchor();
 	const [query, setQuery] = useState("");
@@ -88,6 +91,7 @@ function WorkflowsComboboxField({
 			inputValue={query}
 			onInputValueChange={setQuery}
 			value={value}
+			disabled={disabled}
 			onValueChange={(next) => {
 				onChange(next);
 				setQuery("");
@@ -187,6 +191,8 @@ function RepositorySyncPage() {
 		repository?.provider === "github" ? `/repositories/${id}/branches` : null,
 	);
 	const branchesAnchor = useComboboxAnchor();
+	const { can } = usePermissions();
+	const canUpdate = can("repository", "update", id);
 
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | undefined>();
@@ -305,6 +311,7 @@ function RepositorySyncPage() {
 											onChange={field.handleChange}
 											onBlur={field.handleBlur}
 											className="w-full"
+											disabled={!canUpdate}
 										/>
 									)}
 								</form.Field>
@@ -326,6 +333,7 @@ function RepositorySyncPage() {
 																value={field.state.value ?? ""}
 																onBlur={field.handleBlur}
 																onChange={(e) => field.handleChange(Number(e.target.value))}
+																disabled={!canUpdate}
 															/>
 															<p className="text-muted-foreground text-xs">
 																{m.pollingIntervalHint()}
@@ -369,6 +377,7 @@ function RepositorySyncPage() {
 														id={field.name}
 														checked={field.state.value}
 														onCheckedChange={field.handleChange}
+														disabled={!canUpdate}
 													/>
 												</div>
 											)}
@@ -419,6 +428,7 @@ function RepositorySyncPage() {
 																			},
 																		]}
 																		value={toOIDCAllowedActions(allowRepoSync, allowImageSync)}
+																		disabled={!canUpdate}
 																		onValueChange={(value: OIDCAllowedActions | null) => {
 																			if (!value) {
 																				return;
@@ -485,6 +495,7 @@ function RepositorySyncPage() {
 																		autoHighlight
 																		value={field.state.value}
 																		onValueChange={field.handleChange}
+																		disabled={!canUpdate}
 																	>
 																		<ComboboxChips ref={branchesAnchor}>
 																			<ComboboxValue>
@@ -547,6 +558,7 @@ function RepositorySyncPage() {
 																		value={field.state.value}
 																		onChange={field.handleChange}
 																		onBlur={field.handleBlur}
+																		disabled={!canUpdate}
 																	/>
 																</Field>
 															)}
@@ -564,22 +576,24 @@ function RepositorySyncPage() {
 										return (
 											<>
 												{error && <ErrorAlert description={error} />}
-												<div className="flex flex-wrap gap-2 pt-2">
-													<Button type="submit" disabled={isLoading || unchanged || !repository}>
-														{m.updateRepository()}
-													</Button>
-													<Button
-														type="button"
-														variant="outline"
-														onClick={() => {
-															setError(undefined);
-															form.reset();
-														}}
-														disabled={isLoading}
-													>
-														{m.cancel()}
-													</Button>
-												</div>
+												{canUpdate && (
+													<div className="flex flex-wrap gap-2 pt-2">
+														<Button type="submit" disabled={isLoading || unchanged || !repository}>
+															{m.updateRepository()}
+														</Button>
+														<Button
+															type="button"
+															variant="outline"
+															onClick={() => {
+																setError(undefined);
+																form.reset();
+															}}
+															disabled={isLoading}
+														>
+															{m.cancel()}
+														</Button>
+													</div>
+												)}
 											</>
 										);
 									}}

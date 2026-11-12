@@ -47,13 +47,14 @@ import { cn } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import WarningAlert from "@/components/alerts/warning-alert";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
-import { syncRepository } from "@/lib/repositories";
+import { syncRepository, type Repository } from "@/lib/repositories";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	CodeBlock,
@@ -91,7 +92,7 @@ function InfoCard({
 	children: React.ReactNode;
 }) {
 	return (
-		<Card className="gap-3">
+		<Card className="gap-3 bg-card ring-0">
 			<CardHeader className="min-h-7 items-center">
 				<CardTitle className="flex items-center gap-2 text-sm font-normal text-muted-foreground">
 					{icon}
@@ -128,9 +129,10 @@ function InfoMeta({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={title}>
-			<span className="shrink-0 [&_svg]:size-3.5">{icon}</span>
-			<span className="truncate">{children}</span>
+		<div className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground" title={title}>
+			<span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{icon}</span>
+			{/* Narrow tiles wrap onto a second line rather than cutting off the sentence. */}
+			<span className="line-clamp-2 min-w-0 text-pretty wrap-break-word">{children}</span>
 		</div>
 	);
 }
@@ -315,6 +317,17 @@ function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
 	const { data } = useFetch<Application>("/applications/" + id);
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
+	const canDeploy = can("application", "deploy", id);
+	const canPullImages = can("application", "pull_images", id);
+	const maySyncRepository = !!data && can("repository", "sync", data.repositoryId);
+	// Syncing redeploys every application of the repository
+	const { data: repository } = useFetch<Repository>(
+		maySyncRepository ? `/repositories/${data.repositoryId}` : null,
+	);
+	const canSyncRepository =
+		maySyncRepository && canOnApplicationsOf(data.repositoryId, "deploy", repository?.appCount);
 
 	const [deploying, setDeploying] = useState(false);
 
@@ -408,11 +421,13 @@ function ApplicationDetailsPage() {
 			)}
 			<div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
 				<div className="flex min-w-0 items-start gap-4">
-					<div className="h-14 w-14 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
-						<StaticLucideIcon name={data?.icon} className="h-7 w-7 text-primary" />
+					<div className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-muted ring-1 ring-foreground/5 ring-inset">
+						<StaticLucideIcon name={data?.icon} className="size-7 text-primary" />
 					</div>
-					<div className="min-w-0 space-y-2">
-						<h1 className="text-2xl font-bold wrap-break-word">{data?.name}</h1>
+					<div className="min-w-0 space-y-1.5">
+						<h1 className="text-2xl leading-8 font-semibold tracking-tight wrap-break-word">
+							{data?.name}
+						</h1>
 						<div className="flex flex-wrap items-center gap-2">
 							<ApplicationStatusBadge status={data?.syncStatus ?? SyncStatus.Unknown} type="sync" />
 							<ApplicationStatusBadge
@@ -422,67 +437,82 @@ function ApplicationDetailsPage() {
 						</div>
 					</div>
 				</div>
-				<ButtonGroup>
-					<Tooltip>
-						<TooltipTrigger
-							render={
-								<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
-									<span className="mr-2 inline-flex overflow-hidden">
-										<Rocket
-											className={`h-4 w-4 ${deploymentInProgress ? "motion-safe:animate-rocket-launch" : ""}`}
-										/>
-									</span>
-									{deploymentInProgress ? m.deploying() : m.deploy()}
-								</Button>
-							}
-						/>
-						<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
-					</Tooltip>
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button
-									variant="outline"
-									size="icon"
-									aria-label={m.deployOptions()}
-									disabled={deploymentInProgress || !data}
+				{canDeploy || canPullImages || canSyncRepository ? (
+					<ButtonGroup>
+						{canDeploy && (
+							<Tooltip>
+								<TooltipTrigger
+									render={
+										<Button
+											variant="outline"
+											onClick={handleDeploy}
+											disabled={deploymentInProgress}
+										>
+											<span className="mr-2 inline-flex overflow-hidden">
+												<Rocket
+													className={`h-4 w-4 ${deploymentInProgress ? "motion-safe:animate-rocket-launch" : ""}`}
+												/>
+											</span>
+											{deploymentInProgress ? m.deploying() : m.deploy()}
+										</Button>
+									}
 								/>
-							}
-						>
-							<ChevronDown className="h-4 w-4" />
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-72">
-							<DropdownMenuItem
-								onClick={handleSyncRepository}
-								className="items-start cursor-pointer"
-							>
-								<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
-								<div className="flex flex-col gap-0.5">
-									<span>{m.syncRepository()}</span>
-									<span className="text-xs text-muted-foreground">
-										{m.syncRepositoryDescription()}
-									</span>
-								</div>
-							</DropdownMenuItem>
-							<DropdownMenuItem
-								onClick={handlePullImages}
-								disabled={rolledBack}
-								className="items-start cursor-pointer"
-							>
-								<ImageDown className="mt-0.5 h-4 w-4" />
-								<div className="flex flex-col gap-0.5">
-									<span>{m.pullImages()}</span>
-									<span className="text-xs text-muted-foreground">
-										{rolledBack ? m.pullImagesRolledBack() : m.pullImagesDescription()}
-									</span>
-								</div>
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</ButtonGroup>
+								<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
+							</Tooltip>
+						)}
+						{(canPullImages || canSyncRepository) && (
+							<DropdownMenu>
+								<DropdownMenuTrigger
+									render={
+										<Button
+											variant="outline"
+											size={canDeploy ? "icon" : "default"}
+											aria-label={canDeploy ? m.deployOptions() : undefined}
+											disabled={deploymentInProgress || !data}
+										/>
+									}
+								>
+									{!canDeploy && m.actions()}
+									<ChevronDown className="h-4 w-4" />
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-72">
+									{canSyncRepository && (
+										<DropdownMenuItem
+											onClick={handleSyncRepository}
+											className="items-start cursor-pointer"
+										>
+											<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
+											<div className="flex flex-col gap-0.5">
+												<span>{m.syncRepository()}</span>
+												<span className="text-xs text-muted-foreground">
+													{m.syncRepositoryDescription()}
+												</span>
+											</div>
+										</DropdownMenuItem>
+									)}
+									{canPullImages && (
+										<DropdownMenuItem
+											onClick={handlePullImages}
+											disabled={rolledBack}
+											className="items-start cursor-pointer"
+										>
+											<ImageDown className="mt-0.5 h-4 w-4" />
+											<div className="flex flex-col gap-0.5">
+												<span>{m.pullImages()}</span>
+												<span className="text-xs text-muted-foreground">
+													{rolledBack ? m.pullImagesRolledBack() : m.pullImagesDescription()}
+												</span>
+											</div>
+										</DropdownMenuItem>
+									)}
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
+					</ButtonGroup>
+				) : null}
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+			<div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border ring-1 ring-foreground/10 md:grid-cols-2 xl:grid-cols-[1.25fr_1fr_1fr_1fr] [&>div]:min-w-0 [&>div]:rounded-none">
 				<InfoCard
 					icon={<FolderGit2 className="h-4 w-4" />}
 					label={m.applicationInfoRepository()}
@@ -514,12 +544,6 @@ function ApplicationDetailsPage() {
 					<InfoMeta icon={<GitBranch />} title={data?.branch}>
 						<span className="font-mono">{data?.branch}</span>
 					</InfoMeta>
-					{data ? (
-						<InfoMeta icon={getSyncTypeIcon(data.repositorySyncType, "")}>
-							{m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })}
-						</InfoMeta>
-					) : null}
-					{imageSyncTriggers ? <InfoMeta icon={<ImageDown />}>{imageSyncTriggers}</InfoMeta> : null}
 				</InfoCard>
 				<InfoCard
 					icon={<GitCommit className="h-4 w-4" />}
@@ -561,6 +585,15 @@ function ApplicationDetailsPage() {
 						</InfoMeta>
 					) : null}
 				</InfoCard>
+			</div>
+
+			<div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-1">
+				{data ? (
+					<InfoMeta icon={getSyncTypeIcon(data.repositorySyncType, "")}>
+						{m.applicationInfoRepositorySync({ type: getSyncTypeLabel(data.repositorySyncType) })}
+					</InfoMeta>
+				) : null}
+				{imageSyncTriggers ? <InfoMeta icon={<ImageDown />}>{imageSyncTriggers}</InfoMeta> : null}
 			</div>
 
 			<Tabs defaultValue="manifest" className="space-y-4">

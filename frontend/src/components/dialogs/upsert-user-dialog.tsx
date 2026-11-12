@@ -1,5 +1,6 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Users } from "lucide-react";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { Button } from "@/components/ui/button";
 import {
 	ResponsiveDialog,
@@ -15,20 +16,46 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
 import { z } from "zod";
-import { Field, FieldContent, FieldError, FieldGroup, FieldLabel, FieldTitle } from "../ui/field";
+import {
+	Field,
+	FieldContent,
+	FieldDescription,
+	FieldError,
+	FieldGroup,
+	FieldLabel,
+	FieldTitle,
+} from "../ui/field";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
-import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
+import { Badge } from "../ui/badge";
+import { Skeleton } from "../ui/skeleton";
 import CopyValueDialog from "./copy-value-dialog";
 import { m } from "@/lib/paraglide/messages";
+import { useFetch } from "@/lib/api";
+import { roleDescription, roleName, type Role } from "@/lib/roles";
 
-const baseSchema = z.object({
-	name: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
-	email: z.email(m.validationMustBeValidEmailAddress()).trim(),
-	role: z.enum(["admin", "user"]),
-	resetPassword: z.boolean(),
-});
+// The provider of managed users may set a name or email the validation would reject,
+// and only their roles can be changed anyway.
+function userSchema(isManaged: boolean) {
+	return z.object({
+		name: isManaged
+			? z.string()
+			: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
+		email: isManaged ? z.string() : z.email(m.validationMustBeValidEmailAddress()).trim(),
+		roleIds: z.array(z.string()),
+		resetPassword: z.boolean(),
+	});
+}
+
+function manualRoleIds(user: UserDetail | null, roles: Role[]): string[] {
+	if (user) {
+		return user.roles.filter((role) => role.sources.includes("manual")).map((role) => role.id);
+	}
+	// New users get the default role, like users created by an OIDC login
+	const defaultRole = roles.find((role) => role.builtIn === "user");
+	return defaultRole ? [defaultRole.id] : [];
+}
 
 export default function UpsertUserDialog({
 	user,
@@ -40,64 +67,9 @@ export default function UpsertUserDialog({
 	disabled?: boolean;
 }) {
 	const isEditing = !!user;
-	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [open, setOpen] = useState(false);
 	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
 	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
-
-	const form = useForm({
-		defaultValues: {
-			name: user?.name ?? "",
-			email: user?.email ?? "",
-			role: (user?.role as "admin" | "user") ?? "user",
-			resetPassword: false,
-		},
-		validators: {
-			onSubmit: baseSchema,
-		},
-		onSubmit: async ({ value }) => {
-			setIsSubmitting(true);
-			try {
-				let generated: string | null = null;
-
-				if (isEditing && user) {
-					const response = await updateUser(user.id, {
-						name: value.name,
-						email: value.email,
-						role: value.role,
-						resetPassword: value.resetPassword,
-					});
-					generated = response.generatedPassword ?? null;
-					toast.add({
-						type: "success",
-						title: value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated(),
-					});
-				} else {
-					const response = await createUser({
-						name: value.name,
-						email: value.email,
-						role: value.role,
-					});
-					generated = response.generatedPassword;
-					toast.add({ type: "success", title: m.userCreated() });
-				}
-
-				if (generated) {
-					setGeneratedPassword(generated);
-					setIsGeneratedPasswordOpen(true);
-				}
-
-				setOpen(false);
-			} catch (err) {
-				toast.add({
-					type: "error",
-					title: err instanceof Error ? err.message : m.failedSaveUser(),
-				});
-			} finally {
-				setIsSubmitting(false);
-			}
-		},
-	});
 
 	return (
 		<>
@@ -130,139 +102,15 @@ export default function UpsertUserDialog({
 						</ResponsiveDialogDescription>
 					</ResponsiveDialogHeader>
 
-					<form
-						onSubmit={async (e) => {
-							e.preventDefault();
-							await form.handleSubmit();
+					{/* Mounted only while the dialog is open, so the roles are not fetched for every row */}
+					<UserForm
+						user={user}
+						onClose={() => setOpen(false)}
+						onPasswordGenerated={(password) => {
+							setGeneratedPassword(password);
+							setIsGeneratedPasswordOpen(true);
 						}}
-					>
-						<FieldGroup>
-							<form.Field
-								name="name"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.name()}</Label>
-											<Input
-												id={field.name}
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder={m.fullNamePlaceholder()}
-												autoFocus
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<form.Field
-								name="email"
-								children={(field) => {
-									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-									return (
-										<Field data-invalid={isInvalid}>
-											<Label htmlFor={field.name}>{m.email()}</Label>
-											<Input
-												id={field.name}
-												type="email"
-												value={field.state.value}
-												onBlur={field.handleBlur}
-												onChange={(e) => field.handleChange(e.target.value)}
-												placeholder={m.emailPlaceholder()}
-											/>
-											{isInvalid && <FieldError errors={field.state.meta.errors} />}
-										</Field>
-									);
-								}}
-							/>
-							<form.Field
-								name="role"
-								children={(field) => (
-									<Field>
-										<Label htmlFor={field.name}>{m.role()}</Label>
-										<div className="flex gap-4">
-											<RadioGroup
-												name={field.name}
-												value={field.state.value}
-												onValueChange={(value) => field.handleChange(value as "admin" | "user")}
-											>
-												<FieldLabel>
-													<Field
-														orientation="horizontal"
-														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-													>
-														<FieldContent>
-															<FieldTitle>{m.roleAdmin()}</FieldTitle>
-														</FieldContent>
-														<RadioGroupItem
-															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-															value="admin"
-														/>
-													</Field>
-												</FieldLabel>
-												<FieldLabel>
-													<Field
-														orientation="horizontal"
-														data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-													>
-														<FieldContent>
-															<FieldTitle>{m.roleUser()}</FieldTitle>
-														</FieldContent>
-														<RadioGroupItem
-															aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-															value="user"
-														/>
-													</Field>
-												</FieldLabel>
-											</RadioGroup>
-										</div>
-									</Field>
-								)}
-							/>
-							{isEditing && (
-								<form.Field
-									name="resetPassword"
-									children={(field) => (
-										<Field>
-											<div className="flex items-start gap-2">
-												<Checkbox
-													id={field.name}
-													checked={field.state.value}
-													onCheckedChange={(checked) => field.handleChange(checked === true)}
-													className="h-4 w-4 rounded border-gray-300"
-												/>
-												<div className="space-y-1">
-													<Label htmlFor={field.name}>{m.resetPassword()}</Label>
-													<p className="text-muted-foreground text-xs">
-														{m.resetPasswordDescription()}
-													</p>
-												</div>
-											</div>
-										</Field>
-									)}
-								/>
-							)}
-
-							<div className="flex gap-2 pt-2">
-								<Button type="submit" disabled={isSubmitting}>
-									{isSubmitting ? m.savingDots() : isEditing ? m.updateUser() : m.createUser()}
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => {
-										setOpen(false);
-										form.reset();
-									}}
-									disabled={isSubmitting}
-								>
-									{m.cancel()}
-								</Button>
-							</div>
-						</FieldGroup>
-					</form>
+					/>
 				</ResponsiveDialogContent>
 			</ResponsiveDialog>
 
@@ -282,5 +130,237 @@ export default function UpsertUserDialog({
 				copyTitle={m.copyGeneratedPassword()}
 			/>
 		</>
+	);
+}
+
+function UserForm(props: {
+	user: UserDetail | null;
+	onClose: () => void;
+	onPasswordGenerated: (password: string) => void;
+}) {
+	const { data: roles, error } = useFetch<Role[]>("/admin/roles");
+
+	if (error) {
+		return <ErrorAlert title={m.rolesLoadFailed()} description={(error as Error).message} />;
+	}
+	// The default role of new users is only known once the roles are loaded
+	if (!roles) {
+		return (
+			<div className="flex flex-col gap-4">
+				<Skeleton className="h-9 w-full" />
+				<Skeleton className="h-9 w-full" />
+				<Skeleton className="h-24 w-full" />
+			</div>
+		);
+	}
+
+	return <UserFormFields {...props} roles={roles} />;
+}
+
+function UserFormFields({
+	user,
+	roles,
+	onClose,
+	onPasswordGenerated,
+}: {
+	user: UserDetail | null;
+	roles: Role[];
+	onClose: () => void;
+	onPasswordGenerated: (password: string) => void;
+}) {
+	const isEditing = !!user;
+	// The profile of OIDC users is managed by their provider, only their roles can change
+	const isManaged = isEditing && !user.providers.includes("password");
+	const oidcRoleIds = new Set(
+		user?.roles.filter((role) => role.sources.includes("oidc")).map((role) => role.id) ?? [],
+	);
+	const initialRoleIds = manualRoleIds(user, roles);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+
+	const form = useForm({
+		defaultValues: {
+			name: user?.name ?? "",
+			email: user?.email ?? "",
+			roleIds: initialRoleIds,
+			resetPassword: false,
+		},
+		validators: {
+			onSubmit: userSchema(isManaged),
+		},
+		onSubmit: async ({ value }) => {
+			setIsSubmitting(true);
+			try {
+				let generated: string | null = null;
+
+				if (isEditing) {
+					const response = await updateUser(user.id, {
+						name: value.name,
+						email: value.email,
+						roleIds: value.roleIds,
+						resetPassword: value.resetPassword,
+					});
+					generated = response.generatedPassword ?? null;
+					toast.add({
+						type: "success",
+						title: value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated(),
+					});
+				} else {
+					const response = await createUser({
+						name: value.name,
+						email: value.email,
+						roleIds: value.roleIds,
+					});
+					generated = response.generatedPassword;
+					toast.add({ type: "success", title: m.userCreated() });
+				}
+
+				if (generated) {
+					onPasswordGenerated(generated);
+				}
+
+				onClose();
+			} catch (err) {
+				toast.add({
+					type: "error",
+					title: err instanceof Error ? err.message : m.failedSaveUser(),
+				});
+			} finally {
+				setIsSubmitting(false);
+			}
+		},
+	});
+
+	return (
+		<form
+			onSubmit={async (e) => {
+				e.preventDefault();
+				await form.handleSubmit();
+			}}
+		>
+			<FieldGroup>
+				<form.Field
+					name="name"
+					children={(field) => {
+						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+						return (
+							<Field data-invalid={isInvalid}>
+								<Label htmlFor={field.name}>{m.name()}</Label>
+								<Input
+									id={field.name}
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(e) => field.handleChange(e.target.value)}
+									placeholder={m.fullNamePlaceholder()}
+									disabled={isManaged}
+									autoFocus={!isManaged}
+								/>
+								{isInvalid && <FieldError errors={field.state.meta.errors} />}
+							</Field>
+						);
+					}}
+				/>
+				<form.Field
+					name="email"
+					children={(field) => {
+						const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+						return (
+							<Field data-invalid={isInvalid}>
+								<Label htmlFor={field.name}>{m.email()}</Label>
+								<Input
+									id={field.name}
+									type="email"
+									value={field.state.value}
+									onBlur={field.handleBlur}
+									onChange={(e) => field.handleChange(e.target.value)}
+									placeholder={m.emailPlaceholder()}
+									disabled={isManaged}
+								/>
+								{isInvalid && <FieldError errors={field.state.meta.errors} />}
+							</Field>
+						);
+					}}
+				/>
+				<form.Field
+					name="roleIds"
+					children={(field) => (
+						<Field>
+							<Label>{m.roles()}</Label>
+							<FieldDescription>{m.userRolesDescription()}</FieldDescription>
+							<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+								{roles.map((role) => {
+									const fromOIDC = oidcRoleIds.has(role.id);
+									// A role that was also assigned by hand can still be unassigned
+									const locked = fromOIDC && !initialRoleIds.includes(role.id);
+									const checked = locked || field.state.value.includes(role.id);
+									return (
+										<FieldLabel key={role.id} htmlFor={`user-role-${role.id}`}>
+											<Field orientation="horizontal" data-disabled={locked || undefined}>
+												<Checkbox
+													id={`user-role-${role.id}`}
+													checked={checked}
+													disabled={locked}
+													onCheckedChange={(next) =>
+														field.handleChange(
+															next
+																? [...field.state.value, role.id]
+																: field.state.value.filter((id) => id !== role.id),
+														)
+													}
+												/>
+												<FieldContent>
+													<FieldTitle>
+														{role.builtIn === "admin" && <ShieldCheck className="size-4" />}
+														{roleName(role)}
+														{fromOIDC && (
+															<Badge variant="outline">
+																<Users />
+																{m.oidcGroup()}
+															</Badge>
+														)}
+													</FieldTitle>
+													{roleDescription(role) && (
+														<FieldDescription>{roleDescription(role)}</FieldDescription>
+													)}
+												</FieldContent>
+											</Field>
+										</FieldLabel>
+									);
+								})}
+							</div>
+						</Field>
+					)}
+				/>
+				{isEditing && !isManaged && (
+					<form.Field
+						name="resetPassword"
+						children={(field) => (
+							<Field>
+								<div className="flex items-start gap-2">
+									<Checkbox
+										id={field.name}
+										checked={field.state.value}
+										onCheckedChange={(checked) => field.handleChange(checked === true)}
+										className="h-4 w-4 rounded border-gray-300"
+									/>
+									<div className="space-y-1">
+										<Label htmlFor={field.name}>{m.resetPassword()}</Label>
+										<p className="text-muted-foreground text-xs">{m.resetPasswordDescription()}</p>
+									</div>
+								</div>
+							</Field>
+						)}
+					/>
+				)}
+
+				<div className="flex gap-2 pt-2">
+					<Button type="submit" disabled={isSubmitting}>
+						{isSubmitting ? m.savingDots() : isEditing ? m.updateUser() : m.createUser()}
+					</Button>
+					<Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
+						{m.cancel()}
+					</Button>
+				</div>
+			</FieldGroup>
+		</form>
 	);
 }

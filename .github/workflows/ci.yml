@@ -109,7 +109,7 @@ jobs:
       - name: Compile Protobufs
         working-directory: ./backend
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
           buf generate
           if [[ -n "$(git status --porcelain --untracked-files=all -- internal/proto)" ]]; then
             echo "Generated protobuf files are out of date. Run 'buf generate' and commit the changes."
@@ -153,4 +153,3 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
-

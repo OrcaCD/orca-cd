@@ -31,6 +31,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import {
 	Card,
@@ -99,6 +101,10 @@ function GeneralSettingsPage() {
 	);
 
 	const navigate = useNavigate();
+	const { can } = usePermissions();
+	const canUpdate = can("application", "update", id);
+	// A new source or compose project replaces what is deployed
+	const canChangeSource = canUpdate && can("application", "deploy", id);
 
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -128,7 +134,7 @@ function GeneralSettingsPage() {
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);
-				if (affectsDeployment(previous, updated)) {
+				if (affectsDeployment(previous, updated) && can("application", "deploy", id)) {
 					const toastId = toast.add({
 						type: "success",
 						title: m.applicationUpdated(),
@@ -164,13 +170,26 @@ function GeneralSettingsPage() {
 	const branch = useStore(form.store, (state) => state.values.branch);
 	const isPristine = useStore(form.store, (state) => state.isDefaultValue);
 
+	// Without read access to the repository, its branches and files can't be loaded
+	const canReadRepository = !!repositoryId && can("repository", "read", repositoryId);
 	const { data: branches, isLoading: isBranchesLoading } = useFetch<string[]>(
-		repositoryId ? `/repositories/${repositoryId}/branches` : null,
+		canReadRepository ? `/repositories/${repositoryId}/branches` : null,
 	);
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
-		branch ? `/repositories/${repositoryId}/tree?branch=${branch}` : null,
+		branch && canChangeSource && canReadRepository
+			? `/repositories/${repositoryId}/tree?branch=${branch}`
+			: null,
 	);
+
+	// The current agent, repository and branch are shown even when the user can't read them
+	const agentOptions = optionsWithCurrent(agents, application?.agentId, application?.agentName);
+	const repositoryOptions = optionsWithCurrent(
+		repos,
+		application?.repositoryId,
+		application?.repositoryName,
+	);
+	const branchOptions = branches ?? (branch ? [branch] : []);
 
 	const fileTree = useMemo(() => {
 		return buildFileTree(fileTreeEntries ?? []);
@@ -226,6 +245,7 @@ function GeneralSettingsPage() {
 													onChange={(e) => field.handleChange(e.target.value)}
 													placeholder={m.applicationNamePlaceholder()}
 													aria-invalid={isInvalid}
+													disabled={!canChangeSource}
 												/>
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
 											</Field>
@@ -242,6 +262,7 @@ function GeneralSettingsPage() {
 												onValueChange={field.handleChange}
 												placeholder={m.selectIcon()}
 												emptyMessage={m.noIconsFound()}
+												disabled={!canUpdate}
 											/>
 										</Field>
 									)}
@@ -260,12 +281,8 @@ function GeneralSettingsPage() {
 												onValueChange={(value) => {
 													field.handleChange(value ?? "");
 												}}
-												items={
-													agents?.map((agent) => ({
-														label: agent.name,
-														value: agent.id,
-													})) ?? []
-												}
+												disabled={!canChangeSource}
+												items={agentOptions}
 											>
 												<SelectTrigger
 													id="agent-select"
@@ -278,9 +295,9 @@ function GeneralSettingsPage() {
 													{isAgentsLoading ? (
 														<div className="p-2">{m.loadingDots()}</div>
 													) : (
-														agents?.map((agent) => (
-															<SelectItem key={agent.id} value={agent.id}>
-																{agent.name}
+														agentOptions.map((option) => (
+															<SelectItem key={option.value} value={option.value}>
+																{option.label}
 															</SelectItem>
 														))
 													)}
@@ -320,12 +337,8 @@ function GeneralSettingsPage() {
 														form.setFieldValue("branch", "");
 														form.setFieldValue("path", "");
 													}}
-													items={
-														repos?.map((repo) => ({
-															label: repo.name,
-															value: repo.id,
-														})) ?? []
-													}
+													disabled={!canChangeSource}
+													items={repositoryOptions}
 												>
 													<SelectTrigger
 														id="repository-select"
@@ -338,9 +351,9 @@ function GeneralSettingsPage() {
 														{isReposLoading ? (
 															<div className="p-2">{m.loadingDots()}</div>
 														) : (
-															repos?.map((repo) => (
-																<SelectItem key={repo.id} value={repo.id}>
-																	{repo.name}
+															repositoryOptions.map((option) => (
+																<SelectItem key={option.value} value={option.value}>
+																	{option.label}
 																</SelectItem>
 															))
 														)}
@@ -365,13 +378,11 @@ function GeneralSettingsPage() {
 														field.handleChange(value ?? "");
 														form.setFieldValue("path", "");
 													}}
-													disabled={!repositoryId || isBranchesLoading}
-													items={
-														branches?.map((branch) => ({
-															label: branch,
-															value: branch,
-														})) ?? []
-													}
+													disabled={!canChangeSource || !repositoryId || isBranchesLoading}
+													items={branchOptions.map((branch) => ({
+														label: branch,
+														value: branch,
+													}))}
 												>
 													<SelectTrigger
 														id="branch-select"
@@ -388,7 +399,7 @@ function GeneralSettingsPage() {
 														{isBranchesLoading ? (
 															<div className="p-2">{m.loadingBranchesDots()}</div>
 														) : (
-															branches?.map((branch) => (
+															branchOptions.map((branch) => (
 																<SelectItem key={branch} value={branch}>
 																	{branch}
 																</SelectItem>
@@ -415,7 +426,12 @@ function GeneralSettingsPage() {
 												aria-invalid={isInvalid}
 												className="overflow-hidden rounded-lg border border-input aria-invalid:border-destructive"
 											>
-												<div className="flex min-w-0 items-center gap-2 border-b bg-muted/50 px-3 py-2 font-mono text-xs">
+												<div
+													className={cn(
+														"flex min-w-0 items-center gap-2 bg-muted/50 px-3 py-2 font-mono text-xs",
+														canChangeSource && "border-b",
+													)}
+												>
 													<FileCode className="size-3.5 shrink-0 text-muted-foreground" />
 													{field.state.value ? (
 														<span className="truncate" title={field.state.value}>
@@ -427,26 +443,28 @@ function GeneralSettingsPage() {
 														</span>
 													)}
 												</div>
-												<div className="max-h-72 overflow-auto p-1">
-													{!repositoryId ? (
-														<TreePlaceholder>{m.selectRepositoryFirst()}</TreePlaceholder>
-													) : !branch ? (
-														<TreePlaceholder>{m.selectBranchFirst()}</TreePlaceholder>
-													) : isFileTreeLoading ? (
-														<TreePlaceholder>{m.loadingRepositoryTreeDots()}</TreePlaceholder>
-													) : fileTree.length === 0 ? (
-														<TreePlaceholder>{m.noFilesFoundInBranch()}</TreePlaceholder>
-													) : (
-														<div className="flex flex-col gap-0.5">
-															<TreeNodeList
-																nodes={fileTree}
-																depth={0}
-																selectedPath={field.state.value}
-																onSelectPath={(path) => field.handleChange(path)}
-															/>
-														</div>
-													)}
-												</div>
+												{canChangeSource && (
+													<div className="max-h-72 overflow-auto p-1">
+														{!repositoryId ? (
+															<TreePlaceholder>{m.selectRepositoryFirst()}</TreePlaceholder>
+														) : !branch ? (
+															<TreePlaceholder>{m.selectBranchFirst()}</TreePlaceholder>
+														) : isFileTreeLoading ? (
+															<TreePlaceholder>{m.loadingRepositoryTreeDots()}</TreePlaceholder>
+														) : fileTree.length === 0 ? (
+															<TreePlaceholder>{m.noFilesFoundInBranch()}</TreePlaceholder>
+														) : (
+															<div className="flex flex-col gap-0.5">
+																<TreeNodeList
+																	nodes={fileTree}
+																	depth={0}
+																	selectedPath={field.state.value}
+																	onSelectPath={(path) => field.handleChange(path)}
+																/>
+															</div>
+														)}
+													</div>
+												)}
 											</div>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
@@ -472,6 +490,7 @@ function GeneralSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
+												disabled={!canUpdate}
 											/>
 										</Field>
 									</FieldLabel>
@@ -479,41 +498,45 @@ function GeneralSettingsPage() {
 							</form.Field>
 						</FormSection>
 					</CardContent>
-					<CardFooter className="mt-(--card-spacing) justify-end gap-2">
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => form.reset()}
-							disabled={isSubmitting || isPristine}
-						>
-							{m.cancel()}
-						</Button>
-						<Button type="submit" disabled={isSubmitting || isPristine}>
-							{isSubmitting ? m.savingDots() : m.saveChanges()}
-						</Button>
-					</CardFooter>
+					{canUpdate && (
+						<CardFooter className="mt-(--card-spacing) justify-end gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => form.reset()}
+								disabled={isSubmitting || isPristine}
+							>
+								{m.cancel()}
+							</Button>
+							<Button type="submit" disabled={isSubmitting || isPristine}>
+								{isSubmitting ? m.savingDots() : m.saveChanges()}
+							</Button>
+						</CardFooter>
+					)}
 				</form>
 			</Card>
 
-			<Card className="ring-destructive/30">
-				<CardHeader>
-					<CardTitle className="text-destructive">{m.dangerZone()}</CardTitle>
-					<CardDescription>{m.deleteApplicationHint()}</CardDescription>
-					<CardAction className="self-center">
-						<ConfirmationDialog
-							onConfirm={async () => await deleteApp()}
-							triggerProps={{ variant: "destructive" }}
-							triggerText={
-								<>
-									<Trash2 />
-									{m.delete()}
-								</>
-							}
-							description={m.deleteApplicationDescription()}
-						/>
-					</CardAction>
-				</CardHeader>
-			</Card>
+			{can("application", "delete", id) && (
+				<Card className="ring-destructive/30">
+					<CardHeader>
+						<CardTitle className="text-destructive">{m.dangerZone()}</CardTitle>
+						<CardDescription>{m.deleteApplicationHint()}</CardDescription>
+						<CardAction className="self-center">
+							<ConfirmationDialog
+								onConfirm={async () => await deleteApp()}
+								triggerProps={{ variant: "destructive" }}
+								triggerText={
+									<>
+										<Trash2 />
+										{m.delete()}
+									</>
+								}
+								description={m.deleteApplicationDescription()}
+							/>
+						</CardAction>
+					</CardHeader>
+				</Card>
+			)}
 		</div>
 	);
 }
@@ -545,4 +568,16 @@ function FormSection({
 
 function TreePlaceholder({ children }: { children: React.ReactNode }) {
 	return <div className="p-2 text-sm text-muted-foreground">{children}</div>;
+}
+
+function optionsWithCurrent(
+	items: { id: string; name: string }[] | undefined,
+	currentId: string | undefined,
+	currentName: string | undefined,
+) {
+	const options = items?.map((item) => ({ label: item.name, value: item.id })) ?? [];
+	if (currentId && currentName && !options.some((option) => option.value === currentId)) {
+		options.push({ label: currentName, value: currentId });
+	}
+	return options;
 }

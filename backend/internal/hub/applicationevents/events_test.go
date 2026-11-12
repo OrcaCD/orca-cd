@@ -66,7 +66,6 @@ func setupEventTestDB(t *testing.T) (models.Application, models.Application) {
 		Id:    "user-1",
 		Email: "alex@example.com",
 		Name:  "Alex",
-		Role:  models.UserRoleAdmin,
 	}
 	if err := gorm.G[models.User](testDB).Create(ctx, &user); err != nil {
 		t.Fatalf("seed user: %v", err)
@@ -174,7 +173,7 @@ func TestActivityTopicSkipsRecordedNoChangeEvents(t *testing.T) {
 	withActivity := []string{sse.TopicApplicationEvents(app.Id).URL(), sse.TopicApplicationActivity.URL()}
 	expectUpdate := func(step string, want []string) {
 		t.Helper()
-		if got := (<-updates).URLs; !slices.Equal(got, want) {
+		if got := (<-updates).URLs(); !slices.Equal(got, want) {
 			t.Fatalf("%s published %v, want %v", step, got, want)
 		}
 	}

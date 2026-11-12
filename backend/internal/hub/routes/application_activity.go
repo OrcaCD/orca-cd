@@ -43,6 +43,12 @@ type applicationActivityResponse struct {
 func ApplicationActivityHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	visible := perms.Scope(models.ResourceApplication, models.ActionRead, "application_id")
+
 	offset, ok := parseUTCOffset(c.Query("utcOffset"))
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid utcOffset"})
@@ -58,6 +64,7 @@ func ApplicationActivityHandler(c *gin.Context) {
 	// Timestamps are stored as strings in the hub's local zone, so compare against
 	// a local time and leave the exact day filtering to the bucketing below.
 	events, err := gorm.G[models.ApplicationEvent](db.DB).
+		Scopes(visible).
 		Select("created_at", "status").
 		Where("status IN ? AND created_at >= ?", completed, since.Add(-24*time.Hour).Local()).
 		Find(ctx)
@@ -85,7 +92,7 @@ func ApplicationActivityHandler(c *gin.Context) {
 		}
 	}
 
-	recentDeployments, err := recentDeployments(ctx)
+	recentDeployments, err := recentDeployments(ctx, visible)
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Msg("failed to load recent deployments")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -97,8 +104,9 @@ func ApplicationActivityHandler(c *gin.Context) {
 
 // recentDeployments returns the newest events across all applications. Events
 // without changes are left out, since polling would otherwise flood the feed.
-func recentDeployments(ctx context.Context) ([]applicationActivityDeployment, error) {
+func recentDeployments(ctx context.Context, visible func(*gorm.Statement)) ([]applicationActivityDeployment, error) {
 	events, err := gorm.G[models.ApplicationEvent](db.DB).
+		Scopes(visible).
 		Preload("Application", nil).
 		Where("status IN ?", []models.ApplicationEventStatus{
 			models.ApplicationEventRunning,

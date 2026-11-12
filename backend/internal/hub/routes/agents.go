@@ -131,7 +131,15 @@ func countApplicationsByAgentIDs(ctx context.Context, agentIds []string) (map[st
 func ListAgentsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	agents, err := gorm.G[models.Agent](db.DB).Order("created_at ASC").Find(ctx)
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
+	agents, err := gorm.G[models.Agent](db.DB).
+		Scopes(perms.Scope(models.ResourceAgent, models.ActionRead, "id")).
+		Order("created_at ASC").
+		Find(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -244,7 +252,7 @@ func CreateAgentHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func UpdateAgentHandler(c *gin.Context) {
@@ -291,7 +299,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(id))
 }
 
 func RotateAgentTokenHandler(c *gin.Context) {
@@ -346,11 +354,15 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func DeleteAgentHandler(c *gin.Context) {
 	id := c.Param("id")
+	// The applications of the agent are deleted with it.
+	if !canDeleteApplicationsOf(c, "agent_id", id) {
+		return
+	}
 
 	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Delete(c.Request.Context())
 	if err != nil {
@@ -370,5 +382,8 @@ func DeleteAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "agent", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
-	sse.PublishUpdate(sse.TopicAgents)
+	// Its applications were deleted with it
+	sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
+	// After the update, so clients still get it before losing access
+	pruneGrants(c.Request.Context())
 }

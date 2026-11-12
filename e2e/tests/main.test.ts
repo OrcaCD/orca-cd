@@ -7,8 +7,8 @@ test("Dashboard", async ({ page }) => {
 	await expect(page.getByText("Get started")).toBeVisible();
 
 	await page.goto("/applications");
-	await expect(page.getByRole("heading", { name: "Applications" })).toBeVisible();
-	await expect(page.getByText("No applications found")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
+	await expect(page.getByText("No applications yet")).toBeVisible();
 
 	// ...
 });

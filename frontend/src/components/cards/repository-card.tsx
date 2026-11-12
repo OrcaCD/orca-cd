@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import {
 	getGitProviderIconClass,
 	getGitProviderIconPath,
@@ -20,7 +21,7 @@ import { ResourceCard } from "./resource-card";
 const maxListedApplications = 2;
 
 const syncStatusIcon: Record<RepositorySyncStatus, ReactNode> = {
-	success: <CircleCheck className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />,
+	success: <CircleCheck className="size-4 shrink-0 text-emerald-700 dark:text-emerald-400" />,
 	failed: <CircleX className="size-4 shrink-0 text-red-600 dark:text-red-400" />,
 	syncing: (
 		<RefreshCw className="size-4 shrink-0 text-blue-600 motion-safe:animate-spin dark:text-blue-400" />
@@ -77,6 +78,8 @@ export function RepositoryCard({
 	action?: ReactNode;
 }) {
 	const [triggering, setTriggering] = useState(false);
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	const failed = repository.syncStatus === "failed";
 
 	const handleSync = async () => {
@@ -132,16 +135,19 @@ export function RepositoryCard({
 				<div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-muted-foreground">
 					{getSyncTypeIcon(repository.syncType, "size-3.5 shrink-0")}
 					<span className="truncate">{getTriggerLabel(repository)}</span>
-					<Button
-						variant="outline"
-						size="xs"
-						className="-mr-1.5 ml-auto"
-						disabled={triggering || repository.syncStatus === "syncing"}
-						onClick={() => void handleSync()}
-					>
-						<RefreshCw className={cn(triggering && "motion-safe:animate-spin")} />
-						{m.sync()}
-					</Button>
+					{can("repository", "sync", repository.id) &&
+					canOnApplicationsOf(repository.id, "deploy", repository.appCount) ? (
+						<Button
+							variant="outline"
+							size="xs"
+							className="-mr-1.5 ml-auto"
+							disabled={triggering || repository.syncStatus === "syncing"}
+							onClick={() => void handleSync()}
+						>
+							<RefreshCw className={cn(triggering && "motion-safe:animate-spin")} />
+							{m.sync()}
+						</Button>
+					) : null}
 				</div>
 			</div>
 		</ResourceCard>

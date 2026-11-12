@@ -120,10 +120,13 @@ test.describe("Agent with invalid configuration", () => {
 });
 
 test.describe("Agent setup", () => {
-	test("add agent in the UI", async ({ page }) => {
+	test("first agent setup survives creation from the empty state", async ({ page }) => {
 		await gotoApp(page, "/agents");
 
-		await page.getByRole("button", { name: "Add Agent" }).click();
+		const emptyState = page.getByRole("heading", { name: "No agents yet" }).locator("..");
+		const emptyTrigger = emptyState.getByRole("button", { name: "Add Agent" });
+		await expect(emptyTrigger).toHaveAttribute("aria-haspopup", "dialog");
+		await emptyTrigger.click();
 		const dialog = page.getByRole("dialog");
 		await dialog.getByRole("textbox", { name: "Name" }).fill(AGENT_NAME);
 		await dialog.getByRole("button", { name: "Add Agent" }).click();
@@ -133,6 +136,12 @@ test.describe("Agent setup", () => {
 			setup.getByText(`Waiting for the first connection from ${AGENT_NAME}`),
 		).toBeVisible();
 
+		// The SSE update removes the empty state; the one-time setup must remain mounted.
+		await expect(agentCard(page)).toBeVisible();
+		await expect(emptyState).toHaveCount(0);
+		await expect
+			.poll(() => setup.evaluate((element) => element.contains(document.activeElement)))
+			.toBe(true);
 		const compose = await setup.locator("pre").innerText();
 		expect(compose).toContain(`HUB_URL: ${APP_URL}`);
 		expect(compose).toMatch(/image: ghcr\.io\/orcacd\/agent:\S+/);
@@ -142,6 +151,7 @@ test.describe("Agent setup", () => {
 		authToken = compose.match(/AUTH_TOKEN: (\S+)/)?.[1] ?? "";
 		expect(authToken).not.toBe("");
 		await setup.getByRole("button", { name: "Close" }).click();
+		await expect(page.getByRole("button", { name: "Add Agent" })).toBeFocused();
 
 		const agents = await listAgents(page);
 		expect(agents).toHaveLength(1);

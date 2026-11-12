@@ -18,7 +18,6 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/version"
-	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -100,7 +99,7 @@ func createTestApplicationRecord(t *testing.T, name, repositoryId, agentId strin
 func TestListAgentsHandler_Empty(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.GET("/api/v1/agents", ListAgentsHandler)
 
 	w := httptest.NewRecorder()
@@ -131,7 +130,7 @@ func TestListAgentsHandler_ReturnsAgents(t *testing.T) {
 	createTestApplicationRecord(t, "App Two", repository.Id, errorAgentModel.Id)
 	createTestApplicationRecord(t, "App Three", repository.Id, offlineAgent.Id)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.GET("/api/v1/agents", ListAgentsHandler)
 
 	w := httptest.NewRecorder()
@@ -195,7 +194,7 @@ func TestGetAgentHandler_Success(t *testing.T) {
 	repository := createTestRepositoryRecord(t, "Repo", "https://github.com/orcacd/get-agent-test")
 	createTestApplicationRecord(t, "My App", repository.Id, agent.Id)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.GET("/api/v1/agents/:id", GetAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -234,7 +233,7 @@ func TestGetAgentHandler_Success(t *testing.T) {
 func TestGetAgentHandler_NotFound(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.GET("/api/v1/agents/:id", GetAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -262,7 +261,7 @@ func TestGetAgentHandler_Versions(t *testing.T) {
 	}
 	unreported := createTestAgentRecord(t, "Unreported", "unreported-key", models.AgentStatusOffline, nil)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.GET("/api/v1/agents/:id", GetAgentHandler)
 
 	get := func(id string) agentResponse {
@@ -304,7 +303,7 @@ func TestCreateAgentHandler_Success(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{"name": "New Agent", "icon": "satellite-dish"})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/agents", CreateAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -384,7 +383,7 @@ func TestCreateAgentHandler_InvalidRequest(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/agents", CreateAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -404,7 +403,7 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName, "icon": "radio"})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -436,7 +435,7 @@ func TestUpdateAgentHandler_NotFound(t *testing.T) {
 
 	reqBody, _ := json.Marshal(map[string]any{"name": testUpdatedName})
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -461,7 +460,7 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 	}
 	t.Cleanup(func() { websocket.DefaultHub.FinishDisconnect(client) })
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/agents/:id/rotate-token", RotateAgentTokenHandler)
 
 	w := httptest.NewRecorder()
@@ -540,7 +539,7 @@ func TestRotateAgentTokenHandler_Success(t *testing.T) {
 func TestRotateAgentTokenHandler_NotFound(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.POST("/api/v1/agents/:id/rotate-token", RotateAgentTokenHandler)
 
 	w := httptest.NewRecorder()
@@ -557,7 +556,7 @@ func TestDeleteAgentHandler_Success(t *testing.T) {
 
 	agent := createTestAgentRecord(t, "Delete Me", "delete-key", models.AgentStatusOffline, nil)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.DELETE("/api/v1/agents/:id", DeleteAgentHandler)
 
 	w := httptest.NewRecorder()
@@ -577,7 +576,7 @@ func TestDeleteAgentHandler_Success(t *testing.T) {
 func TestDeleteAgentHandler_NotFound(t *testing.T) {
 	setupTestDBWithAgents(t)
 
-	router := gin.New()
+	router := newAdminRouter()
 	router.DELETE("/api/v1/agents/:id", DeleteAgentHandler)
 
 	w := httptest.NewRecorder()

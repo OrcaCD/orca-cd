@@ -52,15 +52,15 @@ func TestBrokerPublish_DeliveredToSubscriber(t *testing.T) {
 	connID, ch := b.Subscribe()
 	defer b.Unsubscribe(connID)
 
-	b.Publish(Event{Type: EventTypeUpdate, URLs: []string{"http://example.com"}})
+	b.Publish(Event{Type: EventTypeUpdate, Topics: []Topic{TopicRepositories}})
 
 	select {
 	case received := <-ch:
 		if received.Type != EventTypeUpdate {
 			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
 		}
-		if !slices.Equal(received.URLs, []string{"http://example.com"}) {
-			t.Errorf("expected URLs %v, got %v", []string{"http://example.com"}, received.URLs)
+		if got := received.URLs(); !slices.Equal(got, []string{"/api/v1/repositories"}) {
+			t.Errorf("expected URLs %v, got %v", []string{"/api/v1/repositories"}, got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -115,8 +115,8 @@ func TestPublishUpdate_SendsUpdateEvent(t *testing.T) {
 		if received.Type != EventTypeUpdate {
 			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
 		}
-		if !slices.Equal(received.URLs, []string{"/api/v1/repositories"}) {
-			t.Errorf("expected URLs %v, got %v", []string{"/api/v1/repositories"}, received.URLs)
+		if got := received.URLs(); !slices.Equal(got, []string{"/api/v1/repositories"}) {
+			t.Errorf("expected URLs %v, got %v", []string{"/api/v1/repositories"}, got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -155,8 +155,8 @@ func TestPublishUpdate_SendsSingleEventWithDistinctTopics(t *testing.T) {
 		if received.Type != EventTypeUpdate {
 			t.Errorf("expected type %q, got %q", EventTypeUpdate, received.Type)
 		}
-		if !slices.Equal(received.URLs, want) {
-			t.Errorf("expected URLs %v, got %v", want, received.URLs)
+		if got := received.URLs(); !slices.Equal(got, want) {
+			t.Errorf("expected URLs %v, got %v", want, got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
@@ -234,5 +234,45 @@ drain:
 	}
 	if count == 0 {
 		t.Error("expected at least some events to be received")
+	}
+}
+
+func TestEventMessage(t *testing.T) {
+	b := NewBroker(newTestLogger())
+	connID, ch := b.Subscribe()
+	defer b.Unsubscribe(connID)
+
+	b.PublishUpdate(TopicApplications.For("a"), TopicApplications.For("b"), TopicAdminUsers)
+	event := <-ch
+
+	message, ok := event.Message(func(topic Topic) bool {
+		_, id := topic.Resource()
+		return id == "b"
+	})
+	if !ok || !slices.Equal(message.URLs, []string{TopicApplications.URL()}) {
+		t.Fatalf("expected only the applications URL, got %v (ok=%v)", message.URLs, ok)
+	}
+
+	if _, ok := event.Message(func(Topic) bool { return false }); ok {
+		t.Fatal("expected an event without visible topics to be dropped")
+	}
+}
+
+func TestEventReloadsProfileOf(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		want  bool
+	}{
+		{"this user", Event{Topics: []Topic{TopicAgents, TopicProfileOf("user-1")}}, true},
+		{"another user", Event{Topics: []Topic{TopicProfileOf("user-2")}}, false},
+		{"no profile", Event{Topics: []Topic{TopicAdminUsers}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.event.ReloadsProfileOf("user-1"); got != tt.want {
+				t.Fatalf("ReloadsProfileOf() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

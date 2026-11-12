@@ -16,7 +16,7 @@ interface OverviewDashboardProps {
 export function OverviewDashboard({ apps, agents }: OverviewDashboardProps) {
 	return (
 		<div className="space-y-4">
-			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[3fr_2fr_2fr]">
+			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 				<FleetStatusCard apps={apps} />
 				<DeploymentActivityCard />
 				<AgentsStatusCard agents={agents} />

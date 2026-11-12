@@ -5,6 +5,7 @@ import { toast } from "@/components/ui/toast";
 import type { ApplicationEvent } from "@/lib/application-events";
 import { rollbackApplication } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 
 // RollbackButton rolls the application back to the deployment of an event.
 // It is disabled while a deployment or rollback of the application runs.
@@ -17,6 +18,11 @@ export function RollbackButton({
 	event: ApplicationEvent;
 	deploying: boolean;
 }) {
+	const { can } = usePermissions();
+	if (!can("application", "rollback", applicationId)) {
+		return null;
+	}
+
 	const commit = event.commitHash?.slice(0, 7) ?? "";
 	const label = (
 		<>

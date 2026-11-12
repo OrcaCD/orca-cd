@@ -1,6 +1,7 @@
 // oxlint-disable react/no-children-prop
-import { Plus, WebhookIcon } from "lucide-react";
+import { WebhookIcon } from "lucide-react";
 import { Fragment, useState } from "react";
+import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { toast } from "@/components/ui/toast";
@@ -13,7 +14,6 @@ import {
 	ResponsiveDialogDescription,
 	ResponsiveDialogHeader,
 	ResponsiveDialogTitle,
-	ResponsiveDialogTrigger,
 } from "@/components/responsive-dialog";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -867,8 +867,11 @@ function StepperNavigation({
 	);
 }
 
-export default function CreateNotificationDialog() {
-	const [open, setOpen] = useState(false);
+export default function CreateNotificationDialog({
+	open,
+	onOpenChange: setOpen,
+	finalFocus,
+}: SharedDialogProps) {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState<string | undefined>();
 
@@ -958,16 +961,10 @@ export default function CreateNotificationDialog() {
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			modal={false}
 		>
-			<ResponsiveDialogTrigger
-				render={
-					<Button>
-						<Plus className="h-4 w-4" />
-						{m.addNotification()}
-					</Button>
-				}
-			></ResponsiveDialogTrigger>
-
-			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
+			<ResponsiveDialogContent
+				className="flex max-h-[90dvh] flex-col sm:max-w-106.25"
+				finalFocus={finalFocus}
+			>
 				<ResponsiveDialogHeader>
 					<ResponsiveDialogTitle>{m.addNotification()}</ResponsiveDialogTitle>
 					<ResponsiveDialogDescription>
@@ -976,7 +973,7 @@ export default function CreateNotificationDialog() {
 				</ResponsiveDialogHeader>
 
 				<form
-					className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+					className="-m-1 min-h-0 min-w-0 flex-1 overflow-y-auto p-1"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();

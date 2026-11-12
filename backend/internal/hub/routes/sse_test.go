@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -39,8 +40,40 @@ func injectClaimsMiddleware() gin.HandlerFunc {
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		}
 		auth.SetClaims(c, claims)
+		if _, ok := c.Get("rbac_permissions"); !ok {
+			rbac.Set(c, rbac.Admin())
+		}
 		c.Next()
 	}
+}
+
+// newFilteredSSETestServer serves the event stream to a user with the given grants.
+func newFilteredSSETestServer(t *testing.T, grants ...models.RolePermission) *httptest.Server {
+	t.Helper()
+	router := gin.New()
+	router.GET("/api/v1/events", func(c *gin.Context) {
+		rbac.Set(c, rbac.New(grants))
+		c.Next()
+	}, injectClaimsMiddleware(), SSEHandler)
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	return server
+}
+
+// readEventURLs reads the next update event and returns its URLs.
+func readEventURLs(t *testing.T, scanner *bufio.Scanner) []string {
+	t.Helper()
+	for scanner.Scan() {
+		if data, ok := strings.CutPrefix(scanner.Text(), "data: "); ok {
+			var message sse.Message
+			if err := json.Unmarshal([]byte(data), &message); err != nil {
+				t.Fatalf("failed to unmarshal SSE event data: %v", err)
+			}
+			return message.URLs
+		}
+	}
+	t.Fatal("stream ended before an event was received")
+	return nil
 }
 
 func newSSETestServer(t *testing.T) *httptest.Server {
@@ -199,13 +232,13 @@ func TestSSEHandler_ReceivesEvent(t *testing.T) {
 		t.Errorf("expected event type %q, got %q", sse.EventTypeUpdate, eventType)
 	}
 
-	var event sse.Event
-	if err := json.Unmarshal([]byte(eventData), &event); err != nil {
+	var message sse.Message
+	if err := json.Unmarshal([]byte(eventData), &message); err != nil {
 		t.Fatalf("failed to unmarshal SSE event data: %v", err)
 	}
 	wantURLs := []string{sse.TopicAgents.URL(), sse.TopicApplications.URL()}
-	if !slices.Equal(event.URLs, wantURLs) {
-		t.Errorf("expected URLs %v, got %v", wantURLs, event.URLs)
+	if !slices.Equal(message.URLs, wantURLs) {
+		t.Errorf("expected URLs %v, got %v", wantURLs, message.URLs)
 	}
 }
 
@@ -278,5 +311,60 @@ func TestSSEHandler_ClosesStreamWhenTokensRevoked(t *testing.T) {
 
 	if !waitForLine(scanner, "event: unauthorized") {
 		t.Fatal("expected unauthorized event after the tokens were revoked")
+	}
+}
+
+func TestSSEHandler_FiltersEventsByPermission(t *testing.T) {
+	broker := newTestSSEBroker(t)
+	server := newFilteredSSETestServer(t,
+		grantOn(models.ResourceApplication, models.ActionRead, "visible"),
+	)
+
+	scanner, cancel := connectSSE(t, server)
+	defer cancel()
+	waitForInitialComment(t, scanner)
+
+	// None of these may reach the user. The stream must skip them and deliver the last event.
+	broker.PublishUpdate(sse.TopicApplications.For("hidden"))
+	broker.PublishUpdate(sse.TopicApplicationEvents("hidden"))
+	broker.PublishUpdate(sse.TopicAgents, sse.TopicRepositories.For("repo"))
+	broker.PublishUpdate(sse.TopicAdminUsers)
+	broker.PublishUpdate(
+		sse.TopicApplications.For("visible"),
+		sse.TopicApplicationEvents("visible"),
+		sse.TopicApplicationEvents("hidden"),
+		sse.TopicAdminRoles,
+	)
+
+	want := []string{
+		sse.TopicApplications.URL(),
+		sse.TopicApplicationEvents("visible").URL(),
+	}
+	if got := readEventURLs(t, scanner); !slices.Equal(got, want) {
+		t.Fatalf("expected URLs %v, got %v", want, got)
+	}
+}
+
+func TestSSEHandler_ReloadsPermissionsOnProfileUpdates(t *testing.T) {
+	server := setupSSESessionTest(t)
+	sseKeepAliveInterval = time.Hour
+	broker := sse.DefaultBroker
+
+	scanner, cancel := connectSSE(t, server)
+	defer cancel()
+	waitForInitialComment(t, scanner)
+
+	// The stream started with admin permissions. The profile of another user
+	// neither reloads them nor reaches this user.
+	broker.PublishUpdate(sse.TopicProfileOf("other-user"), sse.TopicAdminUsers)
+	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicAdminUsers.URL()}) {
+		t.Fatalf("expected only the admin topic, got %v", got)
+	}
+
+	// The user has no roles, so the reload triggered by their profile topic
+	// must hide the admin topic.
+	broker.PublishUpdate(sse.TopicProfileOf("test-user"), sse.TopicAdminUsers)
+	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicProfileOf("test-user").URL()}) {
+		t.Fatalf("expected only the profile topic, got %v", got)
 	}
 }

@@ -416,6 +416,9 @@ func TestAdminCreateOIDCProviderHandler_Success(t *testing.T) {
 	if body.Scopes != "groups" {
 		t.Errorf("expected scopes %q, got %q", "groups", body.Scopes)
 	}
+	if body.GroupsClaim != "" {
+		t.Errorf("expected syncing groups to be off by default, got %q", body.GroupsClaim)
+	}
 	if !body.Enabled {
 		t.Error("expected enabled=true")
 	}
@@ -607,8 +610,8 @@ func TestAdminUpdateOIDCProviderHandler_UpdatesClientSecret(t *testing.T) {
 
 func createLinkedAndUnlinkedUsers(t *testing.T, providerID string) (linked, unlinked models.User) {
 	t.Helper()
-	linked = models.User{Id: "user-linked", Email: "linked@example.com", Name: "Linked", Role: models.UserRoleUser}
-	unlinked = models.User{Id: "user-unlinked", Email: "unlinked@example.com", Name: "Unlinked", Role: models.UserRoleUser}
+	linked = models.User{Id: "user-linked", Email: "linked@example.com", Name: "Linked"}
+	unlinked = models.User{Id: "user-unlinked", Email: "unlinked@example.com", Name: "Unlinked"}
 	for _, user := range []*models.User{&linked, &unlinked} {
 		if err := db.DB.Create(user).Error; err != nil {
 			t.Fatalf("failed to create user: %v", err)

@@ -23,6 +23,7 @@ import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { RepositoryStatusBadge } from "@/components/badges/repository-status-badge";
 import { RepositorySyncTypeBadge } from "@/components/badges/repository-sync-type-badge";
 import { Link } from "@tanstack/react-router";
@@ -151,58 +152,78 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 	},
 	{
 		id: "actions",
-		cell: ({ row }) => {
-			async function handleDelete() {
-				try {
-					await deleteRepository(row.original.id);
-					toast.add({ type: "success", title: m.repositoryDeleted({ name: row.original.name }) });
-				} catch (err) {
-					toast.add({
-						type: "error",
-						title: err instanceof Error ? err.message : m.failedDeleteRepository(),
-					});
-				}
-			}
+		cell: ({ row }) => <RepositoryActions repository={row.original} />,
+	},
+];
 
-			async function handleSyncRepo(repository: Repository) {
-				try {
-					await syncRepository(repository.id);
-					toast.add({ type: "success", title: m.syncTriggered() });
-				} catch (err) {
-					toast.add({
-						type: "error",
-						title: err instanceof Error ? err.message : m.failedTriggerSync(),
-					});
-				}
-			}
+function RepositoryActions({ repository }: { repository: Repository }) {
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
+	// Syncing redeploys its applications, deleting deletes them
+	const canSync =
+		can("repository", "sync", repository.id) &&
+		canOnApplicationsOf(repository.id, "deploy", repository.appCount);
+	const canDelete =
+		can("repository", "delete", repository.id) &&
+		canOnApplicationsOf(repository.id, "delete", repository.appCount);
 
-			return (
-				<div className="flex justify-end">
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button variant="ghost" className="h-8 w-8 p-0">
-									<span className="sr-only">{m.openMenu()}</span>
-									<MoreHorizontal className="h-4 w-4" />
-								</Button>
-							}
-						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit" keepMounted>
-							<DropdownMenuGroup>
-								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-								<DropdownMenuItem onClick={() => handleSyncRepo(row.original)}>
+	async function handleDelete() {
+		try {
+			await deleteRepository(repository.id);
+			toast.add({ type: "success", title: m.repositoryDeleted({ name: repository.name }) });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteRepository(),
+			});
+		}
+	}
+
+	async function handleSync() {
+		try {
+			await syncRepository(repository.id);
+			toast.add({ type: "success", title: m.syncTriggered() });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedTriggerSync(),
+			});
+		}
+	}
+
+	return (
+		<div className="flex justify-end">
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<Button variant="ghost" className="h-8 w-8 p-0">
+							<span className="sr-only">{m.openMenu()}</span>
+							<MoreHorizontal className="h-4 w-4" />
+						</Button>
+					}
+				></DropdownMenuTrigger>
+				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+					<DropdownMenuGroup>
+						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+						{canSync && (
+							<>
+								<DropdownMenuItem onClick={handleSync}>
 									<RefreshCw className="h-4 w-4" />
 									{m.sync()}
 								</DropdownMenuItem>
 								<DropdownMenuSeparator />
-								<DropdownMenuItem
-									render={
-										<Link to="/repositories/$id/settings/auth" params={{ id: row.original.id }}>
-											<Settings className="h-4 w-4" />
-											{m.settings()}
-										</Link>
-									}
-								/>
+							</>
+						)}
+						<DropdownMenuItem
+							render={
+								<Link to="/repositories/$id/settings/auth" params={{ id: repository.id }}>
+									<Settings className="h-4 w-4" />
+									{m.settings()}
+								</Link>
+							}
+						/>
+						{canDelete && (
+							<>
 								<DropdownMenuSeparator />
 								<ConfirmationDialog
 									triggerText={
@@ -211,16 +232,16 @@ export const columns: ColumnDef<typeof dataTableFeatures, Repository>[] = [
 											{m.delete()}
 										</>
 									}
-									onConfirm={async () => await handleDelete()}
+									onConfirm={handleDelete}
 									title={m.deleteRepositoryTitle()}
-									description={m.deleteRepositoryDescription({ name: row.original.name })}
+									description={m.deleteRepositoryDescription({ name: repository.name })}
 									asDropdownItem
 								/>
-							</DropdownMenuGroup>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
-			);
-		},
-	},
-];
+							</>
+						)}
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	);
+}

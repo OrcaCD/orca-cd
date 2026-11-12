@@ -21,11 +21,18 @@ export interface ApiOidcProvider {
 	callbackUrl: string;
 }
 
+export interface ApiUserRole {
+	id: string;
+	name: string;
+	builtIn: "admin" | "user" | null;
+	sources: ("manual" | "oidc")[];
+}
+
 export interface ApiAdminUser {
 	id: string;
 	name: string;
 	email: string;
-	role: string;
+	roles: ApiUserRole[];
 	providers: string[];
 }
 
@@ -33,7 +40,8 @@ export interface ApiProfile {
 	id: string;
 	name: string;
 	email: string;
-	role: string;
+	isAdmin: boolean;
+	roles: ApiUserRole[];
 	isLocal: boolean;
 	picture?: string;
 }
@@ -49,6 +57,7 @@ interface ProviderOptions {
 	enabled?: boolean;
 	requireVerifiedEmail?: boolean;
 	autoSignup?: boolean;
+	groupsClaim?: string;
 	// The secret the hub is configured with, the identity provider keeps the correct one
 	wrongSecret?: boolean;
 	profileSource?: ProfileSource;

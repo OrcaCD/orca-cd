@@ -14,6 +14,7 @@ export interface OIDCProviderDetail {
 	enabled: boolean;
 	requireVerifiedEmail: boolean;
 	autoSignup: boolean;
+	groupsClaim: string;
 	callbackUrl: string;
 	createdAt: string;
 	updatedAt: string;
@@ -28,6 +29,7 @@ export interface CreateOIDCProviderRequest {
 	enabled?: boolean;
 	requireVerifiedEmail?: boolean;
 	autoSignup?: boolean;
+	groupsClaim?: string;
 }
 
 export interface UpdateOIDCProviderRequest {
@@ -39,6 +41,7 @@ export interface UpdateOIDCProviderRequest {
 	enabled?: boolean;
 	requireVerifiedEmail?: boolean;
 	autoSignup?: boolean;
+	groupsClaim?: string;
 }
 
 export function createOIDCProvider(data: CreateOIDCProviderRequest): Promise<OIDCProviderDetail> {

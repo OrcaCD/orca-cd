@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -119,53 +120,73 @@ export const columns: ColumnDef<typeof dataTableFeatures, Agent>[] = [
 	},
 	{
 		id: "actions",
-		cell: ({ row }) => {
-			async function handleDeleteCard(agent: Agent) {
-				try {
-					await deleteAgent(agent.id);
-					const agentIdentifier = agent?.name?.trim() || agent.id;
-					toast.add({ type: "success", title: m.agentDeleted({ name: agentIdentifier }) });
-				} catch (err) {
-					toast.add({
-						type: "error",
-						title: err instanceof Error ? err.message : m.failedDeleteAgent(),
-					});
-				}
-			}
-			return (
-				<div className="flex justify-end">
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button variant="ghost" size="icon" className="h-8 w-8">
-									<MoreHorizontal className="h-4 w-4" />
-									<span className="sr-only">{m.cardActions()}</span>
-								</Button>
-							}
-						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-fit" keepMounted>
-							<DropdownMenuGroup>
-								<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-								<UpsertAgentDialog agent={row.original} asDropdownItem />
-								<RotateAgentTokenDialog agent={row.original} />
-								<DropdownMenuSeparator />
-								<ConfirmationDialog
-									onConfirm={() => handleDeleteCard(row.original)}
-									title={m.deleteAgentCardTitle()}
-									description={m.deleteAgentCardDescription({ name: row.original.name })}
-									triggerText={
-										<>
-											<Trash2 className="h-4 w-4" />
-											{m.delete()}
-										</>
-									}
-									asDropdownItem
-								/>
-							</DropdownMenuGroup>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
-			);
-		},
+		cell: ({ row }) => <AgentActions agent={row.original} />,
 	},
 ];
+
+function AgentActions({ agent }: { agent: Agent }) {
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("agentId");
+	const canUpdate = can("agent", "update", agent.id);
+	// Its applications are deleted with it
+	const canDelete =
+		can("agent", "delete", agent.id) && canOnApplicationsOf(agent.id, "delete", agent.appsCount);
+
+	if (!canUpdate && !canDelete) {
+		return null;
+	}
+
+	async function handleDelete() {
+		try {
+			await deleteAgent(agent.id);
+			const agentIdentifier = agent?.name?.trim() || agent.id;
+			toast.add({ type: "success", title: m.agentDeleted({ name: agentIdentifier }) });
+		} catch (err) {
+			toast.add({
+				type: "error",
+				title: err instanceof Error ? err.message : m.failedDeleteAgent(),
+			});
+		}
+	}
+
+	return (
+		<div className="flex justify-end">
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<Button variant="ghost" size="icon" className="h-8 w-8">
+							<MoreHorizontal className="h-4 w-4" />
+							<span className="sr-only">{m.cardActions()}</span>
+						</Button>
+					}
+				></DropdownMenuTrigger>
+				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+					<DropdownMenuGroup>
+						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+						{canUpdate && (
+							<>
+								<UpsertAgentDialog agent={agent} asDropdownItem />
+								<RotateAgentTokenDialog agent={agent} />
+							</>
+						)}
+						{canUpdate && canDelete && <DropdownMenuSeparator />}
+						{canDelete && (
+							<ConfirmationDialog
+								onConfirm={handleDelete}
+								title={m.deleteAgentCardTitle()}
+								description={m.deleteAgentCardDescription({ name: agent.name })}
+								triggerText={
+									<>
+										<Trash2 className="h-4 w-4" />
+										{m.delete()}
+									</>
+								}
+								asDropdownItem
+							/>
+						)}
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</div>
+	);
+}

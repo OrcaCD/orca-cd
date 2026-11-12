@@ -95,7 +95,7 @@ func publishUpdate(applicationID string, includeActivity bool) {
 		sse.PublishUpdate(sse.TopicApplicationEvents(applicationID))
 		return
 	}
-	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity)
+	sse.PublishUpdate(sse.TopicApplicationEvents(applicationID), sse.TopicApplicationActivity.For(applicationID))
 }
 
 func deleteEventsOverLimit(tx *gorm.DB, applicationID string) error {

@@ -1,9 +1,17 @@
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
+import { PageContainer, PageHeader } from "@/components/page-header";
+import {
+	EmptyState,
+	ResourceGridSkeleton,
+	ResourceTableSkeleton,
+} from "@/components/collection-states";
+import { SearchField } from "@/components/search-field";
 import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
-import { useMemo, useState } from "react";
-import { EllipsisVertical, Search, Trash2 } from "lucide-react";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
+import { useMemo, useRef, useState } from "react";
+import { EllipsisVertical, Plus, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { AgentCard } from "@/components/cards/agent-card";
@@ -15,7 +23,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
 import { groupBy, toSearchableText } from "@/lib/utils";
@@ -26,6 +33,7 @@ import OutdatedAgentsAlert from "@/components/alerts/outdated-agents-alert";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { LayoutToggleGroup } from "@/components/layout-toggle-group";
 import RotateAgentTokenDialog from "@/components/dialogs/rotate-agent-token";
+import { useSharedDialog } from "@/hooks/use-shared-dialog";
 
 export const Route = createFileRoute("/_authenticated/agents/")({
 	component: RouteComponent,
@@ -48,6 +56,17 @@ function RouteComponent() {
 
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 	const [searchQuery, setSearchQuery] = useState("");
+	const searchInputRef = useRef<HTMLInputElement>(null);
+	// The empty state disappears as soon as the first agent exists, the setup dialog has to stay.
+	const {
+		fallbackRef: addAgentRef,
+		triggerProps: addAgentTrigger,
+		openFrom: openAddAgent,
+		dialogProps: addAgentDialog,
+	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("agentId");
+	const canCreate = can("agent", "create");
 
 	async function handleDeleteCard(agent: Agent) {
 		try {
@@ -82,90 +101,144 @@ function RouteComponent() {
 	}, [data, searchQuery]);
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageAgents()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.agentsPageDescription()}</p>
-				</div>
-				<UpsertAgentDialog agent={null} />
-			</div>
-
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingAgents()}</p>}
+		<PageContainer>
+			<PageHeader
+				title={m.pageAgents()}
+				description={m.agentsPageDescription()}
+				actions={
+					canCreate && (
+						<Button {...addAgentTrigger} ref={addAgentRef} onClick={openAddAgent}>
+							<Plus />
+							{m.addAgent()}
+						</Button>
+					)
+				}
+			/>
+			{canCreate && <UpsertAgentDialog agent={null} {...addAgentDialog} />}
 
 			<OutdatedAgentsAlert agents={data ?? []} />
 
 			<div className="space-y-4">
-				<div className="pb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div className="relative flex-1 ">
-						<Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-						<Input
+				{(data?.length !== 0 || searchQuery.length > 0) && (
+					<div className="flex items-center gap-2 sm:gap-3">
+						<SearchField
 							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
+							onChange={setSearchQuery}
+							inputRef={searchInputRef}
+							label={m.searchAgentsLabel()}
 							placeholder={m.searchAgents()}
-							className="pl-9 bg-muted border-border"
+							className="flex-1"
 						/>
-					</div>
 
-					<div className="flex gap-2 ">
-						<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						<div className="flex shrink-0 gap-2">
+							<LayoutToggleGroup viewMode={viewMode} setViewMode={setViewMode} />
+						</div>
 					</div>
-				</div>
+				)}
 
-				{viewMode === "grid" ? (
+				{isLoading ? (
+					viewMode === "grid" ? (
+						<ResourceGridSkeleton
+							kind="agent"
+							label={m.loadingAgents()}
+							className="sm:grid-cols-2 xl:grid-cols-3"
+						/>
+					) : (
+						<ResourceTableSkeleton label={m.loadingAgents()} />
+					)
+				) : data?.length === 0 ? (
+					<EmptyState
+						icon={Server}
+						title={m.noAgentsYet()}
+						description={m.noAgentsYetDescription()}
+						action={
+							canCreate && (
+								<Button {...addAgentTrigger} onClick={openAddAgent}>
+									<Plus />
+									{m.addAgent()}
+								</Button>
+							)
+						}
+					/>
+				) : filteredAgents.length === 0 ? (
+					<EmptyState
+						variant="noMatches"
+						title={m.noAgentsFound()}
+						description={m.noAgentsFoundDescription()}
+						action={
+							<Button
+								variant="outline"
+								onClick={() => {
+									setSearchQuery("");
+									searchInputRef.current?.focus();
+								}}
+							>
+								{m.searchClear()}
+							</Button>
+						}
+					/>
+				) : viewMode === "grid" ? (
 					<>
-						{filteredAgents.length === 0 && !isLoading ? (
-							<div className="rounded-xl border border-dashed p-10 text-center">
-								<p className="text-sm font-medium">{m.noAgentsFound()}</p>
-								<p className="mt-1 text-sm text-muted-foreground">{m.noAgentsFoundDescription()}</p>
-							</div>
-						) : null}
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-							{filteredAgents.map((agent) => (
-								<AgentCard
-									key={agent.id}
-									agent={agent}
-									apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
-									action={
-										<DropdownMenu>
-											<DropdownMenuTrigger
-												render={
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<EllipsisVertical className="h-4 w-4" />
-														<span className="sr-only">{m.cardActions()}</span>
-													</Button>
-												}
-											></DropdownMenuTrigger>
-											<DropdownMenuContent align="end" className="w-fit" keepMounted>
-												<DropdownMenuGroup>
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<UpsertAgentDialog agent={agent} asDropdownItem />
-													<RotateAgentTokenDialog agent={agent} />
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteCard(agent)}
-														title={m.deleteAgentCardTitle()}
-														description={m.deleteAgentCardDescription({ name: agent.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
+							{filteredAgents.map((agent) => {
+								const canUpdate = can("agent", "update", agent.id);
+								const canDelete =
+									can("agent", "delete", agent.id) &&
+									canOnApplicationsOf(agent.id, "delete", agent.appsCount);
+								return (
+									<AgentCard
+										key={agent.id}
+										agent={agent}
+										apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
+										action={
+											canUpdate || canDelete ? (
+												<DropdownMenu>
+													<DropdownMenuTrigger
+														render={
+															<Button variant="ghost" size="icon" className="h-8 w-8">
+																<EllipsisVertical className="h-4 w-4" />
+																<span className="sr-only">{m.cardActions()}</span>
+															</Button>
 														}
-														asDropdownItem
-													/>
-												</DropdownMenuGroup>
-											</DropdownMenuContent>
-										</DropdownMenu>
-									}
-								/>
-							))}
+													></DropdownMenuTrigger>
+													<DropdownMenuContent align="end" className="w-fit" keepMounted>
+														<DropdownMenuGroup>
+															<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+															{canUpdate && (
+																<>
+																	<UpsertAgentDialog agent={agent} asDropdownItem />
+																	<RotateAgentTokenDialog agent={agent} />
+																</>
+															)}
+															{canUpdate && canDelete && <DropdownMenuSeparator />}
+															{canDelete && (
+																<ConfirmationDialog
+																	onConfirm={() => handleDeleteCard(agent)}
+																	title={m.deleteAgentCardTitle()}
+																	description={m.deleteAgentCardDescription({ name: agent.name })}
+																	triggerText={
+																		<>
+																			<Trash2 className="h-4 w-4" />
+																			{m.delete()}
+																		</>
+																	}
+																	asDropdownItem
+																/>
+															)}
+														</DropdownMenuGroup>
+													</DropdownMenuContent>
+												</DropdownMenu>
+											) : undefined
+										}
+									/>
+								);
+							})}
 						</div>
 					</>
 				) : (
 					<AgentsDataTable columns={columns} data={filteredAgents} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }

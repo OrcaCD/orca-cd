@@ -13,8 +13,9 @@ import type { AuthProviderInfo } from "@/lib/oidc";
 import { API_BASE, fetcher } from "@/lib/api";
 import { getSetupStatus } from "@/lib/setup";
 import { m } from "@/lib/paraglide/messages";
-import { AuthErrorBanner, AuthLayout } from "@/components/auth/auth-layout";
+import { AuthErrorBanner, AuthLayout, authControlClass } from "@/components/auth/auth-layout";
 import { PasswordInput } from "@/components/auth/password-input";
+import { cn } from "@/lib/utils";
 
 // Public credentials of the user seeded by the hub in demo mode
 const DEMO_CREDENTIALS = { email: "demo@orcacd.dev", password: "demo-password" };
@@ -38,6 +39,7 @@ function getOidcErrorMessages(): Record<string, string> {
 		account_update_failed: m.oidcErrorAccountUpdateFailed(),
 		provider_email_conflict: m.oidcErrorProviderEmailConflict(),
 		token_generation_failed: m.oidcErrorTokenGenerationFailed(),
+		role_sync_failed: m.oidcErrorRoleSyncFailed(),
 	};
 }
 
@@ -146,9 +148,13 @@ function LoginForm({
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.loginToYourAccount()}</h1>
-				<p className="text-sm text-balance text-muted-foreground">{m.chooseAuthMethod()}</p>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+					{m.loginToYourAccount()}
+				</h1>
+				{hasProviders && (localAuthEnabled || providers.length > 1) ? (
+					<p className="text-sm text-balance text-muted-foreground">{m.chooseAuthMethod()}</p>
+				) : null}
 			</div>
 
 			{loginErrorMessage && <AuthErrorBanner message={loginErrorMessage} />}
@@ -169,6 +175,7 @@ function LoginForm({
 									<Field data-invalid={isInvalid}>
 										<Label htmlFor={field.name}>{m.email()}</Label>
 										<Input
+											className={authControlClass}
 											id={field.name}
 											name={field.name}
 											value={field.state.value}
@@ -193,6 +200,7 @@ function LoginForm({
 									<Field data-invalid={isInvalid}>
 										<Label htmlFor={field.name}>{m.password()}</Label>
 										<PasswordInput
+											className={cn(authControlClass, "pr-12")}
 											id={field.name}
 											name={field.name}
 											value={field.state.value}
@@ -209,8 +217,8 @@ function LoginForm({
 							}}
 						/>
 						<Field>
-							<Button type="submit" className="w-full" disabled={isLoading}>
-								{isLoading ? m.loggingIn() : m.login()}
+							<Button type="submit" className={cn(authControlClass, "w-full")} disabled={isLoading}>
+								{isLoading ? m.loggingIn() : m.logInAction()}
 							</Button>
 						</Field>
 					</FieldGroup>
@@ -230,7 +238,7 @@ function LoginForm({
 						<Button
 							key={provider.id}
 							variant="outline"
-							className="w-full"
+							className={cn(authControlClass, "w-full")}
 							nativeButton={false}
 							render={
 								<a href={`${API_BASE}/auth/oidc/${provider.id}/authorize`}>

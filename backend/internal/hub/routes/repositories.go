@@ -265,7 +265,14 @@ func normalizeRepositoryURL(rawURL string) string {
 func ListRepositoriesHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	repos, err := gorm.G[models.Repository](db.DB).Find(ctx)
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+
+	repos, err := gorm.G[models.Repository](db.DB).
+		Scopes(perms.Scope(models.ResourceRepository, models.ActionRead, "id")).
+		Find(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -418,7 +425,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "repository", repo.Id)
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(repo.Id))
 }
 
 type testConnectionRequest struct {
@@ -430,6 +437,16 @@ type testConnectionRequest struct {
 }
 
 func TestConnectionHandler(c *gin.Context) {
+	// Testing a connection is part of adding a repository or changing its credentials.
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	if !perms.CanAll(models.ResourceRepository, models.ActionCreate) && !perms.CanAny(models.ResourceRepository, models.ActionUpdate) {
+		respondForbidden(c, "insufficient permissions")
+		return
+	}
+
 	var req testConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: url, provider, and authMethod are required"})
@@ -534,6 +551,9 @@ func ListRepositoryTreeHandler(c *gin.Context) {
 
 func DeleteRepositoryHandler(c *gin.Context) {
 	id := c.Param("id")
+	if !canDeleteApplicationsOf(c, "repository_id", id) {
+		return
+	}
 
 	// Applications cascade with the repository, so undeploy them first. Rows are
 	// dropped one by one after agent confirmation to stay in sync on partial failure.
@@ -544,12 +564,16 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	agentIDs := map[string]struct{}{}
-	removedApps := false
+	removedApps, removedRepo := false, false
+	// Also runs when a later application fails to undeploy, for the ones removed before
 	defer func() {
-		if !removedApps {
-			return
+		if removedApps {
+			sse.PublishUpdate(sse.TopicApplications)
 		}
-		sse.PublishUpdate(sse.TopicApplications)
+		// After the updates, so clients still get them before losing access
+		if removedApps || removedRepo {
+			pruneGrants(c.Request.Context())
+		}
 		for agentID := range agentIDs {
 			sendAgentSettings(c, agentID)
 		}
@@ -579,6 +603,7 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	removedRepo = true
 	utils.RecordAuditLog(c, "deleted", "repository", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
@@ -762,7 +787,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, newWebhookSecret, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(id))
 }
 
 func SyncRepositoryHandler(c *gin.Context) {
@@ -779,6 +804,11 @@ func SyncRepositoryHandler(c *gin.Context) {
 
 	if _, err := repositories.Get(repo.Provider); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported provider"})
+		return
+	}
+
+	// A sync redeploys every application of the repository that changed
+	if !canOnApplicationsOf(c, models.ActionDeploy, "repository_id", repo.Id, "insufficient permissions to deploy its applications") {
 		return
 	}
 

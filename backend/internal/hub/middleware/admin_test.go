@@ -7,18 +7,26 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func assignRole(t *testing.T, userID, roleID string) {
+	t.Helper()
+	if err := gorm.G[models.UserRole](db.DB).Create(t.Context(), &models.UserRole{UserId: userID, RoleId: roleID, Source: models.UserRoleSourceManual}); err != nil {
+		t.Fatalf("failed to assign role: %v", err)
+	}
+}
 
 func TestRequireAdmin_AdminRole(t *testing.T) {
 	user := &models.User{
 		Id:    "user-1",
 		Name:  "Admin",
 		Email: "admin@example.com",
-		Role:  models.UserRoleAdmin,
 	}
 	setupAuthTest(t, user)
+	assignRole(t, user.Id, rbac.AdminRoleID)
 	token := generateToken(t, user)
 
 	router := gin.New()
@@ -38,9 +46,9 @@ func TestRequireAdmin_UserRole(t *testing.T) {
 		Id:    "user-2",
 		Name:  "Regular",
 		Email: "regular@example.com",
-		Role:  models.UserRoleUser,
 	}
 	setupAuthTest(t, user)
+	assignRole(t, user.Id, rbac.UserRoleID)
 	token := generateToken(t, user)
 
 	router := gin.New()
@@ -60,12 +68,12 @@ func TestRequireAdmin_DemotedAdminRejected(t *testing.T) {
 		Id:    "user-3",
 		Name:  "Demoted",
 		Email: "demoted@example.com",
-		Role:  models.UserRoleAdmin,
 	}
 	setupAuthTest(t, user)
+	assignRole(t, user.Id, rbac.AdminRoleID)
 	token := generateToken(t, user)
 
-	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "role", models.UserRoleUser); err != nil {
+	if _, err := gorm.G[models.UserRole](db.DB).Where("user_id = ?", user.Id).Delete(t.Context()); err != nil {
 		t.Fatalf("failed to demote user: %v", err)
 	}
 
