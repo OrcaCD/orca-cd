@@ -1,3 +1,4 @@
+import { PageContainer, PageHeader } from "@/components/page-header";
 import UpsertAgentDialog from "@/components/dialogs/upsert-agent";
 import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
@@ -82,14 +83,12 @@ function RouteComponent() {
 	}, [data, searchQuery]);
 
 	return (
-		<div className="p-6 space-y-6">
-			<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-				<div>
-					<h1 className="text-2xl font-bold">{m.pageAgents()}</h1>
-					<p className="text-muted-foreground text-sm mt-1">{m.agentsPageDescription()}</p>
-				</div>
-				<UpsertAgentDialog agent={null} />
-			</div>
+		<PageContainer>
+			<PageHeader
+				title={m.pageAgents()}
+				description={m.agentsPageDescription()}
+				actions={<UpsertAgentDialog agent={null} />}
+			/>
 
 			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingAgents()}</p>}
 
@@ -166,6 +165,6 @@ function RouteComponent() {
 					<AgentsDataTable columns={columns} data={filteredAgents} />
 				)}
 			</div>
-		</div>
+		</PageContainer>
 	);
 }
