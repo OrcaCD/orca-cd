@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"maps"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -10,6 +11,35 @@ import (
 	containerapi "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
+
+func TestPreferLocalImageIDs(t *testing.T) {
+	orig := getLocalDigests
+	t.Cleanup(func() { getLocalDigests = orig })
+	getLocalDigests = func(_ context.Context, _ client.APIClient, id string) ([]string, error) {
+		if id == "sha256:retained" || id == "nginx@sha256:"+digestOther {
+			return nil, nil
+		}
+		return nil, errors.New("no such image")
+	}
+	pins := map[string]string{
+		"local":   "local/app@sha256:" + digestAaa,
+		"remote":  "nginx@sha256:" + digestBbb,
+		"id-only": "sha256:direct",
+		"no-id":   "redis@sha256:" + digestOther,
+		"named":   "nginx@sha256:" + digestOther,
+	}
+	before := maps.Clone(pins)
+	ids := map[string]string{"local": "sha256:retained", "remote": "sha256:removed", "id-only": "sha256:direct", "unrelated": "sha256:retained", "named": "sha256:retained"}
+	got := preferLocalImageIDs(t.Context(), nil, pins, ids)
+	want := maps.Clone(pins)
+	want["local"] = "sha256:retained"
+	if !maps.Equal(got, want) {
+		t.Fatalf("resolved pins = %v, want %v", got, want)
+	}
+	if !maps.Equal(pins, before) {
+		t.Fatal("resolving images mutated the request")
+	}
+}
 
 const (
 	digestAaa   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

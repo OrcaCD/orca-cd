@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/client"
 )
 
 func readOverride(t *testing.T, dir string) []byte {
@@ -85,6 +87,52 @@ func TestWriteComposeOverride_ReplacesStaleServices(t *testing.T) {
 	project := loadMergedProject(t, "services:\n  app:\n    image: nginx\n", readOverride(t, dir))
 	if _, ok := project.Services["old"]; ok {
 		t.Error("expected stale service to be dropped from the override")
+	}
+}
+
+func TestDeploy_PersistsResolvedRollbackImages(t *testing.T) {
+	for _, tc := range []struct {
+		name, available, wantImage, wantPolicy string
+	}{
+		{"retained ID", "sha256:" + digestAaa, "sha256:" + digestAaa, composetypes.PullPolicyNever},
+		{"named reference", "local/app@sha256:" + digestBbb, "local/app@sha256:" + digestBbb, composetypes.PullPolicyAlways},
+		{"registry fallback", "", "local/app@sha256:" + digestBbb, composetypes.PullPolicyAlways},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			saveRestoreVars(t)
+			c := newTestClient(t)
+			orig := getLocalDigests
+			t.Cleanup(func() { getLocalDigests = orig })
+			getLocalDigests = func(_ context.Context, _ client.APIClient, ref string) ([]string, error) {
+				if ref == tc.available {
+					return nil, nil
+				}
+				return nil, errors.New("no such image")
+			}
+			base := "services:\n  app:\n    image: local/app:latest\n    pull_policy: always\n"
+			loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
+				return loadMergedProject(t, base, nil), nil
+			}
+			upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.UpOptions) error {
+				service := project.Services["app"]
+				if service.Image != tc.wantImage || service.PullPolicy != tc.wantPolicy {
+					t.Fatalf("compose image/policy = %s/%s, want %s/%s", service.Image, service.PullPolicy, tc.wantImage, tc.wantPolicy)
+				}
+				return nil
+			}
+			if err := c.Deploy(t.Context(), DeployRequest{
+				ApplicationID: "app-123", ApplicationName: "rollback", ComposeFile: base,
+				PinnedImages:   map[string]string{"app": "local/app@sha256:" + digestBbb},
+				PinnedImageIDs: map[string]string{"app": "sha256:" + digestAaa},
+			}); err != nil {
+				t.Fatalf("Deploy: %v", err)
+			}
+			merged := loadMergedProject(t, base, readOverride(t, filepath.Join(c.deploymentsDir, "rollback")))
+			service := merged.Services["app"]
+			if service.Image != tc.wantImage || service.PullPolicy != tc.wantPolicy {
+				t.Fatalf("persisted image/policy = %s/%s, want %s/%s", service.Image, service.PullPolicy, tc.wantImage, tc.wantPolicy)
+			}
+		})
 	}
 }
 

@@ -3,6 +3,7 @@ package docker
 import (
 	"cmp"
 	"context"
+	"maps"
 	"slices"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 // ServiceImages reports the image each compose service of the application
@@ -105,4 +107,25 @@ func pinServiceImages(project *composetypes.Project, pins map[string]string) {
 
 func isImageID(ref string) bool {
 	return strings.HasPrefix(ref, "sha256:")
+}
+
+// A repo digest can belong to a locally committed image rather than a registry.
+// Retagging can remove that named digest while its immutable ID is still present.
+// Keep a valid named reference; use its retained ID only when that reference is
+// no longer local. If neither exists, keep the pullable registry fallback.
+func preferLocalImageIDs(ctx context.Context, cli client.APIClient, pins, imageIDs map[string]string) map[string]string {
+	resolved := maps.Clone(pins)
+	for service, ref := range pins {
+		id := imageIDs[service]
+		if !isImageID(id) || isImageID(ref) {
+			continue
+		}
+		if _, err := getLocalDigests(ctx, cli, ref); err == nil {
+			continue
+		}
+		if _, err := getLocalDigests(ctx, cli, id); err == nil {
+			resolved[service] = id
+		}
+	}
+	return resolved
 }

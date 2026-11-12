@@ -48,6 +48,8 @@ type DeployRequest struct {
 	// PinnedImages maps services to the image they run instead of the one the
 	// compose file names.
 	PinnedImages map[string]string
+	// PinnedImageIDs provides a local fallback when a named reference no longer resolves.
+	PinnedImageIDs map[string]string
 }
 
 var loadProject = func(ctx context.Context, composeService api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
@@ -167,9 +169,10 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 		return fmt.Errorf("translate bind mount sources: %w", err)
 	}
 
-	pinServiceImages(project, req.PinnedImages)
+	pins := preferLocalImageIDs(ctx, c.cli.Client(), req.PinnedImages, req.PinnedImageIDs)
+	pinServiceImages(project, pins)
 	applyOrcaLabels(project, req.ApplicationID)
-	if err := writeComposeOverride(applicationDir, orcaOverride(project, req.ApplicationID, req.PinnedImages)); err != nil {
+	if err := writeComposeOverride(applicationDir, orcaOverride(project, req.ApplicationID, pins)); err != nil {
 		return err
 	}
 

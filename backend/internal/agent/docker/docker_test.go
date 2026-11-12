@@ -321,15 +321,16 @@ func newTestClient(t *testing.T) *Client {
 
 func newTestClientWithAllowlist(t *testing.T, allowedPrivilegedApps map[string]struct{}) *Client {
 	t.Helper()
+	// Install lookups before New starts background health checks, and restore
+	// them only after the client has stopped.
+	stubProjectContainers(t, nil, nil)
+	stubServiceImageLookups(t, nil, nil)
 	c, err := New(zerolog.Nop(), t.TempDir(), allowedPrivilegedApps, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(c.Close)
 	waitForDaemonStateNotifierIdle(t, c)
-	// Tests must not depend on the containers of the host's Docker daemon.
-	stubProjectContainers(t, nil, nil)
-	stubServiceImageLookups(t, nil, nil)
 	return c
 }
 
