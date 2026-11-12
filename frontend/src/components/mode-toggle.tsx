@@ -1,5 +1,5 @@
 import { Moon, Sun } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, type ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
@@ -19,6 +19,7 @@ export interface ThemeToggleButtonProps {
 	url?: string; // For gif variant
 	className?: string;
 	onClick?: () => void;
+	buttonVariant?: ComponentProps<typeof Button>["variant"];
 }
 
 export const ModeToggle = ({
@@ -29,6 +30,7 @@ export const ModeToggle = ({
 	url,
 	className,
 	onClick,
+	buttonVariant = "outline",
 }: ThemeToggleButtonProps) => {
 	const handleClick = useCallback(() => {
 		// Inject animation styles for this specific transition
@@ -178,7 +180,7 @@ export const ModeToggle = ({
 			<TooltipTrigger
 				render={
 					<Button
-						variant="outline"
+						variant={buttonVariant}
 						size={showLabel ? "default" : "icon"}
 						onClick={handleClick}
 						className={cn(
@@ -190,11 +192,7 @@ export const ModeToggle = ({
 							theme: theme === "light" ? m.themeDark() : m.themeLight(),
 						})}
 					>
-						{theme === "light" ? (
-							<Sun className="h-[1.2rem] w-[1.2rem]" />
-						) : (
-							<Moon className="h-[1.2rem] w-[1.2rem]" />
-						)}
+						{theme === "light" ? <Sun /> : <Moon />}
 						{showLabel && (
 							<span className="text-sm">{theme === "light" ? m.themeLight() : m.themeDark()}</span>
 						)}

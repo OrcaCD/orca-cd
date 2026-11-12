@@ -1,6 +1,5 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"appLogoAlt": "OrcaCD-Logo",
 	"pageNotFound": "Seite nicht gefunden",
 	"somethingWentWrong": "Etwas ist schiefgelaufen",
 	"goHome": "Zur Startseite",
@@ -121,6 +120,7 @@
 	"navRepositories": "Repositories",
 	"navNotifications": "Benachrichtigungen",
 	"navAdmin": "Admin",
+	"navHome": "OrcaCD-Übersicht",
 	"settings": "Einstellungen",
 	"repositorySettings": "Repository-Einstellungen",
 	"general": "Allgemein",
@@ -917,6 +917,7 @@
 	"applicationsRolledBack": "Zurückgerollt",
 	"rolledBackImages": "Läuft {commit} mit den Images von vor dem fehlgeschlagenen Update.",
 	"rolledBackAutoSyncWaits": "Auto-Sync wartet auf einen neuen Commit.",
+	"navDocumentation": "Dokumentation",
 	"applicationsFleetNotHealthy": "Nicht gesund",
 	"healthHistoryEmptyDescription": "Es wurden noch keine Statusänderungen aufgezeichnet. Der Verlauf beginnt mit der nächsten Änderung. Den Live-Status siehst du oben.",
 	"healthHistoryEmptyTitle": "Noch kein Gesundheitsverlauf"

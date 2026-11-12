@@ -1,6 +1,5 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"appLogoAlt": "OrcaCD Logo",
 	"pageNotFound": "Page Not Found",
 	"somethingWentWrong": "Something went wrong",
 	"goHome": "Go Home",
@@ -121,6 +120,7 @@
 	"navRepositories": "Repositories",
 	"navNotifications": "Notifications",
 	"navAdmin": "Admin",
+	"navHome": "OrcaCD overview",
 	"settings": "Settings",
 	"repositorySettings": "Repository Settings",
 	"general": "General",
@@ -917,6 +917,7 @@
 	"applicationsRolledBack": "Rolled back",
 	"rolledBackImages": "Running {commit} with the images from before the failed update.",
 	"rolledBackAutoSyncWaits": "Auto-sync waits for a new commit.",
+	"navDocumentation": "Documentation",
 	"applicationsFleetNotHealthy": "Not healthy",
 	"healthHistoryEmptyDescription": "No health changes have been recorded yet. The timeline starts with the next status change. Live status is shown above.",
 	"healthHistoryEmptyTitle": "No health history yet"
