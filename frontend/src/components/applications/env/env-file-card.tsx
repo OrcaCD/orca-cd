@@ -44,8 +44,8 @@ export function EnvFileCard({
 
 	return (
 		<Card>
-			<CardHeader>
-				<CardTitle className="font-mono">{file.path}</CardTitle>
+			<CardHeader className="flex flex-col gap-3 sm:grid">
+				<CardTitle className="min-w-0 break-all font-mono">{file.path}</CardTitle>
 				<CardDescription className="flex flex-wrap items-center gap-1.5">
 					<span>{m.envUsedBy()}</span>
 					{file.services.length === 0 ? (
@@ -58,7 +58,7 @@ export function EnvFileCard({
 						))
 					)}
 				</CardDescription>
-				<CardAction className="flex gap-2">
+				<CardAction className="flex flex-wrap gap-2">
 					<ImportEnvDialog
 						entries={file.entries}
 						envRows={rows}

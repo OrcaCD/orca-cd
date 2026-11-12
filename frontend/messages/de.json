@@ -1,5 +1,6 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"appLogoAlt": "OrcaCD-Logo",
 	"pageNotFound": "Seite nicht gefunden",
 	"somethingWentWrong": "Etwas ist schiefgelaufen",
 	"goHome": "Zur Startseite",
@@ -940,5 +941,12 @@
 	"noRepositoriesYetDescription": "Verbinde das Git-Repository, das deine Compose-Dateien enthält.",
 	"noNotificationsYet": "Noch keine Benachrichtigungen",
 	"noNotificationsYetDescription": "Sende Deployment-Ergebnisse und Fehler an die Tools, die dein Team bereits nutzt.",
-	"loadingApplications": "Anwendungen werden geladen..."
+	"loadingApplications": "Anwendungen werden geladen...",
+	"authPanelDescription": "Von Git zu Docker.\nAlles synchron.",
+	"logInAction": "Anmelden",
+	"repositoryProviderUnavailable": "Noch nicht verfügbar",
+	"repositoryStepProvider": "Anbieter",
+	"repositoryStepSource": "Repository",
+	"repositoryStepSync": "Abgleich",
+	"repositoryStepReview": "Prüfen"
 }

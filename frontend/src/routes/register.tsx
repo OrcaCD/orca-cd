@@ -12,8 +12,8 @@ import { useAuth } from "@/lib/auth";
 import { fetcher } from "@/lib/api";
 import { getSetupStatus } from "@/lib/setup";
 import { m } from "@/lib/paraglide/messages";
-import { passwordStrengthRefine } from "@/lib/utils";
-import { AuthErrorBanner, AuthLayout } from "@/components/auth/auth-layout";
+import { cn, passwordStrengthRefine } from "@/lib/utils";
+import { AuthErrorBanner, AuthLayout, authControlClass } from "@/components/auth/auth-layout";
 import { PasswordInput } from "@/components/auth/password-input";
 
 export const Route = createFileRoute("/register")({
@@ -97,8 +97,8 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.enterSetupCode()}</h1>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-3xl font-semibold tracking-tight">{m.enterSetupCode()}</h1>
 				<p className="text-sm text-balance text-muted-foreground">
 					{m.enterSetupCodeDescription()}
 				</p>
@@ -126,7 +126,7 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 										onChange={(e) => field.handleChange(e.target.value)}
 										type="text"
 										placeholder="XXXX-XXXX-XXXX-XXXX"
-										className="font-mono uppercase"
+										className={cn(authControlClass, "font-mono uppercase")}
 										required
 										autoComplete="off"
 										autoCapitalize="characters"
@@ -139,7 +139,7 @@ function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void
 						}}
 					/>
 					<Field>
-						<Button type="submit" className="w-full" disabled={isLoading}>
+						<Button type="submit" className={cn(authControlClass, "w-full")} disabled={isLoading}>
 							{isLoading ? m.verifyingSetupCode() : m.next()}
 						</Button>
 					</Field>
@@ -215,8 +215,8 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div className="flex flex-col items-center gap-1 text-center">
-				<h1 className="text-2xl font-bold">{m.createYourAccount()}</h1>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-3xl font-semibold tracking-tight">{m.createYourAccount()}</h1>
 				<p className="text-sm text-balance text-muted-foreground">
 					{m.createAdminAccountDescription()}
 				</p>
@@ -237,6 +237,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 								<Field data-invalid={isInvalid}>
 									<Label htmlFor={field.name}>{m.name()}</Label>
 									<Input
+										className={authControlClass}
 										id={field.name}
 										name={field.name}
 										value={field.state.value}
@@ -261,6 +262,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 								<Field data-invalid={isInvalid}>
 									<Label htmlFor={field.name}>{m.email()}</Label>
 									<Input
+										className={authControlClass}
 										id={field.name}
 										name={field.name}
 										value={field.state.value}
@@ -284,6 +286,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 								<Field data-invalid={isInvalid}>
 									<Label htmlFor={field.name}>{m.password()}</Label>
 									<PasswordInput
+										className={cn(authControlClass, "pr-12")}
 										id={field.name}
 										name={field.name}
 										value={field.state.value}
@@ -306,6 +309,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 								<Field data-invalid={isInvalid}>
 									<Label htmlFor={field.name}>{m.confirmPassword()}</Label>
 									<PasswordInput
+										className={cn(authControlClass, "pr-12")}
 										id={field.name}
 										name={field.name}
 										value={field.state.value}
@@ -321,7 +325,7 @@ function RegisterAccountForm({ setupCode }: { setupCode: string }) {
 						}}
 					/>
 					<Field>
-						<Button type="submit" className="w-full" disabled={isLoading}>
+						<Button type="submit" className={cn(authControlClass, "w-full")} disabled={isLoading}>
 							{isLoading ? m.creatingAccount() : m.createAccount()}
 						</Button>
 					</Field>
