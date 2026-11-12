@@ -107,11 +107,11 @@ func TestResolveOIDCUser_RejectsProviderEmailConflict(t *testing.T) {
 		AutoSignup: true,
 	}
 
-	userA := models.User{Email: "alice@example.com", Name: "Alice", Role: models.UserRoleUser}
+	userA := models.User{Email: "alice@example.com", Name: "Alice"}
 	if err := gorm.G[models.User](db.DB).Create(t.Context(), &userA); err != nil {
 		t.Fatalf("failed to create user A: %v", err)
 	}
-	userB := models.User{Email: "bob@example.com", Name: "Bob", Role: models.UserRoleUser}
+	userB := models.User{Email: "bob@example.com", Name: "Bob"}
 	if err := gorm.G[models.User](db.DB).Create(t.Context(), &userB); err != nil {
 		t.Fatalf("failed to create user B: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
 	setupTestDB(t)
 
 	hash := "hash"
-	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash, Role: models.UserRoleAdmin}
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestResolveOIDCUser_RefusesToLinkSelfChangedEmail(t *testing.T) {
 	setupTestDB(t)
 
 	hash := "hash"
-	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Mallory", PasswordHash: &hash, Role: models.UserRoleUser, EmailUnconfirmed: true}
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Mallory", PasswordHash: &hash, EmailUnconfirmed: true}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestResolveOIDCUser_RefusesToLinkSelfChangedEmail(t *testing.T) {
 func TestResolveOIDCUser_LinkedLoginConfirmsSyncedEmail(t *testing.T) {
 	setupTestDB(t)
 
-	existing := models.User{Id: "user-1", Email: "old@example.com", Name: "Alice", Role: models.UserRoleUser, EmailUnconfirmed: true}
+	existing := models.User{Id: "user-1", Email: "old@example.com", Name: "Alice", EmailUnconfirmed: true}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}

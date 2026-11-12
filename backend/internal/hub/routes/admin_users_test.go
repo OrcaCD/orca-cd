@@ -13,11 +13,19 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func createTestUser(t *testing.T, name string, email string, role models.UserRole, password string) models.User {
+func userIsAdmin(t *testing.T, userId string) (bool, error) {
+	t.Helper()
+	perms, err := rbac.Load(t.Context(), db.DB, userId)
+	return perms.IsAdmin(), err
+}
+
+// createTestUser creates a user with the given role. An empty roleID creates a user without roles.
+func createTestUser(t *testing.T, name string, email string, roleID string, password string) models.User {
 	t.Helper()
 
 	var passwordHash *string
@@ -32,12 +40,16 @@ func createTestUser(t *testing.T, name string, email string, role models.UserRol
 	user := models.User{
 		Name:         name,
 		Email:        email,
-		Role:         role,
 		PasswordHash: passwordHash,
 	}
 
 	if err := db.DB.WithContext(t.Context()).Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
+	}
+	if roleID != "" {
+		if err := gorm.G[models.UserRole](db.DB).Create(t.Context(), &models.UserRole{UserId: user.Id, RoleId: roleID, Source: models.UserRoleSourceManual}); err != nil {
+			t.Fatalf("failed to assign role: %v", err)
+		}
 	}
 
 	return user
@@ -46,8 +58,8 @@ func createTestUser(t *testing.T, name string, email string, role models.UserRol
 func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	setupTestDB(t)
 
-	createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
-	oidcUser := createTestUser(t, "OIDC User", "oidc@example.com", models.UserRoleUser, "")
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	oidcUser := createTestUser(t, "OIDC User", "oidc@example.com", rbac.UserRoleID, "")
 	provider := createTestProvider(t, "GitHub", true)
 	if err := gorm.G[models.UserOIDCIdentity](db.DB).Create(t.Context(), &models.UserOIDCIdentity{
 		UserId:     oidcUser.Id,
@@ -128,9 +140,9 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":  "New User",
-		"email": "NEW@Example.com",
-		"role":  "user",
+		"name":    "New User",
+		"email":   "NEW@Example.com",
+		"roleIds": []string{rbac.UserRoleID},
 	})
 
 	w := httptest.NewRecorder()
@@ -152,8 +164,8 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	if body.Email != "new@example.com" {
 		t.Fatalf("expected normalized email %q, got %q", "new@example.com", body.Email)
 	}
-	if body.Role != string(models.UserRoleUser) {
-		t.Fatalf("expected role %q, got %q", models.UserRoleUser, body.Role)
+	if len(body.Roles) != 1 || body.Roles[0].Id != rbac.UserRoleID || !slices.Equal(body.Roles[0].Sources, []models.UserRoleSource{models.UserRoleSourceManual}) {
+		t.Fatalf("expected the user role, got %+v", body.Roles)
 	}
 	if !slices.Equal(body.Providers, []string{"password"}) {
 		t.Fatalf("expected providers %v, got %v", []string{"password"}, body.Providers)
@@ -180,12 +192,12 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 func TestAdminCreateUserHandler_DuplicateEmail(t *testing.T) {
 	setupTestDB(t)
 
-	createTestUser(t, "Existing", "existing@example.com", models.UserRoleUser, "password123")
+	createTestUser(t, "Existing", "existing@example.com", rbac.UserRoleID, "password123")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":  "Another",
-		"email": "existing@example.com",
-		"role":  "user",
+		"name":    "Another",
+		"email":   "existing@example.com",
+		"roleIds": []string{rbac.UserRoleID},
 	})
 
 	w := httptest.NewRecorder()
@@ -203,12 +215,12 @@ func TestAdminCreateUserHandler_DuplicateEmail(t *testing.T) {
 func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
-	user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
+	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "old-password")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":  "Updated User",
-		"email": "UPDATED@Example.com",
-		"role":  "admin",
+		"name":    "Updated User",
+		"email":   "UPDATED@Example.com",
+		"roleIds": []string{rbac.AdminRoleID},
 	})
 
 	router := gin.New()
@@ -242,8 +254,13 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	if updated.Email != "updated@example.com" {
 		t.Fatalf("expected normalized email %q, got %q", "updated@example.com", updated.Email)
 	}
-	if updated.Role != models.UserRoleAdmin {
-		t.Fatalf("expected role %q, got %q", models.UserRoleAdmin, updated.Role)
+	isAdmin, err := userIsAdmin(t, user.Id)
+	if err != nil || !isAdmin {
+		t.Fatalf("expected user to have the admin role, err=%v", err)
+	}
+	isUser, err := gorm.G[models.UserRole](db.DB).Where("user_id = ? AND role_id = ?", user.Id, rbac.UserRoleID).Count(t.Context(), "*")
+	if err != nil || isUser != 0 {
+		t.Fatalf("expected the user role to be removed, count=%d err=%v", isUser, err)
 	}
 	if updated.PasswordHash == nil || !auth.CheckPassword("old-password", *updated.PasswordHash) {
 		t.Fatal("expected password to remain unchanged when resetPassword=false")
@@ -256,12 +273,12 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 	setupTestDB(t)
 
-	user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
+	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "old-password")
 
 	reqBody, _ := json.Marshal(map[string]any{
 		"name":          "Updated User",
 		"email":         "UPDATED@Example.com",
-		"role":          "admin",
+		"roleIds":       []string{rbac.AdminRoleID},
 		"resetPassword": true,
 	})
 
@@ -307,12 +324,12 @@ func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 func TestAdminUpdateUserHandler_RejectsDemotingLastAdmin(t *testing.T) {
 	setupTestDB(t)
 
-	admin := createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
 
 	reqBody, _ := json.Marshal(map[string]any{
-		"name":  "Admin",
-		"email": "admin@example.com",
-		"role":  "user",
+		"name":    "Admin",
+		"email":   "admin@example.com",
+		"roleIds": []string{rbac.UserRoleID},
 	})
 
 	router := gin.New()
@@ -327,20 +344,17 @@ func TestAdminUpdateUserHandler_RejectsDemotingLastAdmin(t *testing.T) {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
 
-	loaded, err := gorm.G[models.User](db.DB).Where("id = ?", admin.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to reload admin user: %v", err)
-	}
-	if loaded.Role != models.UserRoleAdmin {
-		t.Fatalf("expected role to stay %q, got %q", models.UserRoleAdmin, loaded.Role)
+	isAdmin, err := userIsAdmin(t, admin.Id)
+	if err != nil || !isAdmin {
+		t.Fatalf("expected admin role to stay, err=%v", err)
 	}
 }
 
 func TestAdminDeleteUserHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
-	createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
-	user := createTestUser(t, "Delete Me", "delete@example.com", models.UserRoleUser, "password123")
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	user := createTestUser(t, "Delete Me", "delete@example.com", rbac.UserRoleID, "password123")
 
 	router := gin.New()
 	router.DELETE("/api/v1/admin/users/:id", AdminDeleteUserHandler)
@@ -362,7 +376,7 @@ func TestAdminDeleteUserHandler_Success(t *testing.T) {
 func TestAdminDeleteUserHandler_RejectsDeletingLastAdmin(t *testing.T) {
 	setupTestDB(t)
 
-	admin := createTestUser(t, "Admin", "admin@example.com", models.UserRoleAdmin, "password123")
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
 
 	router := gin.New()
 	router.DELETE("/api/v1/admin/users/:id", AdminDeleteUserHandler)
@@ -393,12 +407,12 @@ func TestAdminUpdateUserHandler_EmailConfirmation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setupTestDB(t)
 
-			user := createTestUser(t, "User", "user@example.com", models.UserRoleUser, "old-password")
+			user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "old-password")
 			if err := db.DB.Model(&models.User{}).Where("id = ?", user.Id).Update("email_unconfirmed", true).Error; err != nil {
 				t.Fatalf("failed to mark email unconfirmed: %v", err)
 			}
 
-			reqBody, _ := json.Marshal(map[string]any{"name": "User", "email": tt.email, "role": "admin"})
+			reqBody, _ := json.Marshal(map[string]any{"name": "User", "email": tt.email, "roleIds": []string{rbac.UserRoleID}})
 			router := gin.New()
 			router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
 			w := httptest.NewRecorder()
@@ -417,5 +431,186 @@ func TestAdminUpdateUserHandler_EmailConfirmation(t *testing.T) {
 				t.Fatalf("expected emailUnconfirmed=%v, got %v", !tt.wantConfirmed, updated.EmailUnconfirmed)
 			}
 		})
+	}
+}
+
+func TestAdminCreateUserHandler_UnknownRole(t *testing.T) {
+	setupTestDB(t)
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"name":    "New User",
+		"email":   "new@example.com",
+		"roleIds": []string{"missing"},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	AdminCreateUserHandler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if count, _ := gorm.G[models.User](db.DB).Count(t.Context(), "*"); count != 0 {
+		t.Fatalf("expected no user to be created, got %d", count)
+	}
+}
+
+func TestAdminCreateUserHandler_RoleIds(t *testing.T) {
+	setupTestDB(t)
+
+	create := func(email string, body map[string]any) adminUserWithGeneratedPasswordResponse {
+		t.Helper()
+		body["name"] = "New User"
+		body["email"] = email
+		reqBody, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(reqBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+		AdminCreateUserHandler(c)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+		}
+		var response adminUserWithGeneratedPasswordResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		return response
+	}
+
+	if roles := create("default@example.com", map[string]any{}).Roles; len(roles) != 1 || roles[0].Id != rbac.UserRoleID {
+		t.Fatalf("expected users without roleIds to get the default role, got %+v", roles)
+	}
+	if roles := create("none@example.com", map[string]any{"roleIds": []string{}}).Roles; len(roles) != 0 {
+		t.Fatalf("expected no roles, got %+v", roles)
+	}
+	if roles := create("both@example.com", map[string]any{"roleIds": []string{rbac.AdminRoleID, rbac.UserRoleID, rbac.AdminRoleID}}).Roles; len(roles) != 2 || roles[0].Id != rbac.AdminRoleID {
+		t.Fatalf("expected the admin and user role, got %+v", roles)
+	}
+}
+
+func TestAdminUpdateUserHandler_KeepsOIDCRoles(t *testing.T) {
+	setupTestDB(t)
+
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "password123")
+	if err := gorm.G[models.UserRole](db.DB).Create(t.Context(), &models.UserRole{UserId: user.Id, RoleId: rbac.UserRoleID, Source: models.UserRoleSourceOIDC}); err != nil {
+		t.Fatalf("failed to assign oidc role: %v", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]any{"name": "User", "email": "user@example.com", "roleIds": []string{}})
+	router := gin.New()
+	router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+user.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body adminUserResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(body.Roles) != 1 || !slices.Equal(body.Roles[0].Sources, []models.UserRoleSource{models.UserRoleSourceOIDC}) {
+		t.Fatalf("expected only the role from OIDC to remain, got %+v", body.Roles)
+	}
+}
+
+func TestAdminUpdateUserHandler_ManagedUserRolesOnly(t *testing.T) {
+	setupTestDB(t)
+
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	managed := createTestUser(t, "Managed", "managed@example.com", "", "")
+
+	update := func(body map[string]any) *httptest.ResponseRecorder {
+		reqBody, _ := json.Marshal(body)
+		router := gin.New()
+		router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+managed.Id, bytes.NewReader(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	if w := update(map[string]any{"name": "Renamed", "email": "managed@example.com", "roleIds": []string{}}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected renaming a managed user to fail, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := update(map[string]any{"name": "Managed", "email": "managed@example.com", "resetPassword": true}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected resetting the password of a managed user to fail, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := update(map[string]any{"name": "Managed", "email": "MANAGED@example.com", "roleIds": []string{rbac.UserRoleID}}); w.Code != http.StatusOK {
+		t.Fatalf("expected changing the roles of a managed user to work, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The provider may set a name the validation would reject
+	short := createTestUser(t, "Al", "al@example.com", "", "")
+	managed = short
+	if w := update(map[string]any{"name": "Al", "email": "al@example.com", "roleIds": []string{rbac.UserRoleID}}); w.Code != http.StatusOK {
+		t.Fatalf("expected a managed user with a short name to be updatable, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := update(map[string]any{"roleIds": []string{}}); w.Code != http.StatusOK {
+		t.Fatalf("expected name and email to be optional for managed users, got %d: %s", w.Code, w.Body.String())
+	}
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", short.Id).First(t.Context())
+	if err != nil || user.Name != "Al" || user.Email != "al@example.com" {
+		t.Fatalf("expected the profile to stay unchanged, got %+v (err=%v)", user, err)
+	}
+}
+
+func TestAdminUpdateUserHandler_KeepsRolesWithoutRoleIds(t *testing.T) {
+	setupTestDB(t)
+
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	local := createTestUser(t, "Local", "local@example.com", rbac.UserRoleID, "password123")
+
+	reqBody, _ := json.Marshal(map[string]any{"name": "Renamed", "email": "local@example.com"})
+	router := gin.New()
+	router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+local.Id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body adminUserResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if body.Name != "Renamed" || len(body.Roles) != 1 || body.Roles[0].Id != rbac.UserRoleID {
+		t.Fatalf("expected the name to change and the roles to stay, got %+v", body)
+	}
+}
+
+func TestAdminUpdateUserHandler_ValidatesLocalProfile(t *testing.T) {
+	setupTestDB(t)
+
+	createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	local := createTestUser(t, "Local", "local@example.com", rbac.UserRoleID, "password123")
+
+	for _, body := range []map[string]any{
+		{"name": "Lo", "email": "local@example.com"},
+		{"name": "Local", "email": "not-an-email"},
+		{"email": "local@example.com"},
+		{"name": "Local", "email": "local@example.com", "roleIds": []string{"missing"}},
+	} {
+		reqBody, _ := json.Marshal(body)
+		router := gin.New()
+		router.PUT("/api/v1/admin/users/:id", AdminUpdateUserHandler)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/"+local.Id, bytes.NewReader(reqBody))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %v, got %d: %s", body, w.Code, w.Body.String())
+		}
 	}
 }
