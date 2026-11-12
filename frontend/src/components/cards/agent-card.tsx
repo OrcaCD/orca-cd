@@ -8,7 +8,7 @@ import { RelativeTime } from "@/components/relative-time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AgentStatus, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
-import { fleetCategories, fleetCategoryConfig, getFleetCategory } from "@/lib/fleet";
+import { fleetCategories, getFleetCategory, getStatusIndicator } from "@/lib/fleet";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
 import { ResourceCard } from "./resource-card";
@@ -48,12 +48,12 @@ function ConnectionStatus({ agent }: { agent: Agent }) {
 					)}
 				/>
 			</span>
-			<span className="text-emerald-600 dark:text-emerald-400">{m.statusOnline()}</span>
+			<span className="text-emerald-700 dark:text-emerald-400">{m.statusOnline()}</span>
 			{dockerUnreachable ? (
 				<InfoTooltip>
 					<InfoTooltipTrigger
 						render={<span />}
-						className="cursor-help truncate text-amber-600 dark:text-amber-400"
+						className="cursor-help truncate text-amber-700 dark:text-amber-400"
 					>
 						· {m.applicationsAgentsDockerUnreachable()}
 					</InfoTooltipTrigger>
@@ -100,8 +100,8 @@ function ApplicationList({
 
 	return (
 		<ul className="-mx-2">
-			{listed.map(({ app, category: fleetCategory }) => {
-				const category = fleetCategoryConfig[fleetCategory];
+			{listed.map(({ app }) => {
+				const status = getStatusIndicator(app);
 				return (
 					<li key={app.id}>
 						<Link
@@ -112,8 +112,8 @@ function ApplicationList({
 							<StaticLucideIcon name={app.icon} className="size-4 shrink-0 text-muted-foreground" />
 							<span className="min-w-0 flex-1 truncate">{app.name}</span>
 							<span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-								{category.label()}
-								<span className={cn("size-1.5 rounded-full", category.dotClass)} />
+								{status.label()}
+								<span className={cn("size-1.5 rounded-full", status.dotClass)} />
 							</span>
 						</Link>
 					</li>
