@@ -1030,7 +1030,7 @@
 	"groupsClaimDescription": "Set this to sync roles from the groups of users, e.g. groups, or realm_access.roles for Keycloak. Users get the roles mapped to their groups at this provider on every login. After a change, groups only count again from the next login.",
 	"oidcErrorRoleSyncFailed": "Your roles could not be updated from your groups. Please try again.",
 	"roleOidcGroups": "OIDC groups",
-	"roleOidcGroupsDescription": "Members of these groups get this role when they sign in with the provider, and lose it when they leave the group. Group names must match exactly, including case and a leading slash.",
+	"roleOidcGroupsDescription": "Members of these groups get this role when they log in with the provider, and lose it when they leave the group. Group names must match exactly, including case and a leading slash.",
 	"roleOidcGroupPlaceholder": "Group name, e.g. developers",
 	"roleOidcGroupProvider": "OIDC provider",
 	"roleOidcNoProviders": "Set a groups claim on an OIDC provider to map its groups to roles.",
