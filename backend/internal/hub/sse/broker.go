@@ -31,7 +31,7 @@ type Message struct {
 // ReloadsProfileOf reports whether the event tells the user to reload their profile.
 func (e Event) ReloadsProfileOf(userID string) bool {
 	return slices.ContainsFunc(e.Topics, func(topic Topic) bool {
-		return topic.url == TopicProfile.url && topic.SentTo(userID)
+		return topic.url == topicProfile.url && topic.SentTo(userID)
 	})
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -357,4 +358,52 @@ func TestAdminRoles_OIDCGroups(t *testing.T) {
 	if err != nil || len(identity.Groups) != 0 {
 		t.Fatalf("expected the stored groups to be cleared, got %v, %v", identity.Groups, err)
 	}
+}
+
+func TestAdminRoles_ReloadOnlyMembers(t *testing.T) {
+	setupRolesTestDB(t)
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "password123")
+	member := createTestUser(t, "Member", "member@example.com", "", "password123")
+	other := createTestUser(t, "Other", "other@example.com", "", "password123")
+	broker := newTestSSEBroker(t)
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	expectReloads := func(action string, want ...string) {
+		t.Helper()
+		select {
+		case event := <-ch:
+			for _, user := range []models.User{admin, member, other} {
+				if got := event.ReloadsProfileOf(user.Id); got != slices.Contains(want, user.Id) {
+					t.Fatalf("%s: ReloadsProfileOf(%s) = %v", action, user.Name, got)
+				}
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s: timed out waiting for SSE event", action)
+		}
+	}
+
+	body := map[string]any{
+		"name":        "Readers",
+		"permissions": []map[string]any{{"resource": "agent", "action": "read"}},
+		"userIds":     []string{member.Id},
+	}
+	w := serveRoleRequest(t, http.MethodPost, "/api/v1/admin/roles", body)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	role := decodeRole(t, w)
+	expectReloads("create", member.Id)
+
+	// The member who loses the role and the one who gets it
+	body["userIds"] = []string{other.Id}
+	if w := serveRoleRequest(t, http.MethodPut, "/api/v1/admin/roles/"+role.Id, body); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	expectReloads("update", member.Id, other.Id)
+
+	if w := serveRoleRequest(t, http.MethodDelete, "/api/v1/admin/roles/"+role.Id, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	expectReloads("delete", other.Id)
 }

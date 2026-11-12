@@ -141,6 +141,23 @@ test.describe("Roles page", () => {
 		}
 	});
 
+	test("granting an action on all resources removes the rows it covers", async ({ page }) => {
+		const repo = await seedRepo(page, "covered");
+		const role = await createRole(page, {
+			permissions: [{ resource: "repository", action: "sync", resourceId: repo.id }],
+		});
+		await gotoApp(page, `/admin/roles?role=${role.id}`);
+
+		const repositories = page.getByRole("region", { name: "Repositories" });
+		await expect(repositories.getByRole("checkbox", { name: `Sync: ${repo.name}` })).toBeChecked();
+		await expect(repositories).toContainText("Limited access, 1 specific");
+
+		await repositories.getByRole("checkbox", { name: "Sync: All Repositories" }).check();
+		await expect(repositories.getByRole("checkbox", { name: `Sync: ${repo.name}` })).toHaveCount(0);
+		await expect(repositories).toContainText("Limited access");
+		await expect(repositories).not.toContainText("1 specific");
+	});
+
 	test("role changes are written to the audit log", async ({ page }) => {
 		const role = await createRole(page, {});
 		const { body } = await api(page, "GET", `/admin/audit-logs?search=${role.id}`);
@@ -195,5 +212,25 @@ test.describe("Permissions", () => {
 		expect(profile).toMatchObject({ isAdmin: false, roles: [] });
 		expect(profile.permissions.agent.all).toEqual([]);
 		expect((await api(user.page, "POST", "/agents", { name: "Not allowed" })).status).toBe(403);
+	});
+
+	test("users see their roles on the profile, updated right away", async ({ page, browser }) => {
+		const role = await createRole(page, { name: uniqueId("Readers") });
+		const user = await createActiveUser(page, browser, { roleIds: [role.id] });
+		await gotoApp(user.page, "/settings/profile");
+
+		const roles = user.page.getByText(role.name, { exact: true });
+		await expect(roles).toBeVisible();
+
+		const { status } = await api(page, "PUT", `/admin/roles/${role.id}`, {
+			name: role.name,
+			description: "",
+			permissions: [],
+			userIds: [],
+			oidcGroups: [],
+		});
+		expect(status).toBe(200);
+		await expect(roles).toHaveCount(0);
+		await expect(user.page.getByText("No roles", { exact: true })).toBeVisible();
 	});
 });

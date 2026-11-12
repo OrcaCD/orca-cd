@@ -66,14 +66,24 @@ func respondForbidden(c *gin.Context, message string) {
 	c.JSON(http.StatusForbidden, gin.H{"error": message})
 }
 
-// pruneGrants removes the grants on deleted resources. A failure leaves grants
-// that match nothing, so it is only logged.
+// pruneGrants removes the grants on deleted resources and tells the members of
+// the roles that lost grants. A failure leaves grants that match nothing, so it
+// is only logged.
 func pruneGrants(ctx context.Context) {
-	removed, err := rbac.PruneGrants(ctx, db.DB)
+	roleIds, err := rbac.PruneGrants(ctx, db.DB)
 	if err != nil {
 		permissionsLog.Error().Err(err).Msg("failed to remove grants on deleted resources")
 	}
-	if removed > 0 {
-		sse.PublishUpdate(sse.TopicAdminRoles, sse.TopicProfile)
+	if len(roleIds) == 0 {
+		return
 	}
+	members, err := rbac.MemberIDs(ctx, db.DB, roleIds)
+	if err != nil {
+		permissionsLog.Warn().Err(err).Msg("failed to load the members of roles that lost grants")
+	}
+	topics := []sse.Topic{sse.TopicAdminRoles}
+	for _, id := range members {
+		topics = append(topics, sse.TopicProfileOf(id))
+	}
+	sse.PublishUpdate(topics...)
 }

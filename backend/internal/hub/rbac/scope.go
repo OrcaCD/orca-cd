@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"slices"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"gorm.io/gorm"
@@ -37,17 +38,26 @@ var resourceTables = map[models.PermissionResource]string{
 // PruneGrants removes grants on single resources that no longer exist. Grants
 // cannot reference the resources with a foreign key, so this runs after deletes,
 // including the ones that cascade, like the applications of a deleted repository.
-// Returns how many grants were removed.
-func PruneGrants(ctx context.Context, tx *gorm.DB) (int, error) {
-	removed := 0
+// Returns the roles that lost grants.
+func PruneGrants(ctx context.Context, tx *gorm.DB) ([]string, error) {
+	var roleIDs []string
 	for _, resource := range models.PermissionResources {
-		rows, err := gorm.G[models.RolePermission](tx).
-			Where("resource = ? AND resource_id IS NOT NULL AND resource_id NOT IN (SELECT id FROM "+resourceTables[resource]+")", resource).
-			Delete(ctx)
+		stale := "resource = ? AND resource_id IS NOT NULL AND resource_id NOT IN (SELECT id FROM " + resourceTables[resource] + ")"
+		grants, err := gorm.G[models.RolePermission](tx).Where(stale, resource).Find(ctx)
 		if err != nil {
-			return removed, err
+			return roleIDs, err
 		}
-		removed += rows
+		if len(grants) == 0 {
+			continue
+		}
+		if _, err := gorm.G[models.RolePermission](tx).Where(stale, resource).Delete(ctx); err != nil {
+			return roleIDs, err
+		}
+		for i := range grants {
+			if !slices.Contains(roleIDs, grants[i].RoleId) {
+				roleIDs = append(roleIDs, grants[i].RoleId)
+			}
+		}
 	}
-	return removed, nil
+	return roleIDs, nil
 }

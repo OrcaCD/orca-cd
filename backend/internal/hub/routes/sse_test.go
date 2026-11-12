@@ -364,7 +364,7 @@ func TestSSEHandler_ReloadsPermissionsOnProfileUpdates(t *testing.T) {
 	// The user has no roles, so the reload triggered by their profile topic
 	// must hide the admin topic.
 	broker.PublishUpdate(sse.TopicProfileOf("test-user"), sse.TopicAdminUsers)
-	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicProfile.URL()}) {
+	if got := readEventURLs(t, scanner); !slices.Equal(got, []string{sse.TopicProfileOf("test-user").URL()}) {
 		t.Fatalf("expected only the profile topic, got %v", got)
 	}
 }

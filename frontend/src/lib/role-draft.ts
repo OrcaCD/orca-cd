@@ -117,9 +117,16 @@ export function setActions(
 		// Actions allowed on all resources don't need to be granted on single ones
 		const redundant = (action: PermissionAction) =>
 			actions.includes(action) || (action === "read" && isReadImplied(actions));
-		for (const id of Object.keys(next[resource])) {
-			if (id !== ALL) {
-				next[resource][id] = next[resource][id].filter((action) => !redundant(action));
+		for (const [id, granted] of Object.entries(next[resource])) {
+			if (id === ALL) {
+				continue;
+			}
+			const remaining = granted.filter((action) => !redundant(action));
+			// Rows left with nothing to grant go away, empty rows the user added stay
+			if (remaining.length === 0 && granted.length > 0) {
+				delete next[resource][id];
+			} else {
+				next[resource][id] = remaining;
 			}
 		}
 	}

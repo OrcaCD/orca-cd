@@ -1036,5 +1036,6 @@
 	"roleOidcNoProviders": "Lege bei einem OIDC-Anbieter einen Gruppen-Claim fest, um seine Gruppen Rollen zuzuordnen.",
 	"roleRemoveOidcGroup": "Gruppe {group} entfernen",
 	"overviewNoAccessTitle": "Du hast noch keinen Zugriff",
-	"overviewNoAccessDescription": "Deine Rollen geben dir keinen Zugriff auf Anwendungen, Agenten, Repositories oder Benachrichtigungen. Bitte einen Admin, dir eine Rolle zuzuweisen."
+	"overviewNoAccessDescription": "Deine Rollen geben dir keinen Zugriff auf Anwendungen, Agenten, Repositories oder Benachrichtigungen. Bitte einen Admin, dir eine Rolle zuzuweisen.",
+	"profileRolesDescription": "Du darfst alles, was eine deiner Rollen erlaubt. Frag einen Admin, wenn du anderen Zugriff brauchst."
 }

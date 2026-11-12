@@ -146,7 +146,7 @@ func AdminCreateRoleHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "role", role.Id)
 
 	writeRole(c, http.StatusCreated, &role)
-	sse.PublishUpdate(sse.TopicAdminRoles, sse.TopicAdminUsers, sse.TopicProfile)
+	publishRoleUpdate(req.UserIds)
 }
 
 func AdminUpdateRoleHandler(c *gin.Context) {
@@ -158,6 +158,8 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
 	membersChanged := false
+	// Everyone who had or has the role, their permissions may have changed
+	var affected []string
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		role, err := gorm.G[models.Role](tx).Where("id = ?", id).First(ctx)
@@ -168,6 +170,9 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 			return err
 		}
 		if err := checkRoleReferences(ctx, tx, id, permissions, req.UserIds); err != nil {
+			return err
+		}
+		if affected, err = rbac.MemberIDs(ctx, tx, []string{id}); err != nil {
 			return err
 		}
 
@@ -188,20 +193,28 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 			}
 		}
 
-		return keepLastAdmin(ctx, tx, func() error {
+		err = keepLastAdmin(ctx, tx, func() error {
 			groupsChanged, err := replaceRoleOIDCGroups(ctx, tx, id, req.OIDCGroups)
 			if err != nil {
 				return err
 			}
 			// Members from groups follow the new groups right away
 			if groupsChanged {
-				if _, err := syncAllOIDCRoles(ctx, tx); err != nil {
+				synced, err := syncAllOIDCRoles(ctx, tx)
+				if err != nil {
 					return err
 				}
+				affected = append(affected, synced...)
 			}
 			membersChanged, err = rbac.SetRoleMembers(ctx, tx, id, models.UserRoleSourceManual, req.UserIds)
 			return err
 		})
+		if err != nil {
+			return err
+		}
+		members, err := rbac.MemberIDs(ctx, tx, []string{id})
+		affected = append(affected, members...)
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, errLastAdmin) {
@@ -224,12 +237,13 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 	}
 
 	writeRole(c, http.StatusOK, &role)
-	sse.PublishUpdate(sse.TopicAdminRoles, sse.TopicAdminUsers, sse.TopicProfile)
+	publishRoleUpdate(affected)
 }
 
 func AdminDeleteRoleHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
+	var members []string
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		role, err := gorm.G[models.Role](tx).Where("id = ?", id).First(ctx)
@@ -241,6 +255,9 @@ func AdminDeleteRoleHandler(c *gin.Context) {
 		}
 		if role.BuiltIn != nil {
 			return errBuiltInRole
+		}
+		if members, err = rbac.MemberIDs(ctx, tx, []string{id}); err != nil {
+			return err
 		}
 
 		if _, err := gorm.G[models.UserRole](tx).Where("role_id = ?", id).Delete(ctx); err != nil {
@@ -260,7 +277,7 @@ func AdminDeleteRoleHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "deleted", "role", id)
 
 	c.JSON(http.StatusOK, gin.H{"message": "role deleted"})
-	sse.PublishUpdate(sse.TopicAdminRoles, sse.TopicAdminUsers, sse.TopicProfile)
+	publishRoleUpdate(members)
 }
 
 var (
@@ -380,13 +397,18 @@ func syncAllOIDCRoles(ctx context.Context, tx *gorm.DB) ([]string, error) {
 	return rbac.SyncOIDCRoles(ctx, tx, userIds)
 }
 
-// publishRolesChanged tells admins and the users whose roles changed.
+// publishRolesChanged tells admins and the users whose roles changed, if any.
 func publishRolesChanged(userIds []string) {
-	if len(userIds) == 0 {
-		return
+	if len(userIds) > 0 {
+		publishRoleUpdate(userIds)
 	}
+}
+
+// publishRoleUpdate tells admins that roles changed, and the given users to
+// reload their permissions. Other users keep their permissions and get nothing.
+func publishRoleUpdate(userIds []string) {
 	topics := []sse.Topic{sse.TopicAdminUsers, sse.TopicAdminRoles}
-	for _, id := range userIds {
+	for _, id := range uniqueIds(userIds) {
 		topics = append(topics, sse.TopicProfileOf(id))
 	}
 	sse.PublishUpdate(topics...)

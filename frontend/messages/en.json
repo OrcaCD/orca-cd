@@ -1036,5 +1036,6 @@
 	"roleOidcNoProviders": "Set a groups claim on an OIDC provider to map its groups to roles.",
 	"roleRemoveOidcGroup": "Remove group {group}",
 	"overviewNoAccessTitle": "You don't have access to anything yet",
-	"overviewNoAccessDescription": "Your roles don't give you access to any applications, agents, repositories or notifications. Ask an admin to assign you a role."
+	"overviewNoAccessDescription": "Your roles don't give you access to any applications, agents, repositories or notifications. Ask an admin to assign you a role.",
+	"profileRolesDescription": "You can do everything any of your roles allows. Ask an admin if you need different access."
 }

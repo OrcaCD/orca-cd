@@ -17,6 +17,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useAuth, updateProfile } from "@/lib/auth";
+import { RoleBadges } from "@/components/badges/role-badge";
 import { AlertTriangleIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { m } from "@/lib/paraglide/messages";
@@ -176,6 +177,16 @@ function ProfileSettingsPage() {
 							</Field>
 						</FieldGroup>
 					</form>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
+					<CardTitle>{m.roles()}</CardTitle>
+					<CardDescription>{m.profileRolesDescription()}</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<RoleBadges roles={auth.profile?.roles ?? []} />
 				</CardContent>
 			</Card>
 

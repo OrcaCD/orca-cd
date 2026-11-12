@@ -31,14 +31,16 @@ var (
 	TopicAdminUsers          = Topic{url: apiPrefix + "/admin/users", adminOnly: true}
 	TopicAdminOIDCProvider   = Topic{url: apiPrefix + "/admin/oidc-providers", adminOnly: true}
 	TopicAdminRoles          = Topic{url: apiPrefix + "/admin/roles", adminOnly: true}
-	// TopicProfile makes clients reload their own profile, which holds their
-	// permissions. Use TopicProfileOf when only one user is affected.
-	TopicProfile = Topic{url: apiPrefix + "/auth/profile"}
 )
 
-// TopicProfileOf makes only the given user reload their profile.
+// topicProfile makes clients reload their own profile, which holds their
+// permissions. It is only sent to single users through TopicProfileOf, a change
+// of permissions never affects everyone.
+var topicProfile = Topic{url: apiPrefix + "/auth/profile"}
+
+// TopicProfileOf makes the given user reload their profile.
 func TopicProfileOf(userID string) Topic {
-	topic := TopicProfile
+	topic := topicProfile
 	topic.userID = userID
 	return topic
 }
