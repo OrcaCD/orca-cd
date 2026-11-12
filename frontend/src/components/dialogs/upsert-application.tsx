@@ -334,8 +334,11 @@ export default function UpsertApplicationDialog({
 	const open = controlledOpen ?? uncontrolledOpen;
 	const setOpen = onOpenChange ?? setUncontrolledOpen;
 
-	const { data: agents, isLoading: isAgentsLoading } = useFetch<Agent[]>("/agents");
-	const { data: repos, isLoading: isReposLoading } = useFetch<Repository[]>("/repositories");
+	// Only loaded while open, the closed dialog sits on several pages.
+	const { data: agents, isLoading: isAgentsLoading } = useFetch<Agent[]>(open ? "/agents" : null);
+	const { data: repos, isLoading: isReposLoading } = useFetch<Repository[]>(
+		open ? "/repositories" : null,
+	);
 
 	const form = useForm({
 		defaultValues: {
