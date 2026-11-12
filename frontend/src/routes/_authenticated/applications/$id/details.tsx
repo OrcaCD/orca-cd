@@ -127,7 +127,7 @@ function InfoMeta({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground" title={title}>
+		<div className="flex min-w-0 items-start gap-2 text-sm text-muted-foreground" title={title}>
 			<span className="flex h-5 shrink-0 items-center [&_svg]:size-3.5">{icon}</span>
 			{/* Narrow tiles wrap onto a second line rather than cutting off the sentence. */}
 			<span className="line-clamp-2 min-w-0 text-pretty wrap-break-word">{children}</span>
