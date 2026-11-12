@@ -177,7 +177,7 @@ func markRepositorySyncing(ctx context.Context, id string, log *zerolog.Logger) 
 		Updates(ctx, models.Repository{SyncStatus: models.SyncStatusSyncing}); err != nil {
 		log.Error().Err(err).Str("repositoryId", id).Msg("failed to mark repository as syncing")
 	}
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(id))
 }
 
 func markRepositorySuccess(ctx context.Context, repo *models.Repository, now *time.Time, log *zerolog.Logger) {
@@ -195,7 +195,7 @@ func markRepositorySuccess(ctx context.Context, repo *models.Repository, now *ti
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as success")
 	}
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(repo.Id))
 
 	if recovered {
 		sendForRepository(repo.Id, models.NotificationEventRepositorySyncRecovered,
@@ -214,7 +214,7 @@ func markRepositoryFailed(ctx context.Context, repo *models.Repository, errMsg s
 	if err != nil {
 		log.Error().Err(err).Str("repositoryId", repo.Id).Msg("failed to mark repository as failed")
 	}
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(repo.Id))
 
 	if failed {
 		sendForRepository(repo.Id, models.NotificationEventRepositorySyncFailed,

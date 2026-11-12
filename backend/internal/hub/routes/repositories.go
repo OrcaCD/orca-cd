@@ -425,7 +425,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "created", "repository", repo.Id)
 
 	c.JSON(http.StatusCreated, toRepositoryResponse(&repo, true, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(repo.Id))
 }
 
 type testConnectionRequest struct {
@@ -564,13 +564,16 @@ func DeleteRepositoryHandler(c *gin.Context) {
 	}
 
 	agentIDs := map[string]struct{}{}
-	removedApps := false
+	removedApps, removedRepo := false, false
+	// Also runs when a later application fails to undeploy, for the ones removed before
 	defer func() {
-		if !removedApps {
-			return
+		if removedApps {
+			sse.PublishUpdate(sse.TopicApplications)
 		}
-		pruneGrants(c.Request.Context())
-		sse.PublishUpdate(sse.TopicApplications)
+		// After the updates, so clients still get them before losing access
+		if removedApps || removedRepo {
+			pruneGrants(c.Request.Context())
+		}
 		for agentID := range agentIDs {
 			sendAgentSettings(c, agentID)
 		}
@@ -600,10 +603,8 @@ func DeleteRepositoryHandler(c *gin.Context) {
 		return
 	}
 
+	removedRepo = true
 	utils.RecordAuditLog(c, "deleted", "repository", id)
-	if !removedApps {
-		pruneGrants(c.Request.Context())
-	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "repository deleted"})
 	sse.PublishUpdate(sse.TopicRepositories)
@@ -786,7 +787,7 @@ func UpdateRepositoryHandler(c *gin.Context) {
 
 	newWebhookSecret := req.SyncType != nil && *req.SyncType == models.SyncTypeWebhook && prevSyncType != models.SyncTypeWebhook
 	c.JSON(http.StatusOK, toRepositoryDetailResponse(&repo, newWebhookSecret, appCount))
-	sse.PublishUpdate(sse.TopicRepositories)
+	sse.PublishUpdate(sse.TopicRepositories.For(id))
 }
 
 func SyncRepositoryHandler(c *gin.Context) {

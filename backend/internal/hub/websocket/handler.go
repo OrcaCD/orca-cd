@@ -196,7 +196,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 				log.Error().Err(pendingErr).Str("agent_id", claims.Subject).Msg("Failed to discard pending deployments after disconnect")
 			}
 			h.presence.Disconnected(claims.Subject)
-			sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
+			sse.PublishUpdate(sse.TopicAgents.For(claims.Subject), sse.TopicApplications)
 		}()
 
 		connectedAt := time.Now()
@@ -208,7 +208,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}
 		h.presence.Connected(claims.Subject)
-		sse.PublishUpdate(sse.TopicAgents)
+		sse.PublishUpdate(sse.TopicAgents.For(claims.Subject))
 
 		go h.WritePump(client, log)
 
@@ -317,6 +317,9 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 
+	topics := make([]sse.Topic, 0, len(report.Statuses))
+	defer func() { sse.PublishUpdate(topics...) }()
+
 	for _, status := range report.Statuses {
 		if ctx.Err() != nil {
 			return
@@ -333,6 +336,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 				Msg("failed to update application health from status report")
 			continue
 		}
+		topics = append(topics, sse.TopicApplications.For(status.ApplicationId))
 		if err := recordHealthHistory(ctx, client, status, health, changed); err != nil {
 			log.Error().Err(err).
 				Str("agent_id", client.Id).
@@ -344,8 +348,6 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		}
 		client.recordHealthReport(status.ApplicationId, health, time.Now())
 	}
-
-	sse.PublishUpdate(sse.TopicApplications)
 }
 
 // maxReportedVersionLength bounds agent-reported version strings before they
@@ -397,7 +399,7 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 		agentLog.Warn().Msg("Agent cannot reach its Docker daemon")
 	}
 
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(client.Id))
 }
 
 func sanitizeReportedVersion(v string) string {

@@ -252,7 +252,7 @@ func CreateAgentHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func UpdateAgentHandler(c *gin.Context) {
@@ -299,7 +299,7 @@ func UpdateAgentHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "agent", id)
 
 	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(id))
 }
 
 func RotateAgentTokenHandler(c *gin.Context) {
@@ -354,7 +354,7 @@ func RotateAgentTokenHandler(c *gin.Context) {
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
 	})
-	sse.PublishUpdate(sse.TopicAgents)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 }
 
 func DeleteAgentHandler(c *gin.Context) {
@@ -380,8 +380,10 @@ func DeleteAgentHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "deleted", "agent", id)
-	pruneGrants(c.Request.Context())
 
 	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
-	sse.PublishUpdate(sse.TopicAgents)
+	// Its applications were deleted with it
+	sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
+	// After the update, so clients still get it before losing access
+	pruneGrants(c.Request.Context())
 }

@@ -173,7 +173,7 @@ func TestActivityTopicSkipsRecordedNoChangeEvents(t *testing.T) {
 	withActivity := []string{sse.TopicApplicationEvents(app.Id).URL(), sse.TopicApplicationActivity.URL()}
 	expectUpdate := func(step string, want []string) {
 		t.Helper()
-		if got := (<-updates).URLs; !slices.Equal(got, want) {
+		if got := (<-updates).URLs(); !slices.Equal(got, want) {
 			t.Fatalf("%s published %v, want %v", step, got, want)
 		}
 	}

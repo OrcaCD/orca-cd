@@ -16,9 +16,41 @@ const (
 	EventTypeUpdate EventType = "update"
 )
 
+// Event is published to every client, which only gets the topics it may see.
 type Event struct {
+	Type   EventType
+	Topics []Topic
+}
+
+// Message is what a client receives: the URLs to refetch.
+type Message struct {
 	Type EventType `json:"type"`
 	URLs []string  `json:"urls,omitempty"`
+}
+
+// ReloadsProfileOf reports whether the event tells the user to reload their profile.
+func (e Event) ReloadsProfileOf(userID string) bool {
+	return slices.ContainsFunc(e.Topics, func(topic Topic) bool {
+		return topic.url == TopicProfile.url && topic.SentTo(userID)
+	})
+}
+
+// URLs returns the URLs of all topics, as sent to a client that may see them.
+func (e Event) URLs() []string {
+	message, _ := e.Message(func(Topic) bool { return true })
+	return message.URLs
+}
+
+// Message returns what to send to a client that may see the topics visible
+// accepts. Returns false when nothing is left to send.
+func (e Event) Message(visible func(Topic) bool) (Message, bool) {
+	message := Message{Type: e.Type}
+	for _, topic := range e.Topics {
+		if visible(topic) && !slices.Contains(message.URLs, topic.url) {
+			message.URLs = append(message.URLs, topic.url)
+		}
+	}
+	return message, len(message.URLs) > 0
 }
 
 type Broker struct {
@@ -74,17 +106,19 @@ func PublishUpdate(topics ...Topic) {
 }
 
 func (b *Broker) PublishUpdate(topics ...Topic) {
-	urls := make([]string, 0, len(topics))
-	for i, topic := range topics {
-		if topic.url == "" || slices.Contains(topics[:i], topic) {
+	event := Event{Type: EventTypeUpdate}
+	seen := make(map[Topic]struct{}, len(topics))
+	for _, topic := range topics {
+		if _, ok := seen[topic]; ok || topic.url == "" {
 			continue
 		}
-		urls = append(urls, topic.url)
+		seen[topic] = struct{}{}
+		event.Topics = append(event.Topics, topic)
 	}
-	if len(urls) == 0 {
+	if len(event.Topics) == 0 {
 		return
 	}
-	b.Publish(Event{Type: EventTypeUpdate, URLs: urls})
+	b.Publish(event)
 }
 
 // Shutdown closes all client channels, causing their SSE handlers to return.

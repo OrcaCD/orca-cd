@@ -213,7 +213,7 @@ func CreateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, toNotificationResponse(perms, &createdNotification))
-	sse.PublishUpdate(sse.TopicNotifications)
+	sse.PublishUpdate(sse.TopicNotifications.For(notification.Id))
 }
 
 func UpdateNotificationHandler(c *gin.Context) {
@@ -304,7 +304,7 @@ func UpdateNotificationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &updatedNotification))
-	sse.PublishUpdate(sse.TopicNotifications)
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 }
 
 // SetNotificationEnabledHandler only toggles the enabled flag, so it cannot overwrite a concurrent
@@ -350,7 +350,7 @@ func SetNotificationEnabledHandler(c *gin.Context) {
 	notification.Enabled = *req.Enabled
 
 	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
-	sse.PublishUpdate(sse.TopicNotifications)
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 }
 
 func DeleteNotificationHandler(c *gin.Context) {
@@ -366,10 +366,10 @@ func DeleteNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	pruneGrants(c.Request.Context())
-
 	c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
 	sse.PublishUpdate(sse.TopicNotifications)
+	// After the update, so clients still get it before losing access
+	pruneGrants(c.Request.Context())
 }
 
 func TestNotificationHandler(c *gin.Context) {
@@ -408,7 +408,7 @@ func TestNotificationHandler(c *gin.Context) {
 		return
 	}
 
-	sse.PublishUpdate(sse.TopicNotifications)
+	sse.PublishUpdate(sse.TopicNotifications.For(id))
 
 	if sendErr != nil {
 		respondTestNotificationError(c, sendErr)
