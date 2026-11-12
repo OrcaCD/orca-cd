@@ -57,6 +57,7 @@ type LucideIconPickerProps = {
 	placeholder: string;
 	emptyMessage: string;
 	className?: string;
+	disabled?: boolean;
 };
 
 const fallbackIconName = "server" satisfies LucideIconName;
@@ -108,6 +109,7 @@ export default function LucideIconPicker({
 	placeholder,
 	emptyMessage,
 	className,
+	disabled,
 }: LucideIconPickerProps) {
 	const [query, setQuery] = useState("");
 	const visibleIcons = useMemo(() => getVisibleIcons(query, value), [query, value]);
@@ -118,6 +120,7 @@ export default function LucideIconPicker({
 			filter={null}
 			itemToStringLabel={getIconLabel}
 			value={value}
+			disabled={disabled}
 			onInputValueChange={(inputValue, details) => {
 				setQuery(details.reason === "input-change" ? inputValue : "");
 			}}
@@ -135,6 +138,7 @@ export default function LucideIconPicker({
 		>
 			<ComboboxInput
 				className={cn("w-full", className)}
+				disabled={disabled}
 				placeholder={placeholder}
 				aria-label={placeholder}
 			>

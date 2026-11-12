@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import {
 	getGitProviderIconClass,
 	getGitProviderIconPath,
@@ -77,6 +78,8 @@ export function RepositoryCard({
 	action?: ReactNode;
 }) {
 	const [triggering, setTriggering] = useState(false);
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
 	const failed = repository.syncStatus === "failed";
 
 	const handleSync = async () => {
@@ -132,16 +135,19 @@ export function RepositoryCard({
 				<div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-muted-foreground">
 					{getSyncTypeIcon(repository.syncType, "size-3.5 shrink-0")}
 					<span className="truncate">{getTriggerLabel(repository)}</span>
-					<Button
-						variant="outline"
-						size="xs"
-						className="-mr-1.5 ml-auto"
-						disabled={triggering || repository.syncStatus === "syncing"}
-						onClick={() => void handleSync()}
-					>
-						<RefreshCw className={cn(triggering && "motion-safe:animate-spin")} />
-						{m.sync()}
-					</Button>
+					{can("repository", "sync", repository.id) &&
+					canOnApplicationsOf(repository.id, "deploy", repository.appCount) ? (
+						<Button
+							variant="outline"
+							size="xs"
+							className="-mr-1.5 ml-auto"
+							disabled={triggering || repository.syncStatus === "syncing"}
+							onClick={() => void handleSync()}
+						>
+							<RefreshCw className={cn(triggering && "motion-safe:animate-spin")} />
+							{m.sync()}
+						</Button>
+					) : null}
 				</div>
 			</div>
 		</ResourceCard>

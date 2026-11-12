@@ -11,8 +11,9 @@ import {
 	Settings,
 	User,
 	XIcon,
+	type LucideIcon,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Blobatar } from "@blobatar/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +27,8 @@ import { cn } from "@/lib/utils";
 import { ModeToggle, useThemeTransition } from "./mode-toggle";
 import { useTheme } from "./theme-provider";
 import { useAuth } from "@/lib/auth";
+import { usePermissions } from "@/lib/permissions";
+import type { PermissionResource } from "@/lib/roles";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { m } from "@/lib/paraglide/messages";
 import {
@@ -41,12 +44,12 @@ import "blobatar/motion.css";
 
 type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
 
-const navItems = [
-	{ key: "overview" as NavKey, href: "/", icon: LayoutDashboard },
-	{ key: "applications" as NavKey, href: "/applications", icon: Container },
-	{ key: "agents" as NavKey, href: "/agents", icon: Server },
-	{ key: "repositories" as NavKey, href: "/repositories", icon: GitBranch },
-	{ key: "notifications" as NavKey, href: "/notifications", icon: Bell },
+const navItems: { key: NavKey; href: string; icon: LucideIcon; resource?: PermissionResource }[] = [
+	{ key: "overview", href: "/", icon: LayoutDashboard },
+	{ key: "applications", href: "/applications", icon: Container, resource: "application" },
+	{ key: "agents", href: "/agents", icon: Server, resource: "agent" },
+	{ key: "repositories", href: "/repositories", icon: GitBranch, resource: "repository" },
+	{ key: "notifications", href: "/notifications", icon: Bell, resource: "notification" },
 ];
 
 function getNavLabel(key: NavKey): string {
@@ -67,9 +70,6 @@ function getNavLabel(key: NavKey): string {
 			return "";
 	}
 }
-
-// On desktop the logo is the link to the overview, so the bar only lists the sections.
-const sectionNavItems = navItems.filter((item) => item.key !== "overview");
 
 /*
  * The current page is marked by a primary bar on the header's bottom border instead of a filled
@@ -98,6 +98,7 @@ function NavHotkeys({ navKey }: { navKey: NavKey }) {
 export default function Navbar() {
 	useApplicationHotkeys();
 	const { auth, logout } = useAuth();
+	const { canAny } = usePermissions();
 	const navigate = useNavigate();
 	const { theme, setTheme } = useTheme();
 	const { startTransition } = useThemeTransition();
@@ -112,6 +113,12 @@ export default function Navbar() {
 
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+	const visibleNavItems = useMemo(
+		() => navItems.filter((item) => !item.resource || canAny(item.resource, "read")),
+		[canAny],
+	);
+	// On desktop the logo is the link to the overview, so the bar only lists the sections.
+	const sectionNavItems = visibleNavItems.filter((item) => item.key !== "overview");
 
 	return (
 		<header className="relative border-b bg-chrome backdrop-blur-xl backdrop-saturate-150">
@@ -322,7 +329,7 @@ export default function Navbar() {
 				<div className="overflow-hidden">
 					<NavigationMenu className="w-full max-w-full border-t p-4 [&>div]:w-full">
 						<NavigationMenuList className="flex-col items-stretch gap-1 w-full">
-							{navItems.map((item) => (
+							{visibleNavItems.map((item) => (
 								<NavigationMenuItem key={item.key} className="w-full">
 									<NavigationMenuLink
 										render={

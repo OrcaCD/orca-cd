@@ -1034,5 +1034,7 @@
 	"roleOidcGroupPlaceholder": "Group name, e.g. developers",
 	"roleOidcGroupProvider": "OIDC provider",
 	"roleOidcNoProviders": "Set a groups claim on an OIDC provider to map its groups to roles.",
-	"roleRemoveOidcGroup": "Remove group {group}"
+	"roleRemoveOidcGroup": "Remove group {group}",
+	"overviewNoAccessTitle": "You don't have access to anything yet",
+	"overviewNoAccessDescription": "Your roles don't give you access to any applications, agents, repositories or notifications. Ask an admin to assign you a role."
 }

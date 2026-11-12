@@ -1,6 +1,7 @@
 import { useHotkey, type HotkeySequence, type RegisterableHotkey } from "@tanstack/react-hotkeys";
 import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "./auth";
+import { usePermissions } from "./permissions";
 import { useTheme } from "@/components/theme-provider";
 import { useThemeTransition } from "@/components/mode-toggle";
 import { useCallback } from "react";
@@ -26,6 +27,7 @@ export const REGISTERABLE_HOTKEYS = {
 export function useApplicationHotkeys() {
 	const navigate = useNavigate();
 	const { auth } = useAuth();
+	const { canAny } = usePermissions();
 	const { theme, setTheme } = useTheme();
 	const { startTransition } = useThemeTransition();
 
@@ -53,22 +55,22 @@ export function useApplicationHotkeys() {
 
 	useHotkey(HOTKEY_SEQUENCES.navigateApplications, () => navigateTo("/applications"), {
 		...HOTKEY_OPTIONS,
-		enabled,
+		enabled: enabled && canAny("application", "read"),
 	});
 
 	useHotkey(HOTKEY_SEQUENCES.navigateAgents, () => navigateTo("/agents"), {
 		...HOTKEY_OPTIONS,
-		enabled,
+		enabled: enabled && canAny("agent", "read"),
 	});
 
 	useHotkey(HOTKEY_SEQUENCES.navigateRepositories, () => navigateTo("/repositories"), {
 		...HOTKEY_OPTIONS,
-		enabled,
+		enabled: enabled && canAny("repository", "read"),
 	});
 
 	useHotkey(HOTKEY_SEQUENCES.navigateNotifications, () => navigateTo("/notifications"), {
 		...HOTKEY_OPTIONS,
-		enabled,
+		enabled: enabled && canAny("notification", "read"),
 	});
 
 	useHotkey(HOTKEY_SEQUENCES.navigateSettings, () => navigateTo("/settings/profile"), {

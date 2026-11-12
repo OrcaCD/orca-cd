@@ -32,6 +32,7 @@ import { useFetch } from "@/lib/api";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { toSearchableText } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/notifications/")({
@@ -52,6 +53,8 @@ function NotificationsPage() {
 		openFrom: openAddNotification,
 		dialogProps: addNotificationDialog,
 	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canCreate = can("notification", "create");
 	const { preferredLayout: viewMode, setPreferredLayout: setViewMode } = usePreferredLayout();
 
 	async function handleDelete(item: Notification) {
@@ -98,17 +101,19 @@ function NotificationsPage() {
 				title={m.pageNotifications()}
 				description={m.notificationsPageDescription()}
 				actions={
-					<Button
-						{...addNotificationTrigger}
-						ref={addNotificationRef}
-						onClick={openAddNotification}
-					>
-						<Plus />
-						{m.addNotification()}
-					</Button>
+					canCreate && (
+						<Button
+							{...addNotificationTrigger}
+							ref={addNotificationRef}
+							onClick={openAddNotification}
+						>
+							<Plus />
+							{m.addNotification()}
+						</Button>
+					)
 				}
 			/>
-			<CreateNotificationDialog {...addNotificationDialog} />
+			{canCreate && <CreateNotificationDialog {...addNotificationDialog} />}
 
 			<div className="space-y-4">
 				{(data?.length !== 0 || searchQuery.length > 0) && (
@@ -144,10 +149,12 @@ function NotificationsPage() {
 						title={m.noNotificationsYet()}
 						description={m.noNotificationsYetDescription()}
 						action={
-							<Button {...addNotificationTrigger} onClick={openAddNotification}>
-								<Plus />
-								{m.addNotification()}
-							</Button>
+							canCreate && (
+								<Button {...addNotificationTrigger} onClick={openAddNotification}>
+									<Plus />
+									{m.addNotification()}
+								</Button>
+							)
 						}
 					/>
 				) : filteredNotifications.length === 0 ? (
@@ -170,55 +177,70 @@ function NotificationsPage() {
 				) : viewMode === "grid" ? (
 					<>
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-							{filteredNotifications.map((notification) => (
-								<NotificationCard
-									key={notification.id}
-									notification={notification}
-									action={
-										<DropdownMenu>
-											<DropdownMenuTrigger
-												render={
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<EllipsisVertical className="h-4 w-4" />
-														<span className="sr-only">{m.cardActions()}</span>
-													</Button>
-												}
-											></DropdownMenuTrigger>
-											<DropdownMenuContent align="end" keepMounted>
-												<DropdownMenuGroup>
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<UpdateNotificationDialog notification={notification} asDropdownItem />
-													<DropdownMenuItem
-														onClick={() => {
-															void handleTest(notification);
-														}}
-													>
-														<Send className="h-4 w-4" />
-														{m.sendTest()}
-													</DropdownMenuItem>
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => {
-															void handleDelete(notification);
-														}}
-														title={m.deleteNotificationTitle()}
-														description={m.deleteNotificationDescription({
-															name: notification.name,
-														})}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
+							{filteredNotifications.map((notification) => {
+								const canUpdate = can("notification", "update", notification.id);
+								const canDelete = can("notification", "delete", notification.id);
+								return (
+									<NotificationCard
+										key={notification.id}
+										notification={notification}
+										action={
+											canUpdate || canDelete ? (
+												<DropdownMenu>
+													<DropdownMenuTrigger
+														render={
+															<Button variant="ghost" size="icon" className="h-8 w-8">
+																<EllipsisVertical className="h-4 w-4" />
+																<span className="sr-only">{m.cardActions()}</span>
+															</Button>
 														}
-														asDropdownItem
-													/>
-												</DropdownMenuGroup>
-											</DropdownMenuContent>
-										</DropdownMenu>
-									}
-								/>
-							))}
+													></DropdownMenuTrigger>
+													<DropdownMenuContent align="end" keepMounted>
+														<DropdownMenuGroup>
+															<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+															{canUpdate && (
+																<>
+																	<UpdateNotificationDialog
+																		notification={notification}
+																		asDropdownItem
+																	/>
+																	<DropdownMenuItem
+																		onClick={() => {
+																			void handleTest(notification);
+																		}}
+																	>
+																		<Send className="h-4 w-4" />
+																		{m.sendTest()}
+																	</DropdownMenuItem>
+																</>
+															)}
+															{canUpdate && canDelete && <DropdownMenuSeparator />}
+															{canDelete && (
+																<ConfirmationDialog
+																	onConfirm={() => {
+																		void handleDelete(notification);
+																	}}
+																	title={m.deleteNotificationTitle()}
+																	description={m.deleteNotificationDescription({
+																		name: notification.name,
+																	})}
+																	triggerText={
+																		<>
+																			<Trash2 className="h-4 w-4" />
+																			{m.delete()}
+																		</>
+																	}
+																	asDropdownItem
+																/>
+															)}
+														</DropdownMenuGroup>
+													</DropdownMenuContent>
+												</DropdownMenu>
+											) : undefined
+										}
+									/>
+								);
+							})}
 						</div>
 					</>
 				) : (

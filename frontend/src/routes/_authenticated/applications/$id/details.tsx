@@ -47,12 +47,13 @@ import { cn } from "@/lib/utils";
 import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { diffArrays } from "diff";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { getSyncTypeIcon, getSyncTypeLabel } from "@/components/badges/repository-sync-type-badge";
 import { ApplicationEventSource } from "@/lib/application-events";
-import { syncRepository } from "@/lib/repositories";
+import { syncRepository, type Repository } from "@/lib/repositories";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	CodeBlock,
@@ -286,6 +287,17 @@ function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
 	const { data } = useFetch<Application>("/applications/" + id);
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("repositoryId");
+	const canDeploy = can("application", "deploy", id);
+	const canPullImages = can("application", "pull_images", id);
+	const maySyncRepository = !!data && can("repository", "sync", data.repositoryId);
+	// Syncing redeploys every application of the repository
+	const { data: repository } = useFetch<Repository>(
+		maySyncRepository ? `/repositories/${data.repositoryId}` : null,
+	);
+	const canSyncRepository =
+		maySyncRepository && canOnApplicationsOf(data.repositoryId, "deploy", repository?.appCount);
 
 	const [deploying, setDeploying] = useState(false);
 
@@ -382,64 +394,79 @@ function ApplicationDetailsPage() {
 						</div>
 					</div>
 				</div>
-				<ButtonGroup>
-					<Tooltip>
-						<TooltipTrigger
-							render={
-								<Button variant="outline" onClick={handleDeploy} disabled={deploymentInProgress}>
-									<span className="mr-2 inline-flex overflow-hidden">
-										<Rocket
-											className={`h-4 w-4 ${deploymentInProgress ? "motion-safe:animate-rocket-launch" : ""}`}
-										/>
-									</span>
-									{deploymentInProgress ? m.deploying() : m.deploy()}
-								</Button>
-							}
-						/>
-						<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
-					</Tooltip>
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button
-									variant="outline"
-									size="icon"
-									aria-label={m.deployOptions()}
-									disabled={deploymentInProgress || !data}
+				{canDeploy || canPullImages || canSyncRepository ? (
+					<ButtonGroup>
+						{canDeploy && (
+							<Tooltip>
+								<TooltipTrigger
+									render={
+										<Button
+											variant="outline"
+											onClick={handleDeploy}
+											disabled={deploymentInProgress}
+										>
+											<span className="mr-2 inline-flex overflow-hidden">
+												<Rocket
+													className={`h-4 w-4 ${deploymentInProgress ? "motion-safe:animate-rocket-launch" : ""}`}
+												/>
+											</span>
+											{deploymentInProgress ? m.deploying() : m.deploy()}
+										</Button>
+									}
 								/>
-							}
-						>
-							<ChevronDown className="h-4 w-4" />
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-72">
-							<DropdownMenuItem
-								onClick={handleSyncRepository}
-								className="items-start cursor-pointer"
-							>
-								<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
-								<div className="flex flex-col gap-0.5">
-									<span>{m.syncRepository()}</span>
-									<span className="text-xs text-muted-foreground">
-										{m.syncRepositoryDescription()}
-									</span>
-								</div>
-							</DropdownMenuItem>
-							<DropdownMenuItem
-								onClick={handlePullImages}
-								disabled={rolledBack}
-								className="items-start cursor-pointer"
-							>
-								<ImageDown className="mt-0.5 h-4 w-4" />
-								<div className="flex flex-col gap-0.5">
-									<span>{m.pullImages()}</span>
-									<span className="text-xs text-muted-foreground">
-										{rolledBack ? m.pullImagesRolledBack() : m.pullImagesDescription()}
-									</span>
-								</div>
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</ButtonGroup>
+								<TooltipContent>{m.deployCurrentVersionDescription()}</TooltipContent>
+							</Tooltip>
+						)}
+						{(canPullImages || canSyncRepository) && (
+							<DropdownMenu>
+								<DropdownMenuTrigger
+									render={
+										<Button
+											variant="outline"
+											size={canDeploy ? "icon" : "default"}
+											aria-label={canDeploy ? m.deployOptions() : undefined}
+											disabled={deploymentInProgress || !data}
+										/>
+									}
+								>
+									{!canDeploy && m.actions()}
+									<ChevronDown className="h-4 w-4" />
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-72">
+									{canSyncRepository && (
+										<DropdownMenuItem
+											onClick={handleSyncRepository}
+											className="items-start cursor-pointer"
+										>
+											<GitPullRequestArrow className="mt-0.5 h-4 w-4" />
+											<div className="flex flex-col gap-0.5">
+												<span>{m.syncRepository()}</span>
+												<span className="text-xs text-muted-foreground">
+													{m.syncRepositoryDescription()}
+												</span>
+											</div>
+										</DropdownMenuItem>
+									)}
+									{canPullImages && (
+										<DropdownMenuItem
+											onClick={handlePullImages}
+											disabled={rolledBack}
+											className="items-start cursor-pointer"
+										>
+											<ImageDown className="mt-0.5 h-4 w-4" />
+											<div className="flex flex-col gap-0.5">
+												<span>{m.pullImages()}</span>
+												<span className="text-xs text-muted-foreground">
+													{rolledBack ? m.pullImagesRolledBack() : m.pullImagesDescription()}
+												</span>
+											</div>
+										</DropdownMenuItem>
+									)}
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
+					</ButtonGroup>
+				) : null}
 			</div>
 
 			<div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border ring-1 ring-foreground/10 md:grid-cols-2 xl:grid-cols-[1.25fr_1fr_1fr_1fr] [&>div]:min-w-0 [&>div]:rounded-none">

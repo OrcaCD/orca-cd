@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { deployApplication } from "@/lib/applications";
 import { AgentStatus } from "@/lib/agents";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { getStatusIndicator, type AttentionItem } from "@/lib/fleet";
 
@@ -43,6 +44,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
 function AttentionRow({ item }: { item: AttentionItem }) {
 	const { app, reason, agentStatus } = item;
 	const [deploying, setDeploying] = useState(false);
+	const { can } = usePermissions();
 	const status = getStatusIndicator(app);
 
 	const handleRetry = async () => {
@@ -92,7 +94,9 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 				</p>
 			</div>
 			<div className="flex shrink-0 items-center gap-1 max-sm:flex-col max-sm:items-end">
-				{(app.lastSyncError || app.rolledBackAt) && agentStatus === AgentStatus.Online ? (
+				{(app.lastSyncError || app.rolledBackAt) &&
+				agentStatus === AgentStatus.Online &&
+				can("application", "deploy", app.id) ? (
 					<Button variant="outline" size="sm" disabled={deploying} onClick={handleRetry}>
 						<RotateCw className={cn(deploying && "motion-safe:animate-spin")} />
 						{m.applicationsAttentionRetry()}

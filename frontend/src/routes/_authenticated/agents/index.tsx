@@ -9,6 +9,7 @@ import { SearchField } from "@/components/search-field";
 import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
+import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
 import { useMemo, useRef, useState } from "react";
 import { EllipsisVertical, Plus, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -63,6 +64,9 @@ function RouteComponent() {
 		openFrom: openAddAgent,
 		dialogProps: addAgentDialog,
 	} = useSharedDialog();
+	const { can } = usePermissions();
+	const canOnApplicationsOf = useCanOnApplicationsOf("agentId");
+	const canCreate = can("agent", "create");
 
 	async function handleDeleteCard(agent: Agent) {
 		try {
@@ -102,13 +106,15 @@ function RouteComponent() {
 				title={m.pageAgents()}
 				description={m.agentsPageDescription()}
 				actions={
-					<Button {...addAgentTrigger} ref={addAgentRef} onClick={openAddAgent}>
-						<Plus />
-						{m.addAgent()}
-					</Button>
+					canCreate && (
+						<Button {...addAgentTrigger} ref={addAgentRef} onClick={openAddAgent}>
+							<Plus />
+							{m.addAgent()}
+						</Button>
+					)
 				}
 			/>
-			<UpsertAgentDialog agent={null} {...addAgentDialog} />
+			{canCreate && <UpsertAgentDialog agent={null} {...addAgentDialog} />}
 
 			<OutdatedAgentsAlert agents={data ?? []} />
 
@@ -146,10 +152,12 @@ function RouteComponent() {
 						title={m.noAgentsYet()}
 						description={m.noAgentsYetDescription()}
 						action={
-							<Button {...addAgentTrigger} onClick={openAddAgent}>
-								<Plus />
-								{m.addAgent()}
-							</Button>
+							canCreate && (
+								<Button {...addAgentTrigger} onClick={openAddAgent}>
+									<Plus />
+									{m.addAgent()}
+								</Button>
+							)
 						}
 					/>
 				) : filteredAgents.length === 0 ? (
@@ -172,45 +180,59 @@ function RouteComponent() {
 				) : viewMode === "grid" ? (
 					<>
 						<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-							{filteredAgents.map((agent) => (
-								<AgentCard
-									key={agent.id}
-									agent={agent}
-									apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
-									action={
-										<DropdownMenu>
-											<DropdownMenuTrigger
-												render={
-													<Button variant="ghost" size="icon" className="h-8 w-8">
-														<EllipsisVertical className="h-4 w-4" />
-														<span className="sr-only">{m.cardActions()}</span>
-													</Button>
-												}
-											></DropdownMenuTrigger>
-											<DropdownMenuContent align="end" className="w-fit" keepMounted>
-												<DropdownMenuGroup>
-													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
-													<UpsertAgentDialog agent={agent} asDropdownItem />
-													<RotateAgentTokenDialog agent={agent} />
-													<DropdownMenuSeparator />
-													<ConfirmationDialog
-														onConfirm={() => handleDeleteCard(agent)}
-														title={m.deleteAgentCardTitle()}
-														description={m.deleteAgentCardDescription({ name: agent.name })}
-														triggerText={
-															<>
-																<Trash2 className="h-4 w-4" />
-																{m.delete()}
-															</>
+							{filteredAgents.map((agent) => {
+								const canUpdate = can("agent", "update", agent.id);
+								const canDelete =
+									can("agent", "delete", agent.id) &&
+									canOnApplicationsOf(agent.id, "delete", agent.appsCount);
+								return (
+									<AgentCard
+										key={agent.id}
+										agent={agent}
+										apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
+										action={
+											canUpdate || canDelete ? (
+												<DropdownMenu>
+													<DropdownMenuTrigger
+														render={
+															<Button variant="ghost" size="icon" className="h-8 w-8">
+																<EllipsisVertical className="h-4 w-4" />
+																<span className="sr-only">{m.cardActions()}</span>
+															</Button>
 														}
-														asDropdownItem
-													/>
-												</DropdownMenuGroup>
-											</DropdownMenuContent>
-										</DropdownMenu>
-									}
-								/>
-							))}
+													></DropdownMenuTrigger>
+													<DropdownMenuContent align="end" className="w-fit" keepMounted>
+														<DropdownMenuGroup>
+															<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
+															{canUpdate && (
+																<>
+																	<UpsertAgentDialog agent={agent} asDropdownItem />
+																	<RotateAgentTokenDialog agent={agent} />
+																</>
+															)}
+															{canUpdate && canDelete && <DropdownMenuSeparator />}
+															{canDelete && (
+																<ConfirmationDialog
+																	onConfirm={() => handleDeleteCard(agent)}
+																	title={m.deleteAgentCardTitle()}
+																	description={m.deleteAgentCardDescription({ name: agent.name })}
+																	triggerText={
+																		<>
+																			<Trash2 className="h-4 w-4" />
+																			{m.delete()}
+																		</>
+																	}
+																	asDropdownItem
+																/>
+															)}
+														</DropdownMenuGroup>
+													</DropdownMenuContent>
+												</DropdownMenu>
+											) : undefined
+										}
+									/>
+								);
+							})}
 						</div>
 					</>
 				) : (

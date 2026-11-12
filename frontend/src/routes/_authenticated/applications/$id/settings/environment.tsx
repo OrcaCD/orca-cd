@@ -41,6 +41,7 @@ import {
 	type EnvListResponse,
 } from "@/lib/application-env";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/applications/$id/settings/environment")({
@@ -126,6 +127,9 @@ function EnvSkeleton() {
 
 function EnvironmentPage() {
 	const { id } = Route.useParams();
+	const { can } = usePermissions();
+	// Saving redeploys the application
+	const canUpdate = can("application", "update", id) && can("application", "deploy", id);
 	// Revalidating while the user edits would only hand out revisions that conflict with the form state
 	const {
 		data,
@@ -218,6 +222,7 @@ function EnvironmentPage() {
 								file={file}
 								rows={rowsByPath.get(file.path) ?? []}
 								disabled={isBusy}
+								readOnly={!canUpdate}
 								onDraftChange={(key, entry, draft) =>
 									setDrafts((current) => setEnvDraft(current, file.path, key, entry, draft))
 								}
@@ -225,20 +230,29 @@ function EnvironmentPage() {
 						))}
 					</div>
 
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						{changeCount > 0 && (
-							<span className="text-sm text-muted-foreground">
-								{m.envUnsavedChanges({ count: changeCount })}
-							</span>
-						)}
-						<Button variant="outline" onClick={handleReload} disabled={isBusy || changeCount === 0}>
-							{m.envDiscardChanges()}
-						</Button>
-						<Button onClick={handleSave} disabled={isBusy || changeCount === 0 || hasInvalidValue}>
-							{isSaving && <LoaderCircle className="motion-safe:animate-spin" />}
-							{isSaving ? m.envSavingAndRedeploying() : m.envSaveAndRedeploy()}
-						</Button>
-					</div>
+					{canUpdate && (
+						<div className="flex flex-wrap items-center justify-end gap-3">
+							{changeCount > 0 && (
+								<span className="text-sm text-muted-foreground">
+									{m.envUnsavedChanges({ count: changeCount })}
+								</span>
+							)}
+							<Button
+								variant="outline"
+								onClick={handleReload}
+								disabled={isBusy || changeCount === 0}
+							>
+								{m.envDiscardChanges()}
+							</Button>
+							<Button
+								onClick={handleSave}
+								disabled={isBusy || changeCount === 0 || hasInvalidValue}
+							>
+								{isSaving && <LoaderCircle className="motion-safe:animate-spin" />}
+								{isSaving ? m.envSavingAndRedeploying() : m.envSaveAndRedeploy()}
+							</Button>
+						</div>
+					)}
 				</>
 			)}
 
