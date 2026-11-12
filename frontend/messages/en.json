@@ -1023,5 +1023,6 @@
 	"permissionNoResourcesLeft": "Nothing left to add",
 	"permissionDependencyTitle": "Missing view access",
 	"permissionDependencyDescription": "Creating and editing applications needs view access to their repository and agent, but this role can't view any {resources}.",
-	"permissionDependencyFix": "Allow viewing them all"
+	"permissionDependencyFix": "Allow viewing them all",
+	"loadingRoles": "Loading roles..."
 }

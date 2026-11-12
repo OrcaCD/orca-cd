@@ -1023,5 +1023,6 @@
 	"permissionNoResourcesLeft": "Nichts mehr hinzuzufügen",
 	"permissionDependencyTitle": "Ansichtszugriff fehlt",
 	"permissionDependencyDescription": "Zum Erstellen und Bearbeiten von Anwendungen ist Ansichtszugriff auf Repository und Agent nötig, diese Rolle kann aber keine {resources} ansehen.",
-	"permissionDependencyFix": "Ansehen aller erlauben"
+	"permissionDependencyFix": "Ansehen aller erlauben",
+	"loadingRoles": "Rollen werden geladen..."
 }

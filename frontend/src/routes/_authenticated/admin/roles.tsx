@@ -4,6 +4,7 @@ import { Lock, Plus, ShieldCheck, Users } from "lucide-react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CardStackSkeleton } from "@/components/collection-states";
 import {
 	ResponsiveDialog,
 	ResponsiveDialogContent,
@@ -80,7 +81,11 @@ function RolesPage() {
 				<p className="text-muted-foreground px-2 pt-1 pb-2 text-xs font-medium">{m.roles()}</p>
 				{isLoading &&
 					Array.from({ length: 3 }, (_, i) => (
-						<Skeleton key={i} className="h-14 w-full rounded-lg" />
+						<Skeleton
+							key={i}
+							aria-hidden="true"
+							className="bg-foreground/8 h-14 w-full rounded-lg motion-reduce:animate-none"
+						/>
 					))}
 				{roles?.map((role) => (
 					<RoleListItem
@@ -128,6 +133,8 @@ function RolesPage() {
 				</ResponsiveDialogContent>
 			</ResponsiveDialog>
 
+			{isLoading && <CardStackSkeleton label={m.loadingRoles()} heights={["h-96"]} />}
+
 			{roles && (isNew || selected) && (
 				<RoleEditor
 					key={isNew ? NEW_ROLE : selected?.id}
@@ -173,10 +180,12 @@ function RoleListItem({
 			type="button"
 			onClick={onSelect}
 			aria-current={active ? "page" : undefined}
+			// Marks the selected role like the section sidebars mark the current page
 			className={cn(
-				"flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left transition-colors",
-				"hover:bg-muted focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]",
-				active && "bg-muted",
+				"text-muted-foreground relative flex w-full items-start gap-3 rounded-lg py-2 pr-2 pl-3 text-left transition-colors",
+				"hover:text-foreground focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]",
+				"before:bg-primary before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:opacity-0",
+				"aria-[current=page]:text-foreground aria-[current=page]:before:opacity-100",
 			)}
 		>
 			<div className="bg-background mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border">
