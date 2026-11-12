@@ -4,6 +4,7 @@ import { Button } from "../ui/button";
 import z from "zod";
 import { createApplication, updateApplication, type Application } from "@/lib/applications";
 import { Fragment, useMemo, useState } from "react";
+import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
 import { defineStepper } from "@stepperize/react";
@@ -313,16 +314,25 @@ function StepperNavigation({
 	);
 }
 
+/**
+ * Without `open` the dialog brings its own trigger. With `open` it renders none, so the caller can
+ * open one instance from several buttons (see `useSharedDialog`).
+ */
 export default function UpsertApplicationDialog({
 	application,
 	asDropdownItem = false,
+	open: controlledOpen,
+	onOpenChange,
+	finalFocus,
 }: {
 	application: Application | null;
 	asDropdownItem?: boolean;
-}) {
+} & Partial<SharedDialogProps>) {
 	const isEditing = !!application;
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [open, setOpen] = useState(false);
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+	const open = controlledOpen ?? uncontrolledOpen;
+	const setOpen = onOpenChange ?? setUncontrolledOpen;
 
 	const { data: agents, isLoading: isAgentsLoading } = useFetch<Agent[]>("/agents");
 	const { data: repos, isLoading: isReposLoading } = useFetch<Repository[]>("/repositories");
@@ -414,28 +424,33 @@ export default function UpsertApplicationDialog({
 				handleClose();
 			}}
 		>
-			<ResponsiveDialogTrigger
-				nativeButton={!asDropdownItem}
-				render={
-					asDropdownItem ? (
-						<DropdownMenuItem>
-							<Pencil />
-							{m.edit()}
-						</DropdownMenuItem>
-					) : isEditing ? (
-						<Button variant="outline">
-							<Pencil />
-							{m.editApplication()}
-						</Button>
-					) : (
-						<Button>
-							<Plus />
-							{m.newApplication()}
-						</Button>
-					)
-				}
-			></ResponsiveDialogTrigger>
-			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-106.25">
+			{controlledOpen === undefined ? (
+				<ResponsiveDialogTrigger
+					nativeButton={!asDropdownItem}
+					render={
+						asDropdownItem ? (
+							<DropdownMenuItem>
+								<Pencil />
+								{m.edit()}
+							</DropdownMenuItem>
+						) : isEditing ? (
+							<Button variant="outline">
+								<Pencil />
+								{m.editApplication()}
+							</Button>
+						) : (
+							<Button>
+								<Plus />
+								{m.newApplication()}
+							</Button>
+						)
+					}
+				></ResponsiveDialogTrigger>
+			) : null}
+			<ResponsiveDialogContent
+				className="flex max-h-[90dvh] flex-col sm:max-w-106.25"
+				finalFocus={finalFocus}
+			>
 				<ResponsiveDialogHeader>
 					<ResponsiveDialogTitle className="flex items-center gap-2">
 						{isEditing ? m.editApplication() : m.addApplication()}

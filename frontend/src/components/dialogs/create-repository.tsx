@@ -1,14 +1,11 @@
 // oxlint-disable react/no-children-prop
-import { PencilIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
 	ResponsiveDialog,
 	ResponsiveDialogContent,
 	ResponsiveDialogHeader,
 	ResponsiveDialogTitle,
-	ResponsiveDialogTrigger,
 } from "@/components/responsive-dialog";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
 	createRepository,
 	type RepositoryProvider,
@@ -18,6 +15,7 @@ import {
 	getGitProviderIconClass,
 } from "@/lib/repositories";
 import React, { useState } from "react";
+import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
 import { z } from "zod";
@@ -318,10 +316,16 @@ function StepperNavigation({
 	handleClose: () => void;
 }) {
 	const isAtFirstVisibleStep = stepper.index === 0;
+	const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+	React.useEffect(() => {
+		if (stepper.isLast) {
+			closeButtonRef.current?.focus();
+		}
+	}, [stepper.isLast]);
 
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-			<Button type="button" variant="outline" onClick={handleClose}>
+			<Button ref={closeButtonRef} type="button" variant="outline" onClick={handleClose}>
 				{stepper.isLast ? m.close() : m.cancel()}
 			</Button>
 			<div className="flex flex-wrap gap-2">
@@ -355,12 +359,11 @@ function StepperNavigation({
 }
 
 export default function CreateRepositoryDialog({
-	asDropdownItem = false,
-}: {
-	asDropdownItem?: boolean;
-}) {
+	open,
+	onOpenChange: setOpen,
+	finalFocus,
+}: SharedDialogProps) {
 	const [isLoading, setIsLoading] = useState(false);
-	const [open, setOpen] = useState(false);
 	const [error, setError] = useState<string | undefined>();
 	const stepperRef = React.useRef<{ next: () => Promise<NavigationResult> } | null>(null);
 	const [webhookSecret, setWebhookSecret] = useState<string | undefined>();
@@ -446,23 +449,7 @@ export default function CreateRepositoryDialog({
 			onOpenChange={(next) => (next ? setOpen(true) : handleClose())}
 			disablePointerDismissal={true}
 		>
-			<ResponsiveDialogTrigger
-				nativeButton={!asDropdownItem}
-				render={
-					asDropdownItem ? (
-						<DropdownMenuItem>
-							<PencilIcon className="h-4 w-4" />
-							{m.edit()}
-						</DropdownMenuItem>
-					) : (
-						<Button>
-							<PlusIcon className="h-4 w-4" />
-							{m.addRepository()}
-						</Button>
-					)
-				}
-			></ResponsiveDialogTrigger>
-			<ResponsiveDialogContent className="sm:max-w-md overflow-hidden">
+			<ResponsiveDialogContent className="sm:max-w-md overflow-hidden" finalFocus={finalFocus}>
 				<RepositoryDialogLoadingOverlay isLoading={isLoading} />
 				<ResponsiveDialogHeader>
 					<ResponsiveDialogTitle>{m.addRepository()}</ResponsiveDialogTitle>

@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useFetch } from "@/lib/api";
 import { m } from "@/lib/paraglide/messages";
 import { cn } from "@/lib/utils";
+import { CardStackSkeleton } from "@/components/collection-states";
 
 interface SystemInfo {
 	host: string;
@@ -310,7 +311,12 @@ function SystemInfoPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			{isLoading && <p className="text-muted-foreground text-sm">{m.loadingSystemInfo()}</p>}
+			{isLoading ? (
+				<>
+					<CardStackSkeleton label={m.loadingSystemInfo()} heights={["h-32"]} />
+					<CardStackSkeleton heights={["h-56", "h-56"]} className="lg:grid-cols-2" />
+				</>
+			) : null}
 
 			{data && (
 				<>

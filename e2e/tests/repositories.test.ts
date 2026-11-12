@@ -35,7 +35,7 @@ function repositoryCard(page: Page, suffix: string) {
 
 async function openWizard(page: Page) {
 	await page.goto("/repositories");
-	await page.getByRole("button", { name: "Add Repository" }).click();
+	await page.getByRole("button", { name: "Add Repository" }).first().click();
 	const dialog = page.getByRole("dialog");
 	await dialog.getByText("Gitea", { exact: true }).click();
 	await dialog.getByRole("button", { name: "Next" }).click();

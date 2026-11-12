@@ -1,3 +1,4 @@
+import { SearchField } from "@/components/search-field";
 import {
 	type ColumnDef,
 	type ColumnFiltersState,
@@ -16,9 +17,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { DataTableViewOptions } from "../data-table-view-options";
-import { Search } from "lucide-react";
 import { toSearchableText } from "@/lib/utils";
 import { m } from "@/lib/paraglide/messages";
 import UpsertUserDialog from "@/components/dialogs/upsert-user-dialog";
@@ -67,15 +66,13 @@ export function UserDataTable<TData extends RowData>({
 	return (
 		<div>
 			<div className="flex items-center pb-6">
-				<div className="relative w-md">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-					<Input
-						placeholder={m.searchUsers()}
-						className="pl-9 bg-muted border-border"
-						value={globalFilter}
-						onChange={(event) => setGlobalFilter(event.target.value)}
-					/>
-				</div>
+				<SearchField
+					value={globalFilter}
+					onChange={setGlobalFilter}
+					label={m.searchUsersLabel()}
+					placeholder={m.searchUsers()}
+					className="w-md max-w-full min-w-0"
+				/>
 
 				<DataTableViewOptions table={table} />
 
