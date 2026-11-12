@@ -18,6 +18,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
+import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authenticated/admin/roles'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAgentsIndexRouteImport } from './routes/_authenticated/agents/index'
@@ -90,6 +91,11 @@ const AuthenticatedAdminOidcProvidersRoute =
     path: '/oidc-providers',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedAdminRolesRoute = AuthenticatedAdminRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
 const AuthenticatedAdminSystemInfoRoute =
   AuthenticatedAdminSystemInfoRouteImport.update({
     id: '/system-info',
@@ -248,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdRouteWithChildren
@@ -281,6 +288,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/settings/profile': typeof AuthenticatedSettingsProfileRoute
@@ -316,6 +324,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/_authenticated/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/applications/$id': typeof AuthenticatedApplicationsIdRouteWithChildren
@@ -353,6 +362,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/admin/audit-log'
     | '/admin/oidc-providers'
+    | '/admin/roles'
     | '/admin/system-info'
     | '/admin/users'
     | '/applications/$id'
@@ -386,6 +396,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/audit-log'
     | '/admin/oidc-providers'
+    | '/admin/roles'
     | '/admin/system-info'
     | '/admin/users'
     | '/settings/profile'
@@ -420,6 +431,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/admin/audit-log'
     | '/_authenticated/admin/oidc-providers'
+    | '/_authenticated/admin/roles'
     | '/_authenticated/admin/system-info'
     | '/_authenticated/admin/users'
     | '/_authenticated/applications/$id'
@@ -517,6 +529,13 @@ declare module '@tanstack/react-router' {
       path: '/oidc-providers'
       fullPath: '/admin/oidc-providers'
       preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/roles': {
+      id: '/_authenticated/admin/roles'
+      path: '/roles'
+      fullPath: '/admin/roles'
+      preLoaderRoute: typeof AuthenticatedAdminRolesRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/system-info': {
@@ -700,6 +719,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminOidcProvidersRoute: typeof AuthenticatedAdminOidcProvidersRoute
+  AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute
   AuthenticatedAdminSystemInfoRoute: typeof AuthenticatedAdminSystemInfoRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -708,6 +728,7 @@ interface AuthenticatedAdminRouteChildren {
 const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminOidcProvidersRoute: AuthenticatedAdminOidcProvidersRoute,
+  AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
   AuthenticatedAdminSystemInfoRoute: AuthenticatedAdminSystemInfoRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
