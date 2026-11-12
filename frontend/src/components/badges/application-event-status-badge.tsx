@@ -41,7 +41,10 @@ export function ApplicationEventStatusBadge({
 }) {
 	if (type === ApplicationEventType.Rollback && status === ApplicationEventStatus.Succeeded) {
 		return (
-			<Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-500">
+			<Badge
+				variant="outline"
+				className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+			>
 				{m.eventStatusRolledBack()}
 			</Badge>
 		);
@@ -54,7 +57,7 @@ export function ApplicationEventStatusBadge({
 			return (
 				<Badge
 					variant="outline"
-					className="border-amber-500/40 text-amber-500"
+					className="border-amber-500/40 text-amber-700 dark:text-amber-400"
 					title={m.eventStatusWaitingForAgentDescription()}
 				>
 					{m.eventStatusWaitingForAgent()}
