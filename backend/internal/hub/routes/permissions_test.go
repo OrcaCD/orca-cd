@@ -199,8 +199,8 @@ func TestPruneGrants_RemovesGrantsOnDeletedResources(t *testing.T) {
 		t.Fatalf("failed to create grants: %v", err)
 	}
 
-	if removed, err := rbac.PruneGrants(t.Context(), db.DB); err != nil || removed != 1 {
-		t.Fatalf("PruneGrants() = %d, %v; want 1 removed grant", removed, err)
+	if pruned, err := rbac.PruneGrants(t.Context(), db.DB); err != nil || !slices.Equal(pruned, []string{rbac.UserRoleID}) {
+		t.Fatalf("PruneGrants() = %v, %v; want the user role", pruned, err)
 	}
 
 	remaining, err := gorm.G[models.RolePermission](db.DB).Where("role_id = ?", rbac.UserRoleID).Find(t.Context())

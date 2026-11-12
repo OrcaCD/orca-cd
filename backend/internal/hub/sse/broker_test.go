@@ -264,7 +264,6 @@ func TestEventReloadsProfileOf(t *testing.T) {
 		event Event
 		want  bool
 	}{
-		{"everyone", Event{Topics: []Topic{TopicProfile}}, true},
 		{"this user", Event{Topics: []Topic{TopicAgents, TopicProfileOf("user-1")}}, true},
 		{"another user", Event{Topics: []Topic{TopicProfileOf("user-2")}}, false},
 		{"no profile", Event{Topics: []Topic{TopicAdminUsers}}, false},

@@ -39,6 +39,19 @@ func CountAdmins(ctx context.Context, tx *gorm.DB) (int64, error) {
 	return gorm.G[models.User](tx).Where("id IN (?)", adminUserIDs(tx.WithContext(ctx))).Count(ctx, "*")
 }
 
+// MemberIDs returns the users that have any of the roles, from any source.
+func MemberIDs(ctx context.Context, tx *gorm.DB, roleIDs []string) ([]string, error) {
+	if len(roleIDs) == 0 {
+		return nil, nil
+	}
+	var ids []string
+	err := tx.WithContext(ctx).Model(&models.UserRole{}).
+		Where("role_id IN ?", roleIDs).
+		Distinct().
+		Pluck("user_id", &ids).Error
+	return ids, err
+}
+
 // SetUserRoles replaces the roles a user got from the given source. Roles from
 // other sources are kept. Returns whether anything changed.
 func SetUserRoles(ctx context.Context, tx *gorm.DB, userID string, source models.UserRoleSource, roleIDs []string) (bool, error) {
