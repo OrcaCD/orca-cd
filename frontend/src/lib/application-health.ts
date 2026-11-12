@@ -87,9 +87,11 @@ export function useApplicationHealth(
 export const healthStatusConfig: Record<HealthStatus, { label: () => string; className: string }> =
 	{
 		[HealthStatus.Healthy]: { label: () => m.statusHealthy(), className: "bg-emerald-500" },
-		[HealthStatus.Degraded]: { label: () => m.statusDegraded(), className: "bg-yellow-300" },
-		[HealthStatus.Unhealthy]: { label: () => m.statusUnhealthy(), className: "bg-amber-500" },
-		[HealthStatus.Stopped]: { label: () => m.statusStopped(), className: "bg-red-500" },
+		// Same severity scale as the status badges: degraded is a warning, unhealthy an error and
+		// stopped, where nothing runs at all, the deepest shade of it.
+		[HealthStatus.Degraded]: { label: () => m.statusDegraded(), className: "bg-amber-400" },
+		[HealthStatus.Unhealthy]: { label: () => m.statusUnhealthy(), className: "bg-red-500" },
+		[HealthStatus.Stopped]: { label: () => m.statusStopped(), className: "bg-red-800" },
 		[HealthStatus.Unknown]: {
 			label: () => m.healthNoData(),
 			className:
