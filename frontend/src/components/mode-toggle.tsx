@@ -212,7 +212,9 @@ export const ModeToggle = ({
 // Export a helper hook for using with View Transitions API
 export const useThemeTransition = () => {
 	const startTransition = useCallback((updateFn: () => void) => {
-		if ("startViewTransition" in document) {
+		// The circular reveal sweeps the whole screen, so it is skipped when less motion is requested.
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		if ("startViewTransition" in document && !reduceMotion) {
 			document.startViewTransition(updateFn);
 		} else {
 			updateFn();

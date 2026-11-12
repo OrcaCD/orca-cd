@@ -64,12 +64,12 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 	};
 
 	return (
-		<li className="flex items-center gap-x-3 gap-y-2 px-4 py-2.5 transition-colors hover:bg-muted/40 sm:items-center sm:py-2">
-			<div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted ring-1 ring-foreground/5 ring-inset">
+		<li className="flex items-start gap-x-3 gap-y-2 px-4 py-2.5 transition-colors hover:bg-muted/40 sm:items-center sm:py-2">
+			<div className="flex size-8 shrink-0 items-center justify-center self-start rounded-md bg-muted ring-1 ring-foreground/5 ring-inset sm:self-center">
 				<StaticLucideIcon name={app.icon} className="size-4 text-primary" />
 			</div>
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-center md:gap-4">
-				<div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 md:w-72 md:shrink-0">
+				<div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 md:w-72 md:shrink-0">
 					<span className="truncate text-sm font-medium">{app.name}</span>
 					<span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
 						<span className={cn("size-1.5 rounded-full", status.dotClass)} />
@@ -84,11 +84,14 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 				</div>
 				{/* Reasons are often raw sync errors, so small screens get them in full instead of a
 				    truncated first few words. */}
-				<p className="min-w-0 truncate text-sm text-muted-foreground" title={reason}>
+				<p
+					className="min-w-0 text-sm text-pretty wrap-break-word text-muted-foreground max-md:line-clamp-3 md:truncate"
+					title={reason}
+				>
 					{reason}
 				</p>
 			</div>
-			<div className="flex shrink-0 items-center gap-1">
+			<div className="flex shrink-0 items-center gap-1 max-sm:flex-col max-sm:items-end">
 				{(app.lastSyncError || app.rolledBackAt) && agentStatus === AgentStatus.Online ? (
 					<Button variant="outline" size="sm" disabled={deploying} onClick={handleRetry}>
 						<RotateCw className={cn(deploying && "motion-safe:animate-spin")} />
@@ -98,12 +101,12 @@ function AttentionRow({ item }: { item: AttentionItem }) {
 				<Button
 					variant="ghost"
 					size="sm"
-
+					className="max-sm:size-9 max-sm:p-0"
 					aria-label={m.details()}
 					nativeButton={false}
 					render={<Link to="/applications/$id" params={{ id: app.id }} />}
 				>
-					{m.details()}
+					<span className="max-sm:hidden">{m.details()}</span>
 					<ArrowRight />
 				</Button>
 			</div>

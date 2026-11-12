@@ -92,7 +92,7 @@ export function RolledBackBanner({ application }: { application: Application }) 
 			</div>
 			<div className="flex shrink-0 flex-wrap gap-2">
 				<Button variant="outline" disabled={deploymentInProgress} onClick={handleRetry}>
-					<RotateCw className={cn(deploymentInProgress && "animate-spin")} />
+					<RotateCw className={cn(deploymentInProgress && "motion-safe:animate-spin")} />
 					{m.retryDeploy()}
 				</Button>
 				{application.autoSyncPaused ? (

@@ -12,7 +12,7 @@ import {
 	User,
 	XIcon,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Blobatar } from "@blobatar/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,6 +111,7 @@ export default function Navbar() {
 	}, [theme, setTheme, startTransition]);
 
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+	const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 
 	return (
 		<header className="relative border-b bg-chrome backdrop-blur-xl backdrop-saturate-150">
@@ -288,11 +289,14 @@ export default function Navbar() {
 					</DropdownMenu>
 
 					<Button
+						ref={mobileMenuButtonRef}
 						variant="ghost"
 						size="icon"
 						className="md:hidden"
 						onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
 						aria-label={mobileMenuOpen ? m.close() : m.openMenu()}
+						aria-expanded={mobileMenuOpen}
+						aria-controls="mobile-navigation"
 					>
 						{mobileMenuOpen ? <XIcon className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
 					</Button>
@@ -300,8 +304,18 @@ export default function Navbar() {
 			</div>
 
 			<div
+				id="mobile-navigation"
+				// The collapsed menu stays in the DOM for the animation, but must not be reachable by
+				// keyboard or assistive technology.
+				inert={!mobileMenuOpen}
+				onKeyDown={(event) => {
+					if (event.key === "Escape") {
+						setMobileMenuOpen(false);
+						mobileMenuButtonRef.current?.focus();
+					}
+				}}
 				className={cn(
-					"grid transition-[grid-template-rows] duration-300 ease-in-out md:hidden",
+					"grid transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none md:hidden",
 					mobileMenuOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
 				)}
 			>
