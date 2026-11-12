@@ -16,7 +16,7 @@ import (
 func setupImagePollTestEnv(t *testing.T) {
 	t.Helper()
 	setupHandlerTestEnv(t)
-	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Repository{}, &models.Application{}, &models.Notification{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}, &models.ApplicationImageUpdate{}); err != nil {
 		t.Fatalf("failed to migrate Application: %v", err)
 	}
 	sse.DefaultBroker = sse.NewBroker(&zerolog_disabled)
@@ -448,5 +448,113 @@ func TestHandlePullImagesResult_Failure(t *testing.T) {
 	}
 	if updated.LastSyncedAt != nil {
 		t.Errorf("expected LastSyncedAt to remain nil on failure, got %v", updated.LastSyncedAt)
+	}
+}
+
+func TestHandlePullImagesResult_HeldBack_RecordsHeldBackEvent(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-held-back")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
+		ApplicationId: app.Id,
+		Success:       true,
+		HeldBackImages: []*messages.HeldBackImage{
+			{Image: "redis:7", Reason: "pushed at 2026-11-10T12:00:00Z, waiting until 2026-11-13T12:00:00Z (minimum release age 3d)"},
+		},
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	event := events[0]
+	if event.Status != models.ApplicationEventHeldBack || event.Source != models.ApplicationEventSourceImagePolling {
+		t.Fatalf("expected a held back image polling event, got %+v", event)
+	}
+	if event.ErrorMessage == nil || *event.ErrorMessage != heldBackMessage([]*messages.HeldBackImage{
+		{Image: "redis:7", Reason: "pushed at 2026-11-10T12:00:00Z, waiting until 2026-11-13T12:00:00Z (minimum release age 3d)"},
+	}) {
+		t.Errorf("unexpected message %v", event.ErrorMessage)
+	}
+}
+
+func TestHandlePullImagesResult_ExplicitRequestHeldBack_CompletesHeldBack(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-ipr-held-back-explicit")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+	startImageUpdateEvent(t, app.Id, "image-req-held-back")
+
+	handlePullImagesResult(t.Context(), client, &messages.PullImagesResult{
+		RequestId:      "image-req-held-back",
+		ApplicationId:  app.Id,
+		Success:        true,
+		HeldBackImages: []*messages.HeldBackImage{{Image: "redis:7", Reason: "waiting"}},
+	}, &log)
+
+	events := loadImageEvents(t, app.Id)
+	if len(events) != 1 || events[0].Status != models.ApplicationEventHeldBack || events[0].CompletedAt == nil {
+		t.Fatalf("expected the request's event to complete as held back, got %+v", events)
+	}
+}
+
+func TestHandleImageUpdatesReport_ReplacesRowsAndKeepsSkipped(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-image-updates")
+	app := createTestApplication(t, agent.Id)
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1)}
+
+	handleImageUpdatesReport(t.Context(), client, &messages.ImageUpdatesReport{
+		ApplicationId: app.Id,
+		CheckedAt:     time.Now().Unix(),
+		Images: []*messages.ImageUpdate{
+			{Service: "db", Image: "postgres:17", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING, EligibleAt: time.Now().Add(time.Hour).Unix()},
+			{Service: "old", Image: "busybox", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE},
+		},
+	}, &log)
+
+	// A webhook run skips db, which keeps its state; old is gone from the compose file.
+	handleImageUpdatesReport(t.Context(), client, &messages.ImageUpdatesReport{
+		ApplicationId: app.Id,
+		CheckedAt:     time.Now().Unix(),
+		Images: []*messages.ImageUpdate{
+			{Service: "db", Image: "postgres:17", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED},
+			{Service: "web", Image: "ghcr.io/org/web:1", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED},
+		},
+	}, &log)
+
+	rows, err := gorm.G[models.ApplicationImageUpdate](db.DB).Where("application_id = ?", app.Id).Order("service").Find(t.Context())
+	if err != nil {
+		t.Fatalf("load image updates: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Service != "db" || rows[0].Status != models.ImageUpdateWaiting || rows[0].EligibleAt == nil ||
+		rows[1].Service != "web" || rows[1].Status != models.ImageUpdateUpdated {
+		t.Fatalf("unexpected image updates %+v", rows)
+	}
+}
+
+func TestHandleImageUpdatesReport_IgnoresOtherAgentsApplications(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	owner := createTestAgent(t, "key-image-updates-owner")
+	other := createTestAgent(t, "key-image-updates-other")
+	app := createTestApplication(t, owner.Id)
+
+	handleImageUpdatesReport(t.Context(), &Client{Id: other.Id}, &messages.ImageUpdatesReport{
+		ApplicationId: app.Id,
+		Images:        []*messages.ImageUpdate{{Service: "db", Image: "postgres:17", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE}},
+	}, &log)
+
+	if count, _ := gorm.G[models.ApplicationImageUpdate](db.DB).Where("application_id = ?", app.Id).Count(t.Context(), "*"); count != 0 {
+		t.Fatalf("expected no image updates from another agent, got %d", count)
 	}
 }

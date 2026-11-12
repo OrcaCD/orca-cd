@@ -137,6 +137,10 @@ func seedDemoData(db *gorm.DB) error {
 			return err
 		}
 
+		if err := seedDemoImageUpdates(ctx, tx); err != nil {
+			return err
+		}
+
 		if err := seedDemoNotifications(ctx, tx); err != nil {
 			return err
 		}
@@ -302,6 +306,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	manualSource := models.ApplicationEventSourceManual
 	webhookSecret := crypto.EncryptedString("demo-image-webhook-secret")
 	webDeployment, monitoringDeployment := demoWebDeploymentCurrent, demoMonitoringDeploymentGood
+	webReleaseAge := int64(3 * 24 * 60 * 60)
 	rolledBackAt := now.Add(-demoMonitoringRollbackAgo)
 	rolledBackCommit, rolledBackReason := demoMonitoringPrometheusCommit, demoMonitoringRollbackReason
 
@@ -327,6 +332,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 			ImagePollIntervalSeconds:     300,
 			DeleteOldImages:              true,
 			ImageWebhookSecret:           &webhookSecret,
+			MinimumReleaseAgeSeconds:     &webReleaseAge,
 			CurrentDeploymentId:          &webDeployment,
 			RollbackEnabled:              true,
 			RollbackOnDeployFailure:      true,
@@ -393,6 +399,64 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	}
 
 	return seedDemoDeployments(ctx, tx, now)
+}
+
+// seedDemoImageUpdates shows updates that wait for the minimum release age.
+func seedDemoImageUpdates(ctx context.Context, tx *gorm.DB) error {
+	now := time.Now().UTC()
+	checkedAt := now.Add(-3 * time.Minute)
+	webPushed := now.Add(-14 * time.Hour)
+	webEligible := webPushed.Add(3 * 24 * time.Hour)
+	grafanaSeen := now.Add(-5 * time.Hour)
+	grafanaEligible := grafanaSeen.Add(24 * time.Hour)
+
+	updates := []models.ApplicationImageUpdate{
+		{
+			ApplicationId:     "demo-app-web",
+			Service:           "web",
+			Image:             "ghcr.io/orcacd/demo-app:1.4.2",
+			Status:            models.ImageUpdateWaiting,
+			CurrentDigest:     "sha256:4b1f0c2a9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b",
+			CurrentVersion:    "1.4.2",
+			NewDigest:         "sha256:9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c",
+			NewVersion:        "1.4.3",
+			PushedAt:          &webPushed,
+			EligibleAt:        &webEligible,
+			MinimumAgeSeconds: 3 * 24 * 60 * 60,
+			CheckedAt:         checkedAt,
+		},
+		{
+			ApplicationId:  "demo-app-monitoring",
+			Service:        "prometheus",
+			Image:          "prom/prometheus:v3.5.0",
+			Status:         models.ImageUpdateUpToDate,
+			CurrentDigest:  "sha256:1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+			CurrentVersion: "3.5.0",
+			CheckedAt:      checkedAt,
+		},
+		{
+			ApplicationId:       "demo-app-monitoring",
+			Service:             "grafana",
+			Image:               "grafana/grafana:12.1.0",
+			Status:              models.ImageUpdateWaiting,
+			CurrentDigest:       "sha256:2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
+			CurrentVersion:      "12.1.0",
+			NewDigest:           "sha256:3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e",
+			NewVersion:          "12.1.1",
+			PushedAt:            &grafanaSeen,
+			FirstSeen:           true,
+			EligibleAt:          &grafanaEligible,
+			MinimumAgeSeconds:   24 * 60 * 60,
+			MinimumAgeFromLabel: true,
+			CheckedAt:           checkedAt,
+		},
+	}
+	for i := range updates {
+		if err := gorm.G[models.ApplicationImageUpdate](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &updates[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedDemoDeployments records what the applications ran, so their history

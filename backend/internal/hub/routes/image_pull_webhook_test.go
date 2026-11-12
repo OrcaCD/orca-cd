@@ -903,7 +903,7 @@ func TestImagePullWebhookHandler_DockerHub_MissingAuth_Returns401(t *testing.T) 
 	}
 }
 
-func TestIsDockerHubPayload(t *testing.T) {
+func TestParseDockerHubPayload(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -918,9 +918,9 @@ func TestIsDockerHubPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isDockerHubPayload([]byte(tt.body))
+			_, got := parseDockerHubPayload([]byte(tt.body))
 			if got != tt.want {
-				t.Errorf("isDockerHubPayload(%q) = %v, want %v", tt.body, got, tt.want)
+				t.Errorf("parseDockerHubPayload(%q) = %v, want %v", tt.body, got, tt.want)
 			}
 		})
 	}

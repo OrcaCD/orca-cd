@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -89,7 +90,7 @@ func TestScheduleImagePull_CoalescesBurstIntoSinglePull(t *testing.T) {
 
 	// A single registry push arrives as several webhook deliveries.
 	for range 3 {
-		ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+		ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 		time.Sleep(5 * time.Millisecond)
 	}
 
@@ -109,10 +110,10 @@ func TestScheduleImagePull_SeparateBurstsPullAgain(t *testing.T) {
 	app, client := seedConnectedApp(t)
 	setupDebouncer(t, 30*time.Millisecond, time.Second)
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	awaitPullRequest(t, client)
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	awaitPullRequest(t, client)
 
 	if got := countImageUpdateEvents(t, app.Id); got != 2 {
@@ -131,7 +132,7 @@ func TestScheduleImagePull_MaxDelayCapsPostponement(t *testing.T) {
 	go func() {
 		defer close(done)
 		for range 20 {
-			ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+			ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()
@@ -145,7 +146,7 @@ func TestScheduleImagePull_ImmediateTriggerSupersedesQueuedPull(t *testing.T) {
 	app, client := seedConnectedApp(t)
 	debouncer := setupDebouncer(t, time.Hour, time.Hour)
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	if !TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
 		t.Fatal("expected TriggerImagePull to return true for connected agent")
 	}
@@ -168,7 +169,7 @@ func TestImagePullDebouncer_Stop_DropsQueuedPull(t *testing.T) {
 	app, client := seedConnectedApp(t)
 	debouncer := setupDebouncer(t, 30*time.Millisecond, time.Second)
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	debouncer.Stop()
 
 	expectNoPullRequest(t, client, 200*time.Millisecond)
@@ -177,7 +178,7 @@ func TestImagePullDebouncer_Stop_DropsQueuedPull(t *testing.T) {
 	}
 
 	// Triggers after Stop are ignored as well.
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	expectNoPullRequest(t, client, 100*time.Millisecond)
 }
 
@@ -186,7 +187,7 @@ func TestImagePullDebouncer_DeletedApplication_NoPull(t *testing.T) {
 	app, client := seedConnectedApp(t)
 	setupDebouncer(t, 30*time.Millisecond, time.Second)
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Delete(t.Context()); err != nil {
 		t.Fatalf("failed to delete application: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestScheduleImagePull_NoDebouncer_TriggersImmediately(t *testing.T) {
 	app, client := seedConnectedApp(t)
 	DefaultImagePullDebouncer = nil
 
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook)
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 
 	select {
 	case msg := <-client.Send:
@@ -208,5 +209,29 @@ func TestScheduleImagePull_NoDebouncer_TriggersImmediately(t *testing.T) {
 		}
 	default:
 		t.Error("expected an immediate PullImagesRequest without a debouncer")
+	}
+}
+
+func TestScheduleImagePull_SendsAnnouncedImagesAndReleaseAge(t *testing.T) {
+	setupTestDB(t)
+	app, client := seedConnectedApp(t)
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries").
+		Updates(t.Context(), models.Application{MinimumReleaseAgeSeconds: new(int64(3600)), ReleaseAgeAllowedRegistries: []string{"registry.local"}}); err != nil {
+		t.Fatalf("update application: %v", err)
+	}
+	setupDebouncer(t, 30*time.Millisecond, time.Second)
+
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/worker:1.0")
+	req := awaitPullRequest(t, client)
+
+	if want := []string{"ghcr.io/org/app:1.0", "ghcr.io/org/worker:1.0"}; !slices.Equal(req.WebhookImages, want) {
+		t.Errorf("webhook images = %v, want %v", req.WebhookImages, want)
+	}
+	if req.ReleaseAge.GetMinimumSeconds() != 3600 || !slices.Equal(req.ReleaseAge.GetAllowedRegistries(), []string{"registry.local"}) {
+		t.Errorf("unexpected release age policy %v", req.ReleaseAge)
 	}
 }

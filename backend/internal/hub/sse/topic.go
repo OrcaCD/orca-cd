@@ -18,10 +18,15 @@ var (
 	TopicNotifications       = Topic{apiPrefix + "/notifications"}
 	TopicAdminUsers          = Topic{apiPrefix + "/admin/users"}
 	TopicAdminOIDCProvider   = Topic{apiPrefix + "/admin/oidc-providers"}
+	TopicSettings            = Topic{apiPrefix + "/settings"}
 )
 
 func TopicApplicationEvents(applicationID string) Topic {
 	return Topic{apiPrefix + "/applications/" + applicationID + "/events"}
+}
+
+func TopicApplicationImageUpdates(applicationID string) Topic {
+	return Topic{apiPrefix + "/applications/" + applicationID + "/image-updates"}
 }
 
 func (t Topic) URL() string {
