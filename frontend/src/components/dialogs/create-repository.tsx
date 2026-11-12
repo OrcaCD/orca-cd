@@ -116,25 +116,22 @@ const StepperTriggerWrapper = ({
 	isInactive: boolean;
 }) => {
 	return (
-		<>
-			<Stepper.Trigger
-				render={(domProps) => (
-					<Button
-						className="rounded-full cursor-default"
-						variant={isInactive ? "secondary" : "default"}
-						size="icon"
-						{...domProps}
-						aria-label={label}
-						onClick={(e) => {
-							e.preventDefault();
-						}}
-					>
-						<Stepper.Indicator>{displayNumber}</Stepper.Indicator>
-					</Button>
-				)}
-			/>
-			<span className="text-[0.6875rem] font-medium text-muted-foreground">{label}</span>
-		</>
+		<Stepper.Trigger
+			render={(domProps) => (
+				<Button
+					className="rounded-full cursor-default"
+					variant={isInactive ? "secondary" : "default"}
+					size="icon"
+					{...domProps}
+					aria-label={label}
+					onClick={(e) => {
+						e.preventDefault();
+					}}
+				>
+					<Stepper.Indicator>{displayNumber}</Stepper.Indicator>
+				</Button>
+			)}
+		/>
 	);
 };
 
@@ -152,7 +149,7 @@ const StepperSeparatorWithStatus = ({
 		<Stepper.Separator
 			orientation="horizontal"
 			data-status={status}
-			className="mt-4 self-start bg-muted data-[status=previous]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
+			className="self-center bg-muted data-[status=previous]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
 		/>
 	);
 };
@@ -493,7 +490,7 @@ export default function CreateRepositoryDialog({
 												<React.Fragment key={stepData.id}>
 													<Stepper.Item
 														step={stepData.id}
-														className="group peer relative flex shrink-0 flex-col items-center gap-1.5"
+														className="group peer relative flex shrink-0 items-center gap-2"
 													>
 														<StepperTriggerWrapper
 															displayNumber={displayIndex + 1}
