@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Lock, ShieldCheck, Trash2 } from "lucide-react";
+import { Lock, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/toast";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { PermissionEditor, type ResourceOptions } from "@/components/roles/permission-editor";
 import { RoleMembers } from "@/components/roles/role-members";
+import { OIDCGroupsInput } from "@/components/roles/oidc-groups-input";
 import {
 	createRole,
 	deleteRole,
@@ -192,6 +193,19 @@ export function RoleEditor({
 						users={users}
 						onChange={(userIds) => setDraft({ ...draft, userIds })}
 					/>
+					<section className="mt-6 flex flex-col gap-3 rounded-lg border p-4">
+						<div>
+							<h3 className="flex items-center gap-2 text-sm font-medium">
+								<UsersRound className="size-4" />
+								{m.roleOidcGroups()}
+							</h3>
+							<p className="text-muted-foreground text-sm">{m.roleOidcGroupsDescription()}</p>
+						</div>
+						<OIDCGroupsInput
+							groups={draft.oidcGroups}
+							onChange={(oidcGroups) => setDraft({ ...draft, oidcGroups })}
+						/>
+					</section>
 				</TabsContent>
 			</Tabs>
 

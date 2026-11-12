@@ -34,6 +34,145 @@ type OIDCUser struct {
 	Name    string
 	Picture string
 	Issuer  string
+	// Groups the user is a member of. Only read when the provider has a groups claim.
+	Groups []string
+}
+
+// maxGroups bounds the stored groups of a user. Entra ID, for example, sends
+// at most 200 groups in a token.
+const maxGroups = 200
+
+// ErrGroupsUnavailable is returned when the groups of a user can't be read, so
+// their roles are not changed based on missing groups.
+var ErrGroupsUnavailable = errors.New("oidc: groups unavailable")
+
+// groupsFromClaims reads the groups at the claim path. A claim with the whole
+// path as name is used first, for namespaced claims like Auth0's
+// "https://example.com/groups". Otherwise dots separate nested claims like
+// Keycloak's "realm_access.roles". A single string counts as one group.
+// found is false when the claim does not exist.
+func groupsFromClaims(claims map[string]any, path string) (groups []string, found bool, err error) {
+	value, ok := claims[path]
+	if !ok {
+		var current any = claims
+		for part := range strings.SplitSeq(path, ".") {
+			object, isObject := current.(map[string]any)
+			if !isObject {
+				return nil, false, nil
+			}
+			if current, ok = object[part]; !ok {
+				return nil, false, nil
+			}
+		}
+		value = current
+	}
+
+	switch v := value.(type) {
+	case nil:
+	case string:
+		groups = []string{v}
+	case []any:
+		for _, item := range v {
+			group, isString := item.(string)
+			if !isString {
+				return nil, true, fmt.Errorf("%w: claim %q contains a %T", ErrGroupsUnavailable, path, item)
+			}
+			groups = append(groups, group)
+		}
+	default:
+		return nil, true, fmt.Errorf("%w: claim %q is a %T, not a list of groups", ErrGroupsUnavailable, path, value)
+	}
+
+	seen := make(map[string]struct{}, len(groups))
+	unique := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if _, ok := seen[group]; ok || group == "" {
+			continue
+		}
+		seen[group] = struct{}{}
+		unique = append(unique, group)
+	}
+	if len(unique) > maxGroups {
+		return nil, true, fmt.Errorf("%w: claim %q has more than %d groups", ErrGroupsUnavailable, path, maxGroups)
+	}
+	return unique, true, nil
+}
+
+var (
+	// errNoUserInfo is returned by providers without a userinfo endpoint.
+	errNoUserInfo = errors.New("provider has no userinfo endpoint")
+	// errUserInfoSubject is returned when the userinfo belongs to another user.
+	errUserInfoSubject = errors.New("userinfo subject does not match the id_token subject")
+)
+
+// userInfo fetches the userinfo of the id_token's user on first use, so the
+// profile and the groups share one request.
+type userInfo struct {
+	subject string
+	fetch   func(ctx context.Context) (subject string, claims json.RawMessage, err error)
+	fetched bool
+	claims  json.RawMessage
+	err     error
+}
+
+func newUserInfo(provider *gooidc.Provider, token *oauth2.Token, subject string) *userInfo {
+	return &userInfo{
+		subject: subject,
+		fetch: func(ctx context.Context) (string, json.RawMessage, error) {
+			if provider.UserInfoEndpoint() == "" {
+				return "", nil, errNoUserInfo
+			}
+			info, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+			if err != nil {
+				return "", nil, err
+			}
+			var claims json.RawMessage
+			if err := info.Claims(&claims); err != nil {
+				return "", nil, err
+			}
+			return info.Subject, claims, nil
+		},
+	}
+}
+
+// Claims decodes the userinfo claims into v. The userinfo must belong to the
+// user of the id_token.
+func (u *userInfo) Claims(ctx context.Context, v any) error {
+	if !u.fetched {
+		u.fetched = true
+		var subject string
+		subject, u.claims, u.err = u.fetch(ctx)
+		if u.err == nil && subject != u.subject {
+			u.err = errUserInfoSubject
+		}
+	}
+	if u.err != nil {
+		return u.err
+	}
+	return json.Unmarshal(u.claims, v)
+}
+
+// readGroups reads the groups from the id_token and falls back to the userinfo
+// endpoint, which some providers use for large claims. A claim missing from
+// both means no groups, since some providers leave out empty claims.
+func readGroups(ctx context.Context, idTokenClaims map[string]any, info *userInfo, path string) ([]string, error) {
+	if groups, found, err := groupsFromClaims(idTokenClaims, path); found || err != nil {
+		return groups, err
+	}
+
+	var claims map[string]any
+	if err := info.Claims(ctx, &claims); err != nil {
+		if errors.Is(err, errNoUserInfo) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%w: userinfo: %w", ErrGroupsUnavailable, err)
+	}
+	groups, _, err := groupsFromClaims(claims, path)
+	if groups == nil && err == nil {
+		groups = []string{}
+	}
+	return groups, err
 }
 
 func normalizePictureURL(raw string) string {
@@ -173,22 +312,14 @@ type profileClaims struct {
 // mergeUserInfoClaims fills the claims missing from the id_token with the ones of the userinfo
 // endpoint. Claims of the id_token take precedence and failures are ignored, so providers
 // without a userinfo endpoint behave as before.
-func mergeUserInfoClaims(ctx context.Context, provider *gooidc.Provider, token *oauth2.Token, subject string, claims *profileClaims) {
-	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
-	if err != nil {
-		log.Debug().Err(err).Msg("could not fetch userinfo")
-		return
-	}
-
-	// The userinfo response must only be used if it belongs to the user of the id_token
-	if userInfo.Subject != subject {
-		log.Warn().Msg("userinfo subject does not match the id_token subject")
-		return
-	}
-
+func mergeUserInfoClaims(ctx context.Context, userInfo *userInfo, claims *profileClaims) {
 	var info profileClaims
-	if err := userInfo.Claims(&info); err != nil {
-		log.Debug().Err(err).Msg("could not parse userinfo claims")
+	if err := userInfo.Claims(ctx, &info); err != nil {
+		if errors.Is(err, errUserInfoSubject) {
+			log.Warn().Err(err).Msg("ignoring userinfo")
+		} else {
+			log.Debug().Err(err).Msg("could not read userinfo claims")
+		}
 		return
 	}
 
@@ -260,9 +391,10 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 		return nil, fmt.Errorf("nonce mismatch")
 	}
 
+	userInfo := newUserInfo(oidcProvider, oauth2Token, idToken.Subject)
 	// Some providers only put the subject into the id_token and serve the profile at the userinfo endpoint
 	if claims.Email == "" || claims.EmailVerified == nil {
-		mergeUserInfoClaims(ctx, oidcProvider, oauth2Token, idToken.Subject, &claims)
+		mergeUserInfoClaims(ctx, userInfo, &claims)
 	}
 
 	if claims.Email == "" {
@@ -282,12 +414,24 @@ func HandleCallback(ctx context.Context, provider *models.OIDCProvider, appURL s
 
 	picture := normalizePictureURL(claims.Picture)
 
+	var groups []string
+	if provider.GroupsClaim != "" {
+		var idTokenClaims map[string]any
+		if err := idToken.Claims(&idTokenClaims); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrGroupsUnavailable, err)
+		}
+		if groups, err = readGroups(ctx, idTokenClaims, userInfo, provider.GroupsClaim); err != nil {
+			return nil, err
+		}
+	}
+
 	return &OIDCUser{
 		Subject: idToken.Subject,
 		Email:   email,
 		Name:    name,
 		Picture: picture,
 		Issuer:  idToken.Issuer,
+		Groups:  groups,
 	}, nil
 }
 

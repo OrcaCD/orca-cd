@@ -68,6 +68,19 @@ type Role struct {
 	Name        string           `gorm:"type:text;not null"`
 	Description string           `gorm:"type:text;not null;default:''"`
 	Permissions []RolePermission `gorm:"foreignKey:RoleId"`
+	// OIDCGroups gives the role to users who are in any of these groups at their OIDC provider.
+	OIDCGroups []RoleOIDCGroup `gorm:"foreignKey:RoleId"`
+}
+
+// RoleOIDCGroup gives a role to the users in a group at an OIDC provider.
+type RoleOIDCGroup struct {
+	RoleId     string `gorm:"column:role_id;type:text;primaryKey"`
+	ProviderId string `gorm:"column:provider_id;type:text;primaryKey"`
+	Group      string `gorm:"column:group_name;type:text;primaryKey"`
+}
+
+func (RoleOIDCGroup) TableName() string {
+	return "role_oidc_groups"
 }
 
 func (r *Role) IsBuiltIn(builtIn RoleBuiltIn) bool {

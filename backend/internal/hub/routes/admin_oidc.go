@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -26,6 +27,8 @@ type createOIDCProviderRequest struct {
 	Enabled              *bool  `json:"enabled"`
 	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail"`
 	AutoSignup           *bool  `json:"autoSignup"`
+	// GroupsClaim enables syncing roles from groups, which is off by default.
+	GroupsClaim *string `json:"groupsClaim" binding:"omitempty,max=255"`
 }
 
 type updateOIDCProviderRequest struct {
@@ -37,6 +40,7 @@ type updateOIDCProviderRequest struct {
 	Enabled              *bool   `json:"enabled"`
 	RequireVerifiedEmail *bool   `json:"requireVerifiedEmail"`
 	AutoSignup           *bool   `json:"autoSignup"`
+	GroupsClaim          *string `json:"groupsClaim" binding:"omitempty,max=255"`
 }
 
 type oidcProviderResponse struct {
@@ -48,6 +52,7 @@ type oidcProviderResponse struct {
 	Enabled              bool   `json:"enabled"`
 	RequireVerifiedEmail bool   `json:"requireVerifiedEmail"`
 	AutoSignup           bool   `json:"autoSignup"`
+	GroupsClaim          string `json:"groupsClaim"`
 	CallbackURL          string `json:"callbackUrl"`
 	CreatedAt            string `json:"createdAt"`
 	UpdatedAt            string `json:"updatedAt"`
@@ -76,6 +81,7 @@ func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 		Enabled:              p.Enabled,
 		RequireVerifiedEmail: p.RequireVerifiedEmail,
 		AutoSignup:           p.AutoSignup,
+		GroupsClaim:          p.GroupsClaim,
 		CallbackURL:          fmt.Sprintf("%s/api/v1/auth/oidc/%s/callback", OIDCAppURL, p.Id),
 		CreatedAt:            p.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:            p.UpdatedAt.Format(time.RFC3339),
@@ -147,6 +153,9 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		RequireVerifiedEmail: requireVerifiedEmail,
 		AutoSignup:           autoSignup,
 	}
+	if req.GroupsClaim != nil {
+		provider.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
+	}
 
 	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&provider).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -183,6 +192,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	}
 
 	wasEnabled := existing.Enabled
+	previousGroupsClaim := existing.GroupsClaim
 	existing.Name = req.Name
 	existing.IssuerURL = req.IssuerURL
 	existing.ClientId = req.ClientId
@@ -196,13 +206,32 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	if req.AutoSignup != nil {
 		existing.AutoSignup = *req.AutoSignup
 	}
+	if req.GroupsClaim != nil {
+		existing.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
+	}
 	if req.ClientSecret != nil && *req.ClientSecret != "" {
 		existing.ClientSecret = crypto.EncryptedString(*req.ClientSecret)
 	}
 
+	var rolesChanged []string
 	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&existing).Error; err != nil {
 			return err
+		}
+		// Groups read from another claim no longer apply. Users get the groups
+		// of the new claim on their next login.
+		if previousGroupsClaim != existing.GroupsClaim {
+			if _, err := gorm.G[models.UserOIDCIdentity](tx).Where("provider_id = ?", id).
+				Update(c.Request.Context(), "group_names", gorm.Expr("'[]'")); err != nil {
+				return err
+			}
+		}
+		// Roles from the groups of a disabled provider, or one that stopped
+		// syncing them, are removed
+		if wasEnabled != existing.Enabled || previousGroupsClaim != existing.GroupsClaim {
+			if rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx); err != nil {
+				return err
+			}
 		}
 		if wasEnabled && !existing.Enabled {
 			return revokeOIDCProviderSessions(c.Request.Context(), tx, id)
@@ -218,18 +247,26 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
+	publishRolesChanged(rolesChanged)
 }
 
 func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 	id := c.Param("id")
 
 	var deleted int
+	var rolesChanged []string
 	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		if err := revokeOIDCProviderSessions(c.Request.Context(), tx, id); err != nil {
 			return err
 		}
+		if _, err := gorm.G[models.RoleOIDCGroup](tx).Where("provider_id = ?", id).Delete(c.Request.Context()); err != nil {
+			return err
+		}
 		var err error
-		deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context())
+		if deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context()); err != nil {
+			return err
+		}
+		rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx)
 		return err
 	})
 	if err != nil {
@@ -245,6 +282,7 @@ func AdminDeleteOIDCProviderHandler(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
+	publishRolesChanged(rolesChanged)
 }
 
 // revokeOIDCProviderSessions signs out every user linked to the provider, so

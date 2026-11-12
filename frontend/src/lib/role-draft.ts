@@ -6,6 +6,7 @@ import {
 	type PermissionAction,
 	type PermissionResource,
 	type Role,
+	type RoleOIDCGroup,
 	type RolePermission,
 	type UpsertRoleRequest,
 } from "./roles";
@@ -20,6 +21,7 @@ export interface RoleDraft {
 	description: string;
 	grants: Grants;
 	userIds: string[];
+	oidcGroups: RoleOIDCGroup[];
 }
 
 export function emptyGrants(): Grants {
@@ -47,6 +49,7 @@ export function toDraft(role: Role | null): RoleDraft {
 			role?.members
 				.filter((member) => member.sources.includes("manual"))
 				.map((member) => member.id) ?? [],
+		oidcGroups: role?.oidcGroups ?? [],
 	};
 }
 
@@ -64,6 +67,7 @@ export function toRequest(draft: RoleDraft): UpsertRoleRequest {
 		description: draft.description.trim(),
 		permissions,
 		userIds: draft.userIds,
+		oidcGroups: draft.oidcGroups,
 	};
 }
 
@@ -76,6 +80,7 @@ export function draftKey(draft: RoleDraft): string {
 			.map((p) => `${p.resource}:${p.resourceId ?? ALL}:${p.action}`)
 			.sort(),
 		userIds: [...request.userIds].sort(),
+		oidcGroups: request.oidcGroups.map((g) => `${g.providerId}:${g.group}`).sort(),
 	});
 }
 

@@ -17,7 +17,7 @@ const (
 // MigrateForTest creates the role tables on a database that was set up with
 // AutoMigrate and seeds the built-in roles like the SQL migrations do.
 func MigrateForTest(tx *gorm.DB) error {
-	if err := tx.AutoMigrate(&models.Role{}, &models.RolePermission{}, &models.UserRole{}); err != nil {
+	if err := tx.AutoMigrate(&models.Role{}, &models.RolePermission{}, &models.UserRole{}, &models.RoleOIDCGroup{}); err != nil {
 		return err
 	}
 	// AutoMigrate cannot create these indexes from model tags.
