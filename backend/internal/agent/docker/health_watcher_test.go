@@ -828,8 +828,8 @@ func TestImagePoller_ExplicitPullWithoutUpdateReportsHealth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			checkAndPullImages = func(context.Context, *Client, string, string, bool) (bool, error) {
-				return false, tt.err
+			checkAndPullImages = func(context.Context, *Client, string, string, bool, ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+				return false, nil, tt.err
 			}
 			p := newTestPoller(t, noopSender{})
 			sender := &stubMessageSender{}
@@ -839,7 +839,7 @@ func TestImagePoller_ExplicitPullWithoutUpdateReportsHealth(t *testing.T) {
 			w.checkHealth = staticHealth(HealthHealthy)
 			w.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
-			p.runOnce("app-1", "app", "req-1", false)
+			p.runOnce("app-1", "app", "req-1", false, ReleaseAgePolicy{})
 
 			awaitReports(t, sender, 1)
 		})
@@ -849,8 +849,8 @@ func TestImagePoller_ExplicitPullWithoutUpdateReportsHealth(t *testing.T) {
 func TestImagePoller_PeriodicPullWithoutUpdateDoesNotReportHealth(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
-	checkAndPullImages = func(context.Context, *Client, string, string, bool) (bool, error) {
-		return false, nil
+	checkAndPullImages = func(context.Context, *Client, string, string, bool, ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, nil, nil
 	}
 
 	p := newTestPoller(t, noopSender{})
@@ -861,7 +861,7 @@ func TestImagePoller_PeriodicPullWithoutUpdateDoesNotReportHealth(t *testing.T) 
 	w.checkHealth = staticHealth(HealthHealthy)
 	w.lastReported["app-1"] = HealthReport{State: HealthHealthy}
 
-	p.runOnce("app-1", "app", "", false)
+	p.runOnce("app-1", "app", "", false, ReleaseAgePolicy{})
 	time.Sleep(50 * time.Millisecond)
 
 	if msgs := sender.received(); len(msgs) != 0 {

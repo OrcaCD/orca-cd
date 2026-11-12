@@ -44,8 +44,12 @@ type Client struct {
 	healthResyncMu            sync.Mutex
 	retentionMu               sync.Mutex
 	retention                 map[string]imageRetention
-	ctx                       context.Context
-	cancel                    context.CancelFunc
+	// releaseAgeMu protects the state of the release age policy.
+	releaseAgeMu sync.Mutex
+	firstSeen    map[string]firstSeenDigest
+	versions     map[string]string
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 func New(log zerolog.Logger, deploymentsDir string, allowedPrivilegedApps map[string]struct{}, restrictMountsToDeployDir bool) (*Client, error) {

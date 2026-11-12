@@ -16,6 +16,7 @@ message ClientMessage {
     AgentInfo agent_info = 8;
     EnvListResult env_list_result = 9;
     EnvUpdateResult env_update_result = 10;
+    ImageUpdatesReport image_updates_report = 11;
   }
 }
 
@@ -123,6 +124,17 @@ message ImagePollSettings {
   bool delete_old_images = 4;
   string application_name = 5;
   ImageRetention image_retention = 6;
+  ReleaseAgePolicy release_age = 7;
+}
+
+// ReleaseAgePolicy holds back updated images until their registry push time is
+// older than minimum_seconds. 0 disables it.
+message ReleaseAgePolicy {
+  int64 minimum_seconds = 1;
+  // Registries whose images skip the check.
+  repeated string allowed_registries = 2;
+  // Overrides minimum_seconds per compose service.
+  map<string, int64> service_minimum_seconds = 3;
 }
 
 message PullImagesRequest {
@@ -131,6 +143,10 @@ message PullImagesRequest {
   string application_name = 3;
   bool delete_old_images = 4;
   ImageRetention image_retention = 5;
+  ReleaseAgePolicy release_age = 6;
+  // Images an image pull webhook announced. With a release age, only these
+  // are updated, and without the age check.
+  repeated string webhook_images = 7;
 }
 
 message PullImagesResult {
@@ -144,6 +160,53 @@ message PullImagesResult {
   // Set when new images were pulled but recreating the containers failed,
   // which leaves the application in an unknown state.
   bool redeploy_failed = 7;
+  // Updates held back by the release age policy.
+  repeated HeldBackImage held_back_images = 8;
+}
+
+message HeldBackImage {
+  string image = 1;
+  string reason = 2;
+}
+
+enum ImageUpdateStatus {
+  IMAGE_UPDATE_STATUS_UNSPECIFIED = 0;
+  IMAGE_UPDATE_STATUS_UP_TO_DATE = 1;
+  // A new image waits for the minimum release age.
+  IMAGE_UPDATE_STATUS_WAITING = 2;
+  // A new image is held back until the configuration is fixed.
+  IMAGE_UPDATE_STATUS_BLOCKED = 3;
+  IMAGE_UPDATE_STATUS_UPDATED = 4;
+  // Not checked by this run, e.g. not announced by an image pull webhook.
+  IMAGE_UPDATE_STATUS_SKIPPED = 5;
+  IMAGE_UPDATE_STATUS_FAILED = 6;
+}
+
+// ImageUpdate is the update state of the image of one compose service.
+message ImageUpdate {
+  string service = 1;
+  string image = 2;
+  ImageUpdateStatus status = 3;
+  string current_digest = 4;
+  // From the org.opencontainers.image.version label, if the image has one.
+  string current_version = 5;
+  string new_digest = 6;
+  string new_version = 7;
+  // Unix seconds, 0 if unknown.
+  int64 pushed_at = 8;
+  // pushed_at is when the agent first saw the digest, as the registry has no push time.
+  bool first_seen = 9;
+  int64 eligible_at = 10;
+  int64 minimum_age_seconds = 11;
+  bool minimum_age_from_label = 12;
+  string reason = 13;
+}
+
+// ImageUpdatesReport is sent after every image check.
+message ImageUpdatesReport {
+  string application_id = 1;
+  int64 checked_at = 2;
+  repeated ImageUpdate images = 3;
 }
 
 enum HealthStatus {

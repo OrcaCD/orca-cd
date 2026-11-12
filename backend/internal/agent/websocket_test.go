@@ -958,7 +958,7 @@ func (p *stubPoller) ApplySettings(apps []agentdocker.AppPollConfig) {
 	}
 }
 
-func (p *stubPoller) TriggerNow(appID, appName, requestID string, deleteOld bool) {
+func (p *stubPoller) TriggerNow(appID, appName, requestID string, deleteOld bool, _ agentdocker.ReleaseAgePolicy) {
 	p.triggeredAppID = appID
 	p.triggeredReqID = requestID
 	p.triggeredDel = deleteOld

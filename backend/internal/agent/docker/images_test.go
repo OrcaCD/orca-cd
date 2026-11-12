@@ -27,7 +27,14 @@ func saveRestoreVars(t *testing.T) {
 	origUp := upProject
 	origListImages := listApplicationImageIDs
 	origRemoveImage := removeImage
+	origImageVersion := getImageVersion
+	origLocalVersion := getLocalVersion
+	// Version lookups would reach out to real registries.
+	getImageVersion = func(context.Context, command.Cli, string, string) (string, error) { return "", nil }
+	getLocalVersion = func(context.Context, client.APIClient, string) string { return "" }
 	t.Cleanup(func() {
+		getImageVersion = origImageVersion
+		getLocalVersion = origLocalVersion
 		getRemoteDigest = origGetRemote
 		getLocalDigests = origGetLocal
 		isLocalOnlyImage = origIsLocalOnly
@@ -99,7 +106,7 @@ func TestCheckAndPullImages_MissingComposeFile(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when compose file does not exist")
 	}
@@ -109,7 +116,7 @@ func TestCheckAndPullImages_UnsafeAppName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "../bad", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "../bad", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error for unsafe application name")
 	}
@@ -151,7 +158,7 @@ func TestCheckAndPullImages_NothingStale(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +209,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,7 +274,7 @@ func TestCheckAndPullImages_TranslatesBindMountBeforeUp(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("CheckAndPullImages: %v", err)
 	}
@@ -312,7 +319,7 @@ func TestCheckAndPullImages_OrcaLabelsAppliedBeforeUp(t *testing.T) {
 	}
 
 	const appID = "app-abc-123"
-	if _, err := c.CheckAndPullImages(t.Context(), appID, "myapp", false); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), appID, "myapp", false, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -359,7 +366,7 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -395,7 +402,7 @@ func TestCheckAndPullImages_DigestLookupFailure(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected an error for a failed digest lookup")
 	}
@@ -487,7 +494,7 @@ func TestCheckAndPullImages_DigestFailureAlongsideStaleImage(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if !updated {
 		t.Error("expected the healthy stale image to be updated")
 	}
@@ -603,7 +610,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -632,7 +639,7 @@ func TestCheckAndPullImages_LoadProjectError(t *testing.T) {
 		return nil, errors.New("load error")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when loadProject fails")
 	}
@@ -664,7 +671,7 @@ func TestCheckAndPullImages_PullError(t *testing.T) {
 		return errors.New("pull failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when pullProject fails")
 	}
@@ -699,7 +706,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 		return errors.New("up failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when upProject fails")
 	}
@@ -769,7 +776,7 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app", "sha256:sidecar"}, []string{"sha256:new-app", "sha256:sidecar"})
 	setupStaleImageApp(t, c, upDone)
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -789,7 +796,7 @@ func TestCheckAndPullImages_KeepsOldImagesWhenDisabled(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app"}, []string{"sha256:new-app"})
 	setupStaleImageApp(t, c, upDone)
 
-	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*removed) != 0 {
@@ -806,7 +813,7 @@ func TestCheckAndPullImages_DeleteOldImages_FirstDeploy(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, nil, []string{"sha256:new-app"})
 	setupStaleImageApp(t, c, upDone)
 
-	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*removed) != 0 {
@@ -841,7 +848,7 @@ func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 		return "sha256:abc", nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -897,7 +904,7 @@ func TestCheckAndPullImages_RejectsPolicyViolation(t *testing.T) {
 	writeTestComposeFile(t, c.deploymentsDir, "billing")
 	pullCalled, upCalled := stubStalePrivilegedProject(t)
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected a compose file violating the security policy to be rejected")
 	}
@@ -918,7 +925,7 @@ func TestCheckAndPullImages_AllowlistedApplicationBypassesPolicy(t *testing.T) {
 	writeTestComposeFile(t, c.deploymentsDir, "billing")
 	_, upCalled := stubStalePrivilegedProject(t)
 
-	updated, err := c.CheckAndPullImages(t.Context(), allowedAppID, "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), allowedAppID, "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("expected allowlisted application to be redeployed, got: %v", err)
 	}
