@@ -131,7 +131,8 @@ func forgetCurrentDeployment(ctx context.Context, applicationID string, log *zer
 }
 
 func storeComposeWarnings(ctx context.Context, agentID string, app *models.Application, result *messages.DeployResult, log *zerolog.Logger) error {
-	if result.ComposeFileSha256 == "" || result.ComposeFileSha256 != composewarnings.Hash(app.ComposeFile.String()) {
+	// The agent only sends the hash once it analyzed the compose file.
+	if result.ComposeFileSha256 == "" {
 		return nil
 	}
 

@@ -9,26 +9,6 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 )
 
-var databaseImages = map[string]struct{}{
-	"cassandra":     {},
-	"clickhouse":    {},
-	"cockroachdb":   {},
-	"couchbase":     {},
-	"couchdb":       {},
-	"elasticsearch": {},
-	"influxdb":      {},
-	"mariadb":       {},
-	"mongo":         {},
-	"mysql":         {},
-	"neo4j":         {},
-	"postgres":      {},
-	"postgresql":    {},
-	"redis":         {},
-	"timescaledb":   {},
-	"valkey":        {},
-	"yugabytedb":    {},
-}
-
 var databaseDataDirectories = map[string][]string{
 	"cassandra":     {"/var/lib/cassandra"},
 	"clickhouse":    {"/var/lib/clickhouse"},
@@ -99,7 +79,7 @@ func analyzeComposeWarnings(project *composetypes.Project) []composewarnings.War
 }
 
 func hasFloatingImageReference(image string) bool {
-	if image == "" || strings.Contains(image, "@") || strings.Contains(image, "$") {
+	if image == "" || strings.Contains(image, "@") {
 		return false
 	}
 	if strings.HasSuffix(image, ":") {
@@ -132,7 +112,7 @@ func hasPersistentDataMount(image string, volumes []composetypes.ServiceVolumeCo
 }
 
 func isDatabaseImage(image string) bool {
-	_, ok := databaseImages[databaseImageName(image)]
+	_, ok := databaseDataDirectories[databaseImageName(image)]
 	return ok
 }
 

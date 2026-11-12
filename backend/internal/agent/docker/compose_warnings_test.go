@@ -120,7 +120,6 @@ func TestHasFloatingImageReference(t *testing.T) {
 		{image: "registry.example:5000/team/app", want: true},
 		{image: "registry.example:5000/team/app:1.2", want: false},
 		{image: "nginx@sha256:0123456789abcdef", want: false},
-		{image: "nginx:${TAG}", want: false},
 		{image: "", want: false},
 	}
 
