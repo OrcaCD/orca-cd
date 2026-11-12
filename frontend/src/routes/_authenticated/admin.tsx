@@ -13,7 +13,7 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, Logs, Users } from "lucide-react";
+import { Hourglass, IdCard, Info, Logs, Users } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -56,6 +56,11 @@ const adminPages = [
 		title: () => m.adminAuditLog(),
 		icon: Logs,
 		path: "/admin/audit-log",
+	},
+	{
+		title: () => m.adminReleaseAge(),
+		icon: Hourglass,
+		path: "/admin/release-age",
 	},
 ];
 

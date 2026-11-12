@@ -21,6 +21,7 @@ const dotClasses: Record<ApplicationEventStatus, string> = {
 	[ApplicationEventStatus.Succeeded]: "bg-emerald-500",
 	[ApplicationEventStatus.Failed]: "bg-red-500",
 	[ApplicationEventStatus.NoChange]: "bg-muted-foreground/40",
+	[ApplicationEventStatus.HeldBack]: "bg-amber-500",
 };
 
 const dayInMs = 24 * 60 * 60 * 1000;
@@ -196,7 +197,14 @@ function HistoryEvent({
 				) : null}
 			</p>
 			{event.errorMessage ? (
-				<pre className="mt-2 max-h-48 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive wrap-break-word">
+				<pre
+					className={cn(
+						"mt-2 max-h-48 overflow-auto rounded-md border p-3 font-mono text-xs whitespace-pre-wrap wrap-break-word",
+						event.status === ApplicationEventStatus.HeldBack
+							? "bg-muted/50 text-muted-foreground"
+							: "border-destructive/30 bg-destructive/5 text-destructive",
+					)}
+				>
 					{event.errorMessage}
 				</pre>
 			) : null}

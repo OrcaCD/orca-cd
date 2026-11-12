@@ -24,6 +24,8 @@ export enum ApplicationEventStatus {
 	Succeeded = "succeeded",
 	Failed = "failed",
 	NoChange = "no_change",
+	// An image update the minimum release age held back.
+	HeldBack = "held_back",
 }
 
 export enum DeploymentStatus {
