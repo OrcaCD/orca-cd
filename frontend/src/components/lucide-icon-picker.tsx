@@ -118,7 +118,14 @@ export default function LucideIconPicker({
 			filter={null}
 			itemToStringLabel={getIconLabel}
 			value={value}
-			onInputValueChange={setQuery}
+			onInputValueChange={(inputValue, details) => {
+				setQuery(details.reason === "input-change" ? inputValue : "");
+			}}
+			onOpenChange={(open) => {
+				if (!open) {
+					setQuery("");
+				}
+			}}
 			onValueChange={(nextValue) => {
 				if (isLucideIconName(nextValue)) {
 					onValueChange(nextValue);
@@ -139,7 +146,11 @@ export default function LucideIconPicker({
 				<ComboboxEmpty>{emptyMessage}</ComboboxEmpty>
 				<ComboboxList className="grid max-h-72 grid-cols-2 gap-1 sm:grid-cols-3">
 					{(name) => (
-						<ComboboxItem key={name} value={name} className="h-9 min-w-0 pr-2">
+						<ComboboxItem
+							key={name}
+							value={name}
+							className="h-9 min-w-0 pr-2 data-selected:bg-accent data-selected:text-accent-foreground [&>span:has(>svg)]:hidden"
+						>
 							<StaticLucideIcon name={name} className="size-4" />
 							<span className="truncate">{getIconLabel(name)}</span>
 						</ComboboxItem>

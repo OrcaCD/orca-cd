@@ -973,7 +973,7 @@ export default function CreateNotificationDialog({
 				</ResponsiveDialogHeader>
 
 				<form
-					className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+					className="-m-1 min-h-0 min-w-0 flex-1 overflow-y-auto p-1"
 					onSubmit={async (e) => {
 						e.preventDefault();
 						await form.handleSubmit();
