@@ -192,7 +192,7 @@ export function ComposeDiffLines({
 		return (
 			<span
 				key={`gap-${start}`}
-				className="relative col-span-2 -mx-3 grid grid-cols-subgrid items-center gap-x-3 bg-muted/60 px-3 font-sans text-xs text-muted-foreground select-none"
+				className="relative col-span-2 -mx-3 grid grid-cols-subgrid items-center gap-x-3 bg-primary/10 px-3 font-sans text-xs text-primary/80 select-none"
 			>
 				<span className="flex min-w-6 flex-col items-end">
 					{!atTop && (atBottom || end - start > EXPAND_STEP) && (
@@ -234,7 +234,7 @@ function ExpandButton({
 			size="icon-xs"
 			aria-label={label}
 			title={label}
-			className="hover:bg-primary/15 hover:text-primary"
+			className="text-primary hover:bg-primary/20 hover:text-primary"
 			onClick={onClick}
 		>
 			{children}
