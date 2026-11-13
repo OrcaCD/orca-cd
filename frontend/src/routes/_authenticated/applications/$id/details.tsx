@@ -48,7 +48,7 @@ import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
 import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
-import { diffArrays } from "diff";
+import { buildComposeDiff, ComposeDiffLines } from "@/components/applications/compose-diff-lines";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import WarningAlert from "@/components/alerts/warning-alert";
@@ -234,19 +234,6 @@ function getImageSyncTriggers(app?: Application): string | undefined {
 	return m.applicationInfoSyncImages({ type: imageTriggers.join(", ") });
 }
 
-function splitComposeLines(composeFile: string): string[] {
-	if (composeFile.length === 0) {
-		return [];
-	}
-
-	const lines = composeFile.split("\n");
-	if (lines.at(-1) === "") {
-		lines.pop();
-	}
-
-	return lines;
-}
-
 function getApplicationWarningMessage(warning: Application["warnings"][number]) {
 	switch (warning.code) {
 		case "invalid_compose":
@@ -274,43 +261,6 @@ function getApplicationWarningMessage(warning: Application["warnings"][number]) 
 				field: warning.field ?? "",
 			});
 	}
-}
-
-interface ComposeDiffLine {
-	variant: "default" | "added" | "removed";
-	// Index into the previous lines for removed lines, into the current lines otherwise.
-	index: number;
-}
-
-function buildComposeDiff(
-	previousComposeFile: string,
-	composeFile: string,
-): { lines: ComposeDiffLine[]; additions: number; deletions: number } {
-	const lines: ComposeDiffLine[] = [];
-	let previousIndex = 0;
-	let currentIndex = 0;
-
-	for (const change of diffArrays(
-		splitComposeLines(previousComposeFile),
-		splitComposeLines(composeFile),
-	)) {
-		for (let i = 0; i < change.value.length; i++) {
-			if (change.removed) {
-				lines.push({ variant: "removed", index: previousIndex++ });
-			} else {
-				lines.push({ variant: change.added ? "added" : "default", index: currentIndex++ });
-				if (!change.added) {
-					previousIndex++;
-				}
-			}
-		}
-	}
-
-	return {
-		lines,
-		additions: lines.filter((line) => line.variant === "added").length,
-		deletions: lines.filter((line) => line.variant === "removed").length,
-	};
 }
 
 function ApplicationDetailsPage() {
@@ -620,19 +570,11 @@ function ApplicationDetailsPage() {
 
 				<TabsContent value="diff" className="space-y-4">
 					<ComposeFileView path={data?.path}>
-						{composeDiff.lines.map(({ variant, index }, i) => (
-							<CodeBlockLine
-								key={i}
-								variant={variant}
-								className={
-									variant === "added"
-										? "bg-green-500/15 after:text-green-600 dark:after:text-green-400"
-										: undefined
-								}
-							>
-								{variant === "removed" ? previousComposeLines[index] : composeLines[index]}
-							</CodeBlockLine>
-						))}
+						<ComposeDiffLines
+							diff={composeDiff}
+							previousLines={previousComposeLines}
+							currentLines={composeLines}
+						/>
 					</ComposeFileView>
 				</TabsContent>
 			</Tabs>
