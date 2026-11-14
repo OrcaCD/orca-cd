@@ -76,6 +76,9 @@ function OrcaGameCanvas({ ref }: { ref: React.Ref<HTMLDivElement> }) {
 		let colors: string[] = [];
 
 		startRef.current = () => {
+			if (gameStatus === "running") {
+				return;
+			}
 			// Read the colors on every start so the game follows theme changes.
 			const style = getComputedStyle(canvas);
 			colors = ["--chart-2", "--chart-3", "--chart-4", "--primary"].map((name) =>
@@ -186,20 +189,34 @@ function OrcaGameCanvas({ ref }: { ref: React.Ref<HTMLDivElement> }) {
 		};
 		clock.frame = requestAnimationFrame(loop);
 
-		return () => cancelAnimationFrame(clock.frame);
-	}, []);
-
-	const handleKey = (event: React.KeyboardEvent, pressed: boolean) => {
-		if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-			event.preventDefault();
-			keysRef.current[event.key === "ArrowUp" ? "up" : "down"] = pressed;
-		} else if (event.key === " " || event.key === "Enter") {
-			event.preventDefault();
-			if (pressed && status !== "running") {
-				startRef.current?.();
+		// Keys are read on the window so the game also reacts when the dialog did not focus it.
+		const handleKey = (event: KeyboardEvent) => {
+			if (
+				event.target instanceof Element &&
+				event.target.closest("button, input, textarea, select")
+			) {
+				return;
 			}
-		}
-	};
+			const pressed = event.type === "keydown";
+			if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+				event.preventDefault();
+				keysRef.current[event.key === "ArrowUp" ? "up" : "down"] = pressed;
+			} else if (event.key === " " || event.key === "Enter") {
+				event.preventDefault();
+				if (pressed) {
+					startRef.current?.();
+				}
+			}
+		};
+		window.addEventListener("keydown", handleKey);
+		window.addEventListener("keyup", handleKey);
+
+		return () => {
+			cancelAnimationFrame(clock.frame);
+			window.removeEventListener("keydown", handleKey);
+			window.removeEventListener("keyup", handleKey);
+		};
+	}, []);
 
 	const handlePointer = (event: React.PointerEvent<HTMLDivElement>) => {
 		const rect = event.currentTarget.getBoundingClientRect();
@@ -211,14 +228,10 @@ function OrcaGameCanvas({ ref }: { ref: React.Ref<HTMLDivElement> }) {
 			ref={ref}
 			tabIndex={0}
 			className="relative aspect-2/1 w-full touch-none overflow-hidden rounded-lg bg-muted outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/50"
-			onKeyDown={(event) => handleKey(event, true)}
-			onKeyUp={(event) => handleKey(event, false)}
 			onPointerMove={handlePointer}
 			onPointerDown={(event) => {
 				handlePointer(event);
-				if (status !== "running") {
-					startRef.current?.();
-				}
+				startRef.current?.();
 			}}
 			onPointerLeave={() => {
 				pointerYRef.current = null;
@@ -250,7 +263,8 @@ export default function OrcaGame({
 	const gameRef = useRef<HTMLDivElement>(null);
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		// Repeated clicks on the logo or misses while playing would otherwise close the game.
+		<Dialog open={open} onOpenChange={onOpenChange} disablePointerDismissal>
 			<DialogContent className="sm:max-w-2xl" initialFocus={gameRef}>
 				<DialogHeader>
 					<DialogTitle>{m.orcaGameTitle()}</DialogTitle>

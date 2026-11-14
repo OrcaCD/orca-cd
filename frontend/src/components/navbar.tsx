@@ -44,7 +44,7 @@ import "blobatar/motion.css";
 
 const OrcaGame = lazy(() => import("./orca-game"));
 
-const ORCA_GAME_CLICKS = 5;
+const ORCA_GAME_CLICKS = 3;
 const ORCA_GAME_CLICK_WINDOW_MS = 600;
 
 type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
