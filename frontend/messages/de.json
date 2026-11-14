@@ -341,6 +341,7 @@
 	"validationAgentNameMaxLength": "Name darf maximal 128 Zeichen lang sein",
 	"agentAllowedIps": "Erlaubte IPs",
 	"agentAllowedIpsPlaceholder": "203.0.113.5\n198.51.100.0/24",
+	"agentAllowedIpsAddLast": "Zuletzt gesehene IP hinzufügen",
 	"agentAllowedIpsTooltip": "Eine IP-Adresse oder ein CIDR-Bereich pro Zeile. Leer lassen, um Verbindungen von jeder IP zu erlauben. Es wird die Client-IP verglichen, die der Hub sieht. Konfiguriere daher vertrauenswürdige Proxys, wenn der Hub hinter einem Reverse-Proxy läuft.",
 	"validationAgentAllowedIpInvalid": "\"{value}\" ist keine gültige IP-Adresse oder kein gültiger CIDR-Bereich",
 	"validationAgentAllowedIpsMaxCount": "Es sind höchstens 50 Einträge erlaubt",

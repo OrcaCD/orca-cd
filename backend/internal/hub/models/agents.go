@@ -25,5 +25,6 @@ type Agent struct {
 	Version          string        `gorm:"type:text;not null;default:''"`
 	DockerVersion    string        `gorm:"type:text;not null;default:''"`
 	AllowedIPs       []string      `gorm:"column:allowed_ips;type:text;not null;default:'[]';serializer:json"`
+	LastIP           string        `gorm:"column:last_ip;type:text;not null;default:''"`
 	Applications     []Application `gorm:"foreignKey:AgentId;"`
 }

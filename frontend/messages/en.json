@@ -341,6 +341,7 @@
 	"validationAgentNameMaxLength": "Name must be at most 128 characters",
 	"agentAllowedIps": "Allowed IPs",
 	"agentAllowedIpsPlaceholder": "203.0.113.5\n198.51.100.0/24",
+	"agentAllowedIpsAddLast": "Add last seen IP",
 	"agentAllowedIpsTooltip": "One IP address or CIDR range per line. Leave empty to allow connections from any IP. Matched against the client IP the hub sees, so configure trusted proxies if the hub runs behind a reverse proxy.",
 	"validationAgentAllowedIpInvalid": "\"{value}\" is not a valid IP address or CIDR range",
 	"validationAgentAllowedIpsMaxCount": "At most 50 entries are allowed",

@@ -440,6 +440,65 @@ func TestWsHandler_RejectsIPOutsideAllowedIPs(t *testing.T) {
 	}
 }
 
+func storedLastIP(t *testing.T, agentID string) string {
+	t.Helper()
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", agentID).First(t.Context())
+	if err != nil {
+		t.Fatalf("load agent: %v", err)
+	}
+	return agent.LastIP
+}
+
+func TestWsHandler_RecordsLastIPOfRejectedConnection(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "last-ip-rejected-key-id")
+	token, _ := issueTokenAndPersistKeyID(t, agent)
+	setAllowedIPs(t, agent.Id, []string{"10.0.0.0/8"})
+
+	_, resp, dialErr := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if dialErr == nil {
+		t.Fatal("expected dial error, got nil")
+	}
+	if got := storedLastIP(t, agent.Id); got != "127.0.0.1" {
+		t.Errorf("expected last IP 127.0.0.1, got %q", got)
+	}
+}
+
+func TestWsHandler_RecordsLastIPOfAcceptedConnection(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "last-ip-accepted-key-id")
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
+
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+	doHandshake(t, conn, agent.Id, signingPriv)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for storedLastIP(t, agent.Id) == "" && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := storedLastIP(t, agent.Id); got != "127.0.0.1" {
+		t.Errorf("expected last IP 127.0.0.1, got %q", got)
+	}
+}
+
 func TestWsHandler_AcceptsIPInsideAllowedIPs(t *testing.T) {
 	setupHandlerTestEnv(t)
 	log := testLogger()
