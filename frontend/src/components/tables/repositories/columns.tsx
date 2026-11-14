@@ -10,14 +10,13 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ExternalLink, MoreHorizontal, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -193,7 +192,7 @@ function RepositoryActions({ repository }: { repository: Repository }) {
 
 	return (
 		<div className="flex justify-end">
-			<DropdownMenu>
+			<DialogDropdownMenu>
 				<DropdownMenuTrigger
 					render={
 						<Button variant="ghost" className="h-8 w-8 p-0">
@@ -202,7 +201,7 @@ function RepositoryActions({ repository }: { repository: Repository }) {
 						</Button>
 					}
 				></DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+				<DialogDropdownMenuContent align="end" className="w-fit">
 					<DropdownMenuGroup>
 						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 						{canSync && (
@@ -240,8 +239,8 @@ function RepositoryActions({ repository }: { repository: Repository }) {
 							</>
 						)}
 					</DropdownMenuGroup>
-				</DropdownMenuContent>
-			</DropdownMenu>
+				</DialogDropdownMenuContent>
+			</DialogDropdownMenu>
 		</div>
 	);
 }

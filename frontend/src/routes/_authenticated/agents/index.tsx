@@ -10,19 +10,18 @@ import { useFetch } from "@/lib/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { m } from "@/lib/paraglide/messages";
 import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { EllipsisVertical, Plus, Server, Trash2 } from "lucide-react";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { AgentCard } from "@/components/cards/agent-card";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { deleteAgent, type Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
 import { groupBy, toSearchableText } from "@/lib/utils";
@@ -81,8 +80,9 @@ function RouteComponent() {
 		}
 	}
 
+	const deferredSearchQuery = useDeferredValue(searchQuery);
 	const filteredAgents = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
+		const query = deferredSearchQuery.trim().toLowerCase();
 
 		if (!query) {
 			return data ?? [];
@@ -98,7 +98,7 @@ function RouteComponent() {
 				return toSearchableText(searchableAgent).includes(query);
 			}) ?? []
 		);
-	}, [data, searchQuery]);
+	}, [data, deferredSearchQuery]);
 
 	return (
 		<PageContainer>
@@ -192,7 +192,7 @@ function RouteComponent() {
 										apps={applicationsByAgent && (applicationsByAgent.get(agent.id) ?? [])}
 										action={
 											canUpdate || canDelete ? (
-												<DropdownMenu>
+												<DialogDropdownMenu>
 													<DropdownMenuTrigger
 														render={
 															<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -201,7 +201,7 @@ function RouteComponent() {
 															</Button>
 														}
 													></DropdownMenuTrigger>
-													<DropdownMenuContent align="end" className="w-fit" keepMounted>
+													<DialogDropdownMenuContent align="end" className="w-fit">
 														<DropdownMenuGroup>
 															<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 															{canUpdate && (
@@ -226,8 +226,8 @@ function RouteComponent() {
 																/>
 															)}
 														</DropdownMenuGroup>
-													</DropdownMenuContent>
-												</DropdownMenu>
+													</DialogDropdownMenuContent>
+												</DialogDropdownMenu>
 											) : undefined
 										}
 									/>

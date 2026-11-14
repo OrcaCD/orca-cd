@@ -41,9 +41,22 @@ export function deleteRepo(key: string) {
 	repos.delete(key);
 }
 
+let contentAddressed = false;
+
+/**
+ * Derives the commit hashes from the files instead of a commit counter. The dev mock uses this
+ * because its counters restart with the process, which would hand out hashes the hub already knows.
+ */
+export function useContentAddressedCommits() {
+	contentAddressed = true;
+}
+
 // Deterministic, so tests can predict the commit hashes
-function commitSha(repo: Repo, branch: string, counter: number) {
-	return createHash("sha1").update(`${repo.key}:${branch}:${counter}`).digest("hex");
+function commitSha(repo: Repo, branch: string, counter: number, files: Map<string, string>) {
+	const seed = contentAddressed
+		? JSON.stringify([...files].toSorted(([a], [b]) => a.localeCompare(b)))
+		: counter;
+	return createHash("sha1").update(`${repo.key}:${branch}:${seed}`).digest("hex");
 }
 
 /** Creates a repository, replacing any existing one with the same key */
@@ -60,16 +73,27 @@ export function createRepo(
 		signatures: new Map(),
 	};
 	for (const [name, { files = {} }] of Object.entries(branches)) {
-		const branch = {
-			sha: commitSha(repo, name, 1),
-			message: "Initial commit",
-			commits: 1,
-			files: new Map(Object.entries(files)),
-		};
-		repo.branches.set(name, branch);
-		repo.snapshots.set(branch.sha, new Map(branch.files));
+		createBranch(repo, name, files);
 	}
 	repos.set(key, repo);
+}
+
+export function listRepos() {
+	return [...repos.values()];
+}
+
+/** Creates a branch with an initial commit, replacing any existing one with the same name */
+export function createBranch(repo: Repo, name: string, files: Record<string, string>) {
+	const branchFiles = new Map(Object.entries(files));
+	const branch = {
+		sha: commitSha(repo, name, 1, branchFiles),
+		message: "Initial commit",
+		commits: 1,
+		files: branchFiles,
+	};
+	repo.branches.set(name, branch);
+	repo.snapshots.set(branch.sha, new Map(branch.files));
+	return branch;
 }
 
 /** Applies the file changes as a new commit, a `null` content deletes the file */
@@ -91,7 +115,7 @@ export function commitFiles(
 		}
 	}
 	branch.commits++;
-	branch.sha = commitSha(repo, branchName, branch.commits);
+	branch.sha = commitSha(repo, branchName, branch.commits, branch.files);
 	branch.message = message ?? `Commit ${branch.commits}`;
 	repo.snapshots.set(branch.sha, new Map(branch.files));
 	return { sha: branch.sha, message: branch.message };

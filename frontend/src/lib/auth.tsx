@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { API_BASE, fetcher, useFetch } from "./api";
 import { connect, disconnect } from "./sse";
 import type { PermissionAction, PermissionResource, UserRole } from "./roles";
@@ -49,13 +49,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 	const isDemo = data?.demo ?? false;
 
-	const auth: AuthState = {
-		isLoading,
-		profile: data || null,
-		isAuthenticated: !!data,
-		isAdmin: data?.isAdmin ?? false,
-		passwordChangeRequired: data?.passwordChangeRequired ?? false,
-	};
+	const auth: AuthState = useMemo(
+		() => ({
+			isLoading,
+			profile: data || null,
+			isAuthenticated: !!data,
+			isAdmin: data?.isAdmin ?? false,
+			passwordChangeRequired: data?.passwordChangeRequired ?? false,
+		}),
+		[isLoading, data],
+	);
 
 	const refreshAuth = useCallback(async () => {
 		await mutate();
@@ -121,11 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 		await mutate(undefined, false);
 	}, [mutate]);
 
-	return (
-		<AuthContext.Provider value={{ auth, logout, logoutEverywhere, refreshAuth }}>
-			{children}
-		</AuthContext.Provider>
+	const value = useMemo(
+		() => ({ auth, logout, logoutEverywhere, refreshAuth }),
+		[auth, logout, logoutEverywhere, refreshAuth],
 	);
+
+	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
