@@ -6,7 +6,7 @@ import { columns } from "@/components/tables/audit-log/columns";
 import useSWRInfinite from "swr/infinite";
 import { fetcher } from "@/lib/api";
 import { Button } from "@base-ui/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 export const Route = createFileRoute("/_authenticated/admin/audit-log")({
@@ -38,7 +38,7 @@ function AuditLogPage() {
 		keepPreviousData: true,
 	});
 
-	const logs = data ? data.flatMap((page) => page.items) : [];
+	const logs = useMemo(() => (data ? data.flatMap((page) => page.items) : []), [data]);
 	const lastPage = data?.[data.length - 1];
 	const hasMore = lastPage?.hasMore;
 

@@ -49,48 +49,49 @@ export function AvailabilityBar({ stats }: { stats: HealthStats }) {
 					role="group"
 					aria-label={m.healthAvailability()}
 				>
-					{stats.buckets.map((bucket) => (
-						<InfoTooltip key={bucket.start}>
-							<InfoTooltipTrigger
-								aria-label={tooltipFormatter.formatRange(
-									new Date(bucket.start),
-									new Date(bucket.end),
-								)}
-								render={
-									<div
-										className={cn(
-											"h-full min-w-0 flex-1 rounded-[3px] transition-opacity hover:opacity-80",
-											bucket.status === null
-												? "bg-muted"
-												: healthStatusConfig[bucket.status].className,
-										)}
-									/>
-								}
-							/>
-							<InfoTooltipContent className="flex-col items-start gap-1">
-								<p className="font-medium">
-									{tooltipFormatter.formatRange(new Date(bucket.start), new Date(bucket.end))}
-								</p>
-								{bucket.status === null ? (
-									<p className="text-muted-foreground">{m.healthNotTracked()}</p>
-								) : null}
-								{bucketBreakdown
-									.filter((entry) => entry.seconds(bucket) > 0)
-									.map((entry) => (
-										<p key={entry.status} className="flex items-center gap-1.5">
-											<span
-												className={cn(
-													"size-2 rounded-xs",
-													healthStatusConfig[entry.status].className,
-												)}
-											/>
-											{healthStatusConfig[entry.status].label()}:{" "}
-											{formatHealthDuration(entry.seconds(bucket))}
-										</p>
-									))}
-							</InfoTooltipContent>
-						</InfoTooltip>
-					))}
+					{stats.buckets.map((bucket) => {
+						const range = tooltipFormatter.formatRange(
+							new Date(bucket.start),
+							new Date(bucket.end),
+						);
+						return (
+							<InfoTooltip key={bucket.start}>
+								<InfoTooltipTrigger
+									aria-label={range}
+									render={
+										<div
+											className={cn(
+												"h-full min-w-0 flex-1 rounded-[3px] transition-opacity hover:opacity-80",
+												bucket.status === null
+													? "bg-muted"
+													: healthStatusConfig[bucket.status].className,
+											)}
+										/>
+									}
+								/>
+								<InfoTooltipContent className="flex-col items-start gap-1">
+									<p className="font-medium">{range}</p>
+									{bucket.status === null ? (
+										<p className="text-muted-foreground">{m.healthNotTracked()}</p>
+									) : null}
+									{bucketBreakdown
+										.filter((entry) => entry.seconds(bucket) > 0)
+										.map((entry) => (
+											<p key={entry.status} className="flex items-center gap-1.5">
+												<span
+													className={cn(
+														"size-2 rounded-xs",
+														healthStatusConfig[entry.status].className,
+													)}
+												/>
+												{healthStatusConfig[entry.status].label()}:{" "}
+												{formatHealthDuration(entry.seconds(bucket))}
+											</p>
+										))}
+								</InfoTooltipContent>
+							</InfoTooltip>
+						);
+					})}
 				</div>
 				<div className="flex justify-between text-xs text-muted-foreground">
 					<span>{axisFormatter.format(new Date(stats.from))}</span>

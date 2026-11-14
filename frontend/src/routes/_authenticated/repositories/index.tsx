@@ -15,21 +15,20 @@ import { useFetch } from "@/lib/api";
 import type { ApplicationListItem } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
 import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { EllipsisVertical, GitBranch, Plus, RefreshCw, Settings, Trash2 } from "lucide-react";
 
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { RepositoryCard } from "@/components/cards/repository-card";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { toast } from "@/components/ui/toast";
 import { groupBy, toSearchableText } from "@/lib/utils";
 import { usePreferredLayout } from "@/lib/layout-preference";
@@ -93,8 +92,9 @@ function RepositoriesPage() {
 		}
 	}
 
+	const deferredSearchQuery = useDeferredValue(searchQuery);
 	const filteredRepositories = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
+		const query = deferredSearchQuery.trim().toLowerCase();
 
 		if (!query) {
 			return data ?? [];
@@ -105,7 +105,7 @@ function RepositoriesPage() {
 				return toSearchableText(repository).includes(query);
 			}) ?? []
 		);
-	}, [data, searchQuery]);
+	}, [data, deferredSearchQuery]);
 
 	return (
 		<PageContainer>
@@ -194,7 +194,7 @@ function RepositoriesPage() {
 									}
 									onSync={() => handleSyncRepo(repository)}
 									action={
-										<DropdownMenu>
+										<DialogDropdownMenu>
 											<DropdownMenuTrigger
 												render={
 													<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -203,7 +203,7 @@ function RepositoriesPage() {
 													</Button>
 												}
 											></DropdownMenuTrigger>
-											<DropdownMenuContent align="end" className="w-fit" keepMounted>
+											<DialogDropdownMenuContent align="end" className="w-fit">
 												<DropdownMenuGroup>
 													<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 													{can("repository", "sync", repository.id) &&
@@ -248,8 +248,8 @@ function RepositoriesPage() {
 															</>
 														)}
 												</DropdownMenuGroup>
-											</DropdownMenuContent>
-										</DropdownMenu>
+											</DialogDropdownMenuContent>
+										</DialogDropdownMenu>
 									}
 								/>
 							))}
