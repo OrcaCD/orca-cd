@@ -15,12 +15,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { useFetch } from "@/lib/api";
 import { deleteOIDCProvider, type OIDCProviderDetail } from "@/lib/oidc";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
@@ -80,7 +79,7 @@ function OIDCProvidersPage() {
 									{provider.enabled ? m.enabled() : m.disabled()}
 								</Badge>
 
-								<DropdownMenu>
+								<DialogDropdownMenu>
 									<DropdownMenuTrigger
 										render={
 											<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -89,7 +88,7 @@ function OIDCProvidersPage() {
 											</Button>
 										}
 									></DropdownMenuTrigger>
-									<DropdownMenuContent align="end" keepMounted>
+									<DialogDropdownMenuContent align="end">
 										<DropdownMenuGroup>
 											<UpsertOIDCProviderDialog provider={provider} asDropdownItem />
 											<DropdownMenuSeparator />
@@ -104,8 +103,8 @@ function OIDCProvidersPage() {
 												asDropdownItem
 											/>
 										</DropdownMenuGroup>
-									</DropdownMenuContent>
-								</DropdownMenu>
+									</DialogDropdownMenuContent>
+								</DialogDropdownMenu>
 							</CardAction>
 							<CardTitle className="text-lg">{provider.name}</CardTitle>
 							<CardDescription className="mt-0.5">{provider.issuerUrl}</CardDescription>

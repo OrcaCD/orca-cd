@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { PageContainer, PageHeader } from "@/components/page-header";
 import {
 	EmptyState,
@@ -20,14 +20,13 @@ import { NotificationsDataTable } from "@/components/tables/notifications/data-t
 import { Button } from "@/components/ui/button";
 import { NotificationCard } from "@/components/cards/notification-card";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { useFetch } from "@/lib/api";
 import { usePreferredLayout } from "@/lib/layout-preference";
 import { deleteNotification, type Notification, testNotification } from "@/lib/notifications";
@@ -82,8 +81,9 @@ function NotificationsPage() {
 		}
 	}
 
+	const deferredSearchQuery = useDeferredValue(searchQuery);
 	const filteredNotifications = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
+		const query = deferredSearchQuery.trim().toLowerCase();
 		if (!query) {
 			return data ?? [];
 		}
@@ -93,7 +93,7 @@ function NotificationsPage() {
 				return toSearchableText(notification).includes(query);
 			}) ?? []
 		);
-	}, [data, searchQuery]);
+	}, [data, deferredSearchQuery]);
 
 	return (
 		<PageContainer>
@@ -186,7 +186,7 @@ function NotificationsPage() {
 										notification={notification}
 										action={
 											canUpdate || canDelete ? (
-												<DropdownMenu>
+												<DialogDropdownMenu>
 													<DropdownMenuTrigger
 														render={
 															<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -195,7 +195,7 @@ function NotificationsPage() {
 															</Button>
 														}
 													></DropdownMenuTrigger>
-													<DropdownMenuContent align="end" keepMounted>
+													<DialogDropdownMenuContent align="end">
 														<DropdownMenuGroup>
 															<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 															{canUpdate && (
@@ -234,8 +234,8 @@ function NotificationsPage() {
 																/>
 															)}
 														</DropdownMenuGroup>
-													</DropdownMenuContent>
-												</DropdownMenu>
+													</DialogDropdownMenuContent>
+												</DialogDropdownMenu>
 											) : undefined
 										}
 									/>

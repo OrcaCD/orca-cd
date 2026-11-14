@@ -42,9 +42,37 @@ jobs:
             agent.cache-from=type=gha,scope=e2e-agent
             agent.cache-to=type=gha,scope=e2e-agent,mode=max
 
+  changes:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      e2e: ${{ steps.filter.outputs.e2e }}
+    steps:
+      # The merge commit's first parent is the base branch, so two commits cover the whole PR
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # Anything not known to be irrelevant runs the tests, so new files are covered by default
+      - name: Detect changes
+        id: filter
+        run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          relevant=$(grep -vE '\.md$|^\.github/|^\.vscode/|^(LICENSE|codecov\.yml|crowdin\.yml|\.gitattributes|\.gitignore)$' <<< "$changed" || true)
+          if [[ -n "$relevant" ]] || grep -qx '.github/workflows/e2e-tests.yml' <<< "$changed"; then
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
     name: E2E (${{ matrix.name }})
-    if: ${{ github.event_name == 'pull_request' }}
+    needs: changes
+    # Runs as well if detecting the changes failed
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.e2e != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -133,7 +161,8 @@ jobs:
           path: ./e2e/playwright-report
           retention-days: 30
 
-  # Keeps the required "tests" check the same, however the E2E tests are split up
+  # Keeps the required "tests" check the same, however the E2E tests are split up. The E2E jobs
+  # only skip when the pull request changes nothing they test.
   tests:
     if: ${{ always() && github.event_name == 'pull_request' }}
     needs: e2e
@@ -144,7 +173,7 @@ jobs:
         env:
           RESULT: ${{ needs.e2e.result }}
         run: |
-          if [[ "$RESULT" != "success" ]]; then
+          if [[ "$RESULT" != "success" && "$RESULT" != "skipped" ]]; then
             echo "E2E tests finished with result: $RESULT"
             exit 1
           fi

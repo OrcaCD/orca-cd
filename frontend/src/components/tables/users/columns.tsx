@@ -2,12 +2,11 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { EllipsisVertical, KeyRound, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import ConfirmationDialog from "@/components/dialogs/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -93,7 +92,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 
 			return (
 				<div className="flex justify-end">
-					<DropdownMenu>
+					<DialogDropdownMenu>
 						<DropdownMenuTrigger
 							render={
 								<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -102,7 +101,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 								</Button>
 							}
 						></DropdownMenuTrigger>
-						<DropdownMenuContent align="end" keepMounted>
+						<DialogDropdownMenuContent align="end">
 							<DropdownMenuGroup>
 								<UpsertUserDialog user={row.original} asDropdownItem />
 								<DropdownMenuSeparator />
@@ -122,8 +121,8 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 									asDropdownItem
 								/>
 							</DropdownMenuGroup>
-						</DropdownMenuContent>
-					</DropdownMenu>
+						</DialogDropdownMenuContent>
+					</DialogDropdownMenu>
 				</div>
 			);
 		},
