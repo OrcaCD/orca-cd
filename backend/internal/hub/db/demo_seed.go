@@ -77,21 +77,103 @@ const demoWebPreviousComposeFile = `services:
     restart: unless-stopped
 `
 
+// The Grafana commit failed its health check, so the Monitoring Stack still runs
+// the Prometheus commit, which deployed demoMonitoringPreviousComposeFile.
 const demoMonitoringComposeFile = `services:
   prometheus:
     image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
     ports:
       - "9090:9090"
     env_file: prometheus.env
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
   grafana:
     image: grafana/grafana:12.1.0
     ports:
       - "3000:3000"
     env_file: grafana.env
+    volumes:
+      - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
     restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    restart: unless-stopped
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+volumes:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
+`
+
+const demoMonitoringPreviousComposeFile = `services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    env_file: prometheus.env
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    restart: unless-stopped
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    restart: unless-stopped
+volumes:
+  prometheus-data:
+  alertmanager-data:
 `
 
 const demoWorkerComposeFile = `services:
@@ -368,7 +450,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 			LastSyncSource:               &syncSource,
 			Path:                         "monitoring/compose.yml",
 			ComposeFile:                  crypto.EncryptedString(demoMonitoringComposeFile),
-			PreviousComposeFile:          crypto.EncryptedString(""),
+			PreviousComposeFile:          crypto.EncryptedString(demoMonitoringPreviousComposeFile),
 			ImagePollIntervalSeconds:     120,
 			CurrentDeploymentId:          &monitoringDeployment,
 			RolledBackAt:                 &rolledBackAt,
@@ -442,7 +524,7 @@ func seedDemoDeployments(ctx context.Context, tx *gorm.DB, now time.Time) error 
 			demoWebComposeFile, 3*time.Hour,
 			image("web", "b2d8f4a0c6e1937d5b2f8a4c0e6d1b7f3a9c5e2d8b4f0a6c1e7d3b9f5a2c8e4d", "ghcr.io/orcacd/demo-app")),
 		deployment(demoMonitoringDeploymentGood, "demo-app-monitoring", demoMonitoringPrometheusCommit, "feat: Add Prometheus",
-			demoMonitoringComposeFile, 4*24*time.Hour,
+			demoMonitoringPreviousComposeFile, 4*24*time.Hour,
 			image("prometheus", "e5a1c7d3b9f2084a6e1c7d3b9f5a2e8c4d0b6a1f7c3e9d5b2a8f4c0e6d1b7a3f", "prom/prometheus")),
 	}
 	for i := range deployments {
