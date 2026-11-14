@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.6.0](https://github.com/OrcaCD/orca-cd/compare/v0.5.0...v0.6.0) (2026-11-14)
+
+
+### Features
+
+* Accept more truthy values for boolean env vars ([#432](https://github.com/OrcaCD/orca-cd/issues/432)) ([206c9cd](https://github.com/OrcaCD/orca-cd/commit/206c9cd4b023b824b2b11d3079d61e26c5bdc525))
+* Add .env file import ([#485](https://github.com/OrcaCD/orca-cd/issues/485)) ([4a99caa](https://github.com/OrcaCD/orca-cd/commit/4a99caab915767a07e2a5b3313b1d3c0cea0abf5))
+* Add agent IP allowlist ([#533](https://github.com/OrcaCD/orca-cd/issues/533)) ([e9b326b](https://github.com/OrcaCD/orca-cd/commit/e9b326bfa66f8a2cfe91b5a80c781bbee6fc57ee))
+* add button to allow an agent's last seen IP ([#534](https://github.com/OrcaCD/orca-cd/issues/534)) ([9a7f26f](https://github.com/OrcaCD/orca-cd/commit/9a7f26f04bd9126219223c7b9f4b250096dfcbed))
+* Add compose style env file parser and writer ([#451](https://github.com/OrcaCD/orca-cd/issues/451)) ([3235474](https://github.com/OrcaCD/orca-cd/commit/32354747ab2b49107e4050e4ec2191afbadcae97))
+* Add frontend for env configuration ([#460](https://github.com/OrcaCD/orca-cd/issues/460)) ([f6cfcfe](https://github.com/OrcaCD/orca-cd/commit/f6cfcfe3a746b897ef3bbe8e3dc2d90c1420a19e))
+* add Gitea mock for local dev mode ([#524](https://github.com/OrcaCD/orca-cd/issues/524)) ([4a7c281](https://github.com/OrcaCD/orca-cd/commit/4a7c28188a312f0e7535627e9f6a0f400684c23d))
+* add hidden orca dash easter egg game ([#525](https://github.com/OrcaCD/orca-cd/issues/525)) ([2266231](https://github.com/OrcaCD/orca-cd/commit/2266231bec14c47858961665d0744ad87e1a68c9))
+* Add proto messages for env feature ([#450](https://github.com/OrcaCD/orca-cd/issues/450)) ([a3529ce](https://github.com/OrcaCD/orca-cd/commit/a3529ce4edbd6f599e46fa5ecc44bde8bfd44534))
+* **agent:** Implement env configuration feature ([#453](https://github.com/OrcaCD/orca-cd/issues/453)) ([1d360d6](https://github.com/OrcaCD/orca-cd/commit/1d360d6f7672236fa1084f1c2fae090a44b1bcc2))
+* **applications:** collapse unchanged lines in compose diff view ([#527](https://github.com/OrcaCD/orca-cd/issues/527)) ([587b366](https://github.com/OrcaCD/orca-cd/commit/587b3666284b3f035bdbf81a36538c4982c6ee01))
+* check compose files for common errors ([#420](https://github.com/OrcaCD/orca-cd/issues/420)) ([2b61b97](https://github.com/OrcaCD/orca-cd/commit/2b61b976d1c9b96e56de736cdfbc35146dee1215))
+* **frontend:** add dedicated notification type selection step ([#456](https://github.com/OrcaCD/orca-cd/issues/456)) ([26a1cee](https://github.com/OrcaCD/orca-cd/commit/26a1cee977ff5ac54677a38ab7e52329c9791f2b))
+* **frontend:** redesign system info page with grouped settings ([#458](https://github.com/OrcaCD/orca-cd/issues/458)) ([937a1aa](https://github.com/OrcaCD/orca-cd/commit/937a1aa5e92a586cb94eaf849db064186874f0a5))
+* **frontend:** show dialogs as a drawer on mobile ([#470](https://github.com/OrcaCD/orca-cd/issues/470)) ([1778757](https://github.com/OrcaCD/orca-cd/commit/17787573dfb7f0718e75344169ac260ecdefe16c))
+* **frontend:** show relative timestamps with exact date hints ([#442](https://github.com/OrcaCD/orca-cd/issues/442)) ([241d11b](https://github.com/OrcaCD/orca-cd/commit/241d11b49ddb66f36fefac4c2aa5c300cef9ed91))
+* **health:** add application health page ([#427](https://github.com/OrcaCD/orca-cd/issues/427)) ([03dfe64](https://github.com/OrcaCD/orca-cd/commit/03dfe648e6aa6e489b34df5433e3f9b928585160))
+* **health:** add application health statistics endpoint ([#426](https://github.com/OrcaCD/orca-cd/issues/426)) ([b527d23](https://github.com/OrcaCD/orca-cd/commit/b527d2395cc0b3e16871a3fced7414e15d40e415))
+* **health:** record application health history ([#425](https://github.com/OrcaCD/orca-cd/issues/425)) ([a82d80e](https://github.com/OrcaCD/orca-cd/commit/a82d80e86029563d4b53219567acf34f112da1d6))
+* **health:** report per-service health and add degraded status ([#424](https://github.com/OrcaCD/orca-cd/issues/424)) ([c455e32](https://github.com/OrcaCD/orca-cd/commit/c455e3225060d0749b0b957d6fe0cdab66fa6cc3))
+* **hub:** Add APIs for env configuration feature ([#454](https://github.com/OrcaCD/orca-cd/issues/454)) ([12dfea7](https://github.com/OrcaCD/orca-cd/commit/12dfea7ad6581750c433550c6b9113e867bac7a9))
+* **hub:** add request max body size middleware ([#461](https://github.com/OrcaCD/orca-cd/issues/461)) ([b7eb4a8](https://github.com/OrcaCD/orca-cd/commit/b7eb4a85f4eed6c62180d490c93d37f8c68f61de))
+* Improve demo, update sample data, fix readonly ([#429](https://github.com/OrcaCD/orca-cd/issues/429)) ([8213123](https://github.com/OrcaCD/orca-cd/commit/821312361b80c694374228023c83be4eaddce27a))
+* **rbac:** add roles admin page ([#489](https://github.com/OrcaCD/orca-cd/issues/489)) ([594a206](https://github.com/OrcaCD/orca-cd/commit/594a2066a34ea1f8f61cbe1ca5df52b1714eb49d))
+* **rbac:** add roles, permissions and role assignment ([#486](https://github.com/OrcaCD/orca-cd/issues/486)) ([33f232a](https://github.com/OrcaCD/orca-cd/commit/33f232a1a4d7af928365c2504ed3142f4129b604))
+* **rbac:** enforce permissions in the API ([#487](https://github.com/OrcaCD/orca-cd/issues/487)) ([ae9b4de](https://github.com/OrcaCD/orca-cd/commit/ae9b4de21ee532b77fa381faf8a720925fa9c32b))
+* **rbac:** filter live updates by permission ([#488](https://github.com/OrcaCD/orca-cd/issues/488)) ([c611cdd](https://github.com/OrcaCD/orca-cd/commit/c611cddb81161cb9a985c3a5c36985455e321262))
+* **rbac:** hide actions the user is not allowed to do ([#491](https://github.com/OrcaCD/orca-cd/issues/491)) ([a18ef3c](https://github.com/OrcaCD/orca-cd/commit/a18ef3c3022d537bdfa74783f35f1a4621a60af7))
+* **rbac:** map OIDC groups to roles ([#490](https://github.com/OrcaCD/orca-cd/issues/490)) ([3bd16a1](https://github.com/OrcaCD/orca-cd/commit/3bd16a1722ab3f256e263e6b57a873b7ab4ee4e6))
+* **rbac:** show users their roles and reload only affected profiles ([#522](https://github.com/OrcaCD/orca-cd/issues/522)) ([a7ceeb4](https://github.com/OrcaCD/orca-cd/commit/a7ceeb4b6590230cedf2e6bc860e4f8a70178ee6))
+* **rollback:** add rollback page and show rollbacks ([#439](https://github.com/OrcaCD/orca-cd/issues/439)) ([997c46e](https://github.com/OrcaCD/orca-cd/commit/997c46e6657d24f587fead267180b7fcb5630227))
+* **rollback:** record deployments with pinned images ([#436](https://github.com/OrcaCD/orca-cd/issues/436)) ([d424082](https://github.com/OrcaCD/orca-cd/commit/d4240822a2964a16abcf7eff842cd57165627ded))
+* **rollback:** roll back failed deployments automatically ([#438](https://github.com/OrcaCD/orca-cd/issues/438)) ([dba6070](https://github.com/OrcaCD/orca-cd/commit/dba607083c236f41b81e99c50b9fea4e80104343))
+* **rollback:** roll back to earlier deployments ([#437](https://github.com/OrcaCD/orca-cd/issues/437)) ([c5a16d4](https://github.com/OrcaCD/orca-cd/commit/c5a16d449de0dd04bb713b2b9bc8015cbc6e52a5))
+* **ui:** improve overview hierarchy and deployment summaries (4/9) ([#497](https://github.com/OrcaCD/orca-cd/issues/497)) ([e2ce73c](https://github.com/OrcaCD/orca-cd/commit/e2ce73c5709a95e0a8b60c2ab3ba6c8ce135efe4))
+* **ui:** improve search loading and empty collection states (6/9) ([#499](https://github.com/OrcaCD/orca-cd/issues/499)) ([710c067](https://github.com/OrcaCD/orca-cd/commit/710c0679222e1690b8afcb12f886b43c7c26eea2))
+* **ui:** redesign resource cards with flow-stage layout ([#446](https://github.com/OrcaCD/orca-cd/issues/446)) ([7fd90f0](https://github.com/OrcaCD/orca-cd/commit/7fd90f0ce760f78c498cbae23d016159bf06f931))
+* **ui:** refine authentication and creation forms (7/9) ([#500](https://github.com/OrcaCD/orca-cd/issues/500)) ([f9ed8b8](https://github.com/OrcaCD/orca-cd/commit/f9ed8b8a8c43ab686e1876692a61d8b312e1515d))
+* **ui:** standardize page layouts and navigation (3/9) ([#496](https://github.com/OrcaCD/orca-cd/issues/496)) ([0f427b4](https://github.com/OrcaCD/orca-cd/commit/0f427b489ffd0caa0e8513b15549bf971f051896))
+
+
+### Bug Fixes
+
+* **agent:** explain restricted deployment path permissions ([#445](https://github.com/OrcaCD/orca-cd/issues/445)) ([bebf43f](https://github.com/OrcaCD/orca-cd/commit/bebf43f7484fe8f8466bc2662146a6d3b28e81b3))
+* **agent:** restore retained local images during rollback ([#517](https://github.com/OrcaCD/orca-cd/issues/517)) ([66c39c0](https://github.com/OrcaCD/orca-cd/commit/66c39c01339bfbf14877d9b6dbce8ccc520df2fe))
+* **frontend:** make info tooltips work on touch devices ([#441](https://github.com/OrcaCD/orca-cd/issues/441)) ([418c556](https://github.com/OrcaCD/orca-cd/commit/418c556d86105fb84ca67be03a2c699d12e58bac))
+* Further harden demo mode ([#431](https://github.com/OrcaCD/orca-cd/issues/431)) ([9123555](https://github.com/OrcaCD/orca-cd/commit/9123555e322441cd82c539578f7c1baba44fba8d))
+* **justfile:** wait for hub to be healthy before starting frontend dev server ([#457](https://github.com/OrcaCD/orca-cd/issues/457)) ([fd96948](https://github.com/OrcaCD/orca-cd/commit/fd969482db45563990fd8814961e90e9d7417bb7))
+* Mock secrets in demo mode ([#482](https://github.com/OrcaCD/orca-cd/issues/482)) ([baceb02](https://github.com/OrcaCD/orca-cd/commit/baceb02212a267d2965d7d253a82a6fe67f9e148))
+* Support Harbor v2 webhooks ([#433](https://github.com/OrcaCD/orca-cd/issues/433)) ([2723fac](https://github.com/OrcaCD/orca-cd/commit/2723facc8c66edcc1b40e8ea492269d9000f4ff1))
+* **ui:** improve mobile diagnostics keyboard access and reduced motion (8/9) ([#501](https://github.com/OrcaCD/orca-cd/issues/501)) ([6b6f7fd](https://github.com/OrcaCD/orca-cd/commit/6b6f7fd473ae0d43f70c3fa32472522055c28127))
+* **ui:** keep toasts above drawers on mobile ([#480](https://github.com/OrcaCD/orca-cd/issues/480)) ([5dcdafd](https://github.com/OrcaCD/orca-cd/commit/5dcdafd10a6bd31c18179f4c3de14c3c7a8741e8))
+* **ui:** resolve dialog layout and icon picker accessibility issues ([#520](https://github.com/OrcaCD/orca-cd/issues/520)) ([7112889](https://github.com/OrcaCD/orca-cd/commit/71128898762becc839f8a7a0515b284479172d47))
+* **ui:** unify status severity and health history states (2/9) ([#495](https://github.com/OrcaCD/orca-cd/issues/495)) ([4db0e64](https://github.com/OrcaCD/orca-cd/commit/4db0e6434a897c1c461f8a67aa81e938431a87eb))
+
+
+### Performance Improvements
+
+* **frontend:** reduce unnecessary re-renders and recomputation ([#523](https://github.com/OrcaCD/orca-cd/issues/523)) ([77f4e05](https://github.com/OrcaCD/orca-cd/commit/77f4e05cfa59995bd9aa8cfa6749fe8af6597a99))
+
 ## [0.5.0](https://github.com/OrcaCD/orca-cd/compare/v0.4.0...v0.5.0) (2026-10-28)
 
 
