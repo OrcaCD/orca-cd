@@ -3,13 +3,12 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
 import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
@@ -151,7 +150,7 @@ function AgentActions({ agent }: { agent: Agent }) {
 
 	return (
 		<div className="flex justify-end">
-			<DropdownMenu>
+			<DialogDropdownMenu>
 				<DropdownMenuTrigger
 					render={
 						<Button variant="ghost" size="icon" className="h-8 w-8">
@@ -160,7 +159,7 @@ function AgentActions({ agent }: { agent: Agent }) {
 						</Button>
 					}
 				></DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+				<DialogDropdownMenuContent align="end" className="w-fit">
 					<DropdownMenuGroup>
 						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 						{canUpdate && (
@@ -185,8 +184,8 @@ function AgentActions({ agent }: { agent: Agent }) {
 							/>
 						)}
 					</DropdownMenuGroup>
-				</DropdownMenuContent>
-			</DropdownMenu>
+				</DialogDropdownMenuContent>
+			</DialogDropdownMenu>
 		</div>
 	);
 }

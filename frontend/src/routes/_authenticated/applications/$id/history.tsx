@@ -61,7 +61,7 @@ function ApplicationHistoryPage() {
 			{ keepPreviousData: true },
 		);
 
-	const events = data?.flatMap((page) => page.items) ?? [];
+	const events = useMemo(() => data?.flatMap((page) => page.items) ?? [], [data]);
 	const hasMore = data?.at(-1)?.hasMore ?? false;
 	const loadingMore = isValidating && Boolean(data) && data?.[size - 1] === undefined;
 

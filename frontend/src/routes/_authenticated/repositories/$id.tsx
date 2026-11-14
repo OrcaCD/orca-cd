@@ -45,11 +45,11 @@ const sidebarItems = [
 function RepositorySettingsLayout() {
 	const { id } = Route.useParams();
 	const { data: repository } = useFetch<Repository>(`/repositories/${id}`);
-	const { location } = useRouterState();
+	const pathname = useRouterState({ select: (state) => state.location.pathname });
 
 	const currentPage = sidebarItems.find((item) => {
 		const path = item.to.replace("$id", id);
-		return location.pathname === path || location.pathname.startsWith(`${path}/`);
+		return pathname === path || pathname.startsWith(`${path}/`);
 	});
 
 	return (
@@ -60,7 +60,7 @@ function RepositorySettingsLayout() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{sidebarItems.map((item) => (
-								<SidebarItem key={item.to} item={item} pathname={location.pathname} id={id} />
+								<SidebarItem key={item.to} item={item} pathname={pathname} id={id} />
 							))}
 						</SidebarMenu>
 					</SidebarGroupContent>
