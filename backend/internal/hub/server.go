@@ -44,6 +44,7 @@ type Config struct {
 	Demo                  bool
 	DisableUI             bool
 	SkipAgentVersionCheck bool
+	CACertFile            string
 }
 
 func DefaultConfig() (Config, error) {
@@ -103,6 +104,7 @@ func DefaultConfig() (Config, error) {
 		Demo:                  demo,
 		DisableUI:             disableUI,
 		SkipAgentVersionCheck: skipAgentVersionCheck,
+		CACertFile:            os.Getenv("CA_CERT_FILE"),
 	}, nil
 }
 
@@ -118,6 +120,13 @@ func Run(cfg Config) error {
 
 	if cfg.Demo {
 		httpclient.Disable()
+	}
+
+	if cfg.CACertFile != "" {
+		if err := httpclient.TrustExtraCACerts(cfg.CACertFile); err != nil {
+			Log.Error().Err(err).Msg("failed to load extra CA certificates")
+			return err
+		}
 	}
 
 	version.SkipMinAgentVersion = cfg.SkipAgentVersionCheck
