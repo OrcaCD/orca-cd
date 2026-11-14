@@ -34,6 +34,34 @@ func Parse(entries []string) List {
 	return l
 }
 
+// Normalize strictly validates a single IP or CIDR entry and returns its
+// canonical form. Unlike Parse, it reports malformed entries.
+func Normalize(entry string) (string, error) {
+	entry = strings.TrimSpace(entry)
+	if strings.Contains(entry, "/") {
+		prefix, err := netip.ParsePrefix(entry)
+		if err != nil {
+			return "", err
+		}
+		return unmapPrefix(prefix).Masked().String(), nil
+	}
+
+	addr, err := ParseIP(entry)
+	if err != nil {
+		return "", err
+	}
+	return addr.String(), nil
+}
+
+// Allows reports whether ip passes a whitelist. An empty whitelist allows every
+// IP, while a non-empty one fails closed even if none of its entries are valid.
+func Allows(entries []string, ip string) bool {
+	if len(entries) == 0 {
+		return true
+	}
+	return Parse(entries).Contains(ip)
+}
+
 // Empty reports whether the list has no valid entries.
 func (l List) Empty() bool {
 	return len(l.addrs) == 0 && len(l.prefixes) == 0

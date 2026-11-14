@@ -1,5 +1,6 @@
 // oxlint-disable react/no-children-prop
-import { Pencil, Plus } from "lucide-react";
+import { InfoIcon, Pencil, Plus } from "lucide-react";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { Button } from "@/components/ui/button";
 import {
 	ResponsiveDialog,
@@ -17,7 +18,9 @@ import { z } from "zod";
 import { Field, FieldError, FieldGroup } from "../ui/field";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { createAgent, updateAgent, type Agent, type AgentWithTokenResponse } from "@/lib/agents";
+import { isIpOrCidr, parseIpList } from "@/lib/ip";
 import { m } from "@/lib/paraglide/messages";
 import LucideIconPicker, { type LucideIconName } from "@/components/lucide-icon-picker";
 import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
@@ -30,8 +33,22 @@ const agentSchema = z.object({
 		.min(1, m.validationAgentNameRequired())
 		.max(128, m.validationAgentNameMaxLength()),
 	icon: z.string(),
+	allowedIps: z.string().superRefine((value, ctx) => {
+		const entries = parseIpList(value);
+		if (entries.length > maxAllowedIps) {
+			ctx.addIssue({ code: "custom", message: m.validationAgentAllowedIpsMaxCount() });
+		}
+		const invalid = entries.find((entry) => !isIpOrCidr(entry));
+		if (invalid !== undefined) {
+			ctx.addIssue({
+				code: "custom",
+				message: m.validationAgentAllowedIpInvalid({ value: invalid }),
+			});
+		}
+	}),
 });
 
+const maxAllowedIps = 50;
 const defaultAgentIcon: LucideIconName = "server";
 
 /**
@@ -63,6 +80,7 @@ export default function UpsertAgentDialog({
 		defaultValues: {
 			name: agent?.name ?? "",
 			icon: agent?.icon ?? defaultAgentIcon,
+			allowedIps: (agent?.allowedIps ?? []).join("\n"),
 		},
 		validators: {
 			onSubmit: agentSchema,
@@ -74,12 +92,14 @@ export default function UpsertAgentDialog({
 					await updateAgent(agent.id, {
 						name: value.name,
 						icon: value.icon,
+						allowedIps: parseIpList(value.allowedIps),
 					});
 					toast.add({ type: "success", title: m.agentUpdated() });
 				} else {
 					const response = await createAgent({
 						name: value.name,
 						icon: value.icon,
+						allowedIps: parseIpList(value.allowedIps),
 					});
 					setCreatedAgent(response);
 					isHandingOverRef.current = true;
@@ -177,6 +197,44 @@ export default function UpsertAgentDialog({
 										/>
 									</Field>
 								)}
+							/>
+
+							<form.Field
+								name="allowedIps"
+								children={(field) => {
+									const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+									return (
+										<Field data-invalid={isInvalid}>
+											<div className="flex items-center gap-1.5">
+												<Label htmlFor={field.name}>
+													{m.agentAllowedIps()} {m.optional()}
+												</Label>
+												<InfoTooltip>
+													<InfoTooltipTrigger
+														type="button"
+														aria-label={m.details()}
+														className="inline-flex min-h-6 min-w-6 items-center justify-center cursor-help"
+													>
+														<InfoIcon
+															aria-hidden="true"
+															className="size-3.5 text-muted-foreground cursor-help"
+														/>
+													</InfoTooltipTrigger>
+													<InfoTooltipContent>{m.agentAllowedIpsTooltip()}</InfoTooltipContent>
+												</InfoTooltip>
+											</div>
+											<Textarea
+												id={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(e) => field.handleChange(e.target.value)}
+												placeholder={m.agentAllowedIpsPlaceholder()}
+												className="min-h-24 font-mono text-sm"
+											/>
+											{isInvalid && <FieldError errors={field.state.meta.errors} />}
+										</Field>
+									);
+								}}
 							/>
 
 							<div className="flex gap-2 pt-2">

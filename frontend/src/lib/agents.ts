@@ -23,6 +23,7 @@ export interface Agent {
 	version?: string | null;
 	dockerVersion?: string | null;
 	versionStatus: AgentVersionStatus;
+	allowedIps: string[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -35,11 +36,13 @@ export interface AgentWithTokenResponse extends Agent {
 export interface CreateAgentRequest {
 	name: string;
 	icon: string;
+	allowedIps?: string[];
 }
 
 export interface UpdateAgentRequest {
 	name: string;
 	icon: string;
+	allowedIps?: string[];
 }
 
 export function createAgent(data: CreateAgentRequest): Promise<AgentWithTokenResponse> {

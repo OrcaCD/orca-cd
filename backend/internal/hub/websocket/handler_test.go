@@ -22,6 +22,7 @@ import (
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wsreject"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
@@ -354,7 +355,10 @@ func TestWsHandler_RejectsReservedAgentBeforeUpgrade(t *testing.T) {
 		t.Fatal("expected dial error, got nil")
 	}
 	if resp == nil || resp.StatusCode != http.StatusConflict {
-		t.Errorf("expected 409, got %v", resp)
+		t.Fatalf("expected 409, got %v", resp)
+	}
+	if got := resp.Header.Get(wsreject.Header); got != wsreject.AlreadyConnected {
+		t.Errorf("expected reject reason %q, got %q", wsreject.AlreadyConnected, got)
 	}
 }
 
@@ -394,6 +398,113 @@ func TestWsHandler_RejectsTokenRotatedDuringHandshake(t *testing.T) {
 	}
 	if _, _, err := conn.ReadMessage(); err == nil {
 		t.Fatal("expected revoked connection to be closed")
+	}
+	waitForUnregistered(t, h, agent.Id)
+}
+
+func setAllowedIPs(t *testing.T, agentID string, ips []string) {
+	t.Helper()
+	if _, err := gorm.G[models.Agent](db.DB).
+		Where("id = ?", agentID).
+		Select("allowed_ips").
+		Updates(t.Context(), models.Agent{AllowedIPs: ips}); err != nil {
+		t.Fatalf("set allowed ips: %v", err)
+	}
+}
+
+func TestWsHandler_RejectsIPOutsideAllowedIPs(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "ip-key-id")
+	token, _ := issueTokenAndPersistKeyID(t, agent)
+	setAllowedIPs(t, agent.Id, []string{"10.0.0.0/8", "2001:db8::/32"})
+
+	_, resp, dialErr := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if dialErr == nil {
+		t.Fatal("expected dial error, got nil")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %v", resp)
+	}
+	if got := resp.Header.Get(wsreject.Header); got != wsreject.IPNotAllowed {
+		t.Errorf("expected reject reason %q, got %q", wsreject.IPNotAllowed, got)
+	}
+	if h.IsRegistered(agent.Id) {
+		t.Error("expected rejected agent to not be registered")
+	}
+}
+
+func TestWsHandler_AcceptsIPInsideAllowedIPs(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "ip-ok-key-id")
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
+	setAllowedIPs(t, agent.Id, []string{"192.0.2.1", "127.0.0.0/8"})
+
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected successful WS connection, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+	doHandshake(t, conn, agent.Id, signingPriv)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !h.IsRegistered(agent.Id) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	client, ok := h.GetClient(agent.Id)
+	if !ok {
+		t.Fatal("expected agent to be registered")
+	}
+	if got := client.RemoteIP(); got != "127.0.0.1" {
+		t.Errorf("expected remote IP 127.0.0.1, got %q", got)
+	}
+}
+
+func TestWsHandler_RejectsAllowedIPsChangedDuringHandshake(t *testing.T) {
+	setupHandlerTestEnv(t)
+	log := testLogger()
+	h := NewHub(&log)
+	server := newHandlerTestServer(t, h)
+
+	agent := createTestAgent(t, "ip-race-key-id")
+	token, signingPriv := issueTokenAndPersistKeyID(t, agent)
+	conn, resp, err := dialWS(server, token)
+	if resp != nil {
+		defer resp.Body.Close() //nolint:errcheck
+	}
+	if err != nil {
+		t.Fatalf("expected WebSocket upgrade, got: %v", err)
+	}
+	defer conn.Close() //nolint:errcheck
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set handshake read deadline: %v", err)
+	}
+	_, initData, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read KeyExchangeInit: %v", err)
+	}
+	setAllowedIPs(t, agent.Id, []string{"10.0.0.0/8"})
+
+	respondToHandshake(t, conn, initData, agent.Id, signingPriv)
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set close read deadline: %v", err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected connection to be closed")
 	}
 	waitForUnregistered(t, h, agent.Id)
 }

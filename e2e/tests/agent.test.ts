@@ -20,6 +20,7 @@ interface ApiAgent {
 	id: string;
 	name: string;
 	status: string;
+	allowedIps: string[];
 }
 
 const AGENT_NAME = "E2E Agent";
@@ -223,6 +224,61 @@ test.describe("Agent token rotation", () => {
 	});
 });
 
+test.describe("Agent allowed IPs", () => {
+	async function openEditDialog(page: Page) {
+		await openAgentCard(page);
+		await agentCard(page).getByRole("button", { name: "Card actions" }).click();
+		await page.getByRole("menu").getByRole("button", { name: "Edit" }).click();
+		return page.getByRole("dialog", { name: "Edit Agent" });
+	}
+
+	test("rejects invalid entries in the dialog", async ({ page }) => {
+		const dialog = await openEditDialog(page);
+		await dialog.getByRole("textbox", { name: "Allowed IPs" }).fill("192.0.2.1\nnot-an-ip");
+		await dialog.getByRole("button", { name: "Update" }).click();
+
+		await expect(
+			dialog.getByText('"not-an-ip" is not a valid IP address or CIDR range'),
+		).toBeVisible();
+		await dialog.getByRole("button", { name: "Cancel" }).click();
+
+		const agent = (await listAgents(page)).find((entry) => entry.id === agentId);
+		expect(agent?.allowedIps).toEqual([]);
+	});
+
+	test("disconnects the agent and refuses its reconnects when its IP is not allowed", async ({
+		page,
+	}) => {
+		const dialog = await openEditDialog(page);
+		await dialog.getByRole("textbox", { name: "Allowed IPs" }).fill("192.0.2.1, 198.51.100.0/24");
+		await dialog.getByRole("button", { name: "Update" }).click();
+		await expect(dialog).toHaveCount(0);
+
+		const agent = (await listAgents(page)).find((entry) => entry.id === agentId);
+		expect(agent?.allowedIps).toEqual(["192.0.2.1", "198.51.100.0/24"]);
+
+		await expect.poll(() => agentStatus(page), { timeout: 30_000 }).toBe("offline");
+		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("disconnected from hub");
+
+		const rejectedAttempts = () => (agentLogs().match(/not in its allowed IPs list/g) ?? []).length;
+		await expect.poll(rejectedAttempts, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
+		expect(agentLogs()).toContain("bad handshake");
+		expect(agentState().status).toBe("running");
+		expect(await agentStatus(page)).toBe("offline");
+	});
+
+	test("reconnects once the allowed IPs are cleared", async ({ page }) => {
+		const dialog = await openEditDialog(page);
+		await dialog.getByRole("textbox", { name: "Allowed IPs" }).fill("");
+		await dialog.getByRole("button", { name: "Update" }).click();
+		await expect(dialog).toHaveCount(0);
+
+		const agent = (await listAgents(page)).find((entry) => entry.id === agentId);
+		expect(agent?.allowedIps).toEqual([]);
+		await expect.poll(() => agentStatus(page), { timeout: 60_000 }).toBe("online");
+	});
+});
+
 // The agent is online with the rotated token from here on
 test.describe("Agent resilience", () => {
 	test("reconnects after the hub restarts", async ({ page }) => {
@@ -237,7 +293,7 @@ test.describe("Agent resilience", () => {
 	test("a second connection with the same token is rejected", async ({ page }) => {
 		startDuplicateAgent({ hubUrl: HUB_WS_URL, authToken });
 
-		await expect.poll(duplicateAgentLogs, { timeout: 30_000 }).toContain("connection failed");
+		await expect.poll(duplicateAgentLogs, { timeout: 30_000 }).toContain("already connected");
 		expect(duplicateAgentLogs()).toContain("bad handshake");
 		// The duplicate keeps retrying, the original connection is not affected
 		expect(await agentStatus(page)).toBe("online");

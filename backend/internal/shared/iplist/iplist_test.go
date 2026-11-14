@@ -128,6 +128,36 @@ func TestList_ContainsReturnsFalseForUnparsableIP(t *testing.T) {
 	}
 }
 
+func TestNormalize(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{in: " 203.0.113.5 ", want: "203.0.113.5"},
+		{in: "2001:DB8::1", want: "2001:db8::1"},
+		{in: "::ffff:192.0.2.10", want: "192.0.2.10"},
+		{in: "203.0.113.7/24", want: "203.0.113.0/24"},
+		{in: "::ffff:203.0.113.0/120", want: "203.0.113.0/24"},
+		{in: "2001:db8::5/32", want: "2001:db8::/32"},
+		{in: "", wantErr: true},
+		{in: "not-an-ip", wantErr: true},
+		{in: "203.0.113.5/33", wantErr: true},
+		{in: "203.0.113.5, 2001:db8::/32", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		got, err := Normalize(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("Normalize(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("Normalize(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestParse_UnmapPrefixResult(t *testing.T) {
 	l := Parse([]string{"::ffff:203.0.113.0/120"})
 

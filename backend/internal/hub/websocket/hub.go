@@ -22,10 +22,11 @@ import (
 var DefaultHub *Hub
 
 type Client struct {
-	Id      string
-	conn    *websocket.Conn
-	Send    chan *messages.ServerMessage
-	session *wscrypto.Session
+	Id       string
+	conn     *websocket.Conn
+	Send     chan *messages.ServerMessage
+	session  *wscrypto.Session
+	remoteIP string
 
 	closeOnce sync.Once
 	closing   atomic.Bool
@@ -114,15 +115,20 @@ func (h *Hub) Shutdown() {
 }
 
 func (h *Hub) Register(id string, conn *websocket.Conn) (*Client, error) {
+	return h.RegisterFrom(id, conn, "")
+}
+
+func (h *Hub) RegisterFrom(id string, conn *websocket.Conn, remoteIP string) (*Client, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, exists := h.clients[id]; exists {
 		return nil, fmt.Errorf("client Id %s already registered", id)
 	}
 	c := &Client{
-		Id:   id,
-		conn: conn,
-		Send: make(chan *messages.ServerMessage, 64),
+		Id:       id,
+		conn:     conn,
+		Send:     make(chan *messages.ServerMessage, 64),
+		remoteIP: remoteIP,
 	}
 	h.clients[id] = c
 	h.log.Debug().Str("client", id).Msg("Client registered")
@@ -164,6 +170,10 @@ func (h *Hub) FinishDisconnect(c *Client) {
 	h.mu.Unlock()
 	h.abortPendingEnv(c)
 	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
+}
+
+func (c *Client) RemoteIP() string {
+	return c.remoteIP
 }
 
 func (h *Hub) GetClient(id string) (*Client, bool) {

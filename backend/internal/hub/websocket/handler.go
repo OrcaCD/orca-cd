@@ -19,7 +19,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wsreject"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -77,7 +79,15 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
+		clientIP := c.ClientIP()
+		if !iplist.Allows(agent.AllowedIPs, clientIP) {
+			log.Warn().Str("agent_id", claims.Subject).Str("ip", clientIP).Msg("Rejecting connection from IP outside the agent's allowed IPs")
+			c.Header(wsreject.Header, wsreject.IPNotAllowed)
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		if h.IsRegistered(claims.Subject) {
+			c.Header(wsreject.Header, wsreject.AlreadyConnected)
 			c.AbortWithStatus(http.StatusConflict)
 			return
 		}
@@ -116,7 +126,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 			return
 		}
 
-		client, err := h.Register(claims.Subject, conn)
+		client, err := h.RegisterFrom(claims.Subject, conn, clientIP)
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to register client")
 			err = conn.Close()
@@ -131,11 +141,11 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		registeredAgent, verifyErr := gorm.G[models.Agent](db.DB).
 			Where("id = ?", claims.Subject).
 			First(c.Request.Context())
-		if verifyErr != nil || registeredAgent.KeyId.String() != claims.KeyId {
+		if verifyErr != nil || registeredAgent.KeyId.String() != claims.KeyId || !iplist.Allows(registeredAgent.AllowedIPs, clientIP) {
 			if verifyErr != nil {
 				log.Error().Err(verifyErr).Str("agent_id", claims.Subject).Msg("Failed to revalidate agent after handshake")
 			} else {
-				log.Warn().Str("agent_id", claims.Subject).Msg("Rejecting connection with revoked token")
+				log.Warn().Str("agent_id", claims.Subject).Msg("Rejecting connection with revoked token or disallowed IP")
 			}
 			h.BeginDisconnect(client)
 			h.FinishDisconnect(client)
