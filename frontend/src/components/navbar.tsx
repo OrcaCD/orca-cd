@@ -13,7 +13,7 @@ import {
 	XIcon,
 	type LucideIcon,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { Blobatar } from "@blobatar/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +41,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { HOTKEY_SEQUENCES, useApplicationHotkeys } from "@/lib/hotkeys";
 import "blobatar/motion.css";
+
+const OrcaGame = lazy(() => import("./orca-game"));
+
+const ORCA_GAME_CLICKS = 3;
+const ORCA_GAME_CLICK_WINDOW_MS = 600;
 
 type NavKey = "overview" | "applications" | "agents" | "repositories" | "notifications" | "admin";
 
@@ -112,6 +117,18 @@ export default function Navbar() {
 	}, [theme, setTheme, startTransition]);
 
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+	const [orcaGameOpen, setOrcaGameOpen] = useState(false);
+	const logoClicksRef = useRef({ count: 0, last: 0 });
+	const handleLogoClick = useCallback(() => {
+		const now = Date.now();
+		const clicks = logoClicksRef.current;
+		clicks.count = now - clicks.last < ORCA_GAME_CLICK_WINDOW_MS ? clicks.count + 1 : 1;
+		clicks.last = now;
+		if (clicks.count >= ORCA_GAME_CLICKS) {
+			clicks.count = 0;
+			setOrcaGameOpen(true);
+		}
+	}, []);
 	const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
 	const visibleNavItems = useMemo(
 		() => navItems.filter((item) => !item.resource || canAny(item.resource, "read")),
@@ -135,6 +152,7 @@ export default function Navbar() {
 									to="/"
 									activeOptions={{ exact: true }}
 									aria-label={m.navHome()}
+									onClick={handleLogoClick}
 									className={cn(
 										currentPageBarClassName,
 										"flex h-8 items-center gap-2.5 rounded-md outline-none after:inset-x-0 after:hidden focus-visible:ring-3 focus-visible:ring-ring/50 md:after:block",
@@ -351,6 +369,11 @@ export default function Navbar() {
 					</NavigationMenu>
 				</div>
 			</div>
+			{orcaGameOpen && (
+				<Suspense>
+					<OrcaGame open={orcaGameOpen} onOpenChange={setOrcaGameOpen} />
+				</Suspense>
+			)}
 		</header>
 	);
 }

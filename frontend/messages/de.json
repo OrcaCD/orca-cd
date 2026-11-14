@@ -1051,5 +1051,12 @@
 	"roleRemoveOidcGroup": "Gruppe {group} entfernen",
 	"overviewNoAccessTitle": "Du hast noch keinen Zugriff",
 	"overviewNoAccessDescription": "Deine Rollen geben dir keinen Zugriff auf Anwendungen, Agenten, Repositories oder Benachrichtigungen. Bitte einen Admin, dir eine Rolle zuzuweisen.",
-	"profileRolesDescription": "Du darfst alles, was eine deiner Rollen erlaubt. Frag einen Admin, wenn du anderen Zugriff brauchst."
+	"profileRolesDescription": "Du darfst alles, was eine deiner Rollen erlaubt. Frag einen Admin, wenn du anderen Zugriff brauchst.",
+	"orcaGameTitle": "Orca Dash",
+	"orcaGameDescription": "Weiche den Containern aus. Steuere mit ↑ ↓, der Maus oder dem Finger.",
+	"orcaGameStart": "Leertaste drücken oder klicken zum Starten",
+	"orcaGameRestart": "Leertaste drücken oder klicken für eine neue Runde",
+	"orcaGameOver": "Game Over",
+	"orcaGameScore": "Punkte {score}",
+	"orcaGameHighScore": "Rekord {score}"
 }

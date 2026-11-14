@@ -37,6 +37,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	{
 		// Public routes (no authentication required)
 		api.GET("/health", routes.HealthHandler)
+		api.GET("/orca", routes.OrcaHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
 
 		// OIDC auth flow (public): 10 req/min per IP, burst of 5
