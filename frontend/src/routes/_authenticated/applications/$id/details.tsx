@@ -313,6 +313,39 @@ function buildComposeDiff(
 	};
 }
 
+// Its own component, so the previous compose file is only highlighted while the diff tab is open.
+function ComposeDiffView({
+	path,
+	previousComposeFile,
+	composeLines,
+	diff,
+}: {
+	path?: string;
+	previousComposeFile: string;
+	composeLines: React.ReactNode[];
+	diff: ComposeDiffLine[];
+}) {
+	const previousComposeLines = useHighlightedCode(previousComposeFile, "yaml");
+
+	return (
+		<ComposeFileView path={path}>
+			{diff.map(({ variant, index }, i) => (
+				<CodeBlockLine
+					key={i}
+					variant={variant}
+					className={
+						variant === "added"
+							? "bg-green-500/15 after:text-green-600 dark:after:text-green-400"
+							: undefined
+					}
+				>
+					{variant === "removed" ? previousComposeLines[index] : composeLines[index]}
+				</CodeBlockLine>
+			))}
+		</ComposeFileView>
+	);
+}
+
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
@@ -391,7 +424,11 @@ function ApplicationDetailsPage() {
 	const composeFile = data?.composeFile ?? "";
 	const previousComposeFile = data?.previousComposeFile ?? "";
 	const composeLines = useHighlightedCode(composeFile, "yaml");
-	const previousComposeLines = useHighlightedCode(previousComposeFile, "yaml");
+	// The lines of large compose files are not rendered again when only the page state changes.
+	const manifestLines = useMemo(
+		() => composeLines.map((line, index) => <CodeBlockLine key={index}>{line}</CodeBlockLine>),
+		[composeLines],
+	);
 
 	const composeDiff = useMemo(
 		() => buildComposeDiff(previousComposeFile, composeFile),
@@ -612,28 +649,17 @@ function ApplicationDetailsPage() {
 
 				<TabsContent value="manifest" className="space-y-4">
 					<ComposeFileView path={data?.path} copyValue={composeFile}>
-						{composeLines.map((line, index) => (
-							<CodeBlockLine key={index}>{line}</CodeBlockLine>
-						))}
+						{manifestLines}
 					</ComposeFileView>
 				</TabsContent>
 
 				<TabsContent value="diff" className="space-y-4">
-					<ComposeFileView path={data?.path}>
-						{composeDiff.lines.map(({ variant, index }, i) => (
-							<CodeBlockLine
-								key={i}
-								variant={variant}
-								className={
-									variant === "added"
-										? "bg-green-500/15 after:text-green-600 dark:after:text-green-400"
-										: undefined
-								}
-							>
-								{variant === "removed" ? previousComposeLines[index] : composeLines[index]}
-							</CodeBlockLine>
-						))}
-					</ComposeFileView>
+					<ComposeDiffView
+						path={data?.path}
+						previousComposeFile={previousComposeFile}
+						composeLines={composeLines}
+						diff={composeDiff.lines}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

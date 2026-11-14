@@ -84,7 +84,7 @@ const sidebarGroups: SidebarGroup[] = [
 function ApplicationsLayout() {
 	const { id } = Route.useParams();
 	const { data: application } = useFetch<Application>(`/applications/${id}`);
-	const { location } = useRouterState();
+	const pathname = useRouterState({ select: (state) => state.location.pathname });
 
 	return (
 		<SidebarLayout
@@ -94,7 +94,7 @@ function ApplicationsLayout() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{group.children.map((child) => (
-								<SidebarItem key={child.to} item={child} pathname={location.pathname} id={id} />
+								<SidebarItem key={child.to} item={child} pathname={pathname} id={id} />
 							))}
 						</SidebarMenu>
 					</SidebarGroupContent>
@@ -108,9 +108,9 @@ function ApplicationsLayout() {
 						></BreadcrumbLink>
 					</BreadcrumbItem>
 					<BreadcrumbSeparator />
-					{location.pathname.includes("/settings") ||
-					location.pathname.includes("/history") ||
-					location.pathname.includes("/health") ? (
+					{pathname.includes("/settings") ||
+					pathname.includes("/history") ||
+					pathname.includes("/health") ? (
 						<>
 							<BreadcrumbItem>
 								<BreadcrumbLink
@@ -124,9 +124,9 @@ function ApplicationsLayout() {
 							<BreadcrumbSeparator />
 							<BreadcrumbItem>
 								<BreadcrumbPage>
-									{location.pathname.includes("/history")
+									{pathname.includes("/history")
 										? m.applicationHistory()
-										: location.pathname.includes("/health")
+										: pathname.includes("/health")
 											? m.healthTitle()
 											: m.settings()}
 								</BreadcrumbPage>

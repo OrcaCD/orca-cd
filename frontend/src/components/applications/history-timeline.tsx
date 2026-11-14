@@ -1,4 +1,5 @@
 import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
+import { LocaleDateTime } from "@/components/relative-time";
 import { RotateCcw } from "lucide-react";
 import { ApplicationEventStatusBadge } from "@/components/badges/application-event-status-badge";
 import { RollbackButton } from "@/components/applications/rollback-button";
@@ -74,6 +75,8 @@ export function HistoryTimeline({
 	currentDeploymentId?: string | null;
 	deploying: boolean;
 }) {
+	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
+
 	return (
 		<div className="ml-1.5 space-y-6 border-l border-border">
 			{groupByDay(events).map((group) => (
@@ -89,6 +92,7 @@ export function HistoryTimeline({
 								applicationId={applicationId}
 								currentDeploymentId={currentDeploymentId}
 								deploying={deploying}
+								timeFormatter={timeFormatter}
 							/>
 						))}
 					</ol>
@@ -103,14 +107,15 @@ function HistoryEvent({
 	applicationId,
 	currentDeploymentId,
 	deploying,
+	timeFormatter,
 }: {
 	event: ApplicationEvent;
 	applicationId: string;
 	currentDeploymentId?: string | null;
 	deploying: boolean;
+	timeFormatter: Intl.DateTimeFormat;
 }) {
 	const createdAt = new Date(event.createdAt);
-	const timeFormatter = new Intl.DateTimeFormat(getLocale(), { timeStyle: "short" });
 	const isRollback = event.type === ApplicationEventType.Rollback;
 	const duration = event.completedAt
 		? formatDuration(new Date(event.completedAt).getTime() - createdAt.getTime())
@@ -164,7 +169,9 @@ function HistoryEvent({
 							>
 								{timeFormatter.format(createdAt)}
 							</InfoTooltipTrigger>
-							<InfoTooltipContent>{createdAt.toLocaleString(getLocale())}</InfoTooltipContent>
+							<InfoTooltipContent>
+								<LocaleDateTime date={createdAt} />
+							</InfoTooltipContent>
 						</InfoTooltip>
 						{duration ? ` · ${duration}` : null}
 					</span>
