@@ -67,6 +67,7 @@ type agentResponse struct {
 	DockerVersion *string                    `json:"dockerVersion"`
 	VersionStatus version.AgentCompatibility `json:"versionStatus"`
 	AllowedIPs    []string                   `json:"allowedIps"`
+	LastIP        *string                    `json:"lastIp"`
 	CreatedAt     string                     `json:"createdAt"`
 	UpdatedAt     string                     `json:"updatedAt"`
 }
@@ -125,6 +126,9 @@ func toAgentResponse(agent *models.Agent, appsCount int64) agentResponse {
 	}
 	if agent.DockerVersion != "" {
 		response.DockerVersion = &agent.DockerVersion
+	}
+	if agent.LastIP != "" {
+		response.LastIP = &agent.LastIP
 	}
 
 	return response

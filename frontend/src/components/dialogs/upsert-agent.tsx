@@ -66,6 +66,7 @@ export default function UpsertAgentDialog({
 	asDropdownItem?: boolean;
 } & Partial<SharedDialogProps>) {
 	const isEditing = !!agent;
+	const lastIp = agent?.lastIp;
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
 	const open = controlledOpen ?? uncontrolledOpen;
@@ -231,6 +232,26 @@ export default function UpsertAgentDialog({
 												placeholder={m.agentAllowedIpsPlaceholder()}
 												className="min-h-24 font-mono text-sm"
 											/>
+											{isEditing && (
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													className="self-start"
+													disabled={!lastIp || parseIpList(field.state.value).includes(lastIp)}
+													onClick={() => {
+														if (!lastIp) {
+															return;
+														}
+														const current = field.state.value.trimEnd();
+														field.handleChange(current ? `${current}\n${lastIp}` : lastIp);
+													}}
+												>
+													<Plus className="h-4 w-4" />
+													{m.agentAllowedIpsAddLast()}
+													{lastIp && <span className="font-mono">({lastIp})</span>}
+												</Button>
+											)}
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
 										</Field>
 									);

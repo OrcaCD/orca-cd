@@ -481,6 +481,17 @@ func TestUpdateAgentHandler_SetsNormalizedAllowedIPs(t *testing.T) {
 	}
 }
 
+func TestToAgentResponse_LastIP(t *testing.T) {
+	if got := toAgentResponse(&models.Agent{}, 0).LastIP; got != nil {
+		t.Fatalf("expected nil lastIp for an agent that never connected, got %q", *got)
+	}
+
+	got := toAgentResponse(&models.Agent{LastIP: "203.0.113.5"}, 0).LastIP
+	if got == nil || *got != "203.0.113.5" {
+		t.Fatalf("expected lastIp 203.0.113.5, got %v", got)
+	}
+}
+
 func TestUpdateAgentHandler_ClearsAllowedIPs(t *testing.T) {
 	setupTestDBWithAgents(t)
 	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)

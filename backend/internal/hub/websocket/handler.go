@@ -82,6 +82,13 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		if !iplist.Allows(agent.AllowedIPs, clientIP) {
 			log.Warn().Str("agent_id", claims.Subject).Str("ip", clientIP).Msg("Rejecting connection from IP outside the agent's allowed IPs")
+			if agent.LastIP != clientIP {
+				if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "last_ip", clientIP); err != nil {
+					log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update last IP")
+				} else {
+					sse.PublishUpdate(sse.TopicAgents.For(claims.Subject))
+				}
+			}
 			c.Header(wsreject.Header, wsreject.IPNotAllowed)
 			c.AbortWithStatus(http.StatusForbidden)
 			return
@@ -212,8 +219,8 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		connectedAt := time.Now()
 		_, err = gorm.G[models.Agent](db.DB).
 			Where("id = ?", claims.Subject).
-			Select("Status", "LastSeen").
-			Updates(c.Request.Context(), models.Agent{Status: models.AgentStatusOnline, LastSeen: &connectedAt})
+			Select("Status", "LastSeen", "LastIP").
+			Updates(c.Request.Context(), models.Agent{Status: models.AgentStatusOnline, LastSeen: &connectedAt, LastIP: clientIP})
 		if err != nil {
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update status to online")
 		}

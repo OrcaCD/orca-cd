@@ -24,6 +24,7 @@ export interface Agent {
 	dockerVersion?: string | null;
 	versionStatus: AgentVersionStatus;
 	allowedIps: string[];
+	lastIp?: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
