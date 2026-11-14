@@ -16,6 +16,7 @@ import (
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wsreject"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
@@ -526,6 +527,22 @@ func newDialer(rootCAs *x509.CertPool) *websocket.Dialer {
 	return &dialer
 }
 
+func connectFailureMessage(resp *http.Response) string {
+	if resp == nil {
+		return "connection failed, retrying"
+	}
+	switch resp.Header.Get(wsreject.Header) {
+	case wsreject.IPNotAllowed:
+		return "hub rejected the connection: this agent's IP address is not in its allowed IPs list, retrying"
+	case wsreject.AlreadyConnected:
+		return "hub rejected the connection: an agent with this ID is already connected, retrying"
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return "connection forbidden (403): the hub did not state a reason, a proxy in front of the hub may have rejected the request, retrying"
+	}
+	return "connection failed, retrying"
+}
+
 func connectWithRetry(ctx context.Context, dialer *websocket.Dialer, url, authToken string) (*websocket.Conn, error) {
 	const (
 		initialDelay = 1 * time.Second
@@ -552,7 +569,11 @@ func connectWithRetry(ctx context.Context, dialer *websocket.Dialer, url, authTo
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			Log.Fatal().Msg("unauthorized: auth token is invalid or expired, aborting")
 		}
-		Log.Error().Err(err).Float64("retry_in", delay.Seconds()).Msg("connection failed, retrying")
+		logEvent := Log.Error().Err(err).Float64("retry_in", delay.Seconds())
+		if resp != nil {
+			logEvent = logEvent.Int("status", resp.StatusCode)
+		}
+		logEvent.Msg(connectFailureMessage(resp))
 
 		if resp != nil {
 			if closeErr := resp.Body.Close(); closeErr != nil {

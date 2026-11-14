@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -427,6 +429,172 @@ func TestUpdateAgentHandler_Success(t *testing.T) {
 	}
 	if updated.KeyId.String() != "existing-key" {
 		t.Fatalf("expected KeyId %q to stay unchanged, got %q", "existing-key", updated.KeyId.String())
+	}
+}
+
+func putAgent(t *testing.T, id string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	reqBody, _ := json.Marshal(body)
+	router := newAdminRouter()
+	router.PUT("/api/v1/agents/:id", UpdateAgentHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/agents/"+id, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func storedAllowedIPs(t *testing.T, id string) []string {
+	t.Helper()
+
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(t.Context())
+	if err != nil {
+		t.Fatalf("failed to load agent: %v", err)
+	}
+	return agent.AllowedIPs
+}
+
+func TestUpdateAgentHandler_SetsNormalizedAllowedIPs(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+
+	w := putAgent(t, agent.Id, map[string]any{
+		"name":       "Agent",
+		"allowedIps": []string{" 203.0.113.5 ", "10.1.2.3/8", "203.0.113.5"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp agentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	want := []string{"203.0.113.5", "10.0.0.0/8"}
+	if !slices.Equal(resp.AllowedIPs, want) {
+		t.Fatalf("expected response allowedIps %v, got %v", want, resp.AllowedIPs)
+	}
+	if got := storedAllowedIPs(t, agent.Id); !slices.Equal(got, want) {
+		t.Fatalf("expected stored allowedIps %v, got %v", want, got)
+	}
+}
+
+func TestUpdateAgentHandler_ClearsAllowedIPs(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+
+	if w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{"203.0.113.5"}}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if got := storedAllowedIPs(t, agent.Id); len(got) != 0 {
+		t.Fatalf("expected allowedIps to be cleared, got %v", got)
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"allowedIps":[]`)) {
+		t.Fatalf("expected empty allowedIps array in response, got %s", w.Body.String())
+	}
+}
+
+func TestUpdateAgentHandler_OmittedAllowedIPsStayUnchanged(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+
+	if w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{"203.0.113.5"}}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := putAgent(t, agent.Id, map[string]any{"name": testUpdatedName}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if got := storedAllowedIPs(t, agent.Id); !slices.Equal(got, []string{"203.0.113.5"}) {
+		t.Fatalf("expected allowedIps to stay unchanged, got %v", got)
+	}
+}
+
+func TestUpdateAgentHandler_InvalidAllowedIP(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+
+	w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{"203.0.113.5", "not-an-ip"}})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("not-an-ip")) {
+		t.Fatalf("expected error to name the invalid entry, got %s", w.Body.String())
+	}
+	if got := storedAllowedIPs(t, agent.Id); len(got) != 0 {
+		t.Fatalf("expected allowedIps to stay empty, got %v", got)
+	}
+}
+
+func TestUpdateAgentHandler_TooManyAllowedIPs(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+
+	ips := make([]string, 0, maxAgentAllowedIPs+1)
+	for i := 0; i <= maxAgentAllowedIPs; i++ {
+		ips = append(ips, fmt.Sprintf("10.0.%d.%d", i/250, i%250))
+	}
+
+	w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": ips})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAgentHandler_DisconnectsClientOutsideAllowedIPs(t *testing.T) {
+	setupTestDBWithAgents(t)
+	agent := createTestAgentRecord(t, "Agent", "key", models.AgentStatusOffline, nil)
+	client, err := websocket.DefaultHub.RegisterFrom(agent.Id, nil, "203.0.113.9")
+	if err != nil {
+		t.Fatalf("register connected agent: %v", err)
+	}
+	t.Cleanup(func() { websocket.DefaultHub.FinishDisconnect(client) })
+
+	w := putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{"203.0.113.0/24"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, ok := websocket.DefaultHub.GetClient(agent.Id); !ok {
+		t.Fatal("expected client inside the allowed IPs to stay connected")
+	}
+
+	w = putAgent(t, agent.Id, map[string]any{"name": "Agent", "allowedIps": []string{"10.0.0.0/8"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
+		t.Fatal("expected client outside the allowed IPs to be disconnected")
+	}
+}
+
+func TestCreateAgentHandler_WithAllowedIPs(t *testing.T) {
+	setupTestDBWithAgents(t)
+
+	reqBody, _ := json.Marshal(map[string]any{"name": "Agent", "allowedIps": []string{"192.0.2.0/24"}})
+	router := newAdminRouter()
+	router.POST("/api/v1/agents", CreateAgentHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp agentWithTokenResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got := storedAllowedIPs(t, resp.Id); !slices.Equal(got, []string{"192.0.2.0/24"}) {
+		t.Fatalf("expected stored allowedIps [192.0.2.0/24], got %v", got)
 	}
 }
 

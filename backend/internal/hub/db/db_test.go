@@ -125,7 +125,7 @@ func TestRunMigrations_AgentsTableSchema(t *testing.T) {
 	cols := columnNames(t, sqlDB, "agents")
 
 	// migration 001: base columns; migration 003: secret renamed to key_id
-	required := []string{"id", "name", "icon", "key_id", "status", "last_seen", "created_at", "updated_at"}
+	required := []string{"id", "name", "icon", "key_id", "status", "last_seen", "created_at", "updated_at", "allowed_ips"}
 	for _, col := range required {
 		if !cols[col] {
 			t.Errorf("agents table missing column %q", col)

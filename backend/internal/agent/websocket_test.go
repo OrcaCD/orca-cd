@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -20,7 +21,9 @@ import (
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wsreject"
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -413,6 +416,64 @@ func TestConnectWithRetry_RetriesBeforeSuccess(t *testing.T) {
 
 	if got := attempt.Load(); got < wantAttempts {
 		t.Errorf("expected at least %d attempts, got %d", wantAttempts, got)
+	}
+}
+
+func TestConnectWithRetry_LogsRejectionReason(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		reason     string
+		wantInLog  string
+		wantStatus string
+	}{
+		{"ip not allowed", http.StatusForbidden, wsreject.IPNotAllowed, "not in its allowed IPs list", `"status":403`},
+		{"already connected", http.StatusConflict, wsreject.AlreadyConnected, "already connected", `"status":409`},
+		{"forbidden without reason", http.StatusForbidden, "", "proxy in front of the hub", `"status":403`},
+		{"unknown reason", http.StatusForbidden, "something_new", "proxy in front of the hub", `"status":403`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var attempt atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if attempt.Add(1) == 1 {
+					if tt.reason != "" {
+						w.Header().Set(wsreject.Header, tt.reason)
+					}
+					w.WriteHeader(tt.status)
+					return
+				}
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					t.Errorf("upgrade error: %v", err)
+					return
+				}
+				defer conn.Close() //nolint:errcheck
+				time.Sleep(200 * time.Millisecond)
+			}))
+			t.Cleanup(srv.Close)
+
+			var buf bytes.Buffer
+			origLog := Log
+			Log = zerolog.New(&buf)
+			t.Cleanup(func() { Log = origLog })
+
+			u := "ws" + strings.TrimPrefix(srv.URL, "http")
+			conn, err := connectWithRetry(context.Background(), websocket.DefaultDialer, u, "Bearer test-token")
+			if err != nil {
+				t.Fatalf("expected retry to succeed, got error: %v", err)
+			}
+			conn.Close() //nolint:errcheck,gosec
+
+			out := buf.String()
+			if !strings.Contains(out, tt.wantInLog) {
+				t.Errorf("expected log to contain %q, got: %s", tt.wantInLog, out)
+			}
+			if !strings.Contains(out, tt.wantStatus) {
+				t.Errorf("expected log to contain %q, got: %s", tt.wantStatus, out)
+			}
+		})
 	}
 }
 

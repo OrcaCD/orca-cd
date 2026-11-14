@@ -3,7 +3,9 @@ package routes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -13,12 +15,39 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
+	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-const defaultAgentIcon = "server"
+const (
+	defaultAgentIcon   = "server"
+	maxAgentAllowedIPs = 50
+)
+
+func normalizeAgentAllowedIPs(entries []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(entries))
+	result := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if strings.TrimSpace(entry) == "" {
+			continue
+		}
+		normalized, err := iplist.Normalize(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid IP address or CIDR range %q", strings.TrimSpace(entry))
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	if len(result) > maxAgentAllowedIPs {
+		return nil, fmt.Errorf("list exceeds maximum of %d entries", maxAgentAllowedIPs)
+	}
+	return result, nil
+}
 
 func defaultString(value, fallback string) string {
 	if value == "" {
@@ -37,6 +66,7 @@ type agentResponse struct {
 	Version       *string                    `json:"version"`
 	DockerVersion *string                    `json:"dockerVersion"`
 	VersionStatus version.AgentCompatibility `json:"versionStatus"`
+	AllowedIPs    []string                   `json:"allowedIps"`
 	CreatedAt     string                     `json:"createdAt"`
 	UpdatedAt     string                     `json:"updatedAt"`
 }
@@ -48,13 +78,16 @@ type agentWithTokenResponse struct {
 }
 
 type createAgentRequest struct {
-	Name string `json:"name" binding:"required,min=1,max=128"`
-	Icon string `json:"icon" binding:"omitempty,min=1,max=128"`
+	Name       string   `json:"name" binding:"required,min=1,max=128"`
+	Icon       string   `json:"icon" binding:"omitempty,min=1,max=128"`
+	AllowedIPs []string `json:"allowedIps"`
 }
 
 type updateAgentRequest struct {
 	Name string `json:"name" binding:"required,min=1,max=128"`
 	Icon string `json:"icon" binding:"omitempty,min=1,max=128"`
+	// nil leaves the whitelist unchanged, an empty list clears it.
+	AllowedIPs *[]string `json:"allowedIps"`
 }
 
 const agentStatusOffline = "offline"
@@ -78,6 +111,7 @@ func toAgentResponse(agent *models.Agent, appsCount int64) agentResponse {
 		Status:        toAgentStatus(agent.Status),
 		AppsCount:     appsCount,
 		VersionStatus: version.CheckAgentCompatibility(version.Version, agent.Version),
+		AllowedIPs:    append([]string{}, agent.AllowedIPs...),
 		CreatedAt:     agent.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     agent.UpdatedAt.Format(time.RFC3339),
 	}
@@ -194,6 +228,12 @@ func CreateAgentHandler(c *gin.Context) {
 		return
 	}
 
+	allowedIPs, err := normalizeAgentAllowedIPs(req.AllowedIPs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed IPs: " + err.Error()})
+		return
+	}
+
 	ctx := c.Request.Context()
 
 	var (
@@ -201,11 +241,12 @@ func CreateAgentHandler(c *gin.Context) {
 		authToken string
 	)
 
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		agent = models.Agent{
-			Name:   crypto.EncryptedString(req.Name),
-			Icon:   defaultString(req.Icon, defaultAgentIcon),
-			Status: models.AgentStatusOffline,
+			Name:       crypto.EncryptedString(req.Name),
+			Icon:       defaultString(req.Icon, defaultAgentIcon),
+			Status:     models.AgentStatusOffline,
+			AllowedIPs: allowedIPs,
 		}
 
 		if err := gorm.G[models.Agent](tx).Create(ctx, &agent); err != nil {
@@ -267,10 +308,21 @@ func UpdateAgentHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	updates := models.Agent{Name: crypto.EncryptedString(req.Name)}
+	columns := []any{}
 	if req.Icon != "" {
 		updates.Icon = req.Icon
+		columns = append(columns, "icon")
 	}
-	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Updates(ctx, updates)
+	if req.AllowedIPs != nil {
+		allowedIPs, err := normalizeAgentAllowedIPs(*req.AllowedIPs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed IPs: " + err.Error()})
+			return
+		}
+		updates.AllowedIPs = allowedIPs
+		columns = append(columns, "allowed_ips")
+	}
+	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Select("name", columns...).Updates(ctx, updates)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -294,6 +346,12 @@ func UpdateAgentHandler(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
+	}
+
+	if req.AllowedIPs != nil {
+		if client, ok := websocket.DefaultHub.GetClient(id); ok && !iplist.Allows(agent.AllowedIPs, client.RemoteIP()) {
+			websocket.DefaultHub.BeginDisconnect(client)
+		}
 	}
 
 	utils.RecordAuditLog(c, "updated", "agent", id)
