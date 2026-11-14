@@ -10,7 +10,7 @@ import { Container, Plus } from "lucide-react";
 import { SearchField } from "@/components/search-field";
 import type { Agent } from "@/lib/agents";
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { ApplicationsDataTable } from "@/components/tables/applications/data-table";
 import { columns } from "@/components/tables/applications/columns";
@@ -95,24 +95,28 @@ function ApplicationsPage() {
 		searchInputRef.current?.focus();
 	};
 
-	const query = searchQuery.toLowerCase();
-	const filteredApps =
-		data?.filter((app) => {
-			if (status && getFleetCategory(app) !== status) {
-				return false;
-			}
-			if (agent && app.agentId !== agent) {
-				return false;
-			}
-			return (
-				app.name.toLowerCase().includes(query) ||
-				app.repositoryName.toLowerCase().includes(query) ||
-				app.branch.toLowerCase().includes(query) ||
-				app.path.toLowerCase().includes(query) ||
-				app.agentName.toLowerCase().includes(query) ||
-				app.commit.toLowerCase().includes(query)
-			);
-		}) ?? [];
+	// The list filters behind the input, so typing stays responsive with many applications.
+	const query = useDeferredValue(searchQuery).toLowerCase();
+	const filteredApps = useMemo(
+		() =>
+			data?.filter((app) => {
+				if (status && getFleetCategory(app) !== status) {
+					return false;
+				}
+				if (agent && app.agentId !== agent) {
+					return false;
+				}
+				return (
+					app.name.toLowerCase().includes(query) ||
+					app.repositoryName.toLowerCase().includes(query) ||
+					app.branch.toLowerCase().includes(query) ||
+					app.path.toLowerCase().includes(query) ||
+					app.agentName.toLowerCase().includes(query) ||
+					app.commit.toLowerCase().includes(query)
+				);
+			}) ?? [],
+		[data, status, agent, query],
+	);
 
 	return (
 		<PageContainer>

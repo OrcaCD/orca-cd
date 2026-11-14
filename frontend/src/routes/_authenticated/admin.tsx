@@ -51,7 +51,7 @@ const adminPages = [
 ];
 
 function AdminLayout() {
-	const { location } = useRouterState();
+	const pathname = useRouterState({ select: (state) => state.location.pathname });
 
 	return (
 		<SidebarLayout
@@ -61,7 +61,7 @@ function AdminLayout() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{adminPages.map((item) => (
-								<AdminSidebarMenuItem key={item.path} item={item} pathname={location.pathname} />
+								<AdminSidebarMenuItem key={item.path} item={item} pathname={pathname} />
 							))}
 						</SidebarMenu>
 					</SidebarGroupContent>
@@ -75,7 +75,7 @@ function AdminLayout() {
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
 						<BreadcrumbPage>
-							{adminPages.find((page) => page.path === location.pathname)?.title()}
+							{adminPages.find((page) => page.path === pathname)?.title()}
 						</BreadcrumbPage>
 					</BreadcrumbItem>
 				</>

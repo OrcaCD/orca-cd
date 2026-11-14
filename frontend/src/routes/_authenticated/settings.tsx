@@ -31,7 +31,7 @@ const settingsPages = [
 ];
 
 function SettingsLayout() {
-	const { location } = useRouterState();
+	const pathname = useRouterState({ select: (state) => state.location.pathname });
 
 	return (
 		<SidebarLayout
@@ -41,7 +41,7 @@ function SettingsLayout() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{settingsPages.map((item) => (
-								<SettingsSidebarMenuItem key={item.path} item={item} pathname={location.pathname} />
+								<SettingsSidebarMenuItem key={item.path} item={item} pathname={pathname} />
 							))}
 						</SidebarMenu>
 					</SidebarGroupContent>
@@ -55,7 +55,7 @@ function SettingsLayout() {
 					<BreadcrumbSeparator />
 					<BreadcrumbItem>
 						<BreadcrumbPage>
-							{settingsPages.find((page) => page.path === location.pathname)?.title()}
+							{settingsPages.find((page) => page.path === pathname)?.title()}
 						</BreadcrumbPage>
 					</BreadcrumbItem>
 				</>
