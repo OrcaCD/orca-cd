@@ -59,3 +59,12 @@ docker compose -f docker-compose.dev.yaml up --build
 ```
 
 The hub service will be available at `http://localhost:8080`.
+
+### Testing with the Gitea mock
+
+To test repositories and deployments without a real Git provider, run the Gitea mock from `e2e/mock/gitea/`. It serves the repositories in a local directory laid out as `<owner>/<repo>/<branch>/<files>`, and every change you save there becomes a new commit. An empty directory is seeded with a demo repository (`orca/demo`).
+
+- **Native:** `just dev` and `just dev-all` start it (or run `just run-gitea-mock` on its own). It serves `backend/data/gitea-mock` at `https://localhost:3440`. Your `backend/.env` needs the `ALLOWED_INTERNAL_IPS` and `CA_CERT_FILE` values from `.env.dev.example`.
+- **Docker:** `docker compose -f docker-compose.dev.yml --profile gitea-mock up --build`. It serves `data/gitea-mock` at `https://gitea-mock:3440`.
+
+Add a repository with the Gitea provider and a URL like `https://localhost:3440/orca/demo`.

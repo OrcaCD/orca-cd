@@ -17,10 +17,14 @@ run-frontend-after-hub:
     @$hubHost = if ($env:HOST -and $env:HOST -notin '0.0.0.0', '::', 'localhost') { $env:HOST } else { '127.0.0.1' }; $port = if ($env:PORT) { $env:PORT } else { '8080' }; while ($true) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "http://${hubHost}:$port/api/v1/health" | Out-Null; break } catch { Start-Sleep -Seconds 1 } }
     pnpm dev
 
-# Run hub and frontend in parallel
-[parallel]
-dev: run-hub run-frontend-after-hub
+# Run the Gitea mock serving the repositories in backend/data/gitea-mock
+run-gitea-mock:
+    node ../e2e/mock/gitea/dev.ts
 
-# Run hub, agent and frontend in parallel
+# Run hub, frontend and Gitea mock in parallel
 [parallel]
-dev-all: run-hub run-agent run-frontend-after-hub
+dev: run-hub run-frontend-after-hub run-gitea-mock
+
+# Run hub, agent, frontend and Gitea mock in parallel
+[parallel]
+dev-all: run-hub run-agent run-frontend-after-hub run-gitea-mock
