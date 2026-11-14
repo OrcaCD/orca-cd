@@ -9,14 +9,13 @@ import { NotificationStatusBadge } from "@/components/badges/notification-status
 import { Button } from "@/components/ui/button";
 import { DataTableColumnHeader } from "@/components/tables/data-table-column-header";
 import {
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DialogDropdownMenu, DialogDropdownMenuContent } from "@/components/dialog-dropdown-menu";
 import { m } from "@/lib/paraglide/messages";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -137,7 +136,7 @@ function NotificationActions({ notification }: { notification: Notification }) {
 
 	return (
 		<div className="flex justify-end">
-			<DropdownMenu>
+			<DialogDropdownMenu>
 				<DropdownMenuTrigger
 					render={
 						<Button variant="ghost" className="h-8 w-8 p-0">
@@ -146,7 +145,7 @@ function NotificationActions({ notification }: { notification: Notification }) {
 						</Button>
 					}
 				></DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-fit" keepMounted>
+				<DialogDropdownMenuContent align="end" className="w-fit">
 					<DropdownMenuGroup>
 						<DropdownMenuLabel>{m.actions()}</DropdownMenuLabel>
 						{canUpdate && (
@@ -176,8 +175,8 @@ function NotificationActions({ notification }: { notification: Notification }) {
 							/>
 						)}
 					</DropdownMenuGroup>
-				</DropdownMenuContent>
-			</DropdownMenu>
+				</DialogDropdownMenuContent>
+			</DialogDropdownMenu>
 		</div>
 	);
 }

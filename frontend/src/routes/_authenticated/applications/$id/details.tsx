@@ -48,7 +48,11 @@ import { useFetch } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/lib/paraglide/messages";
 import { useCanOnApplicationsOf, usePermissions } from "@/lib/permissions";
-import { buildComposeDiff, ComposeDiffLines } from "@/components/applications/compose-diff-lines";
+import {
+	buildComposeDiff,
+	ComposeDiffLines,
+	type ComposeDiff,
+} from "@/components/applications/compose-diff-lines";
 import { StaticLucideIcon } from "@/components/lucide-icon-picker";
 import ErrorAlert from "@/components/alerts/error-alert";
 import WarningAlert from "@/components/alerts/warning-alert";
@@ -263,6 +267,31 @@ function getApplicationWarningMessage(warning: Application["warnings"][number]) 
 	}
 }
 
+// Its own component, so the previous compose file is only highlighted while the diff tab is open.
+function ComposeDiffView({
+	path,
+	previousComposeFile,
+	composeLines,
+	diff,
+}: {
+	path?: string;
+	previousComposeFile: string;
+	composeLines: React.ReactNode[];
+	diff: ComposeDiff;
+}) {
+	const previousComposeLines = useHighlightedCode(previousComposeFile, "yaml");
+
+	return (
+		<ComposeFileView path={path}>
+			<ComposeDiffLines
+				diff={diff}
+				previousLines={previousComposeLines}
+				currentLines={composeLines}
+			/>
+		</ComposeFileView>
+	);
+}
+
 function ApplicationDetailsPage() {
 	const { id } = Route.useParams();
 
@@ -341,7 +370,11 @@ function ApplicationDetailsPage() {
 	const composeFile = data?.composeFile ?? "";
 	const previousComposeFile = data?.previousComposeFile ?? "";
 	const composeLines = useHighlightedCode(composeFile, "yaml");
-	const previousComposeLines = useHighlightedCode(previousComposeFile, "yaml");
+	// The lines of large compose files are not rendered again when only the page state changes.
+	const manifestLines = useMemo(
+		() => composeLines.map((line, index) => <CodeBlockLine key={index}>{line}</CodeBlockLine>),
+		[composeLines],
+	);
 
 	const composeDiff = useMemo(
 		() => buildComposeDiff(previousComposeFile, composeFile),
@@ -562,20 +595,17 @@ function ApplicationDetailsPage() {
 
 				<TabsContent value="manifest" className="space-y-4">
 					<ComposeFileView path={data?.path} copyValue={composeFile}>
-						{composeLines.map((line, index) => (
-							<CodeBlockLine key={index}>{line}</CodeBlockLine>
-						))}
+						{manifestLines}
 					</ComposeFileView>
 				</TabsContent>
 
 				<TabsContent value="diff" className="space-y-4">
-					<ComposeFileView path={data?.path}>
-						<ComposeDiffLines
-							diff={composeDiff}
-							previousLines={previousComposeLines}
-							currentLines={composeLines}
-						/>
-					</ComposeFileView>
+					<ComposeDiffView
+						path={data?.path}
+						previousComposeFile={previousComposeFile}
+						composeLines={composeLines}
+						diff={composeDiff}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

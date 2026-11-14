@@ -2,19 +2,18 @@ import * as React from "react";
 
 const MOBILE_BREAKPOINT = 768;
 
+const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+
+function subscribe(onChange: () => void) {
+	mql.addEventListener("change", onChange);
+	return () => mql.removeEventListener("change", onChange);
+}
+
+function getSnapshot() {
+	return mql.matches;
+}
+
+// Read synchronously, so components don't render for desktop first and then again for mobile.
 export function useIsMobile() {
-	const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
-
-	React.useEffect(() => {
-		const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-		const onChange = () => {
-			setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-		};
-		mql.addEventListener("change", onChange);
-		// oxlint-disable-next-line react/set-state-in-effect
-		setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-		return () => mql.removeEventListener("change", onChange);
-	}, []);
-
-	return !!isMobile;
+	return React.useSyncExternalStore(subscribe, getSnapshot);
 }

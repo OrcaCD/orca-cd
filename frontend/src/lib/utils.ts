@@ -62,9 +62,21 @@ const relativeTimeUnits: [Intl.RelativeTimeFormatUnit, number][] = [
 	["minute", 60],
 ];
 
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+
+// Creating a formatter is expensive, and every timestamp on the page is formatted again each minute.
+function relativeTimeFormatter(locale: string): Intl.RelativeTimeFormat {
+	let formatter = relativeTimeFormatters.get(locale);
+	if (!formatter) {
+		formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+		relativeTimeFormatters.set(locale, formatter);
+	}
+	return formatter;
+}
+
 export function formatRelativeTime(value: string | Date, now = Date.now()): string {
 	const seconds = Math.round((new Date(value).getTime() - now) / 1000);
-	const formatter = new Intl.RelativeTimeFormat(getLocale(), { numeric: "auto" });
+	const formatter = relativeTimeFormatter(getLocale());
 	for (const [unit, unitSeconds] of relativeTimeUnits) {
 		if (Math.abs(seconds) >= unitSeconds) {
 			return formatter.format(Math.round(seconds / unitSeconds), unit);

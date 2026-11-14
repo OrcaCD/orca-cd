@@ -10,9 +10,13 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./data/hub:/app/data
+      - ./e2e/mock/certs/mock.pem:/certs/mock.pem:ro
     environment:
       - APP_URL=http://localhost:8080
       - APP_SECRET=supersecretkey_minimum_32_characters
+      # Lets the hub reach the Gitea mock (gitea-mock profile) and trust its self-signed certificate
+      - ALLOWED_INTERNAL_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      - CA_CERT_FILE=/certs/mock.pem
 
   agent:
     build:
@@ -41,3 +45,19 @@ services:
       - ENCRYPTION_KEY=supersecretkey_minimum_32_characters
     profiles:
       - pocket-id
+
+  # Repositories in ./data/gitea-mock as <owner>/<repo>/<branch>/<files>, reachable as https://gitea-mock:3440/<owner>/<repo>
+  gitea-mock:
+    container_name: gitea-mock-dev
+    image: node:26-alpine
+    command: ["node", "/e2e/mock/gitea/dev.ts"]
+    volumes:
+      - ./e2e/package.json:/e2e/package.json:ro
+      - ./e2e/mock:/e2e/mock:ro
+      - ./data/gitea-mock:/repos
+    environment:
+      - GITEA_MOCK_REPOS_DIR=/repos
+      - GITEA_MOCK_HOST=0.0.0.0
+      - GITEA_MOCK_PUBLIC_URL=https://gitea-mock:3440
+    profiles:
+      - gitea-mock

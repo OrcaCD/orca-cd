@@ -57,7 +57,7 @@ jobs:
 
       # New keys have to exist in Crowdin before translations for them can be imported.
       - name: Upload sources
-        uses: crowdin/github-action@5b9790df740c85af5412a3a3a91b24988d5d324f # v3.5.1
+        uses: crowdin/github-action@d651c77756acbe11a31d77a6fb79d8a239e1e05a # v3.6.0
         with:
           upload_sources: true
           upload_translations: false
@@ -75,7 +75,7 @@ jobs:
 
       - name: Upload changed translations
         if: ${{ steps.changes.outputs.has_changes == 'true' }}
-        uses: crowdin/github-action@5b9790df740c85af5412a3a3a91b24988d5d324f # v3.5.1
+        uses: crowdin/github-action@d651c77756acbe11a31d77a6fb79d8a239e1e05a # v3.6.0
         with:
           upload_sources: false
           upload_translations: true

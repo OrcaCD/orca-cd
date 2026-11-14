@@ -13,7 +13,41 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        name: Checkout code
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Branches are compared with where they left main instead of their previous commit, so a
+      # later commit cannot skip a job an earlier commit broke. main runs everything to keep
+      # coverage and caches complete.
+      - name: Detect changes
+        id: filter
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" == "refs/heads/main" ]]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only origin/main...HEAD)
+          matches() { grep -qE "$1" <<< "$changed" && echo true || echo false; }
+          echo "backend=$(matches '^(backend/|\.github/workflows/ci\.yml$)')" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(matches '^(frontend/|\.github/workflows/ci\.yml$)')" >> "$GITHUB_OUTPUT"
+
   frontend:
+    needs: changes
+    # Runs as well if detecting the changes failed
+    if: ${{ !cancelled() && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -59,6 +93,8 @@ jobs:
         run: node --run translations:check
 
   backend:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
