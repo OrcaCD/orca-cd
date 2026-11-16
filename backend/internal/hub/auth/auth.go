@@ -1,5 +1,10 @@
 package auth
 
+import (
+	"crypto/rand"
+	"encoding/base64"
+)
+
 func Init(appSecret, appURL string) error {
 	if err := initJWT(appSecret, appURL); err != nil {
 		return err
@@ -9,8 +14,12 @@ func Init(appSecret, appURL string) error {
 		return err
 	}
 
-	if err := initPassword(); err != nil {
-		return err
-	}
 	return nil
+}
+
+// GenerateRandomString generates opaque identifiers for agent tokens and webhooks.
+func GenerateRandomString(length int) (string, error) {
+	raw := make([]byte, length)
+	_, _ = rand.Read(raw)
+	return base64.RawURLEncoding.EncodeToString(raw)[:length], nil
 }
