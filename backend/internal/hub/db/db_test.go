@@ -78,6 +78,7 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"roles",
 		"role_permissions",
 		"user_roles",
+		"api_tokens",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -583,6 +584,89 @@ func TestRunMigrations_AgentAndRepositoryNotificationsCascade(t *testing.T) {
 	}
 	assertRowCount(`SELECT COUNT(*) FROM agent_notifications`, 0)
 	assertRowCount(`SELECT COUNT(*) FROM repository_notifications`, 0)
+}
+
+func TestRunMigrations_APITokens(t *testing.T) {
+	// Cascades need foreign keys enabled, like the production DSN does.
+	gormDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")+"?_foreign_keys=ON"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := gormDB.DB()
+		_ = sqlDB.Close()
+	})
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+	ctx := t.Context()
+
+	users := []models.User{{Email: "a@example.com", Name: "A"}, {Email: "b@example.com", Name: "B"}}
+	if err := gorm.G[models.User](gormDB).CreateInBatches(ctx, &users, len(users)); err != nil {
+		t.Fatalf("failed to create users: %v", err)
+	}
+
+	expiresAt := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Second)
+	token := models.APIToken{
+		UserId:    users[0].Id,
+		Name:      "CI",
+		TokenHash: "hash-1",
+		Prefix:    "orca_abcdefgh",
+		Scopes:    []models.APITokenScope{"application:deploy", models.APITokenScopeAdmin},
+		ExpiresAt: expiresAt,
+	}
+	if err := gorm.G[models.APIToken](gormDB).Create(ctx, &token); err != nil {
+		t.Fatalf("failed to create token: %v", err)
+	}
+
+	got, err := gorm.G[models.APIToken](gormDB).Where("token_hash = ?", "hash-1").First(ctx)
+	if err != nil {
+		t.Fatalf("failed to fetch token: %v", err)
+	}
+	if !slices.Equal(got.Scopes, token.Scopes) {
+		t.Errorf("expected scopes %v, got %v", token.Scopes, got.Scopes)
+	}
+	if !got.ExpiresAt.Equal(expiresAt) {
+		t.Errorf("expected expires_at %v, got %v", expiresAt, got.ExpiresAt)
+	}
+	if got.LastUsedAt != nil {
+		t.Errorf("expected last_used_at to be empty, got %v", got.LastUsedAt)
+	}
+
+	sameHash := models.APIToken{UserId: users[1].Id, Name: "Other", TokenHash: "hash-1", Prefix: "p", ExpiresAt: expiresAt}
+	if err := gorm.G[models.APIToken](gormDB).Create(ctx, &sameHash); err == nil {
+		t.Error("expected creating a token with an existing hash to fail")
+	}
+	sameName := models.APIToken{UserId: users[0].Id, Name: "ci", TokenHash: "hash-2", Prefix: "p", ExpiresAt: expiresAt}
+	if err := gorm.G[models.APIToken](gormDB).Create(ctx, &sameName); err == nil {
+		t.Error("expected creating a second token with the same name for a user to fail")
+	}
+	otherUser := models.APIToken{UserId: users[1].Id, Name: "CI", TokenHash: "hash-3", Prefix: "p", ExpiresAt: expiresAt}
+	if err := gorm.G[models.APIToken](gormDB).Create(ctx, &otherUser); err != nil {
+		t.Errorf("expected another user to be able to use the same token name: %v", err)
+	}
+
+	if _, err := gorm.G[models.User](gormDB).Where("id = ?", users[0].Id).Delete(ctx); err != nil {
+		t.Fatalf("failed to delete user: %v", err)
+	}
+	remaining, err := gorm.G[models.APIToken](gormDB).Find(ctx)
+	if err != nil {
+		t.Fatalf("failed to list tokens: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].UserId != users[1].Id {
+		t.Errorf("expected only the token of the remaining user to be left, got %+v", remaining)
+	}
+
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	if err := newTestMigrator(t, sqlDB).Migrate(45); err != nil {
+		t.Fatalf("failed to migrate down to version 45: %v", err)
+	}
+	if gormDB.Migrator().HasTable("api_tokens") {
+		t.Error("expected api_tokens table to be dropped")
+	}
 }
 
 func TestRunMigrations_AgentAndRepositoryNotificationsDown(t *testing.T) {
