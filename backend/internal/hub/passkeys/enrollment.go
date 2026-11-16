@@ -44,9 +44,14 @@ func ConsumeEnrollment(ctx context.Context, tx *gorm.DB, user *models.User, hash
 	return nil
 }
 
-// ResetLocalPasskeys is shared by admin recovery and the offline CLI. The caller
+// ResetLocal is shared by admin recovery and the offline CLI. The caller
 // owns the transaction so credential/session revocation and code issuance are atomic.
 func ResetLocal(ctx context.Context, tx *gorm.DB, user *models.User) (string, error) {
+	current, err := gorm.G[models.User](tx).Where("id = ?", user.Id).First(ctx)
+	if err != nil {
+		return "", err
+	}
+	*user = current
 	if !user.LocalAuthEnabled {
 		return "", errors.New("cannot reset passkeys for a managed user")
 	}

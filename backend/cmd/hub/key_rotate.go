@@ -46,6 +46,7 @@ type keyRotationResult struct {
 	Repositories  int
 	Notifications int
 	OIDCProviders int
+	Passkeys      int
 }
 
 type encryptedModelSchema struct {
@@ -57,7 +58,7 @@ type encryptedModelSchema struct {
 }
 
 func (r keyRotationResult) Total() int {
-	return r.Agents + r.Applications + r.Repositories + r.Notifications + r.OIDCProviders
+	return r.Agents + r.Applications + r.Repositories + r.Notifications + r.OIDCProviders + r.Passkeys
 }
 
 func newKeyCmd() *cobra.Command {
@@ -242,6 +243,9 @@ func rotateDatabaseEncryptionKeyWithSecrets(ctx context.Context, secrets keyRota
 			return err
 		}
 
+		if err := rotateEncryptedModel[models.Passkey](ctx, tx, secrets, "passkeys", func(rows int) { result.Passkeys += rows }); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -429,6 +433,7 @@ func renderKeyRotateResult(out io.Writer, result keyRotationResult) {
 		labelStyle.Render("Applications:") + " " + valueStyle.Render(fmt.Sprintf("%d", result.Applications)),
 		labelStyle.Render("Repositories:") + " " + valueStyle.Render(fmt.Sprintf("%d", result.Repositories)),
 		labelStyle.Render("Notifications:") + " " + valueStyle.Render(fmt.Sprintf("%d", result.Notifications)),
+		labelStyle.Render("Passkeys:") + " " + valueStyle.Render(fmt.Sprintf("%d", result.Passkeys)),
 		labelStyle.Render("OIDC providers:") + " " + valueStyle.Render(fmt.Sprintf("%d", result.OIDCProviders)),
 		"",
 		noteStyle.Render("Restart the hub with the new APP_SECRET."),
