@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"fmt"
 	"time"
 
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -14,6 +15,11 @@ import (
 )
 
 func RegisterRoutes(router *gin.Engine, cfg Config) error {
+	if !cfg.Demo {
+		if err := routes.InitPasskeys(cfg.AppURL); err != nil && !cfg.DisableLocalAuth {
+			return fmt.Errorf("configure passkeys: %w", err)
+		}
+	}
 	// Configure package-level settings from config
 	routes.LocalAuthDisabled = cfg.DisableLocalAuth
 	routes.OIDCAppURL = cfg.AppURL
@@ -55,12 +61,20 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		authRateLimit := middleware.RateLimit(6*time.Second, 10)
 		api.POST("/auth/setup/verify", authRateLimit, routes.VerifySetupCodeHandler)
 		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
+		api.POST("/auth/passkeys/register/begin", authRateLimit, routes.BeginPasskeyRegistrationHandler)
+		api.POST("/auth/passkeys/register/finish", authRateLimit, routes.FinishPasskeyRegistrationHandler)
+		api.POST("/auth/passkeys/login/begin", authRateLimit, routes.BeginPasskeyLoginHandler)
+		api.POST("/auth/passkeys/login/finish", authRateLimit, routes.FinishPasskeyLoginHandler)
 		api.POST("/auth/login", authRateLimit, routes.LoginHandler)
 
 		// Protected routes (authentication required)
 		protected := api.Group("", middleware.RequireAuth())
 		{
 			protected.GET("/auth/profile", routes.ProfileHandler)
+			protected.GET("/auth/passkeys", routes.ListPasskeysHandler)
+			protected.POST("/auth/passkeys/begin", authRateLimit, routes.BeginOwnPasskeyHandler)
+			protected.POST("/auth/passkeys/finish", authRateLimit, routes.FinishOwnPasskeyHandler)
+			protected.DELETE("/auth/passkeys/:id", routes.DeletePasskeyHandler)
 			protected.GET("/auth/profile-picture", routes.ProfilePictureHandler)
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			protected.POST("/auth/change-password", routes.ChangePasswordHandler)

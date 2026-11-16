@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -41,4 +42,24 @@ func ConsumeEnrollment(ctx context.Context, tx *gorm.DB, user *models.User, hash
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// ResetLocalPasskeys is shared by admin recovery and the offline CLI. The caller
+// owns the transaction so credential/session revocation and code issuance are atomic.
+func ResetLocal(ctx context.Context, tx *gorm.DB, user *models.User) (string, error) {
+	if !user.LocalAuthEnabled {
+		return "", errors.New("cannot reset passkeys for a managed user")
+	}
+	if _, err := gorm.G[models.Passkey](tx).Where("user_id = ?", user.Id).Delete(ctx); err != nil {
+		return "", err
+	}
+	rows, err := gorm.G[models.User](tx).Where("id = ?", user.Id).Update(ctx, "token_version", gorm.Expr("token_version + 1"))
+	if err != nil {
+		return "", err
+	}
+	if rows != 1 {
+		return "", gorm.ErrRecordNotFound
+	}
+	user.TokenVersion++
+	return IssueEnrollment(ctx, tx, user)
 }
