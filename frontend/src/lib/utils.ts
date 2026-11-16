@@ -1,29 +1,6 @@
-import type { RefinementCtx } from "zod";
 import { getLocale } from "@/lib/paraglide/runtime";
 
 export { cn } from "cn";
-
-export function passwordStrengthRefine(messages: {
-	uppercase: string;
-	lowercase: string;
-	number: string;
-	special: string;
-}) {
-	return (val: string, ctx: RefinementCtx) => {
-		if (!/\p{Lu}/u.test(val)) {
-			ctx.addIssue({ code: "custom", message: messages.uppercase });
-		}
-		if (!/\p{Ll}/u.test(val)) {
-			ctx.addIssue({ code: "custom", message: messages.lowercase });
-		}
-		if (!/\p{Nd}/u.test(val)) {
-			ctx.addIssue({ code: "custom", message: messages.number });
-		}
-		if (!/[^\p{Lu}\p{Ll}\p{Nd}]/u.test(val)) {
-			ctx.addIssue({ code: "custom", message: messages.special });
-		}
-	};
-}
 
 export function toSearchableText(value: unknown): string {
 	if (value === null || value === undefined) {

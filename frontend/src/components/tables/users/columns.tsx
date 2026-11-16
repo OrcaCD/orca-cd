@@ -67,8 +67,8 @@ export const columns: ColumnDef<typeof dataTableFeatures, UserDetail>[] = [
 				<div className="flex flex-wrap gap-1 max-w-sm">
 					{providers.map((provider) => (
 						<Badge key={provider} variant="outline">
-							{provider === "password" && <KeyRound className="mr-1 h-3 w-3" />}
-							{provider === "password" ? m.providerPassword() : provider}
+							{provider === "passkey" && <KeyRound className="mr-1 h-3 w-3" />}
+							{provider === "passkey" ? m.passkeys() : provider}
 						</Badge>
 					))}
 				</div>

@@ -11,7 +11,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AppHeader } from "@/components/app-header";
 import { Toaster } from "@/components/ui/toast";
 import { useAuth, type AuthState } from "@/lib/auth";
-import ForcePasswordChangeDialog from "@/components/dialogs/force-password-change-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export interface RouterContext {
@@ -30,7 +29,6 @@ function RootComponent() {
 				<TooltipProvider>
 					<div className="min-h-screen bg-background">
 						{showNavbar && <AppHeader />}
-						<ForcePasswordChangeDialog />
 						<Outlet />
 						<Toaster />
 						<TanStackDevtools
