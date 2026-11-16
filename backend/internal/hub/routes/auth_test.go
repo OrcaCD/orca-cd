@@ -2,10 +2,7 @@ package routes
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +47,7 @@ func setupTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to open test db: %v", err)
 	}
-	if err := testDB.AutoMigrate(&models.User{}, &models.OIDCProvider{}, &models.UserOIDCIdentity{}); err != nil {
+	if err := testDB.AutoMigrate(&models.Passkey{}, &models.PasskeyEnrollment{}, &models.User{}, &models.OIDCProvider{}, &models.UserOIDCIdentity{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	if err := rbac.MigrateForTest(testDB); err != nil {
@@ -172,9 +169,7 @@ func TestSetupHandler_WithUsers(t *testing.T) {
 	setupTestDB(t)
 	LocalAuthDisabled = false
 	t.Cleanup(func() { LocalAuthDisabled = false })
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", LocalAuthEnabled: true})
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -235,89 +230,6 @@ func TestSetupHandler_ReturnsProvidersAndLocalAuthSetting(t *testing.T) {
 	}
 }
 
-func TestRegisterHandler_Success(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "Password123!", SetupCode: testSetupCode})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	RegisterHandler(c)
-
-	if w.Code != http.StatusCreated {
-		t.Errorf("expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-	if !hasAuthCookie(w) {
-		t.Error("expected auth cookie in response")
-	}
-	if setupcode.Verify(testSetupCode) {
-		t.Error("expected setup code to be invalidated after registration")
-	}
-}
-
-func TestRegisterHandler_RejectsInvalidSetupCode(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	tests := []struct {
-		name string
-		code string
-	}{
-		{"missing", ""},
-		{"wrong", "WRONG-SETUP-CODE-1234"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			//nolint:gosec
-			reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "Password123!", SetupCode: tt.code})
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-			c.Request.Header.Set("Content-Type", "application/json")
-
-			RegisterHandler(c)
-
-			if w.Code != http.StatusForbidden {
-				t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-			}
-			if hasAuthCookie(w) {
-				t.Error("must not set an auth cookie")
-			}
-
-			count, err := gorm.G[models.User](db.DB).Count(context.Background(), "*")
-			if err != nil {
-				t.Fatalf("count users: %v", err)
-			}
-			if count != 0 {
-				t.Errorf("expected no users to be created, got %d", count)
-			}
-		})
-	}
-}
-
-func TestRegisterHandler_RejectsWithoutActiveSetupCode(t *testing.T) {
-	setupTestDB(t)
-	setupcode.Clear()
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "Test", Email: "test@example.com", Password: "Password123!"})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	RegisterHandler(c)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestVerifySetupCodeHandler(t *testing.T) {
 	initTestSetupCode(t)
 
@@ -346,479 +258,6 @@ func TestVerifySetupCodeHandler(t *testing.T) {
 
 			if w.Code != tt.want {
 				t.Errorf("expected %d, got %d: %s", tt.want, w.Code, w.Body.String())
-			}
-		})
-	}
-}
-
-func TestRegisterHandler_RejectsSecondUser(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "Password456!", SetupCode: testSetupCode})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	RegisterHandler(c)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRegisterHandler_InvalidRequest(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	tests := []struct {
-		name string
-		body any
-	}{
-		{"short name", registerRequest{Name: "a", Email: "test@example.com", Password: "password123", SetupCode: testSetupCode}},
-		{"short password", registerRequest{Name: "Test", Email: "test@example.com", Password: "short", SetupCode: testSetupCode}},
-		{"invalid email", registerRequest{Name: "Test", Email: "notanemail", Password: "password123", SetupCode: testSetupCode}},
-		{"empty body", nil},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var reqBody []byte
-			if tt.body != nil {
-				reqBody, _ = json.Marshal(tt.body)
-			}
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-			c.Request.Header.Set("Content-Type", "application/json")
-
-			RegisterHandler(c)
-
-			if w.Code != http.StatusBadRequest {
-				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
-			}
-		})
-	}
-}
-
-func TestLoginHandler_Success(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, PasswordChangeRequired: true})
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	LoginHandler(c)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if !hasAuthCookie(w) {
-		t.Error("expected auth cookie in response")
-	}
-}
-
-func TestLoginHandler_DemoModeSkipsPasswordHashing(t *testing.T) {
-	setupTestDB(t)
-	DemoMode = true
-	t.Cleanup(func() { DemoMode = false })
-
-	// An unparsable hash makes any argon2 comparison fail, so a successful
-	// demo login proves the hash was never checked.
-	invalidHash := "not-an-argon2-hash"
-	if err := db.DB.Create(&models.User{Email: "demo@orcacd.dev", Name: "Demo", PasswordHash: &invalidHash}).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	tests := []struct {
-		name       string
-		email      string
-		password   string
-		wantStatus int
-	}{
-		{"demo credentials", "demo@orcacd.dev", "demo-password", http.StatusOK},
-		{"wrong password", "demo@orcacd.dev", "wrong-password", http.StatusUnauthorized},
-		{"unknown email", "other@orcacd.dev", "demo-password", http.StatusUnauthorized},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			reqBody, _ := json.Marshal(loginRequest{Email: tt.email, Password: tt.password}) //nolint:gosec // test credentials
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-			c.Request.Header.Set("Content-Type", "application/json")
-
-			LoginHandler(c)
-
-			if w.Code != tt.wantStatus {
-				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
-			}
-			if hasAuthCookie(w) != (tt.wantStatus == http.StatusOK) {
-				t.Errorf("unexpected auth cookie state for status %d", w.Code)
-			}
-		})
-	}
-}
-
-func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := models.User{
-		Id:                     "user-change-password",
-		Email:                  "test@example.com",
-		Name:                   "Test",
-		PasswordHash:           &hash,
-		PasswordChangeRequired: true,
-	}
-	if err := db.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		t.Fatalf("GenerateUserToken() error: %v", err)
-	}
-	claims, err := auth.ValidateUserToken(token)
-	if err != nil {
-		t.Fatalf("ValidateUserToken() error: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(changePasswordRequest{
-		CurrentPassword: "password123",
-		NewPassword:     "NewPassword-123!",
-	})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	auth.SetClaims(c, claims)
-	auth.SetUser(c, &user)
-
-	ChangePasswordHandler(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if !hasAuthCookie(w) {
-		t.Fatal("expected updated auth cookie in response")
-	}
-
-	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
-	if err != nil {
-		t.Fatalf("failed to load updated user: %v", err)
-	}
-	if updated.PasswordHash == nil || !auth.CheckPassword("NewPassword-123!", *updated.PasswordHash) {
-		t.Fatal("expected password to be updated")
-	}
-	if updated.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=false after password change")
-	}
-	if updated.TokenVersion != 1 {
-		t.Fatalf("expected token version 1 after password change, got %d", updated.TokenVersion)
-	}
-
-	var newToken string
-	for _, cookie := range w.Result().Cookies() {
-		if cookie.Name == "orcacd_auth" {
-			newToken = cookie.Value
-		}
-	}
-	newClaims, err := auth.ValidateUserToken(newToken)
-	if err != nil {
-		t.Fatalf("ValidateUserToken() error: %v", err)
-	}
-	if newClaims.TokenVersion != updated.TokenVersion {
-		t.Fatalf("expected reissued token to carry version %d, got %d", updated.TokenVersion, newClaims.TokenVersion)
-	}
-}
-
-func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
-	if err := db.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		t.Fatalf("GenerateUserToken() error: %v", err)
-	}
-	claims, err := auth.ValidateUserToken(token)
-	if err != nil {
-		t.Fatalf("ValidateUserToken() error: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(changePasswordRequest{
-		CurrentPassword: "wrong-password",
-		NewPassword:     "NewPassword-123!",
-	})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	auth.SetClaims(c, claims)
-	auth.SetUser(c, &user)
-
-	ChangePasswordHandler(c)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("Password123!")
-	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
-	if err := db.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		t.Fatalf("GenerateUserToken() error: %v", err)
-	}
-	claims, err := auth.ValidateUserToken(token)
-	if err != nil {
-		t.Fatalf("ValidateUserToken() error: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(changePasswordRequest{
-		CurrentPassword: "Password123!",
-		NewPassword:     "Password123!",
-	})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	auth.SetClaims(c, claims)
-	auth.SetUser(c, &user)
-
-	ChangePasswordHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestChangePasswordHandler_RejectsManagedUser(t *testing.T) {
-	setupTestDB(t)
-
-	user := models.User{Id: "user-oidc", Email: "oidc@example.com", Name: "OIDC User"}
-	if err := db.DB.Create(&user).Error; err != nil {
-		t.Fatalf("failed to create user: %v", err)
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		t.Fatalf("GenerateUserToken() error: %v", err)
-	}
-	claims, err := auth.ValidateUserToken(token)
-	if err != nil {
-		t.Fatalf("ValidateUserToken() error: %v", err)
-	}
-
-	reqBody, _ := json.Marshal(changePasswordRequest{
-		CurrentPassword: "password123",
-		NewPassword:     "new-password-123",
-	})
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/change-password", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-	auth.SetClaims(c, claims)
-	auth.SetUser(c, &user)
-
-	ChangePasswordHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestLoginHandler_WrongPassword(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "wrongpassword"})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	LoginHandler(c)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestLoginHandler_UserNotFound(t *testing.T) {
-	setupTestDB(t)
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Email: "nonexistent@example.com", Password: "password123"})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	LoginHandler(c)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestLoginHandler_RejectsOverlongPassword(t *testing.T) {
-	setupTestDB(t)
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: strings.Repeat("a", 129)})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	LoginHandler(c)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestAuthHandlers_ReturnServiceUnavailableWhenHashingBusy(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
-	db.DB.Create(&models.User{Email: "sso@example.com", Name: "SSO"})
-
-	tests := []struct {
-		name    string
-		path    string
-		handler gin.HandlerFunc
-		body    any
-	}{
-		{"login with known user", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "test@example.com", Password: "password123"}},
-		{"login with unknown user", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "nobody@example.com", Password: "password123"}},
-		{"login with user without password", "/api/v1/auth/login", LoginHandler, loginRequest{Email: "sso@example.com", Password: "password123"}},
-		{"register", "/api/v1/auth/register", RegisterHandler, registerRequest{Name: "Test", Email: "new@example.com", Password: "Password123!", SetupCode: testSetupCode}},
-	}
-
-	release := auth.SaturateHashSlotsForTest(10 * time.Millisecond)
-	defer release()
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			//nolint:gosec
-			reqBody, _ := json.Marshal(tt.body)
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(reqBody))
-			c.Request.Header.Set("Content-Type", "application/json")
-
-			tt.handler(c)
-
-			if w.Code != http.StatusServiceUnavailable {
-				t.Errorf("expected 503, got %d: %s", w.Code, w.Body.String())
-			}
-			if got := w.Header().Get("Retry-After"); got != "5" {
-				t.Errorf("Retry-After = %q, want %q", got, "5")
-			}
-			if hasAuthCookie(w) {
-				t.Error("must not set an auth cookie when hashing was skipped")
-			}
-		})
-	}
-}
-
-func TestLoginHandler_RecoversAfterHashingBusy(t *testing.T) {
-	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
-
-	login := func() *httptest.ResponseRecorder {
-		//nolint:gosec
-		reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-		c.Request.Header.Set("Content-Type", "application/json")
-		LoginHandler(c)
-		return w
-	}
-
-	release := auth.SaturateHashSlotsForTest(10 * time.Millisecond)
-	if w := login(); w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 while busy, got %d: %s", w.Code, w.Body.String())
-	}
-	release()
-
-	if w := login(); w.Code != http.StatusOK {
-		t.Errorf("expected 200 after slots were freed, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestAbortPasswordOp(t *testing.T) {
-	tests := []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantRetry  string
-	}{
-		{"busy", auth.ErrBusy, http.StatusServiceUnavailable, "5"},
-		{"wrapped busy", fmt.Errorf("wrapped: %w", auth.ErrBusy), http.StatusServiceUnavailable, "5"},
-		{"canceled", context.Canceled, http.StatusOK, ""},
-		{"other", errors.New("boom"), http.StatusInternalServerError, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-
-			abortPasswordOp(c, tt.err)
-
-			if w.Code != tt.wantStatus {
-				t.Errorf("status = %d, want %d", w.Code, tt.wantStatus)
-			}
-			if got := w.Header().Get("Retry-After"); got != tt.wantRetry {
-				t.Errorf("Retry-After = %q, want %q", got, tt.wantRetry)
-			}
-			if tt.err == context.Canceled {
-				if !c.IsAborted() {
-					t.Error("expected context to be aborted")
-				}
-				if w.Body.Len() != 0 {
-					t.Errorf("expected empty body, got %q", w.Body.String())
-				}
 			}
 		})
 	}
@@ -900,13 +339,11 @@ func TestProfileHandler_ReportsDemoMode(t *testing.T) {
 
 func TestProfileHandler_ReturnsIsLocalForLocalUser(t *testing.T) {
 	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
 	user := &models.User{
-		Id:           "user-local-claims",
-		Name:         "Local User",
-		Email:        "local@example.com",
-		PasswordHash: &hash,
+		Id:               "user-local-claims",
+		Name:             "Local User",
+		Email:            "local@example.com",
+		LocalAuthEnabled: true,
 	}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
@@ -935,7 +372,7 @@ func TestProfileHandler_ReturnsIsLocalForLocalUser(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if !body.IsLocal {
-		t.Error("expected isLocal=true for user with password")
+		t.Error("expected isLocal=true for user with local authentication")
 	}
 }
 
@@ -987,65 +424,13 @@ func TestProfileHandler_NoClaims(t *testing.T) {
 	}
 }
 
-func TestLoginHandler_LocalAuthDisabled(t *testing.T) {
-	setupTestDB(t)
-
-	LocalAuthDisabled = true
-	t.Cleanup(func() { LocalAuthDisabled = false })
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	LoginHandler(c)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRegisterHandler_AssignsAdminRole(t *testing.T) {
-	setupTestDB(t)
-	initTestSetupCode(t)
-
-	//nolint:gosec
-	reqBody, _ := json.Marshal(registerRequest{Name: "First User", Email: "admin@example.com", Password: "Password123!", SetupCode: testSetupCode})
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewReader(reqBody))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	RegisterHandler(c)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// Verify the user was created with admin role
-	var user models.User
-	if err := db.DB.Where("email = ?", "admin@example.com").First(&user).Error; err != nil {
-		t.Fatalf("failed to find user: %v", err)
-	}
-	isAdmin, err := userIsAdmin(t, user.Id)
-	if err != nil {
-		t.Fatalf("failed to check admin role: %v", err)
-	}
-	if !isAdmin {
-		t.Error("expected the first user to get the admin role")
-	}
-}
-
 func TestProfileHandler_ReturnsRolesAndPermissions(t *testing.T) {
 	setupTestDB(t)
 
 	user := &models.User{
-		Id:                     "user-admin",
-		Name:                   "Admin",
-		Email:                  "admin@example.com",
-		PasswordChangeRequired: true,
+		Id:    "user-admin",
+		Name:  "Admin",
+		Email: "admin@example.com",
 	}
 	if err := gorm.G[models.User](db.DB).Create(t.Context(), user); err != nil {
 		t.Fatalf("failed to create user: %v", err)
@@ -1088,16 +473,11 @@ func TestProfileHandler_ReturnsRolesAndPermissions(t *testing.T) {
 	if got := body.Permissions[models.ResourceApplication].All; !slices.Contains(got, models.ActionDeploy) {
 		t.Errorf("expected admin to be allowed to deploy all applications, got %v", got)
 	}
-	if !body.PasswordChangeRequired {
-		t.Error("expected passwordChangeRequired=true")
-	}
 }
 
 func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1149,9 +529,7 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 
 func TestUpdateOwnProfileHandler_NameOnlyKeepsEmailConfirmed(t *testing.T) {
 	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1179,11 +557,8 @@ func TestUpdateOwnProfileHandler_NameOnlyKeepsEmailConfirmed(t *testing.T) {
 
 func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 	setupTestDB(t)
-
-	hashA, _ := auth.HashPassword("password123")
-	hashB, _ := auth.HashPassword("password456")
-	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA}
-	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB}
+	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", LocalAuthEnabled: true}
+	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", LocalAuthEnabled: true}
 	if err := db.DB.Create(userA).Error; err != nil {
 		t.Fatalf("failed to create user A: %v", err)
 	}
@@ -1215,9 +590,7 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 
 func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1293,9 +666,7 @@ func TestUpdateOwnProfileHandler_RejectsManagedUserWithoutPassword(t *testing.T)
 
 func TestUpdateOwnProfileHandler_InternalErrorWhenUpdateFails(t *testing.T) {
 	setupTestDB(t)
-
-	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1407,5 +778,24 @@ func TestLogoutAllHandler_NoUser(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDemoLoginRequiresDemoMode(t *testing.T) {
+	setupTestDB(t)
+	user := models.User{Id: db.DemoUserID, Name: "Demo", Email: "demo@orcacd.dev"}
+	if err := gorm.G[models.User](db.DB).Create(t.Context(), &user); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { DemoMode = false })
+	for _, enabled := range []bool{false, true} {
+		DemoMode = enabled
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/demo", nil)
+		DemoLoginHandler(c)
+		if hasAuthCookie(w) != enabled {
+			t.Fatalf("demo session allowed with DemoMode=%v", enabled)
+		}
 	}
 }

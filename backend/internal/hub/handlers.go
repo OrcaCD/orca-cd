@@ -60,12 +60,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		// Rate-limited auth endpoints: 10 req/min per IP, burst of 10
 		authRateLimit := middleware.RateLimit(6*time.Second, 10)
 		api.POST("/auth/setup/verify", authRateLimit, routes.VerifySetupCodeHandler)
-		api.POST("/auth/register", authRateLimit, routes.RegisterHandler)
 		api.POST("/auth/passkeys/register/begin", authRateLimit, routes.BeginPasskeyRegistrationHandler)
 		api.POST("/auth/passkeys/register/finish", authRateLimit, routes.FinishPasskeyRegistrationHandler)
 		api.POST("/auth/passkeys/login/begin", authRateLimit, routes.BeginPasskeyLoginHandler)
 		api.POST("/auth/passkeys/login/finish", authRateLimit, routes.FinishPasskeyLoginHandler)
-		api.POST("/auth/login", authRateLimit, routes.LoginHandler)
+		api.POST("/auth/demo", authRateLimit, routes.DemoLoginHandler)
 
 		// Protected routes (authentication required)
 		protected := api.Group("", middleware.RequireAuth())
@@ -77,7 +76,6 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.DELETE("/auth/passkeys/:id", routes.DeletePasskeyHandler)
 			protected.GET("/auth/profile-picture", routes.ProfilePictureHandler)
 			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
-			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
 			protected.POST("/auth/logout", routes.LogoutHandler)
 			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
 

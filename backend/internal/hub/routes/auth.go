@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"net/http"
 	"slices"
@@ -28,30 +26,13 @@ var LocalAuthDisabled bool
 // DemoMode is set by the server config and exposed to the frontend.
 var DemoMode bool
 
-type registerRequest struct {
-	Name      string `json:"name" binding:"required,min=3,max=64"`
-	Email     string `json:"email" binding:"required,email"`
-	Password  string `json:"password" binding:"required,max=128"`
-	SetupCode string `json:"setupCode" binding:"max=128"`
-}
-
 type verifySetupCodeRequest struct {
 	SetupCode string `json:"setupCode" binding:"max=128"`
-}
-
-type loginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,max=128"`
 }
 
 type updateOwnProfileRequest struct {
 	Name  string `json:"name" binding:"required,min=3,max=64"`
 	Email string `json:"email" binding:"required,email"`
-}
-
-type changePasswordRequest struct {
-	CurrentPassword string `json:"currentPassword" binding:"required,min=1,max=128"`
-	NewPassword     string `json:"newPassword" binding:"required,max=128"`
 }
 
 type providerInfo struct {
@@ -67,16 +48,15 @@ type setupResponse struct {
 }
 
 type profileResponse struct {
-	Id                     string                                           `json:"id"`
-	Name                   string                                           `json:"name"`
-	Email                  string                                           `json:"email"`
-	Picture                string                                           `json:"picture,omitempty"`
-	IsAdmin                bool                                             `json:"isAdmin"`
-	Roles                  []userRoleResponse                               `json:"roles"`
-	Permissions            map[models.PermissionResource]rbac.ResourceGrant `json:"permissions"`
-	PasswordChangeRequired bool                                             `json:"passwordChangeRequired"`
-	IsLocal                bool                                             `json:"isLocal"`
-	Demo                   bool                                             `json:"demo"`
+	Id          string                                           `json:"id"`
+	Name        string                                           `json:"name"`
+	Email       string                                           `json:"email"`
+	Picture     string                                           `json:"picture,omitempty"`
+	IsAdmin     bool                                             `json:"isAdmin"`
+	Roles       []userRoleResponse                               `json:"roles"`
+	Permissions map[models.PermissionResource]rbac.ResourceGrant `json:"permissions"`
+	IsLocal     bool                                             `json:"isLocal"`
+	Demo        bool                                             `json:"demo"`
 }
 
 func ProfileHandler(c *gin.Context) {
@@ -102,16 +82,15 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 	slices.SortFunc(roles, compareUserRoles)
 
 	c.JSON(http.StatusOK, profileResponse{
-		Id:                     user.Id,
-		Name:                   user.Name,
-		Email:                  user.Email,
-		Picture:                profilePictureURL(claims.Picture),
-		IsAdmin:                perms.IsAdmin(),
-		Roles:                  roles,
-		Permissions:            perms.Grants(),
-		PasswordChangeRequired: user.PasswordChangeRequired,
-		IsLocal:                user.LocalAuthEnabled || user.PasswordHash != nil,
-		Demo:                   DemoMode,
+		Id:          user.Id,
+		Name:        user.Name,
+		Email:       user.Email,
+		Picture:     profilePictureURL(claims.Picture),
+		IsAdmin:     perms.IsAdmin(),
+		Roles:       roles,
+		Permissions: perms.Grants(),
+		IsLocal:     user.LocalAuthEnabled,
+		Demo:        DemoMode,
 	})
 }
 
@@ -132,7 +111,7 @@ func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) 
 		return nil, nil, false
 	}
 
-	if !user.LocalAuthEnabled && user.PasswordHash == nil {
+	if !user.LocalAuthEnabled {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
 		return nil, nil, false
 	}
@@ -200,86 +179,6 @@ func SetupHandler(c *gin.Context) {
 	})
 }
 
-func abortPasswordOp(c *gin.Context, err error) {
-	if errors.Is(err, auth.ErrBusy) {
-		c.Header("Retry-After", "5")
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "server is busy, please try again later"})
-		return
-	}
-	if errors.Is(err, context.Canceled) {
-		c.Abort()
-		return
-	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-}
-
-func RegisterHandler(c *gin.Context) {
-	var req registerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars), password (min 12 chars, must include uppercase, lowercase, number and special character) and valid email are required"})
-		return
-	}
-	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-
-	if !setupcode.Verify(req.SetupCode) {
-		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
-		return
-	}
-
-	if !auth.ValidatePasswordStrength(req.Password) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
-		return
-	}
-
-	hash, err := auth.HashPasswordContext(c.Request.Context(), req.Password)
-	if err != nil {
-		abortPasswordOp(c, err)
-		return
-	}
-
-	var user models.User
-
-	txErr := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		count, err := gorm.G[models.User](tx).Count(c.Request.Context(), "*")
-		if err != nil {
-			return err
-		}
-		if count > 0 {
-			return errRegistrationDisabled
-		}
-
-		user = models.User{
-			Email:        req.Email,
-			Name:         req.Name,
-			PasswordHash: &hash,
-		}
-		if err := gorm.G[models.User](tx).Create(c.Request.Context(), &user); err != nil {
-			return err
-		}
-		return rbac.AssignBuiltInRole(c.Request.Context(), tx, user.Id, models.RoleBuiltInAdmin)
-	}, &sql.TxOptions{Isolation: sql.LevelSerializable})
-
-	if txErr != nil {
-		if errors.Is(txErr, errRegistrationDisabled) || errors.Is(txErr, gorm.ErrDuplicatedKey) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "registration is disabled"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	setupcode.Clear()
-
-	auth.SetAuthCookie(c, token)
-	c.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
-}
-
 func VerifySetupCodeHandler(c *gin.Context) {
 	var req verifySetupCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -293,158 +192,6 @@ func VerifySetupCodeHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "setup code accepted"})
-}
-
-func LoginHandler(c *gin.Context) {
-	if LocalAuthDisabled {
-		c.JSON(http.StatusForbidden, gin.H{"error": "local authentication is disabled"})
-		return
-	}
-
-	var req loginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
-		return
-	}
-	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-
-	if DemoMode {
-		demoLogin(c, req)
-		return
-	}
-
-	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if err := auth.CompareWithDummyContext(c.Request.Context(), req.Password); err != nil {
-				abortPasswordOp(c, err)
-				return
-			}
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	if user.PasswordHash == nil {
-		if err := auth.CompareWithDummyContext(c.Request.Context(), req.Password); err != nil {
-			abortPasswordOp(c, err)
-			return
-		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
-		return
-	}
-
-	match, err := auth.CheckPasswordContext(c.Request.Context(), req.Password, *user.PasswordHash)
-	if err != nil {
-		abortPasswordOp(c, err)
-		return
-	}
-	if !match {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
-		return
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	auth.SetAuthCookie(c, token)
-	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
-}
-
-// demoLogin only accepts the public demo credentials and never hashes the password,
-// so anonymous visitors cannot use up argon2 time and memory.
-func demoLogin(c *gin.Context, req loginRequest) {
-	if !db.IsDemoLogin(req.Email, req.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
-		return
-	}
-
-	user, err := gorm.G[models.User](db.DB).Where("email = ?", req.Email).First(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	token, err := auth.GenerateUserToken(&user)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	auth.SetAuthCookie(c, token)
-	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
-}
-
-func ChangePasswordHandler(c *gin.Context) {
-	claims, user, ok := getCurrentUser(c)
-	if !ok {
-		return
-	}
-
-	var req changePasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "currentPassword and newPassword are required, and newPassword must be at least 12 characters and include uppercase, lowercase, number and special character"})
-		return
-	}
-
-	if !auth.ValidatePasswordStrength(req.NewPassword) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "password does not meet strength requirements"})
-		return
-	}
-
-	if user.PasswordHash == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot change password for managed user"})
-		return
-	}
-
-	match, err := auth.CheckPasswordContext(c.Request.Context(), req.CurrentPassword, *user.PasswordHash)
-	if err != nil {
-		abortPasswordOp(c, err)
-		return
-	}
-	if !match {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
-		return
-	}
-
-	same, err := auth.CheckPasswordContext(c.Request.Context(), req.NewPassword, *user.PasswordHash)
-	if err != nil {
-		abortPasswordOp(c, err)
-		return
-	}
-	if same {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must be different from current password"})
-		return
-	}
-
-	hash, err := auth.HashPasswordContext(c.Request.Context(), req.NewPassword)
-	if err != nil {
-		abortPasswordOp(c, err)
-		return
-	}
-
-	user.PasswordHash = &hash
-	user.PasswordChangeRequired = false
-	user.TokenVersion++
-
-	if err := db.DB.WithContext(c.Request.Context()).Save(user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	auth.SetAuthCookie(c, token)
-	c.JSON(http.StatusOK, gin.H{"message": "password changed successfully"})
 }
 
 func LogoutHandler(c *gin.Context) {
@@ -469,4 +216,21 @@ func LogoutAllHandler(c *gin.Context) {
 
 	auth.ClearAuthCookie(c)
 	c.JSON(http.StatusOK, gin.H{"message": "logged out everywhere"})
+}
+
+// DemoLoginHandler grants the deliberately public, read-only demo session.
+func DemoLoginHandler(c *gin.Context) {
+	if !DemoMode {
+		c.JSON(http.StatusForbidden, gin.H{"error": "demo mode is disabled"})
+		return
+	}
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", db.DemoUserID).First(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !setPasskeyLoginCookie(c, &user) {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
 }

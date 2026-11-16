@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
@@ -21,19 +21,19 @@ import (
 )
 
 type adminUserResponse struct {
-	Id                     string             `json:"id"`
-	Name                   string             `json:"name"`
-	Email                  string             `json:"email"`
-	Roles                  []userRoleResponse `json:"roles"`
-	Providers              []string           `json:"providers"`
-	PasswordChangeRequired bool               `json:"passwordChangeRequired"`
-	CreatedAt              string             `json:"createdAt"`
-	UpdatedAt              string             `json:"updatedAt"`
+	Id        string             `json:"id"`
+	Name      string             `json:"name"`
+	Email     string             `json:"email"`
+	Roles     []userRoleResponse `json:"roles"`
+	Providers []string           `json:"providers"`
+	IsLocal   bool               `json:"isLocal"`
+	CreatedAt string             `json:"createdAt"`
+	UpdatedAt string             `json:"updatedAt"`
 }
 
-type adminUserWithGeneratedPasswordResponse struct {
+type adminUserWithEnrollmentResponse struct {
 	adminUserResponse
-	GeneratedPassword string `json:"generatedPassword,omitempty"`
+	EnrollmentToken string `json:"enrollmentToken,omitempty"`
 }
 
 type adminCreateUserRequest struct {
@@ -50,7 +50,7 @@ type adminUpdateUserRequest struct {
 	Email string `json:"email"`
 	// Without roleIds, the roles are left unchanged
 	RoleIds       []string `json:"roleIds" binding:"max=100"`
-	ResetPassword bool     `json:"resetPassword"`
+	ResetPasskeys bool     `json:"resetPasskeys"`
 }
 
 type adminUserProfile struct {
@@ -77,21 +77,21 @@ func toAdminUserResponse(user *models.User, oidcProviderNames []string, roles []
 		roles = []userRoleResponse{}
 	}
 	return adminUserResponse{
-		Id:                     user.Id,
-		Name:                   user.Name,
-		Email:                  user.Email,
-		Roles:                  roles,
-		Providers:              buildAuthProviderNames(user.PasswordHash, oidcProviderNames),
-		PasswordChangeRequired: user.PasswordChangeRequired,
-		CreatedAt:              user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:              user.UpdatedAt.Format(time.RFC3339),
+		Id:        user.Id,
+		Name:      user.Name,
+		Email:     user.Email,
+		Roles:     roles,
+		Providers: buildAuthProviderNames(user.LocalAuthEnabled, oidcProviderNames),
+		IsLocal:   user.LocalAuthEnabled,
+		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
-func toAdminUserWithGeneratedPasswordResponse(user *models.User, oidcProviderNames []string, roles []userRoleResponse, generatedPassword string) adminUserWithGeneratedPasswordResponse {
-	return adminUserWithGeneratedPasswordResponse{
+func toAdminUserWithEnrollmentTokenResponse(user *models.User, oidcProviderNames []string, roles []userRoleResponse, enrollmentToken string) adminUserWithEnrollmentResponse {
+	return adminUserWithEnrollmentResponse{
 		adminUserResponse: toAdminUserResponse(user, oidcProviderNames, roles),
-		GeneratedPassword: generatedPassword,
+		EnrollmentToken:   enrollmentToken,
 	}
 }
 
@@ -159,27 +159,10 @@ func AdminCreateUserHandler(c *gin.Context) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	roleIds := uniqueIds(req.RoleIds)
 
-	generatedPassword, err := auth.GenerateRandomPassword()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	hash, err := auth.HashPassword(generatedPassword)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	user := models.User{
-		Name:                   req.Name,
-		Email:                  req.Email,
-		PasswordHash:           &hash,
-		PasswordChangeRequired: true,
-	}
-
+	user := models.User{Name: req.Name, Email: req.Email, LocalAuthEnabled: true}
+	enrollmentToken := ""
 	ctx := c.Request.Context()
-	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if req.RoleIds == nil {
 			role, err := rbac.BuiltInRole(ctx, tx, models.RoleBuiltInUser)
 			if err != nil {
@@ -192,7 +175,11 @@ func AdminCreateUserHandler(c *gin.Context) {
 		if err := gorm.G[models.User](tx).Create(ctx, &user); err != nil {
 			return err
 		}
-		_, err := rbac.SetUserRoles(ctx, tx, user.Id, models.UserRoleSourceManual, roleIds)
+		if _, err := rbac.SetUserRoles(ctx, tx, user.Id, models.UserRoleSourceManual, roleIds); err != nil {
+			return err
+		}
+		var err error
+		enrollmentToken, err = passkeys.IssueEnrollment(ctx, tx, &user)
 		return err
 	})
 	if err != nil {
@@ -216,7 +203,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "created", "user", user.Id)
 
-	c.JSON(http.StatusCreated, toAdminUserWithGeneratedPasswordResponse(&user, nil, rolesByUserId[user.Id], generatedPassword))
+	c.JSON(http.StatusCreated, toAdminUserWithEnrollmentTokenResponse(&user, nil, rolesByUserId[user.Id], enrollmentToken))
 	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles)
 }
 
@@ -244,11 +231,11 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	// The profile of users without a password is managed by their OIDC provider,
+	// The profile of users without local authentication is managed by their OIDC provider,
 	// only their roles can be changed. Their name and email don't have to be
 	// sent, and the provider may have set values the validation would reject.
-	if user.PasswordHash == nil {
-		if (req.Name != "" && req.Name != user.Name) || (req.Email != "" && !strings.EqualFold(req.Email, user.Email)) || req.ResetPassword {
+	if !user.LocalAuthEnabled {
+		if (req.Name != "" && req.Name != user.Name) || (req.Email != "" && !strings.EqualFold(req.Email, user.Email)) || req.ResetPasskeys {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
 			return
 		}
@@ -264,39 +251,29 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		user.Email = req.Email
 	}
 
-	generatedPassword := ""
-	if req.ResetPassword {
-		var genErr error
-		generatedPassword, genErr = auth.GenerateRandomPassword()
-		if genErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-
-		hash, err := auth.HashPassword(generatedPassword)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-		user.PasswordHash = &hash
-		user.PasswordChangeRequired = true
-		user.TokenVersion++
-	}
+	enrollmentToken := ""
 
 	rolesChanged := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if user.PasswordHash != nil {
+		if user.LocalAuthEnabled {
 			user.UpdatedAt = time.Now()
 			// Only the columns this handler changes, so a concurrent change of
 			// other columns is not overwritten and a deleted user is not recreated.
 			rows, err := gorm.G[models.User](tx).Where("id = ?", user.Id).
-				Select("name", "email", "email_unconfirmed", "password_hash", "password_change_required", "token_version", "updated_at").
+				Select("name", "email", "email_unconfirmed", "updated_at").
 				Updates(ctx, user)
 			if err != nil {
 				return err
 			}
 			if rows == 0 {
 				return gorm.ErrRecordNotFound
+			}
+		}
+		if req.ResetPasskeys {
+			var err error
+			enrollmentToken, err = passkeys.ResetLocal(ctx, tx, &user)
+			if err != nil {
+				return err
 			}
 		}
 		if req.RoleIds == nil {
@@ -343,7 +320,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		utils.RecordAuditLog(c, "roles-updated", "user", id)
 	}
 
-	c.JSON(http.StatusOK, adminUserWithGeneratedPasswordResponse{adminUserResponse: response, GeneratedPassword: generatedPassword})
+	c.JSON(http.StatusOK, adminUserWithEnrollmentResponse{adminUserResponse: response, EnrollmentToken: enrollmentToken})
 	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfileOf(id))
 }
 
@@ -522,13 +499,13 @@ func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string
 	return providerNamesByUserId, nil
 }
 
-func buildAuthProviderNames(passwordHash *string, oidcProviderNames []string) []string {
+func buildAuthProviderNames(localAuth bool, oidcProviderNames []string) []string {
 	seen := make(map[string]struct{}, len(oidcProviderNames)+1)
 	providerNames := make([]string, 0, len(oidcProviderNames)+1)
 
-	if passwordHash != nil {
-		providerNames = append(providerNames, "password")
-		seen["password"] = struct{}{}
+	if localAuth {
+		providerNames = append(providerNames, "passkey")
+		seen["passkey"] = struct{}{}
 	}
 
 	uniqueOIDCProviderNames := make([]string, 0, len(oidcProviderNames))
