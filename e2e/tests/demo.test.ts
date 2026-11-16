@@ -1,5 +1,5 @@
 import { test, expect, type Cookie, type Page } from "@playwright/test";
-import { DEMO_EMAIL, DEMO_PASSWORD, DEMO_URL } from "./const.ts";
+import { DEMO_EMAIL, DEMO_URL } from "./const.ts";
 import { api } from "./helpers/api.ts";
 import { startDemoHub, stopDemoHub } from "./helpers/demo-hub.ts";
 import { expectToast, signOutUi } from "./helpers/users.ts";
@@ -32,16 +32,12 @@ test.afterAll(() => {
 });
 
 test.describe("signed out", () => {
-	test("the login form is prefilled with the demo credentials", async ({ page }) => {
+	test("the public demo signs in without a password or passkey", async ({ page }) => {
 		await page.goto("/login");
 
 		await expect(page).toHaveTitle(/Login/);
-		await expect(page.getByRole("textbox", { name: "email" })).toHaveValue(DEMO_EMAIL);
-		await expect(page.getByRole("textbox", { name: "Password", exact: true })).toHaveValue(
-			DEMO_PASSWORD,
-		);
-
-		await page.locator("form button[type='submit']").click();
+		await expect(page.locator("input[type=password]")).toHaveCount(0);
+		await page.getByRole("button", { name: "Explore demo", exact: true }).click();
 		await page.waitForURL("/");
 
 		await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
@@ -58,18 +54,9 @@ test.describe("signed out", () => {
 		await page.waitForURL("/login");
 	});
 
-	test("only the public demo credentials sign in", async ({ page }) => {
-		const attempts = [
-			{ email: DEMO_EMAIL, password: "wrong-password" },
-			// Seeded, but without a password
-			{ email: "sam@orcacd.dev", password: DEMO_PASSWORD },
-			{ email: "does-not-exist@example.com", password: DEMO_PASSWORD },
-		];
-
-		for (const attempt of attempts) {
-			const { status, body } = await demoApi(page, "POST", "/auth/login", attempt);
-			expect(status, attempt.email).toBe(401);
-			expect(body).toEqual({ error: "invalid email or password" });
+	test("passkey enrollment is blocked in the public demo", async ({ page }) => {
+		for (const path of ["/auth/passkeys/register/begin", "/auth/passkeys/login/begin"]) {
+			expect((await demoApi(page, "POST", path, {})).status).toBe(403);
 		}
 	});
 
@@ -96,10 +83,7 @@ test.describe("signed in", () => {
 		const context = await browser.newContext({ baseURL: DEMO_URL });
 		try {
 			const page = await context.newPage();
-			const { status } = await demoApi(page, "POST", "/auth/login", {
-				email: DEMO_EMAIL,
-				password: DEMO_PASSWORD,
-			});
+			const { status } = await demoApi(page, "POST", "/auth/demo");
 			expect(status).toBe(200);
 			cookies = (await context.storageState()).cookies;
 		} finally {
@@ -119,7 +103,6 @@ test.describe("signed in", () => {
 			name: "Demo User",
 			isAdmin: true,
 			demo: true,
-			passwordChangeRequired: false,
 		});
 
 		for (const path of ["/", "/applications", "/agents", "/repositories", "/admin/users"]) {
@@ -276,7 +259,7 @@ test.describe("signed in", () => {
 			["DELETE", "/admin/users/demo-member"],
 			["POST", "/admin/oidc-providers", { name: "SSO" }],
 			["PUT", "/auth/profile", { name: "Changed" }],
-			["POST", "/auth/change-password", { currentPassword: DEMO_PASSWORD, newPassword: "x" }],
+			["POST", "/auth/passkeys/begin", { name: "Disallowed" }],
 			["POST", "/auth/logout-all"],
 		];
 

@@ -1,3 +1,4 @@
+import { replaceAuthenticator } from "./helpers/passkeys.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect, type Browser, type Page } from "@playwright/test";
@@ -21,13 +22,9 @@ import {
 	uniqueId,
 } from "./helpers/oidc.ts";
 import {
-	ACTIVE_PASSWORD,
-	NEW_PASSWORD,
-	apiSignIn,
 	cleanup,
 	createActiveUser,
 	expectToast,
-	fillPasswords,
 	openSession,
 	signInUi,
 	signOutUi,
@@ -93,7 +90,7 @@ test.describe("Profile", () => {
 		await expect(emailInput).toHaveValue(email.toLowerCase());
 
 		await signOutUi(user.page);
-		await signInUi(user.page, email, ACTIVE_PASSWORD);
+		await signInUi(user.page);
 		await user.page.waitForURL("/");
 		expect((await getProfile(user.page)).name).toBe(name);
 	});
@@ -181,7 +178,7 @@ test.describe("Profile", () => {
 		expect((await none.page.request.get("/api/v1/auth/profile-picture")).status()).toBe(404);
 	});
 
-	test("the profile and the password of SSO users are managed by the identity provider", async ({
+	test("the profile and authentication of SSO users are managed by the identity provider", async ({
 		page,
 		browser,
 	}) => {
@@ -194,9 +191,10 @@ test.describe("Profile", () => {
 		await expect(sso.page.getByRole("button", { name: "Save Changes" })).toBeDisabled();
 
 		await gotoApp(sso.page, "/settings/security");
-		await expect(sso.page.getByText("Managed Profile")).toBeVisible();
-		await expect(sso.page.getByLabel("Current Password", { exact: true })).toBeDisabled();
-		await expect(sso.page.getByRole("button", { name: "Update Password" })).toBeDisabled();
+		await expect(
+			sso.page.getByText("Authentication for this account is managed by your SSO provider."),
+		).toBeVisible();
+		await expect(sso.page.getByRole("button", { name: "Add passkey" })).toHaveCount(0);
 
 		const update = await api(sso.page, "PUT", "/auth/profile", {
 			name: "Hijacked Name",
@@ -204,165 +202,63 @@ test.describe("Profile", () => {
 		});
 		expect(update.status).toBe(403);
 		expect(update.body).toEqual({ error: "this operation is not available for sso users" });
+		const enrollment = await api(sso.page, "POST", "/auth/passkeys/begin", { name: "Disallowed" });
+		expect(enrollment.status).toBe(403);
 
-		const password = await api(sso.page, "POST", "/auth/change-password", {
-			currentPassword: "Whatever-Password-1!",
-			newPassword: NEW_PASSWORD,
-		});
-		expect(password.status).toBe(400);
-		expect(password.body).toEqual({ error: "cannot change password for managed user" });
 		expect((await getProfile(sso.page)).name).toBe(sso.mockUser.name);
 	});
 });
 
-test.describe("Password", () => {
-	test("is validated before it is sent", async ({ page, browser }) => {
-		const user = await createActiveUser(page, browser);
-		let changes = 0;
-		user.page.on("request", (request) => {
-			if (new URL(request.url()).pathname === "/api/v1/auth/change-password") {
-				changes++;
-			}
-		});
-
-		const cases: { title: string; values: Parameters<typeof fillPasswords>[1]; message: string }[] =
-			[
-				{
-					title: "an empty current password",
-					values: { current: "", next: NEW_PASSWORD, confirm: NEW_PASSWORD },
-					message: "Current password is required",
-				},
-				{
-					title: "a short password",
-					values: { current: ACTIVE_PASSWORD, next: "Short1!", confirm: "Short1!" },
-					message: "New password must be at least 12 characters",
-				},
-				{
-					title: "a long password",
-					values: {
-						current: ACTIVE_PASSWORD,
-						next: `Aa1!${"x".repeat(125)}`,
-						confirm: `Aa1!${"x".repeat(125)}`,
-					},
-					message: "New password must be at most 128 characters",
-				},
-				{
-					title: "a password without an uppercase letter",
-					values: { current: ACTIVE_PASSWORD, next: "alllowercase1!", confirm: "alllowercase1!" },
-					message: "New password must contain at least one uppercase letter",
-				},
-				{
-					title: "a password without a lowercase letter",
-					values: { current: ACTIVE_PASSWORD, next: "ALLUPPERCASE1!", confirm: "ALLUPPERCASE1!" },
-					message: "New password must contain at least one lowercase letter",
-				},
-				{
-					title: "a password without a number",
-					values: { current: ACTIVE_PASSWORD, next: "NoNumbersHere!!", confirm: "NoNumbersHere!!" },
-					message: "New password must contain at least one number",
-				},
-				{
-					title: "a password without a special character",
-					values: { current: ACTIVE_PASSWORD, next: "NoSpecial12345A", confirm: "NoSpecial12345A" },
-					message: "New password must contain at least one special character",
-				},
-				{
-					title: "a missing confirmation",
-					values: { current: ACTIVE_PASSWORD, next: NEW_PASSWORD, confirm: "" },
-					message: "Please confirm your new password",
-				},
-				{
-					title: "a different confirmation",
-					values: { current: ACTIVE_PASSWORD, next: NEW_PASSWORD, confirm: `${NEW_PASSWORD}x` },
-					message: "Passwords do not match",
-				},
-			];
-
-		for (const { title, values, message } of cases) {
-			await test.step(title, async () => {
-				await gotoApp(user.page, "/settings/security");
-				await fillPasswords(user.page, values);
-				await user.page.getByRole("button", { name: "Update Password" }).click();
-
-				await expect(user.page.getByText(message, { exact: true })).toBeVisible();
-			});
-		}
-
-		expect(changes).toBe(0);
-	});
-
-	test("can be shown and hidden", async ({ page, browser }) => {
+test.describe("Passkeys", () => {
+	test("adds a backup key and deletes it while preserving the last key", async ({
+		page,
+		browser,
+	}) => {
 		const user = await createActiveUser(page, browser);
 		await gotoApp(user.page, "/settings/security");
-		const current = user.page.getByLabel("Current Password", { exact: true });
-		await current.fill(ACTIVE_PASSWORD);
-		await expect(current).toHaveAttribute("type", "password");
-
-		await user.page.getByRole("button", { name: "Show password" }).first().click();
-		await expect(current).toHaveAttribute("type", "text");
-
-		await user.page.getByRole("button", { name: "Hide password" }).first().click();
-		await expect(current).toHaveAttribute("type", "password");
+		await expect(
+			user.page.getByRole("button", { name: "Delete passkey", exact: true }),
+		).toHaveCount(0);
+		await replaceAuthenticator(user.page);
+		await user.page.getByLabel("Passkey name", { exact: true }).fill("Backup key");
+		await user.page.getByRole("button", { name: "Add passkey", exact: true }).click();
+		await expectToast(user.page, "Passkey added");
+		await expect(user.page.getByText("Backup key", { exact: true })).toBeVisible();
+		const keys = await api(user.page, "GET", "/auth/passkeys");
+		expect(keys.body).toHaveLength(2);
+		expect(JSON.stringify(keys.body)).not.toContain("publicKey");
+		const row = user.page.getByRole("listitem").filter({ hasText: "Backup key" });
+		await row.getByRole("button", { name: "Delete passkey", exact: true }).click();
+		await user.page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Delete passkey", exact: true })
+			.click();
+		await expectToast(user.page, "Passkey deleted");
+		await expect(
+			user.page.getByRole("button", { name: "Delete passkey", exact: true }),
+		).toHaveCount(0);
+		const remaining = await api(user.page, "GET", "/auth/passkeys");
+		expect(remaining.body).toHaveLength(1);
+		expect((await api(user.page, "DELETE", `/auth/passkeys/${remaining.body[0].id}`)).status).toBe(
+			400,
+		);
 	});
 
-	test("must be the current password to change it", async ({ page, browser }) => {
+	test("canceled prompts can be retried", async ({ page, browser }) => {
 		const user = await createActiveUser(page, browser);
 		await gotoApp(user.page, "/settings/security");
-
-		await fillPasswords(user.page, {
-			current: "Wrong-Password-123!",
-			next: NEW_PASSWORD,
-			confirm: NEW_PASSWORD,
+		await user.page.evaluate(() => {
+			navigator.credentials.create = async () => {
+				throw new DOMException("Canceled", "NotAllowedError");
+			};
 		});
-		await user.page.getByRole("button", { name: "Update Password" }).click();
-
-		await expectToast(user.page, "current password is incorrect");
-		expect((await getProfile(user.page)).id).toBe(user.id);
-		const { page: other } = await openSession(browser);
-		await apiSignIn(other, user.email, ACTIVE_PASSWORD);
-	});
-
-	test("must differ from the current password", async ({ page, browser }) => {
-		const user = await createActiveUser(page, browser);
-		await gotoApp(user.page, "/settings/security");
-
-		await fillPasswords(user.page, {
-			current: ACTIVE_PASSWORD,
-			next: ACTIVE_PASSWORD,
-			confirm: ACTIVE_PASSWORD,
-		});
-		await user.page.getByRole("button", { name: "Update Password" }).click();
-
-		await expectToast(user.page, "new password must be different from current password");
-	});
-
-	test("can be changed and the new one is used for the next sign in", async ({ page, browser }) => {
-		const user = await createActiveUser(page, browser);
-		const other = await openSession(browser);
-		await apiSignIn(other.page, user.email, ACTIVE_PASSWORD);
-		await gotoApp(user.page, "/settings/security");
-
-		await fillPasswords(user.page, {
-			current: ACTIVE_PASSWORD,
-			next: NEW_PASSWORD,
-			confirm: NEW_PASSWORD,
-		});
-		await user.page.getByRole("button", { name: "Update Password" }).click();
-
-		await expectToast(user.page, "Password updated successfully");
-		await expect(user.page.getByLabel("Current Password", { exact: true })).toHaveValue("");
-		await expect(user.page.getByLabel("New Password", { exact: true })).toHaveValue("");
-		await expect(user.page.getByLabel("Confirm New Password", { exact: true })).toHaveValue("");
-		expect((await getProfile(user.page)).id).toBe(user.id);
-		expect((await api(other.page, "GET", "/auth/profile")).status).toBe(401);
-
-		await signOutUi(user.page);
-		await signInUi(user.page, user.email, ACTIVE_PASSWORD);
-		await expect(user.page.getByText("invalid email or password")).toBeVisible();
-
-		await signInUi(user.page, user.email, NEW_PASSWORD);
-		await user.page.waitForURL("/");
-		await expect(user.page.getByRole("heading", { name: "Overview" })).toBeVisible();
+		await user.page.getByLabel("Passkey name", { exact: true }).fill("Canceled key");
+		await user.page.getByRole("button", { name: "Add passkey", exact: true }).click();
+		await expectToast(
+			user.page,
+			"The passkey request was canceled or timed out. Please try again.",
+		);
+		expect((await api(user.page, "GET", "/auth/passkeys")).body).toHaveLength(1);
 	});
 });
 
@@ -411,7 +307,7 @@ test.describe("Language", () => {
 		const pages = [
 			{ path: "/", key: "pageOverview", role: "heading" as const },
 			{ path: "/settings/profile", key: "personalInformation" },
-			{ path: "/settings/security", key: "changePassword" },
+			{ path: "/settings/security", key: "passkeyName" },
 			{ path: "/settings/security", key: "sessions" },
 			{ path: "/admin/users", key: "searchUsers", placeholder: true },
 			{ path: "/admin/oidc-providers", key: "adminOidcProviders" },

@@ -1,19 +1,12 @@
-import {
-	expect,
-	type Browser,
-	type BrowserContext,
-	type Locator,
-	type Page,
-} from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { APP_URL, USER_ROLE_ID } from "../const.ts";
 import { api } from "./api.ts";
 import { uniqueId, useNewClientIp, type ApiAdminUser } from "./oidc.ts";
 
-export const ACTIVE_PASSWORD = "Active-Password-123!";
-export const NEW_PASSWORD = "Brand-New-Password-789!";
+import { enroll, installAuthenticator } from "./passkeys.ts";
 
 export interface TestUser extends ApiAdminUser {
-	password: string;
+	enrollmentToken: string;
 }
 
 const createdUserIds: string[] = [];
@@ -41,9 +34,9 @@ export async function createUser(
 	});
 	expect(status, JSON.stringify(body)).toBe(201);
 
-	const { generatedPassword, ...user } = body;
+	const { enrollmentToken, ...user } = body;
 	trackUser(user.id);
-	return { ...user, password: generatedPassword } as TestUser;
+	return { ...user, enrollmentToken } as TestUser;
 }
 
 export async function openSession(browser: Browser) {
@@ -59,11 +52,6 @@ export async function openSession(browser: Browser) {
 	return { context, page: await context.newPage() };
 }
 
-export async function apiSignIn(page: Page, email: string, password: string) {
-	const { status, body } = await api(page, "POST", "/auth/login", { email, password });
-	expect(status, JSON.stringify(body)).toBe(200);
-}
-
 export async function createActiveUser(
 	admin: Page,
 	browser: Browser,
@@ -71,15 +59,8 @@ export async function createActiveUser(
 ) {
 	const user = await createUser(admin, overrides);
 	const session = await openSession(browser);
-	await apiSignIn(session.page, user.email, user.password);
-
-	const { status, body } = await api(session.page, "POST", "/auth/change-password", {
-		currentPassword: user.password,
-		newPassword: ACTIVE_PASSWORD,
-	});
-	expect(status, JSON.stringify(body)).toBe(200);
-
-	return { ...user, password: ACTIVE_PASSWORD, ...session };
+	const credential = await enroll(session.page, user.enrollmentToken);
+	return { ...user, ...session, credential };
 }
 
 export async function cleanup(admin: Page) {
@@ -89,11 +70,10 @@ export async function cleanup(admin: Page) {
 	await Promise.all(openContexts.splice(0).map((context) => context.close()));
 }
 
-export async function signInUi(page: Page, email: string, password: string) {
+export async function signInUi(page: Page) {
+	await installAuthenticator(page);
 	await page.goto("/login");
-	await page.getByRole("textbox", { name: "email" }).fill(email);
-	await page.getByRole("textbox", { name: "Password", exact: true }).fill(password);
-	await page.locator("form button[type='submit']").click();
+	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
 }
 
 export async function signOutUi(page: Page) {
@@ -103,15 +83,6 @@ export async function signOutUi(page: Page) {
 		.click();
 	await page.getByRole("menuitem", { name: "Sign Out" }).click();
 	await page.waitForURL("/login");
-}
-
-export async function fillPasswords(
-	scope: Page | Locator,
-	values: { current: string; next: string; confirm: string },
-) {
-	await scope.getByLabel("Current Password", { exact: true }).fill(values.current);
-	await scope.getByLabel("New Password", { exact: true }).fill(values.next);
-	await scope.getByLabel("Confirm New Password", { exact: true }).fill(values.confirm);
 }
 
 export async function expectToast(page: Page, message: string) {

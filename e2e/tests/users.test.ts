@@ -1,16 +1,14 @@
+import { enroll, importCredential } from "./helpers/passkeys.ts";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { ADMIN_EMAIL, ADMIN_NAME, ADMIN_ROLE_ID } from "./const.ts";
 import { api } from "./helpers/api.ts";
 import { gotoApp } from "./helpers/navigation.ts";
 import { listUsers, uniqueId } from "./helpers/oidc.ts";
 import {
-	NEW_PASSWORD,
-	apiSignIn,
 	cleanup,
 	createActiveUser,
 	createUser,
 	expectToast,
-	fillPasswords,
 	openSession,
 	roleKeys,
 	signInUi,
@@ -80,90 +78,29 @@ async function confirmDelete(page: Page) {
 }
 
 test.describe("Creating users", () => {
-	test("a created user signs in and has to choose a new password", async ({ page, browser }) => {
+	test("a created user enrolls once and signs in with a passkey", async ({ page, browser }) => {
 		const id = uniqueId("create");
-		const name = `Created ${id}`;
 		const email = `${id}@example.com`;
 		await openUsers(page);
-
-		await createUserInUi(page, { name, email });
-
-		await expectToast(page, "User created");
-		const generated = page.getByRole("dialog", { name: "Generated Password" });
-		const generatedPassword = await generated.locator("#generated-password").inputValue();
-		expect(generatedPassword.length).toBeGreaterThanOrEqual(12);
+		await createUserInUi(page, { name: `Created ${id}`, email });
+		const generated = page.getByRole("dialog", { name: "Enrollment code", exact: true });
+		const code = await generated.locator("#enrollment-code").inputValue();
+		expect(code.length).toBeGreaterThanOrEqual(40);
 		await generated.getByRole("button", { name: "Done" }).click();
-
-		const row = rowOf(page, email);
-		await expect(row).toBeVisible();
-		await expect(row).toContainText(name);
-		await expect(row.getByText("User", { exact: true })).toBeVisible();
-		await expect(row.getByText("Password", { exact: true })).toBeVisible();
 		const created = await findUser(page, email);
-		expect(created).toMatchObject({ name, providers: ["password"] });
-		expect(roleKeys(created)).toEqual(["user"]);
 		trackUser(created!.id);
-
+		expect(created).toMatchObject({ providers: ["passkey"] });
 		const { page: userPage } = await openSession(browser);
-		await signInUi(userPage, email, generatedPassword);
-		await userPage.waitForURL("/");
-		const dialog = userPage.getByRole("dialog", { name: "Password Change Required" });
-		await expect(dialog).toBeVisible();
-		expect((await api(userPage, "GET", "/auth/profile")).body.passwordChangeRequired).toBe(true);
-
-		await userPage.keyboard.press("Escape");
-		await expect(dialog).toBeVisible();
-
-		await fillPasswords(dialog, {
-			current: generatedPassword,
-			next: NEW_PASSWORD,
-			confirm: "Different-Password-1!",
-		});
-		await dialog.getByRole("button", { name: "Update Password" }).click();
-		await expect(dialog.getByText("Passwords do not match")).toBeVisible();
-
-		await fillPasswords(dialog, {
-			current: "Wrong-Password-123!",
-			next: NEW_PASSWORD,
-			confirm: NEW_PASSWORD,
-		});
-		await dialog.getByRole("button", { name: "Update Password" }).click();
-		await expectToast(userPage, "current password is incorrect");
-		await expect(dialog).toBeVisible();
-
-		await fillPasswords(dialog, {
-			current: generatedPassword,
-			next: NEW_PASSWORD,
-			confirm: NEW_PASSWORD,
-		});
-		await dialog.getByRole("button", { name: "Update Password" }).click();
-		await expectToast(userPage, "Password updated");
-		await expect(dialog).toHaveCount(0);
-		await expect(userPage.getByRole("heading", { name: "Overview" })).toBeVisible();
-		expect((await api(userPage, "GET", "/auth/profile")).body.passwordChangeRequired).toBe(false);
-
+		await enroll(userPage, code);
+		expect((await api(userPage, "GET", "/auth/profile")).body.id).toBe(created!.id);
 		await signOutUi(userPage);
-		await signInUi(userPage, email, generatedPassword);
-		await expect(userPage.getByText("invalid email or password")).toBeVisible();
-		await signInUi(userPage, email, NEW_PASSWORD);
+		await signInUi(userPage);
 		await userPage.waitForURL("/");
-		await expect(userPage.getByRole("heading", { name: "Overview" })).toBeVisible();
-		await expect(dialog).toHaveCount(0);
-	});
-
-	test("the forced password change dialog offers to sign out", async ({ page, browser }) => {
-		const user = await createUser(page);
-		const { page: userPage } = await openSession(browser);
-
-		await signInUi(userPage, user.email, user.password);
-		await userPage.waitForURL("/");
-		await userPage
-			.getByRole("dialog", { name: "Password Change Required" })
-			.getByRole("button", { name: "Sign Out" })
-			.click();
-
-		await userPage.waitForURL("/login");
-		expect((await api(userPage, "GET", "/auth/profile")).status).toBe(401);
+		const { page: replay } = await openSession(browser);
+		expect(
+			(await api(replay, "POST", "/auth/passkeys/register/begin", { enrollmentToken: code }))
+				.status,
+		).toBe(403);
 	});
 
 	test("can create an admin", async ({ page }) => {
@@ -175,7 +112,7 @@ test.describe("Creating users", () => {
 
 		await expectToast(page, "User created");
 		await page
-			.getByRole("dialog", { name: "Generated Password" })
+			.getByRole("dialog", { name: "Enrollment code" })
 			.getByRole("button", { name: "Done" })
 			.click();
 		await expect(rowOf(page, email).getByText("Admin", { exact: true })).toBeVisible();
@@ -306,33 +243,29 @@ test.describe("Editing users", () => {
 		expect(updates).toBe(0);
 	});
 
-	test("resetting the password signs the user out and forces a new one", async ({
+	test("resetting passkeys revokes sessions and keys and issues a replacement code", async ({
 		page,
 		browser,
 	}) => {
 		const user = await createActiveUser(page, browser);
 		await openUsers(page);
-
 		await chooseAction(page, user.email, "Edit");
 		const dialog = page.getByRole("dialog", { name: "Edit User" });
-		await dialog.getByRole("checkbox", { name: /Reset password/ }).check();
+		await dialog.getByRole("checkbox", { name: /Reset passkeys/ }).check();
 		await dialog.getByRole("button", { name: "Update User" }).click();
-
-		await expectToast(page, "User updated and password reset");
-		const generated = page.getByRole("dialog", { name: "Generated Password" });
-		const generatedPassword = await generated.locator("#generated-password").inputValue();
-		expect(generatedPassword).not.toBe(user.password);
-
+		await expectToast(page, "User updated and passkeys reset");
+		const code = await page
+			.getByRole("dialog", { name: "Enrollment code", exact: true })
+			.locator("#enrollment-code")
+			.inputValue();
 		expect((await api(user.page, "GET", "/auth/profile")).status).toBe(401);
-
-		const { page: freshPage } = await openSession(browser);
-		const oldLogin = await api(freshPage, "POST", "/auth/login", {
-			email: user.email,
-			password: user.password,
-		});
-		expect(oldLogin.status).toBe(401);
-		await apiSignIn(freshPage, user.email, generatedPassword);
-		expect((await api(freshPage, "GET", "/auth/profile")).body.passwordChangeRequired).toBe(true);
+		const { page: old } = await openSession(browser);
+		await importCredential(old, user.credential);
+		await signInUi(old);
+		await expect(old.getByText("passkey authentication failed")).toBeVisible();
+		const { page: recovered } = await openSession(browser);
+		await enroll(recovered, code);
+		expect((await api(recovered, "GET", "/auth/profile")).body.id).toBe(user.id);
 	});
 
 	test("the last admin can't be demoted", async ({ page }) => {
@@ -387,11 +320,9 @@ test.describe("Deleting users", () => {
 		expect((await api(page, "GET", `/admin/users/${user.id}`)).status).toBe(404);
 		expect((await api(user.page, "GET", "/auth/profile")).status).toBe(401);
 		const { page: freshPage } = await openSession(browser);
-		const login = await api(freshPage, "POST", "/auth/login", {
-			email: user.email,
-			password: user.password,
-		});
-		expect(login.status).toBe(401);
+		await importCredential(freshPage, user.credential);
+		await signInUi(freshPage);
+		await expect(freshPage.getByText("passkey authentication failed")).toBeVisible();
 	});
 
 	test("an admin can be deleted while another admin exists", async ({ page }) => {
@@ -438,7 +369,7 @@ test.describe("User list", () => {
 		await expect(row).toContainText(ADMIN_NAME);
 		await expect(row.getByText("You", { exact: true })).toBeVisible();
 		await expect(row.getByText("Admin", { exact: true })).toBeVisible();
-		await expect(row.getByText("Password", { exact: true })).toBeVisible();
+		await expect(row.getByText("Passkeys", { exact: true })).toBeVisible();
 	});
 
 	test("search filters by name, email and role", async ({ page }) => {

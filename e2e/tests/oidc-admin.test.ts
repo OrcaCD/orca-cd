@@ -374,7 +374,7 @@ test.describe("Deleting a provider", () => {
 			await deleteProviders(page, [provider.id]);
 
 			await loginPage.reload();
-			await expect(loginPage.getByRole("textbox", { name: "email" })).toBeVisible();
+			await expect(loginPage.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
 			await expect(providerButton(loginPage, provider)).toHaveCount(0);
 		} finally {
 			await context.close();
@@ -394,7 +394,7 @@ test.describe("Provider status on the login page", () => {
 
 			await updateProvider(page, provider, { enabled: false });
 			await loginPage.reload();
-			await expect(loginPage.getByRole("textbox", { name: "email" })).toBeVisible();
+			await expect(loginPage.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
 			await expect(link).toHaveCount(0);
 
 			await updateProvider(page, provider, { enabled: true });

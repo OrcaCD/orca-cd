@@ -17,6 +17,8 @@ OrcaCD is a simple GitOps tool for Docker. It allows you to deploy your applicat
 
 You can get started with OrcaCD by following the guide in the [documentation](https://orcacd.dev).
 
+Local accounts use passkeys. See the [authentication guide](docs/authentication.md) for deployment requirements, upgrading from passwords, invitations, and account recovery.
+
 ## Contribute
 
 You're very welcome to contribute to OrcaCD! Please follow the [contribution guide](https://github.com/OrcaCD/orca-cd/blob/main/CONTRIBUTING.md) to get started. If you wish to contribute to the documentation head over to the [repository](https://github.com/OrcaCD/docs).
