@@ -175,6 +175,7 @@ func AdminCreateUserHandler(c *gin.Context) {
 		Name:                   req.Name,
 		Email:                  req.Email,
 		PasswordHash:           &hash,
+		LocalAuthEnabled:       true,
 		PasswordChangeRequired: true,
 	}
 

@@ -110,7 +110,7 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 		Roles:                  roles,
 		Permissions:            perms.Grants(),
 		PasswordChangeRequired: user.PasswordChangeRequired,
-		IsLocal:                user.PasswordHash != nil,
+		IsLocal:                user.LocalAuthEnabled || user.PasswordHash != nil,
 		Demo:                   DemoMode,
 	})
 }
@@ -132,7 +132,7 @@ func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) 
 		return nil, nil, false
 	}
 
-	if user.PasswordHash == nil {
+	if !user.LocalAuthEnabled && user.PasswordHash == nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
 		return nil, nil, false
 	}
@@ -249,9 +249,10 @@ func RegisterHandler(c *gin.Context) {
 		}
 
 		user = models.User{
-			Email:        req.Email,
-			Name:         req.Name,
-			PasswordHash: &hash,
+			Email:            req.Email,
+			Name:             req.Name,
+			PasswordHash:     &hash,
+			LocalAuthEnabled: true,
 		}
 		if err := gorm.G[models.User](tx).Create(c.Request.Context(), &user); err != nil {
 			return err
