@@ -88,7 +88,7 @@ func newRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthCheckCmd)
-	rootCmd.AddCommand(newResetPasswordCmd())
+	rootCmd.AddCommand(newResetPasskeysCmd())
 	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportCmd())

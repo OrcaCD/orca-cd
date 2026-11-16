@@ -83,6 +83,7 @@ func setupKeyRotateTestDBWithLogger(t *testing.T, logger gormlogger.Interface) {
 		&models.Application{},
 		&models.Notification{},
 		&models.OIDCProvider{},
+		&models.Passkey{},
 	); err != nil {
 		t.Fatalf("failed to migrate test db: %v", err)
 	}
@@ -306,6 +307,35 @@ func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	}
 	if _, err := crypto.Decrypt(rawAgentKeyID); err == nil {
 		t.Fatal("expected raw agent key id to reject the old encryption key")
+	}
+}
+
+func TestKeyRotationPreservesPasskeys(t *testing.T) {
+	setupKeyRotateTestDB(t)
+	if err := crypto.Init(testOldAppSecret); err != nil {
+		t.Fatal(err)
+	}
+	key := models.Passkey{UserId: "user", CredentialId: "credential", Name: "Laptop", Credential: crypto.EncryptedString(`{"publicKey":"opaque"}`)}
+	if err := gorm.G[models.Passkey](db.DB).Create(t.Context(), &key); err != nil {
+		t.Fatal(err)
+	}
+	result, err := rotateDatabaseEncryptionKey(t.Context(), testOldAppSecret, testNewAppSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Passkeys != 1 {
+		t.Fatal("passkey not included in rotation")
+	}
+	stored, err := gorm.G[models.Passkey](db.DB).Where("id = ?", key.Id).First(t.Context())
+	if err != nil || stored.Credential != key.Credential {
+		t.Fatalf("passkey lost during rotation: %v", err)
+	}
+	if _, err := rotateDatabaseEncryptionKey(t.Context(), testNewAppSecret, testOldAppSecret); err != nil {
+		t.Fatal(err)
+	}
+	stored, err = gorm.G[models.Passkey](db.DB).Where("id = ?", key.Id).First(t.Context())
+	if err != nil || stored.Credential != key.Credential {
+		t.Fatal("passkey lost on repeated rotation")
 	}
 }
 
