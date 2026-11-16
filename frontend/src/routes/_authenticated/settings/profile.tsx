@@ -69,7 +69,7 @@ function ProfileSettingsPage() {
 		},
 	});
 
-	const isLocal = auth.profile?.isLocal ?? false;
+	const isLocal = (auth.profile?.isLocal ?? false) && !auth.profile?.demo;
 	const isReady = !auth.isLoading;
 
 	function getLocaleLabel(locale: Locale): string {
@@ -108,7 +108,7 @@ function ProfileSettingsPage() {
 			<Card>
 				<CardHeader>
 					<CardTitle>{m.personalInformation()}</CardTitle>
-					{isReady && !isLocal && (
+					{isReady && !isLocal && !auth.profile?.demo && (
 						<CardDescription>
 							<Alert className="mt-2 border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
 								<AlertTriangleIcon />
