@@ -73,12 +73,6 @@ func RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		if user.PasswordChangeRequired && !isPasswordChangeAllowedPath(c.Request.URL.Path) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "password change required"})
-			c.Abort()
-			return
-		}
-
 		auth.SetClaims(c, claims)
 		auth.SetUser(c, &user)
 		c.Next()
@@ -137,12 +131,6 @@ func authenticateAPIToken(c *gin.Context, plain string) {
 		return
 	}
 
-	if user.PasswordChangeRequired && !isPasswordChangeAllowedPath(c.Request.URL.Path) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "password change required"})
-		c.Abort()
-		return
-	}
-
 	perms, err := rbac.Load(ctx, db.DB, user.Id)
 	if err != nil {
 		internalError()
@@ -192,14 +180,5 @@ func RequireSession() gin.HandlerFunc {
 			return
 		}
 		c.Next()
-	}
-}
-
-func isPasswordChangeAllowedPath(path string) bool {
-	switch path {
-	case "/api/v1/auth/profile", "/api/v1/auth/logout", "/api/v1/auth/logout-all", "/api/v1/auth/change-password":
-		return true
-	default:
-		return false
 	}
 }

@@ -338,7 +338,7 @@ function SystemInfoPage() {
 						<div className="flex flex-col gap-6">
 							<SettingsSection title={m.accessAndSecurity()} icon={ShieldCheck}>
 								<SettingRow
-									label={m.passwordAuthentication()}
+									label={m.passkeyAuthentication()}
 									envVar="DISABLE_LOCAL_AUTH"
 									hint={data.disableLocalAuth ? m.ssoOnlyHint() : undefined}
 								>

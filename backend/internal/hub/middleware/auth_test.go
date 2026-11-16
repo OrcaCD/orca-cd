@@ -217,61 +217,6 @@ func TestRequireAuth_SetsUserFromDatabase(t *testing.T) {
 	}
 }
 
-func TestRequireAuth_PasswordChangeRequired_BlocksOtherPaths(t *testing.T) {
-	user := &models.User{Id: "user-123", Name: "admin", Email: "admin@example.com", PasswordChangeRequired: true}
-	setupAuthTest(t, user)
-	token := generateToken(t, user)
-
-	router := gin.New()
-	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	w := serveWithToken(router, http.MethodGet, "/protected", token)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRequireAuth_PasswordChangeRequired_UsesDatabaseState(t *testing.T) {
-	user := &models.User{Id: "user-123", Name: "admin", Email: "admin@example.com"}
-	setupAuthTest(t, user)
-	token := generateToken(t, user)
-
-	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "password_change_required", true); err != nil {
-		t.Fatalf("failed to update user: %v", err)
-	}
-
-	router := gin.New()
-	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	w := serveWithToken(router, http.MethodGet, "/protected", token)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestRequireAuth_PasswordChangeRequired_AllowsChangePasswordPath(t *testing.T) {
-	user := &models.User{Id: "user-123", Name: "admin", Email: "admin@example.com", PasswordChangeRequired: true}
-	setupAuthTest(t, user)
-	token := generateToken(t, user)
-
-	router := gin.New()
-	router.POST("/api/v1/auth/change-password", RequireAuth(), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	w := serveWithToken(router, http.MethodPost, "/api/v1/auth/change-password", token)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 // setupAPITokenAuthTest initializes the auth test database and creates an API
 // token with the given scopes for the user.
 func setupAPITokenAuthTest(t *testing.T, user *models.User, scopes ...models.APITokenScope) (string, models.APIToken) {
@@ -473,20 +418,6 @@ func TestRequireAuth_APITokenScopes(t *testing.T) {
 				t.Errorf("expected %d, got %d: %s", tt.want, w.Code, w.Body.String())
 			}
 		})
-	}
-}
-
-func TestRequireAuth_APITokenOwnerPasswordChangeRequired(t *testing.T) {
-	user := &models.User{Id: "user-123", Name: "CI", Email: "ci@example.com", PasswordChangeRequired: true}
-	plain, _ := setupAPITokenAuthTest(t, user)
-
-	router := gin.New()
-	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{})
-	})
-
-	if w := serveWithAPIToken(router, http.MethodGet, "/protected", plain); w.Code != http.StatusForbidden {
-		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -7,17 +7,17 @@ export interface UserDetail {
 	email: string;
 	roles: UserRole[];
 	providers: string[];
-	passwordChangeRequired: boolean;
+	isLocal: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
 
-export interface UserDetailWithGeneratedPassword extends UserDetail {
-	generatedPassword: string;
+export interface UserDetailWithEnrollment extends UserDetail {
+	enrollmentToken: string;
 }
 
-export interface UserDetailWithOptionalGeneratedPassword extends UserDetail {
-	generatedPassword?: string;
+export interface UserDetailWithOptionalEnrollment extends UserDetail {
+	enrollmentToken?: string;
 }
 
 export interface CreateUserRequest {
@@ -30,18 +30,18 @@ export interface UpdateUserRequest {
 	name: string;
 	email: string;
 	roleIds: string[];
-	resetPassword?: boolean;
+	resetPasskeys?: boolean;
 }
 
-export function createUser(data: CreateUserRequest): Promise<UserDetailWithGeneratedPassword> {
-	return fetcher<UserDetailWithGeneratedPassword>("/admin/users", "POST", data);
+export function createUser(data: CreateUserRequest): Promise<UserDetailWithEnrollment> {
+	return fetcher<UserDetailWithEnrollment>("/admin/users", "POST", data);
 }
 
 export function updateUser(
 	id: string,
 	data: UpdateUserRequest,
-): Promise<UserDetailWithOptionalGeneratedPassword> {
-	return fetcher<UserDetailWithOptionalGeneratedPassword>(`/admin/users/${id}`, "PUT", data);
+): Promise<UserDetailWithOptionalEnrollment> {
+	return fetcher<UserDetailWithOptionalEnrollment>(`/admin/users/${id}`, "PUT", data);
 }
 
 export async function deleteUser(id: string): Promise<void> {

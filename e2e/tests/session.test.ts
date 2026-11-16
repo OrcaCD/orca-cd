@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { APP_URL } from "./const.ts";
 import { decodeJwt } from "jose";
 import { gotoApp } from "./helpers/navigation.ts";
 import {
@@ -29,7 +30,7 @@ async function setAuthToken(context: BrowserContext, value: string) {
 		{
 			name: AUTH_COOKIE,
 			value,
-			domain: "127.0.0.1",
+			domain: new URL(APP_URL).hostname,
 			path: "/",
 			httpOnly: true,
 			secure: true,

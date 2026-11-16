@@ -42,7 +42,7 @@ export default defineConfig({
 	reporter: [["html", { open: "never" }]],
 	/* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
 	use: {
-		baseURL: "http://127.0.0.1:8090",
+		baseURL: "http://localhost:8090",
 		launchOptions: { args: ["--host-resolver-rules=MAP host.docker.internal 127.0.0.1"] },
 
 		/* A first failure has no trace otherwise, which makes flaky failures on CI hard to debug. See https://playwright.dev/docs/trace-viewer */
@@ -107,7 +107,7 @@ export default defineConfig({
 	webServer: [
 		{
 			command: `${buildImages}${compose} up --force-recreate --no-build hub`,
-			url: "http://127.0.0.1:8090/api/v1/health",
+			url: "http://localhost:8090/api/v1/health",
 			timeout: 6 * 60 * 1000, // 6 minutes
 			reuseExistingServer: false,
 			stdout: "pipe",

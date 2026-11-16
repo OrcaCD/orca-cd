@@ -20,7 +20,7 @@ func init() {
 
 func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 	router := gin.New()
-	cfg := Config{DisableUI: true}
+	cfg := Config{AppURL: "http://localhost:8080", DisableUI: true}
 	err := RegisterRoutes(router, cfg)
 	if err != nil {
 		t.Fatalf("Failed to register routes: %v", err)
@@ -46,7 +46,7 @@ func TestRegisterRoutes_HealthEndpoint(t *testing.T) {
 func TestRegisterRoutes_EventsEndpointDisabledInDemoMode(t *testing.T) {
 	for _, demo := range []bool{false, true} {
 		router := gin.New()
-		if err := RegisterRoutes(router, Config{DisableUI: true, Demo: demo}); err != nil {
+		if err := RegisterRoutes(router, Config{AppURL: "http://localhost:8080", DisableUI: true, Demo: demo}); err != nil {
 			t.Fatalf("Failed to register routes: %v", err)
 		}
 
@@ -81,7 +81,7 @@ func TestRegisterRoutes_OIDCEndpointsRateLimited(t *testing.T) {
 	})
 
 	router := gin.New()
-	if err := RegisterRoutes(router, Config{DisableUI: true}); err != nil {
+	if err := RegisterRoutes(router, Config{AppURL: "http://localhost:8080", DisableUI: true}); err != nil {
 		t.Fatalf("Failed to register routes: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func TestRegisterRoutes_OIDCEndpointsRateLimited(t *testing.T) {
 
 func TestRegisterRoutes_DisableUI_NoStaticFiles(t *testing.T) {
 	router := gin.New()
-	cfg := Config{DisableUI: true}
+	cfg := Config{AppURL: "http://localhost:8080", DisableUI: true}
 	err := RegisterRoutes(router, cfg)
 	if err != nil {
 		t.Fatalf("Failed to register routes: %v", err)

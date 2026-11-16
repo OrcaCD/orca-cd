@@ -111,7 +111,7 @@ test.describe("Login page", () => {
 
 		await expect(providerButton(page, enabled)).toHaveAttribute("href", authorizePath(enabled.id));
 		await expect(providerButton(page, disabled)).toHaveCount(0);
-		await expect(page.getByRole("textbox", { name: "email" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
 	});
 
 	for (const [error, message] of Object.entries(LOGIN_ERRORS)) {

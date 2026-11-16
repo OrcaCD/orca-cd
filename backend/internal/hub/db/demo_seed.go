@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -13,10 +12,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const DemoUserID = "demo-user"
+
 const (
-	demoSeedUserID         = "demo-user"
+	demoSeedUserID         = DemoUserID
 	demoSeedUserEmail      = "demo@orcacd.dev"
-	demoSeedUserPassword   = "demo-password"
 	demoSeedUserName       = "Demo User"
 	demoSeedMemberID       = "demo-member"
 	demoSeedMemberEmail    = "sam@orcacd.dev"
@@ -39,10 +39,6 @@ const (
 )
 
 var ErrDemoOnExistingDatabase = errors.New("demo mode cannot be enabled on a database that contains non-demo users, use an empty data directory")
-
-func IsDemoLogin(email, password string) bool {
-	return email == demoSeedUserEmail && password == demoSeedUserPassword
-}
 
 var ErrNonDemoOnDemoDatabase = errors.New("the database contains the public demo users, refusing to start without DEMO=true, use an empty data directory")
 
@@ -228,24 +224,17 @@ func seedDemoData(db *gorm.DB) error {
 }
 
 func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
-	hashedPassword, err := auth.HashPassword(demoSeedUserPassword)
-	if err != nil {
-		return nil, err
-	}
-
 	user := models.User{
-		Id:                     demoSeedUserID,
-		Email:                  demoSeedUserEmail,
-		Name:                   demoSeedUserName,
-		PasswordChangeRequired: false,
-		PasswordHash:           &hashedPassword,
-		LocalAuthEnabled:       true,
+		Id:    demoSeedUserID,
+		Email: demoSeedUserEmail,
+		Name:  demoSeedUserName,
+		LocalAuthEnabled: true,
 	}
 	if err := gorm.G[models.User](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &user); err != nil {
 		return nil, err
 	}
 
-	// No password, so this account cannot be used to log in
+	// This account cannot be used to log in
 	member := models.User{
 		Id:    demoSeedMemberID,
 		Email: demoSeedMemberEmail,

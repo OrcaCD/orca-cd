@@ -1,12 +1,8 @@
-// oxlint-disable react/no-children-prop
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { z } from "zod";
-import { useForm } from "@tanstack/react-form";
 import { Separator } from "@/components/ui/separator";
+import { Fingerprint } from "lucide-react";
+import { z } from "zod";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import type { AuthProviderInfo } from "@/lib/oidc";
@@ -14,11 +10,8 @@ import { API_BASE, fetcher } from "@/lib/api";
 import { getSetupStatus } from "@/lib/setup";
 import { m } from "@/lib/paraglide/messages";
 import { AuthErrorBanner, AuthLayout, authControlClass } from "@/components/auth/auth-layout";
-import { PasswordInput } from "@/components/auth/password-input";
 import { cn } from "@/lib/utils";
-
-// Public credentials of the user seeded by the hub in demo mode
-const DEMO_CREDENTIALS = { email: "demo@orcacd.dev", password: "demo-password" };
+import { loginWithPasskey, passkeyErrorMessage, passkeysSupported } from "@/lib/passkeys";
 
 const loginSearchSchema = z.object({
 	error: z.string().optional(),
@@ -110,41 +103,28 @@ function LoginForm({
 }) {
 	const navigate = useNavigate();
 	const { refreshAuth } = useAuth();
-	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
 	const [submitError, setSubmitError] = useState<string | null>(null);
-
-	const loginSchema = z.object({
-		email: z.email(m.validationInvalidEmail()).trim(),
-		password: z.string().min(1, m.validationPasswordRequired()),
-	});
-
-	async function login(email: string, password: string): Promise<void> {
-		await fetcher("/auth/login", "POST", {
-			email,
-			password,
-		});
-	}
-
-	const form = useForm({
-		defaultValues: demo ? DEMO_CREDENTIALS : { email: "", password: "" },
-		validators: { onSubmit: loginSchema },
-		onSubmit: async ({ value }) => {
-			setIsLoading(true);
-			setSubmitError(null);
-			try {
-				await login(value.email, value.password);
-				await refreshAuth();
-				await navigate({ to: "/" });
-			} catch (err) {
-				setSubmitError(err instanceof Error ? err.message : m.toastLoginFailed());
-			} finally {
-				setIsLoading(false);
-			}
-		},
-	});
-
+	const supported = passkeysSupported();
 	const hasProviders = providers.length > 0;
+
+	async function login() {
+		setIsLoading(true);
+		setSubmitError(null);
+		try {
+			if (demo) {
+				await fetcher("/auth/demo", "POST");
+			} else {
+				await loginWithPasskey();
+			}
+			await refreshAuth();
+			await navigate({ to: "/" });
+		} catch (error) {
+			setSubmitError(passkeyErrorMessage(error));
+		} finally {
+			setIsLoading(false);
+		}
+	}
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -152,79 +132,30 @@ function LoginForm({
 				<h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
 					{m.loginToYourAccount()}
 				</h1>
-				{hasProviders && (localAuthEnabled || providers.length > 1) ? (
-					<p className="text-sm text-balance text-muted-foreground">{m.chooseAuthMethod()}</p>
-				) : null}
+				<p className="text-sm text-balance text-muted-foreground">
+					{demo ? m.demoLoginDescription() : m.passkeyLoginDescription()}
+				</p>
 			</div>
-
 			{loginErrorMessage && <AuthErrorBanner message={loginErrorMessage} />}
-
-			{localAuthEnabled && (
-				<form
-					onSubmit={async (e) => {
-						e.preventDefault();
-						await form.handleSubmit();
-					}}
-				>
-					<FieldGroup>
-						<form.Field
-							name="email"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>{m.email()}</Label>
-										<Input
-											className={authControlClass}
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											type="email"
-											placeholder={m.emailPlaceholder()}
-											required
-											autoComplete="email"
-											autoFocus
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<form.Field
-							name="password"
-							children={(field) => {
-								const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
-								return (
-									<Field data-invalid={isInvalid}>
-										<Label htmlFor={field.name}>{m.password()}</Label>
-										<PasswordInput
-											className={cn(authControlClass, "pr-12")}
-											id={field.name}
-											name={field.name}
-											value={field.state.value}
-											onBlur={field.handleBlur}
-											onChange={(e) => field.handleChange(e.target.value)}
-											showPassword={showPassword}
-											onToggle={() => setShowPassword(!showPassword)}
-											autoComplete="current-password"
-											placeholder={m.passwordPlaceholder()}
-										/>
-										{isInvalid && <FieldError errors={field.state.meta.errors} />}
-									</Field>
-								);
-							}}
-						/>
-						<Field>
-							<Button type="submit" className={cn(authControlClass, "w-full")} disabled={isLoading}>
-								{isLoading ? m.loggingIn() : m.logInAction()}
-							</Button>
-						</Field>
-					</FieldGroup>
-				</form>
+			{(localAuthEnabled || demo) && (
+				<div className="flex flex-col gap-3">
+					<Button
+						className={cn(authControlClass, "w-full")}
+						disabled={isLoading || (!demo && !supported)}
+						onClick={login}
+					>
+						<Fingerprint data-icon="inline-start" />
+						{isLoading ? m.loggingIn() : demo ? m.exploreDemo() : m.signInWithPasskey()}
+					</Button>
+					{!demo && !supported && <AuthErrorBanner message={m.passkeysUnsupported()} />}
+					{!demo && (
+						<Link className="text-center text-sm underline underline-offset-4" to="/register">
+							{m.setUpPasskey()}
+						</Link>
+					)}
+				</div>
 			)}
-			{localAuthEnabled && submitError && <AuthErrorBanner message={submitError} />}
+			{submitError && <AuthErrorBanner message={submitError} />}
 			{hasProviders && localAuthEnabled && (
 				<div className="flex items-center gap-4">
 					<Separator className="flex-1" />
@@ -245,11 +176,11 @@ function LoginForm({
 									{m.continueWith({ providerName: provider.name })}
 								</a>
 							}
-						></Button>
+						/>
 					))}
 				</div>
 			)}
-			{!localAuthEnabled && !hasProviders && (
+			{!localAuthEnabled && !hasProviders && !demo && (
 				<p className="text-center text-sm text-muted-foreground">{m.noLoginMethodsAvailable()}</p>
 			)}
 		</div>
