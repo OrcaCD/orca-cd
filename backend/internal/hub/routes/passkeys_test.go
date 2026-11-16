@@ -13,10 +13,12 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
+	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -522,5 +524,106 @@ func TestPasskeyLoginRejectsAccountDisabledDuringCeremony(t *testing.T) {
 	w = passkeyRequest(t, r, "/login/finish", a.assertion(t, options, testBrowserOrigin, true), cookie)
 	if w.Code != http.StatusUnauthorized || hasAuthCookie(w) {
 		t.Fatal("accepted credentials after local authentication was disabled for the account")
+	}
+}
+
+func TestPasskeySetupRechecksAuthorizationBeforeCreatingAccount(t *testing.T) {
+	for _, scenario := range []string{"code cleared", "account created"} {
+		t.Run(scenario, func(t *testing.T) {
+			r := setupPasskeyTest(t)
+			body := map[string]any{"name": "Admin", "email": "admin@example.com", "setupCode": testSetupCode}
+			w := passkeyRequest(t, r, "/begin", body, nil)
+			options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+			var key testAuthenticator
+			response := key.registration(t, options, testBrowserOrigin, true)
+			wantUsers := int64(0)
+			if scenario == "code cleared" {
+				setupcode.Clear()
+			} else {
+				user := models.User{Name: "Other admin", Email: "other@example.com", LocalAuthEnabled: true}
+				if err := gorm.G[models.User](db.DB).Create(t.Context(), &user); err != nil {
+					t.Fatal(err)
+				}
+				wantUsers = 1
+			}
+			w = passkeyRequest(t, r, "/finish", response, cookie)
+			if w.Code != http.StatusBadRequest || hasAuthCookie(w) {
+				t.Fatal("pending setup created an account after authorization changed")
+			}
+			if w := passkeyRequest(t, r, "/begin", body, nil); w.Code != http.StatusForbidden {
+				t.Fatal("started another setup after authorization changed")
+			}
+			count, err := gorm.G[models.User](db.DB).Count(t.Context(), "*")
+			if err != nil || count != wantUsers {
+				t.Fatalf("failed setup changed accounts: count=%d err=%v", count, err)
+			}
+			count, err = gorm.G[models.Passkey](db.DB).Count(t.Context(), "*")
+			if err != nil || count != 0 {
+				t.Fatal("failed setup persisted a credential")
+			}
+		})
+	}
+}
+
+func TestPasskeyEnrollmentRechecksAuthorizationAtFinish(t *testing.T) {
+	for _, scenario := range []string{"expired", "replaced", "managed", "deleted"} {
+		t.Run(scenario, func(t *testing.T) {
+			r := setupPasskeyTest(t)
+			user := models.User{Name: "Invited", Email: "invited@example.com", LocalAuthEnabled: true}
+			if err := gorm.G[models.User](db.DB).Create(t.Context(), &user); err != nil {
+				t.Fatal(err)
+			}
+			token, err := passkeys.IssueEnrollment(t.Context(), db.DB, &user)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := map[string]any{"enrollmentToken": token}
+			w := passkeyRequest(t, r, "/begin", body, nil)
+			options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+			var key testAuthenticator
+			response := key.registration(t, options, testBrowserOrigin, true)
+			switch scenario {
+			case "expired":
+				_, err = gorm.G[models.PasskeyEnrollment](db.DB).Where("user_id = ?", user.Id).Update(t.Context(), "expires_at", time.Now().Add(-time.Second))
+			case "replaced":
+				_, err = passkeys.IssueEnrollment(t.Context(), db.DB, &user)
+			case "managed":
+				_, err = gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "local_auth_enabled", false)
+			case "deleted":
+				_, err = gorm.G[models.User](db.DB).Where("id = ?", user.Id).Delete(t.Context())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			w = passkeyRequest(t, r, "/finish", response, cookie)
+			if w.Code != http.StatusBadRequest || hasAuthCookie(w) {
+				t.Fatal("accepted a pending enrollment after authorization changed")
+			}
+			if w := passkeyRequest(t, r, "/begin", body, nil); w.Code != http.StatusForbidden {
+				t.Fatal("started registration with an invalid enrollment")
+			}
+			count, err := gorm.G[models.Passkey](db.DB).Count(t.Context(), "*")
+			if err != nil || count != 0 {
+				t.Fatal("failed enrollment persisted a credential")
+			}
+		})
+	}
+}
+
+func TestPasskeyLoginRejectsNonAdvancingAuthenticatorCounter(t *testing.T) {
+	r := setupPasskeyTest(t)
+	key := registerTestPasskey(t, r)
+	for attempt := range 2 {
+		w := passkeyRequest(t, r, "/login/begin", nil, nil)
+		options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+		key.counter = 0
+		w = passkeyRequest(t, r, "/login/finish", key.assertion(t, options, testBrowserOrigin, true), cookie)
+		if attempt == 0 {
+			if w.Code != http.StatusOK || !hasAuthCookie(w) {
+				t.Fatal("first assertion should authenticate")
+			}
+		} else if w.Code != http.StatusUnauthorized || hasAuthCookie(w) {
+			t.Fatal("accepted a potentially cloned authenticator")
+		}
 	}
 }
