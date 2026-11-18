@@ -72,6 +72,36 @@ func TestIsValidAPITokenScope_AllPermissions(t *testing.T) {
 	}
 }
 
+func TestAPITokenScopes(t *testing.T) {
+	scopes := APITokenScopes()
+
+	if scopes[0] != APITokenScopeAdmin {
+		t.Errorf("expected the admin scope first, got %q", scopes[0])
+	}
+	if scopes[1] != NewAPITokenScope(ResourceApplication, ActionRead) {
+		t.Errorf("expected application:read second, got %q", scopes[1])
+	}
+
+	want := 1
+	for _, actions := range PermissionActions {
+		want += len(actions)
+	}
+	if len(scopes) != want {
+		t.Errorf("expected %d scopes, got %d", want, len(scopes))
+	}
+
+	seen := make(map[APITokenScope]bool)
+	for _, scope := range scopes {
+		if !IsValidAPITokenScope(scope) {
+			t.Errorf("expected scope %q to be valid", scope)
+		}
+		if seen[scope] {
+			t.Errorf("scope %q is listed twice", scope)
+		}
+		seen[scope] = true
+	}
+}
+
 func TestAPITokenIsExpired(t *testing.T) {
 	now := time.Now()
 	tests := []struct {

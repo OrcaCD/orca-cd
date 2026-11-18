@@ -28,6 +28,18 @@ func (s APITokenScope) Permission() (PermissionResource, PermissionAction, bool)
 	return PermissionResource(resource), PermissionAction(action), true
 }
 
+// APITokenScopes lists every valid scope in display order: the admin scope,
+// then the permissions in the order of PermissionResources and PermissionActions.
+func APITokenScopes() []APITokenScope {
+	scopes := []APITokenScope{APITokenScopeAdmin}
+	for _, resource := range PermissionResources {
+		for _, action := range PermissionActions[resource] {
+			scopes = append(scopes, NewAPITokenScope(resource, action))
+		}
+	}
+	return scopes
+}
+
 func IsValidAPITokenScope(scope APITokenScope) bool {
 	if scope == APITokenScopeAdmin {
 		return true
