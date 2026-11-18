@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
@@ -625,5 +626,69 @@ func TestPasskeyLoginRejectsNonAdvancingAuthenticatorCounter(t *testing.T) {
 		} else if w.Code != http.StatusUnauthorized || hasAuthCookie(w) {
 			t.Fatal("accepted a potentially cloned authenticator")
 		}
+	}
+}
+
+func TestPasskeyLoginAndListingSurviveAnotherCorruptCredential(t *testing.T) {
+	for _, scenario := range []string{"json", "ciphertext"} {
+		t.Run(scenario, func(t *testing.T) {
+			r := setupPasskeyTest(t)
+			key := registerTestPasskey(t, r)
+			handle, _ := base64.RawURLEncoding.DecodeString(key.handle)
+			user, err := passkeys.LoadUser(t.Context(), db.DB, string(handle))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bad := models.Passkey{UserId: user.Id, Name: "Damaged", CredentialId: "damaged", Credential: crypto.EncryptedString("{invalid-json}")}
+			if err := gorm.G[models.Passkey](db.DB).Create(t.Context(), &bad); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "ciphertext" {
+				if err := db.DB.Exec("UPDATE passkeys SET credential = ? WHERE id = ?", "damaged-ciphertext", bad.Id).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			w := passkeyRequest(t, r, "/login/begin", nil, nil)
+			options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+			w = passkeyRequest(t, r, "/login/finish", key.assertion(t, options, testBrowserOrigin, true), cookie)
+			if w.Code != http.StatusOK || !hasAuthCookie(w) {
+				t.Fatal("a corrupt backup credential blocked a healthy passkey login")
+			}
+			r.GET("/keys", func(c *gin.Context) { setUserClaims(t, c, &user.User) }, ListPasskeysHandler)
+			w = httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/keys", nil))
+			var keys []passkeyResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &keys); err != nil || w.Code != http.StatusOK || len(keys) != 2 {
+				t.Fatal("could not list passkey metadata when a credential is corrupt")
+			}
+		})
+	}
+}
+
+func TestDuplicatePasskeyRegistrationReturnsBadRequest(t *testing.T) {
+	r := setupPasskeyTest(t)
+	key := registerTestPasskey(t, r)
+	handle, _ := base64.RawURLEncoding.DecodeString(key.handle)
+	user, err := passkeys.LoadUser(t.Context(), db.DB, string(handle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := r.Group("/own", func(c *gin.Context) { setUserClaims(t, c, &user.User) })
+	own.POST("/begin", BeginOwnPasskeyHandler)
+	own.POST("/finish", FinishOwnPasskeyHandler)
+	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup"}, nil)
+	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+	var backup testAuthenticator
+	response := backup.registration(t, options, testBrowserOrigin, true)
+	if err := passkeys.SaveCredential(t.Context(), db.DB, user.Id, "Already registered", &webauthn.Credential{ID: backup.id}); err != nil {
+		t.Fatal(err)
+	}
+	w = passkeyRequest(t, r, "/own/finish", response, cookie)
+	if w.Code != http.StatusBadRequest || hasAuthCookie(w) || w.Body.String() != "{\"error\":\"passkey registration failed, please try again\"}" {
+		t.Fatalf("duplicate credential did not return a safe 4xx: %d %s", w.Code, w.Body.String())
+	}
+	count, err := gorm.G[models.Passkey](db.DB).Where("user_id = ?", user.Id).Count(t.Context(), "*")
+	if err != nil || count != 2 {
+		t.Fatal("a failed registration changed existing credentials")
 	}
 }

@@ -330,7 +330,7 @@ func ListPasskeysHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
-	keys, err := gorm.G[models.Passkey](db.DB).Where("user_id = ?", user.Id).Order("created_at").Find(c.Request.Context())
+	keys, err := gorm.G[models.Passkey](db.DB).Select("id", "name", "created_at", "last_used_at").Where("user_id = ?", user.Id).Order("created_at").Find(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
