@@ -1070,7 +1070,7 @@
 	"passkeyCancelled": "Die Passkey-Anfrage wurde abgebrochen oder ist abgelaufen. Bitte versuche es erneut.",
 	"passkeyAlreadyRegistered": "Dieser Passkey ist bereits registriert. Verwende ein anderes Gerät oder einen anderen Sicherheitsschlüssel.",
 	"passkeyFailed": "Die Passkey-Anfrage ist fehlgeschlagen. Bitte versuche es erneut.",
-	"passkeysDescription": "Füge einen weiteren Passkey hinzu, damit du dich auch beim Verlust eines Geräts anmelden kannst. Mindestens ein Passkey muss erhalten bleiben.",
+	"passkeysDescription": "Füge einen weiteren Passkey hinzu, damit du dich auch beim Verlust eines Geräts anmelden kannst. Mindestens ein Passkey muss erhalten bleiben. Bestätige deine Identität mit einem vorhandenen Passkey, bevor du einen Schlüssel hinzufügst oder löschst.",
 	"passkeysManagedBySso": "Die Authentifizierung dieses Kontos wird von deinem SSO-Anbieter verwaltet.",
 	"noPasskeys": "Füge vor dem Abmelden deinen ersten Passkey hinzu.",
 	"passkeyAdded": "Passkey hinzugefügt",

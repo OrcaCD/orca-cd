@@ -225,9 +225,9 @@ func seedDemoData(db *gorm.DB) error {
 
 func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
 	user := models.User{
-		Id:    demoSeedUserID,
-		Email: demoSeedUserEmail,
-		Name:  demoSeedUserName,
+		Id:               demoSeedUserID,
+		Email:            demoSeedUserEmail,
+		Name:             demoSeedUserName,
 		LocalAuthEnabled: true,
 	}
 	if err := gorm.G[models.User](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &user); err != nil {

@@ -219,7 +219,16 @@ test.describe("Passkeys", () => {
 		await expect(
 			user.page.getByRole("button", { name: "Delete passkey", exact: true }),
 		).toHaveCount(0);
-		await replaceAuthenticator(user.page);
+		await user.page.route(
+			"**/api/v1/auth/passkeys/verify/finish",
+			async (route) => {
+				const response = await route.fetch();
+				expect(response.status()).toBe(200);
+				await replaceAuthenticator(user.page);
+				await route.fulfill({ response });
+			},
+			{ times: 1 },
+		);
 		await user.page.getByLabel("Passkey name", { exact: true }).fill("Backup key");
 		await user.page.getByRole("button", { name: "Add passkey", exact: true }).click();
 		await expectToast(user.page, "Passkey added");
@@ -240,8 +249,18 @@ test.describe("Passkeys", () => {
 		const remaining = await api(user.page, "GET", "/auth/passkeys");
 		expect(remaining.body).toHaveLength(1);
 		expect((await api(user.page, "DELETE", `/auth/passkeys/${remaining.body[0].id}`)).status).toBe(
-			400,
+			403,
 		);
+	});
+
+	test("a session cookie alone cannot add or delete a passkey", async ({ page, browser }) => {
+		const user = await createActiveUser(page, browser);
+		const keys = await api(user.page, "GET", "/auth/passkeys");
+		expect(
+			(await api(user.page, "POST", "/auth/passkeys/begin", { name: "Unverified" })).status,
+		).toBe(403);
+		expect((await api(user.page, "DELETE", `/auth/passkeys/${keys.body[0].id}`)).status).toBe(403);
+		expect((await api(user.page, "GET", "/auth/passkeys")).body).toHaveLength(1);
 	});
 
 	test("canceled prompts can be retried", async ({ page, browser }) => {

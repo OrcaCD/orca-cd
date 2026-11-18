@@ -76,6 +76,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			session.GET("/auth/profile-picture", routes.ProfilePictureHandler)
 			session.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
 			session.GET("/auth/passkeys", routes.ListPasskeysHandler)
+			session.POST("/auth/passkeys/verify/begin", authRateLimit, routes.BeginPasskeyVerificationHandler)
+			session.POST("/auth/passkeys/verify/finish", authRateLimit, routes.FinishPasskeyVerificationHandler)
 			session.POST("/auth/passkeys/begin", authRateLimit, routes.BeginOwnPasskeyHandler)
 			session.POST("/auth/passkeys/finish", authRateLimit, routes.FinishOwnPasskeyHandler)
 			session.DELETE("/auth/passkeys/:id", routes.DeletePasskeyHandler)

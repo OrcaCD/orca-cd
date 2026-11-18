@@ -65,16 +65,32 @@ export async function registerPasskey(data: {
 }
 
 export async function addPasskey(name: string): Promise<void> {
-	requireSupport();
+	const verificationToken = await verifyPasskey();
 	const optionsJSON = await fetcher<PublicKeyCredentialCreationOptionsJSON>(
 		"/auth/passkeys/begin",
 		"POST",
-		{ name },
+		{ name, verificationToken },
 	);
 	const response = await startRegistration({ optionsJSON });
 	await fetcher("/auth/passkeys/finish", "POST", response);
 }
 
 export async function deletePasskey(id: string): Promise<void> {
-	await fetcher(`/auth/passkeys/${id}`, "DELETE");
+	const verificationToken = await verifyPasskey();
+	await fetcher(`/auth/passkeys/${id}`, "DELETE", { verificationToken });
+}
+
+async function verifyPasskey(): Promise<string> {
+	requireSupport();
+	const optionsJSON = await fetcher<PublicKeyCredentialRequestOptionsJSON>(
+		"/auth/passkeys/verify/begin",
+		"POST",
+	);
+	const response = await startAuthentication({ optionsJSON });
+	const result = await fetcher<{ verificationToken: string }>(
+		"/auth/passkeys/verify/finish",
+		"POST",
+		response,
+	);
+	return result.verificationToken;
 }
