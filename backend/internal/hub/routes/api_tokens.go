@@ -2,6 +2,7 @@ package routes
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -18,7 +19,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const maxAPITokenNameLength = 64
+const (
+	maxAPITokenNameLength = 64
+	maxAPITokensPerUser   = 50
+)
 
 type createAPITokenRequest struct {
 	Name      string                 `json:"name" binding:"required"`
@@ -112,6 +116,17 @@ func CreateAPITokenHandler(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+	count, err := gorm.G[models.APIToken](db.DB).Where("user_id = ?", user.Id).Count(ctx, "*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if count >= maxAPITokensPerUser {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("you can't have more than %d api tokens, revoke one first", maxAPITokensPerUser)})
+		return
+	}
+
 	generated := apitoken.Generate()
 	token := models.APIToken{
 		UserId:    user.Id,
@@ -121,7 +136,7 @@ func CreateAPITokenHandler(c *gin.Context) {
 		Scopes:    scopes,
 		ExpiresAt: req.ExpiresAt.UTC(),
 	}
-	if err := gorm.G[models.APIToken](db.DB).Create(c.Request.Context(), &token); err != nil {
+	if err := gorm.G[models.APIToken](db.DB).Create(ctx, &token); err != nil {
 		if isUniqueConstraintError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a token with this name already exists"})
 			return

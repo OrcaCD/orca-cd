@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -279,6 +280,25 @@ func TestCreateAPITokenHandler_DuplicateName(t *testing.T) {
 	w = serveAPITokenRequest(t, &other, http.MethodPost, "/api/v1/api-tokens", body)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected another user to be able to use the name, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateAPITokenHandler_LimitPerUser(t *testing.T) {
+	setupAPITokensTestDB(t)
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "")
+	other := createTestUser(t, "Other", "other@example.com", rbac.AdminRoleID, "")
+	for i := range maxAPITokensPerUser {
+		seedAPIToken(t, admin.Id, fmt.Sprintf("Token %d", i))
+	}
+
+	w := serveAPITokenRequest(t, &admin, http.MethodPost, "/api/v1/api-tokens", validCreateAPITokenBody())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = serveAPITokenRequest(t, &other, http.MethodPost, "/api/v1/api-tokens", validCreateAPITokenBody())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected the limit to be per user, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
