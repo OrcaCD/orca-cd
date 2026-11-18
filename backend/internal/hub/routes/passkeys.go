@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -23,7 +24,7 @@ import (
 var passkeyWebAuthn *webauthn.WebAuthn
 var passkeySessions passkeys.Sessions
 
-const ceremonyCookieName = "orcacd_passkey"
+const ceremonyCookieName = auth.CeremonyCookieName
 
 func InitPasskeys(appURL string) error {
 	wa, err := passkeys.New(appURL)
@@ -57,16 +58,14 @@ func saveCeremony(c *gin.Context, ceremony passkeys.Ceremony, options any) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many pending passkey requests"})
 		return
 	}
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie(ceremonyCookieName, id, int(passkeys.CeremonyLifetime/time.Second), "/api/v1/auth", "", true, true)
+	auth.SetPasskeyCookie(c, id, passkeys.CeremonyLifetime)
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, options)
 }
 
 func takeCeremony(c *gin.Context, purpose string) (passkeys.Ceremony, bool) {
-	id, _ := c.Cookie(ceremonyCookieName)
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie(ceremonyCookieName, "", -1, "/api/v1/auth", "", true, true)
+	id, _ := auth.GetPasskeyCookie(c)
+	auth.ClearPasskeyCookie(c)
 	ceremony, ok := passkeySessions.Take(id, purpose)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "passkey request expired or already used, please try again"})
@@ -86,6 +85,8 @@ func BeginPasskeyRegistrationHandler(c *gin.Context) {
 	ceremony := passkeys.Ceremony{Purpose: "register", Name: strings.TrimSpace(req.PasskeyName)}
 	var user passkeys.User
 	if req.EnrollmentToken != "" {
+		// An administrator created or recovered this account. The enrollment code
+		// authorizes only the named user and is consumed when registration succeeds.
 		if !passkeysAvailable(c, false) {
 			return
 		}
@@ -102,6 +103,8 @@ func BeginPasskeyRegistrationHandler(c *gin.Context) {
 		}
 		ceremony.EnrollmentHash = hash
 	} else {
+		// The first administrator proves access to the setup code from the hub log.
+		// Later accounts must use an administrator-issued enrollment code above.
 		if !passkeysAvailable(c, true) {
 			return
 		}
@@ -137,10 +140,14 @@ func BeginOwnPasskeyHandler(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name string `json:"name" binding:"required,max=64"`
+		Name              string `json:"name" binding:"required,max=64"`
+		VerificationToken string `json:"verificationToken" binding:"max=128"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Name) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a passkey name is required"})
+		return
+	}
+	if !consumePasskeyVerification(c, current, req.VerificationToken) {
 		return
 	}
 	user, err := passkeys.LoadUser(c.Request.Context(), db.DB, current.Id)
@@ -148,7 +155,96 @@ func BeginOwnPasskeyHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+	if !user.LocalAuthEnabled || user.TokenVersion != current.TokenVersion {
+		c.JSON(http.StatusForbidden, gin.H{"error": "passkey account changed, please sign in again"})
+		return
+	}
 	beginRegistration(c, user, passkeys.Ceremony{Purpose: "add", Name: strings.TrimSpace(req.Name)})
+}
+
+// Verification grants one key-management operation, bound to the current account
+// and session version. A stolen session cookie alone cannot issue this proof.
+func BeginPasskeyVerificationHandler(c *gin.Context) {
+	if !passkeysAvailable(c, false) {
+		return
+	}
+	_, current, ok := getCurrentLocalUser(c)
+	if !ok {
+		return
+	}
+	user, err := passkeys.LoadUser(c.Request.Context(), db.DB, current.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	if !user.LocalAuthEnabled || user.TokenVersion != current.TokenVersion {
+		c.JSON(http.StatusForbidden, gin.H{"error": "passkey account changed, please sign in again"})
+		return
+	}
+	options, session, err := passkeyWebAuthn.BeginLogin(user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not start passkey verification"})
+		return
+	}
+	saveCeremony(c, passkeys.Ceremony{Purpose: "verify", User: user.User, Session: *session}, options.Response)
+}
+
+func FinishPasskeyVerificationHandler(c *gin.Context) {
+	ceremony, ok := takeCeremony(c, "verify")
+	if !ok || !passkeysAvailable(c, false) {
+		return
+	}
+	_, current, ok := getCurrentLocalUser(c)
+	if !ok {
+		return
+	}
+	if current.Id != ceremony.User.Id || current.TokenVersion != ceremony.User.TokenVersion {
+		c.JSON(http.StatusForbidden, gin.H{"error": "passkey account mismatch"})
+		return
+	}
+	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey verification failed"})
+		return
+	}
+	ctx := c.Request.Context()
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		user, err := passkeys.LoadUser(ctx, tx, current.Id)
+		if err != nil {
+			return err
+		}
+		if !user.LocalAuthEnabled || user.TokenVersion != ceremony.User.TokenVersion {
+			return gorm.ErrRecordNotFound
+		}
+		credential, err := passkeyWebAuthn.ValidateLogin(user, ceremony.Session, response)
+		if err != nil {
+			return err
+		}
+		if credential.Authenticator.CloneWarning {
+			return errors.New("authenticator counter did not advance")
+		}
+		return passkeys.UpdateCredential(ctx, tx, user.Id, credential)
+	})
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey verification failed"})
+		return
+	}
+	token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: "manage", User: ceremony.User})
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many pending passkey requests"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"verificationToken": token})
+}
+
+func consumePasskeyVerification(c *gin.Context, user *models.User, token string) bool {
+	proof, ok := passkeySessions.Take(token, "manage")
+	if !ok || proof.User.Id != user.Id || proof.User.TokenVersion != user.TokenVersion {
+		c.JSON(http.StatusForbidden, gin.H{"error": "verify an existing passkey before changing your keys"})
+		return false
+	}
+	return true
 }
 
 func beginRegistration(c *gin.Context, user passkeys.User, ceremony passkeys.Ceremony) {
@@ -192,8 +288,14 @@ func finishRegistration(c *gin.Context, purpose string) {
 		}
 	}
 	ctx := c.Request.Context()
+	response, err := protocol.ParseCredentialCreationResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "passkey registration failed, please try again"})
+		return
+	}
 	var user models.User
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var addedCredentialID string
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var waUser passkeys.User
 		if setup {
 			if !setupcode.Verify(ceremony.SetupCode) {
@@ -222,8 +324,7 @@ func finishRegistration(c *gin.Context, purpose string) {
 				}
 			}
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		credential, err := passkeyWebAuthn.FinishRegistration(waUser, ceremony.Session, c.Request)
+		credential, err := passkeyWebAuthn.CreateCredential(waUser, ceremony.Session, response)
 		if err != nil {
 			return err
 		}
@@ -236,7 +337,12 @@ func finishRegistration(c *gin.Context, purpose string) {
 				return err
 			}
 		}
-		return passkeys.SaveCredential(ctx, tx, user.Id, ceremony.Name, credential)
+		if err := passkeys.SaveCredential(ctx, tx, user.Id, ceremony.Name, credential); err != nil {
+			return err
+		}
+		added, err := gorm.G[models.Passkey](tx).Select("id").Where("user_id = ? AND credential_id = ?", user.Id, passkeys.CredentialID(credential.ID)).First(ctx)
+		addedCredentialID = added.Id
+		return err
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "passkey registration failed, please try again"})
@@ -250,7 +356,7 @@ func finishRegistration(c *gin.Context, purpose string) {
 			return
 		}
 	}
-	utils.RecordAuditLog(c, "passkey-added", "user", user.Id)
+	utils.RecordAuditLog(c, "passkey-added", "passkey", addedCredentialID)
 	c.JSON(http.StatusCreated, gin.H{"message": "passkey registered"})
 }
 
@@ -272,10 +378,14 @@ func FinishPasskeyLoginHandler(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey authentication failed"})
+		return
+	}
 	var user models.User
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
-		waUser, credential, err := passkeyWebAuthn.FinishPasskeyLogin(func(rawID, handle []byte) (webauthn.User, error) {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		waUser, credential, err := passkeyWebAuthn.ValidatePasskeyLogin(func(rawID, handle []byte) (webauthn.User, error) {
 			key, err := gorm.G[models.Passkey](tx).Where("credential_id = ? AND user_id = ?", passkeys.CredentialID(rawID), string(handle)).First(ctx)
 			if err != nil {
 				return nil, err
@@ -288,7 +398,7 @@ func FinishPasskeyLoginHandler(c *gin.Context) {
 				return nil, errors.New("local authentication is disabled for account")
 			}
 			return u, nil
-		}, ceremony.Session, c.Request)
+		}, ceremony.Session, response)
 		if err != nil {
 			return err
 		}
@@ -352,8 +462,25 @@ func DeletePasskeyHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var req struct {
+		VerificationToken string `json:"verificationToken" binding:"required,max=128"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "verify an existing passkey before changing your keys"})
+		return
+	}
+	if !consumePasskeyVerification(c, user, req.VerificationToken) {
+		return
+	}
 	ctx := c.Request.Context()
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := gorm.G[models.User](tx).Where("id = ?", user.Id).First(ctx)
+		if err != nil {
+			return err
+		}
+		if !current.LocalAuthEnabled || current.TokenVersion != user.TokenVersion {
+			return gorm.ErrRecordNotFound
+		}
 		rows, err := gorm.G[models.Passkey](tx).Where("id = ? AND user_id = ?", c.Param("id"), user.Id).Delete(ctx)
 		if err != nil {
 			return err
@@ -378,7 +505,7 @@ func DeletePasskeyHandler(c *gin.Context) {
 	case err != nil:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	default:
-		utils.RecordAuditLog(c, "passkey-deleted", "user", user.Id)
+		utils.RecordAuditLog(c, "passkey-deleted", "passkey", c.Param("id"))
 		c.JSON(http.StatusOK, gin.H{"message": "passkey deleted"})
 	}
 }
