@@ -110,7 +110,7 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 		Roles:                  roles,
 		Permissions:            perms.Grants(),
 		PasswordChangeRequired: user.PasswordChangeRequired,
-		IsLocal:                user.LocalAuthEnabled || user.PasswordHash != nil,
+		IsLocal:                user.LocalAuthEnabled,
 		Demo:                   DemoMode,
 	})
 }
@@ -132,7 +132,7 @@ func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) 
 		return nil, nil, false
 	}
 
-	if !user.LocalAuthEnabled && user.PasswordHash == nil {
+	if !user.LocalAuthEnabled {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
 		return nil, nil, false
 	}

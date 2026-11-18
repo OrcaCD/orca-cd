@@ -239,6 +239,7 @@ func seedDemoUsers(ctx context.Context, tx *gorm.DB) (*models.User, error) {
 		Name:                   demoSeedUserName,
 		PasswordChangeRequired: false,
 		PasswordHash:           &hashedPassword,
+		LocalAuthEnabled:       true,
 	}
 	if err := gorm.G[models.User](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &user); err != nil {
 		return nil, err

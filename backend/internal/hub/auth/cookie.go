@@ -17,6 +17,8 @@ type CookieConfig struct {
 	SameSite http.SameSite
 }
 
+const CeremonyCookieName = "orcacd_passkey"
+
 var defaultCookieConfig = CookieConfig{
 	Name:     "orcacd_auth",
 	Path:     "/",
@@ -28,15 +30,36 @@ var defaultCookieConfig = CookieConfig{
 }
 
 func SetAuthCookie(c *gin.Context, token string) {
-	c.SetSameSite(defaultCookieConfig.SameSite)
-	c.SetCookie(defaultCookieConfig.Name, token, defaultCookieConfig.MaxAge, defaultCookieConfig.Path, defaultCookieConfig.Domain, defaultCookieConfig.Secure, defaultCookieConfig.HttpOnly)
+	setCookie(c, token, defaultCookieConfig)
 }
 
 func ClearAuthCookie(c *gin.Context) {
-	c.SetSameSite(defaultCookieConfig.SameSite)
-	c.SetCookie(defaultCookieConfig.Name, "", -1, defaultCookieConfig.Path, defaultCookieConfig.Domain, defaultCookieConfig.Secure, defaultCookieConfig.HttpOnly)
+	cfg := defaultCookieConfig
+	cfg.MaxAge = -1
+	setCookie(c, "", cfg)
 }
 
 func GetAuthCookie(c *gin.Context) (string, error) {
 	return c.Cookie(defaultCookieConfig.Name)
+}
+
+func SetPasskeyCookie(c *gin.Context, id string, lifetime time.Duration) {
+	cfg := defaultCookieConfig
+	cfg.Name = CeremonyCookieName
+	cfg.Path = "/api/v1/auth"
+	cfg.MaxAge = int(lifetime / time.Second)
+	setCookie(c, id, cfg)
+}
+
+func ClearPasskeyCookie(c *gin.Context) {
+	SetPasskeyCookie(c, "", -time.Second)
+}
+
+func GetPasskeyCookie(c *gin.Context) (string, error) {
+	return c.Cookie(CeremonyCookieName)
+}
+
+func setCookie(c *gin.Context, value string, cfg CookieConfig) {
+	c.SetSameSite(cfg.SameSite)
+	c.SetCookie(cfg.Name, value, cfg.MaxAge, cfg.Path, cfg.Domain, cfg.Secure, cfg.HttpOnly)
 }

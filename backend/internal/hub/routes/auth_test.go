@@ -116,6 +116,24 @@ func setUserClaims(t *testing.T, c *gin.Context, user *models.User) {
 	auth.SetUser(c, user)
 }
 
+func TestCurrentLocalUserRequiresExplicitAccountFlag(t *testing.T) {
+	setupTestDB(t)
+	for _, local := range []bool{false, true} {
+		user := models.User{Id: "account", LocalAuthEnabled: local}
+		if !local {
+			user.PasswordHash = new("legacy-hash")
+		}
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		setUserClaims(t, c, &user)
+		_, _, ok := getCurrentLocalUser(c)
+		if ok != local || (!local && w.Code != http.StatusForbidden) {
+			t.Fatal("local account access depended on a password hash instead of LocalAuthEnabled")
+		}
+	}
+}
+
 func TestSetupHandler_NoUsers(t *testing.T) {
 	setupTestDB(t)
 	LocalAuthDisabled = false
@@ -174,7 +192,7 @@ func TestSetupHandler_WithUsers(t *testing.T) {
 	t.Cleanup(func() { LocalAuthDisabled = false })
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true})
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -356,7 +374,7 @@ func TestRegisterHandler_RejectsSecondUser(t *testing.T) {
 	initTestSetupCode(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(registerRequest{Name: "Hacker", Email: "hacker@example.com", Password: "Password456!", SetupCode: testSetupCode})
@@ -410,7 +428,7 @@ func TestLoginHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, PasswordChangeRequired: true})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true, PasswordChangeRequired: true})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "password123"})
@@ -437,7 +455,7 @@ func TestLoginHandler_DemoModeSkipsPasswordHashing(t *testing.T) {
 	// An unparsable hash makes any argon2 comparison fail, so a successful
 	// demo login proves the hash was never checked.
 	invalidHash := "not-an-argon2-hash"
-	if err := db.DB.Create(&models.User{Email: "demo@orcacd.dev", Name: "Demo", PasswordHash: &invalidHash}).Error; err != nil {
+	if err := db.DB.Create(&models.User{Email: "demo@orcacd.dev", Name: "Demo", PasswordHash: &invalidHash, LocalAuthEnabled: true}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
 
@@ -477,10 +495,10 @@ func TestChangePasswordHandler_SuccessClearsRequirement(t *testing.T) {
 
 	hash, _ := auth.HashPassword("password123")
 	user := models.User{
-		Id:                     "user-change-password",
-		Email:                  "test@example.com",
-		Name:                   "Test",
-		PasswordHash:           &hash,
+		Id:           "user-change-password",
+		Email:        "test@example.com",
+		Name:         "Test",
+		PasswordHash: &hash, LocalAuthEnabled: true,
 		PasswordChangeRequired: true,
 	}
 	if err := db.DB.Create(&user).Error; err != nil {
@@ -550,7 +568,7 @@ func TestChangePasswordHandler_WrongCurrentPassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
+	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -587,7 +605,7 @@ func TestChangePasswordHandler_RejectsSamePassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("Password123!")
-	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash}
+	user := models.User{Id: "user-change-password", Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -660,7 +678,7 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true})
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(loginRequest{Email: "test@example.com", Password: "wrongpassword"})
@@ -715,7 +733,7 @@ func TestAuthHandlers_ReturnServiceUnavailableWhenHashingBusy(t *testing.T) {
 	initTestSetupCode(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true})
 	db.DB.Create(&models.User{Email: "sso@example.com", Name: "SSO"})
 
 	tests := []struct {
@@ -761,7 +779,7 @@ func TestLoginHandler_RecoversAfterHashingBusy(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
+	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash, LocalAuthEnabled: true})
 
 	login := func() *httptest.ResponseRecorder {
 		//nolint:gosec
@@ -906,7 +924,7 @@ func TestProfileHandler_ReturnsIsLocalForLocalUser(t *testing.T) {
 		Id:           "user-local-claims",
 		Name:         "Local User",
 		Email:        "local@example.com",
-		PasswordHash: &hash,
+		PasswordHash: &hash, LocalAuthEnabled: true,
 	}
 	token, err := auth.GenerateUserToken(user)
 	if err != nil {
@@ -1097,7 +1115,7 @@ func TestUpdateOwnProfileHandler_Success(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-1", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1151,7 +1169,7 @@ func TestUpdateOwnProfileHandler_NameOnlyKeepsEmailConfirmed(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-2", Email: "user@example.com", Name: "Initial Name", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1182,8 +1200,8 @@ func TestUpdateOwnProfileHandler_Conflict(t *testing.T) {
 
 	hashA, _ := auth.HashPassword("password123")
 	hashB, _ := auth.HashPassword("password456")
-	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA}
-	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB}
+	userA := &models.User{Id: "user-local-3", Email: "first@example.com", Name: "First", PasswordHash: &hashA, LocalAuthEnabled: true}
+	userB := &models.User{Id: "user-local-4", Email: "second@example.com", Name: "Second", PasswordHash: &hashB, LocalAuthEnabled: true}
 	if err := db.DB.Create(userA).Error; err != nil {
 		t.Fatalf("failed to create user A: %v", err)
 	}
@@ -1217,7 +1235,7 @@ func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-invalid-req", Email: "user@example.com", Name: "User", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -1295,7 +1313,7 @@ func TestUpdateOwnProfileHandler_InternalErrorWhenUpdateFails(t *testing.T) {
 	setupTestDB(t)
 
 	hash, _ := auth.HashPassword("password123")
-	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash}
+	user := &models.User{Id: "user-local-db-error", Email: "db-error@example.com", Name: "User", PasswordHash: &hash, LocalAuthEnabled: true}
 	if err := db.DB.Create(user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}

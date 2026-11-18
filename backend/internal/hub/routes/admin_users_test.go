@@ -38,9 +38,10 @@ func createTestUser(t *testing.T, name string, email string, roleID string, pass
 	}
 
 	user := models.User{
-		Name:         name,
-		Email:        email,
-		PasswordHash: passwordHash,
+		Name:             name,
+		Email:            email,
+		PasswordHash:     passwordHash,
+		LocalAuthEnabled: passwordHash != nil,
 	}
 
 	if err := db.DB.WithContext(t.Context()).Create(&user).Error; err != nil {
