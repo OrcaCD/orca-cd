@@ -178,11 +178,15 @@ func TestPasskeyMigrationPreservesAccountTypesAndCascades(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := newTestMigrator(t, sqlDB)
-	if err := m.Migrate(45); err != nil {
+	if err := m.Migrate(46); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sqlDB.Exec(`INSERT INTO users (id, name, email, password_hash, token_version)
         VALUES ('local', 'Local', 'local@example.com', 'legacy-hash', 3), ('sso', 'SSO', 'sso@example.com', NULL, 4)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO api_tokens (id, user_id, name, token_hash, prefix, expires_at)
+        VALUES ('existing-token', 'local', 'Automation', 'token-digest', 'orca_', datetime('now', '+1 day'))`); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Up(); err != nil {
@@ -202,6 +206,10 @@ func TestPasskeyMigrationPreservesAccountTypesAndCascades(t *testing.T) {
 	if err := sqlDB.QueryRow("SELECT token_version FROM users WHERE id = 'local'").Scan(&version); err != nil || version != 3 {
 		t.Fatal("existing sessions should survive the upgrade")
 	}
+	var tokenCount int
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM api_tokens WHERE id = 'existing-token' AND user_id = 'local'").Scan(&tokenCount); err != nil || tokenCount != 1 {
+		t.Fatal("existing API tokens should survive the upgrade")
+	}
 	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		t.Fatal(err)
 	}
@@ -216,13 +224,13 @@ func TestPasskeyMigrationPreservesAccountTypesAndCascades(t *testing.T) {
 	if _, err := sqlDB.Exec("DELETE FROM users WHERE id = 'local'"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"passkeys", "passkey_enrollments"} {
+	for _, table := range []string{"passkeys", "passkey_enrollments", "api_tokens"} {
 		var count int
 		if err := sqlDB.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("orphan in %s: %v", table, err)
 		}
 	}
-	if err := m.Migrate(47); err != nil {
+	if err := m.Migrate(48); err != nil {
 		t.Fatal(err)
 	}
 	if !columnNames(t, sqlDB, "users")["password_hash"] {
