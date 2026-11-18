@@ -81,7 +81,7 @@ func toAdminUserResponse(user *models.User, oidcProviderNames []string, roles []
 		Name:                   user.Name,
 		Email:                  user.Email,
 		Roles:                  roles,
-		Providers:              buildAuthProviderNames(user.PasswordHash, oidcProviderNames),
+		Providers:              buildAuthProviderNames(user.LocalAuthEnabled, oidcProviderNames),
 		PasswordChangeRequired: user.PasswordChangeRequired,
 		CreatedAt:              user.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:              user.UpdatedAt.Format(time.RFC3339),
@@ -245,10 +245,10 @@ func AdminUpdateUserHandler(c *gin.Context) {
 		return
 	}
 
-	// The profile of users without a password is managed by their OIDC provider,
+	// The profile of users without local authentication is managed by their OIDC provider,
 	// only their roles can be changed. Their name and email don't have to be
 	// sent, and the provider may have set values the validation would reject.
-	if user.PasswordHash == nil {
+	if !user.LocalAuthEnabled {
 		if (req.Name != "" && req.Name != user.Name) || (req.Email != "" && !strings.EqualFold(req.Email, user.Email)) || req.ResetPassword {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
 			return
@@ -286,7 +286,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 
 	rolesChanged := false
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if user.PasswordHash != nil {
+		if user.LocalAuthEnabled {
 			user.UpdatedAt = time.Now()
 			// Only the columns this handler changes, so a concurrent change of
 			// other columns is not overwritten and a deleted user is not recreated.
@@ -523,11 +523,11 @@ func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string
 	return providerNamesByUserId, nil
 }
 
-func buildAuthProviderNames(passwordHash *string, oidcProviderNames []string) []string {
+func buildAuthProviderNames(localAuthEnabled bool, oidcProviderNames []string) []string {
 	seen := make(map[string]struct{}, len(oidcProviderNames)+1)
 	providerNames := make([]string, 0, len(oidcProviderNames)+1)
 
-	if passwordHash != nil {
+	if localAuthEnabled {
 		providerNames = append(providerNames, "password")
 		seen["password"] = struct{}{}
 	}
