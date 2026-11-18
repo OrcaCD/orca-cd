@@ -10,6 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -120,6 +121,7 @@ func TestRequireAuth_MissingCookie(t *testing.T) {
 
 func TestRequireAuth_InvalidToken(t *testing.T) {
 	setupAuthTest(t)
+	events := seclog.CaptureForTest(t)
 
 	router := gin.New()
 	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
@@ -130,6 +132,9 @@ func TestRequireAuth_InvalidToken(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", w.Code)
+	}
+	if !events.Has(seclog.TokenRejected, "invalid_token") {
+		t.Error("expected a token_rejected security event")
 	}
 }
 
@@ -156,6 +161,7 @@ func TestRequireAuth_RejectsDeletedUser(t *testing.T) {
 func TestRequireAuth_RejectsOutdatedTokenVersion(t *testing.T) {
 	user := &models.User{Id: "user-123", Name: "admin", Email: "admin@example.com"}
 	setupAuthTest(t, user)
+	events := seclog.CaptureForTest(t)
 	token := generateToken(t, user)
 
 	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "token_version", user.TokenVersion+1); err != nil {
@@ -174,6 +180,9 @@ func TestRequireAuth_RejectsOutdatedTokenVersion(t *testing.T) {
 	}
 	if !authCookieCleared(w) {
 		t.Error("expected auth cookie to be cleared")
+	}
+	if !events.Has(seclog.TokenRejected, "revoked_token") {
+		t.Error("expected a token_rejected security event")
 	}
 }
 
