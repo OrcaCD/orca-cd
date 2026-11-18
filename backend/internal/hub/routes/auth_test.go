@@ -21,6 +21,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -658,6 +659,7 @@ func TestChangePasswordHandler_RejectsManagedUser(t *testing.T) {
 
 func TestLoginHandler_WrongPassword(t *testing.T) {
 	setupTestDB(t)
+	events := seclog.CaptureForTest(t)
 
 	hash, _ := auth.HashPassword("password123")
 	db.DB.Create(&models.User{Email: "test@example.com", Name: "Test", PasswordHash: &hash})
@@ -674,10 +676,14 @@ func TestLoginHandler_WrongPassword(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
 	}
+	if !events.Has(seclog.LoginFailed, "wrong_password") {
+		t.Error("expected a login_failed security event")
+	}
 }
 
 func TestLoginHandler_UserNotFound(t *testing.T) {
 	setupTestDB(t)
+	events := seclog.CaptureForTest(t)
 
 	//nolint:gosec
 	reqBody, _ := json.Marshal(loginRequest{Email: "nonexistent@example.com", Password: "password123"})
@@ -690,6 +696,9 @@ func TestLoginHandler_UserNotFound(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	if !events.Has(seclog.LoginFailed, "unknown_user") {
+		t.Error("expected a login_failed security event")
 	}
 }
 
@@ -989,6 +998,7 @@ func TestProfileHandler_NoClaims(t *testing.T) {
 
 func TestLoginHandler_LocalAuthDisabled(t *testing.T) {
 	setupTestDB(t)
+	events := seclog.CaptureForTest(t)
 
 	LocalAuthDisabled = true
 	t.Cleanup(func() { LocalAuthDisabled = false })
@@ -1004,6 +1014,9 @@ func TestLoginHandler_LocalAuthDisabled(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+	if !events.Has(seclog.LoginFailed, "local_auth_disabled") {
+		t.Error("expected a login_failed security event")
 	}
 }
 

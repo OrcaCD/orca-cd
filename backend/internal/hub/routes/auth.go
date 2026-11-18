@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
@@ -222,6 +223,7 @@ func RegisterHandler(c *gin.Context) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	if !setupcode.Verify(req.SetupCode) {
+		seclog.Warn(c, seclog.SetupCodeFailed)
 		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
 		return
 	}
@@ -261,6 +263,7 @@ func RegisterHandler(c *gin.Context) {
 
 	if txErr != nil {
 		if errors.Is(txErr, errRegistrationDisabled) || errors.Is(txErr, gorm.ErrDuplicatedKey) {
+			seclog.Warn(c, seclog.RegistrationFailed, "reason", "registration_disabled")
 			c.JSON(http.StatusForbidden, gin.H{"error": "registration is disabled"})
 			return
 		}
@@ -276,6 +279,7 @@ func RegisterHandler(c *gin.Context) {
 
 	setupcode.Clear()
 
+	seclog.Info(c, seclog.RegistrationSuccess, "user_id", user.Id)
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
 }
@@ -288,6 +292,7 @@ func VerifySetupCodeHandler(c *gin.Context) {
 	}
 
 	if !setupcode.Verify(req.SetupCode) {
+		seclog.Warn(c, seclog.SetupCodeFailed)
 		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
 		return
 	}
@@ -297,6 +302,7 @@ func VerifySetupCodeHandler(c *gin.Context) {
 
 func LoginHandler(c *gin.Context) {
 	if LocalAuthDisabled {
+		seclog.Warn(c, seclog.LoginFailed, "reason", "local_auth_disabled")
 		c.JSON(http.StatusForbidden, gin.H{"error": "local authentication is disabled"})
 		return
 	}
@@ -320,6 +326,7 @@ func LoginHandler(c *gin.Context) {
 				abortPasswordOp(c, err)
 				return
 			}
+			seclog.Warn(c, seclog.LoginFailed, "reason", "unknown_user", "email", req.Email)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}
@@ -332,6 +339,7 @@ func LoginHandler(c *gin.Context) {
 			abortPasswordOp(c, err)
 			return
 		}
+		seclog.Warn(c, seclog.LoginFailed, "reason", "no_local_password", "email", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -342,6 +350,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 	if !match {
+		seclog.Warn(c, seclog.LoginFailed, "reason", "wrong_password", "email", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -352,6 +361,7 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
+	seclog.Info(c, seclog.LoginSuccess, "user_id", user.Id)
 	auth.SetAuthCookie(c, token)
 	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
 }
@@ -360,6 +370,7 @@ func LoginHandler(c *gin.Context) {
 // so anonymous visitors cannot use up argon2 time and memory.
 func demoLogin(c *gin.Context, req loginRequest) {
 	if !db.IsDemoLogin(req.Email, req.Password) {
+		seclog.Warn(c, seclog.LoginFailed, "reason", "wrong_password", "email", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -408,6 +419,7 @@ func ChangePasswordHandler(c *gin.Context) {
 		return
 	}
 	if !match {
+		seclog.Warn(c, seclog.PasswordChangeFailed, "reason", "wrong_password")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
 		return
 	}

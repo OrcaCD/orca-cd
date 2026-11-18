@@ -6,6 +6,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,6 +27,7 @@ func RequirePermission(resource models.PermissionResource, action models.Permiss
 		}
 
 		if !perms.Can(resource, action, c.Param("id")) {
+			seclog.Warn(c, seclog.AccessDenied, "reason", "insufficient_permissions", "resource", string(resource), "action", string(action))
 			c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permissions"})
 			c.Abort()
 			return

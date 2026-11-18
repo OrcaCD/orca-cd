@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -93,6 +94,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	rawToken := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 	rawToken = strings.TrimSpace(rawToken)
 	if rawToken == "" {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 		return
 	}
@@ -106,6 +108,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
 	idToken, err := verifier.Verify(ctx, rawToken)
 	if err != nil {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}

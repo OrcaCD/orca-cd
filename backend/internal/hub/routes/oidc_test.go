@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 )
 
@@ -65,6 +66,7 @@ func TestOIDCCallbackHandler_MissingCodeOrState(t *testing.T) {
 
 func TestOIDCCallbackHandler_MissingStateCookie(t *testing.T) {
 	setupTestDB(t)
+	events := seclog.CaptureForTest(t)
 
 	router := gin.New()
 	router.GET("/api/v1/auth/oidc/:id/callback", OIDCCallbackHandler)
@@ -80,6 +82,9 @@ func TestOIDCCallbackHandler_MissingStateCookie(t *testing.T) {
 	loc := w.Header().Get("Location")
 	if loc != "/login?error=missing_state" {
 		t.Errorf("unexpected redirect: %s", loc)
+	}
+	if !events.Has(seclog.OIDCLoginFailed, "missing_state") {
+		t.Error("expected an oidc_login_failed security event")
 	}
 }
 

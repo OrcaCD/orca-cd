@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -39,7 +40,8 @@ type pushPayload struct {
 	After string `json:"after"`
 }
 
-func rejectWebhook(c *gin.Context) {
+func rejectWebhook(c *gin.Context, reason string) {
+	seclog.Warn(c, seclog.WebhookAuthFailed, "reason", reason)
 	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 }
 
@@ -49,7 +51,7 @@ func WebhookHandler(c *gin.Context) {
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			rejectWebhook(c)
+			rejectWebhook(c, "unknown_id")
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -57,7 +59,7 @@ func WebhookHandler(c *gin.Context) {
 	}
 
 	if repo.SyncType != models.SyncTypeWebhook || repo.WebhookSecret == nil {
-		rejectWebhook(c)
+		rejectWebhook(c, "webhook_disabled")
 		return
 	}
 
@@ -75,7 +77,7 @@ func WebhookHandler(c *gin.Context) {
 	secret := repo.WebhookSecret.String()
 
 	if !validateSignature(c, repo.Provider, secret, body) {
-		rejectWebhook(c)
+		rejectWebhook(c, "invalid_signature")
 		return
 	}
 
@@ -136,7 +138,7 @@ func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 	secret := repo.WebhookSecret.String()
 	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		rejectWebhook(c)
+		rejectWebhook(c, "invalid_token")
 		return
 	}
 
