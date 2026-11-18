@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
@@ -112,12 +113,16 @@ func makeWebhookRequest(repoID, body string) (*gin.Context, *httptest.ResponseRe
 
 func TestWebhookHandler_NotFound(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
+	events := seclog.CaptureForTest(t)
 
 	c, w := makeWebhookRequest("nonexistent-id", `{}`)
 	WebhookHandler(c)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+	if !events.Has(seclog.WebhookAuthFailed, "unknown_id") {
+		t.Error("expected a webhook_auth_failed security event")
 	}
 }
 

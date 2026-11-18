@@ -19,6 +19,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
@@ -117,6 +118,7 @@ func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 	applications.Log = Log
+	seclog.Init(Log)
 
 	if cfg.Demo {
 		httpclient.Disable()

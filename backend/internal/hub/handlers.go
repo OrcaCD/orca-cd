@@ -67,6 +67,12 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/auth/logout", routes.LogoutHandler)
 			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
 
+			// Creating API tokens needs a permission, but everyone can see and revoke
+			// their own, for example after losing it.
+			protected.GET("/api-tokens", routes.ListAPITokensHandler)
+			protected.POST("/api-tokens", middleware.RequirePermission(models.ResourceAPIToken, models.ActionCreate), routes.CreateAPITokenHandler)
+			protected.DELETE("/api-tokens/:id", routes.RevokeAPITokenHandler)
+
 			// List endpoints filter by what the user can read, the others check the
 			// permission on the resource of the :id parameter.
 			app := func(action models.PermissionAction) gin.HandlerFunc {
@@ -151,6 +157,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			admin.GET("/roles/:id", routes.AdminGetRoleHandler)
 			admin.PUT("/roles/:id", routes.AdminUpdateRoleHandler)
 			admin.DELETE("/roles/:id", routes.AdminDeleteRoleHandler)
+
+			admin.GET("/api-tokens", routes.AdminListAPITokensHandler)
+			admin.DELETE("/api-tokens/:id", routes.AdminRevokeAPITokenHandler)
 
 			admin.GET("/oidc-providers", routes.AdminListOIDCProvidersHandler)
 			admin.POST("/oidc-providers", routes.AdminCreateOIDCProviderHandler)

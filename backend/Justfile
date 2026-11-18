@@ -16,8 +16,21 @@ DATE := if os_family() == 'windows' {
 } else {
     `date -u +%Y-%m-%dT%H:%M:%SZ`
 }
-LDFLAGS := "-s -w -X github.com/OrcaCD/orca-cd/internal/version.Version=" + VERSION + " -X github.com/OrcaCD/orca-cd/internal/version.Commit=" + COMMIT + " -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=" + DATE
+# Dev builds leave out the build date so the ldflags stay stable and go run can reuse its cached binary
+DEV_LDFLAGS := "-s -w -X github.com/OrcaCD/orca-cd/internal/version.Version=" + VERSION + " -X github.com/OrcaCD/orca-cd/internal/version.Commit=" + COMMIT
+LDFLAGS := DEV_LDFLAGS + " -X github.com/OrcaCD/orca-cd/internal/version.BuildDate=" + DATE
 EXT := if os_family() == 'windows' { '.exe' } else { '' }
+AIR := if os_family() == 'windows' {
+    `if (Get-Command air -ErrorAction SilentlyContinue) { 'air' }`
+} else {
+    `command -v air || true`
+}
+HUB_FLAGS := "-tags=nomsgpack -ldflags '" + DEV_LDFLAGS + "'"
+AGENT_FLAGS := "-ldflags '" + DEV_LDFLAGS + "'"
+HUB_RUN := "go run " + HUB_FLAGS + " ./cmd/hub"
+AGENT_RUN := "go run " + AGENT_FLAGS + " ./cmd/agent"
+HUB_AIR := "air -c .air.hub.toml --build.cmd \"go build " + HUB_FLAGS + " -o bin/hub" + EXT + " ./cmd/hub\""
+AGENT_AIR := "air -c .air.agent.toml --build.cmd \"go build " + AGENT_FLAGS + " -o bin/agent" + EXT + " ./cmd/agent\""
 defaultCommand := ""
 
 # List all available commands
@@ -69,17 +82,17 @@ build-agent: proto
 [parallel]
 build: build-hub build-agent
 
-# Run the hub (use the help command to get a list of commands)
+# Run the hub, live reloading with air if installed (use the help command to get a list of commands)
 [group('hub')]
 [env("CGO_ENABLED", "1")]
 run-hub cmd=defaultCommand: proto
-    go run -tags=nomsgpack -ldflags '{{ LDFLAGS }}' ./cmd/hub {{ cmd }}
+    {{ if cmd != "" { HUB_RUN + " " + cmd } else if AIR == "" { HUB_RUN } else { HUB_AIR } }}
 
-# Run the agent (use the help command to get a list of commands)
+# Run the agent, live reloading with air if installed (use the help command to get a list of commands)
 [group('agent')]
 [env("CGO_ENABLED", "1")]
 run-agent cmd=defaultCommand: proto
-    go run -ldflags '{{ LDFLAGS }}' ./cmd/agent {{ cmd }}
+    {{ if cmd != "" { AGENT_RUN + " " + cmd } else if AIR == "" { AGENT_RUN } else { AGENT_AIR } }}
 
 # Run both hub and agent in parallel
 [parallel]

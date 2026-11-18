@@ -26,7 +26,12 @@ import type { Agent } from "@/lib/agents";
 import type { ApplicationListItem } from "@/lib/applications";
 import type { Notification } from "@/lib/notifications";
 import type { Repository } from "@/lib/repositories";
-import { permissionActions, permissionResources, type PermissionResource } from "@/lib/roles";
+import {
+	permissionActions,
+	permissionResources,
+	resourcesWithoutItems,
+	type PermissionResource,
+} from "@/lib/roles";
 import {
 	ALL,
 	actionDescription,
@@ -50,7 +55,7 @@ export interface ResourceOption {
 	description?: string;
 }
 
-export type ResourceOptions = Record<PermissionResource, ResourceOption[] | undefined>;
+export type ResourceOptions = Partial<Record<PermissionResource, ResourceOption[]>>;
 
 export function useResourceOptions(): ResourceOptions {
 	const { data: applications } = useFetch<ApplicationListItem[]>("/applications");
@@ -120,6 +125,7 @@ function ResourcePermissions({
 	const scopedIds = Object.keys(rows).filter((key) => key !== ALL);
 	const available = options?.filter((option) => !(option.id in rows)) ?? [];
 	const optionById = new Map(options?.map((option) => [option.id, option]));
+	const hasItems = !resourcesWithoutItems.includes(resource);
 
 	const summary =
 		allActions.length === actions.length
@@ -161,11 +167,13 @@ function ResourcePermissions({
 							>
 								{m.permissionPresetFull()}
 							</DropdownMenuItem>
-							<DropdownMenuItem
-								onClick={() => onChange(setActions(grants, resource, ALL, ["read"]))}
-							>
-								{m.permissionPresetReadOnly()}
-							</DropdownMenuItem>
+							{actions.includes("read") && (
+								<DropdownMenuItem
+									onClick={() => onChange(setActions(grants, resource, ALL, ["read"]))}
+								>
+									{m.permissionPresetReadOnly()}
+								</DropdownMenuItem>
+							)}
 							<DropdownMenuItem
 								onClick={() => onChange({ ...grants, [resource]: {} })}
 								variant="destructive"
@@ -196,7 +204,7 @@ function ResourcePermissions({
 						<PermissionRow
 							resource={resource}
 							label={allResourcesLabels[resource]()}
-							description={m.permissionAllDescription()}
+							description={hasItems ? m.permissionAllDescription() : undefined}
 							actions={actions}
 							granted={allActions}
 							onToggle={(next) => onChange(setActions(grants, resource, ALL, next))}
@@ -221,13 +229,15 @@ function ResourcePermissions({
 				</table>
 			</div>
 
-			<footer className="border-t px-4 py-2">
-				<AddResource
-					resource={resource}
-					options={available}
-					onAdd={(id) => onChange(setActions(grants, resource, id, ["read"]))}
-				/>
-			</footer>
+			{hasItems && (
+				<footer className="border-t px-4 py-2">
+					<AddResource
+						resource={resource}
+						options={available}
+						onAdd={(id) => onChange(setActions(grants, resource, id, ["read"]))}
+					/>
+				</footer>
+			)}
 
 			{resource === "application" && (
 				<ApplicationDependencies grants={grants} onChange={onChange} />

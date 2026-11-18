@@ -1,4 +1,4 @@
-import { Bell, Container, GitBranch, Server, type LucideIcon } from "lucide-react";
+import { Bell, Container, GitBranch, KeyRound, Server, type LucideIcon } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import {
 	permissionActions,
@@ -25,7 +25,7 @@ export interface RoleDraft {
 }
 
 export function emptyGrants(): Grants {
-	return { application: {}, repository: {}, agent: {}, notification: {} };
+	return { application: {}, repository: {}, agent: {}, notification: {}, api_token: {} };
 }
 
 export function toDraft(role: Role | null): RoleDraft {
@@ -157,6 +157,7 @@ export const resourceIcons: Record<PermissionResource, LucideIcon> = {
 	repository: GitBranch,
 	agent: Server,
 	notification: Bell,
+	api_token: KeyRound,
 };
 
 export const resourceLabels: Record<PermissionResource, () => string> = {
@@ -164,6 +165,7 @@ export const resourceLabels: Record<PermissionResource, () => string> = {
 	repository: () => m.navRepositories(),
 	agent: () => m.navAgents(),
 	notification: () => m.navNotifications(),
+	api_token: () => m.apiTokens(),
 };
 
 export const allResourcesLabels: Record<PermissionResource, () => string> = {
@@ -171,6 +173,7 @@ export const allResourcesLabels: Record<PermissionResource, () => string> = {
 	repository: () => m.allRepositories(),
 	agent: () => m.allAgents(),
 	notification: () => m.allNotifications(),
+	api_token: () => m.ownApiTokens(),
 };
 
 export const actionLabels: Record<PermissionAction, () => string> = {
@@ -208,6 +211,8 @@ export function actionDescription(resource: PermissionResource, action: Permissi
 			return m.permissionAgentDeleteDescription();
 		case "notification.update":
 			return m.permissionNotificationUpdateDescription();
+		case "api_token.create":
+			return m.permissionApiTokenCreateDescription();
 		default:
 			return "";
 	}

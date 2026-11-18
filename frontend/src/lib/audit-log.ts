@@ -18,6 +18,7 @@ export enum TargetType {
 	User = "user",
 	OidcProvider = "oidc-provider",
 	Role = "role",
+	ApiToken = "api-token",
 }
 
 export enum EventType {
@@ -32,4 +33,5 @@ export enum EventType {
 	RolesUpdated = "roles-updated",
 	RolesSynced = "roles-synced",
 	MembersUpdated = "members-updated",
+	RevokedApiToken = "revoked-api-token",
 }

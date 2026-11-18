@@ -229,8 +229,11 @@ func TestRunMigrations_RolesKeepExistingAccess(t *testing.T) {
 		t.Fatalf("failed to count grants: %v", err)
 	}
 	want := 0
-	for _, actions := range models.PermissionActions {
-		want += len(actions)
+	for resource, actions := range models.PermissionActions {
+		// Added after roles and not granted to the user role.
+		if resource != models.ResourceAPIToken {
+			want += len(actions)
+		}
 	}
 	if grants != want {
 		t.Errorf("expected the user role to have %d grants, got %d", want, grants)
