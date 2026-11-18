@@ -6,6 +6,7 @@ type User struct {
 	Name                   string  `gorm:"type:text;not null"`
 	PasswordHash           *string `gorm:"type:text;"`
 	PasswordChangeRequired bool    `gorm:"type:integer;not null"`
+	LocalAuthEnabled       bool    `gorm:"type:integer;not null;default:0"`
 	TokenVersion           int64   `gorm:"type:integer;not null;default:0"`
 	// EmailUnconfirmed is set when users change their own email. Such an email
 	// is not trusted for linking an OIDC login to the account.

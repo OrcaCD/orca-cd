@@ -906,6 +906,9 @@ func TestSeedDemoData_SeedsExpectedRecords(t *testing.T) {
 	if err := gormDB.Where("email = ?", demoSeedUserEmail).First(&user).Error; err != nil {
 		t.Fatalf("failed to fetch demo user: %v", err)
 	}
+	if !user.LocalAuthEnabled {
+		t.Fatal("demo login account must be explicitly local")
+	}
 
 	var agent models.Agent
 	if err := gormDB.Where("id = ?", demoSeedAgentID).First(&agent).Error; err != nil {

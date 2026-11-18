@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -38,9 +39,10 @@ func createTestUser(t *testing.T, name string, email string, roleID string, pass
 	}
 
 	user := models.User{
-		Name:         name,
-		Email:        email,
-		PasswordHash: passwordHash,
+		Name:             name,
+		Email:            email,
+		PasswordHash:     passwordHash,
+		LocalAuthEnabled: passwordHash != nil,
 	}
 
 	if err := db.DB.WithContext(t.Context()).Create(&user).Error; err != nil {
@@ -267,6 +269,43 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	}
 	if updated.PasswordChangeRequired {
 		t.Fatal("expected passwordChangeRequired=false when resetPassword=false")
+	}
+}
+
+func TestAdminUserClassificationUsesLocalAuthEnabled(t *testing.T) {
+	for _, local := range []bool{true, false} {
+		t.Run(strconv.FormatBool(local), func(t *testing.T) {
+			setupTestDB(t)
+			user := models.User{Name: "Original", Email: "original@example.com", LocalAuthEnabled: local}
+			if !local {
+				user.PasswordHash = new("legacy-hash")
+			}
+			if err := gorm.G[models.User](db.DB).Create(t.Context(), &user); err != nil {
+				t.Fatal(err)
+			}
+			response := toAdminUserResponse(&user, nil, nil)
+			if (len(response.Providers) != 0) != local {
+				t.Fatalf("provider classification ignored LocalAuthEnabled: %v", response.Providers)
+			}
+			body, _ := json.Marshal(map[string]any{"name": "Renamed", "email": "renamed@example.com"})
+			router := gin.New()
+			router.PUT("/users/:id", AdminUpdateUserHandler)
+			req := httptest.NewRequest(http.MethodPut, "/users/"+user.Id, bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			want := http.StatusBadRequest
+			if local {
+				want = http.StatusOK
+			}
+			if w.Code != want {
+				t.Fatalf("local=%v: got %d, want %d: %s", local, w.Code, want, w.Body.String())
+			}
+			updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
+			if err != nil || (updated.Name == "Renamed") != local {
+				t.Fatalf("unexpected admin update: %+v %v", updated, err)
+			}
+		})
 	}
 }
 
