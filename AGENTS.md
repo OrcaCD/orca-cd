@@ -13,7 +13,7 @@ The goal of OrcaCD is to be a simple, self-hosted GitOps solution for Docker Com
 
 ## Prerequisites
 
-Backend: Go 1.27+, golangci-lint v2.14+, `just`, `buf`, `protoc-gen-go`, `gotestsum`.
+Backend: Go 1.27+, golangci-lint v2.14+, `just`, `buf`, `protoc-gen-go`, `gotestsum`. Optional: `air` for live reload.
 Frontend: Node.js 26.x, pnpm 12+.
 
 The Justfile loads `backend/.env` (copy from `backend/.env.dev.example`).
@@ -28,7 +28,7 @@ All backend commands are run from `backend/`. All frontend commands from `fronte
 just build          # proto + build hub and agent binaries → bin/
 just build-hub      # build hub only
 just build-agent    # build agent only
-just run            # run hub and agent in parallel
+just run            # run hub and agent in parallel (live reload via air when installed, else go run)
 just run-hub        # run hub (pass a subcommand: just run-hub help)
 just run-agent      # run agent
 just lint           # golangci-lint + go mod verify + buf lint

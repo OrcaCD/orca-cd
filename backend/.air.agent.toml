@@ -1,0 +1,26 @@
+# Live reload config for the agent, used by `just run-agent` when air is installed
+root = "."
+tmp_dir = "bin"
+
+[misc]
+startup_banner = ""
+
+[log]
+# Hide all of air's own logs; compiler errors and app output still show
+silent = true
+
+[build]
+# build.cmd is passed by the Justfile so it can share the version ldflags
+pre_cmd = ["buf generate"]
+entrypoint = ["./bin/agent"]
+include_ext = ["go", "proto"]
+exclude_dir = ["bin", "data", "cmd/hub", "internal/hub"]
+# Generated protobuf code is rewritten on every build, only react to real changes
+exclude_unchanged = true
+delay = 200
+log = "air-agent-errors.log"
+send_interrupt = true
+kill_delay = "10s"
+
+[build.windows]
+entrypoint = ["./bin/agent.exe"]
