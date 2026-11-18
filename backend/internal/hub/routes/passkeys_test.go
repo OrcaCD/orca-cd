@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,9 +74,9 @@ func passkeyRequest(t *testing.T, r *gin.Engine, path string, body any, cookie *
 	return w
 }
 
-func passkeyManagementProof(t *testing.T, user models.User) string {
+func passkeyManagementProof(t *testing.T, user models.User, action, passkeyID string) string {
 	t.Helper()
-	token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: "manage", User: user})
+	token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: "manage", User: user, Action: action, PasskeyID: passkeyID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func passkeyManagementProof(t *testing.T, user models.User) string {
 
 func deletePasskeyRequest(t *testing.T, r *gin.Engine, path string, user models.User) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(map[string]string{"verificationToken": passkeyManagementProof(t, user)})
+	body, err := json.Marshal(map[string]string{"verificationToken": passkeyManagementProof(t, user, "delete", path[strings.LastIndex(path, "/")+1:])})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +405,7 @@ func TestOwnPasskeyRegistrationAndRemoval(t *testing.T) {
 			t.Fatal("accepted an empty passkey name")
 		}
 	}
-	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup", "verificationToken": passkeyManagementProof(t, *current)}, nil)
+	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup", "verificationToken": passkeyManagementProof(t, *current, "add", "")}, nil)
 	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 	var backup testAuthenticator
 	w = passkeyRequest(t, r, "/own/finish", backup.registration(t, options, testBrowserOrigin, true), cookie)
@@ -430,7 +431,7 @@ func TestOwnPasskeyRegistrationAndRemoval(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w = passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Too many", "verificationToken": passkeyManagementProof(t, *current)}, nil)
+	w = passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Too many", "verificationToken": passkeyManagementProof(t, *current, "add", "")}, nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatal("allowed more than the credential limit")
 	}
@@ -453,7 +454,7 @@ func TestOwnRegistrationCannotSwitchAccount(t *testing.T) {
 	own := r.Group("/own", func(c *gin.Context) { setUserClaims(t, c, current) })
 	own.POST("/begin", BeginOwnPasskeyHandler)
 	own.POST("/finish", FinishOwnPasskeyHandler)
-	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Laptop", "verificationToken": passkeyManagementProof(t, u.User)}, nil)
+	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Laptop", "verificationToken": passkeyManagementProof(t, u.User, "add", "")}, nil)
 	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 	other := models.User{Name: "Other", Email: "other@example.com", LocalAuthEnabled: true}
 	if err := gorm.G[models.User](db.DB).Create(t.Context(), &other); err != nil {
@@ -517,7 +518,7 @@ func TestPasskeyManagementFailsClosedWhenStorageIsUnavailable(t *testing.T) {
 	if err := db.DB.Migrator().DropTable(&models.Passkey{}); err != nil {
 		t.Fatal(err)
 	}
-	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Laptop", "verificationToken": passkeyManagementProof(t, u.User)}, nil)
+	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Laptop", "verificationToken": passkeyManagementProof(t, u.User, "add", "")}, nil)
 	if w.Code != http.StatusInternalServerError || hasAuthCookie(w) {
 		t.Fatal("registered a key without credential storage")
 	}
@@ -701,7 +702,7 @@ func TestDuplicatePasskeyRegistrationReturnsBadRequest(t *testing.T) {
 	own := r.Group("/own", func(c *gin.Context) { setUserClaims(t, c, &user.User) })
 	own.POST("/begin", BeginOwnPasskeyHandler)
 	own.POST("/finish", FinishOwnPasskeyHandler)
-	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup", "verificationToken": passkeyManagementProof(t, user.User)}, nil)
+	w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup", "verificationToken": passkeyManagementProof(t, user.User, "add", "")}, nil)
 	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 	var backup testAuthenticator
 	response := backup.registration(t, options, testBrowserOrigin, true)
@@ -741,8 +742,8 @@ func TestPasskeyManagementRequiresFreshSingleUseVerification(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Fatal("session cookie alone authorized deleting a key")
 	}
-	verify := func() string {
-		w := passkeyRequest(t, r, "/own/verify/begin", nil, nil)
+	verify := func(action, passkeyID string) string {
+		w := passkeyRequest(t, r, "/own/verify/begin", map[string]any{"action": action, "passkeyId": passkeyID}, nil)
 		options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 		w = passkeyRequest(t, r, "/own/verify/finish", key.assertion(t, options, testBrowserOrigin, true), cookie)
 		if w.Code != http.StatusOK || hasAuthCookie(w) || w.Header().Get("Cache-Control") != "no-store" {
@@ -757,7 +758,7 @@ func TestPasskeyManagementRequiresFreshSingleUseVerification(t *testing.T) {
 		}
 		return result.VerificationToken
 	}
-	proof := verify()
+	proof := verify("add", "")
 	w = passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup", "verificationToken": proof}, nil)
 	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 	if w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Replay", "verificationToken": proof}, nil); w.Code != http.StatusForbidden {
@@ -779,17 +780,34 @@ func TestPasskeyManagementRequiresFreshSingleUseVerification(t *testing.T) {
 		}
 	}
 	assertAudit("passkey-added")
-	body, _ := json.Marshal(map[string]string{"verificationToken": verify()})
-	req := httptest.NewRequest(http.MethodDelete, "/own/keys/"+added.Id, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	deleteWithProof := func(id, proof string) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]string{"verificationToken": proof})
+		req := httptest.NewRequest(http.MethodDelete, "/own/keys/"+id, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	if w := deleteWithProof(added.Id, verify("add", "")); w.Code != http.StatusForbidden {
+		t.Fatal("an add proof authorized deleting a key")
+	}
+	original, err := gorm.G[models.Passkey](db.DB).Where("credential_id = ?", passkeys.CredentialID(key.id)).First(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := deleteWithProof(original.Id, verify("delete", added.Id)); w.Code != http.StatusForbidden {
+		t.Fatal("a delete proof authorized a different target key")
+	}
+	if w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Wrong action", "verificationToken": verify("delete", added.Id)}, nil); w.Code != http.StatusForbidden {
+		t.Fatal("a delete proof authorized adding a key")
+	}
+	w = deleteWithProof(added.Id, verify("delete", added.Id))
 	if w.Code != http.StatusOK {
 		t.Fatalf("verified deletion failed: %s", w.Body.String())
 	}
 	assertAudit("passkey-deleted")
 	for _, scenario := range []string{"account", "version", "purpose"} {
-		proof := passkeyManagementProof(t, user.User)
+		proof := passkeyManagementProof(t, user.User, "add", "")
 		switch scenario {
 		case "account":
 			other := models.User{Name: "Other", Email: "other@example.com", LocalAuthEnabled: true}
@@ -832,7 +850,7 @@ func TestPasskeyVerificationRejectsInvalidOrRevokedAssertions(t *testing.T) {
 			})
 			own.POST("/begin", BeginPasskeyVerificationHandler)
 			own.POST("/finish", FinishPasskeyVerificationHandler)
-			w := passkeyRequest(t, r, "/verify/begin", nil, nil)
+			w := passkeyRequest(t, r, "/verify/begin", map[string]any{"action": "add"}, nil)
 			options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
 			origin := testBrowserOrigin
 			switch scenario {
@@ -883,11 +901,19 @@ func TestPasskeyVerificationRequiresAvailableLocalAccountAndStorage(t *testing.T
 			setUserClaims(t, c, current)
 		}
 	}, BeginPasskeyVerificationHandler)
-	if w := passkeyRequest(t, r, "/verify", nil, nil); w.Code != http.StatusUnauthorized {
+	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil); w.Code != http.StatusUnauthorized {
 		t.Fatal("verification did not require authentication")
 	}
 	current = &user
-	if w := passkeyRequest(t, r, "/verify", nil, nil); w.Code != http.StatusBadRequest {
+	for _, body := range []map[string]any{{}, {"action": "delete"}, {"action": "add", "passkeyId": "unexpected"}, {"action": "rename"}} {
+		if w := passkeyRequest(t, r, "/verify", body, nil); w.Code != http.StatusBadRequest {
+			t.Fatal("accepted a missing or invalid key-management scope")
+		}
+	}
+	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "delete", "passkeyId": "missing"}, nil); w.Code != http.StatusNotFound {
+		t.Fatal("issued a delete proof for a missing key")
+	}
+	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil); w.Code != http.StatusBadRequest {
 		t.Fatal("started verification without an existing key")
 	}
 	for _, scenario := range []string{"demo", "disabled", "unconfigured", "account changed"} {
@@ -901,7 +927,7 @@ func TestPasskeyVerificationRequiresAvailableLocalAccountAndStorage(t *testing.T
 				t.Fatal(err)
 			}
 		}
-		w := passkeyRequest(t, r, "/verify", nil, nil)
+		w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil)
 		if w.Code != http.StatusForbidden && w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("started verification with %s", scenario)
 		}
@@ -910,8 +936,31 @@ func TestPasskeyVerificationRequiresAvailableLocalAccountAndStorage(t *testing.T
 	if err := db.DB.Migrator().DropTable(&models.Passkey{}); err != nil {
 		t.Fatal(err)
 	}
-	if w := passkeyRequest(t, r, "/verify", nil, nil); w.Code != http.StatusInternalServerError {
+	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil); w.Code != http.StatusInternalServerError {
 		t.Fatal("verification silently succeeded without credential storage")
+	}
+}
+
+func TestPasskeyRegistrationRejectsOversizedWebAuthnResponse(t *testing.T) {
+	r := setupPasskeyTest(t)
+	w := passkeyRequest(t, r, "/begin", map[string]any{"name": "Admin", "email": "admin@example.com", "setupCode": testSetupCode}, nil)
+	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+	var key testAuthenticator
+	response := key.registration(t, options, testBrowserOrigin, true)
+	client := response["response"].(map[string]any)
+	data, err := base64.RawURLEncoding.DecodeString(client["clientDataJSON"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Trailing JSON whitespace keeps the client data valid while exceeding 64 KiB.
+	client["clientDataJSON"] = b64(append(data, bytes.Repeat([]byte(" "), maxPasskeyResponseBytes)...))
+	w = passkeyRequest(t, r, "/finish", response, cookie)
+	if w.Code != http.StatusBadRequest || hasAuthCookie(w) {
+		t.Fatal("accepted an oversized WebAuthn response")
+	}
+	count, err := gorm.G[models.User](db.DB).Count(t.Context(), "*")
+	if err != nil || count != 0 {
+		t.Fatal("oversized registration created an account")
 	}
 }
 

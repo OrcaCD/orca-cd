@@ -26,6 +26,10 @@ var passkeySessions passkeys.Sessions
 
 const ceremonyCookieName = auth.CeremonyCookieName
 
+// WebAuthn responses need a tighter cap than the hub's general-purpose request
+// limit, which also accommodates deployment and configuration payloads.
+const maxPasskeyResponseBytes = 64 * 1024 // 64 KiB
+
 func InitPasskeys(appURL string) error {
 	wa, err := passkeys.New(appURL)
 	passkeyWebAuthn = wa
@@ -147,7 +151,7 @@ func BeginOwnPasskeyHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a passkey name is required"})
 		return
 	}
-	if !consumePasskeyVerification(c, current, req.VerificationToken) {
+	if !consumePasskeyVerification(c, current, req.VerificationToken, "add", "") {
 		return
 	}
 	user, err := passkeys.LoadUser(c.Request.Context(), db.DB, current.Id)
@@ -172,6 +176,24 @@ func BeginPasskeyVerificationHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
+	var req struct {
+		Action    string `json:"action" binding:"required,oneof=add delete"`
+		PasskeyID string `json:"passkeyId" binding:"max=128"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Action == "delete") != (req.PasskeyID != "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "choose a key-management action and a target for deletion"})
+		return
+	}
+	if req.Action == "delete" {
+		if _, err := gorm.G[models.Passkey](db.DB).Select("id").Where("id = ? AND user_id = ?", req.PasskeyID, current.Id).First(c.Request.Context()); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "passkey not found"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			}
+			return
+		}
+	}
 	user, err := passkeys.LoadUser(c.Request.Context(), db.DB, current.Id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -186,7 +208,7 @@ func BeginPasskeyVerificationHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "could not start passkey verification"})
 		return
 	}
-	saveCeremony(c, passkeys.Ceremony{Purpose: "verify", User: user.User, Session: *session}, options.Response)
+	saveCeremony(c, passkeys.Ceremony{Purpose: "verify", User: user.User, Session: *session, Action: req.Action, PasskeyID: req.PasskeyID}, options.Response)
 }
 
 func FinishPasskeyVerificationHandler(c *gin.Context) {
@@ -202,7 +224,7 @@ func FinishPasskeyVerificationHandler(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "passkey account mismatch"})
 		return
 	}
-	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, maxPasskeyResponseBytes))
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey verification failed"})
 		return
@@ -229,7 +251,7 @@ func FinishPasskeyVerificationHandler(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey verification failed"})
 		return
 	}
-	token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: "manage", User: ceremony.User})
+	token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: "manage", User: ceremony.User, Action: ceremony.Action, PasskeyID: ceremony.PasskeyID})
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many pending passkey requests"})
 		return
@@ -238,9 +260,9 @@ func FinishPasskeyVerificationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"verificationToken": token})
 }
 
-func consumePasskeyVerification(c *gin.Context, user *models.User, token string) bool {
+func consumePasskeyVerification(c *gin.Context, user *models.User, token, action, passkeyID string) bool {
 	proof, ok := passkeySessions.Take(token, "manage")
-	if !ok || proof.User.Id != user.Id || proof.User.TokenVersion != user.TokenVersion {
+	if !ok || proof.User.Id != user.Id || proof.User.TokenVersion != user.TokenVersion || proof.Action != action || proof.PasskeyID != passkeyID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "verify an existing passkey before changing your keys"})
 		return false
 	}
@@ -288,7 +310,7 @@ func finishRegistration(c *gin.Context, purpose string) {
 		}
 	}
 	ctx := c.Request.Context()
-	response, err := protocol.ParseCredentialCreationResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	response, err := protocol.ParseCredentialCreationResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, maxPasskeyResponseBytes))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "passkey registration failed, please try again"})
 		return
@@ -378,7 +400,7 @@ func FinishPasskeyLoginHandler(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10))
+	response, err := protocol.ParseCredentialRequestResponseBody(http.MaxBytesReader(c.Writer, c.Request.Body, maxPasskeyResponseBytes))
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "passkey authentication failed"})
 		return
@@ -469,7 +491,7 @@ func DeletePasskeyHandler(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "verify an existing passkey before changing your keys"})
 		return
 	}
-	if !consumePasskeyVerification(c, user, req.VerificationToken) {
+	if !consumePasskeyVerification(c, user, req.VerificationToken, "delete", c.Param("id")) {
 		return
 	}
 	ctx := c.Request.Context()
