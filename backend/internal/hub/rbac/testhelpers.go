@@ -47,6 +47,11 @@ func MigrateForTest(tx *gorm.DB) error {
 		return err
 	}
 	for _, resource := range models.PermissionResources {
+		// Like migration 000041: the user role got every permission that existed
+		// then. Creating API tokens came later and is not granted by default.
+		if resource == models.ResourceAPIToken {
+			continue
+		}
 		for _, action := range models.PermissionActions[resource] {
 			if err := gorm.G[models.RolePermission](tx).Create(ctx, &models.RolePermission{
 				RoleId:   UserRoleID,

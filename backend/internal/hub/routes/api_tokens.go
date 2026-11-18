@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -96,6 +97,14 @@ func CreateAPITokenHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	perms, ok := currentPermissions(c)
+	if !ok {
+		return
+	}
+	if scope, ok := ungrantedAPITokenScope(perms, scopes); ok {
+		respondForbidden(c, "you don't have the permission for scope "+string(scope))
+		return
+	}
 
 	now := time.Now()
 	if err := validateAPITokenExpiry(*req.ExpiresAt, now); err != nil {
@@ -165,8 +174,18 @@ func AdminRevokeAPITokenHandler(c *gin.Context) {
 }
 
 func revokeAPIToken(c *gin.Context, query gorm.ChainInterface[models.APIToken]) {
-	id := c.Param("id")
-	deleted, err := query.Delete(c.Request.Context())
+	ctx := c.Request.Context()
+	token, err := query.First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "api token not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+		return
+	}
+
+	deleted, err := gorm.G[models.APIToken](db.DB).Where("id = ?", token.Id).Delete(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
@@ -176,13 +195,14 @@ func revokeAPIToken(c *gin.Context, query gorm.ChainInterface[models.APIToken]) 
 		return
 	}
 
-	utils.RecordAuditLog(c, "revoked", "api-token", id)
+	// The token is deleted, so the entry points at its owner to keep that known.
+	utils.RecordAuditLog(c, "revoked-api-token", "user", token.UserId)
 
 	c.JSON(http.StatusOK, gin.H{"message": "api token revoked"})
 }
 
 // normalizeAPITokenScopes rejects unknown scopes and returns the rest without
-// duplicates, in the order of models.APITokenScopes.
+// duplicates, in the order of models.AllAPITokenScopes.
 func normalizeAPITokenScopes(requested []models.APITokenScope) ([]models.APITokenScope, error) {
 	if len(requested) == 0 {
 		return nil, errors.New("at least one scope is required")
@@ -194,12 +214,31 @@ func normalizeAPITokenScopes(requested []models.APITokenScope) ([]models.APIToke
 	}
 
 	scopes := make([]models.APITokenScope, 0, len(requested))
-	for _, scope := range models.APITokenScopes() {
+	for _, scope := range models.AllAPITokenScopes() {
 		if slices.Contains(requested, scope) {
 			scopes = append(scopes, scope)
 		}
 	}
 	return scopes, nil
+}
+
+// ungrantedAPITokenScope returns the first scope the user is not allowed to give
+// a token, as a token can never do more than its owner. A permission on single
+// resources is enough, the token is then limited to those when it is used.
+func ungrantedAPITokenScope(perms *rbac.Permissions, scopes []models.APITokenScope) (models.APITokenScope, bool) {
+	for _, scope := range scopes {
+		if scope == models.APITokenScopeAdmin {
+			if !perms.IsAdmin() {
+				return scope, true
+			}
+			continue
+		}
+		resource, action, _ := scope.Permission()
+		if !perms.CanAny(resource, action) {
+			return scope, true
+		}
+	}
+	return "", false
 }
 
 // maxAPITokenExpiry is a year and a day from now, so a date picker that offers "one

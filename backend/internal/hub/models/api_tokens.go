@@ -28,11 +28,15 @@ func (s APITokenScope) Permission() (PermissionResource, PermissionAction, bool)
 	return PermissionResource(resource), PermissionAction(action), true
 }
 
-// APITokenScopes lists every valid scope in display order: the admin scope,
-// then the permissions in the order of PermissionResources and PermissionActions.
-func APITokenScopes() []APITokenScope {
+// AllAPITokenScopes lists every scope a token can be given, in display order:
+// the admin scope, then the permissions in the order of PermissionResources and
+// PermissionActions. A token gets only the scopes it was created with.
+func AllAPITokenScopes() []APITokenScope {
 	scopes := []APITokenScope{APITokenScopeAdmin}
 	for _, resource := range PermissionResources {
+		if resource == ResourceAPIToken {
+			continue
+		}
 		for _, action := range PermissionActions[resource] {
 			scopes = append(scopes, NewAPITokenScope(resource, action))
 		}
@@ -45,7 +49,8 @@ func IsValidAPITokenScope(scope APITokenScope) bool {
 		return true
 	}
 	resource, action, ok := scope.Permission()
-	return ok && IsValidPermission(resource, action)
+	// A token cannot create other tokens.
+	return ok && resource != ResourceAPIToken && IsValidPermission(resource, action)
 }
 
 // APIToken is a personal access token a user calls the REST API with. A token

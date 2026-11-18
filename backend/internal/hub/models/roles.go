@@ -13,6 +13,9 @@ const (
 	ResourceRepository   PermissionResource = "repository"
 	ResourceAgent        PermissionResource = "agent"
 	ResourceNotification PermissionResource = "notification"
+	// ResourceAPIToken only has the create action. It lets users create API
+	// tokens for themselves, with at most their own permissions.
+	ResourceAPIToken PermissionResource = "api_token"
 )
 
 // PermissionAction is something a role allows to do with a resource.
@@ -35,6 +38,7 @@ var PermissionResources = []PermissionResource{
 	ResourceRepository,
 	ResourceAgent,
 	ResourceNotification,
+	ResourceAPIToken,
 }
 
 // PermissionActions lists the actions each resource type supports, in display order.
@@ -43,6 +47,7 @@ var PermissionActions = map[PermissionResource][]PermissionAction{
 	ResourceRepository:   {ActionRead, ActionCreate, ActionUpdate, ActionDelete, ActionSync},
 	ResourceAgent:        {ActionRead, ActionCreate, ActionUpdate, ActionDelete},
 	ResourceNotification: {ActionRead, ActionCreate, ActionUpdate, ActionDelete},
+	ResourceAPIToken:     {ActionCreate},
 }
 
 // IsValidPermission reports whether the action exists for the resource type.

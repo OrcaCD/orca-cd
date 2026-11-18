@@ -67,10 +67,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/auth/logout", routes.LogoutHandler)
 			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
 
-			// Only admins can create API tokens, but everyone can see and revoke their
-			// own, for example after losing the admin role.
+			// Creating API tokens needs a permission, but everyone can see and revoke
+			// their own, for example after losing it.
 			protected.GET("/api-tokens", routes.ListAPITokensHandler)
-			protected.POST("/api-tokens", middleware.RequireAdmin(), routes.CreateAPITokenHandler)
+			protected.POST("/api-tokens", middleware.RequirePermission(models.ResourceAPIToken, models.ActionCreate), routes.CreateAPITokenHandler)
 			protected.DELETE("/api-tokens/:id", routes.RevokeAPITokenHandler)
 
 			// List endpoints filter by what the user can read, the others check the

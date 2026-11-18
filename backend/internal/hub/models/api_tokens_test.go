@@ -48,6 +48,7 @@ func TestIsValidAPITokenScope(t *testing.T) {
 		{"notification:read", true},
 		{"agent:deploy", false},
 		{"application:sync", false},
+		{"api_token:create", false},
 		{"cluster:read", false},
 		{"application", false},
 		{"Admin", false},
@@ -64,6 +65,9 @@ func TestIsValidAPITokenScope(t *testing.T) {
 
 func TestIsValidAPITokenScope_AllPermissions(t *testing.T) {
 	for resource, actions := range PermissionActions {
+		if resource == ResourceAPIToken {
+			continue
+		}
 		for _, action := range actions {
 			if scope := NewAPITokenScope(resource, action); !IsValidAPITokenScope(scope) {
 				t.Errorf("expected scope %q to be valid", scope)
@@ -72,8 +76,8 @@ func TestIsValidAPITokenScope_AllPermissions(t *testing.T) {
 	}
 }
 
-func TestAPITokenScopes(t *testing.T) {
-	scopes := APITokenScopes()
+func TestAllAPITokenScopes(t *testing.T) {
+	scopes := AllAPITokenScopes()
 
 	if scopes[0] != APITokenScopeAdmin {
 		t.Errorf("expected the admin scope first, got %q", scopes[0])
@@ -83,8 +87,10 @@ func TestAPITokenScopes(t *testing.T) {
 	}
 
 	want := 1
-	for _, actions := range PermissionActions {
-		want += len(actions)
+	for resource, actions := range PermissionActions {
+		if resource != ResourceAPIToken {
+			want += len(actions)
+		}
 	}
 	if len(scopes) != want {
 		t.Errorf("expected %d scopes, got %d", want, len(scopes))

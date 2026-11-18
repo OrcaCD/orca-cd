@@ -18,6 +18,7 @@ function getBadgeVariant(type: string): Parameters<typeof Badge>[0]["variant"] {
 		case "deleted":
 		case "rotated-token":
 		case "revoked-sessions":
+		case "revoked-api-token":
 		case "disabled-image-webhook":
 			return "destructive";
 		case "updated-environment":

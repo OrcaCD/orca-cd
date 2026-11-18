@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,16 +34,20 @@ func setupAPITokensTestDB(t *testing.T) {
 }
 
 // newAPITokensRouter registers the API token routes like RegisterRoutes does,
-// with user as the authenticated user.
-func newAPITokensRouter(user *models.User) *gin.Engine {
+// with user as the authenticated user. Without perms, the permissions of the
+// user's roles are loaded from the database.
+func newAPITokensRouter(user *models.User, perms *rbac.Permissions) *gin.Engine {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		auth.SetClaims(c, &auth.UserClaims{Subject: user.Id})
 		auth.SetUser(c, user)
+		if perms != nil {
+			rbac.Set(c, perms)
+		}
 		c.Next()
 	})
 	router.GET("/api/v1/api-tokens", ListAPITokensHandler)
-	router.POST("/api/v1/api-tokens", middleware.RequireAdmin(), CreateAPITokenHandler)
+	router.POST("/api/v1/api-tokens", middleware.RequirePermission(models.ResourceAPIToken, models.ActionCreate), CreateAPITokenHandler)
 	router.DELETE("/api/v1/api-tokens/:id", RevokeAPITokenHandler)
 	router.GET("/api/v1/admin/api-tokens", middleware.RequireAdmin(), AdminListAPITokensHandler)
 	router.DELETE("/api/v1/admin/api-tokens/:id", middleware.RequireAdmin(), AdminRevokeAPITokenHandler)
@@ -50,6 +55,11 @@ func newAPITokensRouter(user *models.User) *gin.Engine {
 }
 
 func serveAPITokenRequest(t *testing.T, user *models.User, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	return serveAPITokenRequestWith(t, user, nil, method, path, body)
+}
+
+func serveAPITokenRequestWith(t *testing.T, user *models.User, perms *rbac.Permissions, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var reader *bytes.Reader
 	if body != nil {
@@ -64,7 +74,7 @@ func serveAPITokenRequest(t *testing.T, user *models.User, method, path string, 
 	req := httptest.NewRequest(method, path, reader)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	newAPITokensRouter(user).ServeHTTP(w, req)
+	newAPITokensRouter(user, perms).ServeHTTP(w, req)
 	return w
 }
 
@@ -102,10 +112,10 @@ func apiTokenExists(t *testing.T, id string) bool {
 	return count > 0
 }
 
-func countAPITokenAuditLogs(t *testing.T, eventType, tokenID string) int64 {
+func countAuditLogs(t *testing.T, eventType, targetType, targetID string) int64 {
 	t.Helper()
 	count, err := gorm.G[models.AuditLog](db.DB).
-		Where("event_type = ? AND target_type = ? AND target_id = ?", eventType, "api-token", tokenID).
+		Where("event_type = ? AND target_type = ? AND target_id = ?", eventType, targetType, targetID).
 		Count(t.Context(), "*")
 	if err != nil {
 		t.Fatalf("failed to count audit logs: %v", err)
@@ -156,13 +166,14 @@ func TestCreateAPITokenHandler_Success(t *testing.T) {
 	if stored.TokenHash != apitoken.Hash(resp.Token) || stored.TokenHash == resp.Token {
 		t.Error("expected only the hash of the token to be stored")
 	}
-	if countAPITokenAuditLogs(t, "created", resp.Id) != 1 {
+	if countAuditLogs(t, "created", "api-token", resp.Id) != 1 {
 		t.Error("expected an audit log entry")
 	}
 }
 
-func TestCreateAPITokenHandler_RequiresAdmin(t *testing.T) {
+func TestCreateAPITokenHandler_RequiresPermission(t *testing.T) {
 	setupAPITokensTestDB(t)
+	// The user role has every other permission, but not this one by default.
 	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "")
 
 	w := serveAPITokenRequest(t, &user, http.MethodPost, "/api/v1/api-tokens", validCreateAPITokenBody())
@@ -172,6 +183,39 @@ func TestCreateAPITokenHandler_RequiresAdmin(t *testing.T) {
 	count, err := gorm.G[models.APIToken](db.DB).Count(t.Context(), "*")
 	if err != nil || count != 0 {
 		t.Fatalf("expected no token to be created, count=%d err=%v", count, err)
+	}
+}
+
+func TestCreateAPITokenHandler_ScopesLimitedToOwnPermissions(t *testing.T) {
+	setupAPITokensTestDB(t)
+	user := createTestUser(t, "User", "user@example.com", "", "")
+	perms := rbac.New([]models.RolePermission{
+		grantAll(models.ResourceAPIToken, models.ActionCreate),
+		grantAll(models.ResourceRepository, models.ActionRead),
+		grantOn(models.ResourceApplication, models.ActionDeploy, "app-1"),
+	})
+
+	tests := []struct {
+		name     string
+		scopes   []string
+		wantCode int
+	}{
+		{"permission on all resources", []string{"repository:read"}, http.StatusCreated},
+		{"permission on a single resource", []string{"application:deploy"}, http.StatusCreated},
+		{"implied read", []string{"application:read"}, http.StatusCreated},
+		{"missing permission", []string{"repository:read", "repository:delete"}, http.StatusForbidden},
+		{"admin scope", []string{"admin"}, http.StatusForbidden},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := validCreateAPITokenBody()
+			body["name"] = "Token " + strconv.Itoa(i)
+			body["scopes"] = tt.scopes
+			w := serveAPITokenRequestWith(t, &user, perms, http.MethodPost, "/api/v1/api-tokens", body)
+			if w.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tt.wantCode, w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
@@ -189,6 +233,7 @@ func TestCreateAPITokenHandler_InvalidRequests(t *testing.T) {
 		{"missing scopes", func(b map[string]any) { delete(b, "scopes") }},
 		{"no scopes", func(b map[string]any) { b["scopes"] = []string{} }},
 		{"unknown scope", func(b map[string]any) { b["scopes"] = []string{"application:deploy", "agent:deploy"} }},
+		{"token creation scope", func(b map[string]any) { b["scopes"] = []string{"api_token:create"} }},
 		{"missing expiry", func(b map[string]any) { delete(b, "expiresAt") }},
 		{"invalid expiry", func(b map[string]any) { b["expiresAt"] = "next week" }},
 		{"expiry in the past", func(b map[string]any) { b["expiresAt"] = time.Now().Add(-time.Minute).Format(time.RFC3339) }},
@@ -291,8 +336,8 @@ func TestRevokeAPITokenHandler(t *testing.T) {
 	if apiTokenExists(t, own.Id) {
 		t.Fatal("expected the token to be deleted")
 	}
-	if countAPITokenAuditLogs(t, "revoked", own.Id) != 1 {
-		t.Error("expected an audit log entry")
+	if countAuditLogs(t, "revoked-api-token", "user", user.Id) != 1 {
+		t.Error("expected an audit log entry for the owner")
 	}
 
 	w = serveAPITokenRequest(t, &user, http.MethodDelete, "/api/v1/api-tokens/"+own.Id, nil)
@@ -342,8 +387,8 @@ func TestAdminRevokeAPITokenHandler(t *testing.T) {
 	if apiTokenExists(t, token.Id) {
 		t.Fatal("expected the token to be deleted")
 	}
-	if countAPITokenAuditLogs(t, "revoked", token.Id) != 1 {
-		t.Error("expected an audit log entry")
+	if countAuditLogs(t, "revoked-api-token", "user", user.Id) != 1 {
+		t.Error("expected an audit log entry for the owner")
 	}
 
 	w = serveAPITokenRequest(t, &admin, http.MethodDelete, "/api/v1/admin/api-tokens/unknown", nil)
