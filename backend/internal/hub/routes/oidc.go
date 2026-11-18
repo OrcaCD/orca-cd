@@ -14,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/oidc"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
@@ -66,12 +67,14 @@ func OIDCCallbackHandler(c *gin.Context) {
 	code := c.Query("code")
 	stateParam := c.Query("state")
 	if code == "" || stateParam == "" {
+		failOIDCLogin(c, providerId, "invalid_callback")
 		c.Redirect(http.StatusFound, "/login?error=invalid_callback")
 		return
 	}
 
 	encryptedState, err := c.Cookie(oidc.StateCookieName())
 	if err != nil {
+		failOIDCLogin(c, providerId, "missing_state")
 		c.Redirect(http.StatusFound, "/login?error=missing_state")
 		return
 	}
@@ -82,6 +85,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 
 	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ? AND enabled = ?", providerId, true).First(c.Request.Context())
 	if err != nil {
+		failOIDCLogin(c, providerId, "provider_not_found")
 		c.Redirect(http.StatusFound, "/login?error=provider_not_found")
 		return
 	}
@@ -89,6 +93,7 @@ func OIDCCallbackHandler(c *gin.Context) {
 	oidcUser, err := oidc.HandleCallback(c.Request.Context(), &provider, OIDCAppURL, code, stateParam, encryptedState)
 	if err != nil {
 		if errors.Is(err, oidc.ErrEmailNotVerified) {
+			failOIDCLogin(c, provider.Id, "email_not_verified")
 			c.Redirect(http.StatusFound, "/login?error=email_not_verified")
 			return
 		}
@@ -97,12 +102,14 @@ func OIDCCallbackHandler(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/login?error=role_sync_failed")
 			return
 		}
+		failOIDCLogin(c, provider.Id, "authentication_failed")
 		c.Redirect(http.StatusFound, "/login?error=authentication_failed")
 		return
 	}
 
 	user, rolesChanged, redirectError := resolveOIDCUser(c.Request.Context(), &provider, oidcUser)
 	if redirectError != "" {
+		failOIDCLogin(c, provider.Id, redirectError, "email", oidcUser.Email)
 		c.Redirect(http.StatusFound, "/login?error="+redirectError)
 		return
 	}
@@ -117,8 +124,13 @@ func OIDCCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	seclog.Info(c, seclog.OIDCLoginSuccess, "user_id", user.Id, "provider_id", provider.Id)
 	auth.SetAuthCookie(c, token)
 	c.Redirect(http.StatusFound, "/")
+}
+
+func failOIDCLogin(c *gin.Context, providerId, reason string, fields ...any) {
+	seclog.Warn(c, seclog.OIDCLoginFailed, append([]any{"reason", reason, "provider_id", providerId}, fields...)...)
 }
 
 // resolveOIDCUser finds or creates the user of an OIDC login and updates the

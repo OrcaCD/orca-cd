@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,6 +23,7 @@ func RequireAdmin() gin.HandlerFunc {
 		}
 
 		if !perms.IsAdmin() {
+			seclog.Warn(c, seclog.AccessDenied, "reason", "admin_required")
 			c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 			c.Abort()
 			return
