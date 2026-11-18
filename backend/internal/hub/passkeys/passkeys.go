@@ -18,6 +18,8 @@ import (
 
 const MaxCredentials = 20
 
+var ErrCredentialLimit = errors.New("passkey limit reached")
+
 type User struct {
 	models.User
 	Credentials []webauthn.Credential
@@ -55,15 +57,26 @@ func LoadUser(ctx context.Context, database *gorm.DB, id string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	rows, err := gorm.G[models.Passkey](database).Where("user_id = ?", id).Find(ctx)
+	// Decode each row separately so one damaged credential cannot hide healthy keys.
+	type storedCredential struct {
+		Id         string
+		Credential string
+	}
+	rows, err := gorm.G[storedCredential](database).Table("passkeys").Select("id", "credential").Where("user_id = ?", id).Find(ctx)
 	if err != nil {
 		return User{}, err
 	}
 	user := User{User: u}
 	for _, row := range rows {
+		var data crypto.EncryptedString
 		var credential webauthn.Credential
-		if err := json.Unmarshal([]byte(row.Credential), &credential); err != nil {
-			return User{}, err
+		err := data.Scan(row.Credential)
+		if err == nil {
+			err = json.Unmarshal([]byte(data), &credential)
+		}
+		if err != nil {
+			database.Logger.Error(ctx, "skipping unreadable passkey %s for user %s: %v", row.Id, id, err)
+			continue
 		}
 		user.Credentials = append(user.Credentials, credential)
 	}
@@ -73,19 +86,22 @@ func LoadUser(ctx context.Context, database *gorm.DB, id string) (User, error) {
 func CredentialID(id []byte) string { return base64.RawURLEncoding.EncodeToString(id) }
 
 func SaveCredential(ctx context.Context, database *gorm.DB, userID, name string, credential *webauthn.Credential) error {
-	count, err := gorm.G[models.Passkey](database).Where("user_id = ?", userID).Count(ctx, "*")
-	if err != nil {
-		return err
-	}
-	if count >= MaxCredentials {
-		return errors.New("passkey limit reached")
-	}
 	data, err := json.Marshal(credential)
 	if err != nil {
 		return err
 	}
-	return gorm.G[models.Passkey](database).Create(ctx, &models.Passkey{
-		UserId: userID, Name: name, CredentialId: CredentialID(credential.ID), Credential: crypto.EncryptedString(data),
+	return database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// SQLite's immediate transactions serialize the count with the insert.
+		count, err := gorm.G[models.Passkey](tx).Where("user_id = ?", userID).Count(ctx, "*")
+		if err != nil {
+			return err
+		}
+		if count >= MaxCredentials {
+			return ErrCredentialLimit
+		}
+		return gorm.G[models.Passkey](tx).Create(ctx, &models.Passkey{
+			UserId: userID, Name: name, CredentialId: CredentialID(credential.ID), Credential: crypto.EncryptedString(data),
+		})
 	})
 }
 

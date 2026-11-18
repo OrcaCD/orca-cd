@@ -1,7 +1,12 @@
 package passkeys
 
 import (
+	"bytes"
+	"errors"
+	"log"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +18,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func TestOriginAndVerificationPolicy(t *testing.T) {
@@ -171,5 +177,155 @@ func TestEnrollmentAndCredentialStorage(t *testing.T) {
 	}
 	if err := UpdateCredential(ctx, database, u.Id, credential); err == nil {
 		t.Fatal("recreated deleted credential")
+	}
+}
+
+func credentialTestDB(t *testing.T) (*gorm.DB, models.User) {
+	t.Helper()
+	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
+		t.Fatal(err)
+	}
+	database, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "credentials.db")+"?_txlock=immediate&_busy_timeout=5000&_journal_mode=WAL"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(10)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := database.AutoMigrate(&models.User{}, &models.Passkey{}); err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Name: "Test", Email: "test@example.com"}
+	if err := gorm.G[models.User](database).Create(t.Context(), &user); err != nil {
+		t.Fatal(err)
+	}
+	return database, user
+}
+
+func TestSaveCredentialEnforcesPerUserLimit(t *testing.T) {
+	database, user := credentialTestDB(t)
+	for i := range MaxCredentials {
+		if err := SaveCredential(t.Context(), database, user.Id, "Key", &webauthn.Credential{ID: []byte(strconv.Itoa(i))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := SaveCredential(t.Context(), database, user.Id, "Extra", &webauthn.Credential{ID: []byte("extra")}); !errors.Is(err, ErrCredentialLimit) {
+		t.Fatalf("expected credential limit, got %v", err)
+	}
+	count, err := gorm.G[models.Passkey](database).Where("user_id = ?", user.Id).Count(t.Context(), "*")
+	if err != nil || count != MaxCredentials {
+		t.Fatalf("unexpected credential count: %d, %v", count, err)
+	}
+	other := models.User{Name: "Other", Email: "other@example.com"}
+	if err := gorm.G[models.User](database).Create(t.Context(), &other); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCredential(t.Context(), database, other.Id, "Other key", &webauthn.Credential{ID: []byte("other")}); err != nil {
+		t.Fatalf("one user's limit blocked another: %v", err)
+	}
+}
+
+func TestConcurrentCredentialRegistrationsCannotExceedLimit(t *testing.T) {
+	database, user := credentialTestDB(t)
+	for i := range MaxCredentials - 1 {
+		if err := SaveCredential(t.Context(), database, user.Id, "Key", &webauthn.Credential{ID: []byte(strconv.Itoa(i))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const contenders = 8
+	start := make(chan struct{})
+	results := make(chan error, contenders)
+	var workers sync.WaitGroup
+	for i := range contenders {
+		workers.Go(func() {
+			<-start
+			results <- SaveCredential(t.Context(), database, user.Id, "Concurrent", &webauthn.Credential{ID: []byte("concurrent-" + strconv.Itoa(i))})
+		})
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		} else if !errors.Is(err, ErrCredentialLimit) {
+			t.Fatalf("unexpected registration error: %v", err)
+		}
+	}
+	count, err := gorm.G[models.Passkey](database).Where("user_id = ?", user.Id).Count(t.Context(), "*")
+	if err != nil || successes != 1 || count != MaxCredentials {
+		t.Fatalf("limit was not atomic: successes=%d count=%d err=%v", successes, count, err)
+	}
+}
+
+func TestSaveCredentialPreservesCallerTransactionAndRejectsDuplicates(t *testing.T) {
+	database, user := credentialTestDB(t)
+	credential := &webauthn.Credential{ID: []byte("key")}
+	rollback := errors.New("rollback account creation")
+	err := database.Transaction(func(tx *gorm.DB) error {
+		if err := SaveCredential(t.Context(), tx, user.Id, "Key", credential); err != nil {
+			return err
+		}
+		return rollback
+	})
+	if !errors.Is(err, rollback) {
+		t.Fatal(err)
+	}
+	count, err := gorm.G[models.Passkey](database).Count(t.Context(), "*")
+	if err != nil || count != 0 {
+		t.Fatal("credential escaped the caller's rollback")
+	}
+	if err := SaveCredential(t.Context(), database, user.Id, "Key", credential); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCredential(t.Context(), database, user.Id, "Duplicate", credential); err == nil {
+		t.Fatal("accepted a duplicate credential ID")
+	}
+}
+
+func TestLoadUserSkipsCorruptCredentialsAndLogsTheirIDs(t *testing.T) {
+	database, user := credentialTestDB(t)
+	var logs bytes.Buffer
+	database.Logger = gormlogger.New(log.New(&logs, "", 0), gormlogger.Config{LogLevel: gormlogger.Error})
+	for _, id := range []string{"healthy", "backup", "invalid-ciphertext"} {
+		if err := SaveCredential(t.Context(), database, user.Id, id, &webauthn.Credential{ID: []byte(id), PublicKey: []byte("public-key")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	malformed := models.Passkey{UserId: user.Id, Name: "Malformed", CredentialId: "malformed", Credential: crypto.EncryptedString("{not-json-sensitive}")}
+	if err := gorm.G[models.Passkey](database).Create(t.Context(), &malformed); err != nil {
+		t.Fatal(err)
+	}
+	// Bypass EncryptedString.Value to simulate damaged ciphertext on disk.
+	if err := database.Exec("UPDATE passkeys SET credential = ? WHERE credential_id = ?", "damaged-ciphertext-sensitive", CredentialID([]byte("invalid-ciphertext"))).Error; err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadUser(t.Context(), database, user.Id)
+	if err != nil || len(loaded.Credentials) != 2 {
+		t.Fatalf("a damaged row hid healthy credentials: count=%d err=%v", len(loaded.Credentials), err)
+	}
+	for _, credential := range loaded.Credentials {
+		if string(credential.ID) != "healthy" && string(credential.ID) != "backup" {
+			t.Fatal("loaded a corrupt credential")
+		}
+	}
+	if strings.Count(logs.String(), "skipping unreadable passkey") != 2 || !strings.Contains(logs.String(), malformed.Id) || !strings.Contains(logs.String(), user.Id) {
+		t.Fatalf("missing corruption diagnostics: %s", logs.String())
+	}
+	for _, sensitive := range []string{"{not-json-sensitive}", "damaged-ciphertext-sensitive", "public-key"} {
+		if strings.Contains(logs.String(), sensitive) {
+			t.Fatal("credential contents appeared in diagnostics")
+		}
+	}
+	if _, err := gorm.G[models.Passkey](database).Where("credential_id IN ?", []string{CredentialID([]byte("healthy")), CredentialID([]byte("backup"))}).Delete(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = LoadUser(t.Context(), database, user.Id)
+	if err != nil || len(loaded.Credentials) != 0 {
+		t.Fatal("an account with only corrupt rows must have no usable credentials")
 	}
 }

@@ -192,8 +192,8 @@ func TestBlockingVariants_WaitForSlot(t *testing.T) {
 	go func() { checkDone <- CheckPassword("securepassword123", hash) }()
 
 	select {
-	case <-hashDone:
-		t.Fatal("HashPassword() returned while all slots were held")
+	case err := <-hashDone:
+		t.Fatalf("HashPassword() returned while all slots were held: %v", err)
 	case <-checkDone:
 		t.Fatal("CheckPassword() returned while all slots were held")
 	case <-time.After(100 * time.Millisecond):
