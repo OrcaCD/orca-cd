@@ -21,6 +21,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/gin-gonic/gin"
@@ -214,6 +215,39 @@ func TestPasskeysSetupLoginAndReplay(t *testing.T) {
 	admin, err := userIsAdmin(t, user.Id)
 	if err != nil || !admin {
 		t.Fatal("setup must assign admin role")
+	}
+}
+
+func TestPasskeySecurityEventsPreserveLoginAndRegistrationSignals(t *testing.T) {
+	r := setupPasskeyTest(t)
+	events := seclog.CaptureForTest(t)
+	w := passkeyRequest(t, r, "/begin", map[string]any{"name": "Admin", "email": "admin@example.com", "setupCode": "invalid"}, nil)
+	if w.Code != http.StatusForbidden || !events.Has(seclog.SetupCodeFailed, "") {
+		t.Fatal("invalid setup did not emit a security event")
+	}
+	key := registerTestPasskey(t, r)
+	if !events.Has(seclog.RegistrationSuccess, "") {
+		t.Fatal("passkey registration did not emit a security event")
+	}
+	w = passkeyRequest(t, r, "/login/begin", nil, nil)
+	options, cookie := decodeOptions(t, w), ceremonyCookie(t, w)
+	w = passkeyRequest(t, r, "/login/finish", key.assertion(t, options, testBrowserOrigin, false), cookie)
+	if w.Code != http.StatusUnauthorized || !events.Has(seclog.LoginFailed, "invalid_passkey_assertion") {
+		t.Fatal("an invalid assertion did not emit a login failure")
+	}
+	w = passkeyRequest(t, r, "/login/begin", nil, nil)
+	options, cookie = decodeOptions(t, w), ceremonyCookie(t, w)
+	w = passkeyRequest(t, r, "/login/finish", key.assertion(t, options, testBrowserOrigin, true), cookie)
+	if w.Code != http.StatusOK || !events.Has(seclog.LoginSuccess, "") {
+		t.Fatal("passkey login did not emit a success event")
+	}
+	LocalAuthDisabled = true
+	w = passkeyRequest(t, r, "/login/begin", nil, nil)
+	if w.Code != http.StatusForbidden || !events.Has(seclog.LoginFailed, "local_auth_disabled") {
+		t.Fatal("disabled local auth did not emit a security event")
+	}
+	if strings.Contains(events.String(), cookie.Value) || strings.Contains(events.String(), testSetupCode) {
+		t.Fatal("security events exposed authentication secrets")
 	}
 }
 
