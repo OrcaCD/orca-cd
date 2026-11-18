@@ -43,7 +43,7 @@ type APIToken struct {
 	UserId string `gorm:"type:text;not null"`
 	User   *User  `gorm:"foreignKey:UserId"`
 	Name   string `gorm:"type:text;not null"`
-	// TokenHash is the SHA-256 hash of the plain token, which is never stored.
+	// TokenHash is the SHA-512 hash of the plain token, which is never stored.
 	TokenHash string `gorm:"type:text;not null;uniqueIndex"`
 	// Prefix is the start of the plain token, so users can tell their tokens apart.
 	Prefix     string          `gorm:"type:text;not null"`

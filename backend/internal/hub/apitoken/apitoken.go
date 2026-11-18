@@ -1,15 +1,15 @@
 // Package apitoken creates the personal access tokens users call the REST API
 // with, and the hashes they are stored as.
 //
-// A token is "orca_" followed by 32 random bytes in base64url. The tokens are
-// random and long, so a plain SHA-256 hash is enough to store them; a slow
+// A token is "orca_" followed by 64 random bytes in base64url. The tokens are
+// random and long, so a plain SHA-512 hash is enough to store them; a slow
 // password hash would only make every API request slower. The hash does not
 // depend on the app secret, so rotating the key keeps the tokens working.
 package apitoken
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"strings"
@@ -18,7 +18,7 @@ import (
 const (
 	Prefix = "orca_"
 
-	secretBytes = 32
+	secretBytes = 64
 	// displayLength is how much of the token is kept as its prefix, so users can
 	// tell their tokens apart without the prefix being guessable.
 	displayLength = len(Prefix) + 8
@@ -48,7 +48,7 @@ func Generate() Token {
 }
 
 func Hash(plain string) string {
-	sum := sha256.Sum256([]byte(plain))
+	sum := sha512.Sum512([]byte(plain))
 	return hex.EncodeToString(sum[:])
 }
 

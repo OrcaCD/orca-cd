@@ -40,7 +40,7 @@ func TestGenerate_Unique(t *testing.T) {
 }
 
 func TestHash(t *testing.T) {
-	const want = "439cc06b8feb704e6a255e22669d10965d08ae9807abc8e3bde3a34cec410420" // sha256("orca_test")
+	const want = "9d55affbb61b5b31bb8a2fe826662b611ca20980fb2d0fbbc6e90d7fb6bf543238081e8e5d7a426848647b49aaa14fb36e751495b7e1a3012b95b32f6231d2e2" // sha512("orca_test")
 
 	if got := Hash("orca_test"); got != want {
 		t.Errorf("Hash() = %q, want %q", got, want)
