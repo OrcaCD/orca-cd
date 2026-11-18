@@ -1,7 +1,12 @@
 import { fetcher } from "./api";
 import { m } from "@/lib/paraglide/messages";
 
-export type PermissionResource = "application" | "repository" | "agent" | "notification";
+export type PermissionResource =
+	| "application"
+	| "repository"
+	| "agent"
+	| "notification"
+	| "api_token";
 
 export type PermissionAction =
 	| "read"
@@ -22,7 +27,12 @@ export const permissionResources: PermissionResource[] = [
 	"repository",
 	"agent",
 	"notification",
+	"api_token",
 ];
+
+// Resources that are only granted as a whole, not on single items, like
+// creating API tokens.
+export const resourcesWithoutItems: PermissionResource[] = ["api_token"];
 
 // Mirrors models.PermissionActions in the hub
 export const permissionActions: Record<PermissionResource, PermissionAction[]> = {
@@ -30,6 +40,7 @@ export const permissionActions: Record<PermissionResource, PermissionAction[]> =
 	repository: ["read", "create", "update", "delete", "sync"],
 	agent: ["read", "create", "update", "delete"],
 	notification: ["read", "create", "update", "delete"],
+	api_token: ["create"],
 };
 
 export interface RolePermission {

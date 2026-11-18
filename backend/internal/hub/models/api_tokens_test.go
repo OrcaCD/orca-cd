@@ -48,6 +48,7 @@ func TestIsValidAPITokenScope(t *testing.T) {
 		{"notification:read", true},
 		{"agent:deploy", false},
 		{"application:sync", false},
+		{"api_token:create", false},
 		{"cluster:read", false},
 		{"application", false},
 		{"Admin", false},
@@ -64,11 +65,46 @@ func TestIsValidAPITokenScope(t *testing.T) {
 
 func TestIsValidAPITokenScope_AllPermissions(t *testing.T) {
 	for resource, actions := range PermissionActions {
+		if resource == ResourceAPIToken {
+			continue
+		}
 		for _, action := range actions {
 			if scope := NewAPITokenScope(resource, action); !IsValidAPITokenScope(scope) {
 				t.Errorf("expected scope %q to be valid", scope)
 			}
 		}
+	}
+}
+
+func TestAllAPITokenScopes(t *testing.T) {
+	scopes := AllAPITokenScopes()
+
+	if scopes[0] != APITokenScopeAdmin {
+		t.Errorf("expected the admin scope first, got %q", scopes[0])
+	}
+	if scopes[1] != NewAPITokenScope(ResourceApplication, ActionRead) {
+		t.Errorf("expected application:read second, got %q", scopes[1])
+	}
+
+	want := 1
+	for resource, actions := range PermissionActions {
+		if resource != ResourceAPIToken {
+			want += len(actions)
+		}
+	}
+	if len(scopes) != want {
+		t.Errorf("expected %d scopes, got %d", want, len(scopes))
+	}
+
+	seen := make(map[APITokenScope]bool)
+	for _, scope := range scopes {
+		if !IsValidAPITokenScope(scope) {
+			t.Errorf("expected scope %q to be valid", scope)
+		}
+		if seen[scope] {
+			t.Errorf("scope %q is listed twice", scope)
+		}
+		seen[scope] = true
 	}
 }
 

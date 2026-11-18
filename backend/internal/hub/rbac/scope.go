@@ -27,7 +27,8 @@ func (p *Permissions) Scope(resource models.PermissionResource, action models.Pe
 	}
 }
 
-// resourceTables maps the resource types to the tables holding them.
+// resourceTables maps the resource types that can be granted on single
+// resources to the tables holding them.
 var resourceTables = map[models.PermissionResource]string{
 	models.ResourceApplication:  "applications",
 	models.ResourceRepository:   "repositories",
@@ -42,7 +43,11 @@ var resourceTables = map[models.PermissionResource]string{
 func PruneGrants(ctx context.Context, tx *gorm.DB) ([]string, error) {
 	var roleIDs []string
 	for _, resource := range models.PermissionResources {
-		stale := "resource = ? AND resource_id IS NOT NULL AND resource_id NOT IN (SELECT id FROM " + resourceTables[resource] + ")"
+		table, ok := resourceTables[resource]
+		if !ok {
+			continue
+		}
+		stale := "resource = ? AND resource_id IS NOT NULL AND resource_id NOT IN (SELECT id FROM " + table + ")"
 		grants, err := gorm.G[models.RolePermission](tx).Where(stale, resource).Find(ctx)
 		if err != nil {
 			return roleIDs, err
