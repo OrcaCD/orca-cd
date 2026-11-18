@@ -18,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/agenttoken"
@@ -260,6 +261,7 @@ func TestWsHandler_MissingAuthHeader(t *testing.T) {
 
 func TestWsHandler_InvalidToken(t *testing.T) {
 	setupHandlerTestEnv(t)
+	events := seclog.CaptureForTest(t)
 	log := testLogger()
 	h := NewHub(&log)
 	server := newHandlerTestServer(t, h)
@@ -274,10 +276,14 @@ func TestWsHandler_InvalidToken(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %v", resp)
 	}
+	if !events.Has(seclog.AgentAuthFailed, "invalid_token") {
+		t.Error("expected an agent_auth_failed security event")
+	}
 }
 
 func TestWsHandler_AgentNotFound(t *testing.T) {
 	setupHandlerTestEnv(t)
+	events := seclog.CaptureForTest(t)
 	log := testLogger()
 	h := NewHub(&log)
 	server := newHandlerTestServer(t, h)
@@ -287,10 +293,7 @@ func TestWsHandler_AgentNotFound(t *testing.T) {
 		Id:    "nonexistent-agent-id",
 		KeyId: crypto.EncryptedString("some-key"),
 	}
-	token, err := auth.GenerateAgentToken(ghost)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
-	}
+	token, _ := issueTokenAndPersistKeyID(t, ghost)
 
 	_, resp, dialErr := dialWS(server, token)
 	if resp != nil {
@@ -302,10 +305,14 @@ func TestWsHandler_AgentNotFound(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %v", resp)
 	}
+	if !events.Has(seclog.AgentAuthFailed, "unknown_agent") {
+		t.Error("expected an agent_auth_failed security event")
+	}
 }
 
 func TestWsHandler_KeyIdMismatch(t *testing.T) {
 	setupHandlerTestEnv(t)
+	events := seclog.CaptureForTest(t)
 	log := testLogger()
 	h := NewHub(&log)
 	server := newHandlerTestServer(t, h)
@@ -317,9 +324,13 @@ func TestWsHandler_KeyIdMismatch(t *testing.T) {
 		Id:    agent.Id,
 		KeyId: crypto.EncryptedString("wrong-key-id"),
 	}
-	token, err := auth.GenerateAgentToken(tokenAgent)
+	compoundToken, err := auth.GenerateAgentToken(tokenAgent)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
+	}
+	token, _, err := agenttoken.Decode(compoundToken)
+	if err != nil {
+		t.Fatalf("failed to decode compound token: %v", err)
 	}
 
 	_, resp, dialErr := dialWS(server, token)
@@ -331,6 +342,9 @@ func TestWsHandler_KeyIdMismatch(t *testing.T) {
 	}
 	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %v", resp)
+	}
+	if !events.Has(seclog.AgentAuthFailed, "revoked_token") {
+		t.Error("expected an agent_auth_failed security event")
 	}
 }
 

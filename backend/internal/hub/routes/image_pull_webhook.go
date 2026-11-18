@@ -46,7 +46,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 	app, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			rejectWebhook(c)
+			rejectWebhook(c, "unknown_id")
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -54,7 +54,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 	}
 
 	if app.ImageWebhookSecret == nil {
-		rejectWebhook(c)
+		rejectWebhook(c, "webhook_disabled")
 		return
 	}
 
@@ -67,7 +67,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 			return
 		}
 		if !validateHMACSHA256(secret, body, strings.TrimPrefix(c.GetHeader("X-Hub-Signature-256"), "sha256=")) {
-			rejectWebhook(c)
+			rejectWebhook(c, "invalid_signature")
 			return
 		}
 		if event == "ping" {
@@ -99,7 +99,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		token = c.Query("token")
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		rejectWebhook(c)
+		rejectWebhook(c, "invalid_token")
 		return
 	}
 

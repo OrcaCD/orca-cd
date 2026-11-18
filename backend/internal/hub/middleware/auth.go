@@ -7,7 +7,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
@@ -24,6 +26,9 @@ func RequireAuth() gin.HandlerFunc {
 
 		claims, err := auth.ValidateUserToken(authCookie)
 		if err != nil {
+			if !errors.Is(err, jwt.ErrTokenExpired) {
+				seclog.Warn(c, seclog.TokenRejected, "reason", "invalid_token")
+			}
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			c.Abort()
 			return
@@ -34,6 +39,7 @@ func RequireAuth() gin.HandlerFunc {
 		user, err := gorm.G[models.User](db.DB).Where("id = ?", claims.Subject).First(c.Request.Context())
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
+				seclog.Warn(c, seclog.TokenRejected, "reason", "unknown_user", "user_id", claims.Subject)
 				auth.ClearAuthCookie(c)
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 				c.Abort()
@@ -45,6 +51,7 @@ func RequireAuth() gin.HandlerFunc {
 		}
 
 		if user.TokenVersion != claims.TokenVersion {
+			seclog.Warn(c, seclog.TokenRejected, "reason", "revoked_token", "user_id", user.Id)
 			auth.ClearAuthCookie(c)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			c.Abort()

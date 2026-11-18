@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
@@ -53,12 +54,14 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authToken := c.GetHeader("Authorization")
 		if authToken == "" {
+			seclog.Warn(c, seclog.AgentAuthFailed, "reason", "missing_token")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := auth.ValidateAgentToken(authToken)
 		if err != nil {
+			seclog.Warn(c, seclog.AgentAuthFailed, "reason", "invalid_token")
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
@@ -67,6 +70,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
+				seclog.Warn(c, seclog.AgentAuthFailed, "reason", "unknown_agent", "agent_id", claims.Subject)
 				c.AbortWithStatus(http.StatusUnauthorized)
 				return
 			}
@@ -76,12 +80,13 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 		}
 
 		if agent.KeyId.String() != claims.KeyId {
+			seclog.Warn(c, seclog.AgentAuthFailed, "reason", "revoked_token", "agent_id", claims.Subject)
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 		clientIP := c.ClientIP()
 		if !iplist.Allows(agent.AllowedIPs, clientIP) {
-			log.Warn().Str("agent_id", claims.Subject).Str("ip", clientIP).Msg("Rejecting connection from IP outside the agent's allowed IPs")
+			seclog.Warn(c, seclog.AgentAuthFailed, "reason", "ip_not_allowed", "agent_id", claims.Subject)
 			if agent.LastIP != clientIP {
 				if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", claims.Subject).Update(c.Request.Context(), "last_ip", clientIP); err != nil {
 					log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Failed to update last IP")
@@ -116,6 +121,7 @@ func WsHandler(h *Hub, log *zerolog.Logger) gin.HandlerFunc {
 
 		session, err := performHandshake(conn, claims.Subject, agentSigningPubKey, log)
 		if err != nil {
+			seclog.Warn(c, seclog.AgentAuthFailed, "reason", "handshake_failed", "agent_id", claims.Subject)
 			log.Error().Err(err).Str("agent_id", claims.Subject).Msg("Handshake failed")
 			err = conn.Close()
 			if err != nil {
