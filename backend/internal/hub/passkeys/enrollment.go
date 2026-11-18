@@ -2,7 +2,7 @@ package passkeys
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"time"
@@ -14,7 +14,7 @@ import (
 const EnrollmentLifetime = 24 * time.Hour
 
 func TokenHash(token string) string {
-	digest := sha256.Sum256([]byte(token))
+	digest := sha512.Sum512([]byte(token))
 	return hex.EncodeToString(digest[:])
 }
 

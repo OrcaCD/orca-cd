@@ -62,7 +62,7 @@ func (s *Sessions) Take(id, purpose string) (Ceremony, bool) {
 }
 
 func randomBytes() []byte {
-	b := make([]byte, 32)
+	b := make([]byte, 64)
 	_, _ = rand.Read(b)
 	return b
 }

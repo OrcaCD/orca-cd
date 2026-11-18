@@ -2,6 +2,7 @@ package passkeys
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"log"
 	"path/filepath"
@@ -56,6 +57,10 @@ func TestSessionsSingleUseAndPurposeBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rawID, err := base64.RawURLEncoding.DecodeString(id)
+	if err != nil || len(rawID) != 64 {
+		t.Fatalf("ceremony ID must contain 64 random bytes: length=%d err=%v", len(rawID), err)
+	}
 	var wins atomic.Int32
 	var wg sync.WaitGroup
 	for range 20 {
@@ -93,6 +98,14 @@ func TestSessionsSingleUseAndPurposeBinding(t *testing.T) {
 	}
 }
 
+func TestEnrollmentTokenHashUsesSHA512(t *testing.T) {
+	const want = "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2" +
+		"192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+	if got := TokenHash("abc"); got != want {
+		t.Fatalf("unexpected SHA-512 digest: %s", got)
+	}
+}
+
 func TestEnrollmentAndCredentialStorage(t *testing.T) {
 	if err := crypto.Init("test-secret-that-is-long-enough-32chars"); err != nil {
 		t.Fatal(err)
@@ -119,8 +132,12 @@ func TestEnrollmentAndCredentialStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first == second || len(second) < 40 {
+	if first == second {
 		t.Fatal("enrollment tokens must be random")
+	}
+	rawToken, err := base64.RawURLEncoding.DecodeString(second)
+	if err != nil || len(rawToken) != 64 {
+		t.Fatalf("enrollment token must contain 64 random bytes: length=%d err=%v", len(rawToken), err)
 	}
 	if err := ConsumeEnrollment(ctx, database, &u, TokenHash(first)); err == nil {
 		t.Fatal("accepted replaced enrollment code")
