@@ -14,8 +14,8 @@ var Log = logger.New("audit-log", false)
 func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetId string) {
 	var userIdPtr *string
 
-	if claims, ok := auth.GetClaims(c); ok {
-		userIdPtr = &claims.Subject
+	if user, ok := auth.GetUser(c); ok {
+		userIdPtr = &user.Id
 	}
 
 	userIdDisplay := "system"

@@ -3,18 +3,33 @@ package middleware
 import (
 	"errors"
 	"net/http"
+	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
+	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
+// apiTokenUsedInterval is how often last_used_at of an API token is written at
+// most, so busy clients don't cause a write on every request.
+const apiTokenUsedInterval = time.Minute
+
+// RequireAuth accepts the session cookie of the web UI or an API token in the
+// Authorization header. With a token, the cookie is ignored, since ValidateOrigin
+// lets such requests through without checking where they come from.
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if token, ok := auth.GetBearerToken(c); ok {
+			authenticateAPIToken(c, token)
+			return
+		}
 
 		authCookie, err := auth.GetAuthCookie(c)
 
@@ -66,6 +81,106 @@ func RequireAuth() gin.HandlerFunc {
 
 		auth.SetClaims(c, claims)
 		auth.SetUser(c, &user)
+		c.Next()
+	}
+}
+
+func authenticateAPIToken(c *gin.Context, plain string) {
+	reject := func(reason string) {
+		if reason != "" {
+			seclog.Warn(c, seclog.TokenRejected, "reason", reason)
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		c.Abort()
+	}
+	internalError := func() {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		c.Abort()
+	}
+
+	if !apitoken.IsWellFormed(plain) {
+		reject("invalid_api_token")
+		return
+	}
+
+	ctx := c.Request.Context()
+	token, err := gorm.G[models.APIToken](db.DB).Where("token_hash = ?", apitoken.Hash(plain)).First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reject("unknown_api_token")
+			return
+		}
+		internalError()
+		return
+	}
+
+	now := time.Now().UTC()
+	// Like expired sessions, expired tokens are expected and not a security event.
+	if token.IsExpired(now) {
+		reject("")
+		return
+	}
+
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", token.UserId).First(ctx)
+	if err != nil {
+		internalError()
+		return
+	}
+
+	if user.PasswordChangeRequired && !isPasswordChangeAllowedPath(c.Request.URL.Path) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "password change required"})
+		c.Abort()
+		return
+	}
+
+	perms, err := rbac.Load(ctx, db.DB, user.Id)
+	if err != nil {
+		internalError()
+		return
+	}
+
+	auth.SetUser(c, &user)
+	auth.SetAPIToken(c, &token)
+	rbac.Set(c, perms.Restrict(token.Scopes))
+	markAPITokenUsed(c, &token, now)
+	c.Next()
+}
+
+// markAPITokenUsed updates last_used_at and records the first use of a token in
+// the audit log. A failed update doesn't fail the request.
+func markAPITokenUsed(c *gin.Context, token *models.APIToken, now time.Time) {
+	if token.LastUsedAt != nil && now.Sub(*token.LastUsedAt) < apiTokenUsedInterval {
+		return
+	}
+
+	firstUse := token.LastUsedAt == nil
+	query := gorm.G[models.APIToken](db.DB).Where("id = ?", token.Id)
+	if firstUse {
+		// Only one of several concurrent first requests records the first use.
+		query = query.Where("last_used_at IS NULL")
+	}
+	updated, err := query.Update(c.Request.Context(), "last_used_at", now)
+	if err != nil {
+		utils.Log.Error().Err(err).Str("api_token_id", token.Id).Msg("Failed to update last use of API token")
+		return
+	}
+	token.LastUsedAt = &now
+
+	if firstUse && updated > 0 {
+		utils.RecordAuditLog(c, "first-used-api-token", "api-token", token.Id)
+	}
+}
+
+// RequireSession rejects requests authenticated with an API token. Tokens are
+// for automation, so they can't change the account or manage tokens.
+func RequireSession() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := auth.GetAPIToken(c); ok {
+			seclog.Warn(c, seclog.AccessDenied, "reason", "session_required")
+			c.JSON(http.StatusForbidden, gin.H{"error": "this route can't be used with an api token"})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

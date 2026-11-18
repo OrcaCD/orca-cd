@@ -80,3 +80,49 @@ func TestSetUser_And_GetUser(t *testing.T) {
 		t.Error("expected no user when context has wrong type")
 	}
 }
+
+func TestSetAPIToken_And_GetAPIToken(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	if _, ok := GetAPIToken(c); ok {
+		t.Error("expected no API token before it is set")
+	}
+
+	SetAPIToken(c, &models.APIToken{Name: "CI"})
+
+	token, ok := GetAPIToken(c)
+	if !ok || token.Name != "CI" {
+		t.Errorf("GetAPIToken() = (%v, %v), want the token that was set", token, ok)
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	tests := []struct {
+		name      string
+		header    string
+		wantToken string
+		wantOk    bool
+	}{
+		{"bearer", "Bearer orca_abc", "orca_abc", true},
+		{"lowercase scheme", "bearer orca_abc", "orca_abc", true},
+		{"extra spaces", "Bearer   orca_abc ", "orca_abc", true},
+		{"missing", "", "", false},
+		{"basic auth", "Basic dXNlcjpwYXNz", "", false},
+		{"scheme only", "Bearer", "", false},
+		{"empty token", "Bearer  ", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("GET", "/", nil)
+			if tt.header != "" {
+				c.Request.Header.Set("Authorization", tt.header)
+			}
+
+			token, ok := GetBearerToken(c)
+			if token != tt.wantToken || ok != tt.wantOk {
+				t.Errorf("GetBearerToken() = (%q, %v), want (%q, %v)", token, ok, tt.wantToken, tt.wantOk)
+			}
+		})
+	}
+}

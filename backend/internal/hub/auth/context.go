@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"strings"
+
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	claimsContextKey = "auth_claims"
-	userContextKey   = "auth_user"
+	claimsContextKey   = "auth_claims"
+	userContextKey     = "auth_user"
+	apiTokenContextKey = "auth_api_token" //nolint:gosec // context key, not a credential
 )
 
 func SetClaims(c *gin.Context, claims *UserClaims) {
@@ -35,4 +38,30 @@ func GetUser(c *gin.Context) (*models.User, bool) {
 	}
 	user, ok := val.(*models.User)
 	return user, ok
+}
+
+// SetAPIToken stores the API token the current request was authenticated with.
+func SetAPIToken(c *gin.Context, token *models.APIToken) {
+	c.Set(apiTokenContextKey, token)
+}
+
+// GetAPIToken returns the API token of the current request. It reports false
+// for requests authenticated with the session cookie.
+func GetAPIToken(c *gin.Context) (*models.APIToken, bool) {
+	val, exists := c.Get(apiTokenContextKey)
+	if !exists {
+		return nil, false
+	}
+	token, ok := val.(*models.APIToken)
+	return token, ok
+}
+
+// GetBearerToken returns the token of an "Authorization: Bearer" header.
+func GetBearerToken(c *gin.Context) (string, bool) {
+	scheme, token, ok := strings.Cut(c.GetHeader("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
 }

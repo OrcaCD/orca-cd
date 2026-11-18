@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
 	"github.com/gin-gonic/gin"
 )
 
@@ -167,5 +168,38 @@ func TestValidateOrigin_GitHubActionsRoute_WrongOriginAllowed(t *testing.T) {
 	}
 	if c.IsAborted() {
 		t.Error("GitHub Actions request should not be aborted")
+	}
+}
+
+func TestValidateOrigin_APIToken(t *testing.T) {
+	mw := ValidateOrigin("https://example.com")
+
+	tests := []struct {
+		name        string
+		token       string
+		cookie      bool
+		wantAborted bool
+	}{
+		{"api token without origin", apitoken.Generate().Plain, false, false},
+		{"api token with session cookie", apitoken.Generate().Plain, true, true},
+		{"malformed token", "orca_short", false, true},
+		{"jwt", "header.payload.signature", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", nil)
+			c.Request.Header.Set("Authorization", "Bearer "+tt.token)
+			if tt.cookie {
+				c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "session"}) //nolint:gosec
+			}
+
+			mw(c)
+
+			if c.IsAborted() != tt.wantAborted {
+				t.Errorf("expected aborted=%v, got %v (status %d)", tt.wantAborted, c.IsAborted(), w.Code)
+			}
+		})
 	}
 }

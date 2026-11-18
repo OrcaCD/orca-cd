@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,6 +33,17 @@ func ValidateOrigin(appURL string) gin.HandlerFunc {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/github-actions") {
 			c.Next()
 			return
+		}
+
+		// API clients send their token in the Authorization header, which a
+		// browser never adds to a cross-site request on its own. RequireAuth then
+		// ignores the session cookie, so the request can't act with it. Requests
+		// with the cookie are checked anyway.
+		if token, ok := auth.GetBearerToken(c); ok && apitoken.IsWellFormed(token) {
+			if _, err := auth.GetAuthCookie(c); err != nil {
+				c.Next()
+				return
+			}
 		}
 
 		origin := strings.TrimSuffix(c.GetHeader("Origin"), "/")
