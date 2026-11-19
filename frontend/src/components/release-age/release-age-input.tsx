@@ -20,11 +20,13 @@ export function ReleaseAgeInput({
 	seconds,
 	onChange,
 	onBlur,
+	disabled,
 }: {
 	id: string;
 	seconds: number;
 	onChange: (seconds: number) => void;
 	onBlur?: () => void;
+	disabled?: boolean;
 }) {
 	// Whole days are shown as days, anything else as hours.
 	const [unit, setUnit] = useState<Unit>(() => (seconds % dayInSeconds === 0 ? "days" : "hours"));
@@ -38,6 +40,7 @@ export function ReleaseAgeInput({
 				min={0}
 				className="w-28"
 				value={amount}
+				disabled={disabled}
 				onBlur={onBlur}
 				onChange={(e) => onChange(Number(e.target.value) * unitSeconds[unit])}
 			/>
@@ -47,6 +50,7 @@ export function ReleaseAgeInput({
 					{ value: "days", label: m.releaseAgeUnitDays() },
 				]}
 				value={unit}
+				disabled={disabled}
 				onValueChange={(value: Unit | null) => {
 					if (value) {
 						setUnit(value);

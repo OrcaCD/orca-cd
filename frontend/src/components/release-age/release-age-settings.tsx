@@ -15,6 +15,7 @@ import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
 import { updateReleaseAgeSettings, type Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import {
 	formatReleaseAge,
 	maxReleaseAgeSeconds,
@@ -38,6 +39,8 @@ export function ReleaseAgeSettings({
 	onUpdated: (application: Application) => Promise<unknown>;
 }) {
 	const { data: global } = useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
+	const { can } = usePermissions();
+	const canUpdate = application !== undefined && can("application", "update", application.id);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const settings = application?.releaseAge;
@@ -100,6 +103,7 @@ export function ReleaseAgeSettings({
 											id={field.name}
 											checked={field.state.value}
 											onCheckedChange={(checked) => field.handleChange(checked)}
+											disabled={!canUpdate}
 										/>
 										<div className="space-y-1">
 											<Label htmlFor={field.name}>{m.releaseAgeUseGlobal()}</Label>
@@ -126,6 +130,7 @@ export function ReleaseAgeSettings({
 												seconds={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(seconds) => field.handleChange(seconds)}
+												disabled={!canUpdate}
 											/>
 											<p className="text-muted-foreground text-xs">{m.releaseAgeMinimumHint()}</p>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -167,6 +172,7 @@ export function ReleaseAgeSettings({
 										id="release-age-registry"
 										value={field.state.value}
 										onChange={(registries) => field.handleChange(registries)}
+										disabled={!canUpdate}
 									/>
 								</Field>
 							)}

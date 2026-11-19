@@ -19,10 +19,12 @@ export function RegistryListInput({
 	id,
 	value,
 	onChange,
+	disabled,
 }: {
 	id: string;
 	value: string[];
 	onChange: (registries: string[]) => void;
+	disabled?: boolean;
 }) {
 	const [newRegistry, setNewRegistry] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -47,14 +49,16 @@ export function RegistryListInput({
 					{value.map((registry) => (
 						<Badge key={registry} variant="secondary" className="gap-1 font-mono">
 							{registry}
-							<button
-								type="button"
-								className="rounded-sm hover:text-foreground"
-								aria-label={m.releaseAgeRemoveRegistry({ registry })}
-								onClick={() => onChange(value.filter((r) => r !== registry))}
-							>
-								<X className="h-3 w-3" />
-							</button>
+							{!disabled && (
+								<button
+									type="button"
+									className="rounded-sm hover:text-foreground"
+									aria-label={m.releaseAgeRemoveRegistry({ registry })}
+									onClick={() => onChange(value.filter((r) => r !== registry))}
+								>
+									<X className="h-3 w-3" />
+								</button>
+							)}
 						</Badge>
 					))}
 				</div>
@@ -64,6 +68,7 @@ export function RegistryListInput({
 					id={id}
 					placeholder="registry.example.com:5000"
 					value={newRegistry}
+					disabled={disabled}
 					aria-invalid={error !== null}
 					onChange={(e) => {
 						setNewRegistry(e.target.value);
@@ -76,7 +81,7 @@ export function RegistryListInput({
 						}
 					}}
 				/>
-				<Button type="button" variant="outline" onClick={addRegistry}>
+				<Button type="button" variant="outline" onClick={addRegistry} disabled={disabled}>
 					{m.releaseAgeAddRegistry()}
 				</Button>
 			</div>
