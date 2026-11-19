@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -216,6 +217,10 @@ func seedDemoData(db *gorm.DB) error {
 		}
 
 		if err := seedDemoNotifications(ctx, tx); err != nil {
+			return err
+		}
+
+		if err := seedDemoAPITokens(ctx, tx); err != nil {
 			return err
 		}
 
@@ -700,6 +705,75 @@ func seedDemoNotifications(ctx context.Context, tx *gorm.DB) error {
 	return nil
 }
 
+const demoSeedAPITokenID = "demo-api-token-github" //nolint:gosec // record id, not a credential
+
+func seedDemoAPITokens(ctx context.Context, tx *gorm.DB) error {
+	now := time.Now()
+	day := 24 * time.Hour
+
+	tokens := []struct {
+		id        string
+		userId    string
+		name      string
+		prefix    string
+		scopes    []models.APITokenScope
+		createdAt time.Duration
+		expiresIn time.Duration
+		lastUsed  time.Duration
+	}{
+		{demoSeedAPITokenID, demoSeedUserID, "GitHub Actions", "orca_Gh7aQ2xP", []models.APITokenScope{
+			models.NewAPITokenScope(models.ResourceApplication, models.ActionRead),
+			models.NewAPITokenScope(models.ResourceApplication, models.ActionDeploy),
+		}, 20 * day, 70 * day, 3 * time.Hour},
+		{"demo-api-token-backup", demoSeedUserID, "Backup script", "orca_Bk2mW9cL", []models.APITokenScope{
+			models.APITokenScopeAdmin,
+		}, 2 * day, 5 * day, 0},
+		{"demo-api-token-old", demoSeedUserID, "Old deploy script", "orca_Od5rT1vN", []models.APITokenScope{
+			models.NewAPITokenScope(models.ResourceApplication, models.ActionDeploy),
+		}, 40 * day, -10 * day, 12 * day},
+		{"demo-api-token-grafana", demoSeedMemberID, "Grafana", "orca_Gf8sK4yH", []models.APITokenScope{
+			models.NewAPITokenScope(models.ResourceApplication, models.ActionRead),
+			models.NewAPITokenScope(models.ResourceAgent, models.ActionRead),
+		}, 9 * day, 355 * day, 15 * time.Minute},
+	}
+
+	for _, t := range tokens {
+		token := models.APIToken{
+			Id:     t.id,
+			UserId: t.userId,
+			Name:   t.name,
+			// Not a well-formed token, so no request can authenticate with it
+			TokenHash: apitoken.Hash("demo:" + t.id),
+			Prefix:    t.prefix,
+			Scopes:    t.scopes,
+			ExpiresAt: now.Add(t.expiresIn),
+		}
+		if err := gorm.G[models.APIToken](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &token); err != nil {
+			return err
+		}
+
+		// Moved on every start, so the tokens neither expire nor age
+		var lastUsedAt *time.Time
+		if t.lastUsed > 0 {
+			used := now.Add(-t.lastUsed)
+			lastUsedAt = &used
+		}
+		createdAt := now.Add(-t.createdAt)
+		if err := tx.Model(&models.APIToken{}).
+			Where("id = ?", t.id).
+			UpdateColumns(map[string]any{
+				"created_at":   createdAt,
+				"updated_at":   createdAt,
+				"expires_at":   now.Add(t.expiresIn),
+				"last_used_at": lastUsedAt,
+			}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func seedDemoAuditLogs(ctx context.Context, tx *gorm.DB, userID string) error {
 	now := time.Now()
 
@@ -717,6 +791,8 @@ func seedDemoAuditLogs(ctx context.Context, tx *gorm.DB, userID string) error {
 		{"demo-audit-monitoring", "created", "application", "demo-app-monitoring", 4 * 24 * time.Hour},
 		{"demo-audit-webhook", "enabled-image-webhook", "application", "demo-app-web", 2 * 24 * time.Hour},
 		{"demo-audit-user", "created", "user", demoSeedMemberID, 24 * time.Hour},
+		{"demo-audit-api-token", "created", "api-token", demoSeedAPITokenID, 20 * 24 * time.Hour},
+		{"demo-audit-api-token-used", "first-used-api-token", "api-token", demoSeedAPITokenID, 20*24*time.Hour - time.Hour},
 	}
 
 	for i := range entries {
@@ -729,6 +805,10 @@ func seedDemoAuditLogs(ctx context.Context, tx *gorm.DB, userID string) error {
 			EventType:  e.eventType,
 			TargetType: e.targetType,
 			TargetId:   &targetId,
+		}
+		// The first use of a token is made with the token itself
+		if e.eventType == "first-used-api-token" {
+			entry.APITokenId = &targetId
 		}
 		if err := gorm.G[models.AuditLog](tx, clause.OnConflict{DoNothing: true}).Create(ctx, &entry); err != nil {
 			return err

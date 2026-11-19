@@ -120,6 +120,17 @@ test.describe("signed in", () => {
 			"OrcaCD/demo-infrastructure",
 		]);
 		expect(await names(page, "/notifications")).toEqual(["Slack alerts", "Team Discord"]);
+		expect(await names(page, "/api-tokens")).toEqual([
+			"Backup script",
+			"GitHub Actions",
+			"Old deploy script",
+		]);
+		expect(await names(page, "/admin/api-tokens")).toEqual([
+			"Backup script",
+			"GitHub Actions",
+			"Grafana",
+			"Old deploy script",
+		]);
 
 		const agents = await demoApi(page, "GET", "/agents");
 		expect(agents.status).toBe(200);
