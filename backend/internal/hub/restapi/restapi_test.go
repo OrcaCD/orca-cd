@@ -89,6 +89,17 @@ var (
 		return nil, huma.Error422UnprocessableEntity("the provider rejected the thing")
 	})
 
+	noContentThing = Handler(huma.Operation{
+		OperationID:   "touch-thing",
+		Method:        http.MethodPost,
+		Path:          "/things/{id}/touch",
+		DefaultStatus: http.StatusNoContent,
+	}, func(_ context.Context, _ *struct {
+		ID string `path:"id"`
+	}) (*struct{}, error) {
+		return &struct{}{}, nil
+	})
+
 	pingThings = Handler(huma.Operation{
 		OperationID: "ping-things",
 		Method:      http.MethodGet,
@@ -316,5 +327,18 @@ func TestHandler_LeavesTheBodyLimitToTheServer(t *testing.T) {
 	router.POST("/api/v1/things", createThing)
 	if w := serve(router, http.MethodPost, "/api/v1/things", `{"name": "a", "password": "12345678", "note": "`+note+`"}`); w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413 from the server's limit, got %d", w.Code)
+	}
+}
+
+func TestHandler_WritesTheStatusOfBodilessResponses(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/things/1/touch", nil)
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	noContentThing(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", w.Code)
 	}
 }

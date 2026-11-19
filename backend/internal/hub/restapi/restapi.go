@@ -132,6 +132,9 @@ func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	a.handler = func(c *gin.Context) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ginContextKey{}, c))
 		handler(humagin.NewContext(op, c))
+		// Huma only sets the status of responses without a body. Writing it here
+		// sends it right away, also when a test calls the handler without Gin.
+		c.Writer.WriteHeaderNow()
 	}
 }
 
