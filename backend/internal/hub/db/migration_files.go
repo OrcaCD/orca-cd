@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	gofs "io/fs"
+	"os"
+	"path/filepath"
 	"testing/fstest"
 	"time"
 
@@ -122,6 +124,8 @@ func rollBackNewerMigrations(ctx context.Context, db *gorm.DB, version uint, dir
 		return fmt.Errorf("failed to load stored migration files: %w", err)
 	}
 
+	// fstest.MapFS is a plain in-memory fs.FS (it doesn't import package testing),
+	// so the stored files can be passed to the iofs source without writing them to disk
 	files := make(fstest.MapFS, len(stored))
 	ups := make(map[uint]bool)
 	downs := make(map[uint]bool)
@@ -210,8 +214,20 @@ func backupBeforeDowngrade(ctx context.Context, db *gorm.DB, version uint) (stri
 		return "", errors.New("cannot back up an in-memory database before rolling it back")
 	}
 
-	backupPath := fmt.Sprintf("%s-downgrade-v%d-%d.bak", main.File, version, time.Now().Unix())
+	backupPath := filepath.Clean(fmt.Sprintf("%s-downgrade-v%d-%d.bak", main.File, version, time.Now().Unix()))
+
+	// VACUUM INTO creates the file with the default permissions, but the backup holds the same
+	// sensitive data as the database. It accepts an existing empty file, so create it owner-only first.
+	file, err := os.OpenFile(backupPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return "", fmt.Errorf("failed to create database backup: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("failed to create database backup: %w", err)
+	}
+
 	if err := db.Exec("VACUUM INTO ?", backupPath).Error; err != nil {
+		_ = os.Remove(backupPath)
 		return "", fmt.Errorf("failed to back up database before rolling it back: %w", err)
 	}
 	return backupPath, nil

@@ -3,11 +3,14 @@ package db
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func setAllowDowngrade(t *testing.T, allow bool) {
@@ -228,6 +231,14 @@ func TestRunMigrations_RollsBackNewerSchema(t *testing.T) {
 		t.Fatalf("expected 1 backup before rolling back, got %d", len(backups))
 	}
 
+	info, err := os.Stat(backups[0])
+	if err != nil {
+		t.Fatalf("failed to stat backup: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("backup permissions = %o, want 600", perm)
+	}
+
 	backupVersion, _, err := readBackupSchemaVersion(backups[0])
 	if err != nil {
 		t.Fatalf("failed to read backup schema version: %v", err)
@@ -266,5 +277,47 @@ func TestRunMigrations_RefusesRollbackOfDirtySchema(t *testing.T) {
 	}
 	if !gormDB.Migrator().HasTable("downgrade_probe") {
 		t.Error("expected the newer migration to be left in place")
+	}
+}
+
+func TestRunMigrations_ReportsFailedRollback(t *testing.T) {
+	setAllowDowngrade(t, true)
+	gormDB := openTestDB(t)
+	version := applyNewerMigration(t, gormDB, true)
+	if _, err := gorm.G[schemaMigrationFile](gormDB).
+		Where("name = ?", fmt.Sprintf("%06d_downgrade_probe.down.sql", version)).
+		Update(context.Background(), "content", "DROP TABLE missing_table;"); err != nil {
+		t.Fatalf("failed to break down migration: %v", err)
+	}
+
+	err := runMigrations(gormDB)
+	if err == nil || !strings.Contains(err.Error(), "failed to roll back") || !strings.Contains(err.Error(), "backup at") {
+		t.Fatalf("runMigrations() error = %v, want a rollback error naming the backup", err)
+	}
+	// golang-migrate marks the version it rolls back to as dirty, so the next start refuses to migrate
+	if _, dirty := schemaVersion(t, gormDB); !dirty {
+		t.Error("expected the schema to be dirty after a failed rollback")
+	}
+	stored, err := gorm.G[schemaMigrationFile](gormDB).Where("version = ?", version).Find(context.Background())
+	if err != nil {
+		t.Fatalf("failed to load stored migration files: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Errorf("expected the files of the failed rollback to be kept, got %d", len(stored))
+	}
+}
+
+func TestBackupBeforeDowngrade_RefusesInMemoryDatabase(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open in-memory db: %v", err)
+	}
+	t.Cleanup(func() {
+		sqlDB, _ := gormDB.DB()
+		_ = sqlDB.Close()
+	})
+
+	if _, err := backupBeforeDowngrade(context.Background(), gormDB, 1); err == nil || !strings.Contains(err.Error(), "in-memory") {
+		t.Fatalf("backupBeforeDowngrade() error = %v, want an error about the in-memory database", err)
 	}
 }
