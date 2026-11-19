@@ -17,10 +17,13 @@ type CookieConfig struct {
 	SameSite http.SameSite
 }
 
-const CeremonyCookieName = "orcacd_passkey"
+const (
+	AuthCookieName     = "orcacd_auth"
+	CeremonyCookieName = "orcacd_passkey"
+)
 
 var defaultCookieConfig = CookieConfig{
-	Name:     "orcacd_auth",
+	Name:     AuthCookieName,
 	Path:     "/",
 	Domain:   "",
 	MaxAge:   int(tokenExpiry / time.Second),

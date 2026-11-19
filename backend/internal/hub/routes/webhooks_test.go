@@ -305,6 +305,67 @@ func TestWebhookHandler_Gitea_PushEvent_UpdatesDB(t *testing.T) {
 	}
 }
 
+func TestWebhookHandler_FormEncodedPushEvent_UpdatesDB(t *testing.T) {
+	tests := []struct {
+		provider models.RepositoryProvider
+		headers  func(secret, body string) map[string]string
+	}{
+		{models.GitHub, func(secret, body string) map[string]string {
+			return map[string]string{"X-GitHub-Event": "push", "X-Hub-Signature-256": githubSig(secret, body)}
+		}},
+		{models.Gitea, func(secret, body string) map[string]string {
+			return map[string]string{"X-Gitea-Event": "push", "X-Gitea-Signature": giteaSig(secret, body)}
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.provider), func(t *testing.T) {
+			setupTestDBWithWebhookRepos(t)
+			const secret = "formsecret"
+			body := url.Values{"payload": {`{"ref":"refs/heads/main","after":"sha-after"}`}}.Encode()
+			repo := seedWebhookRepo(t, tt.provider, secret)
+
+			// The signature covers the form encoded body, not the JSON in it
+			c, w := makeWebhookRequest(repo.Id, body)
+			c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			for name, value := range tt.headers(secret, body) {
+				c.Request.Header.Set(name, value)
+			}
+			WebhookHandler(c)
+
+			if w.Code != http.StatusNoContent {
+				t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+			}
+
+			var got models.Repository
+			if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+				t.Fatalf("failed to reload repo: %v", err)
+			}
+			if got.SyncStatus != models.SyncStatusSuccess {
+				t.Errorf("expected sync_status %s, got %s", models.SyncStatusSuccess, got.SyncStatus)
+			}
+		})
+	}
+}
+
+func TestWebhookHandler_FormEncodedPushEvent_InvalidSignature_Returns401(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	const secret = "formsecret"
+	payload := `{"ref":"refs/heads/main","after":"sha-after"}`
+	body := url.Values{"payload": {payload}}.Encode()
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	c, w := makeWebhookRequest(repo.Id, body)
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.Request.Header.Set("X-GitHub-Event", "push")
+	c.Request.Header.Set("X-Hub-Signature-256", githubSig(secret, payload))
+	WebhookHandler(c)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestWebhookHandler_GitLab_InvalidToken(t *testing.T) {
 	setupTestDBWithWebhookRepos(t)
 	repo := seedWebhookRepo(t, models.GitLab, "mysecret")
@@ -426,13 +487,16 @@ func TestIsPushEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s/%s", tt.provider, tt.value), func(t *testing.T) {
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
-			if tt.header != "" {
-				c.Request.Header.Set(tt.header, tt.value)
+			input := &webhookInput{}
+			switch tt.header {
+			case "X-GitHub-Event":
+				input.GitHubEvent = tt.value
+			case "X-Gitea-Event":
+				input.GiteaEvent = tt.value
+			case "X-Gitlab-Event":
+				input.GitLabEvent = tt.value
 			}
-			got := isPushEvent(c, tt.provider)
+			got := isPushEvent(input, tt.provider)
 			if got != tt.want {
 				t.Errorf("isPushEvent(%s, %q) = %v, want %v", tt.provider, tt.value, got, tt.want)
 			}
@@ -444,12 +508,9 @@ func TestValidateSignature_GitHub_Valid(t *testing.T) {
 	const secret = "s3cr3t"
 	body := []byte(`{"ref":"refs/heads/main"}`)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
-	c.Request.Header.Set("X-Hub-Signature-256", githubSig(secret, string(body)))
+	input := &webhookInput{GitHubSignature: githubSig(secret, string(body)), RawBody: body}
 
-	if !validateSignature(c, models.GitHub, secret, body) {
+	if !validateSignature(input, models.GitHub, secret) {
 		t.Error("expected valid GitHub signature to pass")
 	}
 }
@@ -458,12 +519,9 @@ func TestValidateSignature_GitLab_Valid(t *testing.T) {
 	const secret = "s3cr3t"
 	body := []byte(`{"ref":"refs/heads/main"}`)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
-	c.Request.Header.Set("X-Gitlab-Token", secret)
+	input := &webhookInput{GitLabToken: secret, RawBody: body}
 
-	if !validateSignature(c, models.GitLab, secret, body) {
+	if !validateSignature(input, models.GitLab, secret) {
 		t.Error("expected valid GitLab token to pass")
 	}
 }
@@ -471,12 +529,9 @@ func TestValidateSignature_GitLab_Valid(t *testing.T) {
 func TestValidateSignature_GitLab_Invalid(t *testing.T) {
 	body := []byte(`{}`)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
-	c.Request.Header.Set("X-Gitlab-Token", "wrongtoken")
+	input := &webhookInput{GitLabToken: "wrongtoken", RawBody: body}
 
-	if validateSignature(c, models.GitLab, "correcttoken", body) {
+	if validateSignature(input, models.GitLab, "correcttoken") {
 		t.Error("expected wrong GitLab token to fail")
 	}
 }
@@ -484,11 +539,9 @@ func TestValidateSignature_GitLab_Invalid(t *testing.T) {
 func TestValidateSignature_UnknownProvider(t *testing.T) {
 	body := []byte(`{}`)
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	input := &webhookInput{RawBody: body}
 
-	if validateSignature(c, models.Generic, "secret", body) {
+	if validateSignature(input, models.Generic, "secret") {
 		t.Error("expected unknown provider to fail")
 	}
 }
@@ -524,12 +577,7 @@ func TestWebhookHandler_NilSecret_Returns401(t *testing.T) {
 func TestParseWebhookPushDetails_GitHub_JSON(t *testing.T) {
 	body := `{"ref":"refs/heads/main","after":"sha-after"}`
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	details, err := parseWebhookPushDetails(c, []byte(body))
+	details, err := parseWebhookPushDetails("application/json", []byte(body))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -545,12 +593,7 @@ func TestParseWebhookPushDetails_GitHub_FormPayload(t *testing.T) {
 	payload := `{"ref":"refs/heads/release","after":"sha-after"}`
 	formBody := url.Values{"payload": {payload}}.Encode()
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(formBody))
-	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	details, err := parseWebhookPushDetails(c, []byte(formBody))
+	details, err := parseWebhookPushDetails("application/x-www-form-urlencoded", []byte(formBody))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -565,12 +608,7 @@ func TestParseWebhookPushDetails_GitHub_FormPayload(t *testing.T) {
 func TestParseWebhookPushDetails_Gitea_JSON(t *testing.T) {
 	body := `{"ref":"refs/heads/main","after":"sha-after"}`
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	details, err := parseWebhookPushDetails(c, []byte(body))
+	details, err := parseWebhookPushDetails("application/json", []byte(body))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -586,12 +624,7 @@ func TestParseWebhookPushDetails_Gitea_FormPayload(t *testing.T) {
 	payload := `{"ref":"refs/heads/hotfix","after":"sha-after"}`
 	formBody := url.Values{"payload": {payload}}.Encode()
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(formBody))
-	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	details, err := parseWebhookPushDetails(c, []byte(formBody))
+	details, err := parseWebhookPushDetails("application/x-www-form-urlencoded", []byte(formBody))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -606,12 +639,7 @@ func TestParseWebhookPushDetails_Gitea_FormPayload(t *testing.T) {
 func TestParseWebhookPushDetails_GitLab_JSON(t *testing.T) {
 	body := `{"ref":"refs/heads/dev","after":"sha-after"}`
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	details, err := parseWebhookPushDetails(c, []byte(body))
+	details, err := parseWebhookPushDetails("application/json", []byte(body))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -629,12 +657,7 @@ func TestParseWebhookPushDetails_GitLab_FormFields(t *testing.T) {
 		"after": {"sha-after"},
 	}.Encode()
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(formBody))
-	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	details, err := parseWebhookPushDetails(c, []byte(formBody))
+	details, err := parseWebhookPushDetails("application/x-www-form-urlencoded", []byte(formBody))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -647,12 +670,7 @@ func TestParseWebhookPushDetails_GitLab_FormFields(t *testing.T) {
 }
 
 func TestParseWebhookPushDetails_EmptyBody_NonForm_ReturnsError(t *testing.T) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	_, err := parseWebhookPushDetails(c, []byte{})
+	_, err := parseWebhookPushDetails("application/json", []byte{})
 	if err == nil {
 		t.Fatal("expected error for empty non-form body, got nil")
 	}
@@ -661,12 +679,7 @@ func TestParseWebhookPushDetails_EmptyBody_NonForm_ReturnsError(t *testing.T) {
 func TestParseWebhookPushDetails_MissingRef_ReturnsError(t *testing.T) {
 	body := `{"after":"sha-after"}`
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	_, err := parseWebhookPushDetails(c, []byte(body))
+	_, err := parseWebhookPushDetails("application/json", []byte(body))
 	if err == nil {
 		t.Fatal("expected error for missing ref, got nil")
 	}
@@ -675,12 +688,7 @@ func TestParseWebhookPushDetails_MissingRef_ReturnsError(t *testing.T) {
 func TestParseWebhookPushDetails_MissingAfter_ReturnsError(t *testing.T) {
 	body := `{"ref":"refs/heads/main"}`
 
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	c.Request.Header.Set("Content-Type", "application/json")
-
-	_, err := parseWebhookPushDetails(c, []byte(body))
+	_, err := parseWebhookPushDetails("application/json", []byte(body))
 	if err == nil {
 		t.Fatal("expected error for missing commit hash, got nil")
 	}
@@ -734,6 +742,31 @@ func TestWebhookHandler_Generic_EmptyBody_UpdatesDB(t *testing.T) {
 	}
 	if got.LastSyncedAt == nil {
 		t.Error("expected last_synced_at to be set")
+	}
+}
+
+func TestWebhookHandler_Generic_NoBodyNoContentType_UpdatesDB(t *testing.T) {
+	setupTestDBWithWebhookRepos(t)
+	const secret = "mysecret"
+	repo := seedWebhookRepo(t, models.GitHub, secret)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/repositories/"+repo.Id, nil)
+	c.Request.Header.Set("Authorization", "Bearer "+secret)
+	c.Params = gin.Params{{Key: "id", Value: repo.Id}}
+	WebhookHandler(c)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got models.Repository
+	if err := db.DB.First(&got, "id = ?", repo.Id).Error; err != nil {
+		t.Fatalf("failed to reload repo: %v", err)
+	}
+	if got.SyncStatus != models.SyncStatusSuccess {
+		t.Errorf("expected sync_status %s, got %s", models.SyncStatusSuccess, got.SyncStatus)
 	}
 }
 

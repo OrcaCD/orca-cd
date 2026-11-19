@@ -4,58 +4,74 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
 type createOIDCProviderRequest struct {
-	Name                 string `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL            string `json:"issuerUrl" binding:"required,http_url"`
-	ClientId             string `json:"clientId" binding:"required"`
-	ClientSecret         string `json:"clientSecret" binding:"required"`
-	Scopes               string `json:"scopes"`
-	Enabled              *bool  `json:"enabled"`
-	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail"`
-	AutoSignup           *bool  `json:"autoSignup"`
+	Name                 string `json:"name" required:"true" minLength:"1" maxLength:"100"`
+	IssuerURL            string `json:"issuerUrl" required:"true" minLength:"1" format:"uri" doc:"An http(s) URL that answers OIDC discovery"`
+	ClientId             string `json:"clientId" required:"true" minLength:"1"`
+	ClientSecret         string `json:"clientSecret" required:"true" minLength:"1"`
+	Scopes               string `json:"scopes" doc:"Comma-separated scopes to request in addition to openid, email and profile"`
+	Enabled              *bool  `json:"enabled" doc:"Defaults to true"`
+	RequireVerifiedEmail *bool  `json:"requireVerifiedEmail" doc:"Whether users need a verified email. Defaults to true."`
+	AutoSignup           *bool  `json:"autoSignup" doc:"Whether unknown users get an account when they sign in. Defaults to true."`
 	// GroupsClaim enables syncing roles from groups, which is off by default.
-	GroupsClaim *string `json:"groupsClaim" binding:"omitempty,max=255"`
+	GroupsClaim *string `json:"groupsClaim" maxLength:"255" doc:"The ID token claim with the groups of the user, which give roles. Empty turns it off."`
 }
 
 type updateOIDCProviderRequest struct {
-	Name                 string  `json:"name" binding:"required,min=1,max=100"`
-	IssuerURL            string  `json:"issuerUrl" binding:"required,http_url"`
-	ClientId             string  `json:"clientId" binding:"required"`
-	ClientSecret         *string `json:"clientSecret"`
-	Scopes               string  `json:"scopes"`
-	Enabled              *bool   `json:"enabled"`
-	RequireVerifiedEmail *bool   `json:"requireVerifiedEmail"`
-	AutoSignup           *bool   `json:"autoSignup"`
-	GroupsClaim          *string `json:"groupsClaim" binding:"omitempty,max=255"`
+	Name                 string  `json:"name" required:"true" minLength:"1" maxLength:"100"`
+	IssuerURL            string  `json:"issuerUrl" required:"true" minLength:"1" format:"uri" doc:"An http(s) URL that answers OIDC discovery"`
+	ClientId             string  `json:"clientId" required:"true" minLength:"1"`
+	ClientSecret         *string `json:"clientSecret" doc:"Leave it out or empty to keep the current secret"`
+	Scopes               string  `json:"scopes" doc:"Comma-separated scopes to request in addition to openid, email and profile"`
+	Enabled              *bool   `json:"enabled" doc:"Leave it out to keep the current value"`
+	RequireVerifiedEmail *bool   `json:"requireVerifiedEmail" doc:"Leave it out to keep the current value"`
+	AutoSignup           *bool   `json:"autoSignup" doc:"Leave it out to keep the current value"`
+	GroupsClaim          *string `json:"groupsClaim" maxLength:"255" doc:"Leave it out to keep the current value, empty turns syncing roles from groups off"`
 }
 
 type oidcProviderResponse struct {
-	Id                   string `json:"id"`
-	Name                 string `json:"name"`
-	IssuerURL            string `json:"issuerUrl"`
-	ClientId             string `json:"clientId"`
-	Scopes               string `json:"scopes"`
-	Enabled              bool   `json:"enabled"`
-	RequireVerifiedEmail bool   `json:"requireVerifiedEmail"`
-	AutoSignup           bool   `json:"autoSignup"`
-	GroupsClaim          string `json:"groupsClaim"`
-	CallbackURL          string `json:"callbackUrl"`
-	CreatedAt            string `json:"createdAt"`
-	UpdatedAt            string `json:"updatedAt"`
+	Id                   string `json:"id" required:"true"`
+	Name                 string `json:"name" required:"true"`
+	IssuerURL            string `json:"issuerUrl" required:"true"`
+	ClientId             string `json:"clientId" required:"true"`
+	Scopes               string `json:"scopes" required:"true"`
+	Enabled              bool   `json:"enabled" required:"true"`
+	RequireVerifiedEmail bool   `json:"requireVerifiedEmail" required:"true"`
+	AutoSignup           bool   `json:"autoSignup" required:"true"`
+	GroupsClaim          string `json:"groupsClaim" required:"true" doc:"The claim roles are synced from, empty when that is off"`
+	CallbackURL          string `json:"callbackUrl" required:"true" doc:"The redirect URL to register at the provider"`
+	CreatedAt            string `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt            string `json:"updatedAt" required:"true" format:"date-time"`
+}
+
+type oidcProviderOutput struct {
+	Body oidcProviderResponse
+}
+
+// isHTTPURL is the check of Gin's http_url validator, which the issuer URL had
+// to pass. The uri format also accepts other schemes.
+func isHTTPURL(value string) bool {
+	u, err := url.Parse(strings.ToLower(value))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
 }
 
 // oidcDiscoveryClient is the HTTP client used to validate issuer URLs.
@@ -88,11 +104,19 @@ func toOIDCProviderResponse(p *models.OIDCProvider) oidcProviderResponse {
 	}
 }
 
-func AdminListOIDCProvidersHandler(c *gin.Context) {
-	providers, err := gorm.G[models.OIDCProvider](db.DB).Find(c.Request.Context())
+var AdminListOIDCProvidersHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-list-oidc-providers",
+	Method:      http.MethodGet,
+	Path:        "/admin/oidc-providers",
+	Summary:     "List OIDC providers",
+	Description: "Lists every OIDC provider, including disabled ones. Client secrets are never returned. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []oidcProviderResponse }, error) {
+	providers, err := gorm.G[models.OIDCProvider](db.DB).Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	result := make([]oidcProviderResponse, 0, len(providers))
@@ -100,32 +124,46 @@ func AdminListOIDCProvidersHandler(c *gin.Context) {
 		result = append(result, toOIDCProviderResponse(&p))
 	}
 
-	c.JSON(http.StatusOK, result)
-}
+	return &struct{ Body []oidcProviderResponse }{Body: result}, nil
+})
 
-func AdminGetOIDCProviderHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", id).First(c.Request.Context())
+var AdminGetOIDCProviderHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-get-oidc-provider",
+	Method:      http.MethodGet,
+	Path:        "/admin/oidc-providers/{id}",
+	Summary:     "Get an OIDC provider",
+	Description: "The client secret is never returned. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*oidcProviderOutput, error) {
+	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
-		return
+		return nil, huma.Error404NotFound("provider not found")
 	}
 
-	c.JSON(http.StatusOK, toOIDCProviderResponse(&provider))
-}
+	return &oidcProviderOutput{Body: toOIDCProviderResponse(&provider)}, nil
+})
 
-func AdminCreateOIDCProviderHandler(c *gin.Context) {
-	var req createOIDCProviderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid"})
-		return
+var AdminCreateOIDCProviderHandler = restapi.Handler(huma.Operation{
+	OperationID:   "admin-create-oidc-provider",
+	Method:        http.MethodPost,
+	Path:          "/admin/oidc-providers",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create an OIDC provider",
+	Description:   "The issuer URL must answer OIDC discovery. " + requiresAdmin,
+	Tags:          []string{tagAdmin},
+	Security:      restapi.Authenticated,
+	Errors:        []int{http.StatusBadRequest, http.StatusForbidden},
+}, func(ctx context.Context, input *struct{ Body createOIDCProviderRequest }) (*oidcProviderOutput, error) {
+	req := input.Body
+	if !isHTTPURL(req.IssuerURL) {
+		return nil, huma.Error400BadRequest("invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid")
 	}
 
 	// Validate issuer by attempting OIDC discovery
-	if err := validateOIDCIssuer(c.Request.Context(), req.IssuerURL); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to discover OIDC provider at the given issuer URL"})
-		return
+	if err := validateOIDCIssuer(ctx, req.IssuerURL); err != nil {
+		return nil, huma.Error400BadRequest("failed to discover OIDC provider at the given issuer URL")
 	}
 
 	enabled := true
@@ -157,37 +195,44 @@ func AdminCreateOIDCProviderHandler(c *gin.Context) {
 		provider.GroupsClaim = strings.TrimSpace(*req.GroupsClaim)
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Select("*").Create(&provider).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+	if err := db.DB.WithContext(ctx).Select("*").Create(&provider).Error; err != nil {
+		return nil, internalError()
 	}
 
-	utils.RecordAuditLog(c, "created", "oidc-provider", provider.Id)
-
-	c.JSON(http.StatusCreated, toOIDCProviderResponse(&provider))
+	utils.RecordAuditLog(restapi.GinContext(ctx), "created", "oidc-provider", provider.Id)
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
-}
 
-func AdminUpdateOIDCProviderHandler(c *gin.Context) {
-	id := c.Param("id")
+	return &oidcProviderOutput{Body: toOIDCProviderResponse(&provider)}, nil
+})
 
-	var req updateOIDCProviderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, issuerUrl, and clientId are required and must be valid"})
-		return
+var AdminUpdateOIDCProviderHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-update-oidc-provider",
+	Method:      http.MethodPut,
+	Path:        "/admin/oidc-providers/{id}",
+	Summary:     "Update an OIDC provider",
+	Description: "A changed issuer URL must answer OIDC discovery. Disabling the provider signs out its users, " +
+		"and changing its groups claim updates the roles users get from groups. " + requiresAdmin,
+	Tags:     []string{tagAdmin},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the OIDC provider"`
+	Body updateOIDCProviderRequest
+}) (*oidcProviderOutput, error) {
+	id, req := input.ID, input.Body
+	if !isHTTPURL(req.IssuerURL) {
+		return nil, huma.Error400BadRequest("invalid request: name, issuerUrl, and clientId are required and must be valid")
 	}
 
-	existing, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", id).First(c.Request.Context())
+	existing, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
-		return
+		return nil, huma.Error404NotFound("provider not found")
 	}
 
 	// Validate issuer if it changed
 	if req.IssuerURL != existing.IssuerURL {
-		if err := validateOIDCIssuer(c.Request.Context(), req.IssuerURL); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to discover OIDC provider at the given issuer URL"})
-			return
+		if err := validateOIDCIssuer(ctx, req.IssuerURL); err != nil {
+			return nil, huma.Error400BadRequest("failed to discover OIDC provider at the given issuer URL")
 		}
 	}
 
@@ -214,7 +259,7 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 	}
 
 	var rolesChanged []string
-	err = db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&existing).Error; err != nil {
 			return err
 		}
@@ -222,68 +267,74 @@ func AdminUpdateOIDCProviderHandler(c *gin.Context) {
 		// of the new claim on their next login.
 		if previousGroupsClaim != existing.GroupsClaim {
 			if _, err := gorm.G[models.UserOIDCIdentity](tx).Where("provider_id = ?", id).
-				Update(c.Request.Context(), "group_names", gorm.Expr("'[]'")); err != nil {
+				Update(ctx, "group_names", gorm.Expr("'[]'")); err != nil {
 				return err
 			}
 		}
 		// Roles from the groups of a disabled provider, or one that stopped
 		// syncing them, are removed
 		if wasEnabled != existing.Enabled || previousGroupsClaim != existing.GroupsClaim {
-			if rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx); err != nil {
+			if rolesChanged, err = syncAllOIDCRoles(ctx, tx); err != nil {
 				return err
 			}
 		}
 		if wasEnabled && !existing.Enabled {
-			return revokeOIDCProviderSessions(c.Request.Context(), tx, id)
+			return revokeOIDCProviderSessions(ctx, tx, id)
 		}
 		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	utils.RecordAuditLog(c, "updated", "oidc-provider", id)
-
-	c.JSON(http.StatusOK, toOIDCProviderResponse(&existing))
+	utils.RecordAuditLog(restapi.GinContext(ctx), "updated", "oidc-provider", id)
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
 	publishRolesChanged(rolesChanged)
-}
 
-func AdminDeleteOIDCProviderHandler(c *gin.Context) {
-	id := c.Param("id")
+	return &oidcProviderOutput{Body: toOIDCProviderResponse(&existing)}, nil
+})
+
+var AdminDeleteOIDCProviderHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-delete-oidc-provider",
+	Method:      http.MethodDelete,
+	Path:        "/admin/oidc-providers/{id}",
+	Summary:     "Delete an OIDC provider",
+	Description: "Signs out the users linked to the provider and removes the roles they got from its groups. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	id := input.ID
 
 	var deleted int
 	var rolesChanged []string
-	err := db.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		if err := revokeOIDCProviderSessions(c.Request.Context(), tx, id); err != nil {
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := revokeOIDCProviderSessions(ctx, tx, id); err != nil {
 			return err
 		}
-		if _, err := gorm.G[models.RoleOIDCGroup](tx).Where("provider_id = ?", id).Delete(c.Request.Context()); err != nil {
+		if _, err := gorm.G[models.RoleOIDCGroup](tx).Where("provider_id = ?", id).Delete(ctx); err != nil {
 			return err
 		}
 		var err error
-		if deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(c.Request.Context()); err != nil {
+		if deleted, err = gorm.G[models.OIDCProvider](tx).Where("id = ?", id).Delete(ctx); err != nil {
 			return err
 		}
-		rolesChanged, err = syncAllOIDCRoles(c.Request.Context(), tx)
+		rolesChanged, err = syncAllOIDCRoles(ctx, tx)
 		return err
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if deleted == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
-		return
+		return nil, huma.Error404NotFound("provider not found")
 	}
 
-	utils.RecordAuditLog(c, "deleted", "oidc-provider", id)
-
-	c.JSON(http.StatusOK, gin.H{"message": "provider deleted"})
+	utils.RecordAuditLog(restapi.GinContext(ctx), "deleted", "oidc-provider", id)
 	sse.PublishUpdate(sse.TopicAdminOIDCProvider)
 	publishRolesChanged(rolesChanged)
-}
+
+	return restapi.Message("provider deleted"), nil
+})
 
 // revokeOIDCProviderSessions signs out every user linked to the provider, so
 // sessions issued through a disabled or deleted provider stop working.

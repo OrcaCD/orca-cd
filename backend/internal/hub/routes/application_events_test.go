@@ -190,7 +190,7 @@ func TestListApplicationEventsHandlerLogsApplicationLookupError(t *testing.T) {
 	logs := captureApplicationEventsLog(t)
 	closeDBForErrorPath(t)
 	w := invokeApplicationEventsHandler(t, app.Id, "")
-	if w.Code != http.StatusInternalServerError || w.Body.String() != "{\"error\":\"internal server error\"}" {
+	if w.Code != http.StatusInternalServerError || strings.TrimSpace(w.Body.String()) != "{\"error\":\"internal server error\"}" {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(logs.String(), "failed to load application for event history") ||
@@ -207,7 +207,7 @@ func TestListApplicationEventsHandlerLogsEventQueryError(t *testing.T) {
 	}
 
 	w := invokeApplicationEventsHandler(t, app.Id, "")
-	if w.Code != http.StatusInternalServerError || w.Body.String() != "{\"error\":\"internal server error\"}" {
+	if w.Code != http.StatusInternalServerError || strings.TrimSpace(w.Body.String()) != "{\"error\":\"internal server error\"}" {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(logs.String(), "failed to list application events") ||

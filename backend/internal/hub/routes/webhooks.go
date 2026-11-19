@@ -1,13 +1,13 @@
 package routes
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,7 +16,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -40,68 +42,104 @@ type pushPayload struct {
 	After string `json:"after"`
 }
 
-func rejectWebhook(c *gin.Context, reason string) {
-	seclog.Warn(c, seclog.WebhookAuthFailed, "reason", reason)
-	c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+// webhookInput is the input of the repository webhook. The providers sign the
+// raw body, so it's verified against exactly the bytes that were sent.
+type webhookInput struct {
+	ID              string `path:"id" doc:"The ID of the repository"`
+	GitHubEvent     string `header:"X-GitHub-Event" doc:"Set by GitHub. Only push events trigger a sync."`
+	GitHubSignature string `header:"X-Hub-Signature-256" doc:"Set by GitHub: sha256= followed by the hex HMAC-SHA256 of the body, keyed with the webhook secret"`
+	GiteaEvent      string `header:"X-Gitea-Event" doc:"Set by Gitea. Only push events trigger a sync."`
+	GiteaSignature  string `header:"X-Gitea-Signature" doc:"Set by Gitea: the hex HMAC-SHA256 of the body, keyed with the webhook secret"`
+	GitLabEvent     string `header:"X-Gitlab-Event" doc:"Set by GitLab. Only Push Hook events trigger a sync."`
+	GitLabToken     string `header:"X-Gitlab-Token" doc:"Set by GitLab: the webhook secret"`
+	Authorization   string `header:"Authorization" doc:"Generic webhooks without a provider event header send Bearer followed by the webhook secret"`
+	ContentType     string `header:"Content-Type" hidden:"true"`
+	RawBody         []byte
 }
 
-func WebhookHandler(c *gin.Context) {
-	id := c.Param("id")
+var webhookRequestBody = &huma.RequestBody{
+	Description: "The push event of the provider, as JSON or form encoded with the JSON in the payload field. " +
+		"A generic webhook may send `{\"ref\": \"...\", \"branch\": \"...\", \"commit\": \"...\"}` or no body.",
+	Content: map[string]*huma.MediaType{
+		"application/json":                  {Schema: &huma.Schema{Type: huma.TypeObject}},
+		"application/x-www-form-urlencoded": {Schema: &huma.Schema{Type: huma.TypeObject}},
+	},
+}
 
-	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", id).First(c.Request.Context())
+// webhookHandler turns a webhook operation into a Gin handler. A webhook takes
+// the body as RawBody, which Huma then requires and documents as
+// application/octet-stream. Callers may send no body at all, e.g. a generic
+// webhook with only the token, and Huma never parses the bytes, so the body is
+// made optional and documented with body after registering.
+func webhookHandler[I, O any](op huma.Operation, body *huma.RequestBody, handler func(context.Context, *I) (*O, error)) gin.HandlerFunc {
+	// Webhooks authenticate with their own secret, not with a token or session
+	op.Security = restapi.Public
+	op.MaxBodyBytes = maxWebhookBodySize
+	op.RequestBody = &huma.RequestBody{}
+	h := restapi.Handler(op, handler)
+	*op.RequestBody = *body
+	return h
+}
+
+func rejectWebhook(c *gin.Context, reason string) error {
+	seclog.Warn(c, seclog.WebhookAuthFailed, "reason", reason)
+	return huma.Error401Unauthorized("unauthorized")
+}
+
+var WebhookHandler = webhookHandler(huma.Operation{
+	OperationID: "receive-repository-webhook",
+	Method:      http.MethodPost,
+	Path:        "/webhooks/repositories/{id}",
+	Summary:     "Receive a repository webhook",
+	Description: "Called by GitHub, GitLab and Gitea on a push to sync the applications of a repository whose sync type is webhook. " +
+		"GitHub and Gitea sign the body with the webhook secret, GitLab sends it as token. Other events are ignored. " +
+		"Without a provider event header the webhook is generic: it authenticates with `Authorization: Bearer <webhook secret>` " +
+		"and syncs the given branch and commit, or every application of the repository at its latest commit.",
+	Tags:          []string{tagWebhooks},
+	DefaultStatus: http.StatusNoContent,
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized},
+}, webhookRequestBody, func(ctx context.Context, input *webhookInput) (*struct{}, error) {
+	c := restapi.GinContext(ctx)
+
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			rejectWebhook(c, "unknown_id")
-			return
+			return nil, rejectWebhook(c, "unknown_id")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	if repo.SyncType != models.SyncTypeWebhook || repo.WebhookSecret == nil {
-		rejectWebhook(c, "webhook_disabled")
-		return
+		return nil, rejectWebhook(c, "webhook_disabled")
 	}
 
-	if !hasProviderEventHeader(c) {
-		handleGenericWebhook(c, repo)
-		return
-	}
-
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+	if !hasProviderEventHeader(input) {
+		return handleGenericWebhook(ctx, input, repo)
 	}
 
 	secret := repo.WebhookSecret.String()
 
-	if !validateSignature(c, repo.Provider, secret, body) {
-		rejectWebhook(c, "invalid_signature")
-		return
+	if !validateSignature(input, repo.Provider, secret) {
+		return nil, rejectWebhook(c, "invalid_signature")
 	}
 
-	if !isPushEvent(c, repo.Provider) {
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+	if !isPushEvent(input, repo.Provider) {
+		return &struct{}{}, nil
 	}
 
-	pushDetails, err := parseWebhookPushDetails(c, body)
+	pushDetails, err := parseWebhookPushDetails(input.ContentType, input.RawBody)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook payload"})
-		return
+		return nil, huma.Error400BadRequest("invalid webhook payload")
 	}
 
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	apps, err := applications.GetMatchingApplications(c.Request.Context(), &repo, pushDetails.Branch)
+	apps, err := applications.GetMatchingApplications(ctx, &repo, pushDetails.Branch)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	release, ok := tryLockRepositorySync(repo.Id)
@@ -109,18 +147,17 @@ func WebhookHandler(c *gin.Context) {
 		// A sync for this repository is already in progress, most likely this
 		// exact push redelivered by the provider's webhook retry logic. Skip
 		// silently instead of dispatching a duplicate deploy.
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+		return &struct{}{}, nil
 	}
 	defer release()
 
 	// TODO: get commit message for push event and pass it to the queue.
 	// Might be simpler to get it via API instead of parsing it from the webhook payload, since the relevant field names differ between providers.
 	// In case we get it from the API we need to add a GetCommitDetails method to the Provider interface which does not pull the latest commit.
-	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
+	applications.SyncApplications(ctx, &repo, provider, apps, applications.StaticCommit(pushDetails.Commit, ""), applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
-	c.AbortWithStatus(http.StatusNoContent)
-}
+	return &struct{}{}, nil
+})
 
 // tryLockRepositorySync claims the in-flight sync slot for repoID via the
 // default poller so a duplicated webhook delivery cannot dispatch the same
@@ -134,43 +171,33 @@ func tryLockRepositorySync(repoID string) (release func(), ok bool) {
 	return applications.DefaultPoller.TryLockRepositorySync(repoID)
 }
 
-func handleGenericWebhook(c *gin.Context, repo models.Repository) {
+func handleGenericWebhook(ctx context.Context, input *webhookInput, repo models.Repository) (*struct{}, error) {
 	secret := repo.WebhookSecret.String()
-	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	token := strings.TrimSpace(strings.TrimPrefix(input.Authorization, "Bearer "))
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		rejectWebhook(c, "invalid_token")
-		return
+		return nil, rejectWebhook(restapi.GinContext(ctx), "invalid_token")
 	}
 
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	branch, commit := parseGenericWebhookBody(body)
+	branch, commit := parseGenericWebhookBody(input.RawBody)
 
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	var apps []models.Application
 	if branch != "" {
-		apps, err = applications.GetMatchingApplications(c.Request.Context(), &repo, branch)
+		apps, err = applications.GetMatchingApplications(ctx, &repo, branch)
 	} else {
-		apps, err = applications.GetAllApplicationsForRepo(c.Request.Context(), &repo)
+		apps, err = applications.GetAllApplicationsForRepo(ctx, &repo)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	release, ok := tryLockRepositorySync(repo.Id)
 	if !ok {
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+		return &struct{}{}, nil
 	}
 	defer release()
 
@@ -180,9 +207,9 @@ func handleGenericWebhook(c *gin.Context, repo models.Repository) {
 	if commit != "" {
 		resolve = applications.StaticCommit(commit, "")
 	}
-	applications.SyncApplications(c.Request.Context(), &repo, provider, apps, resolve, applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
+	applications.SyncApplications(ctx, &repo, provider, apps, resolve, applications.SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook}, &applications.Log)
 
-	c.AbortWithStatus(http.StatusNoContent)
+	return &struct{}{}, nil
 }
 
 // parseGenericWebhookBody extracts an optional branch and commit from the request body.
@@ -203,21 +230,18 @@ func parseGenericWebhookBody(body []byte) (branch, commit string) {
 	return branch, strings.TrimSpace(payload.Commit)
 }
 
-func hasProviderEventHeader(c *gin.Context) bool {
-	return c.GetHeader("X-GitHub-Event") != "" ||
-		c.GetHeader("X-Gitea-Event") != "" ||
-		c.GetHeader("X-Gitlab-Event") != ""
+func hasProviderEventHeader(input *webhookInput) bool {
+	return input.GitHubEvent != "" || input.GiteaEvent != "" || input.GitLabEvent != ""
 }
 
-func validateSignature(c *gin.Context, provider models.RepositoryProvider, secret string, body []byte) bool {
+func validateSignature(input *webhookInput, provider models.RepositoryProvider, secret string) bool {
 	switch provider {
 	case models.GitHub:
-		return validateHMACSHA256(secret, body, strings.TrimPrefix(c.GetHeader("X-Hub-Signature-256"), "sha256="))
+		return validateHMACSHA256(secret, input.RawBody, strings.TrimPrefix(input.GitHubSignature, "sha256="))
 	case models.Gitea:
-		return validateHMACSHA256(secret, body, c.GetHeader("X-Gitea-Signature"))
+		return validateHMACSHA256(secret, input.RawBody, input.GiteaSignature)
 	case models.GitLab:
-		token := c.GetHeader("X-Gitlab-Token")
-		return subtle.ConstantTimeCompare([]byte(token), []byte(secret)) == 1
+		return subtle.ConstantTimeCompare([]byte(input.GitLabToken), []byte(secret)) == 1
 	default:
 		return false
 	}
@@ -236,21 +260,21 @@ func validateHMACSHA256(secret string, body []byte, hexSig string) bool {
 	return hmac.Equal(mac.Sum(nil), sig)
 }
 
-func isPushEvent(c *gin.Context, provider models.RepositoryProvider) bool {
+func isPushEvent(input *webhookInput, provider models.RepositoryProvider) bool {
 	switch provider {
 	case models.GitHub:
-		return c.GetHeader("X-GitHub-Event") == "push"
+		return input.GitHubEvent == "push"
 	case models.Gitea:
-		return c.GetHeader("X-Gitea-Event") == "push"
+		return input.GiteaEvent == "push"
 	case models.GitLab:
-		return c.GetHeader("X-Gitlab-Event") == "Push Hook"
+		return input.GitLabEvent == "Push Hook"
 	default:
 		return false
 	}
 }
 
-func parseWebhookPushDetails(c *gin.Context, body []byte) (webhookPushDetails, error) {
-	decodedBody, form, err := decodeWebhookBody(c, body)
+func parseWebhookPushDetails(contentType string, body []byte) (webhookPushDetails, error) {
+	decodedBody, form, err := decodeWebhookBody(contentType, body)
 	if err != nil {
 		return webhookPushDetails{}, err
 	}
@@ -284,9 +308,8 @@ func parseWebhookPushDetails(c *gin.Context, body []byte) (webhookPushDetails, e
 	}, nil
 }
 
-func decodeWebhookBody(c *gin.Context, body []byte) ([]byte, url.Values, error) {
-	contentType := strings.ToLower(c.GetHeader("Content-Type"))
-	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+func decodeWebhookBody(contentType string, body []byte) ([]byte, url.Values, error) {
+	if strings.HasPrefix(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		form, err := url.ParseQuery(string(body))
 		if err != nil {
 			return nil, nil, err
