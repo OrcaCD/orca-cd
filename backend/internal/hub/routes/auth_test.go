@@ -117,16 +117,13 @@ func TestCurrentLocalUserRequiresExplicitAccountFlag(t *testing.T) {
 	setupTestDB(t)
 	for _, local := range []bool{false, true} {
 		user := models.User{Id: "account", LocalAuthEnabled: local}
-		if !local {
-			user.PasswordHash = new("legacy-hash")
-		}
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 		setUserClaims(t, c, &user)
 		_, _, ok := getCurrentLocalUser(c)
 		if ok != local || (!local && w.Code != http.StatusForbidden) {
-			t.Fatal("local account access depended on a password hash instead of LocalAuthEnabled")
+			t.Fatal("local account access did not follow LocalAuthEnabled")
 		}
 	}
 }

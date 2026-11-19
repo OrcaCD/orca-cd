@@ -261,9 +261,6 @@ func TestAdminUserClassificationUsesLocalAuthEnabled(t *testing.T) {
 		t.Run(strconv.FormatBool(local), func(t *testing.T) {
 			setupTestDB(t)
 			user := models.User{Name: "Original", Email: "original@example.com", LocalAuthEnabled: local}
-			if !local {
-				user.PasswordHash = new("legacy-hash")
-			}
 			if err := gorm.G[models.User](db.DB).Create(t.Context(), &user); err != nil {
 				t.Fatal(err)
 			}

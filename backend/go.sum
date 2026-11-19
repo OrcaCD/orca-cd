@@ -18,8 +18,6 @@ github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d h1:licZJFw2RwpH
 github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d/go.mod h1:asat636LX7Bqt5lYEZ27JNDcqxfjdBQuJ/MM4CN/Lzo=
 github.com/aegis-aead/go-libaegis v0.2.16 h1:J4UErI+IrgYInytT7TTjz3Odj5c+g6Cv94tJLvM7Kpw=
 github.com/aegis-aead/go-libaegis v0.2.16/go.mod h1:WKSG0pcdvpDrwDPBl9NdAIxHxpZOCqlKWH7EOnPLKHc=
-github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e h1:CuCebtHGXeAvdZWqSep7KpIPG6OLruTms/gX+r0Xqns=
-github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e/go.mod h1:e2S3yie2nqqvB/n9NYpVW47tS9S2x+gR+xcLndWDKjM=
 github.com/anchore/go-struct-converter v0.1.0 h1:2rDRssAl6mgKBSLNiVCMADgZRhoqtw9dedlWa0OhD30=
 github.com/anchore/go-struct-converter v0.1.0/go.mod h1:rYqSE9HbjzpHTI74vwPvae4ZVYZd1lue2ta6xHPdblA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

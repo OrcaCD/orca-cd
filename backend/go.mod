@@ -6,7 +6,6 @@ require (
 	charm.land/lipgloss/v2 v2.1.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aegis-aead/go-libaegis v0.2.16
-	github.com/alexedwards/argon2id v1.0.1-0.20251028180742-493d7dead70e
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.21.0

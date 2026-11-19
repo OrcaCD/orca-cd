@@ -192,8 +192,7 @@ func TestResolveOIDCUser_RejectsNewUserWhenSignupDisabled(t *testing.T) {
 func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
 	setupTestDB(t)
 
-	hash := "hash"
-	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", PasswordHash: &hash}
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Alice", LocalAuthEnabled: true}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
@@ -221,8 +220,7 @@ func TestResolveOIDCUser_LinksAdminCreatedUser(t *testing.T) {
 func TestResolveOIDCUser_RefusesToLinkSelfChangedEmail(t *testing.T) {
 	setupTestDB(t)
 
-	hash := "hash"
-	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Mallory", PasswordHash: &hash, EmailUnconfirmed: true}
+	existing := models.User{Id: "user-1", Email: "alice@example.com", Name: "Mallory", LocalAuthEnabled: true, EmailUnconfirmed: true}
 	if err := db.DB.Create(&existing).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}

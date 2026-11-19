@@ -148,12 +148,14 @@ func TestRunMigrations_UsersTableSchema(t *testing.T) {
 		t.Fatalf("failed to get sql.DB: %v", err)
 	}
 	cols := columnNames(t, sqlDB, "users")
+	if cols["password_hash"] || cols["password_change_required"] {
+		t.Fatal("legacy password columns remain")
+	}
 
-	// migration 002: base; 006: oidc fields; 007: auth_provider dropped; 010: password_change_required
+	// Local authentication is explicit after the passkey migration.
 	required := []string{
-		"id", "email", "name", "password_hash",
+		"id", "email", "name", "local_auth_enabled",
 		"oidc_subject", "oidc_issuer",
-		"password_change_required",
 		"created_at", "updated_at",
 	}
 	for _, col := range required {
@@ -166,6 +168,79 @@ func TestRunMigrations_UsersTableSchema(t *testing.T) {
 	}
 	if cols["role"] {
 		t.Error("users table should not have column 'role' (replaced by user_roles in migration 041)")
+	}
+}
+
+func TestPasskeyMigrationPreservesAccountTypesAndCascades(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestMigrator(t, sqlDB)
+	if err := m.Migrate(46); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO users (id, name, email, password_hash, token_version)
+        VALUES ('local', 'Local', 'local@example.com', 'legacy-hash', 3), ('sso', 'SSO', 'sso@example.com', NULL, 4)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO api_tokens (id, user_id, name, token_hash, prefix, expires_at)
+        VALUES ('existing-token', 'local', 'Automation', 'token-digest', 'orca_', datetime('now', '+1 day'))`); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Up(); err != nil {
+		t.Fatal(err)
+	}
+	var local, sso bool
+	if err := sqlDB.QueryRow("SELECT local_auth_enabled FROM users WHERE id = 'local'").Scan(&local); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.QueryRow("SELECT local_auth_enabled FROM users WHERE id = 'sso'").Scan(&sso); err != nil {
+		t.Fatal(err)
+	}
+	if !local || sso {
+		t.Fatal("account type lost during migration")
+	}
+	var version int
+	if err := sqlDB.QueryRow("SELECT token_version FROM users WHERE id = 'local'").Scan(&version); err != nil || version != 3 {
+		t.Fatal("existing sessions should survive the upgrade")
+	}
+	var tokenCount int
+	if err := sqlDB.QueryRow("SELECT COUNT(*) FROM api_tokens WHERE id = 'existing-token' AND user_id = 'local'").Scan(&tokenCount); err != nil || tokenCount != 1 {
+		t.Fatal("existing API tokens should survive the upgrade")
+	}
+	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO passkeys (id, user_id, credential_id, credential, name, created_at, updated_at)
+        VALUES ('key', 'local', 'credential', 'encrypted', 'Laptop', datetime('now'), datetime('now'))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO passkey_enrollments (user_id, token_hash, token_version, expires_at)
+        VALUES ('local', 'digest', 3, datetime('now', '+1 day'))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec("DELETE FROM users WHERE id = 'local'"); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"passkeys", "passkey_enrollments", "api_tokens"} {
+		var count int
+		if err := sqlDB.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("orphan in %s: %v", table, err)
+		}
+	}
+	if err := m.Migrate(49); err != nil {
+		t.Fatal(err)
+	}
+	if !columnNames(t, sqlDB, "users")["password_hash"] {
+		t.Fatal("down migration did not restore schema")
+	}
+	if !columnNames(t, sqlDB, "audit_logs")["api_token_id"] {
+		t.Fatal("password cleanup rollback removed API token audit data")
+	}
+	if err := m.Up(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1023,8 +1098,8 @@ func TestSeedDemoData_RefusesDatabaseWithRealUsers(t *testing.T) {
 	}
 
 	users := []models.User{
-		{Email: "first@orcacd.dev", Name: "First", PasswordChangeRequired: false},
-		{Email: "second@orcacd.dev", Name: "Second", PasswordChangeRequired: false},
+		{Email: "first@orcacd.dev", Name: "First"},
+		{Email: "second@orcacd.dev", Name: "Second"},
 	}
 	if err := gormDB.Create(&users).Error; err != nil {
 		t.Fatalf("failed to create initial users: %v", err)
