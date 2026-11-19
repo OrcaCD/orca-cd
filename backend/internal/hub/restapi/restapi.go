@@ -1,28 +1,67 @@
-// Package restapi sets up Huma, which describes the /api/v1 routes as an
-// OpenAPI spec. The routes move to it one by one, so its defaults are changed
-// to behave like the Gin handlers: the frontend and API clients must not notice
-// which one answers a request.
+// Package restapi describes the /api/v1 routes with Huma, which produces the
+// OpenAPI spec. Gin still routes the requests and runs the middleware: every
+// operation becomes a Gin handler through Handler, and handlers.go mounts it
+// like any other. Huma parses and validates the input, writes the response and
+// documents the operation. Its defaults are changed to behave like the Gin
+// handlers did, so the frontend and API clients don't notice the difference.
 package restapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/version"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 )
 
-const basePath = "/api/v1"
+const (
+	basePath = "/api/v1"
 
-// New mounts a Huma API on the /api/v1 group of the router.
-func New(router *gin.Engine, group *gin.RouterGroup) huma.API {
+	apiTokenScheme = "apiToken"
+	sessionScheme  = "session"
+)
+
+// Security requirements for huma.Operation.Security. Routes without one need
+// no authentication.
+var (
+	// Authenticated routes take an API token or the session cookie.
+	Authenticated = []map[string][]string{{apiTokenScheme: {}}, {sessionScheme: {}}}
+	// SessionOnly routes are for the web UI and refuse API tokens.
+	SessionOnly = []map[string][]string{{sessionScheme: {}}}
+)
+
+var (
+	// registerMu guards the adapter while an operation is registered
+	registerMu sync.Mutex
+	ginAdapter = &adapter{}
+	api        = huma.NewAPI(newConfig(), ginAdapter)
+)
+
+func newConfig() huma.Config {
 	config := huma.DefaultConfig("OrcaCD API", version.Version)
-	config.Info.Description = "The REST API of the OrcaCD hub."
+	config.Info.Description = "The REST API of the OrcaCD hub. Scripts and CI pipelines authenticate with an API token, " +
+		"which can only do what its scopes and its owner allow."
 	config.Servers = []*huma.Server{{URL: basePath}}
+	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		apiTokenScheme: {
+			Type:        "http",
+			Scheme:      "bearer",
+			Description: "An API token from Settings → API Tokens, sent as `Authorization: Bearer orca_...`.",
+		},
+		sessionScheme: {
+			Type:        "apiKey",
+			In:          "cookie",
+			Name:        auth.AuthCookieName,
+			Description: "The session of the web UI.",
+		},
+	}
 
 	// The spec is only published in the docs, the hub doesn't serve it.
 	config.OpenAPIPath = ""
@@ -41,8 +80,68 @@ func New(router *gin.Engine, group *gin.RouterGroup) huma.API {
 	config.FieldsOptionalByDefault = true
 
 	config.OnAddOperation = append(config.OnAddOperation, documentValidationErrorsAs400)
+	return config
+}
 
-	return humagin.NewWithGroup(router, group, config)
+// OpenAPI returns the spec of every operation turned into a handler.
+func OpenAPI() *huma.OpenAPI {
+	return api.OpenAPI()
+}
+
+// Handler adds the operation to the spec and returns it as a Gin handler. The
+// Gin route must use the operation's method and path, with ":id" for "{id}".
+func Handler[I, O any](op huma.Operation, handler func(context.Context, *I) (*O, error)) gin.HandlerFunc {
+	registerMu.Lock()
+	defer registerMu.Unlock()
+
+	huma.Register(api, op, handler)
+	h := ginAdapter.handler
+	ginAdapter.handler = nil
+	return h
+}
+
+type ginContextKey struct{}
+
+// GinContext returns the Gin context of the request a handler runs for, which
+// the auth, audit log and security log helpers take.
+func GinContext(ctx context.Context) *gin.Context {
+	c, ok := ctx.Value(ginContextKey{}).(*gin.Context)
+	if !ok {
+		panic("restapi: no Gin context, the handler must run through restapi.Handler")
+	}
+	return c
+}
+
+// adapter hands the handler Huma builds for an operation to Handler instead of
+// routing requests itself.
+type adapter struct {
+	handler gin.HandlerFunc
+}
+
+func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
+	a.handler = func(c *gin.Context) {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ginContextKey{}, c))
+		handler(humagin.NewContext(op, c))
+	}
+}
+
+// ServeHTTP is never called, Gin routes the requests.
+func (a *adapter) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+}
+
+// MessageOutput is the response of actions that return nothing but a message,
+// like deleting a resource.
+type MessageOutput struct {
+	Body struct {
+		Message string `json:"message" required:"true" example:"agent deleted"`
+	}
+}
+
+func Message(message string) *MessageOutput {
+	out := &MessageOutput{}
+	out.Body.Message = message
+	return out
 }
 
 // Error is the error body of every route, {"error": "..."}, which the frontend

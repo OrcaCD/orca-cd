@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,18 +15,12 @@ func init() {
 	gin.SetMode(gin.TestMode)
 }
 
-// serveRestAPI registers routes on a Huma API like the hub does and sends one request.
-func serveRestAPI(t *testing.T, register func(huma.API), method, path string) *httptest.ResponseRecorder {
-	t.Helper()
-	router := gin.New()
-	register(restapi.New(router, router.Group("/api/v1")))
+func TestHealthHandler(t *testing.T) {
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequest(method, path, nil))
-	return w
-}
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 
-func TestHealth(t *testing.T) {
-	w := serveRestAPI(t, RegisterHealth, http.MethodGet, "/api/v1/health")
+	HealthHandler(c)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
@@ -42,12 +35,10 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestRegisterHealth_SpecRequiresStatus(t *testing.T) {
-	api := restapi.New(gin.New(), gin.New().Group("/api/v1"))
-	RegisterHealth(api)
-
-	ref := api.OpenAPI().Paths["/health"].Get.Responses["200"].Content["application/json"].Schema.Ref
-	schema := api.OpenAPI().Components.Schemas.SchemaFromRef(ref)
+func TestHealthHandler_SpecRequiresStatus(t *testing.T) {
+	spec := restapi.OpenAPI()
+	ref := spec.Paths["/health"].Get.Responses["200"].Content["application/json"].Schema.Ref
+	schema := spec.Components.Schemas.SchemaFromRef(ref)
 	if !slices.Contains(schema.Required, "status") {
 		t.Errorf("expected status to be required, got %v", schema.Required)
 	}

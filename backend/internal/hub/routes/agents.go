@@ -12,12 +12,13 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/iplist"
 	"github.com/OrcaCD/orca-cd/internal/version"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -57,38 +58,46 @@ func defaultString(value, fallback string) string {
 }
 
 type agentResponse struct {
-	Id            string                     `json:"id"`
-	Icon          string                     `json:"icon"`
-	Name          string                     `json:"name"`
-	Status        string                     `json:"status"`
-	AppsCount     int64                      `json:"appsCount"`
-	LastSeen      *string                    `json:"lastSeen"`
-	Version       *string                    `json:"version"`
-	DockerVersion *string                    `json:"dockerVersion"`
-	VersionStatus version.AgentCompatibility `json:"versionStatus"`
-	AllowedIPs    []string                   `json:"allowedIps"`
-	LastIP        *string                    `json:"lastIp"`
-	CreatedAt     string                     `json:"createdAt"`
-	UpdatedAt     string                     `json:"updatedAt"`
+	Id            string                     `json:"id" required:"true"`
+	Icon          string                     `json:"icon" required:"true"`
+	Name          string                     `json:"name" required:"true"`
+	Status        string                     `json:"status" required:"true" enum:"online,offline,error"`
+	AppsCount     int64                      `json:"appsCount" required:"true" doc:"Number of applications deployed by the agent"`
+	LastSeen      *string                    `json:"lastSeen" required:"true" nullable:"true" format:"date-time"`
+	Version       *string                    `json:"version" required:"true" nullable:"true"`
+	DockerVersion *string                    `json:"dockerVersion" required:"true" nullable:"true"`
+	VersionStatus version.AgentCompatibility `json:"versionStatus" required:"true"`
+	AllowedIPs    []string                   `json:"allowedIps" required:"true" doc:"IP addresses and CIDR ranges the agent may connect from. Empty allows any."`
+	LastIP        *string                    `json:"lastIp" required:"true" nullable:"true"`
+	CreatedAt     string                     `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt     string                     `json:"updatedAt" required:"true" format:"date-time"`
 }
 
 type agentWithTokenResponse struct {
 	agentResponse
-	AuthToken  string `json:"authToken,omitempty"`
-	AgentImage string `json:"agentImage,omitempty"`
+	AuthToken  string `json:"authToken,omitempty" doc:"The token the agent connects with. Only returned once."`
+	AgentImage string `json:"agentImage,omitempty" doc:"The agent image matching the hub version"`
 }
 
 type createAgentRequest struct {
-	Name       string   `json:"name" binding:"required,min=1,max=128"`
-	Icon       string   `json:"icon" binding:"omitempty,min=1,max=128"`
-	AllowedIPs []string `json:"allowedIps"`
+	Name       string   `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Icon       string   `json:"icon,omitempty" minLength:"1" maxLength:"128"`
+	AllowedIPs []string `json:"allowedIps,omitempty" doc:"IP addresses and CIDR ranges the agent may connect from"`
 }
 
 type updateAgentRequest struct {
-	Name string `json:"name" binding:"required,min=1,max=128"`
-	Icon string `json:"icon" binding:"omitempty,min=1,max=128"`
+	Name string `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Icon string `json:"icon,omitempty" minLength:"1" maxLength:"128"`
 	// nil leaves the whitelist unchanged, an empty list clears it.
-	AllowedIPs *[]string `json:"allowedIps"`
+	AllowedIPs *[]string `json:"allowedIps,omitempty" doc:"Leave it out to keep the list, an empty list allows any IP"`
+}
+
+type agentOutput struct {
+	Body agentResponse
+}
+
+type agentWithTokenOutput struct {
+	Body agentWithTokenResponse
 }
 
 const agentStatusOffline = "offline"
@@ -166,12 +175,18 @@ func countApplicationsByAgentIDs(ctx context.Context, agentIds []string) (map[st
 	return counts, nil
 }
 
-func ListAgentsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+var ListAgentsHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-agents",
+	Method:      http.MethodGet,
+	Path:        "/agents",
+	Summary:     "List agents",
+	Description: "Lists the agents the user may view.",
+	Tags:        []string{tagAgents},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []agentResponse }, error) {
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 
 	agents, err := gorm.G[models.Agent](db.DB).
@@ -179,8 +194,7 @@ func ListAgentsHandler(c *gin.Context) {
 		Order("created_at ASC").
 		Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	agentIds := make([]string, 0, len(agents))
@@ -190,8 +204,7 @@ func ListAgentsHandler(c *gin.Context) {
 
 	appsCountByAgentId, err := countApplicationsByAgentIDs(ctx, agentIds)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	response := make([]agentResponse, 0, len(agents))
@@ -199,46 +212,51 @@ func ListAgentsHandler(c *gin.Context) {
 		response = append(response, toAgentResponse(&agents[i], appsCountByAgentId[agents[i].Id]))
 	}
 
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body []agentResponse }{Body: response}, nil
+})
 
-func GetAgentHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
-
-	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
+var GetAgentHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-agent",
+	Method:      http.MethodGet,
+	Path:        "/agents/{id}",
+	Summary:     "Get an agent",
+	Description: requires(models.ResourceAgent, models.ActionRead),
+	Tags:        []string{tagAgents},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound},
+}, func(ctx context.Context, input *idInput) (*agentOutput, error) {
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-			return
+			return nil, huma.Error404NotFound("agent not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
-}
+	return &agentOutput{Body: toAgentResponse(&agent, appsCount)}, nil
+})
 
-func CreateAgentHandler(c *gin.Context) {
-	var req createAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name is required and must be valid"})
-		return
-	}
-
+var CreateAgentHandler = restapi.Handler(huma.Operation{
+	OperationID:   "create-agent",
+	Method:        http.MethodPost,
+	Path:          "/agents",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create an agent",
+	Description:   "Returns the token the agent connects with, which is only shown once. " + requires(models.ResourceAgent, models.ActionCreate),
+	Tags:          []string{tagAgents},
+	Security:      restapi.Authenticated,
+	Errors:        []int{http.StatusBadRequest},
+}, func(ctx context.Context, input *struct{ Body createAgentRequest }) (*agentWithTokenOutput, error) {
+	req := input.Body
 	allowedIPs, err := normalizeAgentAllowedIPs(req.AllowedIPs)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed IPs: " + err.Error()})
-		return
+		return nil, huma.Error400BadRequest("invalid allowed IPs: " + err.Error())
 	}
-
-	ctx := c.Request.Context()
 
 	var (
 		agent     models.Agent
@@ -274,42 +292,44 @@ func CreateAgentHandler(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	utils.RecordAuditLog(c, "created", "agent", agent.Id)
+	utils.RecordAuditLog(restapi.GinContext(ctx), "created", "agent", agent.Id)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 
-	c.JSON(http.StatusCreated, agentWithTokenResponse{
+	return &agentWithTokenOutput{Body: agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
-	})
-	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
-}
+	}}, nil
+})
 
-func UpdateAgentHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	var req updateAgentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name is required and must be valid"})
-		return
-	}
-
-	ctx := c.Request.Context()
+var UpdateAgentHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-agent",
+	Method:      http.MethodPut,
+	Path:        "/agents/{id}",
+	Summary:     "Update an agent",
+	Description: "Changing the allowed IPs disconnects the agent if it is connected from an IP that is no longer allowed. " +
+		requires(models.ResourceAgent, models.ActionUpdate),
+	Tags:     []string{tagAgents},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the agent"`
+	Body updateAgentRequest
+}) (*agentOutput, error) {
+	id, req := input.ID, input.Body
 
 	updates := models.Agent{Name: crypto.EncryptedString(req.Name)}
 	columns := []any{}
@@ -320,36 +340,30 @@ func UpdateAgentHandler(c *gin.Context) {
 	if req.AllowedIPs != nil {
 		allowedIPs, err := normalizeAgentAllowedIPs(*req.AllowedIPs)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed IPs: " + err.Error()})
-			return
+			return nil, huma.Error400BadRequest("invalid allowed IPs: " + err.Error())
 		}
 		updates.AllowedIPs = allowedIPs
 		columns = append(columns, "allowed_ips")
 	}
 	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Select("name", columns...).Updates(ctx, updates)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-		return
+		return nil, huma.Error404NotFound("agent not found")
 	}
 
 	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-			return
+			return nil, huma.Error404NotFound("agent not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	if req.AllowedIPs != nil {
@@ -358,38 +372,41 @@ func UpdateAgentHandler(c *gin.Context) {
 		}
 	}
 
-	utils.RecordAuditLog(c, "updated", "agent", id)
-
-	c.JSON(http.StatusOK, toAgentResponse(&agent, appsCount))
+	utils.RecordAuditLog(restapi.GinContext(ctx), "updated", "agent", id)
 	sse.PublishUpdate(sse.TopicAgents.For(id))
-}
 
-func RotateAgentTokenHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
+	return &agentOutput{Body: toAgentResponse(&agent, appsCount)}, nil
+})
 
-	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).First(ctx)
+var RotateAgentTokenHandler = restapi.Handler(huma.Operation{
+	OperationID: "rotate-agent-token",
+	Method:      http.MethodPost,
+	Path:        "/agents/{id}/rotate-token",
+	Summary:     "Rotate the token of an agent",
+	Description: "Returns a new token, which is only shown once. The old token stops working and a connected agent is disconnected. " +
+		requires(models.ResourceAgent, models.ActionUpdate),
+	Tags:     []string{tagAgents},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound},
+}, func(ctx context.Context, input *idInput) (*agentWithTokenOutput, error) {
+	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-			return
+			return nil, huma.Error404NotFound("agent not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	authToken, err := auth.GenerateAgentToken(&agent)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	if _, err := gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).Updates(ctx, models.Agent{
 		KeyId:            agent.KeyId,
 		SigningPublicKey: agent.SigningPublicKey,
 	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if client, ok := websocket.DefaultHub.GetClient(agent.Id); ok {
 		// The socket is closed immediately. WsHandler then drains accepted messages
@@ -399,41 +416,48 @@ func RotateAgentTokenHandler(c *gin.Context) {
 
 	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", agent.Id).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	appsCount, err := countApplicationsByAgentID(ctx, agent.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	utils.RecordAuditLog(c, "rotated-token", "agent", agent.Id)
+	utils.RecordAuditLog(restapi.GinContext(ctx), "rotated-token", "agent", agent.Id)
+	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
 
-	c.JSON(http.StatusOK, agentWithTokenResponse{
+	return &agentWithTokenOutput{Body: agentWithTokenResponse{
 		agentResponse: toAgentResponse(&agent, appsCount),
 		AuthToken:     authToken,
 		AgentImage:    version.AgentImage(),
-	})
-	sse.PublishUpdate(sse.TopicAgents.For(agent.Id))
-}
+	}}, nil
+})
 
-func DeleteAgentHandler(c *gin.Context) {
-	id := c.Param("id")
+var DeleteAgentHandler = restapi.Handler(huma.Operation{
+	OperationID: "delete-agent",
+	Method:      http.MethodDelete,
+	Path:        "/agents/{id}",
+	Summary:     "Delete an agent",
+	Description: "Deletes its applications too, so it also needs `application:delete` on each of them. " +
+		requires(models.ResourceAgent, models.ActionDelete),
+	Tags:     []string{tagAgents},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusForbidden, http.StatusNotFound},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	c := restapi.GinContext(ctx)
+	id := input.ID
 	// The applications of the agent are deleted with it.
-	if !canDeleteApplicationsOf(c, "agent_id", id) {
-		return
+	if err := checkDeleteApplicationsOf(c, "agent_id", id); err != nil {
+		return nil, err
 	}
 
-	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+	rowsAffected, err := gorm.G[models.Agent](db.DB).Where("id = ?", id).Delete(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-		return
+		return nil, huma.Error404NotFound("agent not found")
 	}
 
 	if client, ok := websocket.DefaultHub.GetClient(id); ok {
@@ -443,9 +467,10 @@ func DeleteAgentHandler(c *gin.Context) {
 
 	utils.RecordAuditLog(c, "deleted", "agent", id)
 
-	c.JSON(http.StatusOK, gin.H{"message": "agent deleted"})
 	// Its applications were deleted with it
 	sse.PublishUpdate(sse.TopicAgents, sse.TopicApplications)
 	// After the update, so clients still get it before losing access
-	pruneGrants(c.Request.Context())
-}
+	pruneGrants(ctx)
+
+	return restapi.Message("agent deleted"), nil
+})

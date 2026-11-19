@@ -3,11 +3,18 @@ package routes
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
-func TestOrca(t *testing.T) {
-	w := serveRestAPI(t, RegisterOrca, http.MethodGet, "/api/v1/orca")
+func TestOrcaHandler(t *testing.T) {
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/orca", nil)
+
+	OrcaHandler(c)
 
 	if w.Code != http.StatusTeapot {
 		t.Errorf("expected 418, got %d", w.Code)
