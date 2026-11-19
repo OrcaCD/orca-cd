@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/golang-migrate/migrate/v4"
@@ -1060,7 +1061,8 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 		"application events": {&models.ApplicationEvent{}, 8},
 		"deployments":        {&models.ApplicationDeployment{}, 4},
 		"notifications":      {&models.Notification{}, 2},
-		"audit logs":         {&models.AuditLog{}, 7},
+		"audit logs":         {&models.AuditLog{}, 9},
+		"api tokens":         {&models.APIToken{}, 4},
 	}
 	for name, c := range counts {
 		var got int64
@@ -1086,6 +1088,26 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 	}
 	if agent.Status != models.AgentStatusOnline || agent.LastSeen == nil || agent.Version == "" || agent.DockerVersion == "" {
 		t.Errorf("expected demo agent to look connected, got %+v", agent)
+	}
+
+	var token models.APIToken
+	if err := gormDB.Where("id = ?", demoSeedAPITokenID).First(&token).Error; err != nil {
+		t.Fatalf("failed to fetch demo api token: %v", err)
+	}
+	if token.UserId != demoSeedUserID || token.IsExpired(time.Now()) || token.LastUsedAt == nil {
+		t.Errorf("expected an active, used demo api token of the demo user, got %+v", token)
+	}
+	// The stored hash must not belong to a token anyone could send
+	if apitoken.IsWellFormed("demo:"+token.Id) || token.TokenHash != apitoken.Hash("demo:"+token.Id) {
+		t.Errorf("expected the demo token hash to be of a malformed token, got %q", token.TokenHash)
+	}
+
+	var firstUse models.AuditLog
+	if err := gormDB.Where("event_type = ?", "first-used-api-token").First(&firstUse).Error; err != nil {
+		t.Fatalf("failed to fetch demo first use entry: %v", err)
+	}
+	if firstUse.APITokenId == nil || *firstUse.APITokenId != demoSeedAPITokenID {
+		t.Errorf("expected the first use to be made with %q, got %v", demoSeedAPITokenID, firstUse.APITokenId)
 	}
 }
 

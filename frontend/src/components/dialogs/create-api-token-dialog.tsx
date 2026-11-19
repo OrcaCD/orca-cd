@@ -219,18 +219,25 @@ function ApiTokenForm({
 									? [...field.state.value, scope]
 									: field.state.value.filter((s) => s !== scope),
 							);
+						// The admin scope already allows everything, so the others are shown as
+						// included and aren't sent with it
+						const hasAdmin = field.state.value.includes("admin");
 						return (
 							<FieldSet data-invalid={isInvalid}>
 								<FieldLegend variant="label">{m.apiTokenScopes()}</FieldLegend>
 								<FieldDescription>{m.apiTokenScopesDescription()}</FieldDescription>
-								<div className="flex max-h-72 flex-col gap-4 overflow-y-auto">
+								{/* The negative margin moves a scrollbar that is always shown into the
+								    dialog's padding, away from the scopes */}
+								<div className="-mr-3 flex max-h-72 flex-col gap-4 overflow-y-auto pr-3">
 									{isAdmin && (
 										<FieldLabel htmlFor="api-token-scope-admin">
 											<Field orientation="horizontal">
 												<Checkbox
 													id="api-token-scope-admin"
-													checked={field.state.value.includes("admin")}
-													onCheckedChange={(checked) => toggle("admin", checked === true)}
+													checked={hasAdmin}
+													onCheckedChange={(checked) =>
+														field.handleChange(checked ? ["admin"] : [])
+													}
 												/>
 												<FieldContent>
 													<FieldTitle>{m.apiTokenScopeAdmin()}</FieldTitle>
@@ -250,7 +257,8 @@ function ApiTokenForm({
 														<Field key={scope} orientation="horizontal" className="w-auto">
 															<Checkbox
 																id={id}
-																checked={field.state.value.includes(scope)}
+																checked={hasAdmin || field.state.value.includes(scope)}
+																disabled={hasAdmin}
 																onCheckedChange={(checked) => toggle(scope, checked === true)}
 															/>
 															<Label htmlFor={id} className="font-normal">
