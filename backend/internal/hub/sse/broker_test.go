@@ -276,3 +276,16 @@ func TestEventReloadsProfileOf(t *testing.T) {
 		})
 	}
 }
+
+func TestTopicAPITokensOf(t *testing.T) {
+	topic := TopicAPITokensOf("user-1")
+	if topic.URL() != "/api/v1/api-tokens" {
+		t.Errorf("URL() = %q, want %q", topic.URL(), "/api/v1/api-tokens")
+	}
+	if !topic.SentTo("user-1") || topic.SentTo("user-2") {
+		t.Error("expected the topic to be sent only to its owner")
+	}
+	if !TopicAdminAPITokens.AdminOnly() {
+		t.Error("expected the list of all tokens to be admin only")
+	}
+}

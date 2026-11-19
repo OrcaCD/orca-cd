@@ -31,6 +31,7 @@ var (
 	TopicAdminUsers          = Topic{url: apiPrefix + "/admin/users", adminOnly: true}
 	TopicAdminOIDCProvider   = Topic{url: apiPrefix + "/admin/oidc-providers", adminOnly: true}
 	TopicAdminRoles          = Topic{url: apiPrefix + "/admin/roles", adminOnly: true}
+	TopicAdminAPITokens      = Topic{url: apiPrefix + "/admin/api-tokens", adminOnly: true}
 )
 
 // topicProfile makes clients reload their own profile, which holds their
@@ -41,6 +42,17 @@ var topicProfile = Topic{url: apiPrefix + "/auth/profile"}
 // TopicProfileOf makes the given user reload their profile.
 func TopicProfileOf(userID string) Topic {
 	topic := topicProfile
+	topic.userID = userID
+	return topic
+}
+
+// topicAPITokens is the list of a user's own API tokens. It is only sent to its
+// owner through TopicAPITokensOf.
+var topicAPITokens = Topic{url: apiPrefix + "/api-tokens"}
+
+// TopicAPITokensOf makes the given user reload their API tokens.
+func TopicAPITokensOf(userID string) Topic {
+	topic := topicAPITokens
 	topic.userID = userID
 	return topic
 }

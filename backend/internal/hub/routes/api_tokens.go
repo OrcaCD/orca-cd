@@ -14,6 +14,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -146,6 +147,7 @@ func CreateAPITokenHandler(c *gin.Context) {
 	}
 
 	utils.RecordAuditLog(c, "created", "api-token", token.Id)
+	sse.PublishUpdate(sse.TopicAPITokensOf(user.Id), sse.TopicAdminAPITokens)
 
 	c.JSON(http.StatusCreated, createAPITokenResponse{
 		apiTokenResponse: toAPITokenResponse(&token),
@@ -212,6 +214,7 @@ func revokeAPIToken(c *gin.Context, query gorm.ChainInterface[models.APIToken]) 
 
 	// The token is deleted, so the entry points at its owner to keep that known.
 	utils.RecordAuditLog(c, "revoked-api-token", "user", token.UserId)
+	sse.PublishUpdate(sse.TopicAPITokensOf(token.UserId), sse.TopicAdminAPITokens)
 
 	c.JSON(http.StatusOK, gin.H{"message": "api token revoked"})
 }

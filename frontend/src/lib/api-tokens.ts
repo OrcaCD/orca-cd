@@ -1,5 +1,4 @@
-import { mutate } from "swr";
-import { API_BASE, fetcher } from "./api";
+import { fetcher } from "./api";
 import type { Permissions } from "./permissions";
 import { actionLabels, resourceLabels } from "./role-draft";
 import { m } from "@/lib/paraglide/messages";
@@ -46,26 +45,18 @@ export interface CreateApiTokenRequest {
 export const apiTokensPath = "/api-tokens";
 export const adminApiTokensPath = "/admin/api-tokens";
 
-// Token changes don't send SSE events, so the lists are reloaded by hand.
-async function revalidateApiTokens() {
-	await Promise.all([mutate(API_BASE + apiTokensPath), mutate(API_BASE + adminApiTokensPath)]);
-}
-
-export async function createApiToken(data: CreateApiTokenRequest): Promise<CreatedApiToken> {
-	const token = await fetcher<CreatedApiToken>(apiTokensPath, "POST", data);
-	await revalidateApiTokens();
-	return token;
+// The token lists reload through SSE events, like the other resources.
+export function createApiToken(data: CreateApiTokenRequest): Promise<CreatedApiToken> {
+	return fetcher<CreatedApiToken>(apiTokensPath, "POST", data);
 }
 
 export async function revokeApiToken(id: string): Promise<void> {
 	await fetcher(`${apiTokensPath}/${id}`, "DELETE");
-	await revalidateApiTokens();
 }
 
 // Revokes the token of any user
 export async function adminRevokeApiToken(id: string): Promise<void> {
 	await fetcher(`${adminApiTokensPath}/${id}`, "DELETE");
-	await revalidateApiTokens();
 }
 
 export function apiTokenScope(

@@ -18,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -439,4 +440,55 @@ func TestValidateAPITokenExpiry(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAPITokenEvents(t *testing.T) {
+	setupAPITokensTestDB(t)
+	admin := createTestUser(t, "Admin", "admin@example.com", rbac.AdminRoleID, "")
+	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "")
+	other := createTestUser(t, "Other", "other@example.com", rbac.UserRoleID, "")
+	broker := newTestSSEBroker(t)
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	// The owner reloads their tokens, admins the list of all tokens, nobody else anything.
+	expectEvent := func(action string) {
+		t.Helper()
+		select {
+		case event := <-ch:
+			want := map[string][]string{
+				user.Id:  {"/api/v1/api-tokens"},
+				admin.Id: {"/api/v1/admin/api-tokens"},
+				other.Id: nil,
+			}
+			perms := map[string]*rbac.Permissions{user.Id: rbac.New(nil), admin.Id: rbac.Admin(), other.Id: rbac.New(nil)}
+			for id, urls := range want {
+				message, _ := event.Message(func(topic sse.Topic) bool { return topicVisible(id, perms[id], topic) })
+				if !slices.Equal(message.URLs, urls) {
+					t.Errorf("%s: user %s got %v, want %v", action, id, message.URLs, urls)
+				}
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s: timed out waiting for SSE event", action)
+		}
+	}
+
+	w := serveAPITokenRequestWith(t, &user, rbac.New([]models.RolePermission{grantAll(models.ResourceAPIToken, models.ActionCreate), grantAll(models.ResourceApplication, models.ActionDeploy)}),
+		http.MethodPost, "/api/v1/api-tokens", validCreateAPITokenBody())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	expectEvent("create")
+
+	token := seedAPIToken(t, user.Id, "Revoked by owner")
+	if w := serveAPITokenRequest(t, &user, http.MethodDelete, "/api/v1/api-tokens/"+token.Id, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	expectEvent("revoke")
+
+	token = seedAPIToken(t, user.Id, "Revoked by admin")
+	if w := serveAPITokenRequest(t, &admin, http.MethodDelete, "/api/v1/admin/api-tokens/"+token.Id, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	expectEvent("admin revoke")
 }
