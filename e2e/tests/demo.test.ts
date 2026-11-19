@@ -258,7 +258,7 @@ test.describe("signed in", () => {
 			["POST", `/applications/${WEB_APP.id}/pull-images`],
 			["POST", `/applications/${WEB_APP.id}/deployments/demo-deployment-web-image/rollback`],
 			["POST", `/applications/${MONITORING_APP.id}/resume-auto-sync`],
-			["PUT", `/applications/${WEB_APP.id}/rollback`, { enabled: false }],
+			["PUT", `/applications/${WEB_APP.id}/rollback/settings`, { enabled: false }],
 			["PUT", `/applications/${WEB_APP.id}/env`, { files: [] }],
 			["POST", `/applications/${WEB_APP.id}/image-webhook`],
 			["DELETE", `/applications/${WEB_APP.id}/image-webhook`],
