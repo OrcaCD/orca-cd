@@ -27,6 +27,7 @@ import { useNow } from "@/hooks/use-now";
 import { useFetch } from "@/lib/api";
 import { updateServiceReleaseAge, type Application } from "@/lib/applications";
 import { m } from "@/lib/paraglide/messages";
+import { usePermissions } from "@/lib/permissions";
 import {
 	dayInSeconds,
 	effectiveMinimumSeconds,
@@ -61,6 +62,8 @@ function ImageUpdatesPage() {
 	);
 	const { data: global } = useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
 	const { data: updates } = useFetch<ImageUpdates>(`/applications/${id}/image-updates`);
+	const { can } = usePermissions();
+	const canUpdate = can("application", "update", id);
 
 	const appAge = effectiveMinimumSeconds(application, global);
 	const inherited = application?.releaseAge.minimumSeconds === null;
@@ -139,6 +142,7 @@ function ImageUpdatesPage() {
 												image={image}
 												override={application?.releaseAge.serviceOverrides[image.service]}
 												appAge={appAge}
+												disabled={!canUpdate}
 												onUpdated={(updated) => mutateApplication(updated, { revalidate: false })}
 											/>
 										</TableCell>
@@ -253,12 +257,14 @@ function MinimumAgeSelect({
 	image,
 	override,
 	appAge,
+	disabled,
 	onUpdated,
 }: {
 	applicationId: string;
 	image: ImageUpdate;
 	override: number | undefined;
 	appAge: number;
+	disabled: boolean;
 	onUpdated: (application: Application) => Promise<unknown>;
 }) {
 	const [saving, setSaving] = useState(false);
@@ -310,7 +316,7 @@ function MinimumAgeSelect({
 			items={items}
 			value={override === undefined ? inheritValue : String(override)}
 			onValueChange={change}
-			disabled={saving}
+			disabled={saving || disabled}
 		>
 			<SelectTrigger
 				className={cn("w-44", override === undefined && "text-muted-foreground")}
