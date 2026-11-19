@@ -198,5 +198,5 @@ export function resumeApplicationAutoSync(id: string): Promise<DeployApplication
 }
 
 export function updateRollbackSettings(id: string, data: RollbackSettings): Promise<Application> {
-	return fetcher<Application>(`/applications/${id}/rollback`, "PUT", data);
+	return fetcher<Application>(`/applications/${id}/rollback-settings`, "PUT", data);
 }

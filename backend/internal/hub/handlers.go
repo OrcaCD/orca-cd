@@ -96,6 +96,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 				return middleware.RequirePermission(models.ResourceApplication, action)
 			}
 			protected.GET("/applications", routes.ListApplicationsHandler)
+			// Outside /applications, so application updates don't refetch it, see sse.TopicApplicationActivity
 			protected.GET("/activity", routes.ApplicationActivityHandler)
 			protected.GET("/applications/:id", app(models.ActionRead), routes.GetApplicationHandler)
 			protected.GET("/applications/:id/events", app(models.ActionRead), routes.ListApplicationEventsHandler)
@@ -109,7 +110,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/applications/:id/pull-images", app(models.ActionPullImages), routes.PullApplicationImagesHandler)
 			protected.POST("/applications/:id/deployments/:deploymentId/rollback", app(models.ActionRollback), routes.RollbackApplicationHandler)
 			protected.POST("/applications/:id/resume-auto-sync", app(models.ActionRollback), routes.ResumeApplicationAutoSyncHandler)
-			protected.PUT("/applications/:id/rollback", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
+			protected.PUT("/applications/:id/rollback-settings", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
 			protected.PUT("/applications/:id", app(models.ActionUpdate), routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", app(models.ActionDelete), routes.DeleteApplicationHandler)
 			// Anyone with the webhook URL can pull the images of the application
