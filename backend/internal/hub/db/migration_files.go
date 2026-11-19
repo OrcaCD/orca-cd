@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	gofs "io/fs"
 	"testing/fstest"
 	"time"
 
@@ -67,6 +69,14 @@ func storeMigrationFiles(ctx context.Context, db *gorm.DB, latest uint) error {
 		})
 	}
 
+	stored, err := gorm.G[schemaMigrationFile](db).Where("version <= ?", latest).Find(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load stored migration files: %w", err)
+	}
+	if sameMigrationFiles(stored, files) {
+		return nil
+	}
+
 	return db.Transaction(func(tx *gorm.DB) error {
 		if _, err := gorm.G[schemaMigrationFile](tx).Where("version <= ?", latest).Delete(ctx); err != nil {
 			return fmt.Errorf("failed to clear stored migration files: %w", err)
@@ -78,17 +88,33 @@ func storeMigrationFiles(ctx context.Context, db *gorm.DB, latest uint) error {
 	})
 }
 
+func sameMigrationFiles(stored, embedded []schemaMigrationFile) bool {
+	if len(stored) != len(embedded) {
+		return false
+	}
+	contents := make(map[string]string, len(stored))
+	for _, file := range stored {
+		contents[file.Name] = file.Content
+	}
+	for _, file := range embedded {
+		if content, ok := contents[file.Name]; !ok || content != file.Content {
+			return false
+		}
+	}
+	return true
+}
+
 // rollBackNewerMigrations rolls the schema back from version to latest with the
 // migration files the newer OrcaCD version stored. A backup is taken first.
 func rollBackNewerMigrations(ctx context.Context, db *gorm.DB, version uint, dirty bool, latest uint) error {
+	if dirty {
+		return fmt.Errorf("database schema v%d is in a dirty migration state and cannot be rolled back", version)
+	}
 	if !AllowDowngrade {
 		return fmt.Errorf(
 			"database schema v%d was migrated by a newer OrcaCD version, this version supports up to schema v%d; start the hub with ALLOW_DOWNGRADE=true to roll it back",
 			version, latest,
 		)
-	}
-	if dirty {
-		return fmt.Errorf("database schema v%d is in a dirty migration state and cannot be rolled back", version)
 	}
 
 	stored, err := gorm.G[schemaMigrationFile](db).Where("version <= ?", version).Find(ctx)
@@ -97,15 +123,24 @@ func rollBackNewerMigrations(ctx context.Context, db *gorm.DB, version uint, dir
 	}
 
 	files := make(fstest.MapFS, len(stored))
+	ups := make(map[uint]bool)
 	downs := make(map[uint]bool)
 	for _, file := range stored {
 		files[file.Name] = &fstest.MapFile{Data: []byte(file.Content)}
-		if migration, err := source.Parse(file.Name); err == nil && migration.Direction == source.Down {
+		migration, err := source.Parse(file.Name)
+		if err != nil {
+			return fmt.Errorf("failed to parse stored migration file %q: %w", file.Name, err)
+		}
+		if migration.Direction == source.Up {
+			ups[migration.Version] = true
+		} else {
 			downs[migration.Version] = true
 		}
 	}
-	for v := latest + 1; v <= version; v++ {
-		if !downs[v] {
+	// Version numbers can have gaps, so check the newer migrations that were stored plus the applied one
+	ups[version] = true
+	for v := range ups {
+		if v > latest && !downs[v] {
 			return fmt.Errorf("migration %d cannot be rolled back because the OrcaCD version that applied it did not store its files", v)
 		}
 	}
@@ -133,23 +168,28 @@ func rollBackNewerMigrations(ctx context.Context, db *gorm.DB, version uint, dir
 	return nil
 }
 
+// newMigrator creates a migrator for the migration files in dir of fsys.
+func newMigrator(sqlDB *sql.DB, fsys gofs.FS, dir string) (*migrate.Migrate, error) {
+	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := iofs.New(fsys, dir)
+	if err != nil {
+		return nil, err
+	}
+
+	return migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+}
+
 func migrateSchemaTo(db *gorm.DB, files fstest.MapFS, version uint) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err
 	}
 
-	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
-	if err != nil {
-		return err
-	}
-
-	src, err := iofs.New(files, ".")
-	if err != nil {
-		return err
-	}
-
-	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	m, err := newMigrator(sqlDB, files, ".")
 	if err != nil {
 		return err
 	}

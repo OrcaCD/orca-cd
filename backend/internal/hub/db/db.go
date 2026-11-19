@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -182,17 +180,7 @@ func runMigrations(db *gorm.DB) error {
 		return err
 	}
 
-	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
-	if err != nil {
-		return err
-	}
-
-	src, err := iofs.New(migrationFiles, "migrations")
-	if err != nil {
-		return err
-	}
-
-	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	m, err := newMigrator(sqlDB, migrationFiles, "migrations")
 	if err != nil {
 		return err
 	}

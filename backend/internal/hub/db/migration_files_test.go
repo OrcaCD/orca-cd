@@ -95,6 +95,41 @@ func TestRunMigrations_StoresMigrationFiles(t *testing.T) {
 	}
 }
 
+func TestRunMigrations_RestoresChangedMigrationFiles(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	ctx := context.Background()
+	if _, err := gorm.G[schemaMigrationFile](gormDB).Where("version = ?", 1).Update(ctx, "content", "changed"); err != nil {
+		t.Fatalf("failed to change stored migration file: %v", err)
+	}
+	if err := gormDB.Exec("INSERT INTO schema_migration_files (name, version, content) VALUES ('000001_stale.up.sql', 1, '')").Error; err != nil {
+		t.Fatalf("failed to store stale migration file: %v", err)
+	}
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+
+	stored, err := gorm.G[schemaMigrationFile](gormDB).Where("version = ?", 1).Find(ctx)
+	if err != nil {
+		t.Fatalf("failed to load stored migration files: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored %d files for migration 1, want 2", len(stored))
+	}
+	for _, file := range stored {
+		content, err := migrationFiles.ReadFile("migrations/" + file.Name)
+		if err != nil {
+			t.Fatalf("stored migration file %q is not embedded: %v", file.Name, err)
+		}
+		if file.Content != string(content) {
+			t.Errorf("stored content of %q was not restored", file.Name)
+		}
+	}
+}
+
 func TestRunMigrations_KeepsStoredFilesOfNewerVersions(t *testing.T) {
 	gormDB := openTestDB(t)
 	version := applyNewerMigration(t, gormDB, true)
@@ -217,7 +252,8 @@ func TestRunMigrations_RefusesRollbackWithoutStoredFiles(t *testing.T) {
 }
 
 func TestRunMigrations_RefusesRollbackOfDirtySchema(t *testing.T) {
-	setAllowDowngrade(t, true)
+	// The dirty state is reported first, as allowing downgrades wouldn't help
+	setAllowDowngrade(t, false)
 	gormDB := openTestDB(t)
 	applyNewerMigration(t, gormDB, true)
 	if err := gormDB.Exec("UPDATE schema_migrations SET dirty = true").Error; err != nil {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
+	"github.com/golang-migrate/migrate/v4/source"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -29,19 +29,19 @@ func CurrentSchemaVersion() (uint, error) {
 		return 0, fmt.Errorf("failed to read embedded migrations: %w", err)
 	}
 
-	var max uint = 0
+	var latest uint
 	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".up.sql") {
-			continue
+		migration, err := source.Parse(entry.Name())
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse migration file %q: %w", entry.Name(), err)
 		}
-		max++
+		latest = max(latest, migration.Version)
 	}
 
-	if max == 0 {
+	if latest == 0 {
 		return 0, errors.New("no migrations found in embedded filesystem")
 	}
-	return max, nil
+	return latest, nil
 }
 
 func readBackupSchemaVersion(path string) (version uint, dirty bool, err error) {
