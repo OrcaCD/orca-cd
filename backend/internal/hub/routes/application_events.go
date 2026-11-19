@@ -5,22 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-const (
-	defaultApplicationEventLimit = 20
-	maxApplicationEventLimit     = 100
-)
+const maxApplicationEventLimit = 100
 
 var applicationEventsLog = logger.New("application-events", false)
 
@@ -28,51 +26,69 @@ const applicationEventSearchCondition = "(type LIKE @search OR source LIKE @sear
 	" OR actor_name LIKE @search OR commit_hash LIKE @search OR commit_message LIKE @search OR error_message LIKE @search)"
 
 type applicationEventResponse struct {
-	Id            string  `json:"id"`
-	CreatedAt     string  `json:"createdAt"`
-	CompletedAt   *string `json:"completedAt"`
-	Type          string  `json:"type"`
-	Source        string  `json:"source"`
-	Status        string  `json:"status"`
-	ActorName     *string `json:"actorName"`
-	CommitHash    *string `json:"commitHash"`
-	CommitMessage *string `json:"commitMessage"`
-	ErrorMessage  *string `json:"errorMessage"`
+	Id            string  `json:"id" required:"true"`
+	CreatedAt     string  `json:"createdAt" required:"true" format:"date-time"`
+	CompletedAt   *string `json:"completedAt" required:"true" nullable:"true" format:"date-time"`
+	Type          string  `json:"type" required:"true"`
+	Source        string  `json:"source" required:"true" doc:"What triggered the event"`
+	Status        string  `json:"status" required:"true"`
+	ActorName     *string `json:"actorName" required:"true" nullable:"true" doc:"The user who triggered the event"`
+	CommitHash    *string `json:"commitHash" required:"true" nullable:"true"`
+	CommitMessage *string `json:"commitMessage" required:"true" nullable:"true"`
+	ErrorMessage  *string `json:"errorMessage" required:"true" nullable:"true"`
 	// DeploymentId is set while the deployment the event deployed or rolled
 	// back to is still recorded.
-	DeploymentId     *string `json:"deploymentId"`
-	DeploymentStatus *string `json:"deploymentStatus"`
+	DeploymentId     *string `json:"deploymentId" required:"true" nullable:"true" doc:"The deployment the event deployed or rolled back to, while it is still recorded"`
+	DeploymentStatus *string `json:"deploymentStatus" required:"true" nullable:"true"`
 	// WaitingForAgent is set while the health of the deployment is checked
 	// but its agent is not connected to report it.
-	WaitingForAgent bool `json:"waitingForAgent,omitempty"`
+	WaitingForAgent bool `json:"waitingForAgent,omitempty" doc:"Set while the health of the deployment is checked but its agent is not connected"`
 }
 
-func ListApplicationEventsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	applicationID := c.Param("id")
-
-	limit, offset, ok := applicationEventPagination(c)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pagination"})
-		return
+type applicationEventsOutput struct {
+	Body struct {
+		Items   []applicationEventResponse `json:"items" required:"true" doc:"The events, newest first"`
+		HasMore bool                       `json:"hasMore" required:"true" doc:"Whether there are older events"`
 	}
+}
+
+var ListApplicationEventsHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-application-events",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}/events",
+	Summary:     "List the events of an application",
+	Description: "Lists the deployments, syncs and rollbacks of the application, newest first. " +
+		requires(models.ResourceApplication, models.ActionRead),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+}, func(ctx context.Context, input *struct {
+	ID     string `path:"id" doc:"The ID of the application"`
+	Limit  int    `query:"limit" default:"20" doc:"Between 1 and 100"`
+	Offset int    `query:"offset" doc:"At least 0"`
+	Search string `query:"search" doc:"Only returns events whose type, source, status, actor, commit or error contains it"`
+}) (*applicationEventsOutput, error) {
+	applicationID := input.ID
+
+	if input.Limit < 1 || input.Limit > maxApplicationEventLimit || input.Offset < 0 {
+		return nil, huma.Error400BadRequest("invalid pagination")
+	}
+	limit, offset := input.Limit, input.Offset
 
 	if _, err := gorm.G[models.Application](db.DB).
 		Select("id").
 		Where("id = ?", applicationID).
 		First(ctx); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
 		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
 			Msg("failed to load application for event history")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	query := gorm.G[models.ApplicationEvent](db.DB).Where("application_id = ?", applicationID)
-	if search := strings.TrimSpace(c.Query("search")); search != "" {
+	if search := strings.TrimSpace(input.Search); search != "" {
 		query = query.Where(applicationEventSearchCondition, sql.Named("search", "%"+search+"%"))
 	}
 
@@ -84,8 +100,7 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
 			Msg("failed to list application events")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	hasMore := len(events) > limit
@@ -96,12 +111,14 @@ func ListApplicationEventsHandler(c *gin.Context) {
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Str("applicationId", applicationID).
 			Msg("failed to load deployments of application events")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, gin.H{"items": items, "hasMore": hasMore})
-}
+	out := &applicationEventsOutput{}
+	out.Body.Items = items
+	out.Body.HasMore = hasMore
+	return out, nil
+})
 
 // toApplicationEventResponses converts events and adds the deployments they
 // reference that are still recorded.
@@ -189,27 +206,6 @@ func offlineApplications(ctx context.Context, deployments []models.ApplicationDe
 		offline[apps[i].Id] = true
 	}
 	return offline, nil
-}
-
-func applicationEventPagination(c *gin.Context) (int, int, bool) {
-	limit := defaultApplicationEventLimit
-	if raw := c.Query("limit"); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 1 || value > maxApplicationEventLimit {
-			return 0, 0, false
-		}
-		limit = value
-	}
-
-	offset := 0
-	if raw := c.Query("offset"); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 0 {
-			return 0, 0, false
-		}
-		offset = value
-	}
-	return limit, offset, true
 }
 
 func toApplicationEventResponse(event *models.ApplicationEvent) applicationEventResponse {
