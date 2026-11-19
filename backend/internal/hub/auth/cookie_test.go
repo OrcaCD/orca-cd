@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -100,6 +101,28 @@ func TestGetAuthCookie_Missing(t *testing.T) {
 	_, err := GetAuthCookie(c)
 	if err == nil {
 		t.Error("GetAuthCookie() expected error when cookie is absent")
+	}
+}
+
+func TestPasskeyCookieLifecycle(t *testing.T) {
+	c, w := newTestContext()
+	SetPasskeyCookie(c, "ceremony-id", 5*time.Minute)
+	cookie := findCookie(w.Result().Cookies(), CeremonyCookieName)
+	if cookie == nil || cookie.Value != "ceremony-id" || cookie.Path != "/api/v1/auth" || cookie.MaxAge != 300 || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Domain != "" {
+		t.Fatalf("unexpected ceremony cookie: %+v", cookie)
+	}
+	c.Request.AddCookie(cookie)
+	if value, err := GetPasskeyCookie(c); err != nil || value != "ceremony-id" {
+		t.Fatalf("could not read ceremony cookie: %q %v", value, err)
+	}
+	c, w = newTestContext()
+	ClearPasskeyCookie(c)
+	cleared := findCookie(w.Result().Cookies(), CeremonyCookieName)
+	if cleared == nil || cleared.Value != "" || cleared.Path != cookie.Path || cleared.MaxAge != -1 || !cleared.Secure || !cleared.HttpOnly || cleared.SameSite != cookie.SameSite {
+		t.Fatalf("ceremony cookie was not cleared with the same scope: %+v", cleared)
+	}
+	if _, err := GetPasskeyCookie(c); err == nil {
+		t.Fatal("accepted a missing ceremony cookie")
 	}
 }
 

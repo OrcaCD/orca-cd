@@ -20,6 +20,8 @@ type Ceremony struct {
 	Purpose        string
 	User           models.User
 	Name           string
+	Action         string
+	PasskeyID      string
 	EnrollmentHash string
 	SetupCode      string
 	expires        time.Time

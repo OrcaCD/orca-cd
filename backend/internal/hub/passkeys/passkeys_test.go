@@ -346,3 +346,59 @@ func TestLoadUserSkipsCorruptCredentialsAndLogsTheirIDs(t *testing.T) {
 		t.Fatal("an account with only corrupt rows must have no usable credentials")
 	}
 }
+
+func TestRecoveryRejectsDeletedAndManagedAccounts(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "recovery.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := database.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := database.AutoMigrate(&models.User{}, &models.Passkey{}, &models.PasskeyEnrollment{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	managed := models.User{Name: "Managed", Email: "managed@example.com"}
+	if err := gorm.G[models.User](database).Create(ctx, &managed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResetLocal(ctx, database, &managed); err == nil {
+		t.Fatal("recovered an SSO-only account")
+	}
+	local := models.User{Name: "Local", Email: "local@example.com", LocalAuthEnabled: true}
+	if err := gorm.G[models.User](database).Create(ctx, &local); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gorm.G[models.User](database).Where("id = ?", local.Id).Delete(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResetLocal(ctx, database, &local); err == nil {
+		t.Fatal("recovered a deleted account")
+	}
+	count, err := gorm.G[models.PasskeyEnrollment](database).Count(ctx, "*")
+	if err != nil || count != 0 {
+		t.Fatal("failed recovery issued an enrollment code")
+	}
+	local.Id = ""
+	if err := gorm.G[models.User](database).Create(ctx, &local); err != nil {
+		t.Fatal(err)
+	}
+	stale := local
+	if _, err := gorm.G[models.User](database).Where("id = ?", local.Id).Update(ctx, "token_version", 7); err != nil {
+		t.Fatal(err)
+	}
+	var code string
+	if err := database.Transaction(func(tx *gorm.DB) error {
+		var err error
+		code, err = ResetLocal(ctx, tx, &stale)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if stale.TokenVersion != 8 {
+		t.Fatal("recovery used the caller's stale session version")
+	}
+	if err := ConsumeEnrollment(ctx, database, &stale, TokenHash(code)); err != nil {
+		t.Fatal(err)
+	}
+}
