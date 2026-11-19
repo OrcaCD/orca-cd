@@ -12,67 +12,78 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
 type rolePermissionRequest struct {
-	Resource   models.PermissionResource `json:"resource" binding:"required"`
-	Action     models.PermissionAction   `json:"action" binding:"required"`
-	ResourceId *string                   `json:"resourceId"`
+	// Not an enum, so unknown values keep answering "invalid permission"
+	Resource   models.PermissionResource `json:"resource" required:"true" minLength:"1" doc:"application, repository, agent, notification or api_token"`
+	Action     models.PermissionAction   `json:"action" required:"true" minLength:"1" doc:"An action the resource supports, like read, create, update, delete, deploy, pull_images, rollback or sync"`
+	ResourceId *string                   `json:"resourceId" doc:"Limits the permission to one resource. Leave it out or null to grant it on all of them. Not allowed for create."`
 }
 
 type upsertRoleRequest struct {
-	Name        string                  `json:"name" binding:"required,min=1,max=64"`
-	Description string                  `json:"description" binding:"max=256"`
-	Permissions []rolePermissionRequest `json:"permissions" binding:"max=5000,dive"`
+	Name        string                  `json:"name" required:"true" minLength:"1" maxLength:"64" doc:"Ignored for built-in roles"`
+	Description string                  `json:"description" maxLength:"256" doc:"Ignored for built-in roles"`
+	Permissions []rolePermissionRequest `json:"permissions" maxItems:"5000" doc:"Replaces the permissions of the role. Ignored for the admin role, which can do everything."`
 	// OIDCGroups give the role to users in any of these groups at their OIDC provider.
-	OIDCGroups []roleOIDCGroup `json:"oidcGroups" binding:"max=100,dive"`
+	OIDCGroups []roleOIDCGroup `json:"oidcGroups" maxItems:"100" doc:"Gives the role to the users in any of these groups at their OIDC provider"`
 	// UserIds are the members an admin assigned by hand. Members from OIDC groups are not affected.
-	UserIds []string `json:"userIds" binding:"max=10000"`
+	UserIds []string `json:"userIds" maxItems:"10000" doc:"The members an admin assigns. Members from OIDC groups are not affected."`
 }
 
 type roleOIDCGroup struct {
-	ProviderId string `json:"providerId" binding:"required"`
-	Group      string `json:"group" binding:"required,max=255"`
+	ProviderId string `json:"providerId" required:"true" minLength:"1"`
+	Group      string `json:"group" required:"true" minLength:"1" maxLength:"255"`
 }
 
 type rolePermissionResponse struct {
-	Resource   models.PermissionResource `json:"resource"`
-	Action     models.PermissionAction   `json:"action"`
-	ResourceId *string                   `json:"resourceId"`
+	Resource   models.PermissionResource `json:"resource" required:"true" enum:"application,repository,agent,notification,api_token"`
+	Action     models.PermissionAction   `json:"action" required:"true" enum:"read,create,update,delete,deploy,pull_images,rollback,sync"`
+	ResourceId *string                   `json:"resourceId" required:"true" nullable:"true" doc:"The resource the permission is limited to, null for all of them"`
 }
 
 type roleMemberResponse struct {
-	Id      string                  `json:"id"`
-	Name    string                  `json:"name"`
-	Email   string                  `json:"email"`
-	Sources []models.UserRoleSource `json:"sources"`
+	Id      string                  `json:"id" required:"true"`
+	Name    string                  `json:"name" required:"true"`
+	Email   string                  `json:"email" required:"true"`
+	Sources []models.UserRoleSource `json:"sources" required:"true" enum:"manual,oidc" doc:"Whether an admin assigned the role, the user gets it from an OIDC group, or both"`
 }
 
 type roleResponse struct {
-	Id          string                   `json:"id"`
-	Name        string                   `json:"name"`
-	Description string                   `json:"description"`
-	BuiltIn     *models.RoleBuiltIn      `json:"builtIn"`
-	OIDCGroups  []roleOIDCGroup          `json:"oidcGroups"`
-	Permissions []rolePermissionResponse `json:"permissions"`
-	Members     []roleMemberResponse     `json:"members"`
-	CreatedAt   string                   `json:"createdAt"`
-	UpdatedAt   string                   `json:"updatedAt"`
+	Id          string                   `json:"id" required:"true"`
+	Name        string                   `json:"name" required:"true"`
+	Description string                   `json:"description" required:"true"`
+	BuiltIn     *models.RoleBuiltIn      `json:"builtIn" required:"true" nullable:"true" enum:"admin,user" doc:"Which built-in role it is, null for roles admins created"`
+	OIDCGroups  []roleOIDCGroup          `json:"oidcGroups" required:"true"`
+	Permissions []rolePermissionResponse `json:"permissions" required:"true"`
+	Members     []roleMemberResponse     `json:"members" required:"true"`
+	CreatedAt   string                   `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt   string                   `json:"updatedAt" required:"true" format:"date-time"`
+}
+
+type roleOutput struct {
+	Body roleResponse
 }
 
 var errRoleNotFound = errors.New("role not found")
 
-func AdminListRolesHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-
+var AdminListRolesHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-list-roles",
+	Method:      http.MethodGet,
+	Path:        "/admin/roles",
+	Summary:     "List roles",
+	Description: "Lists every role with its permissions, OIDC groups and members, the built-in roles first. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []roleResponse }, error) {
 	roles, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Preload("OIDCGroups", nil).Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	slices.SortFunc(roles, compareRoles)
 
@@ -82,8 +93,7 @@ func AdminListRolesHandler(c *gin.Context) {
 	}
 	membersByRoleId, err := loadMembersByRoleId(ctx, roleIds)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	response := make([]roleResponse, 0, len(roles))
@@ -91,32 +101,49 @@ func AdminListRolesHandler(c *gin.Context) {
 		response = append(response, toRoleResponse(&roles[i], membersByRoleId[roles[i].Id]))
 	}
 
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body []roleResponse }{Body: response}, nil
+})
 
-func AdminGetRoleHandler(c *gin.Context) {
-	role, err := loadRole(c.Request.Context(), c.Param("id"))
+var AdminGetRoleHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-get-role",
+	Method:      http.MethodGet,
+	Path:        "/admin/roles/{id}",
+	Summary:     "Get a role",
+	Description: requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound},
+}, func(ctx context.Context, input *idInput) (*roleOutput, error) {
+	role, err := loadRole(ctx, input.ID)
 	if err != nil {
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
-	writeRole(c, http.StatusOK, &role)
-}
+	return roleOutputOf(ctx, &role)
+})
 
-func AdminCreateRoleHandler(c *gin.Context) {
-	req, permissions, ok := bindRoleRequest(c)
-	if !ok {
-		return
+var AdminCreateRoleHandler = restapi.Handler(huma.Operation{
+	OperationID:   "admin-create-role",
+	Method:        http.MethodPost,
+	Path:          "/admin/roles",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create a role",
+	Description:   "The resources and users the role refers to must exist. " + requiresAdmin,
+	Tags:          []string{tagAdmin},
+	Security:      restapi.Authenticated,
+	Errors:        []int{http.StatusBadRequest, http.StatusConflict},
+}, func(ctx context.Context, input *struct{ Body upsertRoleRequest }) (*roleOutput, error) {
+	req, permissions, err := normalizeRoleRequest(input.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx := c.Request.Context()
 	role := models.Role{
 		Name:        req.Name,
 		Description: req.Description,
 	}
 
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := checkRoleReferences(ctx, tx, "", permissions, req.UserIds); err != nil {
 			return err
 		}
@@ -133,35 +160,49 @@ func AdminCreateRoleHandler(c *gin.Context) {
 		return err
 	})
 	if err != nil {
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
 	role, err = loadRole(ctx, role.Id)
 	if err != nil {
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
-	utils.RecordAuditLog(c, "created", "role", role.Id)
+	utils.RecordAuditLog(restapi.GinContext(ctx), "created", "role", role.Id)
 
-	writeRole(c, http.StatusCreated, &role)
+	out, err := roleOutputOf(ctx, &role)
+	if err != nil {
+		return nil, err
+	}
 	publishRoleUpdate(req.UserIds)
-}
+	return out, nil
+})
 
-func AdminUpdateRoleHandler(c *gin.Context) {
-	req, permissions, ok := bindRoleRequest(c)
-	if !ok {
-		return
+var AdminUpdateRoleHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-update-role",
+	Method:      http.MethodPut,
+	Path:        "/admin/roles/{id}",
+	Summary:     "Update a role",
+	Description: "Replaces the permissions, OIDC groups and members an admin assigned. The name and description of built-in roles " +
+		"and the permissions of the admin role don't change, and the last admin can't lose the admin role. " + requiresAdmin,
+	Tags:     []string{tagAdmin},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the role"`
+	Body upsertRoleRequest
+}) (*roleOutput, error) {
+	req, permissions, err := normalizeRoleRequest(input.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx := c.Request.Context()
-	id := c.Param("id")
+	id := input.ID
 	membersChanged := false
 	// Everyone who had or has the role, their permissions may have changed
 	var affected []string
 
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		role, err := gorm.G[models.Role](tx).Where("id = ?", id).First(ctx)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -218,31 +259,41 @@ func AdminUpdateRoleHandler(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, errLastAdmin) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot remove the last admin user"})
-			return
+			return nil, huma.Error400BadRequest("cannot remove the last admin user")
 		}
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
 	role, err := loadRole(ctx, id)
 	if err != nil {
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
+	c := restapi.GinContext(ctx)
 	utils.RecordAuditLog(c, "updated", "role", id)
 	if membersChanged {
 		utils.RecordAuditLog(c, "members-updated", "role", id)
 	}
 
-	writeRole(c, http.StatusOK, &role)
+	out, err := roleOutputOf(ctx, &role)
+	if err != nil {
+		return nil, err
+	}
 	publishRoleUpdate(affected)
-}
+	return out, nil
+})
 
-func AdminDeleteRoleHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
+var AdminDeleteRoleHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-delete-role",
+	Method:      http.MethodDelete,
+	Path:        "/admin/roles/{id}",
+	Summary:     "Delete a role",
+	Description: "Built-in roles can't be deleted. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	id := input.ID
 	var members []string
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -270,15 +321,14 @@ func AdminDeleteRoleHandler(c *gin.Context) {
 		return err
 	})
 	if err != nil {
-		writeRoleError(c, err)
-		return
+		return nil, roleError(err)
 	}
 
-	utils.RecordAuditLog(c, "deleted", "role", id)
-
-	c.JSON(http.StatusOK, gin.H{"message": "role deleted"})
+	utils.RecordAuditLog(restapi.GinContext(ctx), "deleted", "role", id)
 	publishRoleUpdate(members)
-}
+
+	return restapi.Message("role deleted"), nil
+})
 
 var (
 	errBuiltInRole       = errors.New("built-in roles cannot be deleted")
@@ -288,44 +338,37 @@ var (
 	errUnknownProvider   = errors.New("OIDC provider not found")
 )
 
-func writeRoleError(c *gin.Context, err error) {
+func roleError(err error) error {
 	switch {
 	case errors.Is(err, errRoleNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": "role not found"})
+		return huma.Error404NotFound("role not found")
 	case errors.Is(err, errBuiltInRole), errors.Is(err, errUnknownResource), errors.Is(err, errUnknownUser), errors.Is(err, errUnknownProvider):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return huma.Error400BadRequest(err.Error())
 	case isUniqueConstraintError(err):
-		c.JSON(http.StatusConflict, gin.H{"error": "a role with this name already exists"})
+		return huma.Error409Conflict("a role with this name already exists")
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return internalError()
 	}
 }
 
-// bindRoleRequest parses and validates a role, returning its deduplicated
+// normalizeRoleRequest trims and validates a role, returning its deduplicated
 // permissions. Whether the referenced users and resources exist is checked by
 // checkRoleReferences in the write transaction.
-func bindRoleRequest(c *gin.Context) (upsertRoleRequest, []models.RolePermission, bool) {
-	var req upsertRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: the name is required and can have up to 64 characters, and a role can have up to 100 OIDC groups"})
-		return req, nil, false
-	}
+func normalizeRoleRequest(req upsertRoleRequest) (upsertRoleRequest, []models.RolePermission, error) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Description = strings.TrimSpace(req.Description)
 	req.OIDCGroups = normalizeOIDCGroups(req.OIDCGroups)
 	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name is required and must be at most 64 characters"})
-		return req, nil, false
+		return req, nil, huma.Error400BadRequest("invalid request: name is required and must be at most 64 characters")
 	}
 
 	permissions, err := normalizeRolePermissions(req.Permissions)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return req, nil, false
+		return req, nil, huma.Error400BadRequest(err.Error())
 	}
 	req.UserIds = uniqueIds(req.UserIds)
 
-	return req, permissions, true
+	return req, permissions, nil
 }
 
 func normalizeOIDCGroups(groups []roleOIDCGroup) []roleOIDCGroup {
@@ -556,13 +599,12 @@ func loadRole(ctx context.Context, id string) (models.Role, error) {
 	return role, err
 }
 
-func writeRole(c *gin.Context, status int, role *models.Role) {
-	membersByRoleId, err := loadMembersByRoleId(c.Request.Context(), []string{role.Id})
+func roleOutputOf(ctx context.Context, role *models.Role) (*roleOutput, error) {
+	membersByRoleId, err := loadMembersByRoleId(ctx, []string{role.Id})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
-	c.JSON(status, toRoleResponse(role, membersByRoleId[role.Id]))
+	return &roleOutput{Body: toRoleResponse(role, membersByRoleId[role.Id])}, nil
 }
 
 func loadMembersByRoleId(ctx context.Context, roleIds []string) (map[string][]roleMemberResponse, error) {
