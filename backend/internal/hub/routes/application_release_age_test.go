@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -11,7 +12,9 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
 
@@ -86,6 +89,7 @@ func TestUpdateReleaseAgeSettingsHandler_Rejects(t *testing.T) {
 		{app.Id, `{"minimumSeconds":0,"allowedRegistries":["registry.local/library"]}`, http.StatusBadRequest},
 		{app.Id, `{"minimumSeconds":0,"allowedRegistries":[""]}`, http.StatusBadRequest},
 		{app.Id, `not json`, http.StatusBadRequest},
+		{app.Id, `{"minimumSeconds":0,"allowedRegistries":` + tooManyRegistries() + `}`, http.StatusBadRequest},
 		{"missing", `{"minimumSeconds":0,"allowedRegistries":[]}`, http.StatusNotFound},
 	} {
 		if w := invokeReleaseAgeSettingsHandler(t, tt.id, tt.body); w.Code != tt.want {
@@ -119,6 +123,25 @@ func TestUpdateServiceReleaseAgeHandler(t *testing.T) {
 	if w := setService("db", `{"minimumSeconds":-5}`); w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for a negative age, got %d", w.Code)
 	}
+	if w := setService("db", `not json`); w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for an invalid body, got %d", w.Code)
+	}
+
+	w := invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+		"/api/v1/applications/missing/release-age/services/db", `{"minimumSeconds":0}`,
+		gin.Params{{Key: "id", Value: "missing"}, {Key: "service", Value: "db"}})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for an unknown application, got %d", w.Code)
+	}
+}
+
+func tooManyRegistries() string {
+	registries := make([]string, maxReleaseAgeAllowedRegistries+1)
+	for i := range registries {
+		registries[i] = fmt.Sprintf("registry%d.local", i)
+	}
+	body, _ := json.Marshal(registries)
+	return string(body)
 }
 
 func TestAdminUpdateReleaseAgeSettingsHandler(t *testing.T) {
@@ -139,10 +162,48 @@ func TestAdminUpdateReleaseAgeSettingsHandler(t *testing.T) {
 		t.Errorf("global settings = %+v", settings)
 	}
 
-	w = invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
-		"/api/v1/admin/settings/release-age", `{"minimumSeconds":-1,"allowedRegistries":[]}`, nil)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for a negative age, got %d", w.Code)
+	for _, body := range []string{
+		`{"minimumSeconds":-1,"allowedRegistries":[]}`,
+		`{"minimumSeconds":0,"allowedRegistries":["registry.local/library"]}`,
+		`not json`,
+	} {
+		w = invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
+			"/api/v1/admin/settings/release-age", body, nil)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", body, w.Code)
+		}
+	}
+}
+
+func TestAdminUpdateReleaseAgeSettingsHandler_SendsSettingsToAgents(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-global")
+	agent := seedTestAgent(t, "agent-release-age-global")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Release Age Global App")
+	nop := zerolog.Nop()
+	hub := websocket.NewHub(&nop)
+	websocket.DefaultHub = hub
+	t.Cleanup(func() { websocket.DefaultHub = nil })
+	client, err := hub.Register(agent.Id, nil)
+	if err != nil {
+		t.Fatalf("failed to register fake agent: %v", err)
+	}
+
+	w := invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
+		"/api/v1/admin/settings/release-age", `{"minimumSeconds":3600,"allowedRegistries":[]}`, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The application inherits the new default, so its agent gets it right away
+	select {
+	case msg := <-client.Send:
+		settings := msg.GetAgentSettings().GetImagePollSettings()
+		if len(settings) != 1 || settings[0].ApplicationId != app.Id || settings[0].GetReleaseAge().GetMinimumSeconds() != 3600 {
+			t.Errorf("unexpected agent settings %v", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected the agent to get its settings")
 	}
 }
 
@@ -189,6 +250,49 @@ func TestListApplicationImageUpdatesHandler(t *testing.T) {
 	}
 	if db := response.Images[1]; db.Service != "db" || db.NewVersion != "17.2" || db.EligibleAt == nil {
 		t.Errorf("unexpected db update %+v", db)
+	}
+}
+
+func TestListApplicationImageUpdatesHandler_OwnAgeAndUnknownApplication(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-image-updates-own")
+	agent := seedTestAgent(t, "agent-image-updates-own")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Image Updates Own App")
+	own := int64(3600)
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("MinimumReleaseAgeSeconds").
+		Updates(t.Context(), models.Application{MinimumReleaseAgeSeconds: &own}); err != nil {
+		t.Fatalf("update application: %v", err)
+	}
+
+	// Before the first image check there is nothing to show
+	w := invokeReleaseAgeHandler(t, ListApplicationImageUpdatesHandler, http.MethodGet,
+		"/api/v1/applications/"+app.Id+"/image-updates", "", gin.Params{{Key: "id", Value: app.Id}})
+	var response imageUpdatesResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if w.Code != http.StatusOK || response.CheckedAt != nil || response.Images == nil || len(response.Images) != 0 {
+		t.Fatalf("expected an empty list, got %d: %s", w.Code, w.Body.String())
+	}
+
+	row := models.ApplicationImageUpdate{ApplicationId: app.Id, Service: "web", Image: "nginx:1", Status: models.ImageUpdateUpToDate, MinimumAgeSeconds: own, CheckedAt: time.Now().UTC()}
+	if err := gorm.G[models.ApplicationImageUpdate](db.DB).Create(t.Context(), &row); err != nil {
+		t.Fatalf("seed image update: %v", err)
+	}
+	w = invokeReleaseAgeHandler(t, ListApplicationImageUpdatesHandler, http.MethodGet,
+		"/api/v1/applications/"+app.Id+"/image-updates", "", gin.Params{{Key: "id", Value: app.Id}})
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Images) != 1 || response.Images[0].AgeSource != "application" {
+		t.Errorf("expected the age of the application, got %+v", response.Images)
+	}
+
+	w = invokeReleaseAgeHandler(t, ListApplicationImageUpdatesHandler, http.MethodGet,
+		"/api/v1/applications/missing/image-updates", "", gin.Params{{Key: "id", Value: "missing"}})
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for an unknown application, got %d", w.Code)
 	}
 }
 
