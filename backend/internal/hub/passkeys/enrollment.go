@@ -14,6 +14,9 @@ import (
 
 const EnrollmentLifetime = 24 * time.Hour
 
+// ErrManagedUser indicates that an SSO-only account cannot use local recovery.
+var ErrManagedUser = errors.New("cannot reset passkeys for a managed user")
+
 func TokenHash(token string) string {
 	digest := sha512.Sum512([]byte(token))
 	return hex.EncodeToString(digest[:])
@@ -53,7 +56,7 @@ func ResetLocal(ctx context.Context, tx *gorm.DB, user *models.User) (string, er
 	}
 	*user = current
 	if !user.LocalAuthEnabled {
-		return "", errors.New("cannot reset passkeys for a managed user")
+		return "", ErrManagedUser
 	}
 	if _, err := gorm.G[models.Passkey](tx).Where("user_id = ?", user.Id).Delete(ctx); err != nil {
 		return "", err
