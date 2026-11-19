@@ -2,6 +2,7 @@ import { test, expect, request as pwRequest, type Locator, type Page } from "@pl
 import { APP_URL, HUB_WS_URL } from "./const.ts";
 import { startAgent, stopAgent } from "./helpers/agent-container.ts";
 import { api, listRepositories, seedRepository, type ApiRepository } from "./helpers/api.ts";
+import { createApiTokenInUi, deleteApiTokens, tokenClient } from "./helpers/api-tokens.ts";
 import {
 	appContainers,
 	BUSYBOX_IMAGE,
@@ -64,6 +65,7 @@ const OFFLINE_APP_NAME = "E2E Offline App";
 const MOVE_APP_NAME = "E2E Move App";
 const RENAMED_APP_NAME = "E2E Moved App";
 const MOVE_TARGET_AGENT_NAME = "E2E Move Target Agent";
+const API_TOKEN_NAME = "E2E Deploy Token";
 const DEPLOY_PROMPT = "These changes affect the deployment. Deploy now to apply them.";
 const COMPOSE_PATH = "apps/demo/compose.yaml";
 
@@ -459,6 +461,29 @@ test.describe("Deploy an application", () => {
 		);
 		expect(appContainers(appId)).toHaveLength(1);
 		expect(runningVersion()).toBe("1");
+	});
+
+	test("deploy it with an API token", async ({ page }) => {
+		const manualDeployments = async () =>
+			(await applicationEvents(page, appId)).filter(
+				(event) => event.source === "manual" && event.status === "succeeded",
+			).length;
+		const before = await manualDeployments();
+		const token = await createApiTokenInUi(page, API_TOKEN_NAME, ["application:deploy"]);
+		const client = await tokenClient(token);
+		try {
+			const response = await client.post(`/api/v1/applications/${appId}/deploy`);
+			expect(response.status()).toBe(202);
+			await expect.poll(manualDeployments, { timeout: 60_000 }).toBe(before + 1);
+		} finally {
+			await client.dispose();
+			await deleteApiTokens(page, [API_TOKEN_NAME]);
+		}
+		await waitForApplication(
+			page,
+			appId,
+			(app) => app.syncStatus === "synced" && app.healthStatus === "healthy",
+		);
 	});
 
 	test("pull images from the application details", async ({ page }) => {

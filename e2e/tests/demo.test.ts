@@ -120,6 +120,17 @@ test.describe("signed in", () => {
 			"OrcaCD/demo-infrastructure",
 		]);
 		expect(await names(page, "/notifications")).toEqual(["Slack alerts", "Team Discord"]);
+		expect(await names(page, "/api-tokens")).toEqual([
+			"Backup script",
+			"GitHub Actions",
+			"Old deploy script",
+		]);
+		expect(await names(page, "/admin/api-tokens")).toEqual([
+			"Backup script",
+			"GitHub Actions",
+			"Grafana",
+			"Old deploy script",
+		]);
 
 		const agents = await demoApi(page, "GET", "/agents");
 		expect(agents.status).toBe(200);
@@ -247,7 +258,7 @@ test.describe("signed in", () => {
 			["POST", `/applications/${WEB_APP.id}/pull-images`],
 			["POST", `/applications/${WEB_APP.id}/deployments/demo-deployment-web-image/rollback`],
 			["POST", `/applications/${MONITORING_APP.id}/resume-auto-sync`],
-			["PUT", `/applications/${WEB_APP.id}/rollback`, { enabled: false }],
+			["PUT", `/applications/${WEB_APP.id}/rollback/settings`, { enabled: false }],
 			["PUT", `/applications/${WEB_APP.id}/env`, { files: [] }],
 			["POST", `/applications/${WEB_APP.id}/image-webhook`],
 			["DELETE", `/applications/${WEB_APP.id}/image-webhook`],

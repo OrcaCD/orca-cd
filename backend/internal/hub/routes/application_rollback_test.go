@@ -234,7 +234,7 @@ func TestPullApplicationImagesHandler_RolledBack(t *testing.T) {
 func invokeRollbackSettingsHandler(t *testing.T, appID, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	c, w := makeAuthContext(t, "user-1")
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+appID+"/rollback", strings.NewReader(body))
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+appID+"/rollback/settings", strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: appID}}
 	UpdateRollbackSettingsHandler(c)
