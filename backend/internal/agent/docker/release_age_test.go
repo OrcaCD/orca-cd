@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,11 @@ func TestParseReleaseAge(t *testing.T) {
 		{value: "-1d", wantErr: true},
 		{value: "-5h", wantErr: true},
 		{value: "soon", wantErr: true},
+		{value: "365d", want: 365 * 24 * time.Hour},
+		{value: "365d1h", wantErr: true},
+		{value: "9000h", wantErr: true},
+		// Would overflow a time.Duration and wrap around to about 36 days
+		{value: "250000d", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.value, func(t *testing.T) {
@@ -48,6 +54,25 @@ func TestParseReleaseAge(t *testing.T) {
 				t.Errorf("parseReleaseAge(%q) = %v, want %v", tt.value, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSameTag(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"redis", "docker.io/library/redis:latest", true},
+		{"ghcr.io/org/app:1.0", "ghcr.io/org/app:1.0", true},
+		{"ghcr.io/org/app:1.0", "ghcr.io/org/app:2.0", false},
+		{"ghcr.io/org/app:1.0", "ghcr.io/org/other:1.0", false},
+		{"ghcr.io/org/app@" + newDigest, "ghcr.io/org/app:latest", false},
+		{"Invalid Ref", "ghcr.io/org/app", false},
+	}
+	for _, tt := range tests {
+		if got := sameTag(tt.a, tt.b); got != tt.want {
+			t.Errorf("sameTag(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
 	}
 }
 
@@ -134,10 +159,17 @@ func TestEvaluateUpdate(t *testing.T) {
 			wantLookup: true,
 		},
 		{name: "invalid label", policy: policy, service: withLabel("soon"), wantStatus: blocked, wantReason: "invalid " + releaseAgeLabel + " label"},
-		{name: "announced by webhook", policy: ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:2.0"}}, service: service, wantStatus: updated},
+		{name: "announced by webhook", policy: ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:1.0"}}, service: service, wantStatus: updated},
 		{
 			name:       "not announced by webhook",
 			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/other:1.0"}},
+			service:    service,
+			wantStatus: skipped,
+			wantReason: "not announced by the image pull webhook",
+		},
+		{
+			name:       "webhook announced another tag",
+			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:2.0"}},
 			service:    service,
 			wantStatus: skipped,
 			wantReason: "not announced by the image pull webhook",
@@ -308,7 +340,7 @@ func TestCheckAndPullImages_MissingImageSkipsReleaseAge(t *testing.T) {
 	c := setupStaleImage(t)
 	calls := stubPushTime(t, time.Now(), nil)
 	getLocalDigests = func(context.Context, client.APIClient, string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pullProject = func(context.Context, api.Compose, *composetypes.Project, api.PullOptions) error { return nil }
 	upProject = func(context.Context, api.Compose, *composetypes.Project, api.UpOptions) error { return nil }
@@ -319,5 +351,104 @@ func TestCheckAndPullImages_MissingImageSkipsReleaseAge(t *testing.T) {
 	}
 	if !updated || len(images) != 1 || images[0].Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED || *calls != 0 {
 		t.Fatalf("expected the missing image to be pulled without an age check, got updated=%v images=%v lookups=%d", updated, images, *calls)
+	}
+}
+
+// Only the services that are updated may be pulled. The others keep the image
+// they run, even when an updated service moves the tag they share.
+func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
+	const (
+		postgresDigest = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+		redisDigest    = "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+	)
+	c := setupStaleImage(t)
+	stubPushTime(t, time.Now().Add(-time.Hour), nil)
+	image := func(ref string, labels composetypes.Labels) composetypes.ServiceConfig {
+		return composetypes.ServiceConfig{Image: ref, PullPolicy: composetypes.PullPolicyAlways, Labels: labels}
+	}
+	loadProject = func(context.Context, api.Compose, api.ProjectLoadOptions) (*composetypes.Project, error) {
+		services := composetypes.Services{
+			// Updated right away, which moves the tag worker shares
+			"web": image("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}),
+			// Held back by the release age
+			"worker": image("ghcr.io/org/app:1.0", nil),
+			"db":     image("postgres:17", nil),
+			"cache":  image("redis:7", nil),
+			"queue":  image("rabbitmq:3", nil),
+		}
+		for name, service := range services {
+			service.Name = name
+			services[name] = service
+		}
+		return &composetypes.Project{Name: "myapp", Services: services}, nil
+	}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, ref string) (string, error) {
+		switch ref {
+		case "postgres:17":
+			return postgresDigest, nil
+		case "redis:7":
+			return "", errors.New("toomanyrequests: rate limit exceeded")
+		}
+		return newDigest, nil
+	}
+	getLocalDigests = func(_ context.Context, _ client.APIClient, ref string) ([]string, error) {
+		switch ref {
+		case "postgres:17":
+			return []string{"postgres@" + postgresDigest}, nil
+		case "redis:7":
+			return []string{"redis@" + redisDigest}, nil
+		case "rabbitmq:3":
+			return nil, errors.New("context deadline exceeded")
+		}
+		return []string{"ghcr.io/org/app@" + oldDigest}, nil
+	}
+	isLocalOnlyImage = func(context.Context, client.APIClient, string) bool { return false }
+
+	var pulled, upped *composetypes.Project
+	pullProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.PullOptions) error {
+		pulled = project
+		return nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.UpOptions) error {
+		upped = project
+		return nil
+	}
+
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{MinimumAge: 24 * time.Hour})
+	if !updated || err == nil {
+		t.Fatalf("expected web to be updated and the failed lookups to be reported, got updated=%v err=%v", updated, err)
+	}
+	statuses := map[string]messages.ImageUpdateStatus{}
+	for _, update := range images {
+		statuses[update.Service] = update.Status
+	}
+	want := map[string]messages.ImageUpdateStatus{
+		"web":    messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED,
+		"worker": messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING,
+		"db":     messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE,
+		"cache":  messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED,
+		// Only an image missing locally may be pulled without a check
+		"queue": messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED,
+	}
+	if !maps.Equal(statuses, want) {
+		t.Errorf("statuses = %v, want %v", statuses, want)
+	}
+
+	if got := pulled.Services["web"].PullPolicy; got != composetypes.PullPolicyAlways {
+		t.Errorf("web must be pulled, got pull policy %q", got)
+	}
+	wantUp := map[string]string{
+		"worker": "ghcr.io/org/app@" + oldDigest,
+		"db":     "postgres@" + postgresDigest,
+		"cache":  "redis@" + redisDigest,
+		"queue":  "rabbitmq:3",
+	}
+	for name, ref := range wantUp {
+		if got := pulled.Services[name].PullPolicy; got != composetypes.PullPolicyNever {
+			t.Errorf("%s must not be pulled, got pull policy %q", name, got)
+		}
+		if got := upped.Services[name]; got.Image != ref || got.PullPolicy != composetypes.PullPolicyNever {
+			t.Errorf("compose up ran %s with %q and pull policy %q, want %q", name, got.Image, got.PullPolicy, ref)
+		}
 	}
 }

@@ -215,58 +215,115 @@ func ghcrVersionPushTime(ctx context.Context, ownerType, owner, pkg, digest stri
 	return time.Time{}, fmt.Errorf("no package version found for digest %s", digest)
 }
 
-// gitLabPushTime reads the push time from the GitLab API. Only gitlab.com is
-// supported, the API of a self-hosted GitLab can't be derived from its registry.
+// gitLabPushTime reads the push time from the GitLab GraphQL API. The REST API
+// only has the time the tag was first created, which stays the same when a new
+// image is pushed to it. Only gitlab.com is supported, the API of a self-hosted
+// GitLab can't be derived from its registry.
 func gitLabPushTime(ctx context.Context, img registryImage, creds registryCredentials) (time.Time, error) {
 	header := http.Header{}
 	if creds.password != "" {
-		header.Set("PRIVATE-TOKEN", creds.password)
+		header.Set("Authorization", "Bearer "+creds.password)
 	}
 
 	// The image path is the project path, optionally followed by an image name,
 	// so the longest path that is a project is searched for.
 	segments := strings.Split(img.path, "/")
 	for i := len(segments); i >= 2; i-- {
-		project := url.PathEscape(strings.Join(segments[:i], "/"))
-		var repositories []struct {
-			ID   int64  `json:"id"`
-			Path string `json:"path"`
-		}
-		err := getJSON(ctx, fmt.Sprintf("%s/api/v4/projects/%s/registry/repositories?per_page=100", gitLabAPI, project), header, &repositories)
-		if isNotFound(err) {
-			continue
-		}
+		repositoryID, found, err := gitLabRepositoryID(ctx, strings.Join(segments[:i], "/"), strings.Join(segments[i:], "/"), img.path, header)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("gitlab: %w", err)
 		}
-		var repositoryID int64
-		for _, repository := range repositories {
-			if repository.Path == img.path {
-				repositoryID = repository.ID
-			}
+		if !found {
+			continue
 		}
-		if repositoryID == 0 {
+		if repositoryID == "" {
 			break
 		}
 
-		var tag struct {
-			Digest    string     `json:"digest"`
-			CreatedAt *time.Time `json:"created_at"`
+		var data struct {
+			ContainerRepository *struct {
+				TagDetails *struct {
+					Digest      string     `json:"digest"`
+					PublishedAt *time.Time `json:"publishedAt"`
+				} `json:"tagDetails"`
+			} `json:"containerRepository"`
 		}
-		endpoint := fmt.Sprintf("%s/api/v4/projects/%s/registry/repositories/%d/tags/%s",
-			gitLabAPI, project, repositoryID, url.PathEscape(img.tag))
-		if err := getJSON(ctx, endpoint, header, &tag); err != nil {
+		err = gitLabGraphQL(ctx, `query($id: ContainerRepositoryID!, $tag: String!) {
+			containerRepository(id: $id) { tagDetails(name: $tag) { digest publishedAt } }
+		}`, map[string]any{"id": repositoryID, "tag": img.tag}, header, &data)
+		if err != nil {
 			return time.Time{}, fmt.Errorf("gitlab: %w", err)
 		}
+		if data.ContainerRepository == nil || data.ContainerRepository.TagDetails == nil {
+			return time.Time{}, fmt.Errorf("gitlab: no tag %s in %s", img.tag, img.path)
+		}
+		tag := data.ContainerRepository.TagDetails
 		if tag.Digest != img.digest {
 			return time.Time{}, errors.New("gitlab reports another digest for the tag, it was probably pushed again")
 		}
-		if tag.CreatedAt == nil {
+		if tag.PublishedAt == nil {
 			return time.Time{}, errors.New("gitlab reports no push time for the tag")
 		}
-		return *tag.CreatedAt, nil
+		return *tag.PublishedAt, nil
 	}
 	return time.Time{}, fmt.Errorf("gitlab: no registry repository found for %s", img.path)
+}
+
+// gitLabRepositoryID returns the ID of the container repository with the given
+// path in a project. found is false if there is no such project.
+func gitLabRepositoryID(ctx context.Context, project, name, path string, header http.Header) (id string, found bool, err error) {
+	var data struct {
+		Project *struct {
+			ContainerRepositories struct {
+				Nodes []struct {
+					ID   string `json:"id"`
+					Path string `json:"path"`
+				} `json:"nodes"`
+			} `json:"containerRepositories"`
+		} `json:"project"`
+	}
+	variables := map[string]any{"project": project}
+	if name != "" {
+		variables["name"] = name
+	}
+	err = gitLabGraphQL(ctx, `query($project: ID!, $name: String) {
+		project(fullPath: $project) { containerRepositories(name: $name, first: 100) { nodes { id path } } }
+	}`, variables, header, &data)
+	if err != nil || data.Project == nil {
+		return "", false, err
+	}
+	for _, repository := range data.Project.ContainerRepositories.Nodes {
+		if repository.Path == path {
+			return repository.ID, true, nil
+		}
+	}
+	return "", true, nil
+}
+
+func gitLabGraphQL(ctx context.Context, query string, variables map[string]any, header http.Header, out any) error {
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gitLabAPI+"/api/graphql", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	maps.Copy(req.Header, header)
+	req.Header.Set("Content-Type", "application/json")
+	var response struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := doJSON(req, &response); err != nil {
+		return err
+	}
+	if len(response.Errors) > 0 {
+		return errors.New(response.Errors[0].Message)
+	}
+	return json.Unmarshal(response.Data, out)
 }
 
 func harborPushTime(ctx context.Context, img registryImage, creds registryCredentials) (time.Time, error) {
@@ -279,18 +336,30 @@ func harborPushTime(ctx context.Context, img registryImage, creds registryCreden
 		header.Set("Authorization", "Basic "+basicAuth(creds))
 	}
 	// Harbor expects slashes in the repository name to be encoded twice.
-	endpoint := fmt.Sprintf("https://%s/api/v2.0/projects/%s/repositories/%s/artifacts/%s",
+	endpoint := fmt.Sprintf("https://%s/api/v2.0/projects/%s/repositories/%s/artifacts/%s?with_tag=true",
 		img.host, url.PathEscape(project), url.PathEscape(url.PathEscape(repository)), url.PathEscape(img.digest))
 	var artifact struct {
-		PushTime *time.Time `json:"push_time"`
+		Tags []struct {
+			Name     string     `json:"name"`
+			PushTime *time.Time `json:"push_time"`
+		} `json:"tags"`
 	}
 	if err := getJSON(ctx, endpoint, header, &artifact); err != nil {
 		return time.Time{}, err
 	}
-	if artifact.PushTime == nil {
-		return time.Time{}, errors.New("no push time in the response")
+	// The push time of the artifact is when its digest was first pushed, maybe
+	// under another tag long before the tag was moved to it, so the time the tag
+	// was pushed is used.
+	for _, tag := range artifact.Tags {
+		if tag.Name != img.tag {
+			continue
+		}
+		if tag.PushTime == nil {
+			return time.Time{}, errors.New("no push time in the response")
+		}
+		return *tag.PushTime, nil
 	}
-	return *artifact.PushTime, nil
+	return time.Time{}, fmt.Errorf("the tag %s no longer points to the digest", img.tag)
 }
 
 func basicAuth(creds registryCredentials) string {

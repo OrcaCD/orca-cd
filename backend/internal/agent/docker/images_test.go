@@ -3,12 +3,14 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/pkg/authconfig"
@@ -475,7 +477,7 @@ func TestIsLocalOnlyImage(t *testing.T) {
 		cli  *fakeInspectClient
 		want bool
 	}{
-		{"missing locally", &fakeInspectClient{err: errors.New("no such image")}, false},
+		{"missing locally", &fakeInspectClient{err: errNoSuchImage}, false},
 		{"containerd store, pulled", inspected(pulled, "app@sha256:a"), false},
 		// The containerd store lists a digest for the local tag of a build as well
 		{"containerd store, built", inspected(built, "reg.example.com/app@sha256:a"), true},
@@ -628,7 +630,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 	}
 	// Image not present locally — treat as stale.
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 
 	var pullCalled bool
@@ -695,7 +697,7 @@ func TestCheckAndPullImages_PullError(t *testing.T) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		return errors.New("pull failed")
@@ -727,7 +729,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		return nil
@@ -913,7 +915,7 @@ func stubStalePrivilegedProject(t *testing.T) (pullCalled, upCalled *bool) {
 		return "sha256:newdigest", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("not present locally")
+		return nil, errNoSuchImage
 	}
 	var pulled, upped bool
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
@@ -963,3 +965,6 @@ func TestCheckAndPullImages_AllowlistedApplicationBypassesPolicy(t *testing.T) {
 		t.Fatal("expected compose up for an allowlisted application")
 	}
 }
+
+// errNoSuchImage is what the Docker client returns for a missing image.
+var errNoSuchImage = fmt.Errorf("no such image: %w", cerrdefs.ErrNotFound)

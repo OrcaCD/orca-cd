@@ -179,10 +179,15 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	var updates []*messages.ImageUpdate
 	var stale []*messages.ImageUpdate
 	var digestErrs []error
-	// Services whose update waits, and the digests of those whose release age
-	// was checked.
-	held := map[string]struct{}{}
+	// The services that are updated, and the digests of those whose release
+	// age was checked.
+	updated := map[string]struct{}{}
 	pinned := map[string]string{}
+	// The image every other service runs now, pinned to its digest.
+	kept := map[string]string{}
+	keep := func(name string, image string, localDigests []string) {
+		kept[name] = localPinnedRef(image, localDigests)
+	}
 	for name, service := range project.Services {
 		if service.Image == "" {
 			continue
@@ -202,12 +207,22 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 				Status:  messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED,
 				Reason:  err.Error(),
 			})
+			localDigests, _ := getLocalDigests(ctx, dockerCLI, service.Image)
+			keep(name, service.Image, localDigests)
 			continue
 		}
 
 		update := &messages.ImageUpdate{Service: name, Image: service.Image}
 		updates = append(updates, update)
 		localDigests, err := getLocalDigests(ctx, dockerCLI, service.Image)
+		if err != nil && !cerrdefs.IsNotFound(err) {
+			// Only an image that is missing locally may be pulled unchecked.
+			c.log.Error().Err(err).Str("image", service.Image).Msg("failed to inspect local image")
+			digestErrs = append(digestErrs, fmt.Errorf("image %s: inspect local image: %w", service.Image, err))
+			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED
+			update.Reason = err.Error()
+			continue
+		}
 		if err == nil {
 			update.CurrentDigest = localDigest(localDigests)
 			update.CurrentVersion = getLocalVersion(ctx, dockerCLI, service.Image)
@@ -220,6 +235,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 				update.MinimumAgeSeconds = int64(age / time.Second)
 				update.MinimumAgeFromLabel = fromLabel
 			}
+			keep(name, service.Image, localDigests)
 			continue
 		}
 
@@ -232,7 +248,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 			checked := c.evaluateUpdate(ctx, appID, policy, service, remoteDigest, update)
 			if isHeldBack(update) {
 				c.log.Info().Str("image", service.Image).Str("reason", update.Reason).Msg("image update held back")
-				held[name] = struct{}{}
+				keep(name, service.Image, localDigests)
 				continue
 			}
 			if checked {
@@ -240,6 +256,7 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 			}
 		}
 		stale = append(stale, update)
+		updated[name] = struct{}{}
 	}
 	digestErr := errors.Join(digestErrs...)
 	slices.SortFunc(updates, func(a, b *messages.ImageUpdate) int { return strings.Compare(a.Service, b.Service) })
@@ -256,16 +273,22 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return err
 	}
 
-	// compose up must not pull held back or checked images by their tag,
-	// which may point to another image by now, even with pull_policy: always.
+	// Only the updated services may be pulled, and checked images not by their
+	// tag, which may point to another image by now, even with pull_policy: always.
+	// The other services keep the image they run, pinned to its digest where it
+	// has one, as an updated service may move the tag they share.
 	for name := range project.Services {
-		_, isHeld := held[name]
+		_, isUpdated := updated[name]
 		_, isPinned := pinned[name]
-		if isHeld || isPinned {
-			service := project.Services[name]
-			service.PullPolicy = composetypes.PullPolicyNever
-			project.Services[name] = service
+		if isUpdated && !isPinned {
+			continue
 		}
+		service := project.Services[name]
+		service.PullPolicy = composetypes.PullPolicyNever
+		if ref := kept[name]; ref != "" {
+			service.Image = ref
+		}
+		project.Services[name] = service
 	}
 
 	pullTarget, err := pinnedProject(project, pinned)
@@ -313,6 +336,17 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 	c.observeApplicationHealth(appID)
 
 	return true, updates, digestErr
+}
+
+// localPinnedRef returns the "repo@sha256:..." entry of repoDigests that
+// belongs to the repository of imageRef, or empty if there is none.
+func localPinnedRef(imageRef string, repoDigests []string) string {
+	for _, d := range repoDigests {
+		if sameRepository(d, imageRef) {
+			return d
+		}
+	}
+	return ""
 }
 
 // localDigest returns the digest of the first "repo@sha256:..." entry.
