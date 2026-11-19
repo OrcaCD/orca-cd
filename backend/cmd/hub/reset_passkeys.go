@@ -20,7 +20,6 @@ import (
 var (
 	errMissingUserIdentifier = errors.New("either --email or --id must be provided")
 	errTooManyIdentifiers    = errors.New("provide either --email or --id, not both")
-	errManagedUser           = errors.New("cannot reset passkeys for a managed user")
 )
 
 type resetPasskeysTarget struct {
@@ -121,12 +120,18 @@ func resetUserPasskeys(ctx context.Context, target resetPasskeysTarget) (models.
 			return err
 		}
 		if !user.LocalAuthEnabled {
-			return errManagedUser
+			return passkeys.ErrManagedUser
 		}
 		enrollmentToken, err = passkeys.ResetLocal(ctx, tx, &user)
 		return err
 	})
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if target.ID != "" {
+				return models.User{}, "", fmt.Errorf("user not found with id %q", target.ID)
+			}
+			return models.User{}, "", fmt.Errorf("user not found with email %q", target.Email)
+		}
 		return models.User{}, "", fmt.Errorf("reset passkeys: %w", err)
 	}
 	return user, enrollmentToken, nil

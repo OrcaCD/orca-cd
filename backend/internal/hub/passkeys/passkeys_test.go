@@ -362,8 +362,8 @@ func TestRecoveryRejectsDeletedAndManagedAccounts(t *testing.T) {
 	if err := gorm.G[models.User](database).Create(ctx, &managed); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResetLocal(ctx, database, &managed); err == nil {
-		t.Fatal("recovered an SSO-only account")
+	if _, err := ResetLocal(ctx, database, &managed); !errors.Is(err, ErrManagedUser) {
+		t.Fatalf("expected ErrManagedUser for an SSO-only account, got %v", err)
 	}
 	local := models.User{Name: "Local", Email: "local@example.com", LocalAuthEnabled: true}
 	if err := gorm.G[models.User](database).Create(ctx, &local); err != nil {

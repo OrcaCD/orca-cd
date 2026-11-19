@@ -182,10 +182,30 @@ func TestResetPasskeysCommandRejectsInvalidInputsAndEnvironment(t *testing.T) {
 					t.Fatal(err)
 				}
 				want = "connect to database"
+			case "unknown user":
+				want = "user not found with id \"missing\""
 			}
 			err := runResetPasskeysCommand(t.Context(), io.Discard, target)
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Fatalf("expected %q, got %v", want, err)
+			}
+		})
+	}
+}
+
+func TestResetUserPasskeysRejectsUnknownUser(t *testing.T) {
+	for _, test := range []struct {
+		target resetPasskeysTarget
+		want   string
+	}{
+		{resetPasskeysTarget{ID: " missing-id "}, `user not found with id "missing-id"`},
+		{resetPasskeysTarget{Email: " MISSING@EXAMPLE.COM "}, `user not found with email "missing@example.com"`},
+	} {
+		t.Run(test.want, func(t *testing.T) {
+			setupCommandTestDB(t)
+			user, code, err := resetUserPasskeys(t.Context(), test.target)
+			if err == nil || err.Error() != test.want || user.Id != "" || code != "" {
+				t.Fatalf("expected %q without recovery data, got user=%q code=%q err=%v", test.want, user.Id, code, err)
 			}
 		})
 	}
@@ -204,8 +224,8 @@ func TestResetUserPasskeysRejectsManagedUser(t *testing.T) {
 	}
 
 	_, _, err := resetUserPasskeys(t.Context(), resetPasskeysTarget{Email: managedUser.Email})
-	if !errors.Is(err, errManagedUser) {
-		t.Fatalf("expected errManagedUser, got %v", err)
+	if !errors.Is(err, passkeys.ErrManagedUser) {
+		t.Fatalf("expected ErrManagedUser, got %v", err)
 	}
 }
 
