@@ -223,8 +223,8 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	origListImages := listServiceImages
 	t.Cleanup(func() { listServiceImages = origListImages })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return true, nil // images updated
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return true, nil, nil // images updated
 	}
 	listServiceImages = func(_ context.Context, _ *Client, appID string) ([]*messages.ServiceImage, error) {
 		return []*messages.ServiceImage{{Service: "app", ImageId: "sha256:new-" + appID}}, nil
@@ -235,7 +235,7 @@ func TestImagePoller_RunOnce_SendsResultOnUpdate(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "req-1", false)
+	p.runOnce("app-1", "myapp", "req-1", false, ReleaseAgePolicy{})
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -263,8 +263,8 @@ func TestImagePoller_RunOnce_SendsResultOnError(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return false, errors.New("registry unreachable")
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, nil, errors.New("registry unreachable")
 	}
 
 	sender := &stubMessageSender{}
@@ -272,7 +272,7 @@ func TestImagePoller_RunOnce_SendsResultOnError(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -294,8 +294,8 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return false, nil // nothing changed
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, nil, nil // nothing changed
 	}
 
 	sender := &stubMessageSender{}
@@ -303,7 +303,7 @@ func TestImagePoller_RunOnce_SilentWhenNothingChanged(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
 
 	if msgs := sender.received(); len(msgs) != 0 {
 		t.Errorf("expected no message when nothing changed, got %d", len(msgs))
@@ -315,8 +315,8 @@ func TestImagePoller_RunOnce_ReportsRecoveryOnceAfterFailure(t *testing.T) {
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	var checkErr error
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return false, checkErr
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, nil, checkErr
 	}
 
 	sender := &stubMessageSender{}
@@ -325,11 +325,11 @@ func TestImagePoller_RunOnce_ReportsRecoveryOnceAfterFailure(t *testing.T) {
 	defer p.StopAll()
 
 	checkErr = errors.New("unauthorized")
-	p.runOnce("app-1", "myapp", "", false)
-	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
 	checkErr = nil
-	p.runOnce("app-1", "myapp", "", false)
-	p.runOnce("app-1", "myapp", "", false)
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
 
 	msgs := sender.received()
 	if len(msgs) != 3 {
@@ -353,18 +353,18 @@ func TestImagePoller_RunOnce_RecoveryStateIsPerApplication(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, appID, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, appID, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		if appID == "app-failing" {
-			return false, errors.New("unauthorized")
+			return false, nil, errors.New("unauthorized")
 		}
-		return false, nil
+		return false, nil, nil
 	}
 
 	sender := &stubMessageSender{}
 	p := newTestPoller(t, sender)
 
-	p.runOnce("app-failing", "a", "", false)
-	p.runOnce("app-healthy", "b", "", false)
+	p.runOnce("app-failing", "a", "", false, ReleaseAgePolicy{})
+	p.runOnce("app-healthy", "b", "", false, ReleaseAgePolicy{})
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -379,8 +379,8 @@ func TestImagePoller_RunOnce_SendsResultOnExplicitRequestEvenWhenNothingChanged(
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return false, nil // nothing changed, e.g. a duplicate webhook delivery
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, nil, nil // nothing changed, e.g. a duplicate webhook delivery
 	}
 
 	sender := &stubMessageSender{}
@@ -388,7 +388,7 @@ func TestImagePoller_RunOnce_SendsResultOnExplicitRequestEvenWhenNothingChanged(
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "req-1", false)
+	p.runOnce("app-1", "myapp", "req-1", false, ReleaseAgePolicy{})
 
 	msgs := sender.received()
 	if len(msgs) != 1 {
@@ -413,8 +413,8 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return true, nil // trigger a send
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return true, nil, nil // trigger a send
 	}
 
 	sender := &stubMessageSender{err: errors.New("send failed")}
@@ -423,7 +423,7 @@ func TestImagePoller_RunOnce_SendErrorLogged(t *testing.T) {
 	defer p.StopAll()
 
 	// Must not panic when sender returns an error; the error is logged.
-	p.runOnce("app-1", "myapp", "req-1", false)
+	p.runOnce("app-1", "myapp", "req-1", false, ReleaseAgePolicy{})
 }
 
 type noopSender struct{}
@@ -434,8 +434,8 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	origCheck := checkAndPullImages
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-		return true, nil
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return true, nil, nil
 	}
 
 	c := newTestClient(t)
@@ -443,7 +443,7 @@ func TestImagePoller_RunOnce_NoopSenderIsNoOp(t *testing.T) {
 	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
 	defer p.StopAll()
 
-	p.runOnce("app-1", "myapp", "", false) // must not panic
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{}) // must not panic
 }
 
 func TestImagePoller_IntervalOverride(t *testing.T) {
@@ -451,12 +451,12 @@ func TestImagePoller_IntervalOverride(t *testing.T) {
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	called := make(chan struct{}, 1)
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		select {
 		case called <- struct{}{}:
 		default:
 		}
-		return false, nil
+		return false, nil, nil
 	}
 
 	p := NewImagePoller(newTestClient(t), noopSender{}, zerolog.Nop(), 10*time.Millisecond)
@@ -479,15 +479,15 @@ func TestImagePoller_TriggerNow(t *testing.T) {
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	called := make(chan struct{}, 1)
-	checkAndPullImages = func(_ context.Context, _ *Client, _, appName string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, appName string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		if appName == "billing" {
 			called <- struct{}{}
 		}
-		return false, nil
+		return false, nil, nil
 	}
 
 	p := newTestPoller(t, noopSender{})
-	p.TriggerNow("app-1", "billing", "req-99", false)
+	p.TriggerNow("app-1", "billing", "req-99", false, ReleaseAgePolicy{})
 
 	select {
 	case <-called:
@@ -501,15 +501,15 @@ func TestImagePoller_TriggerNow_PassesDeleteOldWithoutPollSettings(t *testing.T)
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	got := make(chan bool, 1)
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		got <- deleteOld
-		return false, nil
+		return false, nil, nil
 	}
 
 	// No ApplySettings: polling is disabled for the app, but an explicit
 	// trigger (webhook, manual, GitHub Actions) must still honor cleanup.
 	p := newTestPoller(t, noopSender{})
-	p.TriggerNow("app-1", "billing", "req-1", true)
+	p.TriggerNow("app-1", "billing", "req-1", true, ReleaseAgePolicy{})
 
 	select {
 	case deleteOld := <-got:
@@ -526,12 +526,12 @@ func TestImagePoller_RunTicker_UsesPollSettingsDeleteOld(t *testing.T) {
 	t.Cleanup(func() { checkAndPullImages = origCheck })
 
 	got := make(chan bool, 1)
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, deleteOld bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		select {
 		case got <- deleteOld:
 		default:
 		}
-		return false, nil
+		return false, nil, nil
 	}
 
 	p := newTestPoller(t, noopSender{})
@@ -573,14 +573,14 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 	}
 	t.Cleanup(releaseAll)
 
-	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
 		started <- struct{}{}
 		<-release
-		return false, nil
+		return false, nil, nil
 	}
 
 	p := newTestPoller(t, noopSender{})
-	p.TriggerNow("app-1", "billing", "req-1", false)
+	p.TriggerNow("app-1", "billing", "req-1", false, ReleaseAgePolicy{})
 
 	select {
 	case <-started:
@@ -588,7 +588,7 @@ func TestImagePoller_TriggerNow_SerializesSameApplication(t *testing.T) {
 		t.Fatal("timed out waiting for first pull to start")
 	}
 
-	p.TriggerNow("app-1", "billing", "req-2", false)
+	p.TriggerNow("app-1", "billing", "req-2", false, ReleaseAgePolicy{})
 
 	select {
 	case <-started:
@@ -616,13 +616,13 @@ func TestImagePoller_RunOnce_ReportsFailedRedeploy(t *testing.T) {
 		{fmt.Errorf("%w: container exited", ErrRedeployFailed), true},
 		{errors.New("registry unreachable"), false},
 	} {
-		checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool) (bool, error) {
-			return false, tt.err
+		checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+			return false, nil, tt.err
 		}
 		sender := &stubMessageSender{}
 		p := newTestPoller(t, sender)
 
-		p.runOnce("app-1", "myapp", "req-1", false)
+		p.runOnce("app-1", "myapp", "req-1", false, ReleaseAgePolicy{})
 
 		msgs := sender.received()
 		if len(msgs) != 1 {
@@ -630,6 +630,60 @@ func TestImagePoller_RunOnce_ReportsFailedRedeploy(t *testing.T) {
 		}
 		if got := msgs[0].GetPullImagesResult().RedeployFailed; got != tt.want {
 			t.Errorf("%v: redeploy_failed = %v, want %v", tt.err, got, tt.want)
+		}
+	}
+}
+
+func TestImagePoller_RunOnce_ReportsHeldBackImagesWhenTheyChange(t *testing.T) {
+	origCheck := checkAndPullImages
+	t.Cleanup(func() { checkAndPullImages = origCheck })
+
+	var images []*messages.ImageUpdate
+	checkAndPullImages = func(_ context.Context, _ *Client, _, _ string, _ bool, _ ReleaseAgePolicy) (bool, []*messages.ImageUpdate, error) {
+		return false, images, nil
+	}
+	waiting := func(reason string) []*messages.ImageUpdate {
+		return []*messages.ImageUpdate{{
+			Service: "cache",
+			Image:   "redis:7",
+			Status:  messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING,
+			Reason:  reason,
+		}}
+	}
+
+	sender := &stubMessageSender{}
+	p := newTestPoller(t, sender)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 60})
+	defer p.StopAll()
+
+	images = waiting("waiting until tomorrow")
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+	images = waiting("waiting until next week")
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+	images = []*messages.ImageUpdate{{Service: "cache", Image: "redis:7", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE}}
+	p.runOnce("app-1", "myapp", "", false, ReleaseAgePolicy{})
+
+	var results []*messages.PullImagesResult
+	reports := 0
+	for _, msg := range sender.received() {
+		if result := msg.GetPullImagesResult(); result != nil {
+			results = append(results, result)
+		}
+		if msg.GetImageUpdatesReport() != nil {
+			reports++
+		}
+	}
+	if reports != 4 {
+		t.Errorf("expected an image updates report for every run, got %d", reports)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected a result for each change of the held back images, got %d", len(results))
+	}
+	for i, wantReason := range []string{"waiting until tomorrow", "waiting until next week"} {
+		result := results[i]
+		if !result.Success || len(result.HeldBackImages) != 1 || result.HeldBackImages[0].Reason != wantReason {
+			t.Errorf("result %d: unexpected %v", i, result)
 		}
 	}
 }
