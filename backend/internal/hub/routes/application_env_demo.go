@@ -1,12 +1,12 @@
 package routes
 
 import (
+	"context"
 	"errors"
-	"net/http"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -62,16 +62,14 @@ func demoEnvFiles(applicationID string) []envFileResponse {
 	}
 }
 
-func listDemoApplicationEnv(c *gin.Context) {
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", c.Param("id")).First(c.Request.Context())
+func listDemoApplicationEnv(ctx context.Context, id string) (*envListOutput, error) {
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return nil, huma.Error404NotFound("application not found")
 		}
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, envListResponse{Files: demoEnvFiles(application.Id)})
+	return &envListOutput{Body: envListResponse{Files: demoEnvFiles(application.Id)}}, nil
 }

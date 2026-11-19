@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -18,6 +21,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/shared/envrules"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/OrcaCD/orca-cd/internal/version"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -35,33 +39,37 @@ const (
 )
 
 type envEntryResponse struct {
-	Key      string  `json:"key"`
-	IsSecret bool    `json:"isSecret"`
-	Value    *string `json:"value,omitempty"`
-	IsSet    bool    `json:"isSet"`
+	Key      string  `json:"key" required:"true"`
+	IsSecret bool    `json:"isSecret" required:"true"`
+	Value    *string `json:"value,omitempty" doc:"Left out for secrets, whose values the hub never returns"`
+	IsSet    bool    `json:"isSet" required:"true" doc:"Whether the variable has a value"`
 }
 
 type envFileResponse struct {
-	Path     string             `json:"path"`
-	Services []string           `json:"services"`
-	Revision string             `json:"revision"`
-	Entries  []envEntryResponse `json:"entries"`
+	Path     string             `json:"path" required:"true" doc:"The path of the env file, relative to the compose file"`
+	Services []string           `json:"services" required:"true" doc:"The services that use the file"`
+	Revision string             `json:"revision" required:"true" doc:"Pass it as expectedRevision when changing the file"`
+	Entries  []envEntryResponse `json:"entries" required:"true"`
 }
 
 type envListResponse struct {
-	Files []envFileResponse `json:"files"`
+	Files []envFileResponse `json:"files" required:"true"`
+}
+
+type envListOutput struct {
+	Body envListResponse
 }
 
 type envChangeRequest struct {
 	Key      string `json:"key"`
-	Delete   bool   `json:"delete"`
+	Delete   bool   `json:"delete" doc:"Removes the variable, value is ignored"`
 	Value    string `json:"value"`
 	IsSecret bool   `json:"isSecret"`
 }
 
 type envFileChangesRequest struct {
 	Path             string             `json:"path"`
-	ExpectedRevision string             `json:"expectedRevision"`
+	ExpectedRevision string             `json:"expectedRevision" doc:"The revision the changes are based on. The update fails with 409 if the file changed since."`
 	Changes          []envChangeRequest `json:"changes"`
 }
 
@@ -69,28 +77,54 @@ type updateEnvRequest struct {
 	Files []envFileChangesRequest `json:"files"`
 }
 
-func ListApplicationEnvHandler(c *gin.Context) {
+// envError is an error answer that Huma's errors can't express: a 422, which
+// huma.NewError turns into 400, or one with a flag the web UI reacts to.
+type envError struct {
+	status                 int
+	Message                string `json:"error"`
+	Conflict               bool   `json:"conflict,omitempty"`
+	SavedButRedeployFailed bool   `json:"savedButRedeployFailed,omitempty"`
+}
+
+func (e *envError) Error() string {
+	return e.Message
+}
+
+func (e *envError) GetStatus() int {
+	return e.status
+}
+
+const envServerErrorsDoc = "Answers 503 while the agent is offline, 504 when it doesn't respond in time and 502 when it fails."
+
+var ListApplicationEnvHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-application-env",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}/env",
+	Summary:     "List the environment variables of an application",
+	Description: "Loads the env files of the application from its agent. Values of secrets are left out. " +
+		envServerErrorsDoc + " " + requires(models.ResourceApplication, models.ActionRead),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound, http.StatusUnprocessableEntity},
+}, func(ctx context.Context, input *idInput) (*envListOutput, error) {
 	if DemoMode {
-		listDemoApplicationEnv(c)
-		return
+		return listDemoApplicationEnv(ctx, input.ID)
 	}
 
-	application, agent, ok := loadEnvTarget(c)
-	if !ok {
-		return
+	application, agent, err := loadEnvTarget(ctx, input.ID)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), envListTimeout)
+	ctx, cancel := context.WithTimeout(ctx, envListTimeout)
 	defer cancel()
 
 	result, err := websocket.DefaultHub.ListEnv(ctx, application.AgentId, application.Id, application.Name.String())
 	if err != nil {
-		respondEnvTransportError(c, agent, err)
-		return
+		return nil, envTransportError(agent, err)
 	}
 	if !result.Success {
-		c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to load the environment files.")})
-		return
+		return nil, huma.Error502BadGateway(envAgentError(result.ErrorMessage, "The agent failed to load the environment files."))
 	}
 
 	response := envListResponse{Files: make([]envFileResponse, 0, len(result.EnvFiles))}
@@ -100,29 +134,42 @@ func ListApplicationEnvHandler(c *gin.Context) {
 		}
 		response.Files = append(response.Files, toEnvFileResponse(file))
 	}
-	c.JSON(http.StatusOK, response)
-}
+	return &envListOutput{Body: response}, nil
+})
 
-func UpdateApplicationEnvHandler(c *gin.Context) {
-	var req updateEnvRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-	files, err := validateEnvUpdate(req.Files)
+var UpdateApplicationEnvHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-application-env",
+	Method:      http.MethodPut,
+	Path:        "/applications/{id}/env",
+	Summary:     "Change the environment variables of an application",
+	Description: "Writes the changes to the env files on the agent and redeploys the application, which can take a while. " +
+		"A 409 answer has `conflict: true` when a file changed since expectedRevision. " +
+		"A 502 answer has `savedButRedeployFailed: true` when the changes were saved but the redeploy failed. " +
+		envServerErrorsDoc + " Needs the `application:update` and `application:deploy` permissions.",
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+	// Many changed files can be larger than Huma's default limit of 1 MiB, the
+	// server-wide limit applies instead.
+	MaxBodyBytes: -1,
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the application"`
+	Body updateEnvRequest
+}) (*restapi.MessageOutput, error) {
+	c := restapi.GinContext(ctx)
+	files, err := validateEnvUpdate(input.Body.Files)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	application, agent, ok := loadEnvTarget(c)
-	if !ok {
-		return
+	application, agent, err := loadEnvTarget(ctx, input.ID)
+	if err != nil {
+		return nil, err
 	}
 
 	// The request context carries the global 30s timeout, which is shorter than
 	// a redeploy. Detach from it so the audit entry is still written afterwards.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), envUpdateTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), envUpdateTimeout)
 	defer cancel()
 	c.Request = c.Request.WithContext(ctx)
 
@@ -131,67 +178,68 @@ func UpdateApplicationEnvHandler(c *gin.Context) {
 
 	result, err := websocket.DefaultHub.UpdateEnv(ctx, application.AgentId, application.Id, application.Name.String(), files)
 	if err != nil {
-		respondEnvTransportError(c, agent, err)
-		return
+		return nil, envTransportError(agent, err)
 	}
 
 	if result.Conflict {
-		c.JSON(http.StatusConflict, gin.H{
-			"error":    "The environment settings were changed by someone else in the meantime.",
-			"conflict": true,
-		})
-		return
+		return nil, &envError{
+			status:   http.StatusConflict,
+			Message:  "The environment settings were changed by someone else in the meantime.",
+			Conflict: true,
+		}
 	}
 
 	if result.Success {
 		utils.RecordAuditLog(c, "updated-environment", "application", application.Id)
-		c.JSON(http.StatusOK, gin.H{"message": "environment updated"})
-		return
+		return restapi.Message("environment updated"), nil
 	}
 
 	// The values were persisted, so the change is audited even though the
 	// redeploy failed.
 	if strings.HasPrefix(result.ErrorMessage, envrules.SavedRedeployFailedPrefix) {
 		utils.RecordAuditLog(c, "updated-environment", "application", application.Id)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error":                  utils.CapitalizeFirst(result.ErrorMessage),
-			"savedButRedeployFailed": true,
-		})
-		return
+		return nil, &envError{
+			status:                 http.StatusBadGateway,
+			Message:                utils.CapitalizeFirst(result.ErrorMessage),
+			SavedButRedeployFailed: true,
+		}
 	}
-	c.JSON(http.StatusBadGateway, gin.H{"error": envAgentError(result.ErrorMessage, "The agent failed to update the environment files.")})
-}
+	return nil, huma.Error502BadGateway(envAgentError(result.ErrorMessage, "The agent failed to update the environment files."))
+})
 
 type parseEnvPayload struct {
-	Content string `json:"content"`
+	Content string `json:"content" doc:"The content of an env file, at most 1 MiB"`
 }
 
 type parsedEnvEntry struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	IsSecret bool   `json:"isSecret"`
+	Key      string `json:"key" required:"true"`
+	Value    string `json:"value" required:"true"`
+	IsSecret bool   `json:"isSecret" required:"true" doc:"False for keys marked with a # orcacd:public comment"`
 }
 
 type parseEnvResponse struct {
-	Entries      []parsedEnvEntry `json:"entries"`
-	IgnoredLines int              `json:"ignoredLines"`
+	Entries      []parsedEnvEntry `json:"entries" required:"true"`
+	IgnoredLines int              `json:"ignoredLines" required:"true" doc:"Number of lines that are no valid assignment"`
 }
 
 // maxParseEnvBodyBytes leaves room for JSON escaping, which grows a control
 // character to six bytes.
 const maxParseEnvBodyBytes = 6*envrules.MaxFileBytes + 1024
 
-func ParseEnvHandler(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxParseEnvBodyBytes)
-
-	var req parseEnvPayload
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
+var ParseEnvHandler = limitParseEnvBody(restapi.Handler(huma.Operation{
+	OperationID:  "parse-env-file",
+	Method:       http.MethodPost,
+	Path:         "/env/parse",
+	Summary:      "Parse an env file",
+	Description:  "Parses the content of an env file with the Docker Compose syntax, e.g. to import it. Nothing is saved.",
+	Tags:         []string{tagApplications},
+	Security:     restapi.Authenticated,
+	Errors:       []int{http.StatusBadRequest},
+	MaxBodyBytes: maxParseEnvBodyBytes,
+}, func(_ context.Context, input *struct{ Body parseEnvPayload }) (*struct{ Body parseEnvResponse }, error) {
+	req := input.Body
 	if len(req.Content) > envrules.MaxFileBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("the file is larger than %d bytes", envrules.MaxFileBytes)})
-		return
+		return nil, huma.Error400BadRequest(fmt.Sprintf("the file is larger than %d bytes", envrules.MaxFileBytes))
 	}
 
 	doc := dotenv.Parse(req.Content)
@@ -203,56 +251,67 @@ func ParseEnvHandler(c *gin.Context) {
 	for _, entry := range entries {
 		response.Entries = append(response.Entries, parsedEnvEntry{Key: entry.Key, Value: entry.Value, IsSecret: !entry.Public})
 	}
-	c.JSON(http.StatusOK, response)
+	return &struct{ Body parseEnvResponse }{Body: response}, nil
+}))
+
+// limitParseEnvBody answers a body over maxParseEnvBodyBytes with 400 like
+// before, where Huma's MaxBodyBytes answers 413.
+func limitParseEnvBody(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxParseEnvBodyBytes))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+		next(c)
+	}
 }
 
-func loadEnvTarget(c *gin.Context) (models.Application, models.Agent, bool) {
+func loadEnvTarget(ctx context.Context, id string) (models.Application, models.Agent, error) {
 	var application models.Application
 	var agent models.Agent
 
 	if websocket.DefaultHub == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "hub not initialized"})
-		return application, agent, false
+		return application, agent, huma.Error500InternalServerError("hub not initialized")
 	}
 
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", c.Param("id")).First(c.Request.Context())
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return application, agent, huma.Error404NotFound("application not found")
 		}
-		return application, agent, false
+		return application, agent, internalError()
 	}
 
-	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", application.AgentId).First(c.Request.Context())
+	agent, err = gorm.G[models.Agent](db.DB).Where("id = ?", application.AgentId).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return application, agent, false
+		return application, agent, internalError()
 	}
 
 	if _, online := websocket.DefaultHub.GetClient(agent.Id); !online {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Environment variables can only be viewed or changed while it is connected."})
-		return application, agent, false
+		return application, agent, huma.Error503ServiceUnavailable("The agent is offline. Environment variables can only be viewed or changed while it is connected.")
 	}
 
 	if agent.Version == "" || version.CheckAgentCompatibility(version.Version, agent.Version) == version.AgentIncompatible {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": fmt.Sprintf("This agent is too old to manage environment variables. Please update it to version %s or newer.", strings.TrimSuffix(version.MinAgentVersion, "-0"))})
-		return application, agent, false
+		return application, agent, &envError{
+			status:  http.StatusUnprocessableEntity,
+			Message: fmt.Sprintf("This agent is too old to manage environment variables. Please update it to version %s or newer.", strings.TrimSuffix(version.MinAgentVersion, "-0")),
+		}
 	}
 
-	return application, agent, true
+	return application, agent, nil
 }
 
-func respondEnvTransportError(c *gin.Context, agent models.Agent, err error) {
+func envTransportError(agent models.Agent, err error) error {
 	switch {
 	case errors.Is(err, websocket.ErrAgentOffline):
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Environment variables can only be viewed or changed while it is connected."})
+		return huma.Error503ServiceUnavailable("The agent is offline. Environment variables can only be viewed or changed while it is connected.")
 	case errors.Is(err, context.DeadlineExceeded):
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "The agent did not respond in time. Please try again."})
+		return huma.Error504GatewayTimeout("The agent did not respond in time. Please try again.")
 	default:
 		applicationEnvLog.Error().Err(err).Str("agent_id", agent.Id).Msg("environment request failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return internalError()
 	}
 }
 
