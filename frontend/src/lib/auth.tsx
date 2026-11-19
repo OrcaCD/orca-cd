@@ -9,7 +9,6 @@ export interface AuthState {
 	isAuthenticated: boolean;
 	isLoading: boolean;
 	isAdmin: boolean;
-	passwordChangeRequired: boolean;
 	profile: Profile | null;
 }
 
@@ -35,7 +34,6 @@ export interface Profile {
 	isAdmin: boolean;
 	roles: UserRole[];
 	permissions: Record<PermissionResource, ResourceGrant>;
-	passwordChangeRequired: boolean;
 	isLocal: boolean;
 	demo?: boolean;
 }
@@ -55,7 +53,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 			profile: data || null,
 			isAuthenticated: !!data,
 			isAdmin: data?.isAdmin ?? false,
-			passwordChangeRequired: data?.passwordChangeRequired ?? false,
 		}),
 		[isLoading, data],
 	);
@@ -142,8 +139,4 @@ export function useAuth(): AuthContextValue {
 
 export async function updateProfile(data: { name: string; email: string }): Promise<void> {
 	await fetcher(`/auth/profile`, "PUT", data);
-}
-
-export async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
-	await fetcher(`/auth/change-password`, "POST", { currentPassword, newPassword });
 }

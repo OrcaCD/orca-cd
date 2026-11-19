@@ -451,7 +451,7 @@ func TestRun_GracefulShutdown(t *testing.T) {
 		Host:      host,
 		Port:      port,
 		LogLevel:  zerolog.Disabled,
-		AppURL:    "http://" + host + ":" + port,
+		AppURL:    "http://localhost:" + port,
 		AppSecret: "a-test-secret-that-is-at-least-32-chars!!",
 		DisableUI: true,
 	}

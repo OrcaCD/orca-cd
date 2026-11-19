@@ -49,7 +49,6 @@ export function userClaims({ subject, expiresIn = 3600, role = "admin" }: TokenO
 		name: ADMIN_NAME,
 		email: ADMIN_EMAIL,
 		role,
-		passwordChangeRequired: false,
 		isLocal: true,
 	};
 }

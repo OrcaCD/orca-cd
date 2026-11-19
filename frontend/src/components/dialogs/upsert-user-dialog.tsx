@@ -44,7 +44,7 @@ function userSchema(isManaged: boolean) {
 			: z.string().trim().min(3, m.validationNameMinLength()).max(64, m.validationNameMaxLength()),
 		email: isManaged ? z.string() : z.email(m.validationMustBeValidEmailAddress()).trim(),
 		roleIds: z.array(z.string()),
-		resetPassword: z.boolean(),
+		resetPasskeys: z.boolean(),
 	});
 }
 
@@ -68,8 +68,8 @@ export default function UpsertUserDialog({
 }) {
 	const isEditing = !!user;
 	const [open, setOpen] = useState(false);
-	const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
-	const [isGeneratedPasswordOpen, setIsGeneratedPasswordOpen] = useState(false);
+	const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
+	const [isEnrollmentCodeOpen, setIsEnrollmentCodeOpen] = useState(false);
 
 	return (
 		<>
@@ -106,28 +106,28 @@ export default function UpsertUserDialog({
 					<UserForm
 						user={user}
 						onClose={() => setOpen(false)}
-						onPasswordGenerated={(password) => {
-							setGeneratedPassword(password);
-							setIsGeneratedPasswordOpen(true);
+						onEnrollmentGenerated={(code) => {
+							setEnrollmentToken(code);
+							setIsEnrollmentCodeOpen(true);
 						}}
 					/>
 				</ResponsiveDialogContent>
 			</ResponsiveDialog>
 
 			<CopyValueDialog
-				open={isGeneratedPasswordOpen}
+				open={isEnrollmentCodeOpen}
 				onOpenChange={(nextOpen) => {
-					setIsGeneratedPasswordOpen(nextOpen);
+					setIsEnrollmentCodeOpen(nextOpen);
 					if (!nextOpen) {
-						setGeneratedPassword(null);
+						setEnrollmentToken(null);
 					}
 				}}
-				title={m.generatedPassword()}
-				description={m.copyPasswordNow()}
-				label={m.password()}
-				value={generatedPassword ?? ""}
-				inputId="generated-password"
-				copyTitle={m.copyGeneratedPassword()}
+				title={m.enrollmentCode()}
+				description={m.copyEnrollmentCodeNow()}
+				label={m.enrollmentCode()}
+				value={enrollmentToken ?? ""}
+				inputId="enrollment-code"
+				copyTitle={m.copyEnrollmentCode()}
 			/>
 		</>
 	);
@@ -136,7 +136,7 @@ export default function UpsertUserDialog({
 function UserForm(props: {
 	user: UserDetail | null;
 	onClose: () => void;
-	onPasswordGenerated: (password: string) => void;
+	onEnrollmentGenerated: (code: string) => void;
 }) {
 	const { data: roles, error } = useFetch<Role[]>("/admin/roles");
 
@@ -161,16 +161,16 @@ function UserFormFields({
 	user,
 	roles,
 	onClose,
-	onPasswordGenerated,
+	onEnrollmentGenerated,
 }: {
 	user: UserDetail | null;
 	roles: Role[];
 	onClose: () => void;
-	onPasswordGenerated: (password: string) => void;
+	onEnrollmentGenerated: (code: string) => void;
 }) {
 	const isEditing = !!user;
 	// The profile of OIDC users is managed by their provider, only their roles can change
-	const isManaged = isEditing && !user.providers.includes("password");
+	const isManaged = isEditing && !user.isLocal;
 	const oidcRoleIds = new Set(
 		user?.roles.filter((role) => role.sources.includes("oidc")).map((role) => role.id) ?? [],
 	);
@@ -182,7 +182,7 @@ function UserFormFields({
 			name: user?.name ?? "",
 			email: user?.email ?? "",
 			roleIds: initialRoleIds,
-			resetPassword: false,
+			resetPasskeys: false,
 		},
 		validators: {
 			onSubmit: userSchema(isManaged),
@@ -197,12 +197,12 @@ function UserFormFields({
 						name: value.name,
 						email: value.email,
 						roleIds: value.roleIds,
-						resetPassword: value.resetPassword,
+						resetPasskeys: value.resetPasskeys,
 					});
-					generated = response.generatedPassword ?? null;
+					generated = response.enrollmentToken ?? null;
 					toast.add({
 						type: "success",
-						title: value.resetPassword ? m.userUpdatedAndPasswordReset() : m.userUpdated(),
+						title: value.resetPasskeys ? m.userUpdatedAndPasskeysReset() : m.userUpdated(),
 					});
 				} else {
 					const response = await createUser({
@@ -210,12 +210,12 @@ function UserFormFields({
 						email: value.email,
 						roleIds: value.roleIds,
 					});
-					generated = response.generatedPassword;
+					generated = response.enrollmentToken;
 					toast.add({ type: "success", title: m.userCreated() });
 				}
 
 				if (generated) {
-					onPasswordGenerated(generated);
+					onEnrollmentGenerated(generated);
 				}
 
 				onClose();
@@ -332,7 +332,7 @@ function UserFormFields({
 				/>
 				{isEditing && !isManaged && (
 					<form.Field
-						name="resetPassword"
+						name="resetPasskeys"
 						children={(field) => (
 							<Field>
 								<div className="flex items-start gap-2">
@@ -343,8 +343,8 @@ function UserFormFields({
 										className="h-4 w-4 rounded border-gray-300"
 									/>
 									<div className="space-y-1">
-										<Label htmlFor={field.name}>{m.resetPassword()}</Label>
-										<p className="text-muted-foreground text-xs">{m.resetPasswordDescription()}</p>
+										<Label htmlFor={field.name}>{m.resetPasskeys()}</Label>
+										<p className="text-muted-foreground text-xs">{m.resetPasskeysDescription()}</p>
 									</div>
 								</div>
 							</Field>

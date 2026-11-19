@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -29,21 +29,7 @@ func userIsAdmin(t *testing.T, userId string) (bool, error) {
 func createTestUser(t *testing.T, name string, email string, roleID string, password string) models.User {
 	t.Helper()
 
-	var passwordHash *string
-	if password != "" {
-		hash, err := auth.HashPassword(password)
-		if err != nil {
-			t.Fatalf("failed to hash password: %v", err)
-		}
-		passwordHash = &hash
-	}
-
-	user := models.User{
-		Name:             name,
-		Email:            email,
-		PasswordHash:     passwordHash,
-		LocalAuthEnabled: passwordHash != nil,
-	}
+	user := models.User{Name: name, Email: email, LocalAuthEnabled: password != ""}
 
 	if err := db.DB.WithContext(t.Context()).Create(&user).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
@@ -104,11 +90,11 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	if !ok {
 		t.Fatal("expected admin@example.com in response")
 	}
-	if !slices.Equal(admin.Providers, []string{"password"}) {
-		t.Fatalf("expected admin@example.com providers %v, got %v", []string{"password"}, admin.Providers)
+	if !slices.Equal(admin.Providers, []string{"passkey"}) {
+		t.Fatalf("expected admin@example.com providers %v, got %v", []string{"passkey"}, admin.Providers)
 	}
-	if admin.PasswordChangeRequired {
-		t.Fatal("expected admin@example.com to have passwordChangeRequired=false")
+	if !admin.IsLocal {
+		t.Fatal("expected local user")
 	}
 
 	oidcUserResponse, ok := byEmail["oidc@example.com"]
@@ -118,8 +104,8 @@ func TestAdminListUsersHandler_ReturnsUsersWithoutPasswordHash(t *testing.T) {
 	if !slices.Equal(oidcUserResponse.Providers, []string{"GitHub"}) {
 		t.Fatalf("expected oidc@example.com providers %v, got %v", []string{"GitHub"}, oidcUserResponse.Providers)
 	}
-	if oidcUserResponse.PasswordChangeRequired {
-		t.Fatal("expected oidc@example.com to have passwordChangeRequired=false")
+	if oidcUserResponse.IsLocal {
+		t.Fatal("expected managed user")
 	}
 }
 
@@ -158,7 +144,7 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var body adminUserWithGeneratedPasswordResponse
+	var body adminUserWithEnrollmentResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -169,25 +155,23 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	if len(body.Roles) != 1 || body.Roles[0].Id != rbac.UserRoleID || !slices.Equal(body.Roles[0].Sources, []models.UserRoleSource{models.UserRoleSourceManual}) {
 		t.Fatalf("expected the user role, got %+v", body.Roles)
 	}
-	if !slices.Equal(body.Providers, []string{"password"}) {
-		t.Fatalf("expected providers %v, got %v", []string{"password"}, body.Providers)
+	if !slices.Equal(body.Providers, []string{"passkey"}) {
+		t.Fatalf("expected providers %v, got %v", []string{"passkey"}, body.Providers)
 	}
-	if !body.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=true")
+	if !body.IsLocal {
+		t.Fatal("expected local account")
 	}
-	if body.GeneratedPassword == "" {
-		t.Fatal("expected generatedPassword to be returned")
+	if body.EnrollmentToken == "" {
+		t.Fatal("expected enrollmentToken to be returned")
 	}
 
 	var user models.User
 	if err := db.DB.Where("id = ?", body.Id).First(&user).Error; err != nil {
 		t.Fatalf("failed to load created user: %v", err)
 	}
-	if user.PasswordHash == nil || !auth.CheckPassword(body.GeneratedPassword, *user.PasswordHash) {
-		t.Fatal("expected stored password hash to match generated password")
-	}
-	if !user.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=true for created user")
+	assertEnrollmentCode(t, user.Id, body.EnrollmentToken)
+	if !user.LocalAuthEnabled {
+		t.Fatal("expected local account")
 	}
 }
 
@@ -237,12 +221,12 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var body adminUserWithGeneratedPasswordResponse
+	var body adminUserWithEnrollmentResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.GeneratedPassword != "" {
-		t.Fatal("expected generatedPassword to be omitted when resetPassword=false")
+	if body.EnrollmentToken != "" {
+		t.Fatal("expected enrollmentToken to be omitted when resetPasskeys=false")
 	}
 
 	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
@@ -264,11 +248,11 @@ func TestAdminUpdateUserHandler_Success(t *testing.T) {
 	if err != nil || isUser != 0 {
 		t.Fatalf("expected the user role to be removed, count=%d err=%v", isUser, err)
 	}
-	if updated.PasswordHash == nil || !auth.CheckPassword("old-password", *updated.PasswordHash) {
-		t.Fatal("expected password to remain unchanged when resetPassword=false")
+	if !updated.LocalAuthEnabled {
+		t.Fatal("expected local account")
 	}
-	if updated.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=false when resetPassword=false")
+	if updated.TokenVersion != user.TokenVersion {
+		t.Fatal("profile update revoked sessions")
 	}
 }
 
@@ -309,7 +293,7 @@ func TestAdminUserClassificationUsesLocalAuthEnabled(t *testing.T) {
 	}
 }
 
-func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
+func TestAdminUpdateUserHandler_ResetPasskeys_Success(t *testing.T) {
 	setupTestDB(t)
 
 	user := createTestUser(t, "User", "user@example.com", rbac.UserRoleID, "old-password")
@@ -318,7 +302,7 @@ func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 		"name":          "Updated User",
 		"email":         "UPDATED@Example.com",
 		"roleIds":       []string{rbac.AdminRoleID},
-		"resetPassword": true,
+		"resetPasskeys": true,
 	})
 
 	router := gin.New()
@@ -333,15 +317,15 @@ func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var body adminUserWithGeneratedPasswordResponse
+	var body adminUserWithEnrollmentResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body.GeneratedPassword == "" {
-		t.Fatal("expected generatedPassword to be returned when resetPassword=true")
+	if body.EnrollmentToken == "" {
+		t.Fatal("expected enrollmentToken to be returned when resetPasskeys=true")
 	}
-	if !body.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=true when resetPassword=true")
+	if !body.IsLocal {
+		t.Fatal("expected local account")
 	}
 
 	updated, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).First(t.Context())
@@ -349,12 +333,10 @@ func TestAdminUpdateUserHandler_ResetPassword_Success(t *testing.T) {
 		t.Fatalf("failed to load updated user: %v", err)
 	}
 
-	if updated.PasswordHash == nil || !auth.CheckPassword(body.GeneratedPassword, *updated.PasswordHash) {
-		t.Fatal("expected password to be updated to generated password")
+	if !updated.LocalAuthEnabled {
+		t.Fatal("expected local account")
 	}
-	if !updated.PasswordChangeRequired {
-		t.Fatal("expected passwordChangeRequired=true when password is reset")
-	}
+	assertEnrollmentCode(t, updated.Id, body.EnrollmentToken)
 	if updated.TokenVersion != user.TokenVersion+1 {
 		t.Fatalf("expected token version %d after reset, got %d", user.TokenVersion+1, updated.TokenVersion)
 	}
@@ -500,7 +482,7 @@ func TestAdminCreateUserHandler_UnknownRole(t *testing.T) {
 func TestAdminCreateUserHandler_RoleIds(t *testing.T) {
 	setupTestDB(t)
 
-	create := func(email string, body map[string]any) adminUserWithGeneratedPasswordResponse {
+	create := func(email string, body map[string]any) adminUserWithEnrollmentResponse {
 		t.Helper()
 		body["name"] = "New User"
 		body["email"] = email
@@ -513,7 +495,7 @@ func TestAdminCreateUserHandler_RoleIds(t *testing.T) {
 		if w.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 		}
-		var response adminUserWithGeneratedPasswordResponse
+		var response adminUserWithEnrollmentResponse
 		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
@@ -581,7 +563,7 @@ func TestAdminUpdateUserHandler_ManagedUserRolesOnly(t *testing.T) {
 	if w := update(map[string]any{"name": "Renamed", "email": "managed@example.com", "roleIds": []string{}}); w.Code != http.StatusBadRequest {
 		t.Fatalf("expected renaming a managed user to fail, got %d: %s", w.Code, w.Body.String())
 	}
-	if w := update(map[string]any{"name": "Managed", "email": "managed@example.com", "resetPassword": true}); w.Code != http.StatusBadRequest {
+	if w := update(map[string]any{"name": "Managed", "email": "managed@example.com", "resetPasskeys": true}); w.Code != http.StatusBadRequest {
 		t.Fatalf("expected resetting the password of a managed user to fail, got %d: %s", w.Code, w.Body.String())
 	}
 	if w := update(map[string]any{"name": "Managed", "email": "MANAGED@example.com", "roleIds": []string{rbac.UserRoleID}}); w.Code != http.StatusOK {
@@ -651,5 +633,13 @@ func TestAdminUpdateUserHandler_ValidatesLocalProfile(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for %v, got %d: %s", body, w.Code, w.Body.String())
 		}
+	}
+}
+
+func assertEnrollmentCode(t *testing.T, userID, token string) {
+	t.Helper()
+	enrollment, err := gorm.G[models.PasskeyEnrollment](db.DB).Where("user_id = ?", userID).First(t.Context())
+	if err != nil || token == "" || enrollment.TokenHash != passkeys.TokenHash(token) {
+		t.Fatal("expected a stored enrollment digest")
 	}
 }

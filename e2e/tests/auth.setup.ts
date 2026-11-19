@@ -1,12 +1,15 @@
+import { writeFile } from "node:fs/promises";
+import { credentials, installAuthenticator } from "./helpers/passkeys.ts";
 import { join } from "node:path";
 import { expect, test as setup } from "@playwright/test";
-import { ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD } from "./const.ts";
+import { ADMIN_EMAIL, ADMIN_NAME } from "./const.ts";
 import { readSetupCode } from "./helpers/setup-code.ts";
 
 const authFile = join(import.meta.dirname, "../playwright/.auth/user.json");
 
 setup("Authenticate", async ({ page }) => {
 	const setupCode = await readSetupCode();
+	await installAuthenticator(page);
 
 	await page.goto("/login");
 	await page.waitForURL("/register");
@@ -30,12 +33,13 @@ setup("Authenticate", async ({ page }) => {
 	await page.getByRole("textbox", { name: "name" }).fill(ADMIN_NAME);
 	await page.getByRole("textbox", { name: "email" }).fill(ADMIN_EMAIL);
 
-	await page.getByRole("textbox", { name: "Password", exact: true }).fill(ADMIN_PASSWORD);
-	await page.getByRole("textbox", { name: "Confirm Password", exact: true }).fill(ADMIN_PASSWORD);
-
 	await page.locator("form button[type='submit']").click();
 
 	await page.waitForURL("/");
 
 	await page.context().storageState({ path: authFile });
+	await writeFile(
+		join(import.meta.dirname, "../playwright/.auth/passkey.json"),
+		JSON.stringify((await credentials(page))[0]),
+	);
 });

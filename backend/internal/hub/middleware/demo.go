@@ -25,7 +25,7 @@ func DemoBlocking() gin.HandlerFunc {
 
 func isDemoAllowedPath(path string) bool {
 	switch path {
-	case "/api/v1/auth/login", "/api/v1/auth/logout":
+	case "/api/v1/auth/demo", "/api/v1/auth/logout":
 		return true
 	default:
 		return false

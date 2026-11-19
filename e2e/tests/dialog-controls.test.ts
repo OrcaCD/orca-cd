@@ -12,7 +12,6 @@ test.beforeEach(async ({ page }) => {
 				roles: [],
 				permissions: {},
 				isLocal: true,
-				passwordChangeRequired: false,
 			},
 		}),
 	);

@@ -5,6 +5,15 @@ import { readSetupCode } from "./helpers/setup-code.ts";
 // Run all tests in this file without authentication
 test.use({ storageState: { cookies: [], origins: [] } });
 
+test("password endpoints are removed and demo access is disabled", async ({ request }) => {
+	for (const path of ["/auth/login", "/auth/register", "/auth/change-password"]) {
+		const response = await request.post(`/api/v1${path}`, { headers: { Origin: APP_URL } });
+		expect(response.status(), path).toBe(404);
+	}
+	const demo = await request.post("/api/v1/auth/demo", { headers: { Origin: APP_URL } });
+	expect(demo.status()).toBe(403);
+});
+
 test.describe("registration is disabled after initial setup", () => {
 	test("registration is disabled", async ({ request }) => {
 		const response = await request.get("/api/v1/auth/setup");
@@ -14,8 +23,8 @@ test.describe("registration is disabled after initial setup", () => {
 	});
 
 	test("registration is blocked", async ({ request }) => {
-		const response = await request.post("/api/v1/auth/register", {
-			data: { email: "attacker@example.com", password: "Password123456!", name: "Attacker" },
+		const response = await request.post("/api/v1/auth/passkeys/register/begin", {
+			data: { email: "attacker@example.com", name: "Attacker" },
 			headers: {
 				Origin: APP_URL,
 			},
@@ -27,10 +36,9 @@ test.describe("registration is disabled after initial setup", () => {
 
 	test("registration is blocked even with the initial setup code", async ({ request }) => {
 		const setupCode = await readSetupCode();
-		const response = await request.post("/api/v1/auth/register", {
+		const response = await request.post("/api/v1/auth/passkeys/register/begin", {
 			data: {
 				email: "attacker@example.com",
-				password: "Password123456!",
 				name: "Attacker",
 				setupCode,
 			},
@@ -59,13 +67,13 @@ test.describe("security headers", () => {
 
 test.describe("Origin CSRF check works as expected", () => {
 	test("blocks requests with missing Origin header", async ({ request }) => {
-		const response = await request.post("/api/v1/auth/login");
+		const response = await request.post("/api/v1/auth/passkeys/login/begin");
 		expect(response.status()).toBe(403);
 		const body = await response.text();
 		expect(body).toContain("missing origin header");
 	});
 	test("blocks requests with invalid Origin header", async ({ request }) => {
-		const response = await request.post("/api/v1/auth/login", {
+		const response = await request.post("/api/v1/auth/passkeys/login/begin", {
 			headers: {
 				ORIGIN: "http://malicious-website.com",
 			},
@@ -111,7 +119,7 @@ test.describe("protected API routes require authentication", () => {
 	test("GET /api/v1/events (SSE) returns 401 for an invalid token", async ({ browser }) => {
 		const context = await browser.newContext({ baseURL: APP_URL });
 		await context.addCookies([
-			{ name: "orcacd_auth", value: "invalid", domain: "127.0.0.1", path: "/" },
+			{ name: "orcacd_auth", value: "invalid", domain: new URL(APP_URL).hostname, path: "/" },
 		]);
 		const response = await context.request.get("/api/v1/events", {
 			headers: { Accept: "text/event-stream" },
