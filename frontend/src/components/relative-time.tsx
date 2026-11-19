@@ -13,11 +13,15 @@ export function RelativeTime({
 	className,
 	fallback,
 	format,
+	future = false,
 }: {
 	value?: string | Date | null;
 	className?: string;
 	fallback?: ReactNode;
 	format?: (relative: string) => string;
+	// Past timestamps are never shown as ahead, as the clocks of the hub and the
+	// browser can differ a bit. Set it for timestamps meant to be ahead, like an expiry.
+	future?: boolean;
 }) {
 	const now = useNow();
 	// Parsed once, as the clock renders every timestamp again each minute.
@@ -34,7 +38,7 @@ export function RelativeTime({
 		return <span className={className}>{fallback ?? m.never()}</span>;
 	}
 
-	const relative = formatRelativeTime(date, Math.max(now, date.getTime()));
+	const relative = formatRelativeTime(date, future ? now : Math.max(now, date.getTime()));
 	return (
 		<InfoTooltip>
 			<InfoTooltipTrigger
