@@ -1,9 +1,12 @@
 package routes
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -12,9 +15,10 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/httpclient"
@@ -56,8 +60,28 @@ func getGitHubActionsProvider(ctx context.Context) (*gooidc.Provider, error) {
 }
 
 type githubActionsRequest struct {
-	SyncRepo   bool `json:"syncRepo"`
-	PullImages bool `json:"pullImages"`
+	SyncRepo   bool `json:"syncRepo" doc:"Sync the applications to the commit of the workflow run"`
+	PullImages bool `json:"pullImages" doc:"Pull the images of the applications and redeploy them"`
+}
+
+type githubActionsInput struct {
+	Authorization string `header:"Authorization" doc:"Bearer followed by the OIDC token of the workflow run, with the URL of the hub as audience"`
+	// Read as raw bytes, as the body is only parsed once the token was checked
+	// and applications matched.
+	RawBody []byte
+}
+
+// unprocessableEntityError answers 422, which huma.NewError turns into 400.
+type unprocessableEntityError struct {
+	Message string `json:"error"`
+}
+
+func (e *unprocessableEntityError) Error() string {
+	return e.Message
+}
+
+func (e *unprocessableEntityError) GetStatus() int {
+	return http.StatusUnprocessableEntity
 }
 
 // https://docs.github.com/en/actions/concepts/security/openid-connect#understanding-the-oidc-token
@@ -85,64 +109,72 @@ func extractWorkflowFilename(workflowRef, expectedRepo string) string {
 	return file
 }
 
-// GitHubActionsDeployHandler handles POST /api/v1/github-actions.
-// It verifies a GitHub Actions OIDC token and dispatches deployments for all
-// applications linked to the matching OrcaCD repository and branch.
-func GitHubActionsDeployHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+// GitHubActionsDeployHandler verifies a GitHub Actions OIDC token and
+// dispatches deployments for all applications linked to the matching OrcaCD
+// repository and branch.
+var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
+	OperationID: "deploy-from-github-actions",
+	Method:      http.MethodPost,
+	Path:        "/github-actions",
+	Summary:     "Deploy from a GitHub Actions workflow",
+	Description: "Called by a GitHub Actions workflow to sync or pull the images of the applications of the repository and branch it runs for. " +
+		"It authenticates with the OIDC token of the run, whose audience must be the URL of the hub, and needs a repository with GitHub Actions OIDC enabled, " +
+		"whose settings can limit the workflows, branches and actions. Pull request events are refused.",
+	Tags:          []string{tagWebhooks},
+	DefaultStatus: http.StatusAccepted,
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
+}, &huma.RequestBody{
+	Description: "Required once applications match the branch.",
+	Content: map[string]*huma.MediaType{
+		"application/json": {Schema: restapi.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[githubActionsRequest](), true, "")},
+	},
+}, func(ctx context.Context, input *githubActionsInput) (*restapi.MessageOutput, error) {
+	c := restapi.GinContext(ctx)
 
-	rawToken := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	rawToken := strings.TrimPrefix(input.Authorization, "Bearer ")
 	rawToken = strings.TrimSpace(rawToken)
 	if rawToken == "" {
 		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
-		return
+		return nil, huma.Error401Unauthorized("missing bearer token")
 	}
 
 	oidcProvider, err := getGitHubActionsProvider(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
 	idToken, err := verifier.Verify(ctx, rawToken)
 	if err != nil {
 		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-		return
+		return nil, huma.Error401Unauthorized("invalid token")
 	}
 
 	var claims githubActionsClaims
 	if err := idToken.Claims(&claims); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
-		return
+		return nil, huma.Error401Unauthorized("invalid token claims")
 	}
 
 	if claims.Repository == "" || claims.Ref == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing required token claims"})
-		return
+		return nil, huma.Error401Unauthorized("missing required token claims")
 	}
 
 	// Reject pull_request and pull_request_target events: these can be triggered
 	// by untrusted fork contributors and should never trigger deployments.
 	if claims.EventName == "pull_request" || claims.EventName == "pull_request_target" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "deployments cannot be triggered by pull_request or pull_request_target events"})
-		return
+		return nil, huma.Error403Forbidden("deployments cannot be triggered by pull_request or pull_request_target events")
 	}
 
 	repos, err := gorm.G[models.Repository](db.DB).
 		Where("github_actions_oidc_enabled = ? AND provider = ?", true, models.GitHub).
 		Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	repoProvider, err := repositories.Get(models.GitHub)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	var matchedRepo *models.Repository
@@ -157,15 +189,13 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 		}
 	}
 	if matchedRepo == nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "no repository with GitHub Actions OIDC enabled matches this repository. Add the repository in OrcaCD and enable GitHub Actions OIDC in its sync settings"})
-		return
+		return nil, huma.Error403Forbidden("no repository with GitHub Actions OIDC enabled matches this repository. Add the repository in OrcaCD and enable GitHub Actions OIDC in its sync settings")
 	}
 
 	if len(matchedRepo.GitHubActionsOIDCAllowedWorkflows) > 0 {
 		workflowFile := extractWorkflowFilename(claims.WorkflowRef, claims.Repository)
 		if workflowFile == "" || !slices.Contains(matchedRepo.GitHubActionsOIDCAllowedWorkflows, workflowFile) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "workflow is not permitted by GitHub Actions OIDC settings for this repository"})
-			return
+			return nil, huma.Error403Forbidden("workflow is not permitted by GitHub Actions OIDC settings for this repository")
 		}
 	}
 
@@ -176,18 +206,15 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	case "tag":
 		branchResolver, ok := repoProvider.(repositories.CommitBranchResolver)
 		if !ok {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "tag refs are not supported for this repository provider"})
-			return
+			return nil, &unprocessableEntityError{Message: "tag refs are not supported for this repository provider"}
 		}
 		resolved, err := branchResolver.GetBranchesForCommit(ctx, matchedRepo, claims.Sha)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
+			return nil, internalError()
 		}
 		branches = resolved
 	default:
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "unsupported ref type"})
-		return
+		return nil, &unprocessableEntityError{Message: "unsupported ref type"}
 	}
 
 	if len(matchedRepo.GitHubActionsOIDCAllowedBranches) > 0 {
@@ -195,8 +222,7 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return !slices.Contains(matchedRepo.GitHubActionsOIDCAllowedBranches, b)
 		})
 		if len(branches) == 0 {
-			c.JSON(http.StatusForbidden, gin.H{"error": "branch is not permitted by GitHub Actions OIDC settings for this repository"})
-			return
+			return nil, huma.Error403Forbidden("branch is not permitted by GitHub Actions OIDC settings for this repository")
 		}
 	}
 
@@ -204,48 +230,41 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	for _, branch := range branches {
 		branchApps, err := hubApplications.GetMatchingApplications(ctx, matchedRepo, branch)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
+			return nil, internalError()
 		}
 		apps = append(apps, branchApps...)
 	}
 
 	if len(apps) == 0 {
 		// No applications configured for this branch — nothing to do.
-		c.JSON(http.StatusAccepted, gin.H{"message": "no applications found for branch"})
-		return
+		return restapi.Message("no applications found for branch"), nil
 	}
 
+	// Decoded like Gin's ShouldBindJSON did, which ignores data after the object
 	var req githubActionsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
+	if err := json.NewDecoder(bytes.NewReader(input.RawBody)).Decode(&req); err != nil {
+		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
 	if !req.SyncRepo && !req.PullImages {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one of syncRepo or pullImages must be true"})
-		return
+		return nil, huma.Error400BadRequest("at least one of syncRepo or pullImages must be true")
 	}
 
 	if req.SyncRepo && !matchedRepo.GitHubActionsOIDCAllowRepoSync {
-		c.JSON(http.StatusForbidden, gin.H{"error": "repository sync is not permitted by GitHub Actions OIDC settings for this repository"})
-		return
+		return nil, huma.Error403Forbidden("repository sync is not permitted by GitHub Actions OIDC settings for this repository")
 	}
 	if req.PullImages && !matchedRepo.GitHubActionsOIDCAllowImageSync {
-		c.JSON(http.StatusForbidden, gin.H{"error": "image sync is not permitted by GitHub Actions OIDC settings for this repository"})
-		return
+		return nil, huma.Error403Forbidden("image sync is not permitted by GitHub Actions OIDC settings for this repository")
 	}
 
 	if req.SyncRepo {
 		if hubApplications.DefaultQueue == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "sync queue not initialized"})
-			return
+			return nil, huma.Error500InternalServerError("sync queue not initialized")
 		}
 
 		release, ok := tryLockRepositorySync(matchedRepo.Id)
 		if !ok {
-			c.JSON(http.StatusConflict, gin.H{"error": "repository sync already in progress"})
-			return
+			return nil, huma.Error409Conflict("repository sync already in progress")
 		}
 		defer release()
 
@@ -258,11 +277,10 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	if req.PullImages {
 		for i := range apps {
 			if !hubApplications.TriggerImagePull(&apps[i], hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
-				c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
-				return
+				return nil, huma.Error409Conflict("agent is not connected")
 			}
 		}
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "deployment triggered"})
-}
+	return restapi.Message("deployment triggered"), nil
+})

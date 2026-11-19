@@ -434,6 +434,36 @@ func TestGitHubActionsDeployHandler_InvalidRequestBody(t *testing.T) {
 	}
 }
 
+func TestGitHubActionsDeployHandler_EmptyRequestBody(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+
+	token := srv.makeToken(t, githubActionsClaims{
+		Repository: "owner/testrepo",
+		Ref:        "refs/heads/main",
+		RefType:    "branch",
+		EventName:  "push",
+		Sha:        "abc123",
+	})
+
+	// The body is only read once applications match the branch
+	c, w := makeGHActionsRequest(token, "")
+	GitHubActionsDeployHandler(c)
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202 without applications, got %d: %s", w.Code, w.Body.String())
+	}
+
+	seedGHActionsApp(t, repo.Id)
+	c, w = makeGHActionsRequest(token, "")
+	GitHubActionsDeployHandler(c)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 with applications, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "invalid request body") {
+		t.Errorf("unexpected body: %s", w.Body.String())
+	}
+}
+
 func TestGitHubActionsDeployHandler_NeitherSyncNorPull(t *testing.T) {
 	srv := setupGHActionsTest(t)
 	repo := seedGHActionsRepo(t)
