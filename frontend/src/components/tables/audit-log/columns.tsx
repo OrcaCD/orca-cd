@@ -39,13 +39,14 @@ export const columns: ColumnDef<typeof dataTableFeatures, AuditLog>[] = [
 		header: ({ column }) => <DataTableColumnHeader column={column} title={m.columnName()} />,
 		cell: ({ row }) => {
 			const { auth } = useAuth();
+			// Null once the user was deleted
 			const user = row.original.user;
-			const isSelf = user.id === auth.profile?.id;
+			const isSelf = user !== null && user.id === auth.profile?.id;
 
 			return (
 				<>
 					<div>
-						{user.name}
+						{user ? user.name : <span className="text-muted-foreground">-</span>}
 						{isSelf && (
 							<Badge variant="outline" className="ml-2">
 								{m.you()}
@@ -66,7 +67,7 @@ export const columns: ColumnDef<typeof dataTableFeatures, AuditLog>[] = [
 							</InfoTooltip>
 						)}
 					</div>
-					<span className="text-xs text-muted-foreground">{user.email}</span>
+					{user && <span className="text-xs text-muted-foreground">{user.email}</span>}
 				</>
 			);
 		},
