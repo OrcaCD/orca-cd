@@ -251,6 +251,52 @@ func TestPasskeySecurityEventsPreserveLoginAndRegistrationSignals(t *testing.T) 
 	}
 }
 
+func TestPasskeyCeremonyFailuresEmitSecurityEvents(t *testing.T) {
+	for _, endpoint := range []struct {
+		path    string
+		purpose string
+		handler gin.HandlerFunc
+	}{
+		{"/register/finish", "register", FinishPasskeyRegistrationHandler},
+		{"/login/finish", "login", FinishPasskeyLoginHandler},
+		{"/verify/finish", "verify", FinishPasskeyVerificationHandler},
+		{"/own/finish", "add", FinishOwnPasskeyHandler},
+	} {
+		for _, scenario := range []string{"missing", "unknown", "reused", "wrong purpose"} {
+			t.Run(endpoint.path+"/"+scenario, func(t *testing.T) {
+				r := gin.New()
+				r.POST(endpoint.path, endpoint.handler)
+				var cookie *http.Cookie
+				if scenario != "missing" {
+					purpose := endpoint.purpose
+					if scenario == "wrong purpose" {
+						purpose = "manage"
+					}
+					token, err := passkeySessions.Put(passkeys.Ceremony{Purpose: purpose})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if scenario == "reused" || scenario == "unknown" {
+						passkeySessions.Take(token, purpose)
+					}
+					if scenario == "unknown" {
+						token = "tampered-" + token
+					}
+					cookie = &http.Cookie{Name: ceremonyCookieName, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}
+				}
+				events := seclog.CaptureForTest(t)
+				w := passkeyRequest(t, r, endpoint.path, nil, cookie)
+				if w.Code != http.StatusBadRequest || !events.Has(seclog.TokenRejected, "invalid_passkey_ceremony") {
+					t.Fatal("rejected ceremony did not emit a security event")
+				}
+				if cookie != nil && strings.Contains(events.String(), cookie.Value) {
+					t.Fatal("security events exposed a ceremony token")
+				}
+			})
+		}
+	}
+}
+
 func TestPasskeysRejectInvalidAssertions(t *testing.T) {
 	for _, scenario := range []string{"origin", "verification", "signature", "handle", "challenge", "deleted", "disabled"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -627,7 +673,7 @@ func TestPasskeySetupRechecksAuthorizationBeforeCreatingAccount(t *testing.T) {
 }
 
 func TestPasskeyEnrollmentRechecksAuthorizationAtFinish(t *testing.T) {
-	for _, scenario := range []string{"expired", "replaced", "managed", "deleted"} {
+	for _, scenario := range []string{"expired", "replaced", "managed", "deleted", "version"} {
 		t.Run(scenario, func(t *testing.T) {
 			r := setupPasskeyTest(t)
 			user := models.User{Name: "Invited", Email: "invited@example.com", LocalAuthEnabled: true}
@@ -652,6 +698,8 @@ func TestPasskeyEnrollmentRechecksAuthorizationAtFinish(t *testing.T) {
 				_, err = gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "local_auth_enabled", false)
 			case "deleted":
 				_, err = gorm.G[models.User](db.DB).Where("id = ?", user.Id).Delete(t.Context())
+			case "version":
+				_, err = gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(t.Context(), "token_version", user.TokenVersion+1)
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -660,8 +708,15 @@ func TestPasskeyEnrollmentRechecksAuthorizationAtFinish(t *testing.T) {
 			if w.Code != http.StatusBadRequest || hasAuthCookie(w) {
 				t.Fatal("accepted a pending enrollment after authorization changed")
 			}
+			events := seclog.CaptureForTest(t)
 			if w := passkeyRequest(t, r, "/begin", body, nil); w.Code != http.StatusForbidden {
 				t.Fatal("started registration with an invalid enrollment")
+			}
+			if !events.Has(seclog.RegistrationFailed, "invalid_enrollment_code") {
+				t.Fatal("rejected enrollment did not emit a security event")
+			}
+			if strings.Contains(events.String(), token) || strings.Contains(events.String(), passkeys.TokenHash(token)) {
+				t.Fatal("security events exposed an enrollment token or its hash")
 			}
 			count, err := gorm.G[models.Passkey](db.DB).Count(t.Context(), "*")
 			if err != nil || count != 0 {
@@ -768,8 +823,12 @@ func TestPasskeyManagementRequiresFreshSingleUseVerification(t *testing.T) {
 	own.POST("/begin", BeginOwnPasskeyHandler)
 	own.POST("/finish", FinishOwnPasskeyHandler)
 	own.DELETE("/keys/:id", DeletePasskeyHandler)
+	events := seclog.CaptureForTest(t)
 	if w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Backup"}, nil); w.Code != http.StatusForbidden {
 		t.Fatal("session cookie alone authorized a new key")
+	}
+	if !events.Has(seclog.TokenRejected, "invalid_passkey_verification") {
+		t.Fatal("rejected key-management proof did not emit a security event")
 	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/own/keys/unknown", nil))
@@ -863,6 +922,9 @@ func TestPasskeyManagementRequiresFreshSingleUseVerification(t *testing.T) {
 		if w := passkeyRequest(t, r, "/own/begin", map[string]any{"name": "Forbidden", "verificationToken": proof}, nil); w.Code != http.StatusForbidden {
 			t.Fatalf("accepted a proof for a different %s", scenario)
 		}
+	}
+	if strings.Contains(events.String(), proof) {
+		t.Fatal("security events exposed a key-management proof")
 	}
 }
 

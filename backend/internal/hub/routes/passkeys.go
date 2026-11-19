@@ -73,6 +73,7 @@ func takeCeremony(c *gin.Context, purpose string) (passkeys.Ceremony, bool) {
 	auth.ClearPasskeyCookie(c)
 	ceremony, ok := passkeySessions.Take(id, purpose)
 	if !ok {
+		seclog.Warn(c, seclog.TokenRejected, "reason", "invalid_passkey_ceremony")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "passkey request expired or already used, please try again"})
 	}
 	return ceremony, ok
@@ -98,11 +99,13 @@ func BeginPasskeyRegistrationHandler(c *gin.Context) {
 		hash := passkeys.TokenHash(req.EnrollmentToken)
 		enrollment, err := gorm.G[models.PasskeyEnrollment](db.DB).Where("token_hash = ? AND expires_at > ?", hash, time.Now()).First(ctx)
 		if err != nil {
+			seclog.Warn(c, seclog.RegistrationFailed, "reason", "invalid_enrollment_code")
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired enrollment code"})
 			return
 		}
 		user, err = passkeys.LoadUser(ctx, db.DB, enrollment.UserId)
 		if err != nil || !user.LocalAuthEnabled || user.TokenVersion != enrollment.TokenVersion {
+			seclog.Warn(c, seclog.RegistrationFailed, "reason", "invalid_enrollment_code")
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired enrollment code"})
 			return
 		}
@@ -267,6 +270,7 @@ func FinishPasskeyVerificationHandler(c *gin.Context) {
 func consumePasskeyVerification(c *gin.Context, user *models.User, token, action, passkeyID string) bool {
 	proof, ok := passkeySessions.Take(token, "manage")
 	if !ok || proof.User.Id != user.Id || proof.User.TokenVersion != user.TokenVersion || proof.Action != action || proof.PasskeyID != passkeyID {
+		seclog.Warn(c, seclog.TokenRejected, "reason", "invalid_passkey_verification")
 		c.JSON(http.StatusForbidden, gin.H{"error": "verify an existing passkey before changing your keys"})
 		return false
 	}
