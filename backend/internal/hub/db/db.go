@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"net/url"
 	"sync"
 	"time"
@@ -165,6 +166,17 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 }
 
 func runMigrations(db *gorm.DB) error {
+	ctx := context.Background()
+
+	latest, err := CurrentSchemaVersion()
+	if err != nil {
+		return err
+	}
+
+	if err := storeMigrationFiles(ctx, db, latest); err != nil {
+		return err
+	}
+
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err
@@ -183,6 +195,16 @@ func runMigrations(db *gorm.DB) error {
 	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
 	if err != nil {
 		return err
+	}
+
+	version, dirty, err := m.Version()
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
+		return err
+	}
+	if err == nil && version > latest {
+		if err := rollBackNewerMigrations(ctx, db, version, dirty, latest); err != nil {
+			return err
+		}
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
