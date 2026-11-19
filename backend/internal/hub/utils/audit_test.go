@@ -2,7 +2,6 @@ package utils
 
 import (
 	"log"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
-	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -178,47 +176,39 @@ func TestRecordAuditLog(t *testing.T) {
 	t.Run("authenticated user", func(t *testing.T) {
 		testDB := setupTestDB(t)
 
-		fatalIfErr(
-			t,
-			auth.Init("test-secret-that-is-long-enough-32chars", "http://localhost:8080"),
-			"auth init failed",
-		)
-
-		user := &models.User{
-			Id:   "user-456",
-			Name: "test-admin",
-		}
-		fatalIfErr(t, gorm.G[models.User](testDB).Create(t.Context(), user), "create user failed")
-
-		token, err := auth.GenerateUserToken(user)
-		fatalIfErr(t, err, "token generation failed")
-
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest("POST", "/", nil)
-		//nolint:gosec
-		req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: token})
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/", nil)
+		auth.SetUser(c, &models.User{Id: "user-456", Name: "test-admin"})
 
-		router := gin.New()
-
-		var capturedCtx *gin.Context
-
-		router.POST("/", middleware.RequireAuth(), func(ctx *gin.Context) {
-			capturedCtx = ctx
-			ctx.Status(http.StatusOK)
-		})
-
-		router.ServeHTTP(w, req)
-
-		assertEqual(t, http.StatusOK, w.Code, "middleware should allow token")
-
-		RecordAuditLog(capturedCtx, "UPDATE", "PROJECT", "789")
+		RecordAuditLog(c, "UPDATE", "PROJECT", "789")
 
 		var audit models.AuditLog
-		err = testDB.First(&audit).Error
+		err := testDB.First(&audit).Error
 		fatalIfErr(t, err, "db query failed")
 
 		assertNotNil(t, audit.UserId, "userId should not be nil")
 		assertEqual(t, "user-456", *audit.UserId, "userId mismatch")
+		assertNil(t, audit.APITokenId, "apiTokenId should be nil for a session")
+	})
+
+	t.Run("api token", func(t *testing.T) {
+		testDB := setupTestDB(t)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/", nil)
+		auth.SetUser(c, &models.User{Id: "user-456", Name: "test-admin"})
+		auth.SetAPIToken(c, &models.APIToken{Id: "token-1", UserId: "user-456"})
+
+		RecordAuditLog(c, "UPDATE", "PROJECT", "789")
+
+		var audit models.AuditLog
+		err := testDB.First(&audit).Error
+		fatalIfErr(t, err, "db query failed")
+
+		assertNotNil(t, audit.APITokenId, "apiTokenId should not be nil")
+		assertEqual(t, "token-1", *audit.APITokenId, "apiTokenId mismatch")
 	})
 
 	t.Run("database error case", func(t *testing.T) {

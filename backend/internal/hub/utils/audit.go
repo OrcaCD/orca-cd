@@ -14,8 +14,13 @@ var Log = logger.New("audit-log", false)
 func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetId string) {
 	var userIdPtr *string
 
-	if claims, ok := auth.GetClaims(c); ok {
-		userIdPtr = &claims.Subject
+	if user, ok := auth.GetUser(c); ok {
+		userIdPtr = &user.Id
+	}
+
+	var apiTokenIdPtr *string
+	if token, ok := auth.GetAPIToken(c); ok {
+		apiTokenIdPtr = &token.Id
 	}
 
 	userIdDisplay := "system"
@@ -40,6 +45,7 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		UserId:     userIdPtr,
 		TargetType: targetType,
 		TargetId:   targetIdPtr,
+		APITokenId: apiTokenIdPtr,
 	}
 
 	if err := gorm.G[models.AuditLog](db.DB).Create(c.Request.Context(), &audit); err != nil {

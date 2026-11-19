@@ -664,6 +664,28 @@ func TestRunMigrations_APITokens(t *testing.T) {
 	}
 }
 
+func TestRunMigrations_AuditLogsAPITokenId(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("runMigrations() error: %v", err)
+	}
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+
+	if !columnNames(t, sqlDB, "audit_logs")["api_token_id"] {
+		t.Fatal("audit_logs table missing column \"api_token_id\"")
+	}
+
+	if err := newTestMigrator(t, sqlDB).Migrate(48); err != nil {
+		t.Fatalf("failed to migrate down to version 48: %v", err)
+	}
+	if columnNames(t, sqlDB, "audit_logs")["api_token_id"] {
+		t.Error("expected api_token_id to be dropped")
+	}
+}
+
 func TestRunMigrations_AgentAndRepositoryNotificationsDown(t *testing.T) {
 	gormDB := openTestDB(t)
 	sqlDB, err := gormDB.DB()

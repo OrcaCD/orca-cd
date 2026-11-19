@@ -185,6 +185,53 @@ func TestLoad_UnionOfRoles(t *testing.T) {
 	}
 }
 
+func TestPermissions_Restrict(t *testing.T) {
+	owner := New([]models.RolePermission{
+		grant(models.ResourceApplication, models.ActionDeploy, nil),
+		grant(models.ResourceApplication, models.ActionDelete, nil),
+		grant(models.ResourceRepository, models.ActionSync, new("repo-1")),
+	})
+
+	p := owner.Restrict([]models.APITokenScope{"application:deploy", "repository:sync", "agent:update", models.APITokenScopeAdmin})
+
+	if p.IsAdmin() {
+		t.Fatal("expected the admin scope to have no effect for a non-admin owner")
+	}
+	if !p.CanAll(models.ResourceApplication, models.ActionDeploy) || !p.CanAll(models.ResourceApplication, models.ActionRead) {
+		t.Fatal("expected deploy and the implied read on all applications")
+	}
+	if p.CanAny(models.ResourceApplication, models.ActionDelete) {
+		t.Fatal("expected delete to be denied without its scope")
+	}
+	if !p.Can(models.ResourceRepository, models.ActionSync, "repo-1") || p.CanAll(models.ResourceRepository, models.ActionSync) {
+		t.Fatal("expected sync only on the repository the owner can sync")
+	}
+	if p.CanAny(models.ResourceAgent, models.ActionUpdate) {
+		t.Fatal("expected a scope the owner doesn't have to be denied")
+	}
+}
+
+func TestPermissions_RestrictAdmin(t *testing.T) {
+	admin := Admin()
+	admin.roles = []AssignedRole{{Id: "admin", Name: "Admin"}}
+
+	p := admin.Restrict([]models.APITokenScope{models.APITokenScopeAdmin})
+	if !p.IsAdmin() || len(p.Roles()) != 1 {
+		t.Fatal("expected the admin scope to keep admin access and the roles")
+	}
+
+	p = admin.Restrict([]models.APITokenScope{"application:read"})
+	if p.IsAdmin() {
+		t.Fatal("expected no admin access without the admin scope")
+	}
+	if !p.CanAll(models.ResourceApplication, models.ActionRead) || p.CanAny(models.ResourceApplication, models.ActionDeploy) {
+		t.Fatal("expected only the scopes of the token")
+	}
+	if len(p.Roles()) != 1 {
+		t.Fatal("expected the roles of the owner to be kept")
+	}
+}
+
 func TestLoad_AdminAndDefaultRoles(t *testing.T) {
 	tx := openTestDB(t)
 	createUser(t, tx, "admin", AdminRoleID)

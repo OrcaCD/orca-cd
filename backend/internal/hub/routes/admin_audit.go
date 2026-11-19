@@ -25,6 +25,8 @@ type auditLogResponse struct {
 	User       *adminUserResponse `json:"user"`
 	TargetType string             `json:"targetType"`
 	TargetId   *string            `json:"targetId"`
+	// APITokenId is set when the action was made with an API token.
+	APITokenId *string `json:"apiTokenId"`
 }
 
 func AdminListAuditLogsHandler(c *gin.Context) {
@@ -84,6 +86,7 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 			User:       userResp,
 			TargetType: log.TargetType,
 			TargetId:   log.TargetId,
+			APITokenId: log.APITokenId,
 		}
 	}
 
