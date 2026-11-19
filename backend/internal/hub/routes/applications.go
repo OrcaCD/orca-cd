@@ -553,21 +553,12 @@ func DeployApplicationHandler(c *gin.Context) {
 		return
 	}
 
-	requestID := uuid.NewString()
 	actorUserID, actorName := eventActor(c)
-	if _, eventErr := applicationevents.Start(c.Request.Context(), applicationevents.Params{
-		ApplicationID: application.Id,
-		RequestID:     &requestID,
-		Type:          models.ApplicationEventDeployment,
-		Source:        models.ApplicationEventSourceManual,
-		ActorUserID:   actorUserID,
-		ActorName:     actorName,
-	}); eventErr != nil {
-		hubApplications.Log.Error().Err(eventErr).Str("applicationId", application.Id).Msg("failed to record manual deployment event")
-	}
-
-	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String(), requestID)
-
+	err = hubApplications.Deploy(c.Request.Context(), &application, hubApplications.SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
 			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot deploy application"})
@@ -578,7 +569,6 @@ func DeployApplicationHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
-	sse.PublishUpdate(sse.TopicApplications.For(id))
 }
 
 // PullApplicationImagesHandler asks the agent to pull newer images for the
