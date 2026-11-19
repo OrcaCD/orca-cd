@@ -10,6 +10,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"gorm.io/gorm"
 )
 
@@ -556,5 +557,46 @@ func TestHandleImageUpdatesReport_IgnoresOtherAgentsApplications(t *testing.T) {
 
 	if count, _ := gorm.G[models.ApplicationImageUpdate](db.DB).Where("application_id = ?", app.Id).Count(t.Context(), "*"); count != 0 {
 		t.Fatalf("expected no image updates from another agent, got %d", count)
+	}
+}
+
+func TestHandleClientMessage_ImageUpdatesReportKeepsSkippedServices(t *testing.T) {
+	setupImagePollTestEnv(t)
+	log := testLogger()
+
+	agent := createTestAgent(t, "key-image-updates-dispatch")
+	app := createTestApplication(t, agent.Id)
+	hubSession, err := wscrypto.NewSession(make([]byte, 32), wscrypto.RoleHub)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &Client{Id: agent.Id, Send: make(chan *messages.ServerMessage, 1), session: hubSession}
+	report := func(images ...*messages.ImageUpdate) {
+		t.Helper()
+		env, err := newAgentTestSession(t).Encrypt(&messages.ClientMessage{
+			Payload: &messages.ClientMessage_ImageUpdatesReport{
+				ImageUpdatesReport: &messages.ImageUpdatesReport{ApplicationId: app.Id, Images: images},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Encrypt: %v", err)
+		}
+		handleClientMessage(t.Context(), client, &messages.ClientMessage{
+			Payload: &messages.ClientMessage_EncryptedPayload{EncryptedPayload: env},
+		}, &log)
+	}
+
+	// Without a check time, the hub uses the time it received the report
+	before := time.Now().Add(-time.Second)
+	report(&messages.ImageUpdate{Service: "db", Image: "postgres:17", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE})
+	// A report that skips every service keeps the stored state
+	report(&messages.ImageUpdate{Service: "db", Image: "postgres:17", Status: messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED})
+
+	rows, err := gorm.G[models.ApplicationImageUpdate](db.DB).Where("application_id = ?", app.Id).Find(t.Context())
+	if err != nil {
+		t.Fatalf("load image updates: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Status != models.ImageUpdateUpToDate || rows[0].CheckedAt.Before(before) {
+		t.Fatalf("unexpected image updates %+v", rows)
 	}
 }
