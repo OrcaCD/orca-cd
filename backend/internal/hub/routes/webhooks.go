@@ -72,6 +72,8 @@ var webhookRequestBody = &huma.RequestBody{
 // webhook with only the token, and Huma never parses the bytes, so the body is
 // made optional and documented with body after registering.
 func webhookHandler[I, O any](op huma.Operation, body *huma.RequestBody, handler func(context.Context, *I) (*O, error)) gin.HandlerFunc {
+	// Webhooks authenticate with their own secret, not with a token or session
+	op.Security = restapi.Public
 	op.MaxBodyBytes = maxWebhookBodySize
 	op.RequestBody = &huma.RequestBody{}
 	h := restapi.Handler(op, handler)

@@ -85,6 +85,10 @@ func TestOpenAPI_OperationsAreDescribed(t *testing.T) {
 			if op.Summary == "" || len(op.Tags) == 0 {
 				t.Errorf("%s %s needs a summary and a tag", op.Method, op.Path)
 			}
+			// restapi.Public, Authenticated or SessionOnly
+			if len(op.Security) == 0 {
+				t.Errorf("%s %s needs a security requirement", op.Method, op.Path)
+			}
 			if ids[op.OperationID] {
 				t.Errorf("operation ID %q is used twice", op.OperationID)
 			}

@@ -259,6 +259,13 @@ func TestOpenAPI_DescribesTheOperations(t *testing.T) {
 	if !reflect.DeepEqual(op.Security, Authenticated) {
 		t.Errorf("expected the operation to take a token or the session, got %v", op.Security)
 	}
+	// RequireAuth answers 401 for every authenticated route
+	if _, ok := op.Responses["401"]; !ok {
+		t.Errorf("expected a 401 response, got %v", op.Responses)
+	}
+	if _, ok := spec.Paths["/things/{id}"].Get.Responses["401"]; ok {
+		t.Error("expected no added 401 response on a route without security")
+	}
 	for _, scheme := range []string{apiTokenScheme, sessionScheme} {
 		if spec.Components.SecuritySchemes[scheme] == nil {
 			t.Errorf("expected the %s security scheme", scheme)

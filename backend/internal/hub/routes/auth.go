@@ -179,6 +179,7 @@ var SetupHandler = restapi.Handler(huma.Operation{
 	Summary:     "Get the sign-in options",
 	Description: "Tells the login page whether the hub still needs its first user and how users can sign in.",
 	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
 }, func(ctx context.Context, _ *struct{}) (*struct{ Body setupResponse }, error) {
 	count, err := gorm.G[models.User](db.DB).Count(ctx, "*")
 	if err != nil {
@@ -210,6 +211,7 @@ var VerifySetupCodeHandler = restapi.Handler(huma.Operation{
 	Summary:     "Check the setup code",
 	Description: "Checks the setup code from the hub log before the first user registers. Rate limited.",
 	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
 	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body verifySetupCodeRequest }) (*restapi.MessageOutput, error) {
 	if !setupcode.Verify(input.Body.SetupCode) {
@@ -269,6 +271,7 @@ var DemoLoginHandler = restapi.Handler(huma.Operation{
 	Summary:     "Sign in to the demo",
 	Description: "Sets a session cookie for the read-only demo user. Only available when the hub runs as a demo. Rate limited.",
 	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
 	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
 	if !DemoMode {

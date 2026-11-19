@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,9 +29,10 @@ const (
 	sessionScheme  = "session"
 )
 
-// Security requirements for huma.Operation.Security. Routes without one need
-// no authentication.
+// Security requirements for huma.Operation.Security.
 var (
+	// Public routes need no authentication.
+	Public = []map[string][]string{{}}
 	// Authenticated routes take an API token or the session cookie.
 	Authenticated = []map[string][]string{{apiTokenScheme: {}}, {sessionScheme: {}}}
 	// SessionOnly routes are for the web UI and refuse API tokens.
@@ -48,6 +50,7 @@ func newConfig() huma.Config {
 	config := huma.DefaultConfig("OrcaCD API", version.Version)
 	config.Info.Description = "The REST API of the OrcaCD hub. Scripts and CI pipelines authenticate with an API token, " +
 		"which can only do what its scopes and its owner allow."
+	config.Info.License = &huma.License{Name: "MIT", URL: "https://github.com/OrcaCD/orca-cd/blob/main/LICENSE"}
 	config.Servers = []*huma.Server{{URL: basePath}}
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		apiTokenScheme: {
@@ -79,7 +82,7 @@ func newConfig() huma.Config {
 	config.AllowAdditionalPropertiesByDefault = true
 	config.FieldsOptionalByDefault = true
 
-	config.OnAddOperation = append(config.OnAddOperation, documentValidationErrorsAs400)
+	config.OnAddOperation = append(config.OnAddOperation, documentValidationErrorsAs400, documentAuthErrors)
 	return config
 }
 
@@ -204,6 +207,29 @@ func documentValidationErrorsAs400(_ *huma.OpenAPI, op *huma.Operation) {
 	}
 	if countOf(op.Errors, http.StatusUnprocessableEntity) <= added {
 		delete(op.Responses, unprocessable)
+	}
+}
+
+// documentAuthErrors adds the errors RequireAuth and RequireSession answer with
+// to the operations behind them.
+func documentAuthErrors(oapi *huma.OpenAPI, op *huma.Operation) {
+	if len(op.Security) == 0 || reflect.DeepEqual(op.Security, Public) {
+		return
+	}
+	errors := map[int]string{http.StatusUnauthorized: "Missing, invalid or expired authentication"}
+	if reflect.DeepEqual(op.Security, SessionOnly) {
+		errors[http.StatusForbidden] = "Forbidden, also for requests with an API token"
+	}
+
+	schema := oapi.Components.Schemas.Schema(reflect.TypeFor[Error](), true, "Error")
+	for status, description := range errors {
+		if _, ok := op.Responses[strconv.Itoa(status)]; ok {
+			continue
+		}
+		op.Responses[strconv.Itoa(status)] = &huma.Response{
+			Description: description,
+			Content:     map[string]*huma.MediaType{"application/json": {Schema: schema}},
+		}
 	}
 }
 

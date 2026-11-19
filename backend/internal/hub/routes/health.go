@@ -21,6 +21,7 @@ var HealthHandler = restapi.Handler(huma.Operation{
 	Summary:     "Check that the hub is running",
 	Description: "Needs no authentication, e.g. for container health checks.",
 	Tags:        []string{tagSystem},
+	Security:    restapi.Public,
 }, func(_ context.Context, _ *struct{}) (*healthOutput, error) {
 	out := &healthOutput{}
 	out.Body.Status = "ok"

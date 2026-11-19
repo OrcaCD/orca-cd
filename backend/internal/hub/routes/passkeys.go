@@ -129,8 +129,9 @@ var BeginPasskeyRegistrationHandler = restapi.Handler(huma.Operation{
 	Summary:     "Start registering an account",
 	Description: "Creates the first admin with the setup code, or sets up an account with the enrollment code an admin issued. " +
 		"Returns the WebAuthn creation options and sets a cookie for the ceremony. Rate limited.",
-	Tags:   []string{tagAuth},
-	Errors: []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},
+	Tags:     []string{tagAuth},
+	Security: restapi.Public,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},
 }, func(ctx context.Context, input *struct{ Body passkeyRegistrationRequest }) (*passkeyCreationOptionsOutput, error) {
 	c := restapi.GinContext(ctx)
 	req := input.Body
@@ -362,6 +363,7 @@ var FinishPasskeyRegistrationHandler = restapi.Handler(huma.Operation{
 	Summary:       "Finish registering an account",
 	Description:   "Creates the account and its first passkey and sets the session cookie. Rate limited.",
 	Tags:          []string{tagAuth},
+	Security:      restapi.Public,
 	RequestBody:   webAuthnCredentialBody("The credential JSON from navigator.credentials.create()."),
 	Errors:        []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},
 }, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
@@ -482,6 +484,7 @@ var BeginPasskeyLoginHandler = restapi.Handler(huma.Operation{
 	Summary:     "Start signing in with a passkey",
 	Description: "Returns the WebAuthn request options for a discoverable passkey and sets a cookie for the ceremony. Rate limited.",
 	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
 	Errors:      []int{http.StatusForbidden, http.StatusServiceUnavailable},
 }, func(ctx context.Context, _ *struct{}) (*passkeyRequestOptionsOutput, error) {
 	c := restapi.GinContext(ctx)
@@ -505,6 +508,7 @@ var FinishPasskeyLoginHandler = restapi.Handler(huma.Operation{
 	Summary:     "Finish signing in with a passkey",
 	Description: "Checks the assertion and sets the session cookie. Rate limited.",
 	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
 	RequestBody: webAuthnCredentialBody("The credential JSON from navigator.credentials.get()."),
 	Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable},
 }, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
