@@ -22,6 +22,10 @@ func Deploy(ctx context.Context, application *models.Application, origin SyncOri
 		return ErrDeployerNotInitialized
 	}
 
+	// The agent gets the deploy even when the caller goes away, so recording it
+	// must not stop half way, or the hub loses track of what the agent runs.
+	ctx = context.WithoutCancel(ctx)
+
 	requestID := uuid.NewString()
 	if _, err := applicationevents.Start(ctx, applicationevents.Params{
 		ApplicationID: application.Id,

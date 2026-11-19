@@ -2,11 +2,15 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
+	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 )
@@ -70,11 +74,11 @@ type applicationEvent struct {
 
 type applicationDetails struct {
 	applicationSummary
-	CommitMessage    string             `json:"commitMessage"`
-	ComposeFile      string             `json:"composeFile"`
-	Warnings         string             `json:"warnings,omitempty" jsonschema:"problems found in the compose file, as JSON"`
-	RolledBackReason string             `json:"rolledBackReason,omitempty"`
-	RecentEvents     []applicationEvent `json:"recentEvents" jsonschema:"the latest events, newest first"`
+	CommitMessage    string                    `json:"commitMessage"`
+	ComposeFile      string                    `json:"composeFile"`
+	Warnings         []composewarnings.Warning `json:"warnings" jsonschema:"problems found in the compose file"`
+	RolledBackReason string                    `json:"rolledBackReason,omitempty"`
+	RecentEvents     []applicationEvent        `json:"recentEvents" jsonschema:"the latest events, newest first"`
 }
 
 func (c *caller) listApplications(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listApplicationsOutput, error) {
@@ -116,10 +120,8 @@ func (c *caller) getApplication(ctx context.Context, _ *mcp.CallToolRequest, in 
 		applicationSummary: toApplicationSummary(application),
 		CommitMessage:      application.CommitMessage,
 		ComposeFile:        application.ComposeFile.String(),
+		Warnings:           composeWarnings(application),
 		RecentEvents:       make([]applicationEvent, 0, len(events)),
-	}
-	if application.Warnings != "[]" {
-		details.Warnings = application.Warnings
 	}
 	if application.RolledBackReason != nil {
 		details.RolledBackReason = *application.RolledBackReason
@@ -134,7 +136,13 @@ func (c *caller) getApplication(ctx context.Context, _ *mcp.CallToolRequest, in 
 // application the caller may not use is reported as not found, like one that
 // doesn't exist, so its ID doesn't reveal it.
 func (c *caller) loadApplication(ctx context.Context, id string, action models.PermissionAction) (*models.Application, error) {
-	if id == "" || !c.perms.Can(models.ResourceApplication, action, id) {
+	// IDs are UUIDs, anything else would only end up in the security log.
+	if uuid.Validate(id) != nil {
+		return nil, errApplicationNotFound
+	}
+	if !c.perms.Can(models.ResourceApplication, action, id) {
+		seclog.Warn(c.request, seclog.AccessDenied, "reason", "insufficient_permissions",
+			"resource", string(models.ResourceApplication), "action", string(action), "resource_id", id)
 		return nil, errApplicationNotFound
 	}
 
@@ -176,6 +184,17 @@ func toApplicationSummary(app *models.Application) applicationSummary {
 		summary.RolledBackCommit = *app.RolledBackCommit
 	}
 	return summary
+}
+
+func composeWarnings(app *models.Application) []composewarnings.Warning {
+	var warnings []composewarnings.Warning
+	if err := json.Unmarshal([]byte(app.Warnings), &warnings); err != nil {
+		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to decode application warnings")
+	}
+	if warnings == nil {
+		warnings = []composewarnings.Warning{}
+	}
+	return warnings
 }
 
 func toApplicationEvent(event *models.ApplicationEvent) applicationEvent {

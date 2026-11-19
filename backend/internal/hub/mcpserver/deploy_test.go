@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 )
 
@@ -105,6 +107,22 @@ func TestDeployApplication_DeploysPreview(t *testing.T) {
 		t.Fatalf("expected %q to be deployed, got %v", app.Id, deployer.deployed)
 	}
 
+	// A preview is deployed once, a retry needs a new one.
+	if errText := callTool(t, session, "deploy_application", map[string]any{"applicationId": app.Id, "previewId": previewed.PreviewId}, nil); errText != errPreviewMismatch.Error() {
+		t.Errorf("second deploy error = %q, want %q", errText, errPreviewMismatch.Error())
+	}
+	// Nor with another spelling of the same signature: the last character
+	// has bits a lenient decoder ignores.
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, previewed.PreviewId[len(previewed.PreviewId)-1])
+	respelled := previewed.PreviewId[:len(previewed.PreviewId)-1] + string(alphabet[last^1])
+	if errText := callTool(t, session, "deploy_application", map[string]any{"applicationId": app.Id, "previewId": respelled}, nil); errText != errPreviewMismatch.Error() {
+		t.Errorf("respelled deploy error = %q, want %q", errText, errPreviewMismatch.Error())
+	}
+	if len(deployer.deployed) != 1 {
+		t.Errorf("expected one deploy, got %v", deployer.deployed)
+	}
+
 	event, err := gorm.G[models.ApplicationEvent](db.DB).Where("application_id = ?", app.Id).First(t.Context())
 	if err != nil {
 		t.Fatalf("load deployment event: %v", err)
@@ -141,6 +159,30 @@ func TestDeployApplication_RefusesStalePreviews(t *testing.T) {
 				later := time.Now().Add(previewTTL + time.Minute)
 				now = func() time.Time { return later }
 				t.Cleanup(func() { now = time.Now })
+			},
+		},
+		{
+			name: "commit changed",
+			change: func(t *testing.T, app *models.Application) {
+				if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Update(t.Context(), "commit", "other-commit"); err != nil {
+					t.Fatalf("failed to change commit: %v", err)
+				}
+			},
+		},
+		{
+			name: "rolled back",
+			change: func(t *testing.T, app *models.Application) {
+				if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Update(t.Context(), "rolled_back_at", time.Now()); err != nil {
+					t.Fatalf("failed to roll back: %v", err)
+				}
+			},
+		},
+		{
+			name: "renamed",
+			change: func(t *testing.T, app *models.Application) {
+				if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).Update(t.Context(), "name", crypto.EncryptedString("renamed")); err != nil {
+					t.Fatalf("failed to rename: %v", err)
+				}
 			},
 		},
 		{name: "other user", otherUser: true},
@@ -216,5 +258,58 @@ func TestDeployApplication_AgentOffline(t *testing.T) {
 	errText := callTool(t, session, "deploy_application", map[string]any{"applicationId": app.Id, "previewId": previewed.PreviewId}, nil)
 	if !strings.Contains(errText, "agent is offline") {
 		t.Errorf("error = %q, want an offline agent error", errText)
+	}
+}
+
+func TestDeployApplication_ConcurrentCallsDeployOnce(t *testing.T) {
+	setupTestDB(t)
+	deployer := useStubDeployer(t)
+	app := seedApplication(t, "web")
+
+	session := connect(t, testUser(), rbac.Admin())
+	var previewed previewDeployOutput
+	if errText := callTool(t, session, "preview_deploy", map[string]any{"applicationId": app.Id}, &previewed); errText != "" {
+		t.Fatalf("preview_deploy failed: %s", errText)
+	}
+
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Go(func() {
+			_, _ = session.CallTool(t.Context(), &mcp.CallToolParams{
+				Name:      "deploy_application",
+				Arguments: map[string]any{"applicationId": app.Id, "previewId": previewed.PreviewId},
+			})
+		})
+	}
+	wg.Wait()
+
+	if len(deployer.deployed) != 1 {
+		t.Errorf("expected one deploy, got %v", deployer.deployed)
+	}
+}
+
+func TestPreviewSet_ExpiredPreviewsCantBeUsed(t *testing.T) {
+	start := time.Now()
+	current := start
+	now = func() time.Time { return current }
+	t.Cleanup(func() { now = time.Now })
+
+	set := previewSet{used: map[string]time.Time{}}
+	expiresAt := start.Add(previewTTL)
+	if !set.use("preview", expiresAt) {
+		t.Fatal("expected the first use to succeed")
+	}
+	if set.use("preview", expiresAt) {
+		t.Error("expected a second use to fail")
+	}
+
+	// Past its expiry, a used preview is dropped from the set, so the set must
+	// reject it for being expired instead.
+	current = expiresAt.Add(time.Millisecond)
+	if set.use("preview", expiresAt) {
+		t.Error("expected an expired preview to fail")
+	}
+	if set.use("other", current.Add(previewTTL)); len(set.used) != 1 {
+		t.Errorf("expected expired entries to be dropped, got %v", set.used)
 	}
 }

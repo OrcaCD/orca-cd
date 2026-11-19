@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
@@ -28,11 +30,14 @@ func init() {
 }
 
 type stubDeployer struct {
+	mu       sync.Mutex
 	deployed []string
 	err      error
 }
 
 func (d *stubDeployer) TriggerApplicationDeploy(_ context.Context, app *models.Application, _, _ string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.deployed = append(d.deployed, app.Id)
 	return d.err
 }
@@ -216,5 +221,47 @@ func TestHandlerRejectsRequestsWithoutUser(t *testing.T) {
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/mcp", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestHandlerOnlyAcceptsPost(t *testing.T) {
+	router := gin.New()
+	router.Match([]string{http.MethodGet, http.MethodDelete}, "/mcp", Handler())
+
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(method, "/mcp", nil))
+		if w.Code != http.StatusMethodNotAllowed || w.Header().Get("Allow") != http.MethodPost {
+			t.Errorf("%s: expected 405 with Allow: POST, got %d %q", method, w.Code, w.Header().Get("Allow"))
+		}
+	}
+}
+
+func TestHandlerRejectsBatchesAndLargeBodies(t *testing.T) {
+	router := gin.New()
+	router.POST("/mcp", func(c *gin.Context) {
+		auth.SetUser(c, testUser())
+		rbac.Set(c, rbac.Admin())
+	}, Handler())
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{"batch", ` [{"jsonrpc":"2.0","id":1,"method":"tools/list"},{"jsonrpc":"2.0","id":2,"method":"tools/list"}]`, http.StatusBadRequest},
+		{"too large", `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"pad":"` + strings.Repeat("a", maxRequestBytes) + `"}}`, http.StatusRequestEntityTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
+			}
+		})
 	}
 }

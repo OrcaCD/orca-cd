@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
+	"github.com/OrcaCD/orca-cd/internal/hub/mcpserver"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
@@ -124,6 +125,7 @@ func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 	applications.Log = Log
+	mcpserver.Log = Log
 	seclog.Init(Log)
 
 	if cfg.Demo {

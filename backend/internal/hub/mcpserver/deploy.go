@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
@@ -24,7 +25,7 @@ import (
 // approved by accident.
 const previewTTL = 10 * time.Minute
 
-var errPreviewMismatch = errors.New("the preview is expired or the application changed since it was made; call preview_deploy again and show the user the new diff")
+var errPreviewMismatch = errors.New("the preview is expired, was already deployed, or the application changed since it was made; call preview_deploy again and show the user the new diff")
 
 // previewKey signs the preview IDs. It isn't stored, previews end when the
 // hub restarts.
@@ -32,6 +33,39 @@ var previewKey = rand.Text()
 
 // now is replaced in tests.
 var now = time.Now
+
+// usedPreviews makes each preview deployable once, so a retrying client can't
+// deploy again without the user seeing a new preview. The application state a
+// preview covers doesn't change until a deploy succeeds.
+var usedPreviews = previewSet{used: map[string]time.Time{}}
+
+type previewSet struct {
+	mu   sync.Mutex
+	used map[string]time.Time
+}
+
+// use marks a preview as used until it expires. It reports false if it
+// already was or has expired. Both are checked under the lock, so an entry is
+// never dropped while its preview can still be deployed.
+func (s *previewSet) use(previewID string, expiresAt time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := now()
+	if current.After(expiresAt) {
+		return false
+	}
+	if _, ok := s.used[previewID]; ok {
+		return false
+	}
+	for id, expiry := range s.used {
+		if current.After(expiry) {
+			delete(s.used, id)
+		}
+	}
+	s.used[previewID] = expiresAt
+	return true
+}
 
 var previewDeployTool = &mcp.Tool{
 	Name: "preview_deploy",
@@ -96,17 +130,22 @@ func (c *caller) previewDeploy(ctx context.Context, _ *mcp.CallToolRequest, in a
 	}
 
 	composeFile := application.ComposeFile.String()
+	oldLabel, oldCompose := "/dev/null", ""
 	if running == nil {
-		output.Changed = true
-		output.Diff = udiff.Unified("/dev/null", application.Path, "", composeFile)
 		output.Warnings = append(output.Warnings, "OrcaCD has no record of the deployment the agent runs, the diff shows the whole compose file.")
 	} else {
 		output.RunningCommit = running.Commit
-		output.Diff = udiff.Unified(application.Path+"@"+running.Commit, application.Path+"@"+application.Commit, running.ComposeFile.String(), composeFile)
-		output.Changed = output.Diff != ""
-		if !output.Changed {
-			output.Warnings = append(output.Warnings, "The compose file is the same as the running one, the deploy applies it again.")
-		}
+		oldLabel, oldCompose = application.Path+"@"+running.Commit, running.ComposeFile.String()
+	}
+	// udiff.Unified would stop the hub with log.Fatalf if it failed.
+	output.Diff, err = udiff.ToUnified(oldLabel, application.Path+"@"+application.Commit, oldCompose, udiff.Lines(oldCompose, composeFile), udiff.DefaultContextLines)
+	if err != nil {
+		Log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to diff compose files")
+		return nil, previewDeployOutput{}, errInternal
+	}
+	output.Changed = output.Diff != ""
+	if running != nil && !output.Changed {
+		output.Warnings = append(output.Warnings, "The compose file is the same as the running one, the deploy applies it again.")
 	}
 
 	if application.Agent.Status != models.AgentStatusOnline {
@@ -118,7 +157,7 @@ func (c *caller) previewDeploy(ctx context.Context, _ *mcp.CallToolRequest, in a
 	if application.RolledBackAt != nil {
 		output.Warnings = append(output.Warnings, "The application was rolled back to an earlier deployment. Deploying runs the commit from Git again and resumes automatic syncs.")
 	}
-	if application.Warnings != "" && application.Warnings != "[]" {
+	if len(composeWarnings(application)) > 0 {
 		output.Warnings = append(output.Warnings, "The compose file has warnings, get_application lists them.")
 	}
 
@@ -130,7 +169,8 @@ func (c *caller) deployApplication(ctx context.Context, _ *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, deployApplicationOutput{}, err
 	}
-	if !c.validPreview(application, in.PreviewId) {
+	expiresAt, ok := c.validPreview(application, in.PreviewId)
+	if !ok || !usedPreviews.use(in.PreviewId, expiresAt) {
 		return nil, deployApplicationOutput{}, errPreviewMismatch
 	}
 
@@ -141,7 +181,7 @@ func (c *caller) deployApplication(ctx context.Context, _ *mcp.CallToolRequest, 
 	})
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
-			return nil, deployApplicationOutput{}, errors.New("agent is offline; cannot deploy application")
+			return nil, deployApplicationOutput{}, errors.New("agent is offline; cannot deploy application. Call preview_deploy again to retry once it is online")
 		}
 		Log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to trigger application deploy")
 		return nil, deployApplicationOutput{}, errInternal
@@ -175,20 +215,27 @@ func (c *caller) previewID(application *models.Application, issuedAt time.Time) 
 	return issued + "." + base64.RawURLEncoding.EncodeToString(c.previewMAC(application, issued))
 }
 
-func (c *caller) validPreview(application *models.Application, previewID string) bool {
+// validPreview checks a preview against the current state of the application
+// and returns when it expires.
+func (c *caller) validPreview(application *models.Application, previewID string) (time.Time, bool) {
 	issued, signature, ok := strings.Cut(previewID, ".")
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	issuedUnix, err := strconv.ParseInt(issued, 10, 64)
-	if err != nil || now().After(time.Unix(issuedUnix, 0).Add(previewTTL)) {
-		return false
-	}
-	mac, err := base64.RawURLEncoding.DecodeString(signature)
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
-	return hmac.Equal(mac, c.previewMAC(application, issued))
+	expiresAt := time.Unix(issuedUnix, 0).Add(previewTTL)
+	if now().After(expiresAt) {
+		return time.Time{}, false
+	}
+	// Strict, so each preview has one spelling and can't be used again in another.
+	mac, err := base64.RawURLEncoding.Strict().DecodeString(signature)
+	if err != nil || !hmac.Equal(mac, c.previewMAC(application, issued)) {
+		return time.Time{}, false
+	}
+	return expiresAt, true
 }
 
 func (c *caller) previewMAC(application *models.Application, issued string) []byte {
@@ -201,7 +248,10 @@ func (c *caller) previewMAC(application *models.Application, issued string) []by
 		issued,
 		c.user.Id,
 		application.Id,
+		// The name is the compose project on the agent.
+		application.Name.String(),
 		application.AgentId,
+		strconv.FormatBool(application.DeleteOldImages),
 		application.Commit,
 		base64.RawURLEncoding.EncodeToString(composeHash[:]),
 		deref(application.CurrentDeploymentId),
@@ -209,7 +259,10 @@ func (c *caller) previewMAC(application *models.Application, issued string) []by
 	}
 
 	mac := hmac.New(sha256.New, []byte(previewKey))
-	// The fields can't contain a newline, so they can't be shifted into each other.
-	mac.Write([]byte(strings.Join(fields, "\n")))
+	// Length-prefixed, as the name can contain any character, so no fields can
+	// be shifted into each other.
+	for _, field := range fields {
+		mac.Write([]byte(strconv.Itoa(len(field)) + ":" + field))
+	}
 	return mac.Sum(nil)
 }
