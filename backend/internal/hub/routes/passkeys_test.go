@@ -453,7 +453,7 @@ func TestPasskeysManagementOwnershipAndLastKey(t *testing.T) {
 	}
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/keys", nil))
-	if w.Code != http.StatusOK || w.Body.String() != "[]" {
+	if w.Code != http.StatusOK || strings.TrimSuffix(w.Body.String(), "\n") != "[]" {
 		t.Fatalf("leaked passkey metadata: %s", w.Body.String())
 	}
 }
@@ -799,7 +799,7 @@ func TestDuplicatePasskeyRegistrationReturnsBadRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	w = passkeyRequest(t, r, "/own/finish", response, cookie)
-	if w.Code != http.StatusBadRequest || hasAuthCookie(w) || w.Body.String() != "{\"error\":\"passkey registration failed, please try again\"}" {
+	if w.Code != http.StatusBadRequest || hasAuthCookie(w) || strings.TrimSuffix(w.Body.String(), "\n") != "{\"error\":\"passkey registration failed, please try again\"}" {
 		t.Fatalf("duplicate credential did not return a safe 4xx: %d %s", w.Code, w.Body.String())
 	}
 	count, err := gorm.G[models.Passkey](db.DB).Where("user_id = ?", user.Id).Count(t.Context(), "*")
