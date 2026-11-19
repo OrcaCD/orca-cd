@@ -115,6 +115,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/applications/:id/deployments/:deploymentId/rollback", app(models.ActionRollback), routes.RollbackApplicationHandler)
 			protected.POST("/applications/:id/resume-auto-sync", app(models.ActionRollback), routes.ResumeApplicationAutoSyncHandler)
 			protected.PUT("/applications/:id/rollback/settings", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
+			protected.PUT("/applications/:id/release-age", app(models.ActionUpdate), routes.UpdateReleaseAgeSettingsHandler)
+			protected.PUT("/applications/:id/release-age/services/:service", app(models.ActionUpdate), routes.UpdateServiceReleaseAgeHandler)
+			protected.GET("/applications/:id/image-updates", app(models.ActionRead), routes.ListApplicationImageUpdatesHandler)
+			protected.GET("/settings/release-age", routes.GetReleaseAgeSettingsHandler)
 			protected.PUT("/applications/:id", app(models.ActionUpdate), routes.UpdateApplicationHandler)
 			protected.DELETE("/applications/:id", app(models.ActionDelete), routes.DeleteApplicationHandler)
 			// Anyone with the webhook URL can pull the images of the application
@@ -165,6 +169,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		admin := api.Group("/admin", middleware.RequireAuth(), middleware.RequireAdmin())
 		{
 			admin.GET("/system-info", routes.AdminSystemInfoHandler)
+			admin.PUT("/settings/release-age", routes.AdminUpdateReleaseAgeSettingsHandler)
 
 			admin.GET("/audit-logs", routes.AdminListAuditLogsHandler)
 
