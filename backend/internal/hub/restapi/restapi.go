@@ -7,6 +7,7 @@ package restapi
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -34,8 +35,12 @@ func New(router *gin.Engine, group *gin.RouterGroup) huma.API {
 	// Gin's binding ignores unknown fields and only requires fields marked with
 	// binding:"required". Huma requires every field without omitempty and
 	// rejects unknown ones, which would break requests that work today.
+	// This also makes response fields optional in the spec, so fields a
+	// response always has need required:"true".
 	config.AllowAdditionalPropertiesByDefault = true
 	config.FieldsOptionalByDefault = true
+
+	config.OnAddOperation = append(config.OnAddOperation, documentValidationErrorsAs400)
 
 	return humagin.NewWithGroup(router, group, config)
 }
@@ -57,6 +62,21 @@ func (e *Error) GetStatus() int {
 
 func init() {
 	huma.NewError = newError
+}
+
+// documentValidationErrorsAs400 replaces the 422 response Huma documents for
+// invalid requests, as newError answers them with 400.
+func documentValidationErrorsAs400(_ *huma.OpenAPI, op *huma.Operation) {
+	response, ok := op.Responses[strconv.Itoa(http.StatusUnprocessableEntity)]
+	if !ok {
+		return
+	}
+	delete(op.Responses, strconv.Itoa(http.StatusUnprocessableEntity))
+	badRequest := strconv.Itoa(http.StatusBadRequest)
+	if _, ok := op.Responses[badRequest]; !ok {
+		response.Description = http.StatusText(http.StatusBadRequest)
+		op.Responses[badRequest] = response
+	}
 }
 
 func newError(status int, msg string, errs ...error) huma.StatusError {

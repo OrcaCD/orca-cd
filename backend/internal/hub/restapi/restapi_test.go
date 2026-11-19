@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -148,5 +149,46 @@ func TestNew_SpecDescribesTheRoutes(t *testing.T) {
 	}
 	if spec.Paths["/ping"] == nil {
 		t.Errorf("expected /ping in the spec, got %v", spec.Paths)
+	}
+}
+
+func TestNew_SpecDocumentsValidationErrorsAs400(t *testing.T) {
+	api := New(gin.New(), gin.New().Group("/api/v1"))
+	huma.Register(api, huma.Operation{
+		OperationID: "create-thing",
+		Method:      http.MethodPost,
+		Path:        "/things",
+		Errors:      []int{http.StatusNotFound},
+	}, func(_ context.Context, _ *createInput) (*createOutput, error) { return nil, nil })
+
+	responses := api.OpenAPI().Paths["/things"].Post.Responses
+	if _, ok := responses["422"]; ok {
+		t.Error("expected no 422 response, newError answers with 400")
+	}
+	if r, ok := responses["400"]; !ok || r.Description != "Bad Request" {
+		t.Errorf("expected a 400 Bad Request response, got %+v", r)
+	}
+	if _, ok := responses["404"]; !ok {
+		t.Error("expected the declared 404 response to stay")
+	}
+}
+
+func TestNew_SpecMarksRequiredResponseFields(t *testing.T) {
+	api := New(gin.New(), gin.New().Group("/api/v1"))
+	huma.Get(api, "/ping", func(_ context.Context, _ *struct{}) (*struct {
+		Body struct {
+			Status string `json:"status" required:"true"`
+			Note   string `json:"note"`
+		}
+	}, error) {
+		return nil, nil
+	})
+
+	schema := api.OpenAPI().Paths["/ping"].Get.Responses["200"].Content["application/json"].Schema
+	if schema.Ref != "" {
+		schema = api.OpenAPI().Components.Schemas.SchemaFromRef(schema.Ref)
+	}
+	if !slices.Equal(schema.Required, []string{"status"}) {
+		t.Errorf("expected only status to be required, got %v", schema.Required)
 	}
 }
