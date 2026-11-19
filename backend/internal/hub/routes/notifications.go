@@ -376,7 +376,7 @@ var DeleteNotificationHandler = restapi.Handler(huma.Operation{
 	Description: requires(models.ResourceNotification, models.ActionDelete),
 	Tags:        []string{tagNotifications},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	rowsAffected, err := gorm.G[models.Notification](db.DB).Where("id = ?", input.ID).Delete(ctx)
 	if err != nil {
@@ -403,7 +403,7 @@ var TestNotificationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceNotification, models.ActionUpdate),
 	Tags:     []string{tagNotifications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the notification"`
 	Body *testNotificationRequest

@@ -35,7 +35,7 @@ var GenerateImagePullWebhookHandler = restapi.Handler(huma.Operation{
 		"the `application:pull_images` permission. " + requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound},
+	Errors:   []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*imagePullWebhookOutput, error) {
 	id := input.ID
 
@@ -75,7 +75,7 @@ var RevokeImagePullWebhookHandler = restapi.Handler(huma.Operation{
 	Description: "The secret of the webhook stops working. " + requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:        []string{tagApplications},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	id := input.ID
 

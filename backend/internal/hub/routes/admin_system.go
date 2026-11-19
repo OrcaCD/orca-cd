@@ -61,6 +61,7 @@ var AdminSystemInfoHandler = restapi.Handler(huma.Operation{
 	Description: "Returns the configuration and version of the hub. The network settings are hidden in demo mode. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
 }, func(_ context.Context, _ *struct{}) (*struct{ Body adminSystemInfoResponse }, error) {
 	cfg := adminSystemInfoConfig
 

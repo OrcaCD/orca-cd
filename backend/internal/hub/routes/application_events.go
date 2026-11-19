@@ -61,7 +61,7 @@ var ListApplicationEventsHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionRead),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID     string `path:"id" doc:"The ID of the application"`
 	Limit  int    `query:"limit" default:"20" doc:"Between 1 and 100"`

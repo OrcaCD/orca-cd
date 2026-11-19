@@ -80,6 +80,7 @@ var AdminListRolesHandler = restapi.Handler(huma.Operation{
 	Description: "Lists every role with its permissions, OIDC groups and members, the built-in roles first. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, _ *struct{}) (*struct{ Body []roleResponse }, error) {
 	roles, err := gorm.G[models.Role](db.DB).Preload("Permissions", nil).Preload("OIDCGroups", nil).Find(ctx)
 	if err != nil {
@@ -112,7 +113,7 @@ var AdminGetRoleHandler = restapi.Handler(huma.Operation{
 	Description: requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*roleOutput, error) {
 	role, err := loadRole(ctx, input.ID)
 	if err != nil {
@@ -131,7 +132,7 @@ var AdminCreateRoleHandler = restapi.Handler(huma.Operation{
 	Description:   "The resources and users the role refers to must exist. " + requiresAdmin,
 	Tags:          []string{tagAdmin},
 	Security:      restapi.Authenticated,
-	Errors:        []int{http.StatusBadRequest, http.StatusConflict},
+	Errors:        []int{http.StatusBadRequest, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body upsertRoleRequest }) (*roleOutput, error) {
 	req, permissions, err := normalizeRoleRequest(input.Body)
 	if err != nil {
@@ -187,7 +188,7 @@ var AdminUpdateRoleHandler = restapi.Handler(huma.Operation{
 		"and the permissions of the admin role don't change, and the last admin can't lose the admin role. " + requiresAdmin,
 	Tags:     []string{tagAdmin},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the role"`
 	Body upsertRoleRequest
@@ -291,7 +292,7 @@ var AdminDeleteRoleHandler = restapi.Handler(huma.Operation{
 	Description: "Built-in roles can't be deleted. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	id := input.ID
 	var members []string

@@ -28,7 +28,7 @@ var GetApplicationHealthHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionRead),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID    string `path:"id" doc:"The ID of the application"`
 	Range string `query:"range" default:"24h" doc:"One of 24h, 7d or 30d"`

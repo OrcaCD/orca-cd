@@ -112,6 +112,7 @@ var AdminListUsersHandler = restapi.Handler(huma.Operation{
 	Description: "Lists every user with their roles and how they sign in. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, _ *struct{}) (*struct{ Body []adminUserResponse }, error) {
 	var users []models.User
 	if err := db.DB.WithContext(ctx).Order("created_at ASC").Find(&users).Error; err != nil {
@@ -149,7 +150,7 @@ var AdminGetUserHandler = restapi.Handler(huma.Operation{
 	Description: requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*adminUserOutput, error) {
 	var user models.User
 	if err := db.DB.WithContext(ctx).Where("id = ?", input.ID).First(&user).Error; err != nil {
@@ -177,7 +178,7 @@ var AdminCreateUserHandler = restapi.Handler(huma.Operation{
 		requiresAdmin,
 	Tags:     []string{tagAdmin},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body adminCreateUserRequest }) (*adminUserWithEnrollmentOutput, error) {
 	req := input.Body
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
@@ -235,7 +236,7 @@ var AdminUpdateUserHandler = restapi.Handler(huma.Operation{
 		requiresAdmin,
 	Tags:     []string{tagAdmin},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the user"`
 	Body adminUpdateUserRequest
@@ -347,7 +348,7 @@ var AdminDeleteUserHandler = restapi.Handler(huma.Operation{
 	Description: "The last admin can't be deleted. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	id := input.ID
 

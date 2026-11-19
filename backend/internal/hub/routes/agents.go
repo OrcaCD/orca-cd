@@ -89,7 +89,7 @@ type updateAgentRequest struct {
 	Name string `json:"name" required:"true" minLength:"1" maxLength:"128"`
 	Icon string `json:"icon,omitempty" maxLength:"128" doc:"Leave it empty to keep the icon"`
 	// nil leaves the whitelist unchanged, an empty list clears it.
-	AllowedIPs *[]string `json:"allowedIps,omitempty" doc:"Leave it out to keep the list, an empty list allows any IP"`
+	AllowedIPs *[]string `json:"allowedIps" doc:"Leave it out or null to keep the list, an empty list allows any IP"`
 }
 
 type agentOutput struct {
@@ -223,7 +223,7 @@ var GetAgentHandler = restapi.Handler(huma.Operation{
 	Description: requires(models.ResourceAgent, models.ActionRead),
 	Tags:        []string{tagAgents},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*agentOutput, error) {
 	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
@@ -250,7 +250,7 @@ var CreateAgentHandler = restapi.Handler(huma.Operation{
 	Description:   "Returns the token the agent connects with, which is only shown once. " + requires(models.ResourceAgent, models.ActionCreate),
 	Tags:          []string{tagAgents},
 	Security:      restapi.Authenticated,
-	Errors:        []int{http.StatusBadRequest},
+	Errors:        []int{http.StatusBadRequest, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body createAgentRequest }) (*agentWithTokenOutput, error) {
 	req := input.Body
 	allowedIPs, err := normalizeAgentAllowedIPs(req.AllowedIPs)
@@ -324,7 +324,7 @@ var UpdateAgentHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceAgent, models.ActionUpdate),
 	Tags:     []string{tagAgents},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the agent"`
 	Body updateAgentRequest
@@ -387,7 +387,7 @@ var RotateAgentTokenHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceAgent, models.ActionUpdate),
 	Tags:     []string{tagAgents},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound},
+	Errors:   []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*agentWithTokenOutput, error) {
 	agent, err := gorm.G[models.Agent](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {

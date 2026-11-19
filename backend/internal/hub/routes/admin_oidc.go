@@ -112,6 +112,7 @@ var AdminListOIDCProvidersHandler = restapi.Handler(huma.Operation{
 	Description: "Lists every OIDC provider, including disabled ones. Client secrets are never returned. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, _ *struct{}) (*struct{ Body []oidcProviderResponse }, error) {
 	providers, err := gorm.G[models.OIDCProvider](db.DB).Find(ctx)
 	if err != nil {
@@ -134,7 +135,7 @@ var AdminGetOIDCProviderHandler = restapi.Handler(huma.Operation{
 	Description: "The client secret is never returned. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*oidcProviderOutput, error) {
 	provider, err := gorm.G[models.OIDCProvider](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
@@ -153,7 +154,7 @@ var AdminCreateOIDCProviderHandler = restapi.Handler(huma.Operation{
 	Description:   "The issuer URL must answer OIDC discovery. " + requiresAdmin,
 	Tags:          []string{tagAdmin},
 	Security:      restapi.Authenticated,
-	Errors:        []int{http.StatusBadRequest},
+	Errors:        []int{http.StatusBadRequest, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body createOIDCProviderRequest }) (*oidcProviderOutput, error) {
 	req := input.Body
 	if !isHTTPURL(req.IssuerURL) {
@@ -213,7 +214,7 @@ var AdminUpdateOIDCProviderHandler = restapi.Handler(huma.Operation{
 		"and changing its groups claim updates the roles users get from groups. " + requiresAdmin,
 	Tags:     []string{tagAdmin},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the OIDC provider"`
 	Body updateOIDCProviderRequest
@@ -301,7 +302,7 @@ var AdminDeleteOIDCProviderHandler = restapi.Handler(huma.Operation{
 	Description: "Signs out the users linked to the provider and removes the roles they got from its groups. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	id := input.ID
 

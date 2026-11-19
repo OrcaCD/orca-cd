@@ -177,7 +177,7 @@ var GetApplicationHandler = restapi.Handler(huma.Operation{
 	Description: requires(models.ResourceApplication, models.ActionRead),
 	Tags:        []string{tagApplications},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*applicationOutput, error) {
 	application, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
@@ -514,7 +514,7 @@ var DeleteApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionDelete),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	c := restapi.GinContext(ctx)
 	id := input.ID
@@ -559,7 +559,7 @@ var DeployApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionDeploy),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	if application_deployer.DefaultApplicationDeployer == nil {
 		return nil, huma.Error500InternalServerError("application deployer not initialized")
@@ -618,7 +618,7 @@ var PullApplicationImagesHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionPullImages),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {

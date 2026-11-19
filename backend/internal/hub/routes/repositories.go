@@ -325,7 +325,7 @@ var CreateRepositoryHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceRepository, models.ActionCreate),
 	Tags:     []string{tagRepositories},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body createRepositoryRequest }) (*repositoryOutput, error) {
 	c := restapi.GinContext(ctx)
 	user, ok := auth.GetUser(c)
@@ -513,7 +513,7 @@ var GetRepositoryHandler = restapi.Handler(huma.Operation{
 	Description: "Includes the trusted signing keys. " + requires(models.ResourceRepository, models.ActionRead),
 	Tags:        []string{tagRepositories},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusNotFound},
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*repositoryOutput, error) {
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
@@ -540,7 +540,7 @@ var ListRepositoryBranchesHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceRepository, models.ActionRead),
 	Tags:     []string{tagRepositories},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*struct{ Body []string }, error) {
 	repo, provider, err := resolveRepository(ctx, input.ID)
 	if err != nil {
@@ -564,7 +564,7 @@ var ListRepositoryTreeHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceRepository, models.ActionRead),
 	Tags:     []string{tagRepositories},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID string `path:"id" doc:"The ID of the repository"`
 	// Checked by the handler, which answers with its own message
@@ -681,7 +681,7 @@ var UpdateRepositoryHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceRepository, models.ActionUpdate),
 	Tags:     []string{tagRepositories},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the repository"`
 	Body updateRepositoryRequest

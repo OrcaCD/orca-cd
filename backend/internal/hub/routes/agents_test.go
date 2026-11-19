@@ -522,6 +522,9 @@ func TestUpdateAgentHandler_OmittedAllowedIPsStayUnchanged(t *testing.T) {
 	if w := putAgent(t, agent.Id, map[string]any{"name": testUpdatedName}); w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+	if w := putAgent(t, agent.Id, map[string]any{"name": testUpdatedName, "allowedIps": nil}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for null allowedIps, got %d: %s", w.Code, w.Body.String())
+	}
 
 	if got := storedAllowedIPs(t, agent.Id); !slices.Equal(got, []string{"203.0.113.5"}) {
 		t.Fatalf("expected allowedIps to stay unchanged, got %v", got)
