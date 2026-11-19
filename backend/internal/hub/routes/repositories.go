@@ -93,20 +93,6 @@ type repositoryOutput struct {
 	Body repositoryResponse
 }
 
-// repositoryProviderError is a 422 answer for a request the Git provider
-// rejected. huma.NewError turns 422 into 400, as Huma uses it for invalid input.
-type repositoryProviderError struct {
-	Message string `json:"error"`
-}
-
-func (e *repositoryProviderError) Error() string {
-	return e.Message
-}
-
-func (e *repositoryProviderError) GetStatus() int {
-	return http.StatusUnprocessableEntity
-}
-
 // normalizeOIDCStringList trims, drops empty entries, and deduplicates the given list
 // while preserving order. Returns an error if any entry or the list itself exceeds the
 // configured size limits.
@@ -513,7 +499,7 @@ var TestConnectionHandler = restapi.Handler(huma.Operation{
 	}
 
 	if err := provider.TestConnection(ctx, repo); err != nil {
-		return nil, &repositoryProviderError{Message: err.Error()}
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	return restapi.Message("connection successful"), nil
@@ -563,7 +549,7 @@ var ListRepositoryBranchesHandler = restapi.Handler(huma.Operation{
 
 	branches, err := provider.ListBranches(ctx, &repo)
 	if err != nil {
-		return nil, &repositoryProviderError{Message: err.Error()}
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	return &struct{ Body []string }{Body: branches}, nil
@@ -596,7 +582,7 @@ var ListRepositoryTreeHandler = restapi.Handler(huma.Operation{
 
 	entries, err := provider.ListTree(ctx, &repo, branch)
 	if err != nil {
-		return nil, &repositoryProviderError{Message: err.Error()}
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	return &struct{ Body []repositories.TreeEntry }{Body: entries}, nil

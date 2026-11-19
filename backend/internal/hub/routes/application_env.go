@@ -77,8 +77,8 @@ type updateEnvRequest struct {
 	Files []envFileChangesRequest `json:"files"`
 }
 
-// envError is an error answer that Huma's errors can't express: a 422, which
-// huma.NewError turns into 400, or one with a flag the web UI reacts to.
+// envError is an error answer with a flag the web UI reacts to, which Huma's
+// errors can't carry.
 type envError struct {
 	status                 int
 	Message                string `json:"error"`
@@ -149,9 +149,6 @@ var UpdateApplicationEnvHandler = restapi.Handler(huma.Operation{
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
 	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
-	// Many changed files can be larger than Huma's default limit of 1 MiB, the
-	// server-wide limit applies instead.
-	MaxBodyBytes: -1,
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateEnvRequest
@@ -294,10 +291,7 @@ func loadEnvTarget(ctx context.Context, id string) (models.Application, models.A
 	}
 
 	if agent.Version == "" || version.CheckAgentCompatibility(version.Version, agent.Version) == version.AgentIncompatible {
-		return application, agent, &envError{
-			status:  http.StatusUnprocessableEntity,
-			Message: fmt.Sprintf("This agent is too old to manage environment variables. Please update it to version %s or newer.", strings.TrimSuffix(version.MinAgentVersion, "-0")),
-		}
+		return application, agent, huma.Error422UnprocessableEntity(fmt.Sprintf("This agent is too old to manage environment variables. Please update it to version %s or newer.", strings.TrimSuffix(version.MinAgentVersion, "-0")))
 	}
 
 	return application, agent, nil

@@ -81,13 +81,13 @@ type agentWithTokenResponse struct {
 
 type createAgentRequest struct {
 	Name       string   `json:"name" required:"true" minLength:"1" maxLength:"128"`
-	Icon       string   `json:"icon,omitempty" minLength:"1" maxLength:"128"`
+	Icon       string   `json:"icon,omitempty" maxLength:"128" doc:"Defaults to server"`
 	AllowedIPs []string `json:"allowedIps,omitempty" doc:"IP addresses and CIDR ranges the agent may connect from"`
 }
 
 type updateAgentRequest struct {
 	Name string `json:"name" required:"true" minLength:"1" maxLength:"128"`
-	Icon string `json:"icon,omitempty" minLength:"1" maxLength:"128"`
+	Icon string `json:"icon,omitempty" maxLength:"128" doc:"Leave it empty to keep the icon"`
 	// nil leaves the whitelist unchanged, an empty list clears it.
 	AllowedIPs *[]string `json:"allowedIps,omitempty" doc:"Leave it out to keep the list, an empty list allows any IP"`
 }

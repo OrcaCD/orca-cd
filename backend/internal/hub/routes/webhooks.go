@@ -76,12 +76,7 @@ func webhookHandler[I, O any](op huma.Operation, body *huma.RequestBody, handler
 	op.RequestBody = &huma.RequestBody{}
 	h := restapi.Handler(op, handler)
 	*op.RequestBody = *body
-	return func(c *gin.Context) {
-		h(c)
-		// Huma only sets the status of a response without body. Write it now like
-		// c.AbortWithStatus did, instead of leaving it to the end of the chain.
-		c.Writer.WriteHeaderNow()
-	}
+	return h
 }
 
 func rejectWebhook(c *gin.Context, reason string) error {

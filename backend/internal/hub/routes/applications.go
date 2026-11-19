@@ -205,7 +205,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionCreate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
 }, func(ctx context.Context, input *struct{ Body createApplicationRequest }) (*applicationOutput, error) {
 	c := restapi.GinContext(ctx)
 	req := input.Body
@@ -313,7 +313,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateApplicationRequest
@@ -773,33 +773,19 @@ func fetchApplicationComposeAndCommit(ctx context.Context, repositoryID, branch,
 
 	latestCommit, err := provider.GetLatestCommit(ctx, &repo, branch)
 	if err != nil {
-		return "", repositories.CommitInfo{}, &unprocessableError{Message: err.Error()}
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	if err := repositories.VerifyCommit(ctx, provider, &repo, latestCommit.Hash); err != nil {
-		return "", repositories.CommitInfo{}, &unprocessableError{Message: err.Error()}
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	composeFile, err := provider.GetFileContent(ctx, &repo, latestCommit.Hash, path)
 	if err != nil {
-		return "", repositories.CommitInfo{}, &unprocessableError{Message: err.Error()}
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	return composeFile, latestCommit, nil
-}
-
-// unprocessableError answers 422 when the repository can't be read.
-// huma.NewError can't be used, it turns 422 into 400 like validation failures.
-type unprocessableError struct {
-	Message string `json:"error"`
-}
-
-func (e *unprocessableError) Error() string {
-	return e.Message
-}
-
-func (e *unprocessableError) GetStatus() int {
-	return http.StatusUnprocessableEntity
 }
 
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {

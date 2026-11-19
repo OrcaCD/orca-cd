@@ -71,19 +71,6 @@ type githubActionsInput struct {
 	RawBody []byte
 }
 
-// unprocessableEntityError answers 422, which huma.NewError turns into 400.
-type unprocessableEntityError struct {
-	Message string `json:"error"`
-}
-
-func (e *unprocessableEntityError) Error() string {
-	return e.Message
-}
-
-func (e *unprocessableEntityError) GetStatus() int {
-	return http.StatusUnprocessableEntity
-}
-
 // https://docs.github.com/en/actions/concepts/security/openid-connect#understanding-the-oidc-token
 type githubActionsClaims struct {
 	Repository  string `json:"repository"`
@@ -206,7 +193,7 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 	case "tag":
 		branchResolver, ok := repoProvider.(repositories.CommitBranchResolver)
 		if !ok {
-			return nil, &unprocessableEntityError{Message: "tag refs are not supported for this repository provider"}
+			return nil, huma.Error422UnprocessableEntity("tag refs are not supported for this repository provider")
 		}
 		resolved, err := branchResolver.GetBranchesForCommit(ctx, matchedRepo, claims.Sha)
 		if err != nil {
@@ -214,7 +201,7 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 		}
 		branches = resolved
 	default:
-		return nil, &unprocessableEntityError{Message: "unsupported ref type"}
+		return nil, huma.Error422UnprocessableEntity("unsupported ref type")
 	}
 
 	if len(matchedRepo.GitHubActionsOIDCAllowedBranches) > 0 {
