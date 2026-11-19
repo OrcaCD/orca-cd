@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,27 +85,84 @@ func TestLookupPushTime_GHCRFallsBackToUser(t *testing.T) {
 	}
 }
 
-func TestLookupPushTime_GitLab(t *testing.T) {
+// gitLabRepository is a container repository the GitLab GraphQL mock knows.
+type gitLabRepository struct {
+	id, path string
+	// tags maps a tag name to the JSON of its details. Without tags, reading
+	// one fails with a GraphQL error.
+	tags map[string]string
+}
+
+// serveGitLabGraphQL answers the GraphQL queries for the given projects.
+func serveGitLabGraphQL(t *testing.T, token string, projects map[string][]gitLabRepository) {
+	t.Helper()
 	serveRegistryAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/group%2Fproject%2Fimage/registry/repositories":
+		if r.Method != http.MethodPost || r.URL.Path != "/api/graphql" {
 			w.WriteHeader(http.StatusNotFound)
-		case "/api/v4/projects/group%2Fproject/registry/repositories":
-			_, _ = w.Write([]byte(`[{"id":1,"path":"group/project"},{"id":7,"path":"group/project/image"}]`))
-		case "/api/v4/projects/group%2Fproject/registry/repositories/7/tags/v1":
-			_, _ = w.Write([]byte(`{"digest":"` + newDigest + `","created_at":"2026-11-01T12:00:00Z"}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
+			return
 		}
+		if token != "" && r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			Variables map[string]string `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if project, ok := body.Variables["project"]; ok {
+			repositories, ok := projects[project]
+			if !ok {
+				_, _ = w.Write([]byte(`{"data":{"project":null}}`))
+				return
+			}
+			nodes := []string{}
+			for _, repository := range repositories {
+				if name := body.Variables["name"]; name != "" && !strings.HasSuffix(repository.path, "/"+name) {
+					continue
+				}
+				nodes = append(nodes, `{"id":"`+repository.id+`","path":"`+repository.path+`"}`)
+			}
+			_, _ = w.Write([]byte(`{"data":{"project":{"containerRepositories":{"nodes":[` + strings.Join(nodes, ",") + `]}}}}`))
+			return
+		}
+		for _, repositories := range projects {
+			for _, repository := range repositories {
+				if repository.id != body.Variables["id"] || repository.tags == nil {
+					continue
+				}
+				details, ok := repository.tags[body.Variables["tag"]]
+				if !ok {
+					details = "null"
+				}
+				_, _ = w.Write([]byte(`{"data":{"containerRepository":{"tagDetails":` + details + `}}}`))
+				return
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":null,"errors":[{"message":"repository not found"}]}`))
+	})
+}
+
+func TestLookupPushTime_GitLab(t *testing.T) {
+	serveGitLabGraphQL(t, "glpat", map[string][]gitLabRepository{
+		"group/project": {
+			{id: "gid://gitlab/ContainerRepository/1", path: "group/project"},
+			{id: "gid://gitlab/ContainerRepository/7", path: "group/project/image", tags: map[string]string{
+				// The tag was created long ago, the new image was pushed to it later.
+				"v1": `{"digest":"` + newDigest + `","createdAt":"2025-01-01T00:00:00Z","publishedAt":"2026-11-01T12:00:00Z"}`,
+			}},
+		},
 	})
 
 	img := registryImage{host: "registry.gitlab.com", path: "group/project/image", tag: "v1", digest: newDigest}
-	got, err := lookupPushTime(t.Context(), img, registryCredentials{})
+	got, err := lookupPushTime(t.Context(), img, registryCredentials{password: "glpat"})
 	if err != nil {
 		t.Fatalf("lookupPushTime: %v", err)
 	}
 	if !got.Equal(pushedAt) {
-		t.Errorf("push time = %v, want %v", got, pushedAt)
+		t.Errorf("push time = %v, want the time the tag was last published, %v", got, pushedAt)
 	}
 }
 
@@ -115,8 +173,12 @@ func TestLookupPushTime_Harbor(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		if r.URL.EscapedPath() == "/api/v2.0/projects/library/repositories/team%252Fapp/artifacts/"+newDigest {
-			_, _ = w.Write([]byte(`{"push_time":"2026-11-01T12:00:00Z"}`))
+		if r.URL.EscapedPath() == "/api/v2.0/projects/library/repositories/team%252Fapp/artifacts/"+newDigest && r.URL.Query().Get("with_tag") == "true" {
+			// The digest was pushed under another tag long before 1.0 was moved to it.
+			_, _ = w.Write([]byte(`{"push_time":"2025-01-01T00:00:00Z","tags":[
+				{"name":"nightly","push_time":"2025-01-01T00:00:00Z"},
+				{"name":"1.0","push_time":"2026-11-01T12:00:00Z"}
+			]}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -129,7 +191,7 @@ func TestLookupPushTime_Harbor(t *testing.T) {
 		t.Fatalf("lookupPushTime: %v", err)
 	}
 	if !got.Equal(pushedAt) {
-		t.Errorf("push time = %v, want %v", got, pushedAt)
+		t.Errorf("push time = %v, want the push time of the tag, %v", got, pushedAt)
 	}
 
 	img.path = "library/unknown"
@@ -222,25 +284,13 @@ func TestLookupPushTime_GHCRErrors(t *testing.T) {
 }
 
 func TestLookupPushTime_GitLabErrors(t *testing.T) {
-	serveRegistryAPI(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("PRIVATE-TOKEN") != "glpat" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		switch r.URL.EscapedPath() {
-		case "/api/v4/projects/group%2Fproject/registry/repositories":
-			_, _ = w.Write([]byte(`[{"id":7,"path":"group/project"}]`))
-		case "/api/v4/projects/group%2Fproject/registry/repositories/7/tags/moved":
-			_, _ = w.Write([]byte(`{"digest":"` + oldDigest + `","created_at":"2026-11-01T12:00:00Z"}`))
-		case "/api/v4/projects/group%2Fproject/registry/repositories/7/tags/undated":
-			_, _ = w.Write([]byte(`{"digest":"` + newDigest + `"}`))
-		case "/api/v4/projects/group%2Fbroken/registry/repositories":
-			w.WriteHeader(http.StatusInternalServerError)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+	serveGitLabGraphQL(t, "", map[string][]gitLabRepository{
+		"group/project": {{id: "gid://gitlab/ContainerRepository/7", path: "group/project", tags: map[string]string{
+			"moved":   `{"digest":"` + oldDigest + `","publishedAt":"2026-11-01T12:00:00Z"}`,
+			"undated": `{"digest":"` + newDigest + `","publishedAt":null}`,
+		}}},
+		"group/broken": {{id: "gid://gitlab/ContainerRepository/unknown", path: "group/broken"}},
 	})
-	creds := registryCredentials{password: "glpat"}
 
 	tests := []struct {
 		name string
@@ -249,18 +299,28 @@ func TestLookupPushTime_GitLabErrors(t *testing.T) {
 	}{
 		{name: "pushed again", img: registryImage{path: "group/project", tag: "moved"}, want: "another digest"},
 		{name: "no push time", img: registryImage{path: "group/project", tag: "undated"}, want: "no push time"},
-		{name: "unknown tag", img: registryImage{path: "group/project", tag: "missing"}, want: "gitlab: unexpected status 404"},
+		{name: "unknown tag", img: registryImage{path: "group/project", tag: "missing"}, want: "no tag missing"},
 		{name: "no matching repository", img: registryImage{path: "group/project/other", tag: "v1"}, want: "no registry repository found"},
 		{name: "no project", img: registryImage{path: "group/unknown", tag: "v1"}, want: "no registry repository found"},
-		{name: "server error", img: registryImage{path: "group/broken", tag: "v1"}, want: "gitlab: unexpected status 500"},
+		{name: "graphql error", img: registryImage{path: "group/broken", tag: "v1"}, want: "gitlab: repository not found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.img.host, tt.img.digest = "registry.gitlab.com", newDigest
-			if _, err := lookupPushTime(t.Context(), tt.img, creds); err == nil || !strings.Contains(err.Error(), tt.want) {
+			if _, err := lookupPushTime(t.Context(), tt.img, registryCredentials{}); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("expected an error containing %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestLookupPushTime_GitLabServerError(t *testing.T) {
+	serveRegistryAPI(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	img := registryImage{host: "registry.gitlab.com", path: "group/project", tag: "v1", digest: newDigest}
+	if _, err := lookupPushTime(t.Context(), img, registryCredentials{}); err == nil || !strings.Contains(err.Error(), "gitlab: unexpected status 500") {
+		t.Errorf("expected the server error, got %v", err)
 	}
 }
 
@@ -270,15 +330,26 @@ func TestLookupPushTime_HarborErrors(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		_, _ = w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{"tags":[{"name":"undated"}]}`))
 	})
 	host := strings.TrimPrefix(srv.URL, "https://")
 
-	if _, err := lookupPushTime(t.Context(), registryImage{host: host, path: "app", digest: newDigest}, registryCredentials{}); err == nil || !strings.Contains(err.Error(), "not in a Harbor project") {
-		t.Errorf("expected an error for an image outside a project, got %v", err)
+	tests := []struct {
+		name string
+		img  registryImage
+		want string
+	}{
+		{name: "not in a project", img: registryImage{path: "app", tag: "1.0"}, want: "not in a Harbor project"},
+		{name: "no push time", img: registryImage{path: "library/app", tag: "undated"}, want: "no push time in the response"},
+		{name: "tag moved", img: registryImage{path: "library/app", tag: "1.0"}, want: "no longer points to the digest"},
 	}
-	if _, err := lookupPushTime(t.Context(), registryImage{host: host, path: "library/app", digest: newDigest}, registryCredentials{}); err == nil || !strings.Contains(err.Error(), "no push time in the response") {
-		t.Errorf("expected an error for a missing push time, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.img.host, tt.img.digest = host, newDigest
+			if _, err := lookupPushTime(t.Context(), tt.img, registryCredentials{}); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("expected an error containing %q, got %v", tt.want, err)
+			}
+		})
 	}
 }
 

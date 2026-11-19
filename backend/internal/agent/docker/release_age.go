@@ -89,7 +89,7 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 	}
 
 	if len(policy.WebhookImages) > 0 {
-		if !slices.ContainsFunc(policy.WebhookImages, func(image string) bool { return sameRepository(image, service.Image) }) {
+		if !slices.ContainsFunc(policy.WebhookImages, func(image string) bool { return sameTag(image, service.Image) }) {
 			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
 			update.Reason = "not announced by the image pull webhook, image polling updates it"
 		}
@@ -155,11 +155,23 @@ func isHeldBack(update *messages.ImageUpdate) bool {
 }
 
 // sameRepository reports whether two image references name the same
-// repository, ignoring their tags.
+// repository, ignoring their tags and digests.
 func sameRepository(a, b string) bool {
 	namedA, errA := reference.ParseNormalizedNamed(a)
 	namedB, errB := reference.ParseNormalizedNamed(b)
 	return errA == nil && errB == nil && namedA.Name() == namedB.Name()
+}
+
+// sameTag reports whether two image references name the same repository and
+// tag, a missing tag being "latest". A reference without a tag, e.g. one pinned
+// to a digest, only matches itself.
+func sameTag(a, b string) bool {
+	namedA, errA := reference.ParseNormalizedNamed(a)
+	namedB, errB := reference.ParseNormalizedNamed(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return reference.TagNameOnly(namedA).String() == reference.TagNameOnly(namedB).String()
 }
 
 // pinnedRef returns imageRef pinned to digest, e.g. "redis@sha256:…".
@@ -175,6 +187,10 @@ func pinnedRef(imageRef, digest string) (string, error) {
 	return pinned.String(), nil
 }
 
+// maxReleaseAge is the longest minimum release age, the same limit the hub
+// sets. It also keeps day counts from overflowing a time.Duration.
+const maxReleaseAge = 365 * 24 * time.Hour
+
 // parseReleaseAge parses durations like "3d", "1d12h" or "90m". Go durations
 // have no days, so a leading day count is handled here.
 func parseReleaseAge(value string) (time.Duration, error) {
@@ -182,11 +198,15 @@ func parseReleaseAge(value string) (time.Duration, error) {
 	if value == "" || value == "0" {
 		return 0, nil
 	}
+	tooLong := fmt.Errorf("release age %q is longer than %s", value, formatReleaseAge(maxReleaseAge))
 	var age time.Duration
 	if days, rest, ok := strings.Cut(value, "d"); ok {
 		n, err := strconv.Atoi(days)
 		if err != nil || n < 0 {
 			return 0, fmt.Errorf("invalid number of days in %q", value)
+		}
+		if n > int(maxReleaseAge/(24*time.Hour)) {
+			return 0, tooLong
 		}
 		age = time.Duration(n) * 24 * time.Hour
 		value = rest
@@ -200,6 +220,9 @@ func parseReleaseAge(value string) (time.Duration, error) {
 	}
 	if age < 0 {
 		return 0, errors.New("release age must not be negative")
+	}
+	if age > maxReleaseAge {
+		return 0, tooLong
 	}
 	return age, nil
 }
