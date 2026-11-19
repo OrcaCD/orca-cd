@@ -2,9 +2,11 @@ package hub
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
+	"github.com/OrcaCD/orca-cd/internal/hub/mcpserver"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
@@ -153,6 +155,14 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.PUT("/notifications/:id/enabled", notification(models.ActionUpdate), routes.SetNotificationEnabledHandler)
 			protected.DELETE("/notifications/:id", notification(models.ActionDelete), routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", notification(models.ActionUpdate), routes.TestNotificationHandler)
+
+			// Without the route, the endpoint is a plain 404 instead of an auth error.
+			// Demo mode blocks the POST requests MCP is made of.
+			if !cfg.DisableMCP && !cfg.Demo {
+				// MCP clients open a GET stream and end sessions with DELETE, which the
+				// stateless server answers with 405 instead of a 404.
+				protected.Match([]string{http.MethodGet, http.MethodPost, http.MethodDelete}, "/mcp", mcpserver.Handler())
+			}
 
 			// The demo data never changes, so there is nothing to stream, and the
 			// per-user connection cap would let one visitor block the others

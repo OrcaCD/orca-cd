@@ -6,6 +6,7 @@ require (
 	charm.land/lipgloss/v2 v2.1.0
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/aegis-aead/go-libaegis v0.2.16
+	github.com/aymanbagabas/go-udiff v0.4.2
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.21.0
@@ -23,6 +24,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nicholas-fedor/shoutrrr v0.23.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
@@ -90,6 +92,7 @@ require (
 	github.com/gofrs/flock v0.13.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
@@ -137,6 +140,8 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/spf13/pflag v1.1.0 // indirect
@@ -151,6 +156,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.10.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
