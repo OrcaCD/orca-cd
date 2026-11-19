@@ -33,8 +33,6 @@ type createOutput struct {
 	}
 }
 
-type userKey struct{}
-
 var (
 	createThing = Handler(huma.Operation{
 		OperationID:   "create-thing",
@@ -77,6 +75,20 @@ var (
 		return Message("thing deleted"), nil
 	})
 
+	checkThing = Handler(huma.Operation{
+		OperationID: "check-thing",
+		Method:      http.MethodPost,
+		Path:        "/things/{id}/check",
+		Errors:      []int{http.StatusUnprocessableEntity},
+	}, func(_ context.Context, input *struct {
+		ID   string `path:"id"`
+		Body struct {
+			Note string `json:"note"`
+		}
+	}) (*createOutput, error) {
+		return nil, huma.Error422UnprocessableEntity("the provider rejected the thing")
+	})
+
 	pingThings = Handler(huma.Operation{
 		OperationID: "ping-things",
 		Method:      http.MethodGet,
@@ -98,6 +110,7 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	group.POST("/things", createThing)
 	group.GET("/things/:id", getThing)
 	group.DELETE("/things/:id", deleteThing)
+	group.POST("/things/:id/check", checkThing)
 	return router
 }
 
@@ -268,5 +281,40 @@ func TestOpenAPI_MarksRequiredResponseFields(t *testing.T) {
 	}
 	if !slices.Equal(schema.Required, []string{"status"}) {
 		t.Errorf("expected only status to be required, got %v", schema.Required)
+	}
+}
+
+func TestHandler_KeepsDeliberate422s(t *testing.T) {
+	w := serve(newTestRouter(t), http.MethodPost, "/api/v1/things/1/check", `{}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
+	}
+	if msg := decode(t, w)["error"]; msg != "the provider rejected the thing" {
+		t.Errorf("unexpected message %v", msg)
+	}
+
+	responses := OpenAPI().Paths["/things/{id}/check"].Post.Responses
+	for _, status := range []string{"400", "422"} {
+		if _, ok := responses[status]; !ok {
+			t.Errorf("expected a %s response, got %v", status, responses)
+		}
+	}
+}
+
+func TestHandler_LeavesTheBodyLimitToTheServer(t *testing.T) {
+	// Larger than Huma's default limit of 1 MiB
+	note := strings.Repeat("a", 2<<20)
+	w := serve(newTestRouter(t), http.MethodPost, "/api/v1/things", `{"name": "a", "password": "12345678", "note": "`+note+`"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", w.Code)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	})
+	router.POST("/api/v1/things", createThing)
+	if w := serve(router, http.MethodPost, "/api/v1/things", `{"name": "a", "password": "12345678", "note": "`+note+`"}`); w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 from the server's limit, got %d", w.Code)
 	}
 }

@@ -94,6 +94,16 @@ func Handler[I, O any](op huma.Operation, handler func(context.Context, *I) (*O,
 	registerMu.Lock()
 	defer registerMu.Unlock()
 
+	// The hub's server limits the body size and read time for every route, so
+	// Huma's stricter defaults of 1 MiB and 5 seconds stay off unless an
+	// operation sets its own.
+	if op.MaxBodyBytes == 0 {
+		op.MaxBodyBytes = -1
+	}
+	if op.BodyReadTimeout == 0 {
+		op.BodyReadTimeout = -1
+	}
+
 	huma.Register(api, op, handler)
 	h := ginAdapter.handler
 	ginAdapter.handler = nil
@@ -163,24 +173,41 @@ func init() {
 	huma.NewError = newError
 }
 
-// documentValidationErrorsAs400 replaces the 422 response Huma documents for
-// invalid requests, as newError answers them with 400.
+// validationFailed is the message Huma creates the 422 for invalid requests with
+const validationFailed = "validation failed"
+
+// documentValidationErrorsAs400 documents the 422 Huma adds for invalid requests
+// as 400, as newError answers them with 400. A 422 the operation lists in its
+// Errors itself stays.
 func documentValidationErrorsAs400(_ *huma.OpenAPI, op *huma.Operation) {
-	response, ok := op.Responses[strconv.Itoa(http.StatusUnprocessableEntity)]
+	unprocessable := strconv.Itoa(http.StatusUnprocessableEntity)
+	response, ok := op.Responses[unprocessable]
 	if !ok {
 		return
 	}
-	delete(op.Responses, strconv.Itoa(http.StatusUnprocessableEntity))
+
 	badRequest := strconv.Itoa(http.StatusBadRequest)
 	if _, ok := op.Responses[badRequest]; !ok {
-		response.Description = http.StatusText(http.StatusBadRequest)
-		op.Responses[badRequest] = response
+		op.Responses[badRequest] = &huma.Response{
+			Description: http.StatusText(http.StatusBadRequest),
+			Content:     response.Content,
+		}
+	}
+	// Huma adds the 422 to op.Errors once for operations with parameters or a
+	// body, so a second one comes from the operation.
+	added := 0
+	if len(op.Parameters) > 0 || op.RequestBody != nil {
+		added = 1
+	}
+	if countOf(op.Errors, http.StatusUnprocessableEntity) <= added {
+		delete(op.Responses, unprocessable)
 	}
 }
 
 func newError(status int, msg string, errs ...error) huma.StatusError {
-	// Gin answers invalid requests with 400, Huma with 422
-	if status == http.StatusUnprocessableEntity {
+	// Gin answered invalid requests with 400, Huma with 422. Other 422s are
+	// returned by the handlers on purpose.
+	if status == http.StatusUnprocessableEntity && msg == validationFailed {
 		status = http.StatusBadRequest
 	}
 
@@ -211,4 +238,14 @@ func newError(status int, msg string, errs ...error) huma.StatusError {
 	}
 
 	return &Error{status: status, Message: msg}
+}
+
+func countOf(values []int, value int) int {
+	n := 0
+	for _, v := range values {
+		if v == value {
+			n++
+		}
+	}
+	return n
 }
