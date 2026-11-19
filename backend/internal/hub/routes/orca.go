@@ -19,8 +19,9 @@ func RegisterOrca(api huma.API) {
 		Method:        http.MethodGet,
 		Path:          "/orca",
 		DefaultStatus: http.StatusTeapot,
-		// An easter egg, not part of the documented API
-		Hidden: true,
+		Summary:       "Meet the orca",
+		Description:   "An easter egg. Always answers with 418 I'm a teapot, even though it's an orca.",
+		Tags:          []string{"System"},
 	}, Orca)
 }
 
