@@ -114,8 +114,8 @@ var AdminListUsersHandler = restapi.Handler(huma.Operation{
 	Security:    restapi.Authenticated,
 	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, _ *struct{}) (*struct{ Body []adminUserResponse }, error) {
-	var users []models.User
-	if err := db.DB.WithContext(ctx).Order("created_at ASC").Find(&users).Error; err != nil {
+	users, err := gorm.G[models.User](db.DB).Order("created_at ASC").Find(ctx)
+	if err != nil {
 		return nil, internalError()
 	}
 
@@ -152,8 +152,8 @@ var AdminGetUserHandler = restapi.Handler(huma.Operation{
 	Security:    restapi.Authenticated,
 	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*adminUserOutput, error) {
-	var user models.User
-	if err := db.DB.WithContext(ctx).Where("id = ?", input.ID).First(&user).Error; err != nil {
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", input.ID).First(ctx)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, huma.Error404NotFound("user not found")
 		}
@@ -246,8 +246,8 @@ var AdminUpdateUserHandler = restapi.Handler(huma.Operation{
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	roleIds := uniqueIds(req.RoleIds)
 
-	var user models.User
-	if err := db.DB.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, huma.Error404NotFound("user not found")
 		}
@@ -275,7 +275,7 @@ var AdminUpdateUserHandler = restapi.Handler(huma.Operation{
 	enrollmentToken := ""
 
 	rolesChanged := false
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if user.LocalAuthEnabled {
 			user.UpdatedAt = time.Now()
 			// Only the columns this handler changes, so a concurrent change of

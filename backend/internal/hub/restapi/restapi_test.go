@@ -3,12 +3,14 @@ package restapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
@@ -89,6 +91,16 @@ var (
 		return nil, huma.Error422UnprocessableEntity("the provider rejected the thing")
 	})
 
+	failThing = Handler(huma.Operation{
+		OperationID: "fail-thing",
+		Method:      http.MethodPost,
+		Path:        "/things/{id}/fail",
+	}, func(_ context.Context, _ *struct {
+		ID string `path:"id"`
+	}) (*createOutput, error) {
+		return nil, errors.New("UNIQUE constraint failed: things.secret")
+	})
+
 	noContentThing = Handler(huma.Operation{
 		OperationID:   "touch-thing",
 		Method:        http.MethodPost,
@@ -122,6 +134,7 @@ func newTestRouter(t *testing.T) *gin.Engine {
 	group.GET("/things/:id", getThing)
 	group.DELETE("/things/:id", deleteThing)
 	group.POST("/things/:id/check", checkThing)
+	group.POST("/things/:id/fail", failThing)
 	return router
 }
 
@@ -347,5 +360,46 @@ func TestHandler_WritesTheStatusOfBodilessResponses(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
+	}
+}
+
+func TestHandler_DecodesUnlistedContentTypesAsJSON(t *testing.T) {
+	router := newTestRouter(t)
+	// curl -d sends application/x-www-form-urlencoded, Gin decoded JSON anyway
+	for _, contentType := range []string{"application/x-www-form-urlencoded", "text/plain", "application/json; charset=utf-8"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/things", strings.NewReader(`{"name": "a", "password": "12345678"}`))
+		req.Header.Set("Content-Type", contentType)
+		router.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Errorf("%s: expected 201, got %d: %s", contentType, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestHandler_AlwaysAnswersJSON(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/things/2", nil)
+	req.Header.Set("Accept", "application/cbor")
+	newTestRouter(t).ServeHTTP(w, req)
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("expected application/json, got %q", ct)
+	}
+}
+
+func TestHandler_HidesTheCauseOfServerErrors(t *testing.T) {
+	w := serve(newTestRouter(t), http.MethodPost, "/api/v1/things/1/fail", "")
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "UNIQUE") {
+		t.Errorf("expected the database error to stay internal, got %s", w.Body.String())
+	}
+}
+
+func TestHandler_KeepsAReadDeadlineForTheBody(t *testing.T) {
+	// A negative timeout would remove the server's read deadline
+	if got := OpenAPI().Paths["/things"].Post.BodyReadTimeout; got != 10*time.Second {
+		t.Errorf("expected a body read timeout of 10s, got %v", got)
 	}
 }

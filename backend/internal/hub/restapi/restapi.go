@@ -9,11 +9,13 @@ package restapi
 import (
 	"context"
 	"errors"
+	"mime"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -24,6 +26,8 @@ import (
 
 const (
 	basePath = "/api/v1"
+	// Same as the ReadTimeout of the hub's server
+	bodyReadTimeout = 10 * time.Second
 
 	apiTokenScheme = "apiToken"
 	sessionScheme  = "session"
@@ -97,14 +101,15 @@ func Handler[I, O any](op huma.Operation, handler func(context.Context, *I) (*O,
 	registerMu.Lock()
 	defer registerMu.Unlock()
 
-	// The hub's server limits the body size and read time for every route, so
-	// Huma's stricter defaults of 1 MiB and 5 seconds stay off unless an
-	// operation sets its own.
+	// The hub's server limits the body size for every route, so Huma's stricter
+	// default of 1 MiB stays off unless an operation sets its own.
 	if op.MaxBodyBytes == 0 {
 		op.MaxBodyBytes = -1
 	}
+	// Huma replaces the server's read deadline while it reads the body, and a
+	// negative timeout would remove it. This matches the server's ReadTimeout.
 	if op.BodyReadTimeout == 0 {
-		op.BodyReadTimeout = -1
+		op.BodyReadTimeout = bodyReadTimeout
 	}
 
 	huma.Register(api, op, handler)
@@ -134,11 +139,27 @@ type adapter struct {
 func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	a.handler = func(c *gin.Context) {
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ginContextKey{}, c))
+		decodeUnlistedBodiesAsJSON(op, c.Request)
 		handler(humagin.NewContext(op, c))
 		// Huma only sets the status of responses without a body. Writing it here
 		// sends it right away, also when a test calls the handler without Gin.
 		c.Writer.WriteHeaderNow()
 	}
+}
+
+// decodeUnlistedBodiesAsJSON makes Huma decode a body as JSON when the request
+// sends a content type the operation doesn't list. Gin's ShouldBindJSON read
+// JSON whatever the content type, and e.g. `curl -d` sends
+// application/x-www-form-urlencoded.
+func decodeUnlistedBodiesAsJSON(op *huma.Operation, r *http.Request) {
+	if op.RequestBody == nil || op.RequestBody.Content["application/json"] == nil {
+		return
+	}
+	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if _, listed := op.RequestBody.Content[mediaType]; listed || mediaType == "" {
+		return
+	}
+	r.Header.Set("Content-Type", "application/json")
 }
 
 // ServeHTTP is never called, Gin routes the requests.
@@ -238,6 +259,11 @@ func newError(status int, msg string, errs ...error) huma.StatusError {
 	// returned by the handlers on purpose.
 	if status == http.StatusUnprocessableEntity && msg == validationFailed {
 		status = http.StatusBadRequest
+	}
+
+	// The errors of a 5xx are internal, e.g. from the database
+	if status >= http.StatusInternalServerError {
+		errs = nil
 	}
 
 	details := make([]string, 0, len(errs))

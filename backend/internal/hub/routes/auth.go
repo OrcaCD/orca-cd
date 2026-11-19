@@ -154,7 +154,9 @@ var UpdateOwnProfileHandler = restapi.Handler(huma.Operation{
 		return nil, err
 	}
 
-	if err := db.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email, "email_unconfirmed": user.EmailUnconfirmed || req.Email != user.Email}).Error; err != nil {
+	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).
+		Select("name", "email", "email_unconfirmed").
+		Updates(ctx, models.User{Name: req.Name, Email: req.Email, EmailUnconfirmed: user.EmailUnconfirmed || req.Email != user.Email}); err != nil {
 		if isUniqueConstraintError(err) {
 			return nil, huma.Error409Conflict("a user with this email already exists")
 		}
