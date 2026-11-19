@@ -189,6 +189,26 @@ func TestRecordAuditLog(t *testing.T) {
 
 		assertNotNil(t, audit.UserId, "userId should not be nil")
 		assertEqual(t, "user-456", *audit.UserId, "userId mismatch")
+		assertNil(t, audit.APITokenId, "apiTokenId should be nil for a session")
+	})
+
+	t.Run("api token", func(t *testing.T) {
+		testDB := setupTestDB(t)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/", nil)
+		auth.SetUser(c, &models.User{Id: "user-456", Name: "test-admin"})
+		auth.SetAPIToken(c, &models.APIToken{Id: "token-1", UserId: "user-456"})
+
+		RecordAuditLog(c, "UPDATE", "PROJECT", "789")
+
+		var audit models.AuditLog
+		err := testDB.First(&audit).Error
+		fatalIfErr(t, err, "db query failed")
+
+		assertNotNil(t, audit.APITokenId, "apiTokenId should not be nil")
+		assertEqual(t, "token-1", *audit.APITokenId, "apiTokenId mismatch")
 	})
 
 	t.Run("database error case", func(t *testing.T) {

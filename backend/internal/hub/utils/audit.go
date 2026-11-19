@@ -18,6 +18,11 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		userIdPtr = &user.Id
 	}
 
+	var apiTokenIdPtr *string
+	if token, ok := auth.GetAPIToken(c); ok {
+		apiTokenIdPtr = &token.Id
+	}
+
 	userIdDisplay := "system"
 	if userIdPtr != nil {
 		userIdDisplay = *userIdPtr
@@ -40,6 +45,7 @@ func RecordAuditLog(c *gin.Context, eventType string, targetType string, targetI
 		UserId:     userIdPtr,
 		TargetType: targetType,
 		TargetId:   targetIdPtr,
+		APITokenId: apiTokenIdPtr,
 	}
 
 	if err := gorm.G[models.AuditLog](db.DB).Create(c.Request.Context(), &audit); err != nil {

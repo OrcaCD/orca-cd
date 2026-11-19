@@ -9,6 +9,7 @@ export interface AuditLog {
 	eventType: EventType;
 	targetType: TargetType;
 	targetId: string;
+	apiTokenId: string | null;
 }
 
 export enum TargetType {
