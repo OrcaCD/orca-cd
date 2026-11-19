@@ -149,6 +149,36 @@ func (p *Permissions) IDs(resource models.PermissionResource, action models.Perm
 	return ids, false
 }
 
+// Restrict limits the permissions to the scopes of an API token, so a token
+// never gets more than its owner. A token of an admin only gets admin access
+// with the admin scope. Like role grants, every scope implies read access.
+func (p *Permissions) Restrict(scopes []models.APITokenScope) *Permissions {
+	if p.IsAdmin() && slices.Contains(scopes, models.APITokenScopeAdmin) {
+		restricted := Admin()
+		restricted.roles = p.Roles()
+		return restricted
+	}
+
+	var grants []models.RolePermission
+	for _, scope := range scopes {
+		resource, action, ok := scope.Permission()
+		if !ok {
+			continue
+		}
+		ids, all := p.IDs(resource, action)
+		if all {
+			grants = append(grants, models.RolePermission{Resource: resource, Action: action})
+			continue
+		}
+		for _, id := range ids {
+			grants = append(grants, models.RolePermission{Resource: resource, Action: action, ResourceId: &id})
+		}
+	}
+	restricted := New(grants)
+	restricted.roles = p.Roles()
+	return restricted
+}
+
 // ResourceGrant lists the actions allowed on all resources of a type and on single resources.
 type ResourceGrant struct {
 	All       []models.PermissionAction            `json:"all"`

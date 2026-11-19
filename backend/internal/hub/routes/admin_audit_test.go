@@ -68,6 +68,7 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 		UserId:     ptr("user-456"),
 		TargetType: "system",
 		TargetId:   ptr("target-789"),
+		APITokenId: ptr("token-1"),
 	}
 
 	if err := db.DB.Create(&mockLog).Error; err != nil {
@@ -110,6 +111,9 @@ func TestAdminListAuditLogsHandler_ReturnsLogsCorrectly(t *testing.T) {
 	}
 	if auditLogItem["targetId"] != "target-789" {
 		t.Errorf("expected targetId=target-789, got %v", auditLogItem["targetId"])
+	}
+	if auditLogItem["apiTokenId"] != "token-1" {
+		t.Errorf("expected apiTokenId=token-1, got %v", auditLogItem["apiTokenId"])
 	}
 
 	timeStr, ok := auditLogItem["createdAt"].(string)

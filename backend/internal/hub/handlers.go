@@ -60,18 +60,21 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		// Protected routes (authentication required)
 		protected := api.Group("", middleware.RequireAuth())
 		{
-			protected.GET("/auth/profile", routes.ProfileHandler)
-			protected.GET("/auth/profile-picture", routes.ProfilePictureHandler)
-			protected.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
-			protected.POST("/auth/change-password", routes.ChangePasswordHandler)
-			protected.POST("/auth/logout", routes.LogoutHandler)
-			protected.POST("/auth/logout-all", routes.LogoutAllHandler)
+			// The account, the event stream and API tokens are only for the web UI,
+			// API tokens can't use them.
+			session := protected.Group("", middleware.RequireSession())
+			session.GET("/auth/profile", routes.ProfileHandler)
+			session.GET("/auth/profile-picture", routes.ProfilePictureHandler)
+			session.PUT("/auth/profile", routes.UpdateOwnProfileHandler)
+			session.POST("/auth/change-password", routes.ChangePasswordHandler)
+			session.POST("/auth/logout", routes.LogoutHandler)
+			session.POST("/auth/logout-all", routes.LogoutAllHandler)
 
 			// Creating API tokens needs a permission, but everyone can see and revoke
 			// their own, for example after losing it.
-			protected.GET("/api-tokens", routes.ListAPITokensHandler)
-			protected.POST("/api-tokens", middleware.RequirePermission(models.ResourceAPIToken, models.ActionCreate), routes.CreateAPITokenHandler)
-			protected.DELETE("/api-tokens/:id", routes.RevokeAPITokenHandler)
+			session.GET("/api-tokens", routes.ListAPITokensHandler)
+			session.POST("/api-tokens", middleware.RequirePermission(models.ResourceAPIToken, models.ActionCreate), routes.CreateAPITokenHandler)
+			session.DELETE("/api-tokens/:id", routes.RevokeAPITokenHandler)
 
 			// List endpoints filter by what the user can read, the others check the
 			// permission on the resource of the :id parameter.
@@ -135,7 +138,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			// The demo data never changes, so there is nothing to stream, and the
 			// per-user connection cap would let one visitor block the others
 			if !cfg.Demo {
-				protected.GET("/events", routes.SSEHandler)
+				session.GET("/events", routes.SSEHandler)
 			}
 		}
 
@@ -158,8 +161,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			admin.PUT("/roles/:id", routes.AdminUpdateRoleHandler)
 			admin.DELETE("/roles/:id", routes.AdminDeleteRoleHandler)
 
-			admin.GET("/api-tokens", routes.AdminListAPITokensHandler)
-			admin.DELETE("/api-tokens/:id", routes.AdminRevokeAPITokenHandler)
+			admin.GET("/api-tokens", middleware.RequireSession(), routes.AdminListAPITokensHandler)
+			admin.DELETE("/api-tokens/:id", middleware.RequireSession(), routes.AdminRevokeAPITokenHandler)
 
 			admin.GET("/oidc-providers", routes.AdminListOIDCProvidersHandler)
 			admin.POST("/oidc-providers", routes.AdminCreateOIDCProviderHandler)

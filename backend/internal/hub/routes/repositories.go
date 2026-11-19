@@ -298,7 +298,7 @@ func ListRepositoriesHandler(c *gin.Context) {
 }
 
 func CreateRepositoryHandler(c *gin.Context) {
-	claims, ok := auth.GetClaims(c)
+	user, ok := auth.GetUser(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
 		return
@@ -373,7 +373,7 @@ func CreateRepositoryHandler(c *gin.Context) {
 		AuthMethod:                        req.AuthMethod,
 		SyncType:                          req.SyncType,
 		SyncStatus:                        models.SyncStatusUnknown,
-		CreatedBy:                         claims.Subject,
+		CreatedBy:                         user.Id,
 		GitHubActionsOIDCEnabled:          req.GitHubActionsOIDCEnabled,
 		GitHubActionsOIDCAllowRepoSync:    allowRepoSync,
 		GitHubActionsOIDCAllowImageSync:   allowImageSync,

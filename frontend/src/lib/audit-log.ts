@@ -9,6 +9,7 @@ export interface AuditLog {
 	eventType: EventType;
 	targetType: TargetType;
 	targetId: string;
+	apiTokenId: string | null;
 }
 
 export enum TargetType {
@@ -34,4 +35,5 @@ export enum EventType {
 	RolesSynced = "roles-synced",
 	MembersUpdated = "members-updated",
 	RevokedApiToken = "revoked-api-token",
+	FirstUsedApiToken = "first-used-api-token",
 }
