@@ -11,6 +11,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -163,8 +164,13 @@ func markAPITokenUsed(c *gin.Context, token *models.APIToken, now time.Time) {
 		return
 	}
 	token.LastUsedAt = &now
+	// Another request was first
+	if updated == 0 {
+		return
+	}
 
-	if firstUse && updated > 0 {
+	sse.PublishUpdate(sse.TopicAPITokensOf(token.UserId), sse.TopicAdminAPITokens)
+	if firstUse {
 		utils.RecordAuditLog(c, "first-used-api-token", "api-token", token.Id)
 	}
 }

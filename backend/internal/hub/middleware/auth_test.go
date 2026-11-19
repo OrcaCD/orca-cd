@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
+	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -486,5 +489,38 @@ func TestRequireSession(t *testing.T) {
 	}
 	if !events.Has(seclog.AccessDenied, "session_required") {
 		t.Error("expected an access_denied security event")
+	}
+}
+
+func TestRequireAuth_APITokenUsePublishesEvent(t *testing.T) {
+	user := &models.User{Id: "user-123", Name: "CI", Email: "ci@example.com"}
+	plain, _ := setupAPITokenAuthTest(t, user)
+	log := zerolog.Nop()
+	broker := sse.NewBroker(&log)
+	sse.DefaultBroker = broker
+	t.Cleanup(func() { sse.DefaultBroker = nil })
+	connID, ch := broker.Subscribe()
+	defer broker.Unsubscribe(connID)
+
+	router := gin.New()
+	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{})
+	})
+
+	serveWithAPIToken(router, http.MethodGet, "/protected", plain)
+	select {
+	case event := <-ch:
+		if urls := event.URLs(); !slices.Equal(urls, []string{"/api/v1/api-tokens", "/api/v1/admin/api-tokens"}) {
+			t.Errorf("expected the token lists to be reloaded, got %v", urls)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SSE event")
+	}
+
+	serveWithAPIToken(router, http.MethodGet, "/protected", plain)
+	select {
+	case event := <-ch:
+		t.Errorf("expected no event while last_used_at isn't written, got %v", event.URLs())
+	default:
 	}
 }
