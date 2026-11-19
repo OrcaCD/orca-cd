@@ -73,7 +73,7 @@ function ApiTokensSettingsPage() {
 
 	return (
 		<Card>
-			<CardHeader>
+			<CardHeader className="flex flex-col gap-3 sm:grid">
 				<CardTitle>{m.apiTokens()}</CardTitle>
 				<CardDescription>
 					{m.apiTokensDescription()}
@@ -85,35 +85,38 @@ function ApiTokensSettingsPage() {
 					</CardAction>
 				)}
 			</CardHeader>
-			<CardContent>
-				{isLoading && <CardStackSkeleton label={m.loadingApiTokens()} heights={["h-24"]} />}
-				{error && (
-					<ErrorAlert title={m.apiTokensLoadFailed()} description={(error as Error).message} />
-				)}
-				{tokens && tokens.length === 0 && (
-					<p className="py-6 text-center text-sm text-muted-foreground">{m.noApiTokens()}</p>
-				)}
-				{tokens && tokens.length > 0 && (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>{m.name()}</TableHead>
-								<TableHead>{m.apiTokenScopes()}</TableHead>
-								<TableHead>{m.apiTokenExpires()}</TableHead>
-								<TableHead>{m.apiTokenLastUsed()}</TableHead>
-								<TableHead>
-									<span className="sr-only">{m.actions()}</span>
-								</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{tokens.map((token) => (
-								<ApiTokenRow key={token.id} token={token} onRevoke={() => handleRevoke(token)} />
-							))}
-						</TableBody>
-					</Table>
-				)}
-			</CardContent>
+			{(isLoading || error || tokens?.length === 0) && (
+				<CardContent>
+					{isLoading && <CardStackSkeleton label={m.loadingApiTokens()} heights={["h-24"]} />}
+					{error && (
+						<ErrorAlert title={m.apiTokensLoadFailed()} description={(error as Error).message} />
+					)}
+					{tokens?.length === 0 && (
+						<p className="py-6 text-center text-muted-foreground">{m.noApiTokens()}</p>
+					)}
+				</CardContent>
+			)}
+			{/* Rows span the whole card, the outer cells line up with the header */}
+			{tokens && tokens.length > 0 && (
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead className="pl-(--card-spacing)">{m.name()}</TableHead>
+							<TableHead className="w-full">{m.apiTokenScopes()}</TableHead>
+							<TableHead>{m.apiTokenExpires()}</TableHead>
+							<TableHead>{m.apiTokenLastUsed()}</TableHead>
+							<TableHead className="pr-(--card-spacing)">
+								<span className="sr-only">{m.actions()}</span>
+							</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{tokens.map((token) => (
+							<ApiTokenRow key={token.id} token={token} onRevoke={() => handleRevoke(token)} />
+						))}
+					</TableBody>
+				</Table>
+			)}
 		</Card>
 	);
 }
@@ -125,7 +128,7 @@ function ApiTokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: () => voi
 
 	return (
 		<TableRow>
-			<TableCell>
+			<TableCell className="pl-(--card-spacing)">
 				<div className="font-medium">{token.name}</div>
 				<code className="font-mono text-xs text-muted-foreground">{token.prefix}…</code>
 			</TableCell>
@@ -148,7 +151,7 @@ function ApiTokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: () => voi
 			<TableCell>
 				<RelativeTime value={token.lastUsedAt} fallback={m.never()} />
 			</TableCell>
-			<TableCell className="text-right">
+			<TableCell className="pr-(--card-spacing) text-right">
 				<ConfirmationDialog
 					onConfirm={onRevoke}
 					title={m.revokeApiTokenConfirmTitle({ name: token.name })}
