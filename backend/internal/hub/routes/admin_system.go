@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 )
 
 type AdminSystemInfoConfig struct {
@@ -24,16 +26,16 @@ var adminSystemInfoConfig AdminSystemInfoConfig
 const demoRedacted = "hidden in demo mode"
 
 type adminSystemInfoResponse struct {
-	Host             string   `json:"host"`
-	Port             string   `json:"port"`
-	LogLevel         string   `json:"logLevel"`
-	TrustedProxies   []string `json:"trustedProxies"`
-	AllowedIPs       []string `json:"allowedIps"`
-	AppURL           string   `json:"appUrl"`
-	DisableLocalAuth bool     `json:"disableLocalAuth"`
-	Version          string   `json:"version"`
-	Commit           string   `json:"commit"`
-	BuildDate        string   `json:"buildDate"`
+	Host             string   `json:"host" required:"true"`
+	Port             string   `json:"port" required:"true"`
+	LogLevel         string   `json:"logLevel" required:"true"`
+	TrustedProxies   []string `json:"trustedProxies" required:"true" doc:"null when no proxy is trusted"`
+	AllowedIPs       []string `json:"allowedIps" required:"true" doc:"IP addresses and CIDR ranges the hub accepts requests from. null allows any."`
+	AppURL           string   `json:"appUrl" required:"true"`
+	DisableLocalAuth bool     `json:"disableLocalAuth" required:"true" doc:"Whether login with a password or passkey is disabled"`
+	Version          string   `json:"version" required:"true"`
+	Commit           string   `json:"commit" required:"true"`
+	BuildDate        string   `json:"buildDate" required:"true"`
 }
 
 func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
@@ -51,7 +53,15 @@ func SetAdminSystemInfoConfig(cfg AdminSystemInfoConfig) {
 	}
 }
 
-func AdminSystemInfoHandler(c *gin.Context) {
+var AdminSystemInfoHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-system-info",
+	Method:      http.MethodGet,
+	Path:        "/admin/system-info",
+	Summary:     "Get the hub's configuration",
+	Description: "Returns the configuration and version of the hub. The network settings are hidden in demo mode. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+}, func(_ context.Context, _ *struct{}) (*struct{ Body adminSystemInfoResponse }, error) {
 	cfg := adminSystemInfoConfig
 
 	if DemoMode {
@@ -61,7 +71,7 @@ func AdminSystemInfoHandler(c *gin.Context) {
 		cfg.AllowedIPs = []string{demoRedacted}
 	}
 
-	c.JSON(http.StatusOK, adminSystemInfoResponse{
+	return &struct{ Body adminSystemInfoResponse }{Body: adminSystemInfoResponse{
 		Host:             cfg.Host,
 		Port:             cfg.Port,
 		LogLevel:         cfg.LogLevel,
@@ -72,5 +82,5 @@ func AdminSystemInfoHandler(c *gin.Context) {
 		Version:          cfg.Version,
 		Commit:           cfg.Commit,
 		BuildDate:        cfg.BuildDate,
-	})
-}
+	}}, nil
+})

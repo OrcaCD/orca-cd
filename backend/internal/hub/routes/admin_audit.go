@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"strconv"
@@ -9,7 +10,8 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/gin-gonic/gin"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -19,35 +21,55 @@ const auditLogSearchCondition = "(event_type LIKE @search OR target_type LIKE @s
 	" OR user_id IN (SELECT id FROM users WHERE name LIKE @search OR email LIKE @search))"
 
 type auditLogResponse struct {
-	Id         string             `json:"id"`
-	CreatedAt  string             `json:"createdAt"`
-	EventType  string             `json:"eventType"`
-	User       *adminUserResponse `json:"user"`
-	TargetType string             `json:"targetType"`
-	TargetId   *string            `json:"targetId"`
+	Id        string `json:"id" required:"true"`
+	CreatedAt string `json:"createdAt" required:"true" format:"date-time"`
+	EventType string `json:"eventType" required:"true" example:"created"`
+	// Huma can't mark objects as nullable, so the field is documented as optional.
+	User       *adminUserResponse `json:"user" doc:"Who made the change. null for system events and deleted users."`
+	TargetType string             `json:"targetType" required:"true" example:"agent"`
+	TargetId   *string            `json:"targetId" required:"true" nullable:"true"`
 	// APITokenId is set when the action was made with an API token.
-	APITokenId *string `json:"apiTokenId"`
+	APITokenId *string `json:"apiTokenId" required:"true" nullable:"true" doc:"The API token the change was made with. null for changes in the web UI."`
 }
 
-func AdminListAuditLogsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+type auditLogsResponse struct {
+	Items   []auditLogResponse `json:"items" required:"true"`
+	HasMore bool               `json:"hasMore" required:"true" doc:"Whether there are older entries after these"`
+}
 
+// The paging parameters are strings because invalid values fall back to the
+// default instead of being rejected.
+type listAuditLogsInput struct {
+	Limit  string `query:"limit" default:"20" doc:"The number of entries to return"`
+	Offset string `query:"offset" default:"0" doc:"The number of entries to skip"`
+	Search string `query:"search" doc:"Only returns entries whose event, target or user contains the text"`
+}
+
+var AdminListAuditLogsHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-audit-logs",
+	Method:      http.MethodGet,
+	Path:        "/admin/audit-logs",
+	Summary:     "List audit log entries",
+	Description: "Lists the audit log, newest first. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, input *listAuditLogsInput) (*struct{ Body auditLogsResponse }, error) {
 	limit := defaultAuditLogLimit
-	if l := c.Query("limit"); l != "" {
+	if l := input.Limit; l != "" {
 		if v, err := strconv.Atoi(l); err == nil {
 			limit = v
 		}
 	}
 
 	offset := 0
-	if o := c.Query("offset"); o != "" {
+	if o := input.Offset; o != "" {
 		if v, err := strconv.Atoi(o); err == nil {
 			offset = v
 		}
 	}
 
 	query := gorm.G[models.AuditLog](db.DB).Order("created_at DESC")
-	if search := strings.TrimSpace(c.Query("search")); search != "" {
+	if search := strings.TrimSpace(input.Search); search != "" {
 		query = query.Where(auditLogSearchCondition, sql.Named("search", "%"+search+"%"))
 	}
 
@@ -60,8 +82,7 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 
 	auditLogs, err := query.Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
-		return
+		return nil, huma.Error500InternalServerError("Failed to fetch audit logs")
 	}
 
 	hasMore := false
@@ -90,8 +111,5 @@ func AdminListAuditLogsHandler(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"items":   responses,
-		"hasMore": hasMore,
-	})
-}
+	return &struct{ Body auditLogsResponse }{Body: auditLogsResponse{Items: responses, HasMore: hasMore}}, nil
+})
