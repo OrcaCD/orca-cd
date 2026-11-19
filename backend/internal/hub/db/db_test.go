@@ -230,11 +230,14 @@ func TestPasskeyMigrationPreservesAccountTypesAndCascades(t *testing.T) {
 			t.Fatalf("orphan in %s: %v", table, err)
 		}
 	}
-	if err := m.Migrate(48); err != nil {
+	if err := m.Migrate(49); err != nil {
 		t.Fatal(err)
 	}
 	if !columnNames(t, sqlDB, "users")["password_hash"] {
 		t.Fatal("down migration did not restore schema")
+	}
+	if !columnNames(t, sqlDB, "audit_logs")["api_token_id"] {
+		t.Fatal("password cleanup rollback removed API token audit data")
 	}
 	if err := m.Up(); err != nil {
 		t.Fatal(err)
