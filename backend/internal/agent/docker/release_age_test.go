@@ -170,6 +170,28 @@ func TestEvaluateUpdate(t *testing.T) {
 	}
 }
 
+func TestReleaseAgePolicyFromProto(t *testing.T) {
+	got := ReleaseAgePolicyFromProto(&messages.ReleaseAgePolicy{
+		MinimumSeconds:        3600,
+		ServiceMinimumSeconds: map[string]int64{"db": 7 * 24 * 3600, "app": 0},
+		AllowedRegistries:     []string{"registry.example.com"},
+	}, []string{"ghcr.io/org/app:2.0"})
+
+	want := ReleaseAgePolicy{
+		MinimumAge:        time.Hour,
+		ServiceMinimumAge: map[string]time.Duration{"db": 7 * 24 * time.Hour, "app": 0},
+		AllowedRegistries: []string{"registry.example.com"},
+		WebhookImages:     []string{"ghcr.io/org/app:2.0"},
+	}
+	if !got.equal(want) {
+		t.Errorf("policy = %+v, want %+v", got, want)
+	}
+
+	if empty := ReleaseAgePolicyFromProto(nil, nil); !empty.equal(ReleaseAgePolicy{}) || empty.ServiceMinimumAge != nil {
+		t.Errorf("policy of nil = %+v, want the zero policy", empty)
+	}
+}
+
 func TestFirstSeenAt_KeepsTimeUntilDigestChanges(t *testing.T) {
 	c := newTestClient(t)
 
