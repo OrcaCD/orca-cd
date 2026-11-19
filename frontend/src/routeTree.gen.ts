@@ -19,6 +19,7 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminApiTokensRouteImport } from './routes/_authenticated/admin/api-tokens'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
 import { Route as AuthenticatedAdminOidcProvidersRouteImport } from './routes/_authenticated/admin/oidc-providers'
+import { Route as AuthenticatedAdminReleaseAgeRouteImport } from './routes/_authenticated/admin/release-age'
 import { Route as AuthenticatedAdminRolesRouteImport } from './routes/_authenticated/admin/roles'
 import { Route as AuthenticatedAdminSystemInfoRouteImport } from './routes/_authenticated/admin/system-info'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
@@ -36,6 +37,7 @@ import { Route as AuthenticatedApplicationsIdIndexRouteImport } from './routes/_
 import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes/_authenticated/applications/$id/details'
 import { Route as AuthenticatedApplicationsIdHealthRouteImport } from './routes/_authenticated/applications/$id/health'
 import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
+import { Route as AuthenticatedApplicationsIdImageUpdatesRouteImport } from './routes/_authenticated/applications/$id/image-updates'
 import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
 import { Route as AuthenticatedApplicationsIdSettingsEnvironmentRouteImport } from './routes/_authenticated/applications/$id/settings/environment'
@@ -97,6 +99,12 @@ const AuthenticatedAdminOidcProvidersRoute =
   AuthenticatedAdminOidcProvidersRouteImport.update({
     id: '/oidc-providers',
     path: '/oidc-providers',
+    getParentRoute: () => AuthenticatedAdminRoute,
+  } as any)
+const AuthenticatedAdminReleaseAgeRoute =
+  AuthenticatedAdminReleaseAgeRouteImport.update({
+    id: '/release-age',
+    path: '/release-age',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
 const AuthenticatedAdminRolesRoute = AuthenticatedAdminRolesRouteImport.update({
@@ -199,6 +207,12 @@ const AuthenticatedApplicationsIdHistoryRoute =
     path: '/history',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdImageUpdatesRoute =
+  AuthenticatedApplicationsIdImageUpdatesRouteImport.update({
+    id: '/image-updates',
+    path: '/image-updates',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedRepositoriesIdIndexRoute =
   AuthenticatedRepositoriesIdIndexRouteImport.update({
     id: '/',
@@ -269,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/release-age': typeof AuthenticatedAdminReleaseAgeRoute
   '/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -286,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
+  '/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -305,6 +321,7 @@ export interface FileRoutesByTo {
   '/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/admin/release-age': typeof AuthenticatedAdminReleaseAgeRoute
   '/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -320,6 +337,7 @@ export interface FileRoutesByTo {
   '/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
+  '/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -343,6 +361,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/_authenticated/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
+  '/_authenticated/admin/release-age': typeof AuthenticatedAdminReleaseAgeRoute
   '/_authenticated/admin/roles': typeof AuthenticatedAdminRolesRoute
   '/_authenticated/admin/system-info': typeof AuthenticatedAdminSystemInfoRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -360,6 +379,7 @@ export interface FileRoutesById {
   '/_authenticated/applications/$id/details': typeof AuthenticatedApplicationsIdDetailsRoute
   '/_authenticated/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/_authenticated/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
+  '/_authenticated/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/_authenticated/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -383,6 +403,7 @@ export interface FileRouteTypes {
     | '/admin/api-tokens'
     | '/admin/audit-log'
     | '/admin/oidc-providers'
+    | '/admin/release-age'
     | '/admin/roles'
     | '/admin/system-info'
     | '/admin/users'
@@ -400,6 +421,7 @@ export interface FileRouteTypes {
     | '/applications/$id/details'
     | '/applications/$id/health'
     | '/applications/$id/history'
+    | '/applications/$id/image-updates'
     | '/applications/$id/'
     | '/repositories/$id/'
     | '/applications/$id/settings/environment'
@@ -419,6 +441,7 @@ export interface FileRouteTypes {
     | '/admin/api-tokens'
     | '/admin/audit-log'
     | '/admin/oidc-providers'
+    | '/admin/release-age'
     | '/admin/roles'
     | '/admin/system-info'
     | '/admin/users'
@@ -434,6 +457,7 @@ export interface FileRouteTypes {
     | '/applications/$id/details'
     | '/applications/$id/health'
     | '/applications/$id/history'
+    | '/applications/$id/image-updates'
     | '/applications/$id'
     | '/repositories/$id'
     | '/applications/$id/settings/environment'
@@ -456,6 +480,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/api-tokens'
     | '/_authenticated/admin/audit-log'
     | '/_authenticated/admin/oidc-providers'
+    | '/_authenticated/admin/release-age'
     | '/_authenticated/admin/roles'
     | '/_authenticated/admin/system-info'
     | '/_authenticated/admin/users'
@@ -473,6 +498,7 @@ export interface FileRouteTypes {
     | '/_authenticated/applications/$id/details'
     | '/_authenticated/applications/$id/health'
     | '/_authenticated/applications/$id/history'
+    | '/_authenticated/applications/$id/image-updates'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/repositories/$id/'
     | '/_authenticated/applications/$id/settings/environment'
@@ -562,6 +588,13 @@ declare module '@tanstack/react-router' {
       path: '/oidc-providers'
       fullPath: '/admin/oidc-providers'
       preLoaderRoute: typeof AuthenticatedAdminOidcProvidersRouteImport
+      parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/_authenticated/admin/release-age': {
+      id: '/_authenticated/admin/release-age'
+      path: '/release-age'
+      fullPath: '/admin/release-age'
+      preLoaderRoute: typeof AuthenticatedAdminReleaseAgeRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
     '/_authenticated/admin/roles': {
@@ -683,6 +716,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdHistoryRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/image-updates': {
+      id: '/_authenticated/applications/$id/image-updates'
+      path: '/image-updates'
+      fullPath: '/applications/$id/image-updates'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdImageUpdatesRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/repositories/$id/': {
       id: '/_authenticated/repositories/$id/'
       path: '/'
@@ -760,6 +800,7 @@ interface AuthenticatedAdminRouteChildren {
   AuthenticatedAdminApiTokensRoute: typeof AuthenticatedAdminApiTokensRoute
   AuthenticatedAdminAuditLogRoute: typeof AuthenticatedAdminAuditLogRoute
   AuthenticatedAdminOidcProvidersRoute: typeof AuthenticatedAdminOidcProvidersRoute
+  AuthenticatedAdminReleaseAgeRoute: typeof AuthenticatedAdminReleaseAgeRoute
   AuthenticatedAdminRolesRoute: typeof AuthenticatedAdminRolesRoute
   AuthenticatedAdminSystemInfoRoute: typeof AuthenticatedAdminSystemInfoRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -770,6 +811,7 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
   AuthenticatedAdminApiTokensRoute: AuthenticatedAdminApiTokensRoute,
   AuthenticatedAdminAuditLogRoute: AuthenticatedAdminAuditLogRoute,
   AuthenticatedAdminOidcProvidersRoute: AuthenticatedAdminOidcProvidersRoute,
+  AuthenticatedAdminReleaseAgeRoute: AuthenticatedAdminReleaseAgeRoute,
   AuthenticatedAdminRolesRoute: AuthenticatedAdminRolesRoute,
   AuthenticatedAdminSystemInfoRoute: AuthenticatedAdminSystemInfoRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
@@ -802,6 +844,7 @@ interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdDetailsRoute: typeof AuthenticatedApplicationsIdDetailsRoute
   AuthenticatedApplicationsIdHealthRoute: typeof AuthenticatedApplicationsIdHealthRoute
   AuthenticatedApplicationsIdHistoryRoute: typeof AuthenticatedApplicationsIdHistoryRoute
+  AuthenticatedApplicationsIdImageUpdatesRoute: typeof AuthenticatedApplicationsIdImageUpdatesRoute
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
   AuthenticatedApplicationsIdSettingsEnvironmentRoute: typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -818,6 +861,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
       AuthenticatedApplicationsIdHealthRoute,
     AuthenticatedApplicationsIdHistoryRoute:
       AuthenticatedApplicationsIdHistoryRoute,
+    AuthenticatedApplicationsIdImageUpdatesRoute:
+      AuthenticatedApplicationsIdImageUpdatesRoute,
     AuthenticatedApplicationsIdIndexRoute:
       AuthenticatedApplicationsIdIndexRoute,
     AuthenticatedApplicationsIdSettingsEnvironmentRoute:
