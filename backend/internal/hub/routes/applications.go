@@ -581,21 +581,12 @@ var DeployApplicationHandler = restapi.Handler(huma.Operation{
 		return nil, internalError()
 	}
 
-	requestID := uuid.NewString()
 	actorUserID, actorName := eventActor(c)
-	if _, eventErr := applicationevents.Start(ctx, applicationevents.Params{
-		ApplicationID: application.Id,
-		RequestID:     &requestID,
-		Type:          models.ApplicationEventDeployment,
-		Source:        models.ApplicationEventSourceManual,
-		ActorUserID:   actorUserID,
-		ActorName:     actorName,
-	}); eventErr != nil {
-		hubApplications.Log.Error().Err(eventErr).Str("applicationId", application.Id).Msg("failed to record manual deployment event")
-	}
-
-	err = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &application, application.ComposeFile.String(), requestID)
-
+	err = hubApplications.Deploy(ctx, &application, hubApplications.SyncOrigin{
+		Source:      models.ApplicationEventSourceManual,
+		ActorUserID: actorUserID,
+		ActorName:   actorName,
+	})
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
 			return nil, huma.Error409Conflict("agent is offline; cannot deploy application")
@@ -603,7 +594,6 @@ var DeployApplicationHandler = restapi.Handler(huma.Operation{
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to trigger application deploy: %v", err))
 	}
 
-	sse.PublishUpdate(sse.TopicApplications.For(id))
 	return restapi.Message("deployment started"), nil
 })
 

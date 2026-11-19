@@ -138,6 +138,35 @@ func TestRegisterRoutes_StreamingRoutesAreExemptFromTimeout(t *testing.T) {
 	}
 }
 
+func TestRegisterRoutes_MCPEndpoint(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        Config
+		wantStatus int
+	}{
+		{"enabled", Config{}, http.StatusUnauthorized},
+		{"disabled", Config{DisableMCP: true}, http.StatusNotFound},
+		{"demo", Config{Demo: true}, http.StatusNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.cfg.AppURL = "http://localhost:8080"
+			tt.cfg.DisableUI = true
+			router := gin.New()
+			if err := RegisterRoutes(router, tt.cfg); err != nil {
+				t.Fatalf("Failed to register routes: %v", err)
+			}
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader("{}")))
+			if w.Code != tt.wantStatus {
+				t.Errorf("expected %d, got %d", tt.wantStatus, w.Code)
+			}
+		})
+	}
+}
+
 func TestRegisterRoutes_OIDCEndpointsRateLimited(t *testing.T) {
 	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	if err != nil {
