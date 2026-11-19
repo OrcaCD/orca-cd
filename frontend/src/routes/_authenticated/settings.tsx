@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SidebarLayout, sidebarMenuButtonClass } from "@/components/sidebar-layout";
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Key, User } from "lucide-react";
+import { Key, KeyRound, User } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { BreadcrumbItem, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -27,6 +27,11 @@ const settingsPages = [
 		title: () => m.security(),
 		icon: Key,
 		path: "/settings/security",
+	},
+	{
+		title: () => m.apiTokens(),
+		icon: KeyRound,
+		path: "/settings/api-tokens",
 	},
 ];
 
