@@ -19,6 +19,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
@@ -42,10 +43,14 @@ func InitPasskeys(appURL string) error {
 
 type passkeyRegistrationRequest struct {
 	Name            string `json:"name" maxLength:"64" doc:"The name of the first admin, at least 3 characters. Only used with setupCode."`
-	Email           string `json:"email" format:"email" doc:"The email of the first admin. Only used with setupCode."`
+	Email           string `json:"email" doc:"The email of the first admin. Only used with setupCode."`
 	SetupCode       string `json:"setupCode" maxLength:"128" doc:"The setup code from the hub log, to create the first admin"`
 	EnrollmentToken string `json:"enrollmentToken" maxLength:"128" doc:"The enrollment code an admin issued for an account"`
 	PasskeyName     string `json:"passkeyName" maxLength:"64"`
+}
+
+type passkeyRegistrationEmail struct {
+	Email string `binding:"omitempty,email"`
 }
 
 type ownPasskeyRequest struct {
@@ -135,6 +140,11 @@ var BeginPasskeyRegistrationHandler = restapi.Handler(huma.Operation{
 }, func(ctx context.Context, input *struct{ Body passkeyRegistrationRequest }) (*passkeyCreationOptionsOutput, error) {
 	c := restapi.GinContext(ctx)
 	req := input.Body
+	// Checked here instead of with format:"email", which would reject the
+	// empty email of a registration with an enrollment token.
+	if err := binding.Validator.ValidateStruct(passkeyRegistrationEmail{Email: req.Email}); err != nil {
+		return nil, huma.Error400BadRequest("invalid registration request")
+	}
 	ceremony := passkeys.Ceremony{Purpose: "register", Name: strings.TrimSpace(req.PasskeyName)}
 	var user passkeys.User
 	if req.EnrollmentToken != "" {

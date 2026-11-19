@@ -216,13 +216,13 @@ func documentAuthErrors(oapi *huma.OpenAPI, op *huma.Operation) {
 	if len(op.Security) == 0 || reflect.DeepEqual(op.Security, Public) {
 		return
 	}
-	errors := map[int]string{http.StatusUnauthorized: "Missing, invalid or expired authentication"}
+	authErrors := map[int]string{http.StatusUnauthorized: "Missing, invalid or expired authentication"}
 	if reflect.DeepEqual(op.Security, SessionOnly) {
-		errors[http.StatusForbidden] = "Forbidden, also for requests with an API token"
+		authErrors[http.StatusForbidden] = "Forbidden, also for requests with an API token"
 	}
 
 	schema := oapi.Components.Schemas.Schema(reflect.TypeFor[Error](), true, "Error")
-	for status, description := range errors {
+	for status, description := range authErrors {
 		if _, ok := op.Responses[strconv.Itoa(status)]; ok {
 			continue
 		}

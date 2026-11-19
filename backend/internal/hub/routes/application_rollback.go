@@ -29,7 +29,7 @@ var RollbackApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionRollback),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID           string `path:"id" doc:"The ID of the application"`
 	DeploymentID string `path:"deploymentId" doc:"The ID of the successful deployment to roll back to"`
@@ -96,7 +96,7 @@ var ResumeApplicationAutoSyncHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionRollback),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound},
+	Errors:   []int{http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	c := restapi.GinContext(ctx)
 	id := input.ID
@@ -131,11 +131,11 @@ const (
 // updateRollbackSettingsRequest replaces all rollback settings, so every
 // field is required: an omitted one would be reset.
 type updateRollbackSettingsRequest struct {
-	Enabled              *bool `json:"enabled" required:"true" doc:"Whether a failed deployment is rolled back automatically"`
-	OnDeployFailure      *bool `json:"onDeployFailure" required:"true" doc:"Roll back when the deployment fails"`
-	OnUnhealthy          *bool `json:"onUnhealthy" required:"true" doc:"Roll back when the deployment doesn't become healthy in time"`
+	Enabled              bool  `json:"enabled" required:"true" doc:"Whether a failed deployment is rolled back automatically"`
+	OnDeployFailure      bool  `json:"onDeployFailure" required:"true" doc:"Roll back when the deployment fails"`
+	OnUnhealthy          bool  `json:"onUnhealthy" required:"true" doc:"Roll back when the deployment doesn't become healthy in time"`
 	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds" required:"true" doc:"How long a deployment may take to become healthy, between 30 and 3600"`
-	PauseAutoSync        *bool `json:"pauseAutoSync" required:"true" doc:"Pause automatic syncs after a rollback, so they don't undo it"`
+	PauseAutoSync        bool  `json:"pauseAutoSync" required:"true" doc:"Pause automatic syncs after a rollback, so they don't undo it"`
 }
 
 // UpdateRollbackSettingsHandler configures the automatic rollback of an
@@ -148,7 +148,7 @@ var UpdateRollbackSettingsHandler = restapi.Handler(huma.Operation{
 	Description: "Replaces all settings of the automatic rollback. " + requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:        []string{tagApplications},
 	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusBadRequest, http.StatusNotFound},
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateRollbackSettingsRequest
@@ -164,11 +164,11 @@ var UpdateRollbackSettingsHandler = restapi.Handler(huma.Operation{
 		Where("id = ?", id).
 		Select("RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
 		Updates(ctx, models.Application{
-			RollbackEnabled:              *req.Enabled,
-			RollbackOnDeployFailure:      *req.OnDeployFailure,
-			RollbackOnUnhealthy:          *req.OnUnhealthy,
+			RollbackEnabled:              req.Enabled,
+			RollbackOnDeployFailure:      req.OnDeployFailure,
+			RollbackOnUnhealthy:          req.OnUnhealthy,
 			RollbackHealthTimeoutSeconds: req.HealthTimeoutSeconds,
-			RollbackPauseAutoSync:        *req.PauseAutoSync,
+			RollbackPauseAutoSync:        req.PauseAutoSync,
 		})
 	if err != nil {
 		return nil, internalError()

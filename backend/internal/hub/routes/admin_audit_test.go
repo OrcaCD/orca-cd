@@ -239,13 +239,15 @@ func TestAdminListAuditLogsHandler_InvalidLimit(t *testing.T) {
 	router := gin.New()
 	router.GET("/api/v1/admin/audit-logs", AdminListAuditLogsHandler)
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?limit=abc", nil)
+	for _, query := range []string{"limit=abc", "limit=0", "limit=-1", "limit=-5", "offset=-1"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?"+query, nil)
 
-	router.ServeHTTP(w, req)
+		router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", query, w.Code)
+		}
 	}
 }
 

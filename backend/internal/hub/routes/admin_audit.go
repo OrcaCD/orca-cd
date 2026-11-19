@@ -53,17 +53,18 @@ var AdminListAuditLogsHandler = restapi.Handler(huma.Operation{
 	Description: "Lists the audit log, newest first. " + requiresAdmin,
 	Tags:        []string{tagAdmin},
 	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
 }, func(ctx context.Context, input *listAuditLogsInput) (*struct{ Body auditLogsResponse }, error) {
 	limit := defaultAuditLogLimit
 	if l := input.Limit; l != "" {
-		if v, err := strconv.Atoi(l); err == nil {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
 			limit = v
 		}
 	}
 
 	offset := 0
 	if o := input.Offset; o != "" {
-		if v, err := strconv.Atoi(o); err == nil {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
 			offset = v
 		}
 	}

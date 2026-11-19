@@ -403,6 +403,8 @@ func TestPasskeysRequireSetupAuthorization(t *testing.T) {
 		{"name": "Admin", "email": "admin@example.com"},
 		{"name": "Admin", "email": "admin@example.com", "setupCode": "wrong"},
 		{"enrollmentToken": "unknown"},
+		// The email is only used with a setup code, so an empty one is fine
+		{"enrollmentToken": "unknown", "email": ""},
 	} {
 		w := passkeyRequest(t, r, "/begin", body, nil)
 		if w.Code != http.StatusForbidden || hasAuthCookie(w) {
@@ -412,6 +414,10 @@ func TestPasskeysRequireSetupAuthorization(t *testing.T) {
 	invalid := passkeyRequest(t, r, "/begin", map[string]any{"name": "äö", "email": "admin@example.com", "setupCode": testSetupCode}, nil)
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatal("accepted a name shorter than three characters")
+	}
+	invalid = passkeyRequest(t, r, "/begin", map[string]any{"name": "Admin", "email": "not-an-email", "setupCode": testSetupCode}, nil)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatal("accepted an invalid email")
 	}
 	_ = registerTestPasskey(t, r)
 	w := passkeyRequest(t, r, "/begin", map[string]any{"name": "Other", "email": "other@example.com", "setupCode": testSetupCode}, nil)

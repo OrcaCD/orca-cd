@@ -286,6 +286,7 @@ func TestUpdateRollbackSettingsHandler_Rejects(t *testing.T) {
 		{app.Id, settings(3601), http.StatusBadRequest},
 		{app.Id, `{"enabled":true,"healthTimeoutSeconds":300}`, http.StatusBadRequest},
 		{app.Id, `{"enabled":false,"onDeployFailure":false,"onUnhealthy":false,"healthTimeoutSeconds":300}`, http.StatusBadRequest},
+		{app.Id, `{"enabled":null,"onDeployFailure":true,"onUnhealthy":true,"healthTimeoutSeconds":300,"pauseAutoSync":false}`, http.StatusBadRequest},
 		{app.Id, `not json`, http.StatusBadRequest},
 		{"missing", settings(300), http.StatusNotFound},
 	} {

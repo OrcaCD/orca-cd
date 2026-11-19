@@ -105,7 +105,7 @@ var ListApplicationEnvHandler = restapi.Handler(huma.Operation{
 		envServerErrorsDoc + " " + requires(models.ResourceApplication, models.ActionRead),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusUnprocessableEntity},
+	Errors:   []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden},
 }, func(ctx context.Context, input *idInput) (*envListOutput, error) {
 	if DemoMode {
 		return listDemoApplicationEnv(ctx, input.ID)
@@ -148,7 +148,7 @@ var UpdateApplicationEnvHandler = restapi.Handler(huma.Operation{
 		envServerErrorsDoc + " Needs the `application:update` and `application:deploy` permissions.",
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusForbidden},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateEnvRequest
@@ -224,15 +224,14 @@ type parseEnvResponse struct {
 const maxParseEnvBodyBytes = 6*envrules.MaxFileBytes + 1024
 
 var ParseEnvHandler = limitParseEnvBody(restapi.Handler(huma.Operation{
-	OperationID:  "parse-env-file",
-	Method:       http.MethodPost,
-	Path:         "/env/parse",
-	Summary:      "Parse an env file",
-	Description:  "Parses the content of an env file with the Docker Compose syntax, e.g. to import it. Nothing is saved.",
-	Tags:         []string{tagApplications},
-	Security:     restapi.Authenticated,
-	Errors:       []int{http.StatusBadRequest},
-	MaxBodyBytes: maxParseEnvBodyBytes,
+	OperationID: "parse-env-file",
+	Method:      http.MethodPost,
+	Path:        "/env/parse",
+	Summary:     "Parse an env file",
+	Description: "Parses the content of an env file with the Docker Compose syntax, e.g. to import it. Nothing is saved.",
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusBadRequest},
 }, func(_ context.Context, input *struct{ Body parseEnvPayload }) (*struct{ Body parseEnvResponse }, error) {
 	req := input.Body
 	if len(req.Content) > envrules.MaxFileBytes {
