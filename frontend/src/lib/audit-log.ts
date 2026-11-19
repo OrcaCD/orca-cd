@@ -5,7 +5,7 @@ export interface AuditLog {
 	createdAt: string;
 	updatedAt: string;
 	userId: string;
-	user: UserDetail;
+	user: UserDetail | null;
 	eventType: EventType;
 	targetType: TargetType;
 	targetId: string;
