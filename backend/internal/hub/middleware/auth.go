@@ -26,7 +26,7 @@ const apiTokenUsedInterval = time.Minute
 // lets such requests through without checking where they come from.
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if token, ok := auth.GetBearerToken(c); ok {
+		if token, ok := bearerAPIToken(c); ok {
 			authenticateAPIToken(c, token)
 			return
 		}
@@ -85,6 +85,17 @@ func RequireAuth() gin.HandlerFunc {
 	}
 }
 
+// bearerAPIToken returns the API token of an "Authorization: Bearer" header.
+// Other bearer tokens, like one a reverse proxy adds, are not API tokens and
+// don't keep the session cookie from being used.
+func bearerAPIToken(c *gin.Context) (string, bool) {
+	token, ok := auth.GetBearerToken(c)
+	if !ok || !apitoken.IsWellFormed(token) {
+		return "", false
+	}
+	return token, true
+}
+
 func authenticateAPIToken(c *gin.Context, plain string) {
 	reject := func(reason string) {
 		if reason != "" {
@@ -96,11 +107,6 @@ func authenticateAPIToken(c *gin.Context, plain string) {
 	internalError := func() {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		c.Abort()
-	}
-
-	if !apitoken.IsWellFormed(plain) {
-		reject("invalid_api_token")
-		return
 	}
 
 	ctx := c.Request.Context()
@@ -123,6 +129,10 @@ func authenticateAPIToken(c *gin.Context, plain string) {
 
 	user, err := gorm.G[models.User](db.DB).Where("id = ?", token.UserId).First(ctx)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			reject("unknown_user")
+			return
+		}
 		internalError()
 		return
 	}

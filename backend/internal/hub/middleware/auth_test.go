@@ -347,6 +347,7 @@ func TestRequireAuth_APITokenRejected(t *testing.T) {
 	user := &models.User{Id: "user-123", Name: "CI", Email: "ci@example.com"}
 	_, _ = setupAPITokenAuthTest(t, user)
 	expired, _ := createAPIToken(t, user.Id, time.Now().Add(-time.Minute))
+	ownerless, _ := createAPIToken(t, "deleted-user", time.Now().Add(time.Hour))
 
 	router := gin.New()
 	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
@@ -358,10 +359,10 @@ func TestRequireAuth_APITokenRejected(t *testing.T) {
 		token  string
 		reason string
 	}{
-		{"malformed", "orca_short", "invalid_api_token"},
-		{"jwt", generateToken(t, user), "invalid_api_token"},
+		{"malformed", "orca_short", ""},
 		{"unknown", apitoken.Generate().Plain, "unknown_api_token"},
 		{"expired", expired, ""},
+		{"owner deleted", ownerless, "unknown_user"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -374,6 +375,51 @@ func TestRequireAuth_APITokenRejected(t *testing.T) {
 			}
 			if tt.reason != "" && !events.Has(seclog.TokenRejected, tt.reason) {
 				t.Errorf("expected a token_rejected security event with reason %q", tt.reason)
+			}
+		})
+	}
+}
+
+func TestRequireAuth_OtherBearerTokenUsesCookie(t *testing.T) {
+	user := &models.User{Id: "user-123", Name: "CI", Email: "ci@example.com"}
+	_, _ = setupAPITokenAuthTest(t, user)
+
+	router := gin.New()
+	router.GET("/protected", RequireAuth(), func(c *gin.Context) {
+		if _, ok := auth.GetAPIToken(c); ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "unexpected api token"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer token-of-a-proxy")
+	req.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: generateToken(t, user)}) //nolint:gosec
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected the session cookie to be used, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRequireAuth_APITokenDatabaseErrors(t *testing.T) {
+	for name, table := range map[string]any{"token lookup": &models.APIToken{}, "permissions": &models.UserRole{}} {
+		t.Run(name, func(t *testing.T) {
+			user := &models.User{Id: "user-123", Name: "CI", Email: "ci@example.com"}
+			plain, _ := setupAPITokenAuthTest(t, user)
+			if err := db.DB.Migrator().DropTable(table); err != nil {
+				t.Fatalf("failed to drop table: %v", err)
+			}
+
+			router := gin.New()
+			router.GET("/protected", RequireAuth(), func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{})
+			})
+
+			if w := serveWithAPIToken(router, http.MethodGet, "/protected", plain); w.Code != http.StatusInternalServerError {
+				t.Errorf("expected 500, got %d: %s", w.Code, w.Body.String())
 			}
 		})
 	}
@@ -456,7 +502,7 @@ func TestRequireAuth_APITokenMarksUse(t *testing.T) {
 	countFirstUses := func() int64 {
 		t.Helper()
 		count, err := gorm.G[models.AuditLog](db.DB).
-			Where("event_type = ? AND target_type = ? AND target_id = ? AND user_id = ?", "first-used-api-token", "api-token", token.Id, user.Id).
+			Where("event_type = ? AND target_type = ? AND target_id = ? AND user_id = ? AND api_token_id = ?", "first-used-api-token", "api-token", token.Id, user.Id, token.Id).
 			Count(t.Context(), "*")
 		if err != nil {
 			t.Fatalf("failed to count audit logs: %v", err)

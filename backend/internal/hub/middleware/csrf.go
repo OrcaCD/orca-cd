@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/OrcaCD/orca-cd/internal/hub/apitoken"
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/gin-gonic/gin"
 )
@@ -39,7 +38,7 @@ func ValidateOrigin(appURL string) gin.HandlerFunc {
 		// browser never adds to a cross-site request on its own. RequireAuth then
 		// ignores the session cookie, so the request can't act with it. Requests
 		// with the cookie are checked anyway.
-		if token, ok := auth.GetBearerToken(c); ok && apitoken.IsWellFormed(token) {
+		if _, ok := bearerAPIToken(c); ok {
 			if _, err := auth.GetAuthCookie(c); err != nil {
 				c.Next()
 				return
