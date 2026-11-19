@@ -3,13 +3,12 @@ package db
 import (
 	"context"
 	"embed"
+	"errors"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/sqlite3"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -165,24 +164,35 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 }
 
 func runMigrations(db *gorm.DB) error {
+	ctx := context.Background()
+
+	latest, err := CurrentSchemaVersion()
+	if err != nil {
+		return err
+	}
+
+	if err := storeMigrationFiles(ctx, db, latest); err != nil {
+		return err
+	}
+
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err
 	}
 
-	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
+	m, err := newMigrator(sqlDB, migrationFiles, "migrations")
 	if err != nil {
 		return err
 	}
 
-	src, err := iofs.New(migrationFiles, "migrations")
-	if err != nil {
+	version, dirty, err := m.Version()
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 		return err
 	}
-
-	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
-	if err != nil {
-		return err
+	if err == nil && version > latest {
+		if err := rollBackNewerMigrations(ctx, db, version, dirty, latest); err != nil {
+			return err
+		}
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {

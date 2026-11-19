@@ -45,6 +45,7 @@ type Config struct {
 	Demo                  bool
 	DisableUI             bool
 	SkipAgentVersionCheck bool
+	AllowDowngrade        bool
 	CACertFile            string
 }
 
@@ -58,6 +59,7 @@ func DefaultConfig() (Config, error) {
 	demo := utils.EnvBool("DEMO")
 	disableUI := utils.EnvBool("DISABLE_UI")
 	skipAgentVersionCheck := utils.EnvBool("SKIP_AGENT_VERSION_CHECK")
+	allowDowngrade := utils.EnvBool("ALLOW_DOWNGRADE")
 	if port == "" {
 		port = "8080"
 	}
@@ -105,6 +107,7 @@ func DefaultConfig() (Config, error) {
 		Demo:                  demo,
 		DisableUI:             disableUI,
 		SkipAgentVersionCheck: skipAgentVersionCheck,
+		AllowDowngrade:        allowDowngrade,
 		CACertFile:            os.Getenv("CA_CERT_FILE"),
 	}, nil
 }
@@ -151,6 +154,7 @@ func Run(cfg Config) error {
 		return err
 	}
 
+	db.AllowDowngrade = cfg.AllowDowngrade
 	dbLogger := Log.With().Str("component", "gorm").Logger()
 	err := db.Connect(dbLogger, cfg.LogLevel, cfg.Demo)
 	if err != nil {

@@ -171,15 +171,7 @@ func TestRunMigrations_UsersTableSchema(t *testing.T) {
 
 func newTestMigrator(t *testing.T, sqlDB *sql.DB) *migrate.Migrate {
 	t.Helper()
-	driver, err := sqlite3.WithInstance(sqlDB, &sqlite3.Config{})
-	if err != nil {
-		t.Fatalf("failed to create migrate driver: %v", err)
-	}
-	src, err := iofs.New(migrationFiles, "migrations")
-	if err != nil {
-		t.Fatalf("failed to open migration source: %v", err)
-	}
-	m, err := migrate.NewWithInstance("iofs", src, "sqlite3", driver)
+	m, err := newMigrator(sqlDB, migrationFiles, "migrations")
 	if err != nil {
 		t.Fatalf("failed to create migrator: %v", err)
 	}
