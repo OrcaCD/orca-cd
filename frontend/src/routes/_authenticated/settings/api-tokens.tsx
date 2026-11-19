@@ -35,7 +35,6 @@ import {
 import { usePermissions } from "@/lib/permissions";
 import { actionLabels, resourceLabels } from "@/lib/role-draft";
 import { m } from "@/lib/paraglide/messages";
-import { getLocale } from "@/lib/paraglide/runtime";
 
 export const Route = createFileRoute("/_authenticated/settings/api-tokens")({
 	component: ApiTokensSettingsPage,
@@ -143,7 +142,7 @@ function ApiTokenRow({ token, onRevoke }: { token: ApiToken; onRevoke: () => voi
 				{isExpired ? (
 					<Badge variant="destructive">{m.apiTokenExpired()}</Badge>
 				) : (
-					expiresAt.toLocaleDateString(getLocale())
+					<RelativeTime value={token.expiresAt} future />
 				)}
 			</TableCell>
 			<TableCell>
