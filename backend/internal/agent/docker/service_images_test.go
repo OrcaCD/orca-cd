@@ -19,7 +19,7 @@ func TestPreferLocalImageIDs(t *testing.T) {
 		if id == "sha256:retained" || id == "nginx@sha256:"+digestOther {
 			return nil, nil
 		}
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pins := map[string]string{
 		"local":   "local/app@sha256:" + digestAaa,
@@ -61,7 +61,7 @@ func stubServiceImageLookups(t *testing.T, containers []containerapi.Summary, di
 	getLocalDigests = func(_ context.Context, _ client.APIClient, imageID string) ([]string, error) {
 		repoDigests, ok := digests[imageID]
 		if !ok {
-			return nil, errors.New("no such image")
+			return nil, errNoSuchImage
 		}
 		return repoDigests, nil
 	}

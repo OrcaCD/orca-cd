@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -107,7 +106,7 @@ func TestDeploy_PersistsResolvedRollbackImages(t *testing.T) {
 				if ref == tc.available {
 					return nil, nil
 				}
-				return nil, errors.New("no such image")
+				return nil, errNoSuchImage
 			}
 			base := "services:\n  app:\n    image: local/app:latest\n    pull_policy: always\n"
 			loadProject = func(_ context.Context, _ api.Compose, _ api.ProjectLoadOptions) (*composetypes.Project, error) {
