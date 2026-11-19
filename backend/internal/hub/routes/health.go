@@ -1,11 +1,31 @@
 package routes
 
 import (
+	"context"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 )
 
-func HealthHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+type HealthOutput struct {
+	Body struct {
+		Status string `json:"status" required:"true" enum:"ok" doc:"Always ok while the hub is running"`
+	}
+}
+
+func RegisterHealth(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "get-health",
+		Method:      http.MethodGet,
+		Path:        "/health",
+		Summary:     "Check that the hub is running",
+		Description: "Needs no authentication, e.g. for container health checks.",
+		Tags:        []string{"System"},
+	}, Health)
+}
+
+func Health(_ context.Context, _ *struct{}) (*HealthOutput, error) {
+	out := &HealthOutput{}
+	out.Body.Status = "ok"
+	return out, nil
 }
