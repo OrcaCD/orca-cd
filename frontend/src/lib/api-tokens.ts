@@ -1,6 +1,8 @@
 import { mutate } from "swr";
 import { API_BASE, fetcher } from "./api";
 import type { Permissions } from "./permissions";
+import { actionLabels, resourceLabels } from "./role-draft";
+import { m } from "@/lib/paraglide/messages";
 import {
 	permissionActions,
 	permissionResources,
@@ -20,6 +22,14 @@ export interface ApiToken {
 	expiresAt: string;
 	lastUsedAt: string | null;
 	createdAt: string;
+	// Only set in the admin list
+	owner?: ApiTokenOwner;
+}
+
+export interface ApiTokenOwner {
+	id: string;
+	name: string;
+	email: string;
 }
 
 export interface CreatedApiToken extends ApiToken {
@@ -34,16 +44,28 @@ export interface CreateApiTokenRequest {
 }
 
 export const apiTokensPath = "/api-tokens";
+export const adminApiTokensPath = "/admin/api-tokens";
+
+// Token changes don't send SSE events, so the lists are reloaded by hand.
+async function revalidateApiTokens() {
+	await Promise.all([mutate(API_BASE + apiTokensPath), mutate(API_BASE + adminApiTokensPath)]);
+}
 
 export async function createApiToken(data: CreateApiTokenRequest): Promise<CreatedApiToken> {
 	const token = await fetcher<CreatedApiToken>(apiTokensPath, "POST", data);
-	await mutate(API_BASE + apiTokensPath);
+	await revalidateApiTokens();
 	return token;
 }
 
 export async function revokeApiToken(id: string): Promise<void> {
 	await fetcher(`${apiTokensPath}/${id}`, "DELETE");
-	await mutate(API_BASE + apiTokensPath);
+	await revalidateApiTokens();
+}
+
+// Revokes the token of any user
+export async function adminRevokeApiToken(id: string): Promise<void> {
+	await fetcher(`${adminApiTokensPath}/${id}`, "DELETE");
+	await revalidateApiTokens();
 }
 
 export function apiTokenScope(
@@ -51,6 +73,14 @@ export function apiTokenScope(
 	action: PermissionAction,
 ): ApiTokenScope {
 	return `${resource}:${action}`;
+}
+
+export function apiTokenScopeLabel(scope: ApiTokenScope): string {
+	const permission = parseApiTokenScope(scope);
+	if (!permission) {
+		return m.apiTokenScopeAdmin();
+	}
+	return `${resourceLabels[permission.resource]()}: ${actionLabels[permission.action]()}`;
 }
 
 export function parseApiTokenScope(

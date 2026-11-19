@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SidebarLayout, sidebarMenuButtonClass } from "@/components/sidebar-layout";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { IdCard, Info, Logs, ShieldUser, Users } from "lucide-react";
+import { IdCard, Info, KeyRound, Logs, ShieldUser, Users } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { BreadcrumbItem, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -42,6 +42,11 @@ const adminPages = [
 		title: () => m.adminRoles(),
 		icon: ShieldUser,
 		path: "/admin/roles",
+	},
+	{
+		title: () => m.apiTokens(),
+		icon: KeyRound,
+		path: "/admin/api-tokens",
 	},
 	{
 		title: () => m.adminAuditLog(),
