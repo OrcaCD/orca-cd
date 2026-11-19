@@ -9,7 +9,7 @@ import (
 
 type OrcaOutput struct {
 	Body struct {
-		Message string `json:"message"`
+		Message string `json:"message" required:"true"`
 	}
 }
 

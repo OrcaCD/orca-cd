@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
@@ -38,5 +39,16 @@ func TestHealth(t *testing.T) {
 	}
 	if body["status"] != "ok" || len(body) != 1 {
 		t.Errorf(`expected {"status": "ok"}, got %v`, body)
+	}
+}
+
+func TestRegisterHealth_SpecRequiresStatus(t *testing.T) {
+	api := restapi.New(gin.New(), gin.New().Group("/api/v1"))
+	RegisterHealth(api)
+
+	ref := api.OpenAPI().Paths["/health"].Get.Responses["200"].Content["application/json"].Schema.Ref
+	schema := api.OpenAPI().Components.Schemas.SchemaFromRef(ref)
+	if !slices.Contains(schema.Required, "status") {
+		t.Errorf("expected status to be required, got %v", schema.Required)
 	}
 }

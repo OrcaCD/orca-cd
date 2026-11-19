@@ -9,7 +9,7 @@ import (
 
 type HealthOutput struct {
 	Body struct {
-		Status string `json:"status" enum:"ok" doc:"Always ok while the hub is running"`
+		Status string `json:"status" required:"true" enum:"ok" doc:"Always ok while the hub is running"`
 	}
 }
 
