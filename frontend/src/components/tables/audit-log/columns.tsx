@@ -4,6 +4,8 @@ import { DataTableColumnHeader } from "../data-table-column-header";
 import { m } from "@/lib/paraglide/messages";
 import { getLocale } from "@/lib/paraglide/runtime";
 import { Badge } from "@/components/ui/badge";
+import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
+import { KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { EventTypeBadge } from "@/components/badges/audit-status-badge";
 import { dataTableFeatures } from "../table-features";
@@ -48,6 +50,20 @@ export const columns: ColumnDef<typeof dataTableFeatures, AuditLog>[] = [
 							<Badge variant="outline" className="ml-2">
 								{m.you()}
 							</Badge>
+						)}
+						{row.original.apiTokenId && (
+							<InfoTooltip>
+								<InfoTooltipTrigger
+									render={<Badge variant="secondary" className="ml-2 cursor-help" />}
+									nativeButton={false}
+								>
+									<KeyRound />
+									{m.auditLogViaApiToken()}
+								</InfoTooltipTrigger>
+								<InfoTooltipContent>
+									{m.auditLogApiTokenId({ id: row.original.apiTokenId })}
+								</InfoTooltipContent>
+							</InfoTooltip>
 						)}
 					</div>
 					<span className="text-xs text-muted-foreground">{user.email}</span>
