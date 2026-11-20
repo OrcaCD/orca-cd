@@ -171,7 +171,7 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 // like deleting a resource.
 type MessageOutput struct {
 	Body struct {
-		Message string `json:"message" required:"true" example:"agent deleted"`
+		Message string `json:"message" required:"true"`
 	}
 }
 
