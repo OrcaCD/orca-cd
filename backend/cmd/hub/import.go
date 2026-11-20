@@ -9,6 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -64,6 +65,10 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 	if !confirmed {
 		_, _ = fmt.Fprintln(out, lipgloss.NewStyle().Foreground(lipgloss.Yellow).Render("Import cancelled"))
 		return nil
+	}
+
+	if err := crypto.Init(cfg.AppSecret); err != nil {
+		return fmt.Errorf("failed to initialize encryption: %w", err)
 	}
 
 	dbLogger := zerolog.New(io.Discard)
