@@ -45,6 +45,9 @@ type apiTokenResponse struct {
 	ExpiresAt  string                 `json:"expiresAt"`
 	LastUsedAt *string                `json:"lastUsedAt"`
 	CreatedAt  string                 `json:"createdAt"`
+	// OAuth tells whether an MCP client got the token by asking the user. Its
+	// prefix changes whenever the client refreshes it.
+	OAuth bool `json:"oauth"`
 	// Owner is only set in the admin list.
 	Owner *apiTokenOwnerResponse `json:"owner,omitempty"`
 }
@@ -292,8 +295,9 @@ func toAPITokenResponse(token *models.APIToken) apiTokenResponse {
 		Name:       token.Name,
 		Prefix:     token.Prefix,
 		Scopes:     scopes,
-		ExpiresAt:  token.ExpiresAt.Format(time.RFC3339),
+		ExpiresAt:  token.GrantExpiresAt().Format(time.RFC3339),
 		LastUsedAt: lastUsedAt,
 		CreatedAt:  token.CreatedAt.Format(time.RFC3339),
+		OAuth:      token.IsOAuth(),
 	}
 }

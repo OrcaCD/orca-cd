@@ -15,6 +15,7 @@ import { Route as RegisterRouteImport } from './routes/register'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminApiTokensRouteImport } from './routes/_authenticated/admin/api-tokens'
 import { Route as AuthenticatedAdminAuditLogRouteImport } from './routes/_authenticated/admin/audit-log'
@@ -75,6 +76,11 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
+  id: '/oauth/authorize',
+  path: '/oauth/authorize',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
   '/admin/oidc-providers': typeof AuthenticatedAdminOidcProvidersRoute
@@ -301,6 +308,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/': typeof AuthenticatedIndexRoute
   '/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
@@ -339,6 +347,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRouteWithChildren
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/admin/api-tokens': typeof AuthenticatedAdminApiTokensRoute
   '/_authenticated/admin/audit-log': typeof AuthenticatedAdminAuditLogRoute
@@ -380,6 +389,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/admin'
     | '/settings'
+    | '/oauth/authorize'
     | '/admin/api-tokens'
     | '/admin/audit-log'
     | '/admin/oidc-providers'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/register'
+    | '/oauth/authorize'
     | '/'
     | '/admin/api-tokens'
     | '/admin/audit-log'
@@ -452,6 +463,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/admin'
     | '/_authenticated/settings'
+    | '/oauth/authorize'
     | '/_authenticated/'
     | '/_authenticated/admin/api-tokens'
     | '/_authenticated/admin/audit-log'
@@ -490,6 +502,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  OauthAuthorizeRoute: typeof OauthAuthorizeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -535,6 +548,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/oauth/authorize': {
+      id: '/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof OauthAuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
@@ -898,6 +918,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  OauthAuthorizeRoute: OauthAuthorizeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

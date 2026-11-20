@@ -20,7 +20,8 @@ export interface RouterContext {
 function RootComponent() {
 	const pathname = useRouterState({ select: (state) => state.location.pathname });
 	const { auth } = useAuth();
-	const showNavbar = auth.isAuthenticated && pathname !== "/login" && pathname !== "/register";
+	const showNavbar =
+		auth.isAuthenticated && !["/login", "/register", "/oauth/authorize"].includes(pathname);
 
 	return (
 		<>

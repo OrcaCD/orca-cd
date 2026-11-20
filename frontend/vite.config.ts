@@ -40,6 +40,11 @@ export default defineConfig(({ mode }) => ({
 					target: "http://localhost:8080",
 					changeOrigin: true,
 				},
+				// The OAuth metadata MCP clients look for
+				"/.well-known/oauth-": {
+					target: "http://localhost:8080",
+					changeOrigin: true,
+				},
 			},
 		}),
 	},
