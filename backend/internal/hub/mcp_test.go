@@ -23,25 +23,7 @@ import (
 // The scopes of an API token decide which tools the MCP endpoint offers, even
 // when the user's role allows more.
 func TestMCPEndpoint_ToolsFollowTokenScopes(t *testing.T) {
-	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{Logger: gormlogger.Discard})
-	if err != nil {
-		t.Fatalf("failed to open test db: %v", err)
-	}
-	if err := testDB.AutoMigrate(&models.User{}, &models.APIToken{}, &models.AuditLog{}); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-	if err := rbac.MigrateForTest(testDB); err != nil {
-		t.Fatalf("failed to migrate roles: %v", err)
-	}
-	sqlDB, err := testDB.DB()
-	if err != nil {
-		t.Fatalf("failed to get sql db: %v", err)
-	}
-	db.DB = testDB
-	t.Cleanup(func() {
-		_ = sqlDB.Close()
-		db.DB = nil
-	})
+	testDB := setupMCPTestDB(t)
 
 	user := models.User{Id: "user-1", Name: "CI", Email: "ci@example.com"}
 	if err := gorm.G[models.User](testDB).Create(t.Context(), &user); err != nil {
@@ -69,16 +51,53 @@ func TestMCPEndpoint_ToolsFollowTokenScopes(t *testing.T) {
 		t.Fatalf("Failed to register routes: %v", err)
 	}
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
-	req.Header.Set("Authorization", "Bearer "+generated.Plain)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	router.ServeHTTP(w, req)
-
+	w := listMCPTools(router, generated.Plain)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+	if names, want := mcpToolNames(t, w), []string{"get_application", "list_applications"}; !slices.Equal(names, want) {
+		t.Errorf("tools = %v, want %v", names, want)
+	}
+}
+
+func setupMCPTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{Logger: gormlogger.Discard})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	if err := testDB.AutoMigrate(&models.User{}, &models.APIToken{}, &models.AuditLog{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	if err := rbac.MigrateForTest(testDB); err != nil {
+		t.Fatalf("failed to migrate roles: %v", err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql db: %v", err)
+	}
+	db.DB = testDB
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+		db.DB = nil
+	})
+	return testDB
+}
+
+func listMCPTools(router *gin.Engine, token string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func mcpToolNames(t *testing.T, w *httptest.ResponseRecorder) []string {
+	t.Helper()
 	var resp struct {
 		Result struct {
 			Tools []struct {
@@ -94,7 +113,5 @@ func TestMCPEndpoint_ToolsFollowTokenScopes(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	slices.Sort(names)
-	if want := []string{"get_application", "list_applications"}; !slices.Equal(names, want) {
-		t.Errorf("tools = %v, want %v", names, want)
-	}
+	return names
 }

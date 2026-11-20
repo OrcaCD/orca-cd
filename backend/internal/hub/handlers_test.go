@@ -163,6 +163,16 @@ func TestRegisterRoutes_MCPEndpoint(t *testing.T) {
 			if w.Code != tt.wantStatus {
 				t.Errorf("expected %d, got %d", tt.wantStatus, w.Code)
 			}
+			if hasChallenge := w.Header().Get("WWW-Authenticate") != ""; hasChallenge != (tt.wantStatus == http.StatusUnauthorized) {
+				t.Errorf("WWW-Authenticate = %q", w.Header().Get("WWW-Authenticate"))
+			}
+
+			// The OAuth routes come and go with the endpoint.
+			w = httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+			if wantMetadata := tt.wantStatus != http.StatusNotFound; (w.Code == http.StatusOK) != wantMetadata {
+				t.Errorf("authorization server metadata: got %d", w.Code)
+			}
 		})
 	}
 }

@@ -67,6 +67,19 @@ type APIToken struct {
 	Scopes     []APITokenScope `gorm:"type:text;not null;default:'[]';serializer:json"`
 	ExpiresAt  time.Time       `gorm:"not null"`
 	LastUsedAt *time.Time
+
+	// The fields below are only set for the tokens an MCP client got through
+	// OAuth. They only work on the MCP endpoint. Their access token is replaced
+	// on every refresh, so TokenHash and ExpiresAt belong to the current one,
+	// and RefreshExpiresAt ends the grant.
+	OAuthClientId    *string `gorm:"column:oauth_client_id;type:text"`
+	RefreshTokenHash *string `gorm:"type:text"`
+	// UsedRefreshTokenHashes are the start of the hashes of the replaced refresh
+	// tokens, the latest last. One coming back was copied.
+	UsedRefreshTokenHashes []string `gorm:"type:text;not null;default:'[]';serializer:json"`
+	RefreshExpiresAt       *time.Time
+	// RefreshedAt is when the refresh token was replaced last.
+	RefreshedAt *time.Time
 }
 
 func (APIToken) TableName() string {
@@ -75,6 +88,19 @@ func (APIToken) TableName() string {
 
 func (t *APIToken) IsExpired(now time.Time) bool {
 	return !now.Before(t.ExpiresAt)
+}
+
+func (t *APIToken) IsOAuth() bool {
+	return t.OAuthClientId != nil
+}
+
+// GrantExpiresAt is when the token stops working for good: the end of the
+// OAuth grant, or the expiry of a token without one.
+func (t *APIToken) GrantExpiresAt() time.Time {
+	if t.RefreshExpiresAt != nil {
+		return *t.RefreshExpiresAt
+	}
+	return t.ExpiresAt
 }
 
 func (t *APIToken) HasScope(scope APITokenScope) bool {

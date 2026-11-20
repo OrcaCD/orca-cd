@@ -192,13 +192,47 @@ func TestValidateOrigin_APIToken(t *testing.T) {
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/applications", nil)
 			c.Request.Header.Set("Authorization", "Bearer "+tt.token)
 			if tt.cookie {
-				c.Request.AddCookie(&http.Cookie{Name: "orcacd_auth", Value: "session"}) //nolint:gosec
+				c.Request.Header.Set("Cookie", "orcacd_auth=session") //nolint:gosec
 			}
 
 			mw(c)
 
 			if c.IsAborted() != tt.wantAborted {
 				t.Errorf("expected aborted=%v, got %v (status %d)", tt.wantAborted, c.IsAborted(), w.Code)
+			}
+		})
+	}
+}
+
+func TestValidateOrigin_MCPClients(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		cookie bool
+		want   int
+	}{
+		{"oauth register", "/api/v1/oauth/register", false, http.StatusOK},
+		{"oauth token", "/api/v1/oauth/token", false, http.StatusOK},
+		// The cookie can't be used by the token endpoint, so it doesn't matter.
+		{"oauth token with cookie", "/api/v1/oauth/token", true, http.StatusOK},
+		{"mcp without session", "/api/v1/mcp", false, http.StatusOK},
+		{"mcp with session", "/api/v1/mcp", true, http.StatusForbidden},
+		{"consent page", "/api/v1/oauth/authorize", true, http.StatusForbidden},
+		{"other route", "/api/v1/applications", false, http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.path, nil)
+			if tt.cookie {
+				c.Request.Header.Set("Cookie", "orcacd_auth=session")
+			}
+
+			ValidateOrigin("https://example.com")(c)
+
+			if w.Code != tt.want {
+				t.Errorf("expected %d, got %d", tt.want, w.Code)
 			}
 		})
 	}

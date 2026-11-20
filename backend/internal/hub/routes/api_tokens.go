@@ -48,6 +48,7 @@ type apiTokenResponse struct {
 	ExpiresAt  string                 `json:"expiresAt" required:"true" format:"date-time"`
 	LastUsedAt *string                `json:"lastUsedAt" required:"true" nullable:"true" format:"date-time"`
 	CreatedAt  string                 `json:"createdAt" required:"true" format:"date-time"`
+	OAuth      bool                   `json:"oauth" required:"true" doc:"Whether an MCP client got the token by asking the user. Its prefix changes whenever the client refreshes it."`
 	// Owner is only set in the admin list.
 	Owner *apiTokenOwnerResponse `json:"owner,omitempty" doc:"Only set in the admin list"`
 }
@@ -129,11 +130,13 @@ var CreateAPITokenHandler = restapi.Handler(huma.Operation{
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	count, err := gorm.G[models.APIToken](db.DB).Where("user_id = ?", user.Id).Count(ctx, "*")
+	existing, err := gorm.G[models.APIToken](db.DB).Where("user_id = ?", user.Id).Find(ctx)
 	if err != nil {
 		return nil, internalError()
 	}
-	if count >= maxAPITokensPerUser {
+	// Ended OAuth grants are deleted when a client gets a new one, until then
+	// they don't count.
+	if kept, _ := replacedAPITokens(existing, ""); len(kept) >= maxAPITokensPerUser {
 		return nil, huma.Error409Conflict(fmt.Sprintf("you can't have more than %d api tokens, revoke one first", maxAPITokensPerUser))
 	}
 
@@ -320,8 +323,9 @@ func toAPITokenResponse(token *models.APIToken) apiTokenResponse {
 		Name:       token.Name,
 		Prefix:     token.Prefix,
 		Scopes:     scopes,
-		ExpiresAt:  token.ExpiresAt.Format(time.RFC3339),
+		ExpiresAt:  token.GrantExpiresAt().Format(time.RFC3339),
 		LastUsedAt: lastUsedAt,
 		CreatedAt:  token.CreatedAt.Format(time.RFC3339),
+		OAuth:      token.IsOAuth(),
 	}
 }

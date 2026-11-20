@@ -335,6 +335,10 @@
           "name": {
             "type": "string"
           },
+          "oauth": {
+            "description": "Whether an MCP client got the token by asking the user. Its prefix changes whenever the client refreshes it.",
+            "type": "boolean"
+          },
           "owner": {
             "$ref": "#/components/schemas/ApiTokenOwnerResponse",
             "description": "Only set in the admin list"
@@ -360,7 +364,8 @@
           "scopes",
           "expiresAt",
           "lastUsedAt",
-          "createdAt"
+          "createdAt",
+          "oauth"
         ],
         "type": "object"
       },
