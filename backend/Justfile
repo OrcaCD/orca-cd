@@ -94,6 +94,12 @@ run-hub cmd=defaultCommand: proto
 run-agent cmd=defaultCommand: proto
     {{ if cmd != "" { AGENT_RUN + " " + cmd } else if AIR == "" { AGENT_RUN } else { AGENT_AIR } }}
 
+# Write the OpenAPI spec of the REST API to openapi.json (without ldflags, so the version stays "dev" like in the test)
+[group('hub')]
+[env("CGO_ENABLED", "1")]
+openapi:
+    go run -tags=nomsgpack ./cmd/hub openapi > openapi.json
+
 # Run both hub and agent in parallel
 [parallel]
 run: run-hub run-agent
