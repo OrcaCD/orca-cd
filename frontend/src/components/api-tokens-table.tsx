@@ -93,7 +93,14 @@ function ApiTokenRow({
 	return (
 		<TableRow>
 			<TableCell className="pl-(--card-spacing)">
-				<div className="font-medium">{token.name}</div>
+				<div className="flex items-center gap-2 font-medium">
+					{token.name}
+					{token.oauth && (
+						<Badge variant="secondary" title={m.apiTokenConnectedAppDescription()}>
+							{m.apiTokenConnectedApp()}
+						</Badge>
+					)}
+				</div>
 				<code className="font-mono text-xs text-muted-foreground">{token.prefix}…</code>
 			</TableCell>
 			{showOwner && (

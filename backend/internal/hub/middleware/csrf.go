@@ -28,6 +28,22 @@ func ValidateOrigin(appURL string) gin.HandlerFunc {
 			return
 		}
 
+		// MCP clients register and get their tokens without a browser. The
+		// endpoints don't read the session cookie, so there is nothing to forge.
+		if c.Request.URL.Path == "/api/v1/oauth/register" || c.Request.URL.Path == "/api/v1/oauth/token" {
+			c.Next()
+			return
+		}
+		// An MCP client calls the endpoint without a token first, to learn from
+		// the 401 where to authorize. A 403 would stop it. Without the session
+		// cookie, the request can only authenticate with a token.
+		if c.Request.URL.Path == MCPPath {
+			if _, err := auth.GetAuthCookie(c); err != nil {
+				c.Next()
+				return
+			}
+		}
+
 		// GitHub Actions sends requests without a browser Origin header.
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/github-actions") {
 			c.Next()

@@ -42,6 +42,20 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	routes.SetRepositoriesConfig(cfg.AppURL)
 	routes.SetGitHubActionsConfig(cfg.AppURL)
 
+	mcpEnabled := !cfg.DisableMCP && !cfg.Demo
+	// The consent page is part of the web UI at the app URL, which is served by
+	// Vite in development, when the hub runs with DisableUI.
+	if mcpEnabled {
+		if err := routes.InitOAuth(cfg.AppSecret, cfg.AppURL); err != nil {
+			return err
+		}
+		// MCP clients find the authorization server through the metadata of the
+		// endpoint (RFC 9728).
+		metadataMethods := []string{http.MethodGet, http.MethodOptions}
+		router.Match(metadataMethods, "/.well-known/oauth-protected-resource/api/v1/mcp", routes.OAuthProtectedResourceMetadataHandler())
+		router.Match(metadataMethods, "/.well-known/oauth-authorization-server", routes.OAuthCORS, routes.OAuthAuthorizationServerMetadataHandler)
+	}
+
 	api := router.Group("/api/v1")
 	{
 		// Routes on Huma are part of the OpenAPI spec. The others move there one by one.
@@ -71,6 +85,15 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 		api.POST("/auth/passkeys/login/begin", authRateLimit, routes.BeginPasskeyLoginHandler)
 		api.POST("/auth/passkeys/login/finish", authRateLimit, routes.FinishPasskeyLoginHandler)
 		api.POST("/auth/demo", authRateLimit, routes.DemoLoginHandler)
+
+		// OAuth for MCP clients, called by the clients themselves. Registering
+		// stores nothing, but each registration is a new client.
+		if mcpEnabled {
+			clientMethods := []string{http.MethodPost, http.MethodOptions}
+			api.Match(clientMethods, "/oauth/register", routes.OAuthCORS, middleware.RateLimit(6*time.Second, 10), routes.OAuthRegisterHandler)
+			// 1 req/s per IP, burst of 10: clients refresh their tokens hourly
+			api.Match(clientMethods, "/oauth/token", routes.OAuthCORS, middleware.RateLimit(time.Second, 10), routes.OAuthTokenHandler)
+		}
 
 		// Protected routes (authentication required)
 		protected := api.Group("", middleware.RequireAuth())
@@ -156,12 +179,19 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.DELETE("/notifications/:id", notification(models.ActionDelete), routes.DeleteNotificationHandler)
 			protected.POST("/notifications/:id/test", notification(models.ActionUpdate), routes.TestNotificationHandler)
 
-			// Without the route, the endpoint is a plain 404 instead of an auth error.
+			// Without the routes, the endpoints are a plain 404 instead of an auth error.
 			// Demo mode blocks the POST requests MCP is made of.
-			if !cfg.DisableMCP && !cfg.Demo {
+			if mcpEnabled {
 				// MCP clients open a GET stream and end sessions with DELETE, which the
-				// stateless server answers with 405 instead of a 404.
-				protected.Match([]string{http.MethodGet, http.MethodPost, http.MethodDelete}, "/mcp", mcpserver.Handler())
+				// stateless server answers with 405 instead of a 404. A 401 tells
+				// clients where to authorize, so it is checked before RequireAuth.
+				api.Match([]string{http.MethodGet, http.MethodPost, http.MethodDelete}, "/mcp",
+					middleware.BearerChallenge(routes.MCPAuthChallenge()), middleware.RequireAuth(), mcpserver.Handler())
+
+				// The consent page of the web UI. A client can't approve itself with
+				// an API token.
+				session.GET("/oauth/authorize", routes.OAuthAuthorizationRequestHandler)
+				session.POST("/oauth/authorize", middleware.RateLimit(6*time.Second, 10), routes.OAuthAuthorizeHandler)
 			}
 
 			// The demo data never changes, so there is nothing to stream, and the
