@@ -121,7 +121,9 @@ func exchangeOAuthCode(c *gin.Context) {
 		return
 	}
 
-	token, access, refresh, err := createOAuthToken(c, &user, clientId, client.Name, entry.scopes)
+	// The audit log names the user that approved the client.
+	auth.SetUser(c, &user)
+	token, access, refresh, replaced, err := createOAuthToken(c, &user, clientId, client.Name, entry.scopes)
 	if err != nil {
 		if errors.Is(err, errTooManyAPITokens) {
 			oauthError(c, http.StatusBadRequest, "invalid_grant", err.Error())
@@ -131,10 +133,15 @@ func exchangeOAuthCode(c *gin.Context) {
 		oauthError(c, http.StatusInternalServerError, "server_error", "internal server error")
 		return
 	}
-	oauthCodes.setToken(code, token.Id)
-
-	// The audit log names the user that approved the client.
-	auth.SetUser(c, &user)
+	for range replaced {
+		utils.RecordAuditLog(c, "revoked-api-token", "user", user.Id)
+	}
+	if oauthCodes.setToken(code, token.Id) {
+		// The code was used again while the token was created.
+		revokeOAuthToken(c, token, "oauth_code_reused")
+		invalidGrant()
+		return
+	}
 	utils.RecordAuditLog(c, "created", "api-token", token.Id)
 	sse.PublishUpdate(sse.TopicAPITokensOf(user.Id), sse.TopicAdminAPITokens)
 
@@ -142,13 +149,14 @@ func exchangeOAuthCode(c *gin.Context) {
 }
 
 // createOAuthToken creates the token of a grant. The grant replaces an earlier
-// one of the same client, which happens when the user authorizes it again.
-func createOAuthToken(c *gin.Context, user *models.User, clientId, clientName string, scopes []models.APITokenScope) (*models.APIToken, string, string, error) {
+// one of the same client, which happens when the user authorizes it again, and
+// the ended grants of the user. It returns the IDs of the replaced tokens.
+func createOAuthToken(c *gin.Context, user *models.User, clientId, clientName string, scopes []models.APITokenScope) (*models.APIToken, string, string, []string, error) {
 	now := oauthNow().UTC()
 	access := apitoken.Generate()
 	tokenId, err := uuid.NewV7()
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", nil, err
 	}
 	refresh, refreshHash := newRefreshToken(tokenId.String())
 	refreshExpiresAt := now.Add(oauthRefreshTokenLifetime)
@@ -164,13 +172,15 @@ func createOAuthToken(c *gin.Context, user *models.User, clientId, clientName st
 		RefreshExpiresAt: &refreshExpiresAt,
 	}
 
+	var replaced []string
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		ctx := c.Request.Context()
 		tokens, err := gorm.G[models.APIToken](tx).Where("user_id = ?", user.Id).Find(ctx)
 		if err != nil {
 			return err
 		}
-		kept, replaced := replacedAPITokens(tokens, clientId)
+		var kept []models.APIToken
+		kept, replaced = replacedAPITokens(tokens, clientId)
 		if len(replaced) > 0 {
 			if _, err := gorm.G[models.APIToken](tx).Where("id IN ?", replaced).Delete(ctx); err != nil {
 				return err
@@ -187,9 +197,9 @@ func createOAuthToken(c *gin.Context, user *models.User, clientId, clientName st
 		return gorm.G[models.APIToken](tx).Create(ctx, &token)
 	})
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", nil, err
 	}
-	return &token, access.Plain, refresh, nil
+	return &token, access.Plain, refresh, replaced, nil
 }
 
 // replacedAPITokens splits the tokens of a user into the ones a new grant of
@@ -283,15 +293,15 @@ func refreshOAuthToken(c *gin.Context) {
 		return
 	}
 
-	// A client may ask for fewer scopes, never for more.
-	scopes := token.Scopes
+	// A client may not ask for more scopes. It gets the granted ones when it
+	// asks for fewer, as the access token is the grant, and the response says
+	// so (RFC 6749 section 5.1).
 	if raw := form.Get("scope"); raw != "" {
 		requested, err := parseOAuthScopes(raw)
 		if err != nil || slices.ContainsFunc(requested, func(scope models.APITokenScope) bool { return !token.HasScope(scope) }) {
-			oauthError(c, http.StatusBadRequest, "invalid_scope", "the scope can only be narrowed")
+			oauthError(c, http.StatusBadRequest, "invalid_scope", "the scope can't be more than was granted")
 			return
 		}
-		scopes = requested
 	}
 
 	// A grant lasts at most as long as an API token can.
@@ -315,7 +325,6 @@ func refreshOAuthToken(c *gin.Context) {
 		Updates(ctx, models.APIToken{
 			TokenHash:              access.Hash,
 			Prefix:                 access.Prefix,
-			Scopes:                 scopes,
 			ExpiresAt:              expiresAt,
 			RefreshTokenHash:       &refreshHash,
 			UsedRefreshTokenHashes: used,
@@ -330,7 +339,6 @@ func refreshOAuthToken(c *gin.Context) {
 		invalidGrant()
 		return
 	}
-	token.Scopes = scopes
 	token.ExpiresAt = expiresAt
 	sse.PublishUpdate(sse.TopicAPITokensOf(token.UserId), sse.TopicAdminAPITokens)
 
@@ -344,6 +352,7 @@ func revokeOAuthToken(c *gin.Context, token *models.APIToken, reason string) {
 		return
 	}
 	seclog.Warn(c, seclog.TokenRejected, "reason", reason, "user_id", token.UserId, "api_token_id", token.Id)
+	utils.RecordAuditLog(c, "revoked-api-token", "user", token.UserId)
 	sse.PublishUpdate(sse.TopicAPITokensOf(token.UserId), sse.TopicAdminAPITokens)
 }
 

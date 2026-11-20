@@ -282,7 +282,14 @@ type oauthAuthorizationCode struct {
 	// tokenId is the token the code was exchanged for, which is revoked when
 	// the code is used again.
 	tokenId string
+	// reused tells that the code was used again while its token was created,
+	// so the token is revoked once it is set.
+	reused bool
 }
+
+// oauthCodeReuseWindow is how long an exchanged code is kept, to revoke its
+// token when it is used again.
+const oauthCodeReuseWindow = 10 * time.Minute
 
 var oauthCodes = oauthCodeStore{codes: map[string]*oauthAuthorizationCode{}}
 
@@ -291,20 +298,27 @@ type oauthCodeStore struct {
 	codes map[string]*oauthAuthorizationCode
 }
 
+func (code *oauthAuthorizationCode) isGone(now time.Time) bool {
+	if code.redeemed {
+		return now.After(code.expiresAt.Add(oauthCodeReuseWindow))
+	}
+	return now.After(code.expiresAt)
+}
+
 func (s *oauthCodeStore) add(code string, entry *oauthAuthorizationCode) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := oauthNow()
-	ofUser := 0
+	pendingOfUser := 0
 	for key, existing := range s.codes {
-		if now.After(existing.expiresAt) {
+		if existing.isGone(now) {
 			delete(s.codes, key)
-		} else if existing.userId == entry.userId {
-			ofUser++
+		} else if existing.userId == entry.userId && !existing.redeemed {
+			pendingOfUser++
 		}
 	}
-	if len(s.codes) >= maxOAuthCodes || ofUser >= maxOAuthCodesPerUser {
+	if len(s.codes) >= maxOAuthCodes || pendingOfUser >= maxOAuthCodesPerUser {
 		return false
 	}
 	s.codes[code] = entry
@@ -312,28 +326,38 @@ func (s *oauthCodeStore) add(code string, entry *oauthAuthorizationCode) bool {
 }
 
 // redeem returns the authorization of a code that wasn't used yet. A code can
-// only be tried once. When it was already exchanged, it returns the token it
-// was exchanged for, as someone else has the code (RFC 6749 section 4.1.2).
+// only be tried once. When it was already exchanged, someone else has the code,
+// so it returns the token it was exchanged for to revoke it (RFC 6749 section
+// 4.1.2). If that token isn't created yet, setToken reports it instead.
 func (s *oauthCodeStore) redeem(code string) (entry oauthAuthorizationCode, ok bool, reusedTokenId string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := oauthNow()
 	existing := s.codes[code]
-	if existing == nil || oauthNow().After(existing.expiresAt) {
+	if existing == nil || existing.isGone(now) {
 		return oauthAuthorizationCode{}, false, ""
 	}
 	if existing.redeemed {
-		delete(s.codes, code)
+		existing.reused = true
 		return oauthAuthorizationCode{}, false, existing.tokenId
+	}
+	if now.After(existing.expiresAt) {
+		return oauthAuthorizationCode{}, false, ""
 	}
 	existing.redeemed = true
 	return *existing, true, ""
 }
 
-func (s *oauthCodeStore) setToken(code, tokenId string) {
+// setToken records the token a code was exchanged for. It reports whether the
+// code was used again in the meantime, so the token has to be revoked.
+func (s *oauthCodeStore) setToken(code, tokenId string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existing := s.codes[code]; existing != nil {
-		existing.tokenId = tokenId
+	existing := s.codes[code]
+	if existing == nil {
+		return false
 	}
+	existing.tokenId = tokenId
+	return existing.reused
 }

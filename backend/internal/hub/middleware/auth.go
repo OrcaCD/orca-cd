@@ -124,8 +124,9 @@ func authenticateAPIToken(c *gin.Context, plain string) {
 		reject("")
 		return
 	}
-	// A client the user approved for MCP can't use the rest of the API.
-	if token.IsOAuth() && c.Request.URL.Path != MCPPath {
+	// A client the user approved for MCP can't use the rest of the API. The
+	// route gin matched is checked, so it can't differ from what the path says.
+	if token.IsOAuth() && c.FullPath() != MCPPath {
 		reject("oauth_token_outside_mcp")
 		return
 	}

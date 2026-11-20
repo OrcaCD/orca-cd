@@ -253,6 +253,8 @@ func TestOAuthRegister_RejectsInvalidClients(t *testing.T) {
 		{"implicit grant", `{"redirect_uris":["https://a.example"],"grant_types":["implicit"]}`},
 		{"token response", `{"redirect_uris":["https://a.example"],"response_types":["token"]}`},
 		{"not json", `redirect_uris=https://a.example`},
+		// JSON escapes &, so the client ID would be too long to use.
+		{"client id too long", `{"redirect_uris":["https://a.example/?` + strings.Repeat("&", 490) + `","https://b.example/?` + strings.Repeat("&", 490) + `"]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -554,11 +556,37 @@ func TestOAuthToken_CodeUsedTwiceRevokesToken(t *testing.T) {
 	form := codeForm(clientId, redirect.Query().Get("code"))
 
 	resp := decodeOAuthToken(t, requestOAuthToken(router, form))
+	// After the code expired, it is still known to be used.
+	oauthNow = func() time.Time { return time.Now().Add(5 * time.Minute) }
+	t.Cleanup(func() { oauthNow = time.Now })
 	if w := requestOAuthToken(router, form); oauthErrorCode(w) != "invalid_grant" {
 		t.Fatalf("expected invalid_grant, got %d: %s", w.Code, w.Body.String())
 	}
 	if _, ok := findOAuthToken(t, resp.AccessToken); ok {
 		t.Error("the token of a code that was used twice still works")
+	}
+	if count, _ := gorm.G[models.AuditLog](db.DB).Where("event_type = ?", "revoked-api-token").Count(t.Context(), "*"); count != 1 {
+		t.Errorf("expected the revocation in the audit log, got %d entries", count)
+	}
+}
+
+// A code used again while its first exchange is still creating the token
+// revokes the token once it is created.
+func TestOAuthCodeStore_ReuseDuringExchange(t *testing.T) {
+	store := oauthCodeStore{codes: map[string]*oauthAuthorizationCode{}}
+	store.add("code", &oauthAuthorizationCode{userId: "u", expiresAt: time.Now().Add(time.Minute)})
+
+	if _, ok, _ := store.redeem("code"); !ok {
+		t.Fatal("the first redeem failed")
+	}
+	if _, ok, reused := store.redeem("code"); ok || reused != "" {
+		t.Fatalf("the second redeem = %v, %q", ok, reused)
+	}
+	if !store.setToken("code", "token") {
+		t.Error("setToken didn't report the reuse")
+	}
+	if _, _, reused := store.redeem("code"); reused != "token" {
+		t.Errorf("a later reuse returned %q, want the token", reused)
 	}
 }
 
@@ -586,14 +614,15 @@ func TestOAuthToken_Refresh(t *testing.T) {
 			t.Errorf("expected invalid_grant, got %d: %s", w.Code, w.Body.String())
 		}
 	})
-	t.Run("narrows but never widens scopes", func(t *testing.T) {
+	t.Run("never widens scopes", func(t *testing.T) {
 		clientId, resp := authorizeOAuthClient(t, router, "App", "application:read", "agent:read")
 		if w := refresh(clientId, resp.RefreshToken, "application:read application:deploy"); oauthErrorCode(w) != "invalid_scope" {
 			t.Fatalf("expected invalid_scope, got %d: %s", w.Code, w.Body.String())
 		}
-		narrowed := decodeOAuthToken(t, refresh(clientId, resp.RefreshToken, "agent:read"))
-		if narrowed.Scope != "agent:read" {
-			t.Errorf("scope = %q, want agent:read", narrowed.Scope)
+		// Asking for fewer keeps the grant, so a later refresh can't lose scopes.
+		refreshed := decodeOAuthToken(t, refresh(clientId, resp.RefreshToken, "agent:read"))
+		if refreshed.Scope != "application:read agent:read" {
+			t.Errorf("scope = %q, want the granted scopes", refreshed.Scope)
 		}
 	})
 	t.Run("expired grant", func(t *testing.T) {
@@ -724,6 +753,16 @@ func TestOAuthToken_GrantLimits(t *testing.T) {
 		}
 		if w, _ := approveOAuth(t, router, authorizationQuery(clientId), true, "application:read"); w.Code != http.StatusConflict {
 			t.Errorf("expected the consent page to refuse, got %d", w.Code)
+		}
+
+		// An ended grant doesn't count when the user creates a token.
+		ended := time.Now().Add(-time.Minute)
+		if _, err := gorm.G[models.APIToken](db.DB).Where("user_id = ? AND oauth_client_id IS NOT NULL", user.Id).
+			Update(t.Context(), "refresh_expires_at", ended); err != nil {
+			t.Fatal(err)
+		}
+		if w := serveAPITokenRequest(t, &user, http.MethodPost, "/api/v1/api-tokens", validCreateAPITokenBody()); w.Code != http.StatusCreated {
+			t.Errorf("creating a token with ended grants: expected 201, got %d: %s", w.Code, w.Body.String())
 		}
 	})
 }

@@ -143,9 +143,15 @@ func OAuthRegisterHandler(c *gin.Context) {
 		RedirectURIs: slices.Compact(slices.Clone(req.RedirectURIs)),
 		Nonce:        rand.Text(),
 	}
+	// JSON escapes some characters, so the URIs alone don't bound the length.
+	clientId := encodeOAuthClientId(&client)
+	if len(clientId) > maxOAuthClientIdLength {
+		oauthError(c, http.StatusBadRequest, "invalid_redirect_uri", "the redirect_uris are too long")
+		return
+	}
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusCreated, oauthClientRegistrationResponse{
-		ClientId:         encodeOAuthClientId(&client),
+		ClientId:         clientId,
 		ClientIdIssuedAt: oauthNow().Unix(),
 		ClientName:       client.Name,
 		RedirectURIs:     client.RedirectURIs,

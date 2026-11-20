@@ -43,16 +43,16 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	routes.SetGitHubActionsConfig(cfg.AppURL)
 
 	mcpEnabled := !cfg.DisableMCP && !cfg.Demo
+	// The consent page is part of the web UI at the app URL, which is served by
+	// Vite in development, when the hub runs with DisableUI.
 	if mcpEnabled {
 		if err := routes.InitOAuth(cfg.AppSecret, cfg.AppURL); err != nil {
 			return err
 		}
 		// MCP clients find the authorization server through the metadata of the
-		// endpoint (RFC 9728). Some only look at the root of the host.
-		resourceMetadata := routes.OAuthProtectedResourceMetadataHandler()
+		// endpoint (RFC 9728).
 		metadataMethods := []string{http.MethodGet, http.MethodOptions}
-		router.Match(metadataMethods, "/.well-known/oauth-protected-resource/api/v1/mcp", resourceMetadata)
-		router.Match(metadataMethods, "/.well-known/oauth-protected-resource", resourceMetadata)
+		router.Match(metadataMethods, "/.well-known/oauth-protected-resource/api/v1/mcp", routes.OAuthProtectedResourceMetadataHandler())
 		router.Match(metadataMethods, "/.well-known/oauth-authorization-server", routes.OAuthCORS, routes.OAuthAuthorizationServerMetadataHandler)
 	}
 
