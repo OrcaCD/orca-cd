@@ -118,7 +118,7 @@ function PasskeysCard() {
 						))}
 					</ul>
 				)}
-				{keys?.length !== 0 && (
+				{keys && keys.length > 0 && (
 					<>
 						<form onSubmit={add} className="max-w-xl">
 							<FieldGroup>
@@ -137,7 +137,7 @@ function PasskeysCard() {
 								<Field>
 									<Button
 										type="submit"
-										disabled={busy || !passkeysSupported() || (keys?.length ?? 0) >= 20}
+										disabled={busy || !passkeysSupported() || keys.length >= 20}
 									>
 										<Fingerprint data-icon="inline-start" />
 										{busy ? m.creatingAccount() : m.addPasskey()}
