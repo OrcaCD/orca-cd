@@ -234,6 +234,13 @@ func seedKeyRotateCommandDatabase(t *testing.T) keyRotateFixture {
 	return fixture
 }
 
+// clearDefaultCipher mimics a fresh CLI process in which crypto has not been
+// initialized yet, so commands must set up the cipher before connecting.
+func clearDefaultCipher(t *testing.T) {
+	t.Helper()
+	crypto.SetDefault(nil)
+}
+
 func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	setupKeyRotateTestDB(t)
 	fixture := seedKeyRotateFixture(t)
@@ -452,6 +459,20 @@ func TestRunKeyRotateCommandSucceeds(t *testing.T) {
 	}
 }
 
+func TestRunKeyRotateCommandInitializesCipherBeforeConnecting(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	seedKeyRotateCommandDatabase(t)
+	clearDefaultCipher(t)
+
+	err := runKeyRotateCommandWithInput(t.Context(), io.Discard, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        testOldAppSecret,
+		SkipConfirmation: true,
+	})
+	if err != nil {
+		t.Fatalf("runKeyRotateCommandWithInput() unexpected error: %v", err)
+	}
+}
+
 func TestRunKeyRotateCommandRejectsInvalidConfiguration(t *testing.T) {
 	setupKeyRotateCommandEnv(t)
 	t.Setenv("APP_SECRET", "")
@@ -534,9 +555,33 @@ func TestRunKeyRotateCommandReturnsDatabaseConnectError(t *testing.T) {
 	}
 }
 
+func TestRunKeyRotateCommandRejectsWrongOldSecret(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	seedKeyRotateCommandDatabase(t)
+
+	err := runKeyRotateCommandWithInput(t.Context(), io.Discard, strings.NewReader("yes\n"), keyRotateOptions{
+		OldSecret:        "wrong-old-secret-that-is-long-enough",
+		SkipConfirmation: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Check that the old secret matches") {
+		t.Fatalf("expected wrong old secret error, got %v", err)
+	}
+}
+
 func TestRunKeyRotateCommandReturnsRotationError(t *testing.T) {
 	setupKeyRotateCommandEnv(t)
 	seedKeyRotateCommandDatabase(t)
+	// Without applications the wrong old secret is only detected during rotation,
+	// because connecting decrypts application names to backfill their name hashes.
+	if err := db.Connect(zerolog.New(io.Discard), zerolog.Disabled, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gorm.G[models.Application](db.DB).Where("1 = 1").Delete(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	var out bytes.Buffer
 	err := runKeyRotateCommandWithInput(t.Context(), &out, strings.NewReader("yes\n"), keyRotateOptions{

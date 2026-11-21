@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +69,54 @@ func TestRunImportCommand_Succeeds(t *testing.T) {
 
 	if !strings.Contains(importOut.String(), "Import Successful") {
 		t.Errorf("expected output to contain %q, got: %q", "Import Successful", importOut.String())
+	}
+}
+
+func TestRunImportCommand_InitializesCipherBeforeConnecting(t *testing.T) {
+	setupImportTestEnv(t)
+	t.Setenv("APP_SECRET", testOldAppSecret)
+	seedKeyRotateCommandDatabase(t)
+
+	backupPath := filepath.Join("data", "test-backup.db")
+	if err := runBackupCommand(&bytes.Buffer{}, "test-backup.db"); err != nil {
+		t.Fatalf("runBackupCommand() unexpected error: %v", err)
+	}
+	clearDefaultCipher(t)
+
+	if err := runImportCommandWithInput(io.Discard, strings.NewReader("yes\n"), backupPath, true); err != nil {
+		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
+	}
+}
+
+func TestRunImportCommand_ReplacesDatabaseEncryptedWithAnotherSecret(t *testing.T) {
+	setupImportTestEnv(t)
+	t.Setenv("APP_SECRET", testNewAppSecret)
+
+	if err := runBackupCommand(&bytes.Buffer{}, "test-backup.db"); err != nil {
+		t.Fatalf("runBackupCommand() unexpected error: %v", err)
+	}
+	// The live database now holds an application the current secret cannot decrypt.
+	seedKeyRotateCommandDatabase(t)
+
+	backupPath := filepath.Join("data", "test-backup.db")
+	if err := runImportCommandWithInput(io.Discard, strings.NewReader("yes\n"), backupPath, true); err != nil {
+		t.Fatalf("runImportCommandWithInput() unexpected error: %v", err)
+	}
+}
+
+func TestRunImportCommand_ExplainsBackupEncryptedWithAnotherSecret(t *testing.T) {
+	setupImportTestEnv(t)
+	t.Setenv("APP_SECRET", testOldAppSecret)
+	seedKeyRotateCommandDatabase(t)
+	if err := runBackupCommand(&bytes.Buffer{}, "test-backup.db"); err != nil {
+		t.Fatalf("runBackupCommand() unexpected error: %v", err)
+	}
+	t.Setenv("APP_SECRET", testNewAppSecret)
+
+	backupPath := filepath.Join("data", "test-backup.db")
+	err := runImportCommandWithInput(io.Discard, strings.NewReader("yes\n"), backupPath, true)
+	if err == nil || !strings.Contains(err.Error(), "Check that APP_SECRET matches the one the backup was encrypted with") {
+		t.Fatalf("expected APP_SECRET hint, got %v", err)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	aegiscommon "github.com/aegis-aead/go-libaegis/common"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
@@ -124,10 +125,17 @@ func runKeyRotateCommandWithInput(ctx context.Context, out io.Writer, in io.Read
 		return nil
 	}
 
+	// The database is still encrypted with the old secret, and db.Connect already
+	// decrypts application names to backfill their name hashes.
+	crypto.SetDefault(secrets.oldCipher)
+
 	dbLogger := zerolog.New(io.Discard)
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
 			renderDatabaseBusyInfo(out)
+		}
+		if errors.Is(err, aegiscommon.ErrAuth) {
+			return fmt.Errorf("failed to connect to database: %w. Check that the old secret matches the APP_SECRET the database is currently encrypted with", err)
 		}
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
