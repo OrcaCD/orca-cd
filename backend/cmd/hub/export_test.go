@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,17 @@ func TestRunExportCommand_Succeeds(t *testing.T) {
 
 	if !strings.Contains(out.String(), "Export Successful") {
 		t.Errorf("expected output to contain %q, got: %q", "Export Successful", out.String())
+	}
+}
+
+func TestRunExportCommand_InitializesCipherBeforeConnecting(t *testing.T) {
+	setupExportTestEnv(t)
+	t.Setenv("APP_SECRET", testOldAppSecret)
+	seedKeyRotateCommandDatabase(t)
+	clearDefaultCipher(t)
+
+	if err := runExportCommand(io.Discard, "export.db"); err != nil {
+		t.Fatalf("runExportCommand() unexpected error: %v", err)
 	}
 }
 

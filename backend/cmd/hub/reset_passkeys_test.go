@@ -160,6 +160,25 @@ func TestResetPasskeysCommandIssuesUsableCode(t *testing.T) {
 	}
 }
 
+func TestResetPasskeysCommandInitializesCipherBeforeConnecting(t *testing.T) {
+	setupKeyRotateCommandEnv(t)
+	t.Setenv("DEMO", "false")
+	t.Setenv("APP_SECRET", testOldAppSecret)
+	seedKeyRotateCommandDatabase(t)
+	if err := db.Connect(zerolog.New(io.Discard), zerolog.Disabled, false); err != nil {
+		t.Fatal(err)
+	}
+	user := createLocalTestUser(t, "recovery@example.com")
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	clearDefaultCipher(t)
+
+	if err := runResetPasskeysCommand(t.Context(), io.Discard, resetPasskeysTarget{Email: user.Email}); err != nil {
+		t.Fatalf("runResetPasskeysCommand() unexpected error: %v", err)
+	}
+}
+
 func TestResetPasskeysCommandRejectsInvalidInputsAndEnvironment(t *testing.T) {
 	for _, scenario := range []string{"missing identifier", "invalid configuration", "demo", "missing database", "unknown user"} {
 		t.Run(scenario, func(t *testing.T) {
