@@ -448,7 +448,7 @@
 	"validationNotificationEmailToAddressesInvalid": "Recipients must be valid email addresses, one per line or comma-separated",
 	"validationNotificationEmailConfigInvalid": "Email configuration is invalid",
 	"title": "Title",
-	"notificationTeamsHostPlaceholder": "https://contoso.webhook.office.com/webhookb2/...",
+	"notificationTeamsHostPlaceholder": "https://contoso.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/...",
 	"notificationTeamsTitlePlaceholder": "e.g. \"Deploy status\"",
 	"validationNotificationTeamsHostRequired": "Webhook URL is required",
 	"validationNotificationTeamsHostInvalid": "Webhook URL must be a valid Microsoft Teams incoming webhook URL",
