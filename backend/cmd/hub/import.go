@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	aegiscommon "github.com/aegis-aead/go-libaegis/common"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
@@ -71,8 +73,10 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 		return fmt.Errorf("failed to initialize encryption: %w", err)
 	}
 
+	// The current database may be encrypted with a different APP_SECRET, so
+	// open it without decrypting anything. Restore only needs it for a copy.
 	dbLogger := zerolog.New(io.Discard)
-	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
+	if err := db.ConnectWithoutBackfill(dbLogger, cfg.LogLevel); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "database is locked") {
 			renderDatabaseBusyInfo(out)
 		}
@@ -89,6 +93,9 @@ func runImportCommandWithInput(out io.Writer, in io.Reader, importPath string, s
 	}
 
 	if err := db.Connect(dbLogger, cfg.LogLevel, false); err != nil {
+		if errors.Is(err, aegiscommon.ErrAuth) {
+			return fmt.Errorf("import restored file but could not open database: %w. Check that APP_SECRET matches the one the backup was encrypted with", err)
+		}
 		return fmt.Errorf("import restored file but could not open database: %w", err)
 	}
 
