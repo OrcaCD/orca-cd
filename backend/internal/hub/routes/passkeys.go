@@ -208,6 +208,12 @@ func BeginPasskeyVerificationHandler(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "passkey account changed, please sign in again"})
 		return
 	}
+	// An account signed in through SSO can have no passkey yet. The first one
+	// needs an enrollment code, otherwise a stolen session cookie could add one.
+	if len(user.Credentials) == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "add your first passkey with an enrollment code"})
+		return
+	}
 	options, session, err := passkeyWebAuthn.BeginLogin(user)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "could not start passkey verification"})

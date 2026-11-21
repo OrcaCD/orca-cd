@@ -1076,7 +1076,7 @@
 	"passkeyFailed": "Die Passkey-Anfrage ist fehlgeschlagen. Bitte versuche es erneut.",
 	"passkeysDescription": "Füge einen weiteren Passkey hinzu, damit du dich auch beim Verlust eines Geräts anmelden kannst. Mindestens ein Passkey muss erhalten bleiben. Bestätige deine Identität mit einem vorhandenen Passkey, bevor du einen Schlüssel hinzufügst oder löschst.",
 	"passkeysManagedBySso": "Die Authentifizierung dieses Kontos wird von deinem SSO-Anbieter verwaltet.",
-	"noPasskeys": "Füge vor dem Abmelden deinen ersten Passkey hinzu.",
+	"noPasskeys": "Du hast noch keinen Passkey. Um deinen ersten hinzuzufügen, melde dich ab, wähle auf der Anmeldeseite „Passkey einrichten“ und gib den Einrichtungscode von deinem Administrator ein.",
 	"passkeyAdded": "Passkey hinzugefügt",
 	"passkeyDeleted": "Passkey gelöscht",
 	"passkeyName": "Passkey-Name",

@@ -24,6 +24,7 @@ import {
 import {
 	cleanup,
 	createActiveUser,
+	createUser,
 	expectToast,
 	openSession,
 	signInUi,
@@ -261,6 +262,31 @@ test.describe("Passkeys", () => {
 		).toBe(403);
 		expect((await api(user.page, "DELETE", `/auth/passkeys/${keys.body[0].id}`)).status).toBe(403);
 		expect((await api(user.page, "GET", "/auth/passkeys")).body).toHaveLength(1);
+	});
+
+	test("asks for an enrollment code when a local account without passkeys uses SSO", async ({
+		page,
+		browser,
+	}) => {
+		const user = await createUser(page);
+		const provider = await createProvider(page);
+		providerIds.push(provider.id);
+		const mockUser = await createMockUser({ email: user.email });
+		const session = await openSession(browser);
+		await clickProvider(session.page, provider);
+		await signInAtMock(session.page, mockUser.sub);
+		await session.page.waitForURL("/");
+
+		await gotoApp(session.page, "/settings/security");
+		await expect(
+			session.page.getByText("You don't have a passkey yet.", { exact: false }),
+		).toBeVisible();
+		await expect(session.page.getByRole("button", { name: "Add passkey" })).toHaveCount(0);
+		const verification = await api(session.page, "POST", "/auth/passkeys/verify/begin", {
+			action: "add",
+		});
+		expect(verification.status).toBe(409);
+		expect(verification.body).toEqual({ error: "add your first passkey with an enrollment code" });
 	});
 
 	test("canceled prompts can be retried", async ({ page, browser }) => {

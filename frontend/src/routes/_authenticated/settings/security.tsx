@@ -118,35 +118,39 @@ function PasskeysCard() {
 						))}
 					</ul>
 				)}
-				<form onSubmit={add} className="max-w-xl">
-					<FieldGroup>
-						<Field>
-							<FieldLabel htmlFor="passkey-name">{m.passkeyName()}</FieldLabel>
-							<Input
-								id="passkey-name"
-								value={name}
-								onChange={(event) => setName(event.target.value)}
-								maxLength={64}
-								required
-								placeholder={m.passkeyNamePlaceholder()}
-								disabled={busy}
-							/>
-						</Field>
-						<Field>
-							<Button
-								type="submit"
-								disabled={busy || !passkeysSupported() || (keys?.length ?? 0) >= 20}
-							>
-								<Fingerprint data-icon="inline-start" />
-								{busy ? m.creatingAccount() : m.addPasskey()}
-							</Button>
-						</Field>
-					</FieldGroup>
-				</form>
-				{!passkeysSupported() && (
-					<p role="alert" className="text-sm text-muted-foreground">
-						{m.passkeysUnsupported()}
-					</p>
+				{keys && keys.length > 0 && (
+					<>
+						<form onSubmit={add} className="max-w-xl">
+							<FieldGroup>
+								<Field>
+									<FieldLabel htmlFor="passkey-name">{m.passkeyName()}</FieldLabel>
+									<Input
+										id="passkey-name"
+										value={name}
+										onChange={(event) => setName(event.target.value)}
+										maxLength={64}
+										required
+										placeholder={m.passkeyNamePlaceholder()}
+										disabled={busy}
+									/>
+								</Field>
+								<Field>
+									<Button
+										type="submit"
+										disabled={busy || !passkeysSupported() || keys.length >= 20}
+									>
+										<Fingerprint data-icon="inline-start" />
+										{busy ? m.creatingAccount() : m.addPasskey()}
+									</Button>
+								</Field>
+							</FieldGroup>
+						</form>
+						{!passkeysSupported() && (
+							<p role="alert" className="text-sm text-muted-foreground">
+								{m.passkeysUnsupported()}
+							</p>
+						)}
+					</>
 				)}
 			</CardContent>
 		</Card>
