@@ -285,6 +285,7 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 							value={field.state.value}
 							onChange={field.handleChange}
 							onBlur={field.handleBlur}
+							className="w-full"
 						/>
 					)}
 				</form.Field>

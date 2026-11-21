@@ -9,6 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/OrcaCD/orca-cd/internal/hub"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
@@ -58,6 +59,10 @@ func runResetPasskeysCommand(ctx context.Context, out io.Writer, target resetPas
 
 	if cfg.Demo {
 		return fmt.Errorf("passkey recovery is not available in demo mode")
+	}
+
+	if err := crypto.Init(cfg.AppSecret); err != nil {
+		return fmt.Errorf("failed to initialize encryption: %w", err)
 	}
 
 	dbLogger := zerolog.New(io.Discard)
