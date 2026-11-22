@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
+	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
@@ -126,6 +128,47 @@ func TestRateLimit_IsolatesIPs(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("IP B: expected 200, got %d", w.Code)
+	}
+}
+
+func TestRateLimitPerUser_IsolatesUsersAcrossIPs(t *testing.T) {
+	router := gin.New()
+	router.GET("/logs", func(c *gin.Context) {
+		auth.SetUser(c, &models.User{Id: c.GetHeader("X-Test-User")})
+	}, RateLimitPerUser(time.Hour, 1), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{})
+	})
+
+	get := func(user, remoteAddr string) int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/logs", nil)
+		req.Header.Set("X-Test-User", user)
+		req.RemoteAddr = remoteAddr
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	if code := get("alice", "192.0.2.30:1234"); code != http.StatusOK {
+		t.Fatalf("first request: expected 200, got %d", code)
+	}
+	if code := get("alice", "192.0.2.31:1234"); code != http.StatusTooManyRequests {
+		t.Errorf("same user from another IP: expected 429, got %d", code)
+	}
+	if code := get("bob", "192.0.2.30:1234"); code != http.StatusOK {
+		t.Errorf("other user from the same IP: expected 200, got %d", code)
+	}
+}
+
+func TestRateLimitPerUser_WithoutUserIsRejected(t *testing.T) {
+	router := gin.New()
+	router.GET("/logs", RateLimitPerUser(time.Second, 5), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{})
+	})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/logs", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", w.Code)
 	}
 }
 

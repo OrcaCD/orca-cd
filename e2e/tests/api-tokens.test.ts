@@ -90,6 +90,34 @@ test.describe("API tokens", () => {
 		}
 	});
 
+	test("need the inspect scope to inspect containers", async ({ page }) => {
+		const reader = await createToken(page, ["application:read"]);
+		const inspector = await createToken(page, ["application:inspect"]);
+		await expect(tokenRow(page, inspector.name)).toContainText("Applications: Inspect");
+
+		const applicationId = randomUUID();
+		const list = `/api/v1/applications/${applicationId}/containers`;
+		const inspect = `${list}/0123456789ab/inspect`;
+
+		const readerClient = await tokenClient(reader.token);
+		const inspectorClient = await tokenClient(inspector.token);
+		try {
+			// Past the permission check, the application doesn't exist
+			expect((await readerClient.get(list)).status()).toBe(404);
+			const denied = await readerClient.get(inspect);
+			expect(denied.status()).toBe(403);
+			expect((await denied.json()).error).toBe("insufficient permissions");
+
+			expect((await inspectorClient.get(list)).status()).toBe(404);
+			const allowed = await inspectorClient.get(inspect);
+			expect(allowed.status()).toBe(404);
+			expect((await allowed.json()).error).toBe("application not found");
+		} finally {
+			await readerClient.dispose();
+			await inspectorClient.dispose();
+		}
+	});
+
 	test("with the admin scope reach the admin routes", async ({ page }) => {
 		const { token } = await createToken(page, ["admin"]);
 		const client = await tokenClient(token);

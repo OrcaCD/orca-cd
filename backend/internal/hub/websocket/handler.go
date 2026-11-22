@@ -410,7 +410,7 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 	if info == nil {
 		return
 	}
-	client.setCapabilities(info.Capabilities)
+	client.SetCapabilities(info.Capabilities)
 
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()

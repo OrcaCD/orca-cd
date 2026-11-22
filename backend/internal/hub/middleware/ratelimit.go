@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
@@ -91,6 +92,28 @@ func (rl *rateLimiter) cleanupStaleLocked(now time.Time) {
 // RateLimit returns a per-IP token-bucket rate limiting middleware.
 // interval is the time between token refills; burst is the maximum burst size.
 func RateLimit(interval time.Duration, burst int) gin.HandlerFunc {
+	return rateLimitBy(interval, burst, func(c *gin.Context) string {
+		return c.ClientIP()
+	})
+}
+
+func RateLimitPerUser(interval time.Duration, burst int) gin.HandlerFunc {
+	limit := rateLimitBy(interval, burst, func(c *gin.Context) string {
+		user, _ := auth.GetUser(c)
+		return user.Id
+	})
+
+	return func(c *gin.Context) {
+		if _, ok := auth.GetUser(c); !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+			c.Abort()
+			return
+		}
+		limit(c)
+	}
+}
+
+func rateLimitBy(interval time.Duration, burst int, key func(*gin.Context) string) gin.HandlerFunc {
 	if interval <= 0 {
 		interval = defaultInterval
 	}
@@ -101,7 +124,7 @@ func RateLimit(interval time.Duration, burst int) gin.HandlerFunc {
 	rl := newRateLimiter(rate.Every(interval), burst)
 
 	return func(c *gin.Context) {
-		if !rl.get(c.ClientIP()).Allow() {
+		if !rl.get(key(c)).Allow() {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests, please try again later"})
 			c.Abort()
 			return

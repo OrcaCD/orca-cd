@@ -107,6 +107,11 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			// Saving the env redeploys the application
 			protected.PUT("/applications/:id/env", app(models.ActionUpdate), app(models.ActionDeploy), routes.UpdateApplicationEnvHandler)
 			protected.POST("/env/parse", routes.ParseEnvHandler)
+			// Each call reaches out to the agent. 1 req/s per user, burst of 20
+			containerRateLimit := middleware.RateLimitPerUser(time.Second, 20)
+			protected.GET("/applications/:id/containers", app(models.ActionRead), containerRateLimit, routes.ListApplicationContainersHandler)
+			protected.GET("/applications/:id/containers/:containerId/inspect", app(models.ActionInspect), containerRateLimit, routes.InspectApplicationContainerHandler)
+
 			protected.POST("/applications", app(models.ActionCreate), routes.CreateApplicationHandler)
 			protected.POST("/applications/:id/deploy", app(models.ActionDeploy), routes.DeployApplicationHandler)
 			protected.POST("/applications/:id/pull-images", app(models.ActionPullImages), routes.PullApplicationImagesHandler)

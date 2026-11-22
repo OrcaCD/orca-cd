@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { ADMIN_ROLE_ID, USER_ROLE_ID } from "./const.ts";
 import { api, seedRepository, type ApiRepository } from "./helpers/api.ts";
@@ -193,6 +194,38 @@ test.describe("Permissions", () => {
 		await expect(user.page.getByRole("heading", { name: hidden.name })).toHaveCount(0);
 		await expect(user.page.getByRole("button", { name: "Add Repository" })).toHaveCount(0);
 		await expect(user.page.getByRole("link", { name: "Agents" })).toHaveCount(0);
+	});
+
+	test("inspecting containers has to be granted, the user role doesn't have it", async ({
+		page,
+		browser,
+	}) => {
+		const missing = `/applications/${randomUUID()}/containers/0123456789ab/inspect`;
+
+		const defaultUser = await createActiveUser(page, browser);
+		const defaultGrants = (await api(defaultUser.page, "GET", "/auth/profile")).body.permissions
+			.application.all;
+		expect(defaultGrants).toContain("read");
+		expect(defaultGrants).not.toContain("inspect");
+		expect((await api(defaultUser.page, "GET", missing)).status).toBe(403);
+
+		const role = await createRole(page, {
+			permissions: [{ resource: "application", action: "inspect", resourceId: null }],
+		});
+		const inspector = await createActiveUser(page, browser, { roleIds: [role.id] });
+		const grants = (await api(inspector.page, "GET", "/auth/profile")).body.permissions.application
+			.all;
+		// Inspecting includes viewing
+		expect(grants).toEqual(expect.arrayContaining(["read", "inspect"]));
+		// Past the permission check, the application doesn't exist
+		expect((await api(inspector.page, "GET", missing)).status).toBe(404);
+
+		await gotoApp(page, `/admin/roles?role=${role.id}`);
+		await expect(
+			page
+				.getByRole("region", { name: "Applications" })
+				.getByRole("checkbox", { name: "Inspect: All Applications" }),
+		).toBeChecked();
 	});
 
 	test("role changes apply to signed in users right away", async ({ page, browser }) => {

@@ -303,8 +303,14 @@ func TestRunMigrations_RolesKeepExistingAccess(t *testing.T) {
 	want := 0
 	for resource, actions := range models.PermissionActions {
 		// Added after roles and not granted to the user role.
-		if resource != models.ResourceAPIToken {
-			want += len(actions)
+		if resource == models.ResourceAPIToken {
+			continue
+		}
+		for _, action := range actions {
+			// Added with roles in place, so the user role has to opt in.
+			if resource != models.ResourceApplication || action != models.ActionInspect {
+				want++
+			}
 		}
 	}
 	if grants != want {

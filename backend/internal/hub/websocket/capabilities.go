@@ -11,7 +11,7 @@ const (
 	maxReportedCapabilityLength = 64
 )
 
-func (c *Client) setCapabilities(reported []string) {
+func (c *Client) SetCapabilities(reported []string) {
 	if len(reported) > maxReportedCapabilities {
 		reported = reported[:maxReportedCapabilities]
 	}
