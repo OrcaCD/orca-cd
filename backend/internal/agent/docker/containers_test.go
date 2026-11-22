@@ -250,6 +250,48 @@ func TestListContainerInfos_ContainerNumberLabel(t *testing.T) {
 	}
 }
 
+func TestCPULimit(t *testing.T) {
+	withResources := func(r containerapi.Resources) *containerapi.HostConfig {
+		return &containerapi.HostConfig{Resources: r}
+	}
+	tests := []struct {
+		name string
+		host *containerapi.HostConfig
+		want float64
+	}{
+		{"no host config", nil, 0},
+		{"no limit", withResources(containerapi.Resources{}), 0},
+		{"nano cpus", withResources(containerapi.Resources{NanoCPUs: 500_000_000}), 0.5},
+		{"more than one cpu", withResources(containerapi.Resources{NanoCPUs: 2_500_000_000}), 2.5},
+		{"quota and period", withResources(containerapi.Resources{CPUQuota: 50_000, CPUPeriod: 100_000}), 0.5},
+		{"quota without period uses the default", withResources(containerapi.Resources{CPUQuota: 200_000}), 2},
+		{"unlimited quota", withResources(containerapi.Resources{CPUQuota: -1, CPUPeriod: 100_000}), 0},
+		{"nano cpus win over quota", withResources(containerapi.Resources{NanoCPUs: 1_000_000_000, CPUQuota: 50_000, CPUPeriod: 100_000}), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cpuLimit(tt.host); got != tt.want {
+				t.Errorf("cpuLimit = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestListContainerInfos_ReportsCPULimit(t *testing.T) {
+	stubContainers(t, []containerapi.Summary{appSummary(webID, "web", "running")})
+	inspect := webInspect()
+	inspect.Container.HostConfig.NanoCPUs = 1_500_000_000
+	cli := &fakeContainerAPI{results: map[string]client.ContainerInspectResult{webID: inspect}}
+
+	infos, err := listContainerInfos(t.Context(), cli, "app-1")
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("infos = %v, err = %v", infos, err)
+	}
+	if infos[0].CpuLimit != 1.5 {
+		t.Errorf("CpuLimit = %v, want 1.5", infos[0].CpuLimit)
+	}
+}
+
 func TestListContainerInfos_ListError(t *testing.T) {
 	orig := listApplicationContainers
 	t.Cleanup(func() { listApplicationContainers = orig })

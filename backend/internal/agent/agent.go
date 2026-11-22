@@ -304,6 +304,10 @@ func Run(cfg Config) error {
 	poller := docker.NewImagePoller(dockerClient, sRef, Log, cfg.ImagePollIntervalOverride)
 	defer poller.StopAll()
 
+	streams := newStreamManager()
+	go streams.run(ctx)
+	defer streams.StopAll()
+
 	var wsConnected atomic.Bool
 
 	go startHealthServer(ctx, cfg.HealthPort, dockerClient.Ready, wsConnected.Load)
@@ -329,6 +333,7 @@ func Run(cfg Config) error {
 		data, readErr := readHubMessage(conn, hubReadTimeout)
 		if readErr != nil {
 			wsConnected.Store(false)
+			streams.StopAll()
 			if ctx.Err() != nil {
 				Log.Info().Msg("agent stopped")
 				return nil
@@ -353,6 +358,6 @@ func Run(cfg Config) error {
 			Log.Error().Err(err).Msg("unmarshal error")
 			continue
 		}
-		handleServerMessage(ctx, msg, session, sender, dockerClient, poller)
+		handleServerMessage(ctx, msg, session, sender, dockerClient, poller, streams)
 	}
 }

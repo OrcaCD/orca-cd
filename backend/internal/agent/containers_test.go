@@ -162,7 +162,7 @@ func TestHandleServerMessage_ContainerRequests(t *testing.T) {
 		}
 		handleServerMessage(t.Context(), &messages.ServerMessage{
 			Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
-		}, session, sender, deployer, nil)
+		}, session, sender, deployer, nil, newStreamManager())
 	}
 
 	got := map[string]bool{}

@@ -383,6 +383,7 @@ message ContainerInfo {
   string restart_policy = 21;
   string log_driver = 22;
   int32 health_failing_streak = 23;
+  double cpu_limit = 24;
 }
 
 message ContainerListResult {
@@ -470,6 +471,7 @@ message ContainerStatsSample {
   uint64 net_rx_bytes = 6;
   uint64 net_tx_bytes = 7;
   uint64 pids = 8;
+  uint32 online_cpus = 9;
 }
 
 enum StreamEndReason {
