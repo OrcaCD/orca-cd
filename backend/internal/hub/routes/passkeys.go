@@ -238,7 +238,7 @@ var BeginPasskeyVerificationHandler = restapi.Handler(huma.Operation{
 		"Returns the WebAuthn request options and sets a cookie for the ceremony. Rate limited.",
 	Tags:     []string{tagProfile},
 	Security: restapi.SessionOnly,
-	Errors:   []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusServiceUnavailable},
+	Errors:   []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable},
 }, func(ctx context.Context, input *struct{ Body passkeyVerificationRequest }) (*passkeyRequestOptionsOutput, error) {
 	if err := checkPasskeysAvailable(false); err != nil {
 		return nil, err
@@ -270,8 +270,7 @@ var BeginPasskeyVerificationHandler = restapi.Handler(huma.Operation{
 	// An account signed in through SSO can have no passkey yet. The first one
 	// needs an enrollment code, otherwise a stolen session cookie could add one.
 	if len(user.Credentials) == 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "add your first passkey with an enrollment code"})
-		return
+		return nil, huma.Error409Conflict("add your first passkey with an enrollment code")
 	}
 	options, session, err := passkeyWebAuthn.BeginLogin(user)
 	if err != nil {
