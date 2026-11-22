@@ -132,8 +132,8 @@ func TestEnvRequests_ContextCancelled(t *testing.T) {
 		t.Fatalf("error = %v, want DeadlineExceeded", err)
 	}
 
-	h.envMu.Lock()
-	defer h.envMu.Unlock()
+	h.requestMu.Lock()
+	defer h.requestMu.Unlock()
 	if len(h.pendingEnvLists) != 0 {
 		t.Fatalf("pending request leaked: %d", len(h.pendingEnvLists))
 	}
