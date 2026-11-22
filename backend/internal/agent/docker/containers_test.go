@@ -220,6 +220,36 @@ func TestListContainerInfos_InspectError(t *testing.T) {
 	}
 }
 
+func TestListContainerInfos_ContainerNumberLabel(t *testing.T) {
+	tests := []struct {
+		label string
+		want  int32
+	}{
+		{"3", 3},
+		{"", 0},
+		{"two", 0},
+		{"2147483647", 2147483647},
+		{"2147483648", 0},
+		{"99999999999999999999", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.label, func(t *testing.T) {
+			web := appSummary(webID, "web", "running")
+			web.Labels[api.ContainerNumberLabel] = tt.label
+			stubContainers(t, []containerapi.Summary{web})
+			cli := &fakeContainerAPI{results: map[string]client.ContainerInspectResult{webID: webInspect()}}
+
+			infos, err := listContainerInfos(t.Context(), cli, "app-1")
+			if err != nil || len(infos) != 1 {
+				t.Fatalf("infos = %v, err = %v", infos, err)
+			}
+			if infos[0].ContainerNumber != tt.want {
+				t.Errorf("ContainerNumber = %d, want %d", infos[0].ContainerNumber, tt.want)
+			}
+		})
+	}
+}
+
 func TestListContainerInfos_ListError(t *testing.T) {
 	orig := listApplicationContainers
 	t.Cleanup(func() { listApplicationContainers = orig })

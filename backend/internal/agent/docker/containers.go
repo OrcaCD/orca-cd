@@ -119,8 +119,8 @@ func buildContainerInfo(ctx context.Context, cli client.APIClient, item containe
 	if info.Name == "" && len(item.Names) > 0 {
 		info.Name = strings.TrimPrefix(item.Names[0], "/")
 	}
-	if n, err := strconv.Atoi(item.Labels[api.ContainerNumberLabel]); err == nil {
-		info.ContainerNumber = clampInt32(n)
+	if n, err := strconv.ParseInt(item.Labels[api.ContainerNumberLabel], 10, 32); err == nil {
+		info.ContainerNumber = int32(n)
 	}
 
 	state := inspected.State
