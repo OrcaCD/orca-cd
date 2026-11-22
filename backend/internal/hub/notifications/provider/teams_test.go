@@ -9,7 +9,7 @@ import (
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
-const validTeamsWebhookURL = "https://contoso.webhook.office.com/webhookb2/11111111-4444-4444-8444-cccccccccccc@22222222-4444-4444-8444-cccccccccccc/IncomingWebhook/33333333012222222222333333333344/44444444-4444-4444-8444-cccccccccccc/V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"
+const validTeamsWebhookURL = "https://contoso.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/33333333012222222222333333333344/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"
 
 func TestTeamsProviderBuildShoutrrrUrls(t *testing.T) {
 	tests := []struct {
@@ -34,17 +34,17 @@ func TestTeamsProviderBuildShoutrrrUrls(t *testing.T) {
 		},
 		{
 			name:    "non-https scheme must be rejected",
-			raw:     `{"host":"http://contoso.webhook.office.com/webhookb2/11111111-4444-4444-8444-cccccccccccc@22222222-4444-4444-8444-cccccccccccc/IncomingWebhook/33333333012222222222333333333344/44444444-4444-4444-8444-cccccccccccc/V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"}`,
+			raw:     `{"host":"http://contoso.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/33333333012222222222333333333344/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"}`,
 			wantErr: "teams host must be a valid HTTPS URL",
 		},
 		{
 			name:    "missing host",
-			raw:     `{"host":"https:///webhookb2/11111111-4444-4444-8444-cccccccccccc@22222222-4444-4444-8444-cccccccccccc/IncomingWebhook/33333333012222222222333333333344/44444444-4444-4444-8444-cccccccccccc/V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"}`,
+			raw:     `{"host":"https:///powerautomate/automations/direct/workflows/33333333012222222222333333333344/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05"}`,
 			wantErr: "teams host must include a host",
 		},
 		{
 			name:    "fragment must be rejected",
-			raw:     `{"host":"https://contoso.webhook.office.com/webhookb2/11111111-4444-4444-8444-cccccccccccc@22222222-4444-4444-8444-cccccccccccc/IncomingWebhook/33333333012222222222333333333344/44444444-4444-4444-8444-cccccccccccc/V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05#fragment"}`,
+			raw:     `{"host":"https://contoso.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/33333333012222222222333333333344/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=V2ESyij_gAljSoUQHvZoZYzlpAoAXExyOl26dlf1xHEx05#fragment"}`,
 			wantErr: "teams host must not include a fragment",
 		},
 		{ //nolint:gosec
