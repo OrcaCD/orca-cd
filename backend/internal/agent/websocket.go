@@ -42,6 +42,11 @@ type envManager interface {
 	Redeploy(ctx context.Context, appID, appName string) error
 }
 
+type containerManager interface {
+	ListContainers(ctx context.Context, appID string) ([]*messages.ContainerInfo, error)
+	InspectContainer(ctx context.Context, appID, containerID string) (string, error)
+}
+
 type pollerHandler interface {
 	ApplySettings(apps []docker.AppPollConfig)
 	TriggerNow(appID, appName, requestID string, deleteOld bool, policy docker.ReleaseAgePolicy)
@@ -249,6 +254,10 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		go executeEnvList(ctx, sender, deployer, p.EnvListRequest)
 	case *messages.ServerMessage_EnvUpdateRequest:
 		go executeEnvUpdate(ctx, sender, deployer, p.EnvUpdateRequest)
+	case *messages.ServerMessage_ContainerListRequest:
+		go executeContainerList(ctx, sender, deployer, p.ContainerListRequest)
+	case *messages.ServerMessage_ContainerInspectRequest:
+		go executeContainerInspect(ctx, sender, deployer, p.ContainerInspectRequest)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
