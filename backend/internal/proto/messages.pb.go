@@ -3779,7 +3779,8 @@ type ContainerLogsRequest struct {
 	Tail        int32 `protobuf:"varint,4,opt,name=tail,proto3" json:"tail,omitempty"`
 	SinceUnixMs int64 `protobuf:"varint,5,opt,name=since_unix_ms,json=sinceUnixMs,proto3" json:"since_unix_ms,omitempty"`
 	Follow      bool  `protobuf:"varint,6,opt,name=follow,proto3" json:"follow,omitempty"`
-	// Cap for non-follow reads, 0 for the agent default.
+	// Cap for non-follow reads, 0 for the agent default. It cuts off the newest
+	// lines, use tail or since to read the end of a large log.
 	MaxBytes      int64 `protobuf:"varint,7,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

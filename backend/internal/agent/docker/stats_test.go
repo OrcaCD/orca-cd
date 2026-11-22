@@ -69,6 +69,7 @@ func collectStats(t *testing.T, cli client.APIClient, interval time.Duration) ([
 func TestStreamStats_BuildsSamples(t *testing.T) {
 	stubContainers(t, []containerapi.Summary{appSummary(webID, "web", "running")})
 	first := statsRecord(0, 1000, 10000)
+	first.PreCPUStats = statsRecord(0, 900, 9000).CPUStats
 	first.Networks = map[string]containerapi.NetworkStats{
 		"eth0": {RxBytes: 100, TxBytes: 10},
 		"eth1": {RxBytes: 5, TxBytes: 1},
@@ -98,9 +99,6 @@ func TestStreamStats_BuildsSamples(t *testing.T) {
 	if s.NetRxBytes != 105 || s.NetTxBytes != 11 {
 		t.Errorf("network counters must be summed over all interfaces, got rx=%d tx=%d", s.NetRxBytes, s.NetTxBytes)
 	}
-	if s.CpuPercent != 0 {
-		t.Errorf("the first sample has nothing to compare with, got %v", s.CpuPercent)
-	}
 }
 
 func TestStreamStats_CPUDeltaBetweenSamples(t *testing.T) {
@@ -108,6 +106,7 @@ func TestStreamStats_CPUDeltaBetweenSamples(t *testing.T) {
 	cli := &fakeStatsAPI{records: []containerapi.StatsResponse{
 		statsRecord(0, 1000, 10000),
 		statsRecord(2*time.Second, 1500, 12000),
+		statsRecord(4*time.Second, 1700, 14000),
 	}}
 
 	samples, _, err := collectStats(t, cli, 0)
@@ -118,8 +117,11 @@ func TestStreamStats_CPUDeltaBetweenSamples(t *testing.T) {
 		t.Fatalf("samples = %v", samples)
 	}
 	// 500 / 2000 * 4 cpus * 100
-	if got := samples[1].CpuPercent; math.Abs(got-100) > 1e-9 {
+	if got := samples[0].CpuPercent; math.Abs(got-100) > 1e-9 {
 		t.Errorf("cpu = %v, want 100", got)
+	}
+	if got := samples[1].CpuPercent; math.Abs(got-40) > 1e-9 {
+		t.Errorf("cpu = %v, want 40", got)
 	}
 }
 
@@ -132,6 +134,28 @@ func TestStreamStats_UsesPreviousSampleOfFirstRecord(t *testing.T) {
 	samples, _, err := collectStats(t, cli, 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := samples[0].CpuPercent; math.Abs(got-100) > 1e-9 {
+		t.Errorf("cpu = %v, want 100", got)
+	}
+}
+
+func TestStreamStats_FirstRecordWithoutPreCPUStatsIsOnlyBaseline(t *testing.T) {
+	stubContainers(t, []containerapi.Summary{appSummary(webID, "web", "running")})
+	cli := &fakeStatsAPI{records: []containerapi.StatsResponse{
+		statsRecord(0, 1000, 10000),
+		statsRecord(time.Second, 1500, 12000),
+	}}
+
+	samples, _, err := collectStats(t, cli, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 {
+		t.Fatalf("samples = %v, want only the second record", samples)
+	}
+	if samples[0].TimestampMs != statsEpoch.Add(time.Second).UnixMilli() {
+		t.Errorf("timestamp = %d, want the second record", samples[0].TimestampMs)
 	}
 	if got := samples[0].CpuPercent; math.Abs(got-100) > 1e-9 {
 		t.Errorf("cpu = %v, want 100", got)
@@ -154,12 +178,12 @@ func TestStreamStats_SamplesAtInterval(t *testing.T) {
 	for _, s := range samples {
 		got = append(got, (s.TimestampMs-statsEpoch.UnixMilli())/1000)
 	}
-	if len(got) != 4 || got[0] != 0 || got[1] != 2 || got[2] != 4 || got[3] != 6 {
-		t.Errorf("sample offsets = %v, want [0 2 4 6]", got)
+	if len(got) != 3 || got[0] != 2 || got[1] != 4 || got[2] != 6 {
+		t.Errorf("sample offsets = %v, want [2 4 6]", got)
 	}
 	// 200 / 2000 * 4 * 100 over the two second window, not the last second.
-	if math.Abs(samples[1].CpuPercent-40) > 1e-9 {
-		t.Errorf("cpu = %v, want 40", samples[1].CpuPercent)
+	if math.Abs(samples[0].CpuPercent-40) > 1e-9 {
+		t.Errorf("cpu = %v, want 40", samples[0].CpuPercent)
 	}
 }
 
@@ -170,6 +194,46 @@ func TestStreamStats_SkipsRecordsOfStoppedContainers(t *testing.T) {
 	samples, started, err := collectStats(t, cli, 0)
 	if err != nil || !started || len(samples) != 0 {
 		t.Errorf("samples = %v, started = %v, err = %v", samples, started, err)
+	}
+}
+
+func TestStreamStats_EndsWhenContainerStaysStopped(t *testing.T) {
+	stubContainers(t, []containerapi.Summary{appSummary(webID, "web", "exited")})
+	records := make([]containerapi.StatsResponse, 0, emptyRecordsUntilEnd+1)
+	for range emptyRecordsUntilEnd {
+		records = append(records, containerapi.StatsResponse{})
+	}
+	records = append(records, statsRecord(0, 1000, 10000), statsRecord(time.Second, 1500, 12000))
+	cli := &fakeStatsAPI{records: records}
+
+	samples, started, err := collectStats(t, cli, 0)
+	if err != nil || !started {
+		t.Fatalf("started = %v, err = %v", started, err)
+	}
+	if len(samples) != 0 {
+		t.Errorf("the stream must end once the container stays stopped, got %v", samples)
+	}
+}
+
+func TestStreamStats_ResumesAfterShortGap(t *testing.T) {
+	stubContainers(t, []containerapi.Summary{appSummary(webID, "web", "running")})
+	var records []containerapi.StatsResponse
+	for range emptyRecordsUntilEnd - 1 {
+		records = append(records, containerapi.StatsResponse{})
+	}
+	records = append(records, statsRecord(0, 1000, 10000), statsRecord(time.Second, 1500, 12000))
+	for range emptyRecordsUntilEnd - 1 {
+		records = append(records, containerapi.StatsResponse{})
+	}
+	records = append(records, statsRecord(10*time.Second, 2000, 20000))
+	cli := &fakeStatsAPI{records: records}
+
+	samples, _, err := collectStats(t, cli, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 2 {
+		t.Errorf("empty records below the limit must not end the stream, got %v", samples)
 	}
 }
 

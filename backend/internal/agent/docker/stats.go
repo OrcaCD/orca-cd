@@ -16,6 +16,8 @@ import (
 
 const StatsInterval = 2 * time.Second
 
+const emptyRecordsUntilEnd = 3
+
 // StreamStats blocks until the container stops or ctx is cancelled. started is
 // called once the stats are open, a container that cannot be read fails before that.
 func (c *Client) StreamStats(ctx context.Context, appID, containerID string, started func(), emit func(*messages.ContainerStatsSample) error) error {
@@ -45,6 +47,7 @@ func streamStats(ctx context.Context, cli client.APIClient, appID, containerID s
 	minGap := interval - interval/4
 	decoder := json.NewDecoder(result.Body)
 	var previous *container.StatsResponse
+	emptyRecords := 0
 	for {
 		record := new(container.StatsResponse)
 		if err := decoder.Decode(record); err != nil {
@@ -55,8 +58,12 @@ func streamStats(ctx context.Context, cli client.APIClient, appID, containerID s
 		}
 		// Stopped containers answer with an empty record.
 		if record.Read.Year() <= 1 {
+			if emptyRecords++; emptyRecords >= emptyRecordsUntilEnd {
+				return nil
+			}
 			continue
 		}
+		emptyRecords = 0
 		if previous != nil && record.Read.Sub(previous.Read) < minGap {
 			continue
 		}
@@ -64,6 +71,11 @@ func streamStats(ctx context.Context, cli client.APIClient, appID, containerID s
 		before := record.PreCPUStats
 		if previous != nil {
 			before = previous.CPUStats
+		}
+		// The first record has no PreCPUStats, so it is only a baseline.
+		if before.SystemUsage == 0 {
+			previous = record
+			continue
 		}
 		if err := emit(buildStatsSample(record, before)); err != nil {
 			return err

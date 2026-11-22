@@ -611,6 +611,28 @@ func TestStreamManager_StopAllEndsStreamsSilently(t *testing.T) {
 	}
 }
 
+func TestStreamManager_StopAllWaitsForStreamsToExit(t *testing.T) {
+	m, _ := newTestStreamManager()
+	sender := newStreamSender()
+	streamer := &stubStreamer{logs: func(ctx context.Context, _ agentdocker.LogsRequest, started func(), _ func(*messages.LogLine) error) error {
+		blockUntilDone(ctx, started)
+		time.Sleep(50 * time.Millisecond)
+		return ctx.Err()
+	}}
+	req := logRequest("r1")
+	req.Follow = true
+	m.StartLogs(t.Context(), sender, streamer, req)
+	expectStarted(t, sender, "r1")
+
+	m.StopAll()
+
+	if m.count() != 0 {
+		t.Fatalf("count = %d, StopAll must wait for the streams to exit", m.count())
+	}
+	m.StartLogs(t.Context(), sender, streamer, req)
+	expectStarted(t, sender, "r1")
+}
+
 func TestStreamManager_ParentContextCancellationIsSilent(t *testing.T) {
 	m, _ := newTestStreamManager()
 	sender := newStreamSender()
@@ -664,6 +686,34 @@ func TestStreamManager_RejectsStreamsOverTheLimit(t *testing.T) {
 	req := logRequest("after")
 	req.Follow = true
 	m.StartLogs(t.Context(), sender, streamer, req)
+	expectStarted(t, sender, "after")
+}
+
+func TestStreamManager_LimitsConcurrentDownloads(t *testing.T) {
+	m, _ := newTestStreamManager()
+	sender := newStreamSender()
+	streamer := &stubStreamer{logs: func(ctx context.Context, _ agentdocker.LogsRequest, started func(), _ func(*messages.LogLine) error) error {
+		blockUntilDone(ctx, started)
+		return ctx.Err()
+	}}
+	for i := range maxDownloads {
+		id := fmt.Sprintf("download%d", i)
+		m.StartLogs(t.Context(), sender, streamer, logRequest(id))
+		expectStarted(t, sender, id)
+	}
+
+	m.StartLogs(t.Context(), sender, streamer, logRequest("over"))
+	expectEnd(t, sender, "over", messages.StreamEndReason_STREAM_END_REASON_LIMIT)
+
+	follow := logRequest("follow")
+	follow.Follow = true
+	m.StartLogs(t.Context(), sender, streamer, follow)
+	expectStarted(t, sender, "follow")
+
+	m.Cancel("download0")
+	expectEnd(t, sender, "download0", messages.StreamEndReason_STREAM_END_REASON_CANCELLED)
+	waitForStreamCount(t, m, maxDownloads)
+	m.StartLogs(t.Context(), sender, streamer, logRequest("after"))
 	expectStarted(t, sender, "after")
 }
 

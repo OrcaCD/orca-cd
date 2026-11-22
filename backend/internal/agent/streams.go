@@ -27,6 +27,8 @@ const (
 
 	maxFollowTail    = 5000     // lines
 	maxDownloadBytes = 64 << 20 // 64 MiB
+
+	maxDownloads = 2 // no byte budget, so they must not saturate the connection
 )
 
 var (
@@ -44,6 +46,7 @@ type containerStreamer interface {
 type stream struct {
 	cancel      context.CancelCauseFunc
 	lastRefresh time.Time
+	download    bool
 }
 
 // streamManager runs the log and stats streams the hub opened. The hub keeps a
@@ -113,7 +116,7 @@ func (m *streamManager) StartLogs(ctx context.Context, sender outboundSender, de
 		maxBytes = maxDownloadBytes
 	}
 
-	m.start(ctx, sender, req.RequestId, onEnd, func(ctx context.Context, started func()) error {
+	m.start(ctx, sender, req.RequestId, onEnd, !req.Follow, func(ctx context.Context, started func()) error {
 		return m.streamLogs(ctx, sender, streamer, req.RequestId, logs, maxBytes, started)
 	})
 }
@@ -125,7 +128,7 @@ func (m *streamManager) StartStats(ctx context.Context, sender outboundSender, d
 		return
 	}
 
-	m.start(ctx, sender, req.RequestId, messages.StreamEndReason_STREAM_END_REASON_CONTAINER_GONE, func(ctx context.Context, started func()) error {
+	m.start(ctx, sender, req.RequestId, messages.StreamEndReason_STREAM_END_REASON_CONTAINER_GONE, false, func(ctx context.Context, started func()) error {
 		return streamer.StreamStats(ctx, req.ApplicationId, req.ContainerId, started, func(sample *messages.ContainerStatsSample) error {
 			sample.RequestId = req.RequestId
 			return sender.SendMessage(&messages.ClientMessage{
@@ -152,12 +155,14 @@ func (m *streamManager) KeepAlive(requestID string) {
 	}
 }
 
+// StopAll waits for the streams to exit. It must not run concurrently with a Start.
 func (m *streamManager) StopAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for _, s := range m.streams {
 		s.cancel(errConnectionClosed)
 	}
+	m.mu.Unlock()
+	m.wg.Wait()
 }
 
 func (m *streamManager) expireLeases() {
@@ -177,11 +182,21 @@ func (m *streamManager) count() int {
 	return len(m.streams)
 }
 
+func (m *streamManager) downloadsLocked() int {
+	n := 0
+	for _, s := range m.streams {
+		if s.download {
+			n++
+		}
+	}
+	return n
+}
+
 // start registers the stream and runs it until it ends. A stream the agent
 // cannot take is answered with a StreamEnd right away.
-func (m *streamManager) start(parent context.Context, sender outboundSender, requestID string, onEnd messages.StreamEndReason, run func(ctx context.Context, started func()) error) {
+func (m *streamManager) start(parent context.Context, sender outboundSender, requestID string, onEnd messages.StreamEndReason, download bool, run func(ctx context.Context, started func()) error) {
 	ctx, cancel := context.WithCancelCause(parent)
-	s := &stream{cancel: cancel}
+	s := &stream{cancel: cancel, download: download}
 
 	m.mu.Lock()
 	var rejection messages.StreamEndReason
@@ -189,7 +204,7 @@ func (m *streamManager) start(parent context.Context, sender outboundSender, req
 	switch {
 	case m.streams[requestID] != nil:
 		rejection, rejectionMessage = messages.StreamEndReason_STREAM_END_REASON_ERROR, "duplicate request ID"
-	case len(m.streams) >= maxStreams:
+	case len(m.streams) >= maxStreams, download && m.downloadsLocked() >= maxDownloads:
 		rejection = messages.StreamEndReason_STREAM_END_REASON_LIMIT
 	default:
 		s.lastRefresh = m.now()

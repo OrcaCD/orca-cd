@@ -417,7 +417,8 @@ message ContainerLogsRequest {
   int32 tail = 4;
   int64 since_unix_ms = 5;
   bool follow = 6;
-  // Cap for non-follow reads, 0 for the agent default.
+  // Cap for non-follow reads, 0 for the agent default. It cuts off the newest
+  // lines, use tail or since to read the end of a large log.
   int64 max_bytes = 7;
 }
 
