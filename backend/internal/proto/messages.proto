@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package messages;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "./messages";
 
 message ClientMessage {
@@ -17,6 +19,12 @@ message ClientMessage {
     EnvListResult env_list_result = 9;
     EnvUpdateResult env_update_result = 10;
     ImageUpdatesReport image_updates_report = 11;
+    ContainerListResult container_list_result = 12;
+    ContainerInspectResult container_inspect_result = 13;
+    ContainerLogsChunk container_logs_chunk = 14;
+    ContainerStatsSample container_stats_sample = 15;
+    StreamEnd stream_end = 16;
+    StreamStarted stream_started = 17;
   }
 }
 
@@ -31,6 +39,12 @@ message ServerMessage {
     DeleteRequest delete_request = 7;
     EnvListRequest env_list_request = 8;
     EnvUpdateRequest env_update_request = 9;
+    ContainerListRequest container_list_request = 10;
+    ContainerInspectRequest container_inspect_request = 11;
+    ContainerLogsRequest container_logs_request = 12;
+    ContainerStatsRequest container_stats_request = 13;
+    StreamCancel stream_cancel = 14;
+    StreamKeepAlive stream_keep_alive = 15;
   }
 }
 
@@ -255,6 +269,8 @@ message AgentInfo {
   string version = 1;
   string docker_version = 2;
   bool docker_unreachable = 3;
+  // Supported features, e.g. "container-monitoring".
+  repeated string capabilities = 4;
 }
 
 message EnvListRequest {
@@ -311,4 +327,164 @@ message EnvUpdateResult {
   bool success = 3;
   string error_message = 4;
   bool conflict = 5;
+}
+
+message ContainerListRequest {
+  string request_id = 1;
+  string application_id = 2;
+}
+
+message PortBinding {
+  string ip = 1;
+  // Zero when not published.
+  uint32 public_port = 2;
+  uint32 private_port = 3;
+  string protocol = 4;
+}
+
+message NetworkInfo {
+  string name = 1;
+  string ip_address = 2;
+  repeated string aliases = 3;
+}
+
+message MountInfo {
+  string type = 1;
+  string name = 2;
+  string destination = 3;
+  bool read_only = 4;
+}
+
+message ContainerInfo {
+  string id = 1;
+  string name = 2;
+  string service = 3;
+  string state = 4;
+  HealthStatus health = 5;
+  string health_raw = 6;
+  string image = 7;
+  string image_id = 8;
+  // Empty for images that did not come from a registry.
+  string image_digest = 9;
+  int32 restart_count = 10;
+  int32 exit_code = 11;
+  int64 created_at_ms = 12;
+  // Zero when unset.
+  int64 started_at_ms = 13;
+  int64 finished_at_ms = 14;
+  repeated PortBinding ports = 15;
+  repeated NetworkInfo networks = 16;
+  repeated MountInfo mounts = 17;
+  // Compose replica number, 0 when unknown.
+  int32 container_number = 18;
+  bool oom_killed = 19;
+  // Why the container could not start, from the Docker state.
+  string error = 20;
+  string restart_policy = 21;
+  string log_driver = 22;
+  int32 health_failing_streak = 23;
+}
+
+message ContainerListResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  repeated ContainerInfo containers = 5;
+}
+
+message ContainerInspectRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string container_id = 3;
+}
+
+message ContainerInspectResult {
+  string request_id = 1;
+  string application_id = 2;
+  bool success = 3;
+  string error_message = 4;
+  // Sanitized by the agent: no environment variables, secrets redacted.
+  string inspect_json = 5;
+}
+
+message ContainerLogsRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string container_id = 3;
+  // -1 for all lines, 0 for none.
+  int32 tail = 4;
+  int64 since_unix_ms = 5;
+  bool follow = 6;
+  // Cap for non-follow reads, 0 for the agent default.
+  int64 max_bytes = 7;
+}
+
+message ContainerStatsRequest {
+  string request_id = 1;
+  string application_id = 2;
+  string container_id = 3;
+}
+
+message StreamStarted {
+  string request_id = 1;
+}
+
+message StreamCancel {
+  string request_id = 1;
+}
+
+message StreamKeepAlive {
+  string request_id = 1;
+}
+
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  LOG_STREAM_STDOUT = 1;
+  LOG_STREAM_STDERR = 2;
+}
+
+message LogLine {
+  // Using timestamp for ns precision without overflow
+  google.protobuf.Timestamp timestamp = 1;
+  LogStream stream = 2;
+  string text = 3;
+  bool truncated = 4;
+}
+
+message ContainerLogsChunk {
+  string request_id = 1;
+  repeated LogLine lines = 2;
+  int64 dropped_lines = 3;
+}
+
+message ContainerStatsSample {
+  string request_id = 1;
+  int64 timestamp_ms = 2;
+  // Relative to one core, can exceed 100.
+  double cpu_percent = 3;
+  uint64 mem_usage_bytes = 4;
+  // Host memory when the container has no limit.
+  uint64 mem_limit_bytes = 5;
+  // Cumulative counters.
+  uint64 net_rx_bytes = 6;
+  uint64 net_tx_bytes = 7;
+  uint64 pids = 8;
+}
+
+enum StreamEndReason {
+  STREAM_END_REASON_UNSPECIFIED = 0;
+  STREAM_END_REASON_COMPLETED = 1;
+  STREAM_END_REASON_CANCELLED = 2;
+  STREAM_END_REASON_CONTAINER_GONE = 3;
+  STREAM_END_REASON_LEASE_EXPIRED = 4;
+  STREAM_END_REASON_LIMIT = 5;
+  STREAM_END_REASON_ERROR = 6;
+  STREAM_END_REASON_NOT_FOUND = 7;
+}
+
+message StreamEnd {
+  string request_id = 1;
+  StreamEndReason reason = 2;
+  string error_message = 3;
 }
