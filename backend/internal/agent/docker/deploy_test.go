@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -506,6 +507,7 @@ func TestDeploy_RestrictMountsToDeployDirAllowsMountInsideDeploymentsDir(t *test
 }
 
 func TestDeploy_TranslatesBindMountForAllowlistedApplication(t *testing.T) {
+	skipOnWindows(t)
 	const allowedAppID = "019e1ce8-7938-71b8-be55-4b184f307a2d"
 
 	c := newTestClientWithAllowlist(t, map[string]struct{}{allowedAppID: {}})
@@ -556,6 +558,7 @@ func TestDeploy_TranslatesBindMountForAllowlistedApplication(t *testing.T) {
 }
 
 func TestDeploy_RestrictMountsAllowsTranslatedDeploymentBind(t *testing.T) {
+	skipOnWindows(t)
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 	c.mu.Lock()
@@ -1108,7 +1111,7 @@ func TestDeploy_RejectsBindMountThroughSymlinkInApplicationDir(t *testing.T) {
 		ApplicationName: "billing",
 		ComposeFile:     "services:\n  app:\n    image: img:latest\n    volumes:\n      - ./link:/data\n",
 	})
-	requireErrorContains(t, err, "traverses symlink \""+filepath.Join(appDir, "link")+"\"")
+	requireErrorContains(t, err, fmt.Sprintf("traverses symlink %q", filepath.Join(appDir, "link")))
 	if upCalled {
 		t.Fatal("expected compose up to never be called for a rejected deploy")
 	}

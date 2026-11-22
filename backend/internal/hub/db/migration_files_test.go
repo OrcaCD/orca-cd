@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -235,7 +236,7 @@ func TestRunMigrations_RollsBackNewerSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to stat backup: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0600 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0600 {
 		t.Errorf("backup permissions = %o, want 600", perm)
 	}
 

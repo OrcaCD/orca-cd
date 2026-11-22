@@ -96,8 +96,9 @@ func TestDefaultConfig_Valid(t *testing.T) {
 	if !cfg.SigningPrivateKey.Equal(signingPriv) {
 		t.Error("SigningPrivateKey does not match the key encoded into the token")
 	}
-	if cfg.DeploymentsDir != "/test/deployments" {
-		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/test/deployments")
+	wantDir, _ := filepath.Abs("/test/deployments")
+	if cfg.DeploymentsDir != wantDir {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, wantDir)
 	}
 }
 
@@ -121,8 +122,9 @@ func TestDefaultConfig_Defaults(t *testing.T) {
 	if cfg.LogJSON {
 		t.Error("LogJSON = true, want false by default")
 	}
-	if cfg.DeploymentsDir != "/deployments" {
-		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, "/deployments")
+	wantDir, _ := filepath.Abs("/deployments")
+	if cfg.DeploymentsDir != wantDir {
+		t.Errorf("DeploymentsDir = %q, want %q", cfg.DeploymentsDir, wantDir)
 	}
 	if cfg.RootCAs != nil {
 		t.Error("RootCAs should be nil when CA_CERT_FILE is not set")
