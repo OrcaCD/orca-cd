@@ -120,6 +120,16 @@ func connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo, backfill bo
 		return err
 	}
 
+	connected := false
+	defer func() {
+		if connected {
+			return
+		}
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+
 	if err := configureSQLitePool(db); err != nil {
 		return err
 	}
@@ -130,9 +140,6 @@ func connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo, backfill bo
 
 	if !demo {
 		if err := refuseDemoDatabase(db); err != nil {
-			if sqlDB, dbErr := db.DB(); dbErr == nil {
-				_ = sqlDB.Close()
-			}
 			return err
 		}
 	}
@@ -171,6 +178,7 @@ func connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo, backfill bo
 	}
 
 	DB = db
+	connected = true
 	return nil
 }
 

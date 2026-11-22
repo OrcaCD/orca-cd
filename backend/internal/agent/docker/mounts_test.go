@@ -151,6 +151,7 @@ func (f *fakeContainerInspector) ContainerInspect(_ context.Context, containerID
 }
 
 func TestDetectHostDeploymentsDirUsesExactContainerID(t *testing.T) {
+	skipOnWindows(t)
 	inspector := &fakeContainerInspector{result: client.ContainerInspectResult{
 		Container: containerapi.InspectResponse{
 			ID:     testContainerID,
@@ -176,6 +177,7 @@ func TestDetectHostDeploymentsDirUsesExactContainerID(t *testing.T) {
 }
 
 func TestDetectHostDeploymentsDirSupportsLocalNamedVolume(t *testing.T) {
+	skipOnWindows(t)
 	inspector := &fakeContainerInspector{result: client.ContainerInspectResult{
 		Container: containerapi.InspectResponse{
 			ID: testContainerID,
@@ -278,6 +280,7 @@ func TestDetectHostDeploymentsDirErrors(t *testing.T) {
 }
 
 func TestTranslateBindMountSources(t *testing.T) {
+	skipOnWindows(t)
 	project := &composetypes.Project{Services: composetypes.Services{
 		"app": composetypes.ServiceConfig{Volumes: []composetypes.ServiceVolumeConfig{
 			{Type: composetypes.VolumeTypeBind, Source: "/deployments/app/data", Target: "/data", ReadOnly: true},
@@ -307,6 +310,7 @@ func TestTranslateBindMountSources(t *testing.T) {
 }
 
 func TestTranslateBindMountSourcesTranslatesRoot(t *testing.T) {
+	skipOnWindows(t)
 	project := projectWithBindMount("/deployments")
 
 	if err := translateBindMountSources(project, "/deployments", "/srv/orcacd/deployments"); err != nil {
@@ -337,6 +341,7 @@ func projectWithBindMount(source string) *composetypes.Project {
 }
 
 func TestTranslateBindMountSourcesTranslatesSecretAndConfigFiles(t *testing.T) {
+	skipOnWindows(t)
 	project := &composetypes.Project{
 		Secrets: composetypes.Secrets{
 			"inside":  {File: "/deployments/app/secret.txt"},

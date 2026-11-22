@@ -19,7 +19,15 @@ func projectWithService(svc composetypes.ServiceConfig) *composetypes.Project {
 	}
 }
 
+func skipOnWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix-style absolute paths")
+	}
+}
+
 func TestCheckDeployPolicy_AllowsSafeService(t *testing.T) {
+	skipOnWindows(t)
 	project := projectWithService(composetypes.ServiceConfig{
 		Image: "ghcr.io/orcacd/app:1.0.0",
 		Volumes: []composetypes.ServiceVolumeConfig{
@@ -106,6 +114,7 @@ func TestCheckDeployPolicy_RejectsSensitiveBindMounts(t *testing.T) {
 }
 
 func TestCheckDeployPolicy_AllowsNonSensitiveBindMounts(t *testing.T) {
+	skipOnWindows(t)
 	tests := []string{
 		"/data", "/home/user/app-data", "/etcetera", "/etc-data",
 		"/data/.ssh-backup", "/data/passwords", "/data/mykubeconfig",
@@ -293,6 +302,7 @@ func TestCheckEnvFiles_DenyListRejectsSensitivePaths(t *testing.T) {
 }
 
 func TestCheckEnvFiles_DenyListAllowsOtherPaths(t *testing.T) {
+	skipOnWindows(t)
 	for _, path := range []string{"/deployments/app/.env", "/srv/app/.env.prod", "/data/app.env"} {
 		t.Run(path, func(t *testing.T) {
 			if err := checkDeployPolicy(envFileProject(path), pathRules{}); err != nil {
@@ -503,6 +513,7 @@ func bindMountProject(source string) *composetypes.Project {
 }
 
 func TestCheckDeployPolicy_CleansPathsBeforeDenyListCheck(t *testing.T) {
+	skipOnWindows(t)
 	for _, source := range []string{"/./etc", "//etc", "/srv/../etc", "/var/run/./docker.sock", "/data/../root/.bashrc"} {
 		t.Run(source, func(t *testing.T) {
 			if err := checkDeployPolicy(bindMountProject(source), pathRules{}); err == nil {
@@ -516,6 +527,7 @@ func TestCheckDeployPolicy_CleansPathsBeforeDenyListCheck(t *testing.T) {
 }
 
 func TestCheckDeployPolicy_RejectsParentsOfSensitivePaths(t *testing.T) {
+	skipOnWindows(t)
 	for _, source := range []string{"/var", "/var/lib", "/home", "/home/alice", "/home/alice/"} {
 		t.Run(source, func(t *testing.T) {
 			if err := checkDeployPolicy(bindMountProject(source), pathRules{}); err == nil {
