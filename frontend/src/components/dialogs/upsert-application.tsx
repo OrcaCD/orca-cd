@@ -8,7 +8,6 @@ import type { SharedDialogProps } from "@/hooks/use-shared-dialog";
 import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
 import { defineStepper } from "@stepperize/react";
-import { type StepStatus } from "@stepperize/react/primitives";
 import {
 	ResponsiveDialog,
 	ResponsiveDialogContent,
@@ -61,6 +60,8 @@ export const applicationSchema = z.object({
 });
 
 const defaultApplicationIcon: LucideIconName = "box";
+type StepStatus = "previous" | "active" | "upcoming";
+
 const { Stepper } = defineStepper([{ id: "details" }, { id: "source" }, { id: "imagePolling" }]);
 
 type ApplicationFormValues = z.infer<typeof applicationSchema>;
@@ -253,8 +254,9 @@ const StepperSeparatorWithStatus = ({
 	}
 
 	return (
-		<Stepper.Separator
-			orientation="horizontal"
+		<hr
+			aria-hidden
+			data-orientation="horizontal"
 			data-status={status}
 			className="self-center bg-muted data-[status=previous]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
 		/>
@@ -471,7 +473,7 @@ export default function UpsertApplicationDialog({
 					}}
 				>
 					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
-						{({ stepper }) => {
+						{(stepper) => {
 							const allSteps = stepper.steps;
 							const currentIndex = stepper.index;
 
@@ -863,7 +865,11 @@ export default function UpsertApplicationDialog({
 									<Separator />
 
 									<StepperNavigation
-										stepper={stepper}
+										stepper={{
+											index: stepper.index,
+											id: stepper.current.id,
+											isLast: stepper.isLast,
+										}}
 										onNext={handleNext}
 										handleClose={handleClose}
 										isSubmitting={isSubmitting}

@@ -89,6 +89,17 @@ func configureSQLitePool(db *gorm.DB) error {
 }
 
 func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error {
+	return connect(newLogger, logLevel, demo, !demo)
+}
+
+// ConnectWithoutBackfill opens the database without recomputing the application
+// name hashes, so no encrypted data is read. The import command uses it to
+// replace a database that the current APP_SECRET cannot decrypt.
+func ConnectWithoutBackfill(newLogger zerolog.Logger, logLevel zerolog.Level) error {
+	return connect(newLogger, logLevel, false, false)
+}
+
+func connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo, backfill bool) error {
 	logger = newLogger
 
 	gormLogLevel := gormlogger.Error
@@ -109,6 +120,16 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 		return err
 	}
 
+	connected := false
+	defer func() {
+		if connected {
+			return
+		}
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	}()
+
 	if err := configureSQLitePool(db); err != nil {
 		return err
 	}
@@ -119,16 +140,13 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 
 	if !demo {
 		if err := refuseDemoDatabase(db); err != nil {
-			if sqlDB, dbErr := db.DB(); dbErr == nil {
-				_ = sqlDB.Close()
-			}
 			return err
 		}
 	}
 
 	// Populate the application name_hash blind index for rows created before the
 	// column existed. Skipped in demo mode where the database is read-only.
-	if !demo {
+	if backfill {
 		if err := BackfillNameHashes(context.Background(), db); err != nil {
 			return err
 		}
@@ -160,6 +178,7 @@ func Connect(newLogger zerolog.Logger, logLevel zerolog.Level, demo bool) error 
 	}
 
 	DB = db
+	connected = true
 	return nil
 }
 

@@ -253,6 +253,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 }
 
 func TestCheckAndPullImages_TranslatesBindMountBeforeUp(t *testing.T) {
+	skipOnWindows(t)
 	saveRestoreVars(t)
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()

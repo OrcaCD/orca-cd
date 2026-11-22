@@ -2,6 +2,7 @@ package docker
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,7 @@ func requireErrorContains(t *testing.T, err error, want string) {
 }
 
 func TestDeploymentPaths_AllowsPathsInsideApplicationDir(t *testing.T) {
+	skipOnWindows(t)
 	rules := setupDeploymentDirs(t)
 
 	for _, source := range []string{rules.applicationDir, filepath.Join(rules.applicationDir, "data"), filepath.Join(rules.applicationDir, "not-created-yet/sub"), "/srv/shared"} {
@@ -102,7 +104,7 @@ func TestDeploymentPaths_RejectsSymlinks(t *testing.T) {
 	for name, project := range projects {
 		t.Run(name, func(t *testing.T) {
 			err := checkDeployPolicy(project, rules)
-			requireErrorContains(t, err, "traverses symlink \""+link+"\"")
+			requireErrorContains(t, err, fmt.Sprintf("traverses symlink %q", link))
 		})
 	}
 }
@@ -116,7 +118,7 @@ func TestDeploymentPaths_RejectsSymlinkedApplicationDir(t *testing.T) {
 
 	rules := pathRules{deploymentsDir: deploymentsDir, applicationDir: applicationDir}
 	err := checkDeployPolicy(bindMountProject(filepath.Join(applicationDir, "data")), rules)
-	requireErrorContains(t, err, "traverses symlink \""+applicationDir+"\"")
+	requireErrorContains(t, err, fmt.Sprintf("traverses symlink %q", applicationDir))
 }
 
 func TestDeploymentPaths_ProtectEnvFilesOfOtherApplications(t *testing.T) {

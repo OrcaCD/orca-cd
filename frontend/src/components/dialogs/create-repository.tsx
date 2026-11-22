@@ -30,8 +30,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { defineStepper, type NavigationResult } from "@stepperize/react";
-import { type StepStatus } from "@stepperize/react/primitives";
+import { defineStepper } from "@stepperize/react";
 import { cn } from "@/lib/utils";
 import ErrorAlert from "../alerts/error-alert";
 import SuccessAlert from "../alerts/success-alert";
@@ -75,6 +74,8 @@ const PROVIDERS = [
 		placeholderUrl: "https://git.example.com/org/repo",
 	},
 ] as const;
+
+type StepStatus = "previous" | "active" | "upcoming";
 
 const { Stepper } = defineStepper([
 	{ id: "provider" },
@@ -146,8 +147,9 @@ const StepperSeparatorWithStatus = ({
 		return null;
 	}
 	return (
-		<Stepper.Separator
-			orientation="horizontal"
+		<hr
+			aria-hidden
+			data-orientation="horizontal"
 			data-status={status}
 			className="self-center bg-muted data-[status=previous]:bg-primary data-disabled:opacity-50 transition-all duration-300 ease-in-out data-[orientation=horizontal]:h-0.5 data-[orientation=horizontal]:min-w-4 data-[orientation=horizontal]:flex-1"
 		/>
@@ -283,6 +285,7 @@ function SyncTypeStepContent({ form }: { form: RepoFormApi }) {
 							value={field.state.value}
 							onChange={field.handleChange}
 							onBlur={field.handleBlur}
+							className="w-full"
 						/>
 					)}
 				</form.Field>
@@ -373,7 +376,7 @@ export default function CreateRepositoryDialog({
 }: SharedDialogProps) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | undefined>();
-	const stepperRef = React.useRef<{ next: () => Promise<NavigationResult> } | null>(null);
+	const stepperRef = React.useRef<{ next: () => Promise<unknown> } | null>(null);
 	const [webhookSecret, setWebhookSecret] = useState<string | undefined>();
 	const [webhookUrl, setWebhookUrl] = useState<string | undefined>();
 
@@ -470,7 +473,7 @@ export default function CreateRepositoryDialog({
 					}}
 				>
 					<Stepper.Root key={String(open)} className="w-full space-y-6" orientation="horizontal">
-						{({ stepper }) => {
+						{(stepper) => {
 							stepperRef.current = stepper;
 							const allSteps = stepper.steps;
 							const currentIndex = stepper.index;
@@ -558,7 +561,11 @@ export default function CreateRepositoryDialog({
 									})}
 
 									<StepperNavigation
-										stepper={stepper}
+										stepper={{
+											index: stepper.index,
+											id: stepper.current.id,
+											isLast: stepper.isLast,
+										}}
 										onNext={handleNext}
 										handleClose={handleClose}
 									/>

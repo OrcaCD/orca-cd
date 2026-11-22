@@ -1015,8 +1015,8 @@ func TestPasskeyVerificationRequiresAvailableLocalAccountAndStorage(t *testing.T
 	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "delete", "passkeyId": "missing"}, nil); w.Code != http.StatusNotFound {
 		t.Fatal("issued a delete proof for a missing key")
 	}
-	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil); w.Code != http.StatusBadRequest {
-		t.Fatal("started verification without an existing key")
+	if w := passkeyRequest(t, r, "/verify", map[string]any{"action": "add"}, nil); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "enrollment code") {
+		t.Fatalf("expected enrollment code hint without an existing key, got %d %s", w.Code, w.Body.String())
 	}
 	for _, scenario := range []string{"demo", "disabled", "unconfigured", "account changed"} {
 		previous := passkeyWebAuthn

@@ -267,6 +267,12 @@ var BeginPasskeyVerificationHandler = restapi.Handler(huma.Operation{
 	if !user.LocalAuthEnabled || user.TokenVersion != current.TokenVersion {
 		return nil, huma.Error403Forbidden("passkey account changed, please sign in again")
 	}
+	// An account signed in through SSO can have no passkey yet. The first one
+	// needs an enrollment code, otherwise a stolen session cookie could add one.
+	if len(user.Credentials) == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "add your first passkey with an enrollment code"})
+		return
+	}
 	options, session, err := passkeyWebAuthn.BeginLogin(user)
 	if err != nil {
 		return nil, huma.Error400BadRequest("could not start passkey verification")
