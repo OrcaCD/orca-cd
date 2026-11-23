@@ -102,25 +102,36 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		SyncStatus:    models.OutOfSync,
 		LastSyncError: &errMsg,
 	}, log)
-	// Publish the failed result only once a linked rollback is recorded, so
-	// status polling cannot finish before the rollback has started.
-	defer completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
+	var target *models.ApplicationDeployment
+	if event != nil && ctx.Err() == nil {
+		var previous *string
+		if discarded != nil {
+			previous = discarded.PreviousDeploymentId
+		}
+		target = automaticRollbackTarget(ctx, app, previous, log)
+	}
+	// Keep a tracked failure running until its rollback event is recorded.
+	rollbackBeforeCompletion := target != nil && event != nil && event.TriggerId != nil
+	if rollbackBeforeCompletion {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
+	}
+
+	writeCtx, cancelWrite := failureEventWriteContext(ctx)
+	defer cancelWrite()
+	completeDeployEvent(writeCtx, result, models.ApplicationEventFailed, &errMsg, log)
 	if ctx.Err() != nil {
 		return
 	}
 	go notifications.SendForApplication(result.ApplicationId, models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String(), log)
-
-	// Only deployments the hub dispatched are rolled back.
-	if event == nil {
-		return
-	}
-	var previous *string
-	if discarded != nil {
-		previous = discarded.PreviousDeploymentId
-	}
-	if target := automaticRollbackTarget(ctx, app, previous, log); target != nil {
+	if target != nil && !rollbackBeforeCompletion {
 		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
 	}
+}
+
+// A result already received from an agent should survive cancellation of the
+// context that carried it, with a deadline of its own for the database write.
+func failureEventWriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 }
 
 // forgetCurrentDeployment clears the current deployment of an application

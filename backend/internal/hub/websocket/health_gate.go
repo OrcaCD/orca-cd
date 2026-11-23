@@ -154,19 +154,21 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 // the deployment before it.
 func failHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, reason string, rollBack bool, log *zerolog.Logger) {
 	event := gatedEvent(ctx, app.Id, deployment, log)
+	var target *models.ApplicationDeployment
+	if rollBack {
+		var err error
+		target, err = deployments.Get(ctx, app.Id, deployment.PreviousDeploymentId)
+		if err != nil {
+			log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load deployment to roll back to")
+		}
+	}
+
 	var rejected bool
 	var err error
-	if rollBack && deployment.PreviousDeploymentId != nil && event != nil && event.TriggerId != nil {
+	rollbackBeforeCompletion := target != nil && event != nil && event.TriggerId != nil
+	if rollbackBeforeCompletion {
+		// Startup recovery completes the unlinked event if the Hub stops here.
 		rejected, err = deployments.RejectForRollback(ctx, deployment)
-		if err == nil && rejected {
-			defer func() {
-				writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-				defer cancel()
-				if _, err := applicationevents.Complete(writeCtx, *deployment.RequestId, app.Id, models.ApplicationEventFailed, &reason); err != nil {
-					log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to complete rejected deployment event")
-				}
-			}()
-		}
 	} else {
 		rejected, err = deployments.Reject(ctx, deployment, reason)
 	}
@@ -183,6 +185,14 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 		Updates(ctx, models.Application{SyncStatus: models.OutOfSync, LastSyncError: &reason}); err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to update application after failed health check")
 	}
+	if rollbackBeforeCompletion {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceHealthCheck, event, log)
+		writeCtx, cancelWrite := failureEventWriteContext(ctx)
+		defer cancelWrite()
+		if _, err := applicationevents.Complete(writeCtx, *deployment.RequestId, app.Id, models.ApplicationEventFailed, &reason); err != nil {
+			log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to complete rejected deployment event")
+		}
+	}
 	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 
 	notification, message := models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String()+": "+reason
@@ -190,16 +200,9 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 		notification, message = models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String()+": "+reason
 	}
 	go notifications.SendForApplication(app.Id, notification, message, log)
-	if !rollBack {
-		return
+	if target != nil && !rollbackBeforeCompletion {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceHealthCheck, event, log)
 	}
-
-	target, err := deployments.Get(ctx, app.Id, deployment.PreviousDeploymentId)
-	if err != nil {
-		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load deployment to roll back to")
-		return
-	}
-	triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceHealthCheck, event, log)
 }
 
 // triggerAutomaticRollback rolls the application back to target after a

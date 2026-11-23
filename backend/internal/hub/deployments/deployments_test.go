@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -689,6 +690,14 @@ func TestRejectForRollbackKeepsSourceEventRunning(t *testing.T) {
 	}
 	if ok, err := Verify(t.Context(), gated); err != nil || ok {
 		t.Errorf("removed deployment should no longer be verifiable, got %v, %v", ok, err)
+	}
+	// Startup recovery must finish the event if the Hub stops between rejection
+	// and the terminal status write.
+	if recovered, err := applicationevents.RecoverRunning(t.Context(), "hub restarted"); err != nil || recovered != 1 {
+		t.Fatalf("RecoverRunning = %d, %v, want one recovered event", recovered, err)
+	}
+	if got := loadEvent(t, event.Id); got.Status != models.ApplicationEventFailed {
+		t.Errorf("recovered event status = %q, want failed", got.Status)
 	}
 }
 

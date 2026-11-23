@@ -327,11 +327,19 @@ func TestResolveHealthGates_GateEnd(t *testing.T) {
 }
 
 func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		t.Run(map[bool]string{true: "enabled", false: "disabled"}[enabled], func(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		tracked bool
+	}{
+		{name: "tracks rollback despite cancellation", enabled: true, tracked: true},
+		{name: "completes ordinary failure before rollback", enabled: true},
+		{name: "rollback disabled"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			setupDeployTestEnv(t)
 			app := seedDeployApp(t, models.Syncing)
-			if enabled {
+			if tt.enabled {
 				app = enableAutomaticRollback(t, app.Id)
 			}
 			good := seedRollbackTarget(t, app.Id)
@@ -340,19 +348,34 @@ func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
 				t.Fatalf("set current deployment: %v", err)
 			}
 			startDeployEvent(t, &app, "failing")
-			triggerID := linkTestEventToTrigger(t, "failing")
+			var triggerID *string
+			if tt.tracked {
+				triggerID = new(linkTestEventToTrigger(t, "failing"))
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			recorder := recordRollbacks(t)
 			recorder.onDispatch = func() {
-				if event := loadEventByRequest(t, "failing"); event.Status != models.ApplicationEventRunning {
-					t.Errorf("triggered deploy event during rollback dispatch = %q, want running", event.Status)
+				want := models.ApplicationEventFailed
+				if tt.tracked {
+					want = models.ApplicationEventRunning
+					cancel()
+				}
+				if event := loadEventByRequest(t, "failing"); event.Status != want {
+					t.Errorf("deploy event during rollback dispatch = %q, want %q", event.Status, want)
 				}
 			}
 			nop := zerolog.Nop()
-			expectAsyncNotification(t)
+			if !tt.tracked {
+				expectAsyncNotification(t)
+			}
 
-			handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: "failing", ApplicationId: app.Id, ErrorMessage: "compose up failed"}, &nop)
+			handleDeployResult(ctx, "agent-1", &messages.DeployResult{RequestId: "failing", ApplicationId: app.Id, ErrorMessage: "compose up failed"}, &nop)
 
-			if !enabled {
+			if event := loadEventByRequest(t, "failing"); event.Status != models.ApplicationEventFailed {
+				t.Errorf("expected a terminal failure, got %q", event.Status)
+			}
+			if !tt.enabled {
 				if len(recorder.targets) != 0 {
 					t.Fatalf("expected no rollback, got %v", recorder.targets)
 				}
@@ -367,7 +390,7 @@ func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load rollback event: %v", err)
 			}
-			if rollbackEvent.TriggerId == nil || *rollbackEvent.TriggerId != triggerID {
+			if tt.tracked && (rollbackEvent.TriggerId == nil || *rollbackEvent.TriggerId != *triggerID) {
 				t.Errorf("rollback event should be linked to the trigger: %+v", rollbackEvent)
 			}
 			if rollbackEvent.Source != models.ApplicationEventSourceDeploymentFailure {
@@ -449,22 +472,30 @@ func TestHandlePullImagesResult_FailedRedeployRollsBack(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("start image update event: %v", err)
 			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			recorder := recordRollbacks(t)
 			recorder.onDispatch = func() {
+				cancel()
 				if event := loadEventByRequest(t, requestID); event.Status != models.ApplicationEventRunning {
 					t.Errorf("image update event during rollback dispatch = %q, want running", event.Status)
 				}
 			}
 			log := testLogger()
-			expectAsyncNotification(t)
+			if !redeployFailed {
+				expectAsyncNotification(t)
+			}
 
-			handlePullImagesResult(t.Context(), &Client{Id: "agent-1"}, &messages.PullImagesResult{
+			handlePullImagesResult(ctx, &Client{Id: "agent-1"}, &messages.PullImagesResult{
 				RequestId:      requestID,
 				ApplicationId:  app.Id,
 				ErrorMessage:   "compose up after pull: container exited",
 				RedeployFailed: redeployFailed,
 			}, &log)
 
+			if event := loadEventByRequest(t, requestID); event.Status != models.ApplicationEventFailed {
+				t.Errorf("expected a terminal failure, got %q", event.Status)
+			}
 			if rolledBack := len(recorder.targets) == 1 && recorder.targets[0] == good.Id; rolledBack != redeployFailed {
 				t.Errorf("rollbacks = %v, want rollback %v", recorder.targets, redeployFailed)
 			}
