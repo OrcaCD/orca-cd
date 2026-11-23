@@ -33,8 +33,10 @@ type ApplicationImageUpdate struct {
 	EligibleAt          *time.Time `gorm:"type:timestamp"`
 	MinimumAgeSeconds   int64      `gorm:"not null;default:0"`
 	MinimumAgeFromLabel bool       `gorm:"not null;default:false"`
-	Reason              string     `gorm:"type:text;not null;default:''"`
-	CheckedAt           time.Time  `gorm:"not null"`
+	// MinimumAgeEnforced means the global minimum raised MinimumAgeSeconds.
+	MinimumAgeEnforced bool      `gorm:"not null;default:false"`
+	Reason             string    `gorm:"type:text;not null;default:''"`
+	CheckedAt          time.Time `gorm:"not null"`
 }
 
 func (ApplicationImageUpdate) TableName() string { return "application_image_updates" }

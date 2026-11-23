@@ -32,8 +32,10 @@ type pendingImagePull struct {
 	// deadline is the hard cap, measured from the first trigger of the burst.
 	deadline time.Time
 	source   models.ApplicationEventSource
-	// images are the images the triggers announced, if they named one.
+	// images are the images the triggers announced, if they all named one.
 	images []string
+	// unrestricted means a trigger named no image, so every image is updated.
+	unrestricted bool
 }
 
 // ImagePullDebouncer collapses bursts of image update triggers for the same
@@ -90,6 +92,7 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 	now := time.Now()
 	deadline := now.Add(d.maxDelay)
 	var images []string
+	unrestricted := image == ""
 	if pending, ok := d.pending[appID]; ok {
 		if !now.Before(pending.deadline) {
 			// Hard cap elapsed; the queued pull is already on its way out.
@@ -97,10 +100,16 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 		}
 		deadline = pending.deadline
 		images = pending.images
+		unrestricted = unrestricted || pending.unrestricted
 		pending.timer.Stop()
 	}
+	if unrestricted {
+		images = nil
+	} else {
+		images = appendImage(images, image)
+	}
 
-	pending := &pendingImagePull{deadline: deadline, source: source, images: appendImage(images, image)}
+	pending := &pendingImagePull{deadline: deadline, source: source, images: images, unrestricted: unrestricted}
 	delay := min(d.window, deadline.Sub(now))
 	pending.timer = time.AfterFunc(delay, func() { d.dispatch(appID, pending) })
 	d.pending[appID] = pending

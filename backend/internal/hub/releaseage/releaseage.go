@@ -27,9 +27,10 @@ func Global(ctx context.Context) (models.Settings, error) {
 }
 
 // MinimumSeconds returns the minimum release age of the application, and
-// whether it uses the global default.
+// whether it uses the global one. The global minimum is also the least one, as
+// it may have been raised after the application set its own.
 func MinimumSeconds(app *models.Application, global models.Settings) (seconds int64, inherited bool) {
-	if app.MinimumReleaseAgeSeconds == nil {
+	if app.MinimumReleaseAgeSeconds == nil || *app.MinimumReleaseAgeSeconds < global.MinimumReleaseAgeSeconds {
 		return global.MinimumReleaseAgeSeconds, true
 	}
 	return *app.MinimumReleaseAgeSeconds, false
@@ -46,12 +47,15 @@ func AllowedRegistries(app *models.Application, global models.Settings) []string
 	return registries
 }
 
-// Policy returns the release age policy of the application for its agent.
+// Policy returns the release age policy of the application for its agent. The
+// agent raises service overrides and labels below the global minimum to it.
 func Policy(app *models.Application, global models.Settings) *messages.ReleaseAgePolicy {
 	seconds, _ := MinimumSeconds(app, global)
 	return &messages.ReleaseAgePolicy{
-		MinimumSeconds:        seconds,
-		AllowedRegistries:     AllowedRegistries(app, global),
-		ServiceMinimumSeconds: app.ReleaseAgeServiceOverrides,
+		MinimumSeconds:           seconds,
+		AllowedRegistries:        AllowedRegistries(app, global),
+		ServiceMinimumSeconds:    app.ReleaseAgeServiceOverrides,
+		EnforcedMinimumSeconds:   global.MinimumReleaseAgeSeconds,
+		EnforcedExemptRegistries: global.ReleaseAgeAllowedRegistries,
 	}
 }

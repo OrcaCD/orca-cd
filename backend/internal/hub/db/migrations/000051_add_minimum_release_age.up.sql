@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS application_image_updates (
     eligible_at            DATETIME,
     minimum_age_seconds    INTEGER NOT NULL DEFAULT 0,
     minimum_age_from_label INTEGER NOT NULL DEFAULT 0,
+    minimum_age_enforced   INTEGER NOT NULL DEFAULT 0,
     reason                 TEXT NOT NULL DEFAULT '',
     checked_at             DATETIME NOT NULL,
     PRIMARY KEY (application_id, service),

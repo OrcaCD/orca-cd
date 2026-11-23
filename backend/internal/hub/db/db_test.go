@@ -82,6 +82,8 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"role_permissions",
 		"user_roles",
 		"api_tokens",
+		"settings",
+		"application_image_updates",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -1110,6 +1112,8 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 		"notifications":      {&models.Notification{}, 2},
 		"audit logs":         {&models.AuditLog{}, 9},
 		"api tokens":         {&models.APIToken{}, 4},
+		"image updates":      {&models.ApplicationImageUpdate{}, 3},
+		"settings":           {&models.Settings{}, 1},
 	}
 	for name, c := range counts {
 		var got int64

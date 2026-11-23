@@ -29,8 +29,14 @@ type ReleaseAgePolicy struct {
 	ServiceMinimumAge map[string]time.Duration
 	// AllowedRegistries skip the check.
 	AllowedRegistries []string
+	// EnforcedMinimumAge is the least age of every image, which neither labels,
+	// service overrides nor AllowedRegistries lower. Images of
+	// EnforcedExemptRegistries skip it.
+	EnforcedMinimumAge       time.Duration
+	EnforcedExemptRegistries []string
 	// WebhookImages are the images an image pull webhook announced. When set,
-	// only they are updated, without the check, as their publisher triggered it.
+	// only they are updated, without the check but for EnforcedMinimumAge, as
+	// their publisher triggered it.
 	WebhookImages []string
 }
 
@@ -43,10 +49,12 @@ func ReleaseAgePolicyFromProto(policy *messages.ReleaseAgePolicy, webhookImages 
 		services[service] = time.Duration(seconds) * time.Second
 	}
 	return ReleaseAgePolicy{
-		MinimumAge:        time.Duration(policy.GetMinimumSeconds()) * time.Second,
-		ServiceMinimumAge: services,
-		AllowedRegistries: policy.GetAllowedRegistries(),
-		WebhookImages:     webhookImages,
+		MinimumAge:               time.Duration(policy.GetMinimumSeconds()) * time.Second,
+		ServiceMinimumAge:        services,
+		AllowedRegistries:        policy.GetAllowedRegistries(),
+		EnforcedMinimumAge:       time.Duration(policy.GetEnforcedMinimumSeconds()) * time.Second,
+		EnforcedExemptRegistries: policy.GetEnforcedExemptRegistries(),
+		WebhookImages:            webhookImages,
 	}
 }
 
@@ -54,6 +62,8 @@ func (p ReleaseAgePolicy) equal(other ReleaseAgePolicy) bool {
 	return p.MinimumAge == other.MinimumAge &&
 		maps.Equal(p.ServiceMinimumAge, other.ServiceMinimumAge) &&
 		slices.Equal(p.AllowedRegistries, other.AllowedRegistries) &&
+		p.EnforcedMinimumAge == other.EnforcedMinimumAge &&
+		slices.Equal(p.EnforcedExemptRegistries, other.EnforcedExemptRegistries) &&
 		slices.Equal(p.WebhookImages, other.WebhookImages)
 }
 
@@ -70,35 +80,66 @@ func (p ReleaseAgePolicy) minimumAge(service composetypes.ServiceConfig) (time.D
 	return p.MinimumAge, false, nil
 }
 
+// enforcedMinimumAge returns the enforced minimum release age of imageRef.
+func (p ReleaseAgePolicy) enforcedMinimumAge(imageRef string) time.Duration {
+	if slices.Contains(p.EnforcedExemptRegistries, registryHost(imageRef)) {
+		return 0
+	}
+	return p.EnforcedMinimumAge
+}
+
+// setMinimumAge records the minimum release age of the service in update and
+// returns it. The enforced minimum raises a lower one.
+func (p ReleaseAgePolicy) setMinimumAge(service composetypes.ServiceConfig, update *messages.ImageUpdate) (time.Duration, error) {
+	age, fromLabel, err := p.minimumAge(service)
+	update.MinimumAgeFromLabel = fromLabel
+	if err != nil {
+		return 0, err
+	}
+	if enforced := p.enforcedMinimumAge(service.Image); enforced > age {
+		age = enforced
+		update.MinimumAgeFromLabel = false
+		update.MinimumAgeEnforced = true
+	}
+	update.MinimumAgeSeconds = int64(age / time.Second)
+	return age, nil
+}
+
 // evaluateUpdate decides whether the service's image may be updated to digest
 // and records why in update. It returns whether the age of the digest was
 // checked, which means it has to be pulled by that digest.
 func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy ReleaseAgePolicy, service composetypes.ServiceConfig, digest string, update *messages.ImageUpdate) (checked bool) {
 	update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED
 
-	minimumAge, fromLabel, err := policy.minimumAge(service)
-	update.MinimumAgeFromLabel = fromLabel
+	minimumAge, err := policy.setMinimumAge(service, update)
 	if err != nil {
 		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED
 		update.Reason = fmt.Sprintf("invalid %s label: %v", releaseAgeLabel, err)
 		return false
 	}
-	update.MinimumAgeSeconds = int64(minimumAge / time.Second)
 	if minimumAge <= 0 {
 		return false
 	}
 
+	// An image its publisher announced, or one of an allowed registry, only
+	// waits for the enforced minimum.
+	exempt := slices.Contains(policy.AllowedRegistries, registryHost(service.Image))
 	if len(policy.WebhookImages) > 0 {
 		if !slices.ContainsFunc(policy.WebhookImages, func(image string) bool { return sameTag(image, service.Image) }) {
 			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
 			update.Reason = "not announced by the image pull webhook, image polling updates it"
+			return false
 		}
-		return false
+		exempt = true
 	}
-
-	registry := registryHost(service.Image)
-	if slices.Contains(policy.AllowedRegistries, registry) {
-		return false
+	if exempt {
+		minimumAge = policy.enforcedMinimumAge(service.Image)
+		if minimumAge <= 0 {
+			return false
+		}
+		update.MinimumAgeSeconds = int64(minimumAge / time.Second)
+		update.MinimumAgeFromLabel = false
+		update.MinimumAgeEnforced = true
 	}
 
 	since := "pushed"

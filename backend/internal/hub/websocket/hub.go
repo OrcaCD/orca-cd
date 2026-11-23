@@ -258,16 +258,20 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 }
 
 // SendAgentSettings builds an AgentSettings message from the given applications
-// and sends it to the specified agent. Returns false if the agent is not connected
-// or the send buffer is full.
+// and sends it to the specified agent. Returns false if the settings can't be
+// determined, the agent is not connected or the send buffer is full. The agent
+// then keeps the settings it has, rather than run without the release age or
+// delete images a rollback needs.
 func (h *Hub) SendAgentSettings(ctx context.Context, agentID string, apps []models.Application) bool {
 	retentions, err := deployments.ImageRetentions(ctx, apps)
 	if err != nil {
 		h.log.Error().Err(err).Str("agent_id", agentID).Msg("failed to determine images to keep for rollbacks")
+		return false
 	}
 	global, err := releaseage.Global(ctx)
 	if err != nil {
 		h.log.Error().Err(err).Str("agent_id", agentID).Msg("failed to load the global release age settings")
+		return false
 	}
 	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
 	for i := range apps {

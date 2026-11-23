@@ -117,7 +117,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			protected.POST("/applications/:id/deployments/:deploymentId/rollback", app(models.ActionRollback), routes.RollbackApplicationHandler)
 			protected.POST("/applications/:id/resume-auto-sync", app(models.ActionRollback), routes.ResumeApplicationAutoSyncHandler)
 			protected.PUT("/applications/:id/rollback/settings", app(models.ActionUpdate), routes.UpdateRollbackSettingsHandler)
-			protected.PUT("/applications/:id/release-age", app(models.ActionUpdate), routes.UpdateReleaseAgeSettingsHandler)
+			protected.PUT("/applications/:id/release-age/settings", app(models.ActionUpdate), routes.UpdateReleaseAgeSettingsHandler)
 			protected.PUT("/applications/:id/release-age/services/:service", app(models.ActionUpdate), routes.UpdateServiceReleaseAgeHandler)
 			protected.GET("/applications/:id/image-updates", app(models.ActionRead), routes.ListApplicationImageUpdatesHandler)
 			protected.GET("/settings/release-age", routes.GetReleaseAgeSettingsHandler)

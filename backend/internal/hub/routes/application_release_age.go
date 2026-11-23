@@ -1,11 +1,13 @@
 package routes
 
 import (
+	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -13,9 +15,13 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
+	"github.com/OrcaCD/orca-cd/internal/shared/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+var releaseAgeLog = logger.New("release-age", false)
 
 const (
 	maxMinimumReleaseAgeSeconds    = 365 * 24 * 60 * 60
@@ -78,24 +84,73 @@ func normalizeRegistries(registries []string) ([]string, bool) {
 	return normalized, true
 }
 
+// nullableSeconds is a number of seconds that may be null, telling a null
+// apart from a missing field.
+type nullableSeconds struct {
+	Set   bool
+	Value *int64
+}
+
+func (n *nullableSeconds) UnmarshalJSON(data []byte) error {
+	n.Set = true
+	n.Value = nil
+	if string(data) == "null" {
+		return nil
+	}
+	var seconds int64
+	if err := json.Unmarshal(data, &seconds); err != nil {
+		return err
+	}
+	n.Value = &seconds
+	return nil
+}
+
+// checkMinimumSeconds answers with 400 and returns false if seconds is not a
+// valid minimum release age, which must not be below the global one.
+func checkMinimumSeconds(c *gin.Context, seconds *int64, global models.Settings) bool {
+	if seconds == nil {
+		return true
+	}
+	if !validMinimumSeconds(*seconds) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
+		return false
+	}
+	if *seconds < global.MinimumReleaseAgeSeconds {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must not be below the global minimum release age"})
+		return false
+	}
+	return true
+}
+
+// loadGlobalReleaseAge returns the global settings, or answers with 500.
+func loadGlobalReleaseAge(c *gin.Context) (models.Settings, bool) {
+	global, err := releaseage.Global(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return global, false
+	}
+	return global, true
+}
+
 type updateReleaseAgeRequest struct {
-	MinimumSeconds    *int64   `json:"minimumSeconds"`
-	AllowedRegistries []string `json:"allowedRegistries"`
+	MinimumSeconds    nullableSeconds `json:"minimumSeconds"`
+	AllowedRegistries []string        `json:"allowedRegistries" binding:"required"`
 }
 
 // UpdateReleaseAgeSettingsHandler configures the minimum release age of the
-// images an application is updated to. A null minimumSeconds uses the global default.
+// images an application is updated to. A null minimumSeconds uses the global
+// one, which is also the least minimum release age.
 func UpdateReleaseAgeSettingsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := c.Param("id")
 
 	var req updateReleaseAgeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil || !req.MinimumSeconds.Set {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if req.MinimumSeconds != nil && !validMinimumSeconds(*req.MinimumSeconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
+	global, ok := loadGlobalReleaseAge(c)
+	if !ok || !checkMinimumSeconds(c, req.MinimumSeconds.Value, global) {
 		return
 	}
 	registries, ok := normalizeRegistries(req.AllowedRegistries)
@@ -108,7 +163,7 @@ func UpdateReleaseAgeSettingsHandler(c *gin.Context) {
 		Where("id = ?", id).
 		Select("MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries").
 		Updates(ctx, models.Application{
-			MinimumReleaseAgeSeconds:    req.MinimumSeconds,
+			MinimumReleaseAgeSeconds:    req.MinimumSeconds.Value,
 			ReleaseAgeAllowedRegistries: registries,
 		})
 	if err != nil {
@@ -122,9 +177,18 @@ func UpdateReleaseAgeSettingsHandler(c *gin.Context) {
 	respondWithUpdatedApplication(c, id)
 }
 
+const (
+	maxServiceReleaseAgeOverrides = 100
+	maxServiceNameLength          = 255
+)
+
 type updateServiceReleaseAgeRequest struct {
-	MinimumSeconds *int64 `json:"minimumSeconds"`
+	MinimumSeconds nullableSeconds `json:"minimumSeconds"`
 }
+
+// serviceOverridesMu serializes changes to the service overrides, which are
+// read, changed and written back as a whole.
+var serviceOverridesMu sync.Mutex
 
 // UpdateServiceReleaseAgeHandler overrides the minimum release age of one
 // compose service. A null minimumSeconds removes the override.
@@ -134,14 +198,17 @@ func UpdateServiceReleaseAgeHandler(c *gin.Context) {
 	service := c.Param("service")
 
 	var req updateServiceReleaseAgeRequest
-	if err := c.ShouldBindJSON(&req); err != nil || service == "" || len(service) > 255 {
+	if err := c.ShouldBindJSON(&req); err != nil || !req.MinimumSeconds.Set || service == "" || len(service) > maxServiceNameLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if req.MinimumSeconds != nil && !validMinimumSeconds(*req.MinimumSeconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
+	global, ok := loadGlobalReleaseAge(c)
+	if !ok || !checkMinimumSeconds(c, req.MinimumSeconds.Value, global) {
 		return
 	}
+
+	serviceOverridesMu.Lock()
+	defer serviceOverridesMu.Unlock()
 
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
@@ -157,10 +224,14 @@ func UpdateServiceReleaseAgeHandler(c *gin.Context) {
 	if overrides == nil {
 		overrides = map[string]int64{}
 	}
-	if req.MinimumSeconds == nil {
+	if req.MinimumSeconds.Value == nil {
 		delete(overrides, service)
 	} else {
-		overrides[service] = *req.MinimumSeconds
+		if _, exists := overrides[service]; !exists && len(overrides) >= maxServiceReleaseAgeOverrides {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "the minimum release age can be overridden for at most 100 services"})
+			return
+		}
+		overrides[service] = *req.MinimumSeconds.Value
 	}
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", id).
@@ -193,9 +264,8 @@ func respondWithUpdatedApplication(c *gin.Context, id string) {
 
 // GetReleaseAgeSettingsHandler returns the global release age settings.
 func GetReleaseAgeSettingsHandler(c *gin.Context) {
-	settings, err := releaseage.Global(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+	settings, ok := loadGlobalReleaseAge(c)
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, globalReleaseAgeSettings{
@@ -204,17 +274,23 @@ func GetReleaseAgeSettingsHandler(c *gin.Context) {
 	})
 }
 
-// AdminUpdateReleaseAgeSettingsHandler changes the global release age settings,
-// which apply to every application without its own minimum release age.
+type updateGlobalReleaseAgeRequest struct {
+	MinimumSeconds    *int64   `json:"minimumSeconds" binding:"required"`
+	AllowedRegistries []string `json:"allowedRegistries" binding:"required"`
+}
+
+// AdminUpdateReleaseAgeSettingsHandler changes the global release age settings.
+// The minimum release age is the default of applications without their own,
+// and the least one of every image that is not from an allowed registry.
 func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	var req globalReleaseAgeSettings
+	var req updateGlobalReleaseAgeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	if !validMinimumSeconds(req.MinimumSeconds) {
+	if !validMinimumSeconds(*req.MinimumSeconds) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
 		return
 	}
@@ -226,10 +302,10 @@ func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 
 	settings := models.Settings{
 		Id:                          models.SettingsId,
-		MinimumReleaseAgeSeconds:    req.MinimumSeconds,
+		MinimumReleaseAgeSeconds:    *req.MinimumSeconds,
 		ReleaseAgeAllowedRegistries: registries,
 	}
-	if err := db.DB.WithContext(ctx).Save(&settings).Error; err != nil {
+	if err := gorm.G[models.Settings](db.DB, clause.OnConflict{UpdateAll: true}).Create(ctx, &settings); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -245,6 +321,7 @@ func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 func sendAllAgentSettings(c *gin.Context) {
 	agentIDs, err := gorm.G[models.Application](db.DB).Distinct("agent_id").Find(c.Request.Context())
 	if err != nil {
+		releaseAgeLog.Error().Err(err).Msg("failed to list the agents to send the release age settings to")
 		return
 	}
 	for _, app := range agentIDs {
@@ -335,6 +412,9 @@ func ListApplicationImageUpdatesHandler(c *gin.Context) {
 }
 
 func ageSource(row *models.ApplicationImageUpdate, app *models.Application, inherited bool) string {
+	if row.MinimumAgeEnforced {
+		return "global"
+	}
 	if row.MinimumAgeFromLabel {
 		return "label"
 	}

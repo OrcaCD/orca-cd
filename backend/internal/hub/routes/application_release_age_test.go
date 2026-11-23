@@ -7,11 +7,15 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -31,7 +35,7 @@ func invokeReleaseAgeHandler(t *testing.T, handler gin.HandlerFunc, method, path
 func invokeReleaseAgeSettingsHandler(t *testing.T, appID, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	return invokeReleaseAgeHandler(t, UpdateReleaseAgeSettingsHandler, http.MethodPut,
-		"/api/v1/applications/"+appID+"/release-age", body, gin.Params{{Key: "id", Value: appID}})
+		"/api/v1/applications/"+appID+"/release-age/settings", body, gin.Params{{Key: "id", Value: appID}})
 }
 
 func decodeApplication(t *testing.T, w *httptest.ResponseRecorder) applicationResponse {
@@ -123,8 +127,10 @@ func TestUpdateServiceReleaseAgeHandler(t *testing.T) {
 	if w := setService("db", `{"minimumSeconds":-5}`); w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for a negative age, got %d", w.Code)
 	}
-	if w := setService("db", `not json`); w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 for an invalid body, got %d", w.Code)
+	for _, body := range []string{`not json`, `{}`} {
+		if w := setService("db", body); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", body, w.Code)
+		}
 	}
 
 	w := invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
@@ -165,6 +171,9 @@ func TestAdminUpdateReleaseAgeSettingsHandler(t *testing.T) {
 	for _, body := range []string{
 		`{"minimumSeconds":-1,"allowedRegistries":[]}`,
 		`{"minimumSeconds":0,"allowedRegistries":["registry.local/library"]}`,
+		`{}`,
+		`{"minimumSeconds":null,"allowedRegistries":[]}`,
+		`{"minimumSeconds":0}`,
 		`not json`,
 	} {
 		w = invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
@@ -307,21 +316,25 @@ func TestWebhookImage(t *testing.T) {
 	if got := dockerHubImage(dockerHubPayloadFrom(t, dockerHubPushBody)); got != "svendowideit/testhook:latest" {
 		t.Errorf("dockerHubImage = %q", got)
 	}
+	otherRegistry := `{"push_data":{"tag":"17"},"repository":{"repo_name":"ghcr.io/org/postgres"}}`
+	if got := dockerHubImage(dockerHubPayloadFrom(t, otherRegistry)); got != "" {
+		t.Errorf("expected no image of another registry, got %q", got)
+	}
 
 	tests := []struct {
-		name, body, want string
+		image, registry, want string
 	}{
-		{"harbor", `{"type":"PUSH_ARTIFACT","event_data":{"resources":[{"resource_url":"harbor.local/library/nginx:1.27"}]}}`, "harbor.local/library/nginx:1.27"},
-		{"harbor cloudevents", `{"type":"harbor.artifact.pushed","data":{"resources":[{"resource_url":"harbor.local/library/nginx:1.27"}]}}`, "harbor.local/library/nginx:1.27"},
-		{"generic", `{}`, ""},
-		{"empty", ``, ""},
+		{"ghcr.io/org/app:1.0", "ghcr.io", "ghcr.io/org/app:1.0"},
+		{"docker.io/library/postgres:17", "ghcr.io", ""},
+		{"postgres:17", "docker.io", "postgres:17"},
+		{"registry.local/postgres:17", "docker.io", ""},
+		{"not a reference", "ghcr.io", ""},
+		{"", "ghcr.io", ""},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := harborImage([]byte(tt.body)); got != tt.want {
-				t.Errorf("harborImage = %q, want %q", got, tt.want)
-			}
-		})
+		if got := announcedImage(tt.image, tt.registry); got != tt.want {
+			t.Errorf("announcedImage(%q, %q) = %q, want %q", tt.image, tt.registry, got, tt.want)
+		}
 	}
 }
 
@@ -332,4 +345,148 @@ func dockerHubPayloadFrom(t *testing.T, body string) dockerHubPayload {
 		t.Fatalf("not a Docker Hub payload: %s", body)
 	}
 	return payload
+}
+
+func TestReleaseAgeHandlers_GlobalMinimumIsLowerBound(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-floor")
+	agent := seedTestAgent(t, "agent-release-age-floor")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Release Age Floor App")
+	if w := invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
+		"/api/v1/admin/settings/release-age", `{"minimumSeconds":86400,"allowedRegistries":[]}`, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if w := invokeReleaseAgeSettingsHandler(t, app.Id, `{"minimumSeconds":3600,"allowedRegistries":[]}`); w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 below the global minimum, got %d", w.Code)
+	}
+	decodeApplication(t, invokeReleaseAgeSettingsHandler(t, app.Id, `{"minimumSeconds":172800,"allowedRegistries":[]}`))
+
+	setService := func(body string) *httptest.ResponseRecorder {
+		return invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+			"/api/v1/applications/"+app.Id+"/release-age/services/web", body,
+			gin.Params{{Key: "id", Value: app.Id}, {Key: "service", Value: "web"}})
+	}
+	if w := setService(`{"minimumSeconds":0}`); w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for a service below the global minimum, got %d", w.Code)
+	}
+	decodeApplication(t, setService(`{"minimumSeconds":86400}`))
+}
+
+func TestUpdateServiceReleaseAgeHandler_LimitsOverrides(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-limit")
+	agent := seedTestAgent(t, "agent-release-age-limit")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Release Age Limit App")
+	overrides := make(map[string]int64, maxServiceReleaseAgeOverrides)
+	for i := range maxServiceReleaseAgeOverrides {
+		overrides[fmt.Sprintf("service-%d", i)] = 0
+	}
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("ReleaseAgeServiceOverrides").
+		Updates(t.Context(), models.Application{ReleaseAgeServiceOverrides: overrides}); err != nil {
+		t.Fatalf("update application: %v", err)
+	}
+	setService := func(service string) *httptest.ResponseRecorder {
+		return invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+			"/api/v1/applications/"+app.Id+"/release-age/services/"+service, `{"minimumSeconds":60}`,
+			gin.Params{{Key: "id", Value: app.Id}, {Key: "service", Value: service}})
+	}
+
+	if w := setService("one-too-many"); w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 above the limit, got %d", w.Code)
+	}
+	// An existing override can still be changed.
+	decodeApplication(t, setService("service-0"))
+}
+
+func TestUpdateServiceReleaseAgeHandler_ConcurrentUpdatesKeepEveryService(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-concurrent")
+	agent := seedTestAgent(t, "agent-release-age-concurrent")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Release Age Concurrent App")
+
+	const services = 10
+	var wg sync.WaitGroup
+	for i := range services {
+		wg.Go(func() {
+			service := fmt.Sprintf("service-%d", i)
+			invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+				"/api/v1/applications/"+app.Id+"/release-age/services/"+service, `{"minimumSeconds":60}`,
+				gin.Params{{Key: "id", Value: app.Id}, {Key: "service", Value: service}})
+		})
+	}
+	wg.Wait()
+
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatalf("load application: %v", err)
+	}
+	if len(updated.ReleaseAgeServiceOverrides) != services {
+		t.Errorf("expected %d overrides, got %v", services, updated.ReleaseAgeServiceOverrides)
+	}
+}
+
+func TestReleaseAgeHandlers_GlobalSettingsError(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-error")
+	agent := seedTestAgent(t, "agent-release-age-error")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Release Age Error App")
+	if err := db.DB.Migrator().DropTable(&models.Settings{}); err != nil {
+		t.Fatalf("drop settings: %v", err)
+	}
+
+	if w := invokeReleaseAgeSettingsHandler(t, app.Id, `{"minimumSeconds":3600,"allowedRegistries":[]}`); w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+	w := invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+		"/api/v1/applications/"+app.Id+"/release-age/services/web", `{"minimumSeconds":60}`,
+		gin.Params{{Key: "id", Value: app.Id}, {Key: "service", Value: "web"}})
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+	if w := invokeReleaseAgeHandler(t, GetReleaseAgeSettingsHandler, http.MethodGet, "/api/v1/settings/release-age", "", nil); w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestAgeSource_Enforced(t *testing.T) {
+	row := &models.ApplicationImageUpdate{Service: "web", MinimumAgeEnforced: true, MinimumAgeFromLabel: false}
+	app := &models.Application{ReleaseAgeServiceOverrides: map[string]int64{"web": 0}}
+	if got := ageSource(row, app, false); got != "global" {
+		t.Errorf("ageSource = %q, want global", got)
+	}
+}
+
+func TestAdminUpdateReleaseAgeSettingsHandler_RequiresAdmin(t *testing.T) {
+	setupTestDBWithApplications(t)
+	user := &models.User{Id: "user-release-age"}
+	for _, tt := range []struct {
+		name  string
+		perms *rbac.Permissions
+		want  int
+	}{
+		{"user", rbac.New(nil), http.StatusForbidden},
+		{"admin", rbac.Admin(), http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				auth.SetClaims(c, &auth.UserClaims{Subject: user.Id})
+				auth.SetUser(c, user)
+				rbac.Set(c, tt.perms)
+				c.Next()
+			})
+			router.PUT("/api/v1/admin/settings/release-age", middleware.RequireAdmin(), AdminUpdateReleaseAgeSettingsHandler)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings/release-age",
+				strings.NewReader(`{"minimumSeconds":0,"allowedRegistries":[]}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != tt.want {
+				t.Errorf("expected %d, got %d: %s", tt.want, w.Code, w.Body.String())
+			}
+		})
+	}
 }

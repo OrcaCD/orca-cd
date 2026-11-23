@@ -9,7 +9,8 @@ import (
 
 func TestPolicy(t *testing.T) {
 	global := models.Settings{MinimumReleaseAgeSeconds: 86400, ReleaseAgeAllowedRegistries: []string{"registry.local"}}
-	custom := int64(3600)
+	custom := int64(3 * 86400)
+	below := int64(3600)
 
 	tests := []struct {
 		name           string
@@ -28,8 +29,15 @@ func TestPolicy(t *testing.T) {
 		{
 			name:           "own age and registries",
 			app:            models.Application{MinimumReleaseAgeSeconds: &custom, ReleaseAgeAllowedRegistries: []string{"harbor.local", "registry.local"}},
-			wantSeconds:    3600,
+			wantSeconds:    3 * 86400,
 			wantRegistries: []string{"registry.local", "harbor.local"},
+		},
+		{
+			name:           "own age below the global minimum",
+			app:            models.Application{MinimumReleaseAgeSeconds: &below},
+			wantSeconds:    86400,
+			wantInherited:  true,
+			wantRegistries: []string{"registry.local"},
 		},
 	}
 	for _, tt := range tests {
@@ -39,7 +47,8 @@ func TestPolicy(t *testing.T) {
 				t.Errorf("MinimumSeconds = %d, %v", seconds, inherited)
 			}
 			policy := Policy(&tt.app, global)
-			if policy.MinimumSeconds != tt.wantSeconds || !slices.Equal(policy.AllowedRegistries, tt.wantRegistries) {
+			if policy.MinimumSeconds != tt.wantSeconds || !slices.Equal(policy.AllowedRegistries, tt.wantRegistries) ||
+				policy.EnforcedMinimumSeconds != 86400 || !slices.Equal(policy.EnforcedExemptRegistries, []string{"registry.local"}) {
 				t.Errorf("Policy = %v", policy)
 			}
 		})

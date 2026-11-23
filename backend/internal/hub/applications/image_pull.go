@@ -47,9 +47,12 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 		failImagePullEvent(ctx, requestID, app.Id, "hub not initialized")
 		return false
 	}
+	// Without the global settings the pull would skip the release age.
 	global, err := releaseage.Global(ctx)
 	if err != nil {
 		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load the global release age settings")
+		failImagePullEvent(ctx, requestID, app.Id, "failed to load the release age settings")
+		return false
 	}
 	sent := hubws.DefaultHub.Send(app.AgentId, &messages.ServerMessage{
 		Payload: &messages.ServerMessage_PullImagesRequest{

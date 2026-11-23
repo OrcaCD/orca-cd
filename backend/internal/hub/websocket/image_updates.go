@@ -62,6 +62,7 @@ func handleImageUpdatesReport(parent context.Context, client *Client, r *message
 			EligibleAt:          unixTime(image.EligibleAt),
 			MinimumAgeSeconds:   image.MinimumAgeSeconds,
 			MinimumAgeFromLabel: image.MinimumAgeFromLabel,
+			MinimumAgeEnforced:  image.MinimumAgeEnforced,
 			Reason:              image.Reason,
 			CheckedAt:           checkedAt,
 		})

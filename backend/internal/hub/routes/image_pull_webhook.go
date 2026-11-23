@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/distribution/reference"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -46,19 +47,9 @@ type dockerHubPayload struct {
 	} `json:"repository"`
 }
 
-type harborEventData struct {
-	Resources []struct {
-		// ResourceURL is the pushed image, e.g. "harbor.example.com/library/nginx:1.27".
-		ResourceURL string `json:"resource_url"`
-	} `json:"resources"`
-}
-
 type harborPayload struct {
 	Type      string `json:"type"`
 	EventType string `json:"event_type"`
-	// Harbor's own format nests the event in event_data, the CloudEvents format in data.
-	EventData *harborEventData `json:"event_data"`
-	Data      *harborEventData `json:"data"`
 }
 
 func ImagePullWebhookHandler(c *gin.Context) {
@@ -113,7 +104,7 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		}
 		var image string
 		if payload.Package.PackageVersion != nil {
-			image = payload.Package.PackageVersion.PackageURL
+			image = announcedImage(payload.Package.PackageVersion.PackageURL, "ghcr.io")
 		}
 		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, image)
 		c.AbortWithStatus(http.StatusNoContent)
@@ -148,7 +139,10 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		return
 	}
 
-	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, harborImage(body))
+	// The hub doesn't know the host of a Harbor registry, so it can't check
+	// the image a Harbor payload names. The pull checks the release age of
+	// every image instead.
+	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, "")
 	c.AbortWithStatus(http.StatusNoContent)
 }
 
@@ -156,22 +150,18 @@ func dockerHubImage(payload dockerHubPayload) string {
 	if payload.Repository.RepoName == "" || payload.PushData.Tag == "" {
 		return ""
 	}
-	return payload.Repository.RepoName + ":" + payload.PushData.Tag
+	return announcedImage(payload.Repository.RepoName+":"+payload.PushData.Tag, "docker.io")
 }
 
-// harborImage returns the pushed image of a Harbor payload, or empty for
-// payloads without one, like generic webhooks.
-func harborImage(body []byte) string {
-	var payload harborPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
+// announcedImage returns image if it is in the registry of the provider that
+// sent the webhook, or empty otherwise. An announced image skips the release
+// age, so a payload must not name the image of another registry.
+func announcedImage(image, registry string) string {
+	named, err := reference.ParseNormalizedNamed(image)
+	if err != nil || reference.Domain(named) != registry {
 		return ""
 	}
-	for _, data := range []*harborEventData{payload.EventData, payload.Data} {
-		if data != nil && len(data.Resources) > 0 {
-			return data.Resources[0].ResourceURL
-		}
-	}
-	return ""
+	return image
 }
 
 // isGitHubImageTagEvent reports whether a GHCR package event moved a tag an application

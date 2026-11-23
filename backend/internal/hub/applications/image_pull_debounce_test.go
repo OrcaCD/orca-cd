@@ -223,7 +223,6 @@ func TestScheduleImagePull_SendsAnnouncedImagesAndReleaseAge(t *testing.T) {
 	setupDebouncer(t, 30*time.Millisecond, time.Second)
 
 	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
-	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
 	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
 	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/worker:1.0")
 	req := awaitPullRequest(t, client)
@@ -234,4 +233,34 @@ func TestScheduleImagePull_SendsAnnouncedImagesAndReleaseAge(t *testing.T) {
 	if req.ReleaseAge.GetMinimumSeconds() != 3600 || !slices.Equal(req.ReleaseAge.GetAllowedRegistries(), []string{"registry.local"}) {
 		t.Errorf("unexpected release age policy %v", req.ReleaseAge)
 	}
+}
+
+func TestScheduleImagePull_TriggerWithoutImageUpdatesEveryImage(t *testing.T) {
+	setupTestDB(t)
+	app, client := seedConnectedApp(t)
+	setupDebouncer(t, 30*time.Millisecond, time.Second)
+
+	// A trigger that names no image merged with ones that do must not limit
+	// the pull to the named images.
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/worker:1.0")
+	req := awaitPullRequest(t, client)
+
+	if len(req.WebhookImages) != 0 {
+		t.Errorf("expected no webhook images, got %v", req.WebhookImages)
+	}
+}
+
+func TestTriggerImagePull_GlobalSettingsErrorSendsNothing(t *testing.T) {
+	setupTestDB(t)
+	app, client := seedConnectedApp(t)
+	if err := db.DB.Migrator().DropTable(&models.Settings{}); err != nil {
+		t.Fatalf("drop settings: %v", err)
+	}
+
+	if TriggerImagePull(app, SyncOrigin{Source: models.ApplicationEventSourceManual}) {
+		t.Error("expected the pull to fail without the release age settings")
+	}
+	expectNoPullRequest(t, client, 100*time.Millisecond)
 }

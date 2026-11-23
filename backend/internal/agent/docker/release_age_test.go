@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -173,6 +174,48 @@ func TestEvaluateUpdate(t *testing.T) {
 			service:    service,
 			wantStatus: skipped,
 			wantReason: "not announced by the image pull webhook",
+		},
+		{
+			name:       "enforced minimum raises a lower label",
+			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week},
+			service:    withLabel("0"),
+			pushed:     time.Now().Add(-72 * time.Hour),
+			wantStatus: waiting,
+			wantReason: "minimum release age 7d",
+			wantLookup: true,
+		},
+		{
+			name:       "enforced minimum raises a lower service override",
+			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week, ServiceMinimumAge: map[string]time.Duration{"app": 0}},
+			service:    service,
+			pushed:     time.Now().Add(-72 * time.Hour),
+			wantStatus: waiting,
+			wantReason: "minimum release age 7d",
+			wantLookup: true,
+		},
+		{
+			name:       "enforced minimum applies to allowed registries",
+			policy:     ReleaseAgePolicy{MinimumAge: week, EnforcedMinimumAge: 3 * 24 * time.Hour, AllowedRegistries: []string{"ghcr.io"}},
+			service:    service,
+			pushed:     time.Now().Add(-time.Hour),
+			wantStatus: waiting,
+			wantReason: "minimum release age 3d",
+			wantLookup: true,
+		},
+		{
+			name:       "enforced minimum applies to announced images",
+			policy:     ReleaseAgePolicy{MinimumAge: week, EnforcedMinimumAge: 3 * 24 * time.Hour, WebhookImages: []string{"ghcr.io/org/app:1.0"}},
+			service:    service,
+			pushed:     time.Now().Add(-time.Hour),
+			wantStatus: waiting,
+			wantReason: "minimum release age 3d",
+			wantLookup: true,
+		},
+		{
+			name:       "exempt registry skips the enforced minimum",
+			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week, EnforcedExemptRegistries: []string{"ghcr.io"}, AllowedRegistries: []string{"ghcr.io"}},
+			service:    withLabel("0"),
+			wantStatus: updated,
 		},
 	}
 	for _, tt := range tests {
@@ -451,5 +494,41 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 		if got := upped.Services[name]; got.Image != ref || got.PullPolicy != composetypes.PullPolicyNever {
 			t.Errorf("compose up ran %s with %q and pull policy %q, want %q", name, got.Image, got.PullPolicy, ref)
 		}
+	}
+}
+
+func TestSetMinimumAge_ReportsEnforcedMinimum(t *testing.T) {
+	policy := ReleaseAgePolicy{EnforcedMinimumAge: 24 * time.Hour}
+	service := composetypes.ServiceConfig{Name: "app", Image: "redis:7", Labels: composetypes.Labels{releaseAgeLabel: "1h"}}
+
+	update := &messages.ImageUpdate{}
+	age, err := policy.setMinimumAge(service, update)
+	if err != nil || age != 24*time.Hour {
+		t.Fatalf("setMinimumAge = %v, %v", age, err)
+	}
+	if !update.MinimumAgeEnforced || update.MinimumAgeFromLabel || update.MinimumAgeSeconds != 86400 {
+		t.Errorf("unexpected update %+v", update)
+	}
+
+	service.Labels[releaseAgeLabel] = "2d"
+	update = &messages.ImageUpdate{}
+	if _, err := policy.setMinimumAge(service, update); err != nil {
+		t.Fatal(err)
+	}
+	if update.MinimumAgeEnforced || !update.MinimumAgeFromLabel || update.MinimumAgeSeconds != 2*86400 {
+		t.Errorf("unexpected update %+v", update)
+	}
+}
+
+func TestReleaseAgePolicyFromProto_Enforced(t *testing.T) {
+	policy := ReleaseAgePolicyFromProto(&messages.ReleaseAgePolicy{
+		EnforcedMinimumSeconds:   3600,
+		EnforcedExemptRegistries: []string{"registry.local"},
+	}, nil)
+	if policy.EnforcedMinimumAge != time.Hour || !slices.Equal(policy.EnforcedExemptRegistries, []string{"registry.local"}) {
+		t.Errorf("unexpected policy %+v", policy)
+	}
+	if policy.equal(ReleaseAgePolicy{EnforcedMinimumAge: time.Hour}) {
+		t.Error("expected policies with other exempt registries to differ")
 	}
 }
