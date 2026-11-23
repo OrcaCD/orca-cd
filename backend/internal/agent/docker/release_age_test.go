@@ -437,10 +437,12 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 	if got := pulled.Services["web"].PullPolicy; got != composetypes.PullPolicyAlways {
 		t.Errorf("web must be pulled, got pull policy %q", got)
 	}
+	// Only worker shares the tag that web moves, so only it is pinned. The
+	// others keep their tag, so the next deploy doesn't recreate them.
 	wantUp := map[string]string{
 		"worker": "ghcr.io/org/app@" + oldDigest,
-		"db":     "postgres@" + postgresDigest,
-		"cache":  "redis@" + redisDigest,
+		"db":     "postgres:17",
+		"cache":  "redis:7",
 		"queue":  "rabbitmq:3",
 	}
 	for name, ref := range wantUp {

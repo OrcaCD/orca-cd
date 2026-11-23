@@ -275,8 +275,14 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	// Only the updated services may be pulled, and checked images not by their
 	// tag, which may point to another image by now, even with pull_policy: always.
-	// The other services keep the image they run, pinned to its digest where it
-	// has one, as an updated service may move the tag they share.
+	// The other services keep the image they run. One that shares its tag with
+	// an updated service is pinned to its digest, as the update moves the tag.
+	// The others keep their tag, so the next deploy doesn't see a changed image
+	// and recreate them.
+	var updatedImages []string
+	for name := range updated {
+		updatedImages = append(updatedImages, project.Services[name].Image)
+	}
 	for name := range project.Services {
 		_, isUpdated := updated[name]
 		_, isPinned := pinned[name]
@@ -285,7 +291,8 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		}
 		service := project.Services[name]
 		service.PullPolicy = composetypes.PullPolicyNever
-		if ref := kept[name]; ref != "" {
+		sharesTag := slices.ContainsFunc(updatedImages, func(image string) bool { return sameTag(image, service.Image) })
+		if ref := kept[name]; ref != "" && !isUpdated && sharesTag {
 			service.Image = ref
 		}
 		project.Services[name] = service

@@ -170,7 +170,9 @@ func dockerHubToken(ctx context.Context, creds registryCredentials) (string, err
 }
 
 // ghcrPushTime reads the push time from the GitHub Packages API, which always
-// needs a token, even for public packages.
+// needs a token, even for public packages. GitHub has no time per tag, so this
+// is when the digest was first pushed, maybe under another tag long before the
+// tag was moved to it.
 func ghcrPushTime(ctx context.Context, img registryImage, creds registryCredentials) (time.Time, error) {
 	if creds.password == "" {
 		return time.Time{}, errors.New("ghcr: reading the push time needs credentials for ghcr.io with the read:packages scope in the agent's Docker config")
