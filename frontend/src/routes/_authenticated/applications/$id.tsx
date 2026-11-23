@@ -27,19 +27,22 @@ import {
 	Braces,
 	RotateCcw,
 	PackageSearch,
+	Container,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/applications/$id")({
 	component: ApplicationsLayout,
 });
 
+type SidebarChild = {
+	title: () => string;
+	icon?: any;
+	to: string;
+};
+
 type SidebarGroup = {
 	title: () => string;
-	children: {
-		title: () => string;
-		icon?: any;
-		to: string;
-	}[];
+	children: SidebarChild[];
 };
 
 const sidebarGroups: SidebarGroup[] = [
@@ -55,6 +58,11 @@ const sidebarGroups: SidebarGroup[] = [
 				title: () => m.healthTitle(),
 				icon: Activity,
 				to: "/applications/$id/health",
+			},
+			{
+				title: () => m.monitoringTitle(),
+				icon: Container,
+				to: "/applications/$id/monitoring",
 			},
 			{
 				title: () => m.applicationHistory(),
@@ -124,7 +132,8 @@ function ApplicationsLayout() {
 					<BreadcrumbSeparator />
 					{pathname.includes("/settings") ||
 					pathname.includes("/history") ||
-					pathname.includes("/health") ? (
+					pathname.includes("/health") ||
+					pathname.includes("/monitoring") ? (
 						<>
 							<BreadcrumbItem>
 								<BreadcrumbLink
@@ -142,7 +151,9 @@ function ApplicationsLayout() {
 										? m.applicationHistory()
 										: pathname.includes("/health")
 											? m.healthTitle()
-											: m.settings()}
+											: pathname.includes("/monitoring")
+												? m.monitoringTitle()
+												: m.settings()}
 								</BreadcrumbPage>
 							</BreadcrumbItem>
 						</>
@@ -164,11 +175,7 @@ function SidebarItem({
 	pathname,
 	id,
 }: {
-	item: {
-		title: () => string;
-		icon?: any;
-		to: string;
-	};
+	item: SidebarChild;
 	pathname: string;
 	id?: string;
 }) {

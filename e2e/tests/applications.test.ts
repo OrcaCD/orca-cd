@@ -1092,6 +1092,45 @@ test.describe("Container monitoring API", () => {
 	});
 });
 
+test.describe("Monitoring page", () => {
+	const running = (page: Page) => page.getByText(/^Running · Up /);
+
+	test("shows the container and follows it when it stops", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+
+		await gotoApp(page, `/applications/${appId}/monitoring`);
+		await expect(page.getByRole("heading", { name: "Monitoring" })).toBeVisible();
+		await expect(
+			page.getByRole("tablist", { name: "Container" }).getByRole("tab", { name: "app" }),
+		).toHaveAttribute("aria-selected", "true");
+		await expect(running(page)).toBeVisible({ timeout: 30_000 });
+
+		// The first sample arrives a couple of seconds after the stream starts
+		const title = (name: string) =>
+			page
+				.locator("[data-slot='card']")
+				.filter({ has: page.getByText(name, { exact: true }) })
+				.locator("[data-slot='card-title']");
+		await expect(title("CPU")).toHaveText(/^\d+(\.\d+)?%$/, { timeout: 30_000 });
+		await expect(title("Memory")).toHaveText(/^\d+(\.\d+)? (B|KiB|MiB|GiB)$/);
+
+		const details = page.locator("[data-slot='card']").filter({ hasText: "Digest" });
+		await expect(details.getByText(IMAGE, { exact: true })).toBeVisible();
+		await expect(details.getByText(container.id.slice(0, 12), { exact: true })).toBeVisible();
+
+		stopContainer(container.id);
+		try {
+			await expect(page.getByText(/^Exited · /)).toBeVisible({ timeout: 30_000 });
+			await expect(running(page)).toHaveCount(0);
+		} finally {
+			startContainer(container.id);
+		}
+
+		await expect(running(page)).toBeVisible({ timeout: 30_000 });
+	});
+});
+
 test.describe("Rollback", () => {
 	const shortSha = (sha: string) => sha.slice(0, 7);
 	let goodSha = "";

@@ -85,6 +85,25 @@ export function formatDuration(ms: number): string {
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+const byteUnits = ["B", "KiB", "MiB", "GiB", "TiB"];
+
+export function formatBytes(bytes: number): string {
+	let value = Math.max(0, bytes);
+	let unit = 0;
+	while (value >= 1024 && unit < byteUnits.length - 1) {
+		value /= 1024;
+		unit++;
+	}
+	const formatted = new Intl.NumberFormat(getLocale(), {
+		maximumFractionDigits: unit === 0 ? 0 : 1,
+	}).format(value);
+	return `${formatted} ${byteUnits[unit]}`;
+}
+
+export function formatByteRate(bytesPerSecond: number): string {
+	return `${formatBytes(bytesPerSecond)}/s`;
+}
+
 export const isApple = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 
 export function groupBy<T, K>(items: T[], getKey: (item: T) => K): Map<K, T[]> {
