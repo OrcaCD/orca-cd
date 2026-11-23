@@ -1,8 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 import { useNow } from "@/hooks/use-now";
-import { formatUptime, type ContainerInfo } from "@/lib/application-containers";
+import type { ContainerInfo } from "@/lib/application-containers";
 import { m } from "@/lib/paraglide/messages";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatDuration, formatRelativeTime } from "@/lib/utils";
 
 type StateTone = "good" | "warn" | "bad" | "neutral";
 
@@ -48,7 +48,7 @@ export function ContainerStatePill({ container }: { container: ContainerInfo }) 
 	let detail: string | null = null;
 	if (container.state === "running" && container.startedAt) {
 		detail = m.monitoringUptime({
-			duration: formatUptime(now - new Date(container.startedAt).getTime()),
+			duration: formatDuration(now - new Date(container.startedAt).getTime()),
 		});
 	} else if (container.state === "exited" && container.finishedAt) {
 		detail = formatRelativeTime(container.finishedAt, now);

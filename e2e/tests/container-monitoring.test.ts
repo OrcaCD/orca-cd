@@ -110,7 +110,7 @@ test("the sidebar links to the monitoring page", async ({ page }) => {
 	await mockContainers(page, 200, { containers: [container()] });
 	await page.goto(`/applications/${APP_ID}/details`);
 
-	await page.getByRole("link", { name: "Monitoring" }).click();
+	await page.locator("[data-sidebar='menu-button']").filter({ hasText: "Monitoring" }).click();
 
 	await expect(page).toHaveURL(new RegExp(`/applications/${APP_ID}/monitoring`));
 	await expect(page.getByRole("heading", { name: "Monitoring" })).toBeVisible();
@@ -218,7 +218,7 @@ test("shows an empty state without containers", async ({ page }) => {
 	await mockContainers(page, 200, { containers: [] });
 	await page.goto(`/applications/${APP_ID}/monitoring`);
 
-	await expect(page.getByText("No containers")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "No containers" })).toBeVisible();
 });
 
 test("shows the error of a failed request", async ({ page }) => {
@@ -255,7 +255,8 @@ test("the cards show the CPU, memory and network values with their charts", asyn
 	await expect(total.getByText("↑ 6.5 KiB", { exact: true })).toBeVisible();
 
 	for (const stat of [cpu, memory, network]) {
-		await expect(stat.locator("[data-slot='chart'] .recharts-area-curve").first()).toBeVisible();
+		// The mocked samples give flat lines, which have no height and count as hidden.
+		await expect(stat.locator("[data-slot='chart'] .recharts-area-curve").first()).toBeAttached();
 		await expect(stat.getByText("Container stopped, showing the last values")).toBeVisible();
 	}
 });
@@ -270,7 +271,7 @@ test("hovering a chart shows the values of that moment", async ({ page }) => {
 	await page.goto(`/applications/${APP_ID}/monitoring`);
 
 	const chart = card(page, "Network").locator("[data-slot='chart']");
-	await expect(chart.locator(".recharts-area-curve").first()).toBeVisible();
+	await expect(chart.locator(".recharts-area-curve").first()).toBeAttached();
 	const box = await chart.boundingBox();
 	await page.mouse.move(box!.x + box!.width - 4, box!.y + box!.height / 2);
 
