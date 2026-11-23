@@ -69,6 +69,10 @@ export function execInContainer(id: string, command: string[]) {
 	return result.stdout;
 }
 
+export function logFromContainer(id: string, text: string, stream: "stdout" | "stderr" = "stdout") {
+	execInContainer(id, ["sh", "-c", `echo '${text}' > /proc/1/fd/${stream === "stdout" ? 1 : 2}`]);
+}
+
 export function containerImageId(id: string) {
 	const { ok, stdout } = docker(["inspect", "-f", "{{.Image}}", id]);
 	if (!ok) {
