@@ -838,6 +838,25 @@ func TestRunMigrations_GitHubActionsTriggersDown(t *testing.T) {
 	}
 }
 
+func TestRunMigrations_GitHubActionsTriggerSkipsCascadeOnApplicationDelete(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDelete string
+	if err := sqlDB.QueryRow(`SELECT on_delete FROM pragma_foreign_key_list('github_actions_trigger_skips')
+		WHERE "from" = 'application_id' AND "table" = 'applications' AND "to" = 'id'`).Scan(&onDelete); err != nil {
+		t.Fatalf("load application foreign key: %v", err)
+	}
+	if onDelete != "CASCADE" {
+		t.Errorf("application foreign key ON DELETE = %q, want CASCADE", onDelete)
+	}
+}
+
 func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
 	gormDB := openTestDB(t)
 	if err := runMigrations(gormDB); err != nil {
