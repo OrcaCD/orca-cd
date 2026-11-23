@@ -18,7 +18,8 @@ import (
 // rollbackRecorder records the rollbacks the hub dispatches instead of
 // sending them to an agent.
 type rollbackRecorder struct {
-	targets []string
+	targets    []string
+	onDispatch func()
 }
 
 func (r *rollbackRecorder) TriggerApplicationDeploy(context.Context, *models.Application, string, string) error {
@@ -27,6 +28,9 @@ func (r *rollbackRecorder) TriggerApplicationDeploy(context.Context, *models.App
 
 func (r *rollbackRecorder) TriggerRollback(_ context.Context, _ *models.Application, target *models.ApplicationDeployment, _ string) error {
 	r.targets = append(r.targets, target.Id)
+	if r.onDispatch != nil {
+		r.onDispatch()
+	}
 	return nil
 }
 
@@ -114,6 +118,16 @@ func verifyingDeployment(t *testing.T, appID string) *models.ApplicationDeployme
 	return deployment
 }
 
+func linkTestEventToTrigger(t *testing.T, requestID string) string {
+	t.Helper()
+	const triggerID = "workflow-trigger"
+	if _, err := gorm.G[models.ApplicationEvent](db.DB).Where("request_id = ?", requestID).
+		Update(t.Context(), "trigger_id", triggerID); err != nil {
+		t.Fatalf("link event to trigger: %v", err)
+	}
+	return triggerID
+}
+
 func TestHandleDeployResult_HealthGateKeepsEventRunning(t *testing.T) {
 	setupDeployTestEnv(t)
 	app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
@@ -157,6 +171,12 @@ func TestResolveHealthGates_FailingRollsBackAfterGrace(t *testing.T) {
 	app := enableAutomaticRollback(t, seedDeployApp(t, models.Syncing).Id)
 	good := deployGated(t, &app)
 	recorder := recordRollbacks(t)
+	triggerID := linkTestEventToTrigger(t, "gated")
+	recorder.onDispatch = func() {
+		if event := loadEventByRequest(t, "gated"); event.Status != models.ApplicationEventRunning {
+			t.Errorf("triggered deploy event during rollback dispatch = %q, want running", event.Status)
+		}
+	}
 	clients := connectAgents(t, "agent-1", "other-agent")
 	deployedAt := *verifyingDeployment(t, app.Id).DeployedAt
 	at := func(seconds int) time.Time { return deployedAt.Add(time.Duration(seconds) * time.Second) }
@@ -193,6 +213,9 @@ func TestResolveHealthGates_FailingRollsBackAfterGrace(t *testing.T) {
 		First(t.Context())
 	if err != nil {
 		t.Fatalf("load rollback event: %v", err)
+	}
+	if rollbackEvent.TriggerId == nil || *rollbackEvent.TriggerId != triggerID {
+		t.Errorf("rollback event should be linked to the trigger: %+v", rollbackEvent)
 	}
 	if rollbackEvent.Source != models.ApplicationEventSourceHealthCheck {
 		t.Errorf("rollback source = %q, want health_check", rollbackEvent.Source)
@@ -304,11 +327,19 @@ func TestResolveHealthGates_GateEnd(t *testing.T) {
 }
 
 func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		t.Run(map[bool]string{true: "enabled", false: "disabled"}[enabled], func(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		enabled bool
+		tracked bool
+	}{
+		{name: "tracks rollback despite cancellation", enabled: true, tracked: true},
+		{name: "completes ordinary failure before rollback", enabled: true},
+		{name: "rollback disabled"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			setupDeployTestEnv(t)
 			app := seedDeployApp(t, models.Syncing)
-			if enabled {
+			if tt.enabled {
 				app = enableAutomaticRollback(t, app.Id)
 			}
 			good := seedRollbackTarget(t, app.Id)
@@ -317,13 +348,34 @@ func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
 				t.Fatalf("set current deployment: %v", err)
 			}
 			startDeployEvent(t, &app, "failing")
+			var triggerID *string
+			if tt.tracked {
+				triggerID = new(linkTestEventToTrigger(t, "failing"))
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			recorder := recordRollbacks(t)
+			recorder.onDispatch = func() {
+				want := models.ApplicationEventFailed
+				if tt.tracked {
+					want = models.ApplicationEventRunning
+					cancel()
+				}
+				if event := loadEventByRequest(t, "failing"); event.Status != want {
+					t.Errorf("deploy event during rollback dispatch = %q, want %q", event.Status, want)
+				}
+			}
 			nop := zerolog.Nop()
-			expectAsyncNotification(t)
+			if !tt.tracked {
+				expectAsyncNotification(t)
+			}
 
-			handleDeployResult(t.Context(), "agent-1", &messages.DeployResult{RequestId: "failing", ApplicationId: app.Id, ErrorMessage: "compose up failed"}, &nop)
+			handleDeployResult(ctx, "agent-1", &messages.DeployResult{RequestId: "failing", ApplicationId: app.Id, ErrorMessage: "compose up failed"}, &nop)
 
-			if !enabled {
+			if event := loadEventByRequest(t, "failing"); event.Status != models.ApplicationEventFailed {
+				t.Errorf("expected a terminal failure, got %q", event.Status)
+			}
+			if !tt.enabled {
 				if len(recorder.targets) != 0 {
 					t.Fatalf("expected no rollback, got %v", recorder.targets)
 				}
@@ -337,6 +389,9 @@ func TestHandleDeployResult_FailureRollsBack(t *testing.T) {
 				First(t.Context())
 			if err != nil {
 				t.Fatalf("load rollback event: %v", err)
+			}
+			if tt.tracked && (rollbackEvent.TriggerId == nil || *rollbackEvent.TriggerId != *triggerID) {
+				t.Errorf("rollback event should be linked to the trigger: %+v", rollbackEvent)
 			}
 			if rollbackEvent.Source != models.ApplicationEventSourceDeploymentFailure {
 				t.Errorf("rollback source = %q, want deployment_failure", rollbackEvent.Source)
@@ -410,19 +465,46 @@ func TestHandlePullImagesResult_FailedRedeployRollsBack(t *testing.T) {
 				Update(t.Context(), "current_deployment_id", good.Id); err != nil {
 				t.Fatalf("set current deployment: %v", err)
 			}
+			requestID, triggerID := "image-req", "workflow-trigger"
+			if _, err := applicationevents.Start(t.Context(), applicationevents.Params{
+				ApplicationID: app.Id, RequestID: &requestID, TriggerID: &triggerID,
+				Type: models.ApplicationEventImageUpdate, Source: models.ApplicationEventSourceGitHubActions,
+			}); err != nil {
+				t.Fatalf("start image update event: %v", err)
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			recorder := recordRollbacks(t)
+			recorder.onDispatch = func() {
+				cancel()
+				if event := loadEventByRequest(t, requestID); event.Status != models.ApplicationEventRunning {
+					t.Errorf("image update event during rollback dispatch = %q, want running", event.Status)
+				}
+			}
 			log := testLogger()
-			expectAsyncNotification(t)
+			if !redeployFailed {
+				expectAsyncNotification(t)
+			}
 
-			handlePullImagesResult(t.Context(), &Client{Id: "agent-1"}, &messages.PullImagesResult{
-				RequestId:      "image-req",
+			handlePullImagesResult(ctx, &Client{Id: "agent-1"}, &messages.PullImagesResult{
+				RequestId:      requestID,
 				ApplicationId:  app.Id,
 				ErrorMessage:   "compose up after pull: container exited",
 				RedeployFailed: redeployFailed,
 			}, &log)
 
+			if event := loadEventByRequest(t, requestID); event.Status != models.ApplicationEventFailed {
+				t.Errorf("expected a terminal failure, got %q", event.Status)
+			}
 			if rolledBack := len(recorder.targets) == 1 && recorder.targets[0] == good.Id; rolledBack != redeployFailed {
 				t.Errorf("rollbacks = %v, want rollback %v", recorder.targets, redeployFailed)
+			}
+			if redeployFailed {
+				event, err := gorm.G[models.ApplicationEvent](db.DB).
+					Where("trigger_id = ? AND type = ?", triggerID, models.ApplicationEventRollback).First(t.Context())
+				if err != nil || event.ApplicationId != app.Id {
+					t.Errorf("expected a rollback linked to the trigger, got %+v, %v", event, err)
+				}
 			}
 		})
 	}

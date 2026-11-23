@@ -17,6 +17,7 @@ const MaxPerApplication = 1000
 type Params struct {
 	ApplicationID string
 	RequestID     *string
+	TriggerID     *string
 	Type          models.ApplicationEventType
 	Source        models.ApplicationEventSource
 	ActorUserID   *string
@@ -57,6 +58,7 @@ func create(
 	event := models.ApplicationEvent{
 		ApplicationId: p.ApplicationID,
 		RequestId:     p.RequestID,
+		TriggerId:     p.TriggerID,
 		Type:          p.Type,
 		Source:        p.Source,
 		Status:        status,

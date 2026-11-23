@@ -361,15 +361,18 @@ func TestQueueEnqueueFullQueueRecordsFailedEvent(t *testing.T) {
 	}
 
 	provider := &mockProvider{}
-	q.Enqueue(&repo, provider, apps, "new-sha", "new commit", SyncOrigin{Source: models.ApplicationEventSourceRepositoryWebhook})
+	triggerID := "workflow-trigger"
+	q.Enqueue(&repo, provider, apps, "new-sha", "new commit", SyncOrigin{
+		Source: models.ApplicationEventSourceGitHubActions, TriggerID: &triggerID,
+	})
 
 	dropped := apps[capacity]
 	events := loadAppEvents(t, dropped.Id)
 	if len(events) != 1 {
 		t.Fatalf("expected 1 failed event for dropped job, got %d", len(events))
 	}
-	if events[0].Status != models.ApplicationEventFailed {
-		t.Fatalf("expected failed event, got %+v", events[0])
+	if events[0].Status != models.ApplicationEventFailed || events[0].TriggerId == nil || *events[0].TriggerId != triggerID {
+		t.Fatalf("expected failed event linked to the trigger, got %+v", events[0])
 	}
 	for _, queued := range apps[:capacity] {
 		if got := loadAppEvents(t, queued.Id); len(got) != 0 {

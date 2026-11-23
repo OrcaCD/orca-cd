@@ -22,6 +22,7 @@ type Origin struct {
 	Source      models.ApplicationEventSource
 	ActorUserID *string
 	ActorName   *string
+	TriggerID   *string
 }
 
 // Trigger dispatches a rollback of app to target and records it as a rollback
@@ -36,6 +37,7 @@ func Trigger(ctx context.Context, app *models.Application, target *models.Applic
 	params := applicationevents.Params{
 		ApplicationID: app.Id,
 		RequestID:     &requestID,
+		TriggerID:     origin.TriggerID,
 		Type:          models.ApplicationEventRollback,
 		Source:        origin.Source,
 		ActorUserID:   origin.ActorUserID,

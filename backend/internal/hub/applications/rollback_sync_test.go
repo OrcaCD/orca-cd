@@ -4,9 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/rs/zerolog"
+	"gorm.io/gorm"
 )
 
 func TestProcessSyncJob_RolledBackApplication(t *testing.T) {
@@ -69,5 +71,40 @@ func TestTriggerImagePull_SkipsRolledBackApplication(t *testing.T) {
 	events := loadAppEvents(t, app.Id)
 	if len(events) != 0 {
 		t.Errorf("expected no image update event, got %v", events)
+	}
+}
+
+func TestGitHubActionsRecordsRolledBackOperationSkips(t *testing.T) {
+	setupTestDB(t)
+	if err := db.DB.AutoMigrate(&models.GitHubActionsTriggerSkip{}); err != nil {
+		t.Fatalf("migrate trigger skips: %v", err)
+	}
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	app := seedApp(t, repo.Id, agent.Id, "services: {}\n")
+	now := time.Now()
+	app.RolledBackAt = &now
+	app.AutoSyncPaused = true
+	triggerID := "workflow-trigger"
+	origin := SyncOrigin{Source: models.ApplicationEventSourceGitHubActions, TriggerID: &triggerID}
+	nop := zerolog.Nop()
+
+	processSyncJob(t.Context(), syncJob{Application: app, Origin: origin, Commit: "newsha"}, &nop)
+	if !TriggerImagePull(&app, origin) {
+		t.Fatal("skipped pull should be accepted")
+	}
+
+	skips, err := gorm.G[models.GitHubActionsTriggerSkip](db.DB).
+		Where("trigger_id = ? AND application_id = ?", triggerID, app.Id).
+		Order("type").Find(t.Context())
+	if err != nil {
+		t.Fatalf("load skipped operations: %v", err)
+	}
+	if len(skips) != 2 || skips[0].Type != models.ApplicationEventCommitSync ||
+		skips[1].Type != models.ApplicationEventImageUpdate || skips[0].Reason == "" || skips[1].Reason == "" {
+		t.Errorf("expected skip reasons for sync and image pull, got %+v", skips)
+	}
+	if events := loadAppEvents(t, app.Id); len(events) != 0 {
+		t.Errorf("expected no history events for skipped operations, got %+v", events)
 	}
 }
