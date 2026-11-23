@@ -272,8 +272,8 @@ test("hovering a chart shows the values of that moment", async ({ page }) => {
 
 	const chart = card(page, "Network").locator("[data-slot='chart']");
 	await expect(chart.locator(".recharts-area-curve").first()).toBeAttached();
-	const box = await chart.boundingBox();
-	await page.mouse.move(box!.x + box!.width - 4, box!.y + box!.height / 2);
+	// The samples only cover the last pixels of the time window and the tooltip only shows there.
+	await chart.locator(".recharts-area-area").first().hover();
 
 	const tooltip = page.locator(".recharts-tooltip-wrapper");
 	await expect(tooltip.getByText("Received")).toBeVisible();
