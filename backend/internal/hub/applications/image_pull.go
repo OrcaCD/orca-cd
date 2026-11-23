@@ -24,6 +24,7 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// with the latest ones, so updates wait until it is deployed again.
 	if app.RolledBackAt != nil {
 		Log.Info().Str("applicationId", app.Id).Msg("skipping image pull of rolled back application")
+		recordTriggerSkip(context.Background(), origin.TriggerID, app.Id, models.ApplicationEventImageUpdate, "image pull was skipped to keep rolled back images pinned", &Log)
 		return true
 	}
 
@@ -32,6 +33,7 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	if _, err := applicationevents.Start(ctx, applicationevents.Params{
 		ApplicationID: app.Id,
 		RequestID:     &requestID,
+		TriggerID:     origin.TriggerID,
 		Type:          models.ApplicationEventImageUpdate,
 		Source:        origin.Source,
 		ActorUserID:   origin.ActorUserID,

@@ -102,7 +102,9 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		SyncStatus:    models.OutOfSync,
 		LastSyncError: &errMsg,
 	}, log)
-	completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
+	// Publish the failed result only once a linked rollback is recorded, so
+	// status polling cannot finish before the rollback has started.
+	defer completeDeployEvent(ctx, result, models.ApplicationEventFailed, &errMsg, log)
 	if ctx.Err() != nil {
 		return
 	}
@@ -117,7 +119,7 @@ func handleDeployResult(parent context.Context, agentID string, result *messages
 		previous = discarded.PreviousDeploymentId
 	}
 	if target := automaticRollbackTarget(ctx, app, previous, log); target != nil {
-		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, log)
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
 	}
 }
 

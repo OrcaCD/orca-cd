@@ -78,7 +78,13 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	if r.Success && r.ImagesUpdated && !rolledBack {
 		gate = app.HealthGate()
 	}
-	requestID := recordImagePullHistory(ctx, r, gate > 0, log)
+	var requestID string
+	if r.Success {
+		requestID = recordImagePullHistory(ctx, r, gate > 0, log)
+	} else {
+		// Record the terminal failure after a linked rollback has started.
+		defer recordImagePullHistory(ctx, r, false, log)
+	}
 	if ctx.Err() != nil {
 		return
 	}
@@ -104,7 +110,11 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	// left the containers as they were.
 	if r.RedeployFailed {
 		if target := automaticRollbackTarget(ctx, &app, nil, log); target != nil {
-			triggerAutomaticRollback(ctx, &app, target, models.ApplicationEventSourceDeploymentFailure, log)
+			event, err := applicationevents.ForRequest(ctx, r.RequestId, app.Id)
+			if err != nil {
+				log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to look up image update event for rollback")
+			}
+			triggerAutomaticRollback(ctx, &app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
 		}
 	}
 }

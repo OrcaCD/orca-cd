@@ -188,13 +188,25 @@ func Verify(ctx context.Context, deployment *models.ApplicationDeployment) (bool
 // rolled back to, and fails the event that deployed it with reason. It
 // reports false when the deployment is no longer being verified.
 func Reject(ctx context.Context, deployment *models.ApplicationDeployment, reason string) (bool, error) {
+	return reject(ctx, deployment, &reason)
+}
+
+// RejectForRollback drops an unhealthy deployment while leaving its source
+// event running. The caller completes that event after recording the rollback.
+func RejectForRollback(ctx context.Context, deployment *models.ApplicationDeployment) (bool, error) {
+	return reject(ctx, deployment, nil)
+}
+
+func reject(ctx context.Context, deployment *models.ApplicationDeployment, reason *string) (bool, error) {
 	var rejected bool
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The event is completed first: deleting the deployment unlinks it. Both
 		// only apply while the deployment is verified, so Verify can't interleave.
-		if err := completeEvent(ctx, tx, deployment, models.ApplicationEventFailed, &reason,
-			"deployment_id IN (?)", idsWhere(tx, "id = ? AND status = ?", deployment.Id, models.DeploymentVerifying)); err != nil {
-			return err
+		if reason != nil {
+			if err := completeEvent(ctx, tx, deployment, models.ApplicationEventFailed, reason,
+				"deployment_id IN (?)", idsWhere(tx, "id = ? AND status = ?", deployment.Id, models.DeploymentVerifying)); err != nil {
+				return err
+			}
 		}
 		deleted, err := deleteDeployments(ctx, tx, idsWhere(tx, "id = ? AND status = ?", deployment.Id, models.DeploymentVerifying))
 		rejected = deleted > 0

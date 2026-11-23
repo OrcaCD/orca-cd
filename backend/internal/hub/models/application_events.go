@@ -51,6 +51,7 @@ type ApplicationEvent struct {
 	ApplicationId string                 `gorm:"type:text;not null;index:idx_application_events_app_created,priority:1"`
 	Application   Application            `gorm:"foreignKey:ApplicationId;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	RequestId     *string                `gorm:"type:text;uniqueIndex"`
+	TriggerId     *string                `gorm:"type:text;index"`
 	Type          ApplicationEventType   `gorm:"type:text;not null"`
 	Source        ApplicationEventSource `gorm:"type:text;not null"`
 	Status        ApplicationEventStatus `gorm:"type:text;not null"`

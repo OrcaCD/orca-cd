@@ -132,7 +132,7 @@ func deploymentHealthReport(app *models.Application, deployment *models.Applicat
 }
 
 func passHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, log *zerolog.Logger) {
-	eventType := gatedEventType(ctx, app.Id, deployment, log)
+	event := gatedEvent(ctx, app.Id, deployment, log)
 	verified, err := deployments.Verify(ctx, deployment)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to mark deployment as verified")
@@ -143,7 +143,7 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 	}
 	sendRetentionSettings(ctx, app, log)
 
-	if eventType == models.ApplicationEventImageUpdate {
+	if event != nil && event.Type == models.ApplicationEventImageUpdate {
 		go notifications.SendForApplication(app.Id, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
 		return
 	}
@@ -153,8 +153,23 @@ func passHealthGate(ctx context.Context, app *models.Application, deployment *mo
 // failHealthGate drops the deployment and, if rollBack is set, rolls back to
 // the deployment before it.
 func failHealthGate(ctx context.Context, app *models.Application, deployment *models.ApplicationDeployment, reason string, rollBack bool, log *zerolog.Logger) {
-	eventType := gatedEventType(ctx, app.Id, deployment, log)
-	rejected, err := deployments.Reject(ctx, deployment, reason)
+	event := gatedEvent(ctx, app.Id, deployment, log)
+	var rejected bool
+	var err error
+	if rollBack && deployment.PreviousDeploymentId != nil && event != nil && event.TriggerId != nil {
+		rejected, err = deployments.RejectForRollback(ctx, deployment)
+		if err == nil && rejected {
+			defer func() {
+				writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+				defer cancel()
+				if _, err := applicationevents.Complete(writeCtx, *deployment.RequestId, app.Id, models.ApplicationEventFailed, &reason); err != nil {
+					log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to complete rejected deployment event")
+				}
+			}()
+		}
+	} else {
+		rejected, err = deployments.Reject(ctx, deployment, reason)
+	}
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to drop unhealthy deployment")
 		return
@@ -170,11 +185,11 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 	}
 	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
 
-	event, message := models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String()+": "+reason
-	if eventType == models.ApplicationEventImageUpdate {
-		event, message = models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String()+": "+reason
+	notification, message := models.NotificationEventDeploymentFailed, "Error: deployment failed for "+app.Name.String()+": "+reason
+	if event != nil && event.Type == models.ApplicationEventImageUpdate {
+		notification, message = models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String()+": "+reason
 	}
-	go notifications.SendForApplication(app.Id, event, message, log)
+	go notifications.SendForApplication(app.Id, notification, message, log)
 	if !rollBack {
 		return
 	}
@@ -184,18 +199,22 @@ func failHealthGate(ctx context.Context, app *models.Application, deployment *mo
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load deployment to roll back to")
 		return
 	}
-	triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceHealthCheck, log)
+	triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceHealthCheck, event, log)
 }
 
 // triggerAutomaticRollback rolls the application back to target after a
 // failed deployment, if there is a deployment to roll back to.
-func triggerAutomaticRollback(ctx context.Context, app *models.Application, target *models.ApplicationDeployment, source models.ApplicationEventSource, log *zerolog.Logger) {
+func triggerAutomaticRollback(ctx context.Context, app *models.Application, target *models.ApplicationDeployment, source models.ApplicationEventSource, event *models.ApplicationEvent, log *zerolog.Logger) {
 	if target == nil {
 		log.Warn().Str("applicationId", app.Id).Msg("no earlier deployment to roll back to")
 		return
 	}
 	log.Info().Str("applicationId", app.Id).Str("deploymentId", target.Id).Str("source", string(source)).Msg("rolling back application")
-	if err := rollback.Trigger(ctx, app, target, rollback.Origin{Source: source}); err != nil {
+	origin := rollback.Origin{Source: source}
+	if event != nil {
+		origin.TriggerID = event.TriggerId
+	}
+	if err := rollback.Trigger(ctx, app, target, origin); err != nil {
 		log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to trigger automatic rollback")
 		go notifications.SendForApplication(app.Id, models.NotificationEventRollbackFailed, "Error: rollback failed for "+app.Name.String()+": "+err.Error(), log)
 	}
@@ -229,18 +248,15 @@ func sendRetentionSettings(ctx context.Context, app *models.Application, log *ze
 	}
 }
 
-func gatedEventType(ctx context.Context, applicationID string, deployment *models.ApplicationDeployment, log *zerolog.Logger) models.ApplicationEventType {
+func gatedEvent(ctx context.Context, applicationID string, deployment *models.ApplicationDeployment, log *zerolog.Logger) *models.ApplicationEvent {
 	if deployment.RequestId == nil {
-		return models.ApplicationEventDeployment
+		return nil
 	}
 	event, err := applicationevents.ForRequest(ctx, *deployment.RequestId, applicationID)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to load event of verified deployment")
 	}
-	if event == nil {
-		return models.ApplicationEventDeployment
-	}
-	return event.Type
+	return event
 }
 
 func isFailingHealth(health models.HealthStatus) bool {
