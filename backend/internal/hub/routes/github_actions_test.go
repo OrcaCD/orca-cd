@@ -11,9 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -21,6 +23,7 @@ import (
 	jose "github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 	"github.com/rs/zerolog"
+	"gorm.io/gorm"
 )
 
 // ghActionsOIDCTestServer is a minimal OIDC provider for testing GitHub Actions token verification.
@@ -70,6 +73,14 @@ func newGHActionsOIDCTestServer(t *testing.T) *ghActionsOIDCTestServer {
 func (s *ghActionsOIDCTestServer) makeToken(t *testing.T, claims githubActionsClaims) string {
 	t.Helper()
 
+	if claims.RunId == "" {
+		claims.RunId = "default-run"
+	}
+	return s.signToken(t, claims)
+}
+
+func (s *ghActionsOIDCTestServer) signToken(t *testing.T, claims githubActionsClaims) string {
+	t.Helper()
 	sig, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.RS256, Key: s.privateKey},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", s.keyID),
@@ -100,6 +111,9 @@ func (s *ghActionsOIDCTestServer) makeToken(t *testing.T, claims githubActionsCl
 func setupGHActionsTest(t *testing.T) *ghActionsOIDCTestServer {
 	t.Helper()
 	setupTestDBWithRepos(t)
+	if err := db.DB.AutoMigrate(&models.GitHubActionsTrigger{}, &models.GitHubActionsTriggerSkip{}); err != nil {
+		t.Fatalf("migrate GitHub Actions tables: %v", err)
+	}
 
 	srv := newGHActionsOIDCTestServer(t)
 
@@ -472,16 +486,7 @@ func TestGitHubActionsDeployHandler_SyncTriggered(t *testing.T) {
 	c, w := makeGHActionsRequest(token, `{"syncRepo": true}`)
 	GitHubActionsDeployHandler(c)
 
-	if w.Code != http.StatusAccepted {
-		t.Errorf("expected 202, got %d: %s", w.Code, w.Body.String())
-	}
-	var body map[string]string
-	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body["message"] != "deployment triggered" {
-		t.Errorf("unexpected message: %q", body["message"])
-	}
+	decodeTriggerResponse(t, w)
 }
 
 func TestGitHubActionsDeployHandler_SyncRejectedWhenRepositoryAlreadySyncing(t *testing.T) {
@@ -883,5 +888,156 @@ func TestGitHubActionsDeployHandler_CaseInsensitiveRepoMatch(t *testing.T) {
 
 	if w.Code != http.StatusAccepted {
 		t.Errorf("expected case-insensitive match to succeed (202), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGitHubActionsTriggerStatusHandler(t *testing.T) {
+	srv := setupGHActionsTest(t)
+	repo := seedGHActionsRepo(t)
+	seedGHActionsApp(t, repo.Id)
+	claims := githubActionsClaims{
+		Repository: "owner/testrepo", RunId: "123456",
+		Ref: "refs/heads/main", RefType: "branch", EventName: "push", Sha: "abc123",
+	}
+	c, w := makeGHActionsRequest(srv.makeToken(t, claims), `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+	trigger := decodeTriggerResponse(t, w)
+	app := trigger.Applications[0]
+
+	router := gin.New()
+	router.GET("/api/v1/github-actions/triggers/:id", GitHubActionsTriggerStatusHandler)
+	poll := func(t *testing.T, id, token string, wantCode int) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/github-actions/triggers/"+id, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, req)
+		if recorder.Code != wantCode {
+			t.Fatalf("poll = %d, want %d: %s", recorder.Code, wantCode, recorder.Body.String())
+		}
+		return recorder
+	}
+
+	for _, tc := range []struct {
+		name, repository, runID string
+	}{
+		{"different repository", "owner/other", claims.RunId},
+		{"different workflow run", claims.Repository, "123457"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			poll(t, trigger.TriggerID, srv.makeToken(t, githubActionsClaims{Repository: tc.repository, RunId: tc.runID}), http.StatusNotFound)
+		})
+	}
+	poll(t, trigger.TriggerID, srv.signToken(t, githubActionsClaims{Repository: claims.Repository}), http.StatusNotFound)
+	poll(t, trigger.TriggerID, "invalid-token", http.StatusUnauthorized)
+	poll(t, "unknown-trigger", srv.makeToken(t, claims), http.StatusNotFound)
+
+	w = poll(t, trigger.TriggerID, srv.makeToken(t, claims), http.StatusOK)
+	var result githubactions.Result
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode running result: %v", err)
+	}
+	if result.Status != "running" || len(result.Applications) != 1 || result.Applications[0].Status != "running" {
+		t.Fatalf("expected to wait for the queued sync, got %+v", result)
+	}
+
+	if _, err := applicationevents.RecordCompleted(t.Context(), applicationevents.Params{
+		ApplicationID: app.Id, TriggerID: &trigger.TriggerID, Type: models.ApplicationEventCommitSync,
+		Source: models.ApplicationEventSourceGitHubActions, CommitHash: &claims.Sha,
+	}, models.ApplicationEventNoChange, nil); err != nil {
+		t.Fatalf("record no-change event: %v", err)
+	}
+
+	// Polling only needs the issuer, audience, repository and run claims.
+	pollClaims := githubActionsClaims{Repository: "OWNER/testrepo", RunId: claims.RunId}
+	w = poll(t, trigger.TriggerID, srv.makeToken(t, pollClaims), http.StatusOK)
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Error("workflow results should not be cached")
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode completed result: %v", err)
+	}
+	if result.Status != "succeeded" || len(result.Applications) != 1 {
+		t.Fatalf("expected a successful result, got %+v", result)
+	}
+	got := result.Applications[0]
+	if got.Id != app.Id || got.Name != app.Name || got.Status != "succeeded" || len(got.Events) != 1 ||
+		got.Events[0].Status != "no_change" || got.Events[0].Commit == nil || *got.Events[0].Commit != claims.Sha {
+		t.Errorf("unexpected application result: %+v", got)
+	}
+
+	if _, err := gorm.G[models.GitHubActionsTrigger](db.DB).Where("id = ?", trigger.TriggerID).
+		Update(t.Context(), "created_at", time.Now().Add(-25*time.Hour)); err != nil {
+		t.Fatalf("expire trigger: %v", err)
+	}
+	poll(t, trigger.TriggerID, srv.makeToken(t, claims), http.StatusNotFound)
+
+	if err := db.DB.Migrator().DropTable(&models.GitHubActionsTrigger{}); err != nil {
+		t.Fatalf("drop trigger table: %v", err)
+	}
+	poll(t, trigger.TriggerID, srv.makeToken(t, claims), http.StatusInternalServerError)
+	c, w = makeGHActionsRequest(srv.makeToken(t, claims), `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("deploy without a trigger table = %d, want 500", w.Code)
+	}
+}
+
+type testGitHubActionsTriggerResponse struct {
+	Message      string                      `json:"message"`
+	TriggerID    string                      `json:"triggerId"`
+	Applications []githubactions.Application `json:"applications"`
+}
+
+func decodeTriggerResponse(t *testing.T, w *httptest.ResponseRecorder) testGitHubActionsTriggerResponse {
+	t.Helper()
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	var body testGitHubActionsTriggerResponse
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode trigger response: %v", err)
+	}
+	if body.Message != "deployment triggered" || body.TriggerID == "" || len(body.Applications) != 1 {
+		t.Fatalf("unexpected trigger response: %+v", body)
+	}
+	return body
+}
+
+func TestGitHubActionsImagePullDispatchFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, request string
+		wait          bool
+	}{
+		{"fire and forget", `{"pullImages":true}`, false},
+		{"wait for reports", `{"pullImages":true,"waitForResult":true}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := setupGHActionsTest(t)
+			repo := seedGHActionsRepo(t)
+			seedGHActionsApp(t, repo.Id)
+			token := srv.makeToken(t, githubActionsClaims{
+				Repository: "owner/testrepo", RunId: "123456",
+				Ref: "refs/heads/main", RefType: "branch", EventName: "push", Sha: "abc123",
+			})
+			c, w := makeGHActionsRequest(token, tc.request)
+			GitHubActionsDeployHandler(c)
+			if !tc.wait {
+				if w.Code != http.StatusConflict {
+					t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+				}
+				return
+			}
+			trigger := decodeTriggerResponse(t, w)
+			result, err := githubactions.GetResult(t.Context(), trigger.TriggerID, "owner/testrepo", "123456")
+			if err != nil || result.Status != "failed" || len(result.Applications) != 1 {
+				t.Fatalf("expected failed image pull, got %+v, %v", result, err)
+			}
+			app := result.Applications[0]
+			if app.Status != "failed" || len(app.Events) != 1 ||
+				app.Events[0].Type != models.ApplicationEventImageUpdate || app.Events[0].Error == nil {
+				t.Errorf("expected a failed image update event with an error, got %+v", app)
+			}
+		})
 	}
 }
