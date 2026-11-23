@@ -10,6 +10,7 @@ import (
 
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
@@ -56,13 +57,15 @@ func getGitHubActionsProvider(ctx context.Context) (*gooidc.Provider, error) {
 }
 
 type githubActionsRequest struct {
-	SyncRepo   bool `json:"syncRepo"`
-	PullImages bool `json:"pullImages"`
+	SyncRepo      bool `json:"syncRepo"`
+	PullImages    bool `json:"pullImages"`
+	WaitForResult bool `json:"waitForResult"`
 }
 
 // https://docs.github.com/en/actions/concepts/security/openid-connect#understanding-the-oidc-token
 type githubActionsClaims struct {
 	Repository  string `json:"repository"`
+	RunId       string `json:"run_id"`
 	Ref         string `json:"ref"`
 	RefType     string `json:"ref_type"`
 	Sha         string `json:"sha"`
@@ -91,35 +94,12 @@ func extractWorkflowFilename(workflowRef, expectedRepo string) string {
 func GitHubActionsDeployHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	rawToken := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-	rawToken = strings.TrimSpace(rawToken)
-	if rawToken == "" {
-		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+	claims, ok := verifyGitHubActionsClaims(c)
+	if !ok {
 		return
 	}
 
-	oidcProvider, err := getGitHubActionsProvider(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
-	idToken, err := verifier.Verify(ctx, rawToken)
-	if err != nil {
-		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-		return
-	}
-
-	var claims githubActionsClaims
-	if err := idToken.Claims(&claims); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
-		return
-	}
-
-	if claims.Repository == "" || claims.Ref == "" {
+	if claims.Repository == "" || claims.Ref == "" || claims.RunId == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing required token claims"})
 		return
 	}
@@ -248,8 +228,31 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 			return
 		}
 		defer release()
+	}
 
-		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}, &hubApplications.Log)
+	trigger := models.GitHubActionsTrigger{
+		RepositoryId:   matchedRepo.Id,
+		Repository:     strings.ToLower(claims.Repository),
+		RunId:          claims.RunId,
+		SyncRepo:       req.SyncRepo,
+		PullImages:     req.PullImages,
+		ApplicationIds: make([]string, 0, len(apps)),
+	}
+	targets := make([]githubactions.Application, 0, len(apps))
+	for i := range apps {
+		app := &apps[i]
+		trigger.ApplicationIds = append(trigger.ApplicationIds, app.Id)
+		targets = append(targets, githubactions.Application{Id: app.Id, Name: app.Name.String()})
+	}
+	if err := gorm.G[models.GitHubActionsTrigger](db.DB).Create(ctx, &trigger); err != nil {
+		hubApplications.Log.Error().Err(err).Msg("failed to record GitHub Actions trigger")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	origin := hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions, TriggerID: &trigger.Id}
+	if req.SyncRepo {
+		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), origin, &hubApplications.Log)
 	}
 
 	// Todo
@@ -257,12 +260,49 @@ func GitHubActionsDeployHandler(c *gin.Context) {
 	// (even if compose file did not change)
 	if req.PullImages {
 		for i := range apps {
-			if !hubApplications.TriggerImagePull(&apps[i], hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
+			// Waiting workflows receive dispatch failures in their result and
+			// still wait for every other application the trigger covers.
+			if !hubApplications.TriggerImagePull(&apps[i], origin) && !req.WaitForResult {
 				c.JSON(http.StatusConflict, gin.H{"error": "agent is not connected"})
 				return
 			}
 		}
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "deployment triggered"})
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "deployment triggered", "triggerId": trigger.Id, "applications": targets,
+	})
+}
+
+func verifyGitHubActionsClaims(c *gin.Context) (githubActionsClaims, bool) {
+	ctx := c.Request.Context()
+	rawToken := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	rawToken = strings.TrimSpace(rawToken)
+	if rawToken == "" {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		return githubActionsClaims{}, false
+	}
+
+	oidcProvider, err := getGitHubActionsProvider(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return githubActionsClaims{}, false
+	}
+
+	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
+	idToken, err := verifier.Verify(ctx, rawToken)
+	if err != nil {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return githubActionsClaims{}, false
+	}
+
+	var claims githubActionsClaims
+	if err := idToken.Claims(&claims); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
+		return githubActionsClaims{}, false
+	}
+
+	return claims, true
 }
