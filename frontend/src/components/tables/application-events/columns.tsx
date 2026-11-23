@@ -4,6 +4,7 @@ import {
 	eventSourceLabel,
 	eventTitle,
 	isCurrentDeployment,
+	ApplicationEventStatus,
 	type ApplicationEvent,
 } from "@/lib/application-events";
 import { m } from "@/lib/paraglide/messages";
@@ -98,7 +99,11 @@ export const getColumns = (
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						aria-label={m.applicationHistoryErrorDetails()}
+						aria-label={
+							row.original.status === ApplicationEventStatus.HeldBack
+								? m.applicationHistoryHeldBackDetails()
+								: m.applicationHistoryErrorDetails()
+						}
 						onClick={row.getToggleExpandedHandler()}
 					>
 						{row.getIsExpanded() ? (

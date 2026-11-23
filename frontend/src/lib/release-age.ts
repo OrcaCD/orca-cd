@@ -54,12 +54,23 @@ export function updateGlobalReleaseAgeSettings(
 	return fetcher<GlobalReleaseAgeSettings>("/admin/settings/release-age", "PUT", data);
 }
 
-// effectiveMinimumSeconds is the minimum release age of the application without service overrides.
+// effectiveMinimumSeconds is the minimum release age of the application without service
+// overrides. The global minimum is also the least one.
 export function effectiveMinimumSeconds(
-	application: Application | undefined,
-	global: GlobalReleaseAgeSettings | undefined,
+	application: Application,
+	global: GlobalReleaseAgeSettings,
 ): number {
-	return application?.releaseAge.minimumSeconds ?? global?.minimumSeconds ?? 0;
+	return Math.max(application.releaseAge.minimumSeconds ?? 0, global.minimumSeconds);
+}
+
+// usesGlobalMinimum reports whether the application uses the global minimum release age,
+// because it sets none or a lower one.
+export function usesGlobalMinimum(
+	application: Application,
+	global: GlobalReleaseAgeSettings,
+): boolean {
+	const own = application.releaseAge.minimumSeconds;
+	return own === null || own < global.minimumSeconds;
 }
 
 // formatReleaseAge formats an age like "3 days" or "12 hours", 0 is "Off".
@@ -78,20 +89,6 @@ export function formatReleaseAge(seconds: number): string {
 		unit,
 		unitDisplay: "long",
 	}).format(value);
-}
-
-// formatRemaining formats a wait like "2d 10h", "5h 3m" or "12m".
-export function formatRemaining(ms: number): string {
-	const minutes = Math.max(1, Math.ceil(ms / 60_000));
-	const days = Math.floor(minutes / (24 * 60));
-	const hours = Math.floor((minutes % (24 * 60)) / 60);
-	if (days > 0) {
-		return `${days}d ${hours}h`;
-	}
-	if (hours > 0) {
-		return `${hours}h ${minutes % 60}m`;
-	}
-	return `${minutes}m`;
 }
 
 // shortDigest shortens "sha256:abc…" to its first 12 hex characters, like docker does.

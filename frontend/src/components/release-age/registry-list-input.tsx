@@ -52,7 +52,7 @@ export function RegistryListInput({
 							{!disabled && (
 								<button
 									type="button"
-									className="rounded-sm hover:text-foreground"
+									className="rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
 									aria-label={m.releaseAgeRemoveRegistry({ registry })}
 									onClick={() => onChange(value.filter((r) => r !== registry))}
 								>

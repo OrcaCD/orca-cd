@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { useState } from "react";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { InfoTooltip, InfoTooltipContent, InfoTooltipTrigger } from "@/components/info-tooltip";
 import { RelativeTime } from "@/components/relative-time";
 import { Badge } from "@/components/ui/badge";
@@ -32,9 +33,9 @@ import {
 	dayInSeconds,
 	effectiveMinimumSeconds,
 	formatReleaseAge,
-	formatRemaining,
 	ImageUpdateStatus,
 	shortDigest,
+	usesGlobalMinimum,
 	type GlobalReleaseAgeSettings,
 	type ImageUpdate,
 	type ImageUpdates,
@@ -60,13 +61,22 @@ function ImageUpdatesPage() {
 	const { data: application, mutate: mutateApplication } = useFetch<Application>(
 		`/applications/${id}`,
 	);
-	const { data: global } = useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
-	const { data: updates } = useFetch<ImageUpdates>(`/applications/${id}/image-updates`);
+	const { data: global, error: globalError } =
+		useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
+	const { data: updates, error: updatesError } = useFetch<ImageUpdates>(
+		`/applications/${id}/image-updates`,
+	);
 	const { can } = usePermissions();
 	const canUpdate = can("application", "update", id);
 
-	const appAge = effectiveMinimumSeconds(application, global);
-	const inherited = application?.releaseAge.minimumSeconds === null;
+	const loadError = updatesError ?? globalError;
+	const policy =
+		application && global
+			? {
+					age: effectiveMinimumSeconds(application, global),
+					inherited: usesGlobalMinimum(application, global),
+				}
+			: undefined;
 
 	return (
 		<Card>
@@ -82,22 +92,31 @@ function ImageUpdatesPage() {
 						</p>
 					)}
 				</div>
-				<p className="text-muted-foreground flex flex-wrap items-center gap-1 text-sm">
-					{m.upcomingUpdatesPolicy({ age: formatReleaseAge(appAge) })}
-					{inherited && <span>({m.upcomingUpdatesPolicyGlobal()})</span>}
-					<Link
-						to="/applications/$id/settings/image-polling"
-						params={{ id }}
-						className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:text-foreground hover:underline"
-					>
-						{m.upcomingUpdatesChangePolicy()}
-						<ArrowRight className="h-3 w-3" />
-					</Link>
-				</p>
+				{policy && (
+					<p className="text-muted-foreground flex flex-wrap items-center gap-1 text-sm">
+						{m.upcomingUpdatesPolicy({ age: formatReleaseAge(policy.age) })}
+						{policy.inherited && <span>({m.upcomingUpdatesPolicyGlobal()})</span>}
+						{canUpdate && (
+							<Link
+								to="/applications/$id/settings/image-polling"
+								params={{ id }}
+								className="inline-flex items-center gap-1 font-medium underline-offset-4 hover:text-foreground hover:underline"
+							>
+								{m.upcomingUpdatesChangePolicy()}
+								<ArrowRight className="h-3 w-3" />
+							</Link>
+						)}
+					</p>
+				)}
 			</CardHeader>
 			<Separator />
 			<CardContent>
-				{!updates ? (
+				{loadError ? (
+					<ErrorAlert
+						title={m.upcomingUpdatesLoadFailed()}
+						description={loadError instanceof Error ? loadError.message : undefined}
+					/>
+				) : !updates || !policy || !global ? (
 					<Skeleton className="h-32 w-full" />
 				) : updates.images.length === 0 ? (
 					<p className="text-muted-foreground py-6 text-center text-sm">
@@ -141,7 +160,8 @@ function ImageUpdatesPage() {
 												applicationId={id}
 												image={image}
 												override={application?.releaseAge.serviceOverrides[image.service]}
-												appAge={appAge}
+												appAge={policy.age}
+												globalAge={global.minimumSeconds}
 												disabled={!canUpdate}
 												onUpdated={(updated) => mutateApplication(updated, { revalidate: false })}
 											/>
@@ -161,16 +181,25 @@ function versionLabel(version: string, digest: string): string {
 	return version || shortDigest(digest) || "–";
 }
 
+// Versions come from a label the publisher sets, so they can be of any length.
 function VersionCell({ image }: { image: ImageUpdate }) {
 	const current = versionLabel(image.currentVersion, image.currentDigest);
 	if (!image.newDigest) {
-		return <span className="font-mono text-xs">{current}</span>;
+		return (
+			<span className="block max-w-40 truncate font-mono text-xs" title={current}>
+				{current}
+			</span>
+		);
 	}
+	const next = versionLabel(image.newVersion, image.newDigest);
 	return (
-		<span className="inline-flex items-center gap-1 font-mono text-xs" title={image.newDigest}>
-			<span className="text-muted-foreground">{current}</span>
+		<span
+			className="inline-flex max-w-72 items-center gap-1 font-mono text-xs"
+			title={`${current} → ${next}\n${image.newDigest}`}
+		>
+			<span className="text-muted-foreground truncate">{current}</span>
 			<ArrowRight className="h-3 w-3 shrink-0" />
-			<span className="font-medium">{versionLabel(image.newVersion, image.newDigest)}</span>
+			<span className="truncate font-medium">{next}</span>
 		</span>
 	);
 }
@@ -210,9 +239,15 @@ function StatusCell({ image }: { image: ImageUpdate }) {
 						variant="outline"
 						className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
 					>
-						{remaining > 0
-							? m.imageUpdateStatusWaiting({ remaining: formatRemaining(remaining) })
-							: m.imageUpdateStatusWaitingDue()}
+						{remaining > 0 ? (
+							<RelativeTime
+								value={image.eligibleAt}
+								future
+								format={(relative) => m.imageUpdateStatusWaiting({ remaining: relative })}
+							/>
+						) : (
+							m.imageUpdateStatusWaitingDue()
+						)}
 					</Badge>
 					<div
 						className="h-1.5 overflow-hidden rounded-full bg-muted"
@@ -257,6 +292,7 @@ function MinimumAgeSelect({
 	image,
 	override,
 	appAge,
+	globalAge,
 	disabled,
 	onUpdated,
 }: {
@@ -264,6 +300,8 @@ function MinimumAgeSelect({
 	image: ImageUpdate;
 	override: number | undefined;
 	appAge: number;
+	// The least age a service can have.
+	globalAge: number;
 	disabled: boolean;
 	onUpdated: (application: Application) => Promise<unknown>;
 }) {
@@ -279,10 +317,12 @@ function MinimumAgeSelect({
 		);
 	}
 
+	const allowed = presetAges.filter((seconds) => seconds >= globalAge);
+	if (!allowed.includes(globalAge)) {
+		allowed.unshift(globalAge);
+	}
 	const ages =
-		override === undefined || presetAges.includes(override)
-			? presetAges
-			: [...presetAges, override];
+		override === undefined || allowed.includes(override) ? allowed : [...allowed, override];
 	const items = [
 		{ value: inheritValue, label: m.releaseAgeInherit({ age: formatReleaseAge(appAge) }) },
 		...ages.map((seconds) => ({ value: String(seconds), label: formatReleaseAge(seconds) })),
@@ -300,7 +340,11 @@ function MinimumAgeSelect({
 				value === inheritValue ? null : Number(value),
 			);
 			await onUpdated(updated);
-			toast.add({ type: "success", title: m.releaseAgeServiceUpdated() });
+			toast.add({
+				type: "success",
+				title: m.releaseAgeServiceUpdated(),
+				description: m.releaseAgeAppliesNextCheck(),
+			});
 		} catch (err) {
 			toast.add({
 				type: "error",

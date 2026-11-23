@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "@tanstack/react-form";
 import { useState } from "react";
 import z from "zod";
+import ErrorAlert from "@/components/alerts/error-alert";
 import { RegistryListInput } from "@/components/release-age/registry-list-input";
 import { ReleaseAgeInput } from "@/components/release-age/release-age-input";
 import { Button } from "@/components/ui/button";
@@ -31,12 +32,23 @@ export const Route = createFileRoute("/_authenticated/admin/release-age")({
 });
 
 const globalSchema = z.object({
-	minimumSeconds: z.number().int().min(0).max(maxReleaseAgeSeconds, m.validationReleaseAgeRange()),
+	minimumSeconds: z
+		.number()
+		.min(0, m.validationReleaseAgeRange())
+		.max(maxReleaseAgeSeconds, m.validationReleaseAgeRange()),
 	allowedRegistries: z.array(z.string()),
 });
 
 function AdminReleaseAgePage() {
-	const { data, mutate } = useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
+	const { data, error, mutate } = useFetch<GlobalReleaseAgeSettings>("/settings/release-age");
+	if (error) {
+		return (
+			<ErrorAlert
+				title={m.adminReleaseAgeLoadFailed()}
+				description={error instanceof Error ? error.message : undefined}
+			/>
+		);
+	}
 	if (!data) {
 		return <Skeleton className="h-64 w-full" />;
 	}

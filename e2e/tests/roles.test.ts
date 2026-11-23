@@ -253,7 +253,7 @@ test.describe("Permissions", () => {
 			);
 			expect(
 				(
-					await api(user.page, "PUT", `/applications/${appId}/release-age`, {
+					await api(user.page, "PUT", `/applications/${appId}/release-age/settings`, {
 						minimumSeconds: 3600,
 						allowedRegistries: [],
 					})

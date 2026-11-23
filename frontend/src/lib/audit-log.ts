@@ -21,6 +21,7 @@ export enum TargetType {
 	Role = "role",
 	ApiToken = "api-token",
 	Passkey = "passkey",
+	Settings = "settings",
 }
 
 export enum EventType {

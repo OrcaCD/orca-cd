@@ -23,11 +23,29 @@ import {
 	type GlobalReleaseAgeSettings,
 } from "@/lib/release-age";
 
-const releaseAgeSchema = z.object({
-	useGlobal: z.boolean(),
-	seconds: z.number().int().min(0).max(maxReleaseAgeSeconds, m.validationReleaseAgeRange()),
-	allowedRegistries: z.array(z.string()),
-});
+// The age is only checked when it is shown, and never below the global minimum.
+function releaseAgeSchema(globalSeconds: number) {
+	return z
+		.object({
+			useGlobal: z.boolean(),
+			seconds: z.number(),
+			allowedRegistries: z.array(z.string()),
+		})
+		.superRefine((value, ctx) => {
+			if (value.useGlobal) {
+				return;
+			}
+			if (value.seconds < 0 || value.seconds > maxReleaseAgeSeconds) {
+				ctx.addIssue({ code: "custom", path: ["seconds"], message: m.validationReleaseAgeRange() });
+			} else if (value.seconds < globalSeconds) {
+				ctx.addIssue({
+					code: "custom",
+					path: ["seconds"],
+					message: m.validationReleaseAgeBelowGlobal({ age: formatReleaseAge(globalSeconds) }),
+				});
+			}
+		});
+}
 
 // ReleaseAgeSettings configures the minimum release age of an application, or
 // lets it use the global default.
@@ -51,7 +69,7 @@ export function ReleaseAgeSettings({
 			allowedRegistries: settings?.allowedRegistries ?? [],
 		},
 		validators: {
-			onSubmit: releaseAgeSchema,
+			onSubmit: releaseAgeSchema(global?.minimumSeconds ?? 0),
 		},
 		onSubmit: async ({ value }) => {
 			if (!application) {
@@ -102,16 +120,25 @@ export function ReleaseAgeSettings({
 										<Switch
 											id={field.name}
 											checked={field.state.value}
-											onCheckedChange={(checked) => field.handleChange(checked)}
+											onCheckedChange={(checked) => {
+												field.handleChange(checked);
+												// Start from the global minimum, not from "Off".
+												const seconds = form.getFieldValue("seconds");
+												if (!checked && global && seconds < global.minimumSeconds) {
+													form.setFieldValue("seconds", global.minimumSeconds);
+												}
+											}}
 											disabled={!canUpdate}
 										/>
 										<div className="space-y-1">
 											<Label htmlFor={field.name}>{m.releaseAgeUseGlobal()}</Label>
-											<p className="text-muted-foreground text-xs">
-												{m.releaseAgeUseGlobalDescription({
-													age: formatReleaseAge(global?.minimumSeconds ?? 0),
-												})}
-											</p>
+											{global && (
+												<p className="text-muted-foreground text-xs">
+													{m.releaseAgeUseGlobalDescription({
+														age: formatReleaseAge(global.minimumSeconds),
+													})}
+												</p>
+											)}
 										</div>
 									</div>
 								</Field>
@@ -179,7 +206,7 @@ export function ReleaseAgeSettings({
 						</form.Field>
 
 						<div className="flex flex-wrap gap-2 pt-2">
-							<Button type="submit" disabled={isSubmitting || !application}>
+							<Button type="submit" disabled={isSubmitting || !canUpdate}>
 								{isSubmitting ? m.savingDots() : m.saveChanges()}
 							</Button>
 							<Button
