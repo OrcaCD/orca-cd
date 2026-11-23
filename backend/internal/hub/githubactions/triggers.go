@@ -2,6 +2,7 @@ package githubactions
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,10 @@ import (
 )
 
 const triggerRetention = 24 * time.Hour
+
+// Allow queued syncs to start, even when every worker ahead of them reaches
+// its job deadline. Once an operation is recorded, its own lifecycle applies.
+const operationRecordTimeout = 30 * time.Minute
 
 const (
 	running   = "running"
@@ -45,9 +50,10 @@ type EventResult struct {
 }
 
 func GetResult(ctx context.Context, id, repository, runID string) (Result, error) {
+	now := time.Now()
 	trigger, err := gorm.G[models.GitHubActionsTrigger](db.DB).
 		Where("id = ? AND repository = ? AND run_id = ? AND created_at > ?",
-			id, strings.ToLower(repository), runID, time.Now().Add(-triggerRetention)).
+			id, strings.ToLower(repository), runID, now.Add(-triggerRetention)).
 		First(ctx)
 	if err != nil {
 		return Result{}, err
@@ -75,10 +81,10 @@ func GetResult(ctx context.Context, id, repository, runID string) (Result, error
 		names[apps[i].Id] = apps[i].Name.String()
 	}
 
-	return buildResult(&trigger, events, skips, names), nil
+	return buildResult(&trigger, events, skips, names, now), nil
 }
 
-func buildResult(trigger *models.GitHubActionsTrigger, events []models.ApplicationEvent, skips []models.GitHubActionsTriggerSkip, names map[string]string) Result {
+func buildResult(trigger *models.GitHubActionsTrigger, events []models.ApplicationEvent, skips []models.GitHubActionsTriggerSkip, names map[string]string, now time.Time) Result {
 	byApp := make(map[string][]EventResult, len(trigger.ApplicationIds))
 	for i := range events {
 		event := &events[i]
@@ -101,6 +107,12 @@ func buildResult(trigger *models.GitHubActionsTrigger, events []models.Applicati
 			name = id
 		}
 		events := byApp[id]
+		switch {
+		case !exists:
+			events = addMissingOperationFailures(trigger, events, "the application no longer exists")
+		case !now.Before(trigger.CreatedAt.Add(operationRecordTimeout)):
+			events = addMissingOperationFailures(trigger, events, "the Hub timed out waiting for an operation record")
+		}
 		if events == nil {
 			events = []EventResult{}
 		}
@@ -116,6 +128,23 @@ func buildResult(trigger *models.GitHubActionsTrigger, events []models.Applicati
 		}
 	}
 	return result
+}
+
+func addMissingOperationFailures(trigger *models.GitHubActionsTrigger, events []EventResult, reason string) []EventResult {
+	for _, operation := range []struct {
+		requested bool
+		kind      models.ApplicationEventType
+	}{
+		{trigger.SyncRepo, models.ApplicationEventCommitSync},
+		{trigger.PullImages, models.ApplicationEventImageUpdate},
+	} {
+		if operation.requested && !slices.ContainsFunc(events, func(event EventResult) bool { return event.Type == operation.kind }) {
+			events = append(events, EventResult{
+				Type: operation.kind, Source: models.ApplicationEventSourceGitHubActions, Status: failed, Error: &reason,
+			})
+		}
+	}
+	return events
 }
 
 func applicationStatus(trigger *models.GitHubActionsTrigger, events []EventResult) string {

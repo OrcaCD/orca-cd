@@ -76,6 +76,11 @@ func (s *ghActionsOIDCTestServer) makeToken(t *testing.T, claims githubActionsCl
 	if claims.RunId == "" {
 		claims.RunId = "default-run"
 	}
+	return s.signToken(t, claims)
+}
+
+func (s *ghActionsOIDCTestServer) signToken(t *testing.T, claims githubActionsClaims) string {
+	t.Helper()
 	sig, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.RS256, Key: s.privateKey},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", s.keyID),
@@ -923,6 +928,7 @@ func TestGitHubActionsTriggerStatusHandler(t *testing.T) {
 			poll(t, trigger.TriggerID, srv.makeToken(t, githubActionsClaims{Repository: tc.repository, RunId: tc.runID}), http.StatusNotFound)
 		})
 	}
+	poll(t, trigger.TriggerID, srv.signToken(t, githubActionsClaims{Repository: claims.Repository}), http.StatusNotFound)
 	poll(t, trigger.TriggerID, "invalid-token", http.StatusUnauthorized)
 	poll(t, "unknown-trigger", srv.makeToken(t, claims), http.StatusNotFound)
 
@@ -965,6 +971,16 @@ func TestGitHubActionsTriggerStatusHandler(t *testing.T) {
 		t.Fatalf("expire trigger: %v", err)
 	}
 	poll(t, trigger.TriggerID, srv.makeToken(t, claims), http.StatusNotFound)
+
+	if err := db.DB.Migrator().DropTable(&models.GitHubActionsTrigger{}); err != nil {
+		t.Fatalf("drop trigger table: %v", err)
+	}
+	poll(t, trigger.TriggerID, srv.makeToken(t, claims), http.StatusInternalServerError)
+	c, w = makeGHActionsRequest(srv.makeToken(t, claims), `{"syncRepo": true}`)
+	GitHubActionsDeployHandler(c)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("deploy without a trigger table = %d, want 500", w.Code)
+	}
 }
 
 type testGitHubActionsTriggerResponse struct {

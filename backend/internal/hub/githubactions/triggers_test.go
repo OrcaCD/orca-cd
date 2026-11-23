@@ -9,13 +9,16 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestBuildResult(t *testing.T) {
+	now := time.Now()
 	trigger := models.GitHubActionsTrigger{
-		SyncRepo: true, PullImages: true,
+		CreatedAt: now,
+		SyncRepo:  true, PullImages: true,
 		ApplicationIds: []string{"app-a", "app-b"},
 	}
 	event := func(appID string, ty models.ApplicationEventType, status models.ApplicationEventStatus) models.ApplicationEvent {
@@ -50,7 +53,7 @@ func TestBuildResult(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildResult(&trigger, tt.events, tt.skips, nil)
+			got := buildResult(&trigger, tt.events, tt.skips, map[string]string{"app-a": "web", "app-b": "worker"}, now)
 			if got.Status != tt.wantOverall {
 				t.Errorf("overall status = %q, want %q", got.Status, tt.wantOverall)
 			}
@@ -61,6 +64,40 @@ func TestBuildResult(t *testing.T) {
 				t.Errorf("unexpected application statuses: %+v", got.Applications)
 			}
 		})
+	}
+}
+
+func TestBuildResultMissingOperations(t *testing.T) {
+	start := time.Now()
+	trigger := models.GitHubActionsTrigger{
+		CreatedAt: start, ApplicationIds: []string{"app"}, SyncRepo: true, PullImages: true,
+	}
+	apps := map[string]string{"app": "web"}
+	syncEvent := models.ApplicationEvent{
+		ApplicationId: "app", Type: models.ApplicationEventCommitSync, Status: models.ApplicationEventSucceeded,
+	}
+	deadline := start.Add(operationRecordTimeout)
+	pending := buildResult(&trigger, []models.ApplicationEvent{syncEvent}, nil, apps, deadline.Add(-time.Second))
+	if pending.Status != running {
+		t.Fatalf("before the deadline = %q, want running", pending.Status)
+	}
+	result := buildResult(&trigger, []models.ApplicationEvent{syncEvent}, nil, apps, deadline)
+	if result.Status != failed || len(result.Applications[0].Events) != 2 {
+		t.Fatalf("after the deadline, expected a failed pull alongside the completed sync: %+v", result)
+	}
+	pull := result.Applications[0].Events[1]
+	if pull.Type != models.ApplicationEventImageUpdate || pull.Status != failed || pull.Error == nil {
+		t.Errorf("unexpected pull result: %+v", pull)
+	}
+	syncEvent.Status = models.ApplicationEventRunning
+	result = buildResult(&trigger, []models.ApplicationEvent{syncEvent}, nil, apps, deadline)
+	if result.Status != running {
+		t.Errorf("an operation already running must continue to run after the deadline, got %q", result.Status)
+	}
+
+	result = buildResult(&trigger, nil, nil, nil, start)
+	if result.Status != failed || len(result.Applications[0].Events) != 2 || result.Applications[0].Name != "app" {
+		t.Fatalf("deleted application should fail immediately: %+v", result)
 	}
 }
 
@@ -126,14 +163,29 @@ func TestGetResultAndPruneExpiredTriggers(t *testing.T) {
 	}
 
 	if _, err := gorm.G[models.GitHubActionsTrigger](testDB).Where("id = ?", "expired").
-		Update(t.Context(), "created_at", now.Add(-triggerRetention)); err != nil {
+		Update(t.Context(), "created_at", now.Add(-triggerRetention-time.Minute)); err != nil {
 		t.Fatalf("age trigger: %v", err)
 	}
-	if err := prune(t.Context(), now); err != nil {
-		t.Fatalf("prune triggers: %v", err)
-	}
-	remaining, err := gorm.G[models.GitHubActionsTrigger](testDB).Find(t.Context())
-	if err != nil || len(remaining) != 1 || remaining[0].Id != "current" {
-		t.Fatalf("expected only the current trigger, got %+v, %v", remaining, err)
+	// Startup must prune before the first hourly tick.
+	log := zerolog.Nop()
+	stop := StartPruner(&log)
+	defer stop()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		remaining, err := gorm.G[models.GitHubActionsTrigger](testDB).Find(t.Context())
+		if err != nil {
+			t.Fatalf("load triggers: %v", err)
+		}
+		if len(remaining) == 1 && remaining[0].Id == "current" {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("expected only the current trigger, got %+v", remaining)
+		case <-ticker.C:
+		}
 	}
 }
