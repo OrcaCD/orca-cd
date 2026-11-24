@@ -11,6 +11,15 @@ let repo: ApiRepository | undefined;
 let agentId = "";
 let appId = "";
 
+// The global minimum applies to every application.
+async function resetGlobalReleaseAge(page: Page) {
+	const reset = await api(page, "PUT", "/admin/settings/release-age", {
+		minimumSeconds: 0,
+		allowedRegistries: [],
+	});
+	expect(reset.status).toBe(200);
+}
+
 async function seedApplication(page: Page) {
 	repo = await seedRepository(
 		page,
@@ -43,15 +52,13 @@ function releaseAgeCard(page: Page) {
 
 test.describe("Release age", () => {
 	test.beforeEach(async ({ page }) => {
+		// A previous run may have left a global minimum behind.
+		await resetGlobalReleaseAge(page);
 		await seedApplication(page);
 	});
 
 	test.afterEach(async ({ page }) => {
-		// The global minimum applies to every application.
-		await api(page, "PUT", "/admin/settings/release-age", {
-			minimumSeconds: 0,
-			allowedRegistries: [],
-		});
+		await resetGlobalReleaseAge(page);
 		await api(page, "DELETE", `/applications/${appId}`);
 		await api(page, "DELETE", `/agents/${agentId}`);
 		if (repo) {
