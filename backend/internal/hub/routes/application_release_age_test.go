@@ -3,6 +3,7 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -456,6 +457,10 @@ func TestAgeSource_Enforced(t *testing.T) {
 	if got := ageSource(row, app, false); got != "global" {
 		t.Errorf("ageSource = %q, want global", got)
 	}
+	row.MinimumAgeFromLabel = true
+	if got := ageSource(row, app, false); got != "label" {
+		t.Errorf("ageSource = %q, want label for a raised label", got)
+	}
 }
 
 func TestAdminUpdateReleaseAgeSettingsHandler_RequiresAdmin(t *testing.T) {
@@ -489,4 +494,48 @@ func TestAdminUpdateReleaseAgeSettingsHandler_RequiresAdmin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Raising the global minimum raises the stored ages below it, so the settings
+// show the age that applies and can be saved as they are.
+func TestAdminUpdateReleaseAgeSettingsHandler_RaisesStoredAgesBelowTheMinimum(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-release-age-raise")
+	agent := seedTestAgent(t, "agent-release-age-raise")
+	below := seedTestApplication(t, repo.Id, agent.Id, "Release Age Below App")
+	above := seedTestApplication(t, repo.Id, agent.Id, "Release Age Above App")
+	decodeApplication(t, invokeReleaseAgeSettingsHandler(t, below.Id, `{"minimumSeconds":172800,"allowedRegistries":[]}`))
+	decodeApplication(t, invokeReleaseAgeSettingsHandler(t, above.Id, `{"minimumSeconds":864000,"allowedRegistries":[]}`))
+	for service, seconds := range map[string]int{"web": 86400, "db": 1209600} {
+		decodeApplication(t, invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+			"/api/v1/applications/"+below.Id+"/release-age/services/"+service, fmt.Sprintf(`{"minimumSeconds":%d}`, seconds),
+			gin.Params{{Key: "id", Value: below.Id}, {Key: "service", Value: service}}))
+	}
+
+	if w := invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,
+		"/api/v1/admin/settings/release-age", `{"minimumSeconds":604800,"allowedRegistries":[]}`, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	load := func(id string) models.Application {
+		t.Helper()
+		app, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(t.Context())
+		if err != nil {
+			t.Fatalf("load application: %v", err)
+		}
+		return app
+	}
+	got := load(below.Id)
+	if got.MinimumReleaseAgeSeconds != nil {
+		t.Errorf("expected the application to use the global minimum, got %d", *got.MinimumReleaseAgeSeconds)
+	}
+	if want := map[string]int64{"web": 604800, "db": 1209600}; !maps.Equal(got.ReleaseAgeServiceOverrides, want) {
+		t.Errorf("service overrides = %v, want %v", got.ReleaseAgeServiceOverrides, want)
+	}
+	if got := load(above.Id); got.MinimumReleaseAgeSeconds == nil || *got.MinimumReleaseAgeSeconds != 864000 {
+		t.Errorf("an age above the minimum must stay, got %v", got.MinimumReleaseAgeSeconds)
+	}
+
+	// The stored settings can be saved again unchanged.
+	decodeApplication(t, invokeReleaseAgeSettingsHandler(t, below.Id, `{"minimumSeconds":null,"allowedRegistries":[]}`))
 }

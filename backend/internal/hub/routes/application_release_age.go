@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -305,7 +306,20 @@ func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 		MinimumReleaseAgeSeconds:    *req.MinimumSeconds,
 		ReleaseAgeAllowedRegistries: registries,
 	}
-	if err := gorm.G[models.Settings](db.DB, clause.OnConflict{UpdateAll: true}).Create(ctx, &settings); err != nil {
+	// The overrides are read and written back as a whole, see UpdateServiceReleaseAgeHandler.
+	serviceOverridesMu.Lock()
+	var raised []string
+	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := gorm.G[models.Settings](tx, clause.OnConflict{UpdateAll: true}).Create(ctx, &settings); err != nil {
+			return err
+		}
+		var err error
+		raised, err = raiseReleaseAgesBelow(ctx, tx, settings.MinimumReleaseAgeSeconds)
+		return err
+	})
+	serviceOverridesMu.Unlock()
+	if err != nil {
+		releaseAgeLog.Error().Err(err).Msg("failed to update the global release age settings")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
@@ -313,7 +327,52 @@ func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 	utils.RecordAuditLog(c, "updated", "settings", "release-age")
 	c.JSON(http.StatusOK, globalReleaseAgeSettings{MinimumSeconds: settings.MinimumReleaseAgeSeconds, AllowedRegistries: registries})
 	sse.PublishUpdate(sse.TopicSettings)
+	for _, id := range raised {
+		sse.PublishUpdate(sse.TopicApplications.For(id))
+	}
 	sendAllAgentSettings(c)
+}
+
+// raiseReleaseAgesBelow makes the stored ages of applications and services
+// match a raised global minimum, so they show and save the age that applies.
+// An application age below it uses the global one again, and a service age
+// below it is raised to it. It returns the applications it changed.
+func raiseReleaseAgesBelow(ctx context.Context, tx *gorm.DB, minimumSeconds int64) ([]string, error) {
+	applications, err := gorm.G[models.Application](tx).
+		Select("id", "minimum_release_age_seconds", "release_age_service_overrides").
+		Find(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var raised []string
+	for _, application := range applications {
+		ownAge := application.MinimumReleaseAgeSeconds
+		changed := ownAge != nil && *ownAge < minimumSeconds
+		if changed {
+			ownAge = nil
+		}
+		overrides := maps.Clone(application.ReleaseAgeServiceOverrides)
+		if overrides == nil {
+			overrides = map[string]int64{}
+		}
+		for service, seconds := range overrides {
+			if seconds < minimumSeconds {
+				overrides[service] = minimumSeconds
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if _, err := gorm.G[models.Application](tx).
+			Where("id = ?", application.Id).
+			Select("MinimumReleaseAgeSeconds", "ReleaseAgeServiceOverrides").
+			Updates(ctx, models.Application{MinimumReleaseAgeSeconds: ownAge, ReleaseAgeServiceOverrides: overrides}); err != nil {
+			return nil, err
+		}
+		raised = append(raised, application.Id)
+	}
+	return raised, nil
 }
 
 // sendAllAgentSettings pushes the settings to every agent, as global settings
@@ -344,7 +403,9 @@ type imageUpdateResponse struct {
 	// AgeSource says where the minimum age comes from: label, service,
 	// application or global.
 	AgeSource string `json:"ageSource"`
-	Reason    string `json:"reason"`
+	// MinimumAgeEnforced means the global minimum raised the age of its source.
+	MinimumAgeEnforced bool   `json:"minimumAgeEnforced"`
+	Reason             string `json:"reason"`
 }
 
 type imageUpdatesResponse struct {
@@ -390,19 +451,20 @@ func ListApplicationImageUpdatesHandler(c *gin.Context) {
 			checkedAt = row.CheckedAt
 		}
 		response.Images = append(response.Images, imageUpdateResponse{
-			Service:           row.Service,
-			Image:             row.Image,
-			Status:            string(row.Status),
-			CurrentDigest:     row.CurrentDigest,
-			CurrentVersion:    row.CurrentVersion,
-			NewDigest:         row.NewDigest,
-			NewVersion:        row.NewVersion,
-			PushedAt:          formatTimestamp(row.PushedAt),
-			FirstSeen:         row.FirstSeen,
-			EligibleAt:        formatTimestamp(row.EligibleAt),
-			MinimumAgeSeconds: row.MinimumAgeSeconds,
-			AgeSource:         ageSource(row, &application, inherited),
-			Reason:            row.Reason,
+			Service:            row.Service,
+			Image:              row.Image,
+			Status:             string(row.Status),
+			CurrentDigest:      row.CurrentDigest,
+			CurrentVersion:     row.CurrentVersion,
+			NewDigest:          row.NewDigest,
+			NewVersion:         row.NewVersion,
+			PushedAt:           formatTimestamp(row.PushedAt),
+			FirstSeen:          row.FirstSeen,
+			EligibleAt:         formatTimestamp(row.EligibleAt),
+			MinimumAgeSeconds:  row.MinimumAgeSeconds,
+			AgeSource:          ageSource(row, &application, inherited),
+			MinimumAgeEnforced: row.MinimumAgeEnforced,
+			Reason:             row.Reason,
 		})
 	}
 	if !checkedAt.IsZero() {
@@ -412,11 +474,12 @@ func ListApplicationImageUpdatesHandler(c *gin.Context) {
 }
 
 func ageSource(row *models.ApplicationImageUpdate, app *models.Application, inherited bool) string {
-	if row.MinimumAgeEnforced {
-		return "global"
-	}
+	// A label wins over the settings, even when the global minimum raises it.
 	if row.MinimumAgeFromLabel {
 		return "label"
+	}
+	if row.MinimumAgeEnforced {
+		return "global"
 	}
 	if _, ok := app.ReleaseAgeServiceOverrides[row.Service]; ok {
 		return "service"
