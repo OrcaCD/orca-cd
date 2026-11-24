@@ -214,6 +214,76 @@ test.describe("Permissions", () => {
 		expect((await api(user.page, "POST", "/agents", { name: "Not allowed" })).status).toBe(403);
 	});
 
+	test("a reader sees the release age of an application without changing it", async ({
+		page,
+		browser,
+	}) => {
+		const repo = await seedRepository(
+			page,
+			`e2e/rbac-${uniqueId("release-age")}`,
+			{},
+			{
+				branches: {
+					main: { files: { "compose.yaml": "services:\n  web:\n    image: busybox:1.37\n" } },
+				},
+			},
+		);
+		createdRepos.push(repo);
+		// The agent never connects; the application only needs it to exist.
+		const agent = await api(page, "POST", "/agents", { name: uniqueId("Release Age Agent") });
+		expect(agent.status).toBe(201);
+		const created = await api(page, "POST", "/applications", {
+			name: uniqueId("Release Age App"),
+			repositoryId: repo.id,
+			agentId: agent.body.id,
+			branch: "main",
+			path: "compose.yaml",
+		});
+		expect(created.status, JSON.stringify(created.body)).toBe(201);
+		const appId = created.body.id as string;
+
+		try {
+			const role = await createRole(page, {
+				permissions: [{ resource: "application", action: "read", resourceId: appId }],
+			});
+			const user = await createActiveUser(page, browser, { roleIds: [role.id] });
+
+			expect((await api(user.page, "GET", `/applications/${appId}/image-updates`)).status).toBe(
+				200,
+			);
+			expect(
+				(
+					await api(user.page, "PUT", `/applications/${appId}/release-age/settings`, {
+						minimumSeconds: 3600,
+						allowedRegistries: [],
+					})
+				).status,
+			).toBe(403);
+			expect(
+				(
+					await api(user.page, "PUT", `/applications/${appId}/release-age/services/web`, {
+						minimumSeconds: 0,
+					})
+				).status,
+			).toBe(403);
+
+			const settingsUrl = `/applications/${appId}/settings/image-polling`;
+			await gotoApp(user.page, settingsUrl);
+			await expect(
+				user.page.getByRole("switch", { name: "Use the global default" }),
+			).toBeDisabled();
+			await expect(user.page.getByLabel("Registries without age check")).toBeDisabled();
+			await expect(user.page.getByRole("button", { name: "Add registry" })).toBeDisabled();
+
+			await gotoApp(page, settingsUrl);
+			await expect(page.getByRole("switch", { name: "Use the global default" })).toBeEnabled();
+			await expect(page.getByLabel("Registries without age check")).toBeEnabled();
+		} finally {
+			await api(page, "DELETE", `/applications/${appId}`);
+			await api(page, "DELETE", `/agents/${agent.body.id}`);
+		}
+	});
+
 	test("users see their roles on the profile, updated right away", async ({ page, browser }) => {
 		const role = await createRole(page, { name: uniqueId("Readers") });
 		const user = await createActiveUser(page, browser, { roleIds: [role.id] });

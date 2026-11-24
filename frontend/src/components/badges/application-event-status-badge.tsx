@@ -26,6 +26,10 @@ const statusConfig: Record<
 		label: () => m.eventStatusNoChange(),
 		variant: "outline",
 	},
+	[ApplicationEventStatus.HeldBack]: {
+		label: () => m.eventStatusHeldBack(),
+		variant: "outline",
+	},
 };
 
 export function ApplicationEventStatusBadge({
