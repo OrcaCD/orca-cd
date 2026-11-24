@@ -3,6 +3,7 @@ package applications
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -31,6 +32,29 @@ type pendingImagePull struct {
 	// deadline is the hard cap, measured from the first trigger of the burst.
 	deadline time.Time
 	source   models.ApplicationEventSource
+	// images are the images the triggers announced, if they all named one.
+	images []string
+	// unrestricted means a trigger named no image, so every image is updated.
+	unrestricted bool
+	// next holds the triggers that arrived after the deadline and that this
+	// pull doesn't cover. They are queued once it is dispatched.
+	next *pendingImagePull
+}
+
+// covers reports whether the pull updates the image a trigger announced.
+func (p *pendingImagePull) covers(image string) bool {
+	return p.unrestricted || (image != "" && slices.Contains(p.images, image))
+}
+
+// add merges a trigger into the pull.
+func (p *pendingImagePull) add(source models.ApplicationEventSource, image string) {
+	p.source = source
+	p.unrestricted = p.unrestricted || image == ""
+	if p.unrestricted {
+		p.images = nil
+	} else {
+		p.images = appendImage(p.images, image)
+	}
 }
 
 // ImagePullDebouncer collapses bursts of image update triggers for the same
@@ -55,18 +79,26 @@ func NewImagePullDebouncer(log *zerolog.Logger) *ImagePullDebouncer {
 }
 
 // ScheduleImagePull queues a debounced image pull for app, or dispatches it
-// right away when no debouncer is initialized.
-func ScheduleImagePull(app *models.Application, source models.ApplicationEventSource) {
+// right away when no debouncer is initialized. image is the image the trigger
+// announced, or empty if it named none.
+func ScheduleImagePull(app *models.Application, source models.ApplicationEventSource, image string) {
 	if DefaultImagePullDebouncer == nil {
-		TriggerImagePull(app, SyncOrigin{Source: source})
+		TriggerImagePull(app, SyncOrigin{Source: source, WebhookImages: appendImage(nil, image)})
 		return
 	}
-	DefaultImagePullDebouncer.Schedule(app.Id, source)
+	DefaultImagePullDebouncer.Schedule(app.Id, source, image)
+}
+
+func appendImage(images []string, image string) []string {
+	if image == "" || slices.Contains(images, image) {
+		return images
+	}
+	return append(images, image)
 }
 
 // Schedule queues a pull for appID once no further trigger arrives within the
 // debounce window, but never later than maxDelay after the first trigger.
-func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEventSource) {
+func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEventSource, image string) {
 	if d == nil {
 		return
 	}
@@ -77,18 +109,30 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 	}
 
 	now := time.Now()
-	deadline := now.Add(d.maxDelay)
-	if pending, ok := d.pending[appID]; ok {
-		if !now.Before(pending.deadline) {
-			// Hard cap elapsed; the queued pull is already on its way out.
-			return
+	pending, ok := d.pending[appID]
+	switch {
+	case !ok:
+		pending = &pendingImagePull{deadline: now.Add(d.maxDelay)}
+	case !now.Before(pending.deadline):
+		// Hard cap elapsed; the queued pull is already on its way out.
+		if !pending.covers(image) {
+			if pending.next == nil {
+				pending.next = &pendingImagePull{}
+			}
+			pending.next.add(source, image)
 		}
-		deadline = pending.deadline
+		return
+	default:
 		pending.timer.Stop()
+		pending = &pendingImagePull{deadline: pending.deadline, source: pending.source, images: pending.images, unrestricted: pending.unrestricted}
 	}
+	pending.add(source, image)
+	d.queue(appID, pending, now)
+}
 
-	pending := &pendingImagePull{deadline: deadline, source: source}
-	delay := min(d.window, deadline.Sub(now))
+// queue starts the timer of pending. The caller must hold d.mu.
+func (d *ImagePullDebouncer) queue(appID string, pending *pendingImagePull, now time.Time) {
+	delay := min(d.window, pending.deadline.Sub(now))
 	pending.timer = time.AfterFunc(delay, func() { d.dispatch(appID, pending) })
 	d.pending[appID] = pending
 
@@ -132,6 +176,11 @@ func (d *ImagePullDebouncer) dispatch(appID string, pending *pendingImagePull) {
 		return
 	}
 	delete(d.pending, appID)
+	if next := pending.next; next != nil {
+		now := time.Now()
+		next.deadline = now.Add(d.maxDelay)
+		d.queue(appID, next, now)
+	}
 	d.wg.Add(1)
 	d.mu.Unlock()
 	defer d.wg.Done()
@@ -150,5 +199,5 @@ func (d *ImagePullDebouncer) dispatch(appID string, pending *pendingImagePull) {
 		}
 		return
 	}
-	TriggerImagePull(&app, SyncOrigin{Source: pending.source})
+	triggerImagePull(&app, SyncOrigin{Source: pending.source, WebhookImages: pending.images})
 }

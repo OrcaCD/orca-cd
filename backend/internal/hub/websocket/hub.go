@@ -11,6 +11,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/gorilla/websocket"
@@ -257,12 +258,20 @@ func (h *Hub) Broadcast(msg *messages.ServerMessage) {
 }
 
 // SendAgentSettings builds an AgentSettings message from the given applications
-// and sends it to the specified agent. Returns false if the agent is not connected
-// or the send buffer is full.
+// and sends it to the specified agent. Returns false if the settings can't be
+// determined, the agent is not connected or the send buffer is full. The agent
+// then keeps the settings it has, rather than run without the release age or
+// delete images a rollback needs.
 func (h *Hub) SendAgentSettings(ctx context.Context, agentID string, apps []models.Application) bool {
 	retentions, err := deployments.ImageRetentions(ctx, apps)
 	if err != nil {
 		h.log.Error().Err(err).Str("agent_id", agentID).Msg("failed to determine images to keep for rollbacks")
+		return false
+	}
+	global, err := releaseage.Global(ctx)
+	if err != nil {
+		h.log.Error().Err(err).Str("agent_id", agentID).Msg("failed to load the global release age settings")
+		return false
 	}
 	pollSettings := make([]*messages.ImagePollSettings, 0, len(apps))
 	for i := range apps {
@@ -274,6 +283,7 @@ func (h *Hub) SendAgentSettings(ctx context.Context, agentID string, apps []mode
 			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
 			DeleteOldImages: apps[i].DeleteOldImages,
 			ImageRetention:  retentions[apps[i].Id],
+			ReleaseAge:      releaseage.Policy(&apps[i], global),
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{

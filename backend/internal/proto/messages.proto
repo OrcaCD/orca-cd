@@ -143,6 +143,10 @@ message ReleaseAgePolicy {
   repeated string allowed_registries = 2;
   // Overrides minimum_seconds per compose service.
   map<string, int64> service_minimum_seconds = 3;
+  // The least age of every image, which neither labels, service overrides nor
+  // allowed_registries lower. Only enforced_exempt_registries skip it.
+  int64 enforced_minimum_seconds = 4;
+  repeated string enforced_exempt_registries = 5;
 }
 
 message PullImagesRequest {
@@ -208,6 +212,8 @@ message ImageUpdate {
   int64 minimum_age_seconds = 11;
   bool minimum_age_from_label = 12;
   string reason = 13;
+  // The enforced minimum raised minimum_age_seconds.
+  bool minimum_age_enforced = 14;
 }
 
 // ImageUpdatesReport is sent after every image check.

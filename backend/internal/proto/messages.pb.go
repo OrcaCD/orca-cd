@@ -1458,8 +1458,12 @@ type ReleaseAgePolicy struct {
 	AllowedRegistries []string `protobuf:"bytes,2,rep,name=allowed_registries,json=allowedRegistries,proto3" json:"allowed_registries,omitempty"`
 	// Overrides minimum_seconds per compose service.
 	ServiceMinimumSeconds map[string]int64 `protobuf:"bytes,3,rep,name=service_minimum_seconds,json=serviceMinimumSeconds,proto3" json:"service_minimum_seconds,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// The least age of every image, which neither labels, service overrides nor
+	// allowed_registries lower. Only enforced_exempt_registries skip it.
+	EnforcedMinimumSeconds   int64    `protobuf:"varint,4,opt,name=enforced_minimum_seconds,json=enforcedMinimumSeconds,proto3" json:"enforced_minimum_seconds,omitempty"`
+	EnforcedExemptRegistries []string `protobuf:"bytes,5,rep,name=enforced_exempt_registries,json=enforcedExemptRegistries,proto3" json:"enforced_exempt_registries,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
 }
 
 func (x *ReleaseAgePolicy) Reset() {
@@ -1509,6 +1513,20 @@ func (x *ReleaseAgePolicy) GetAllowedRegistries() []string {
 func (x *ReleaseAgePolicy) GetServiceMinimumSeconds() map[string]int64 {
 	if x != nil {
 		return x.ServiceMinimumSeconds
+	}
+	return nil
+}
+
+func (x *ReleaseAgePolicy) GetEnforcedMinimumSeconds() int64 {
+	if x != nil {
+		return x.EnforcedMinimumSeconds
+	}
+	return 0
+}
+
+func (x *ReleaseAgePolicy) GetEnforcedExemptRegistries() []string {
+	if x != nil {
+		return x.EnforcedExemptRegistries
 	}
 	return nil
 }
@@ -1782,8 +1800,10 @@ type ImageUpdate struct {
 	MinimumAgeSeconds   int64  `protobuf:"varint,11,opt,name=minimum_age_seconds,json=minimumAgeSeconds,proto3" json:"minimum_age_seconds,omitempty"`
 	MinimumAgeFromLabel bool   `protobuf:"varint,12,opt,name=minimum_age_from_label,json=minimumAgeFromLabel,proto3" json:"minimum_age_from_label,omitempty"`
 	Reason              string `protobuf:"bytes,13,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// The enforced minimum raised minimum_age_seconds.
+	MinimumAgeEnforced bool `protobuf:"varint,14,opt,name=minimum_age_enforced,json=minimumAgeEnforced,proto3" json:"minimum_age_enforced,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ImageUpdate) Reset() {
@@ -1905,6 +1925,13 @@ func (x *ImageUpdate) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *ImageUpdate) GetMinimumAgeEnforced() bool {
+	if x != nil {
+		return x.MinimumAgeEnforced
+	}
+	return false
 }
 
 // ImageUpdatesReport is sent after every image check.
@@ -2833,11 +2860,13 @@ const file_messages_proto_rawDesc = "" +
 	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\x12A\n" +
 	"\x0fimage_retention\x18\x06 \x01(\v2\x18.messages.ImageRetentionR\x0eimageRetention\x12;\n" +
 	"\vrelease_age\x18\a \x01(\v2\x1a.messages.ReleaseAgePolicyR\n" +
-	"releaseAge\"\xa3\x02\n" +
+	"releaseAge\"\x9b\x03\n" +
 	"\x10ReleaseAgePolicy\x12'\n" +
 	"\x0fminimum_seconds\x18\x01 \x01(\x03R\x0eminimumSeconds\x12-\n" +
 	"\x12allowed_registries\x18\x02 \x03(\tR\x11allowedRegistries\x12m\n" +
-	"\x17service_minimum_seconds\x18\x03 \x03(\v25.messages.ReleaseAgePolicy.ServiceMinimumSecondsEntryR\x15serviceMinimumSeconds\x1aH\n" +
+	"\x17service_minimum_seconds\x18\x03 \x03(\v25.messages.ReleaseAgePolicy.ServiceMinimumSecondsEntryR\x15serviceMinimumSeconds\x128\n" +
+	"\x18enforced_minimum_seconds\x18\x04 \x01(\x03R\x16enforcedMinimumSeconds\x12<\n" +
+	"\x1aenforced_exempt_registries\x18\x05 \x03(\tR\x18enforcedExemptRegistries\x1aH\n" +
 	"\x1aServiceMinimumSecondsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xd7\x02\n" +
@@ -2863,7 +2892,7 @@ const file_messages_proto_rawDesc = "" +
 	"\x10held_back_images\x18\b \x03(\v2\x17.messages.HeldBackImageR\x0eheldBackImages\"=\n" +
 	"\rHeldBackImage\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xdc\x03\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8e\x04\n" +
 	"\vImageUpdate\x12\x18\n" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x123\n" +
@@ -2882,7 +2911,8 @@ const file_messages_proto_rawDesc = "" +
 	"eligibleAt\x12.\n" +
 	"\x13minimum_age_seconds\x18\v \x01(\x03R\x11minimumAgeSeconds\x123\n" +
 	"\x16minimum_age_from_label\x18\f \x01(\bR\x13minimumAgeFromLabel\x12\x16\n" +
-	"\x06reason\x18\r \x01(\tR\x06reason\"\x89\x01\n" +
+	"\x06reason\x18\r \x01(\tR\x06reason\x120\n" +
+	"\x14minimum_age_enforced\x18\x0e \x01(\bR\x12minimumAgeEnforced\"\x89\x01\n" +
 	"\x12ImageUpdatesReport\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1d\n" +
 	"\n" +

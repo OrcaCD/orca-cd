@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
@@ -381,10 +380,7 @@ func (c *Client) checkImageUnit(ctx context.Context, appID string, policy Releas
 			use.update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE
 			use.update.CurrentDigest = remoteDigest
 			// Shown even without an update, so the tab lists the age of every service.
-			if age, fromLabel, err := policy.minimumAge(use.service); err == nil {
-				use.update.MinimumAgeSeconds = int64(age / time.Second)
-				use.update.MinimumAgeFromLabel = fromLabel
-			}
+			policy.reportMinimumAge(use.service, use.update)
 		}
 		return nil
 	}

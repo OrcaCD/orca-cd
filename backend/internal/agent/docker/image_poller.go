@@ -189,7 +189,8 @@ func (p *ImagePoller) runOnce(appID, appName, requestID string, deleteOld bool, 
 	}
 	var heldBack []*messages.HeldBackImage
 	for _, image := range images {
-		if isHeldBack(image) {
+		// A skipped update waits for image polling, not for the release age.
+		if isHeldBack(image) && image.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED {
 			heldBack = append(heldBack, &messages.HeldBackImage{Image: image.Image, Reason: image.Reason})
 		}
 	}

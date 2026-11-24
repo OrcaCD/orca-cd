@@ -12,6 +12,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/distribution/reference"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -21,6 +22,8 @@ type githubPackagePayload struct {
 	Package struct {
 		PackageType    string `json:"package_type"`
 		PackageVersion *struct {
+			// PackageURL is the pushed image, e.g. "ghcr.io/owner/name:tag".
+			PackageURL        string `json:"package_url"`
 			ContainerMetadata *struct {
 				Tag *struct {
 					Name string `json:"name"`
@@ -36,7 +39,17 @@ type githubPackagePayload struct {
 var signatureTagPattern = regexp.MustCompile(`^sha256-[a-f0-9]{64}(\..+)?$`)
 
 type dockerHubPayload struct {
-	PushData *json.RawMessage `json:"push_data"`
+	PushData *struct {
+		Tag string `json:"tag"`
+	} `json:"push_data"`
+	Repository struct {
+		RepoName string `json:"repo_name"`
+	} `json:"repository"`
+}
+
+type harborPayload struct {
+	Type      string `json:"type"`
+	EventType string `json:"event_type"`
 }
 
 func ImagePullWebhookHandler(c *gin.Context) {
@@ -89,7 +102,11 @@ func ImagePullWebhookHandler(c *gin.Context) {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
-		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook)
+		var image string
+		if payload.Package.PackageVersion != nil {
+			image = announcedImage(payload.Package.PackageVersion.PackageURL, "ghcr.io")
+		}
+		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, image)
 		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
@@ -110,8 +127,8 @@ func ImagePullWebhookHandler(c *gin.Context) {
 	}
 
 	// Docker Hub payloads carry a push_data field; all Docker Hub webhooks are push events.
-	if isDockerHubPayload(body) {
-		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook)
+	if payload, ok := parseDockerHubPayload(body); ok {
+		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, dockerHubImage(payload))
 		c.AbortWithStatus(http.StatusNoContent)
 		return
 	}
@@ -122,8 +139,29 @@ func ImagePullWebhookHandler(c *gin.Context) {
 		return
 	}
 
-	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook)
+	// The hub doesn't know the host of a Harbor registry, so it can't check
+	// the image a Harbor payload names. The pull checks the release age of
+	// every image instead.
+	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, "")
 	c.AbortWithStatus(http.StatusNoContent)
+}
+
+func dockerHubImage(payload dockerHubPayload) string {
+	if payload.Repository.RepoName == "" || payload.PushData.Tag == "" {
+		return ""
+	}
+	return announcedImage(payload.Repository.RepoName+":"+payload.PushData.Tag, "docker.io")
+}
+
+// announcedImage returns image if it is in the registry of the provider that
+// sent the webhook, or empty otherwise. An announced image skips the release
+// age, so a payload must not name the image of another registry.
+func announcedImage(image, registry string) string {
+	named, err := reference.ParseNormalizedNamed(image)
+	if err != nil || reference.Domain(named) != registry {
+		return ""
+	}
+	return image
 }
 
 // isGitHubImageTagEvent reports whether a GHCR package event moved a tag an application
@@ -141,18 +179,18 @@ func isGitHubImageTagEvent(payload *githubPackagePayload) bool {
 	return tag != "" && !signatureTagPattern.MatchString(tag)
 }
 
-// isDockerHubPayload returns true when body contains a Docker Hub push_data field.
+// parseDockerHubPayload parses body when it contains a Docker Hub push_data field.
 // Docker Hub does not support custom auth headers, so authentication is handled via
 // the ?token query parameter before this function is called.
-func isDockerHubPayload(body []byte) bool {
-	if len(body) == 0 {
-		return false
-	}
+func parseDockerHubPayload(body []byte) (dockerHubPayload, bool) {
 	var payload dockerHubPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return false
+	if len(body) == 0 {
+		return payload, false
 	}
-	return payload.PushData != nil
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return payload, false
+	}
+	return payload, payload.PushData != nil
 }
 
 // isHarborPushEvent returns true when the request should trigger an image pull.
@@ -164,10 +202,7 @@ func isHarborPushEvent(body []byte) bool {
 	if len(body) == 0 {
 		return true
 	}
-	var payload struct {
-		Type      string `json:"type"`
-		EventType string `json:"event_type"`
-	}
+	var payload harborPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return true
 	}
