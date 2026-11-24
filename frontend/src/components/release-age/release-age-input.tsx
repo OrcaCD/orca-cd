@@ -40,8 +40,8 @@ export function ReleaseAgeInput({
 		seconds,
 	}));
 	const unit = picked.seconds === seconds ? picked.unit : unitFor(seconds);
-	// Not rounded, so the box always shows the age that is saved.
-	const amount = seconds / unitSeconds[unit];
+	// Rounded only to hide floating point noise, so the box shows the age that is saved.
+	const amount = Number((seconds / unitSeconds[unit]).toFixed(4));
 
 	function change(value: number, newUnit: Unit) {
 		const newSeconds = Math.round(value * unitSeconds[newUnit]);

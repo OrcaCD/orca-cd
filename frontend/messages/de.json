@@ -1115,6 +1115,8 @@
 	"releaseAgeInherit": "Standard ({age})",
 	"releaseAgeSetByLabel": "Durch das Label orca-cd.minimum-release-age in der Compose-Datei gesetzt",
 	"releaseAgeLabelShort": "Label",
+	"releaseAgeLabelRaised": "Das Label orca-cd.minimum-release-age in der Compose-Datei setzt ein kürzeres Alter, daher gilt das globale Minimum",
+	"releaseAgeLabelRaisedShort": "Label, auf das globale Minimum angehoben",
 	"releaseAgeServiceLabel": "Mindestalter von {service}",
 	"releaseAgeServiceUpdated": "Mindestalter aktualisiert",
 	"upcomingUpdatesTitle": "Anstehende Updates",

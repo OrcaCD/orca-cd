@@ -40,6 +40,8 @@ export interface ImageUpdate {
 	eligibleAt: string | null;
 	minimumAgeSeconds: number;
 	ageSource: ReleaseAgeSource;
+	// The global minimum raised the age of its source.
+	minimumAgeEnforced: boolean;
 	reason: string;
 }
 
