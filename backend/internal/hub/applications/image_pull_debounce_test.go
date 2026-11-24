@@ -264,3 +264,31 @@ func TestTriggerImagePull_GlobalSettingsErrorSendsNothing(t *testing.T) {
 	}
 	expectNoPullRequest(t, client, 100*time.Millisecond)
 }
+
+// A trigger that arrives once the queued pull is on its way out is pulled
+// right after it, unless that pull already covers it.
+func TestScheduleImagePull_TriggerAfterDeadlineIsNotLost(t *testing.T) {
+	setupTestDB(t)
+	app, client := seedConnectedApp(t)
+	debouncer := setupDebouncer(t, 20*time.Millisecond, time.Hour)
+
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
+	// As if the timer fired and dispatch waits for the lock.
+	debouncer.mu.Lock()
+	outgoing := debouncer.pending[app.Id]
+	outgoing.timer.Stop()
+	outgoing.deadline = time.Now().Add(-time.Millisecond)
+	debouncer.mu.Unlock()
+
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/app:1.0")
+	ScheduleImagePull(app, models.ApplicationEventSourceImageWebhook, "ghcr.io/org/worker:1.0")
+	debouncer.dispatch(app.Id, outgoing)
+
+	if req := awaitPullRequest(t, client); !slices.Equal(req.WebhookImages, []string{"ghcr.io/org/app:1.0"}) {
+		t.Errorf("outgoing pull: webhook images = %v", req.WebhookImages)
+	}
+	if req := awaitPullRequest(t, client); !slices.Equal(req.WebhookImages, []string{"ghcr.io/org/worker:1.0"}) {
+		t.Errorf("follow-up pull: webhook images = %v", req.WebhookImages)
+	}
+	expectNoPullRequest(t, client, 100*time.Millisecond)
+}

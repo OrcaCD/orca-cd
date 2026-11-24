@@ -20,7 +20,12 @@ import (
 func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// This pull supersedes a debounced one queued for the same application.
 	DefaultImagePullDebouncer.Cancel(app.Id)
+	return triggerImagePull(app, origin)
+}
 
+// triggerImagePull is TriggerImagePull for a debounced pull, which leaves the
+// pulls queued after it.
+func triggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// A rolled back application runs pinned images. Pulling would replace them
 	// with the latest ones, so updates wait until it is deployed again.
 	if app.RolledBackAt != nil {
