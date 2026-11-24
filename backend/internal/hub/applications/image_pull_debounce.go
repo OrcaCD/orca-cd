@@ -110,9 +110,10 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 
 	now := time.Now()
 	pending, ok := d.pending[appID]
-	if !ok {
+	switch {
+	case !ok:
 		pending = &pendingImagePull{deadline: now.Add(d.maxDelay)}
-	} else if !now.Before(pending.deadline) {
+	case !now.Before(pending.deadline):
 		// Hard cap elapsed; the queued pull is already on its way out.
 		if !pending.covers(image) {
 			if pending.next == nil {
@@ -121,7 +122,7 @@ func (d *ImagePullDebouncer) Schedule(appID string, source models.ApplicationEve
 			pending.next.add(source, image)
 		}
 		return
-	} else {
+	default:
 		pending.timer.Stop()
 		pending = &pendingImagePull{deadline: pending.deadline, source: pending.source, images: pending.images, unrestricted: pending.unrestricted}
 	}
