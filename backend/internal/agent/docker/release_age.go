@@ -96,13 +96,38 @@ func (p ReleaseAgePolicy) setMinimumAge(service composetypes.ServiceConfig, upda
 	if err != nil {
 		return 0, err
 	}
+	// MinimumAgeFromLabel stays set, as the label still wins over the settings.
 	if enforced := p.enforcedMinimumAge(service.Image); enforced > age {
 		age = enforced
-		update.MinimumAgeFromLabel = false
 		update.MinimumAgeEnforced = true
 	}
 	update.MinimumAgeSeconds = int64(age / time.Second)
 	return age, nil
+}
+
+// exempt reports whether imageRef only waits for the enforced minimum, as it
+// is from an allowed registry or its publisher announced it.
+func (p ReleaseAgePolicy) exempt(imageRef string) bool {
+	return slices.Contains(p.AllowedRegistries, registryHost(imageRef)) ||
+		slices.ContainsFunc(p.WebhookImages, func(image string) bool { return sameTag(image, imageRef) })
+}
+
+// setExemptMinimumAge records the minimum release age of an exempt image in
+// update and returns it.
+func (p ReleaseAgePolicy) setExemptMinimumAge(imageRef string, update *messages.ImageUpdate) time.Duration {
+	age := p.enforcedMinimumAge(imageRef)
+	update.MinimumAgeSeconds = int64(age / time.Second)
+	update.MinimumAgeFromLabel = false
+	update.MinimumAgeEnforced = age > 0
+	return age
+}
+
+// reportMinimumAge records in update the minimum release age an update of the
+// image of the service would wait for.
+func (p ReleaseAgePolicy) reportMinimumAge(service composetypes.ServiceConfig, update *messages.ImageUpdate) {
+	if _, err := p.setMinimumAge(service, update); err == nil && p.exempt(service.Image) {
+		p.setExemptMinimumAge(service.Image, update)
+	}
 }
 
 // evaluateUpdate decides whether the service's image may be updated to digest
@@ -133,13 +158,9 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 		exempt = true
 	}
 	if exempt {
-		minimumAge = policy.enforcedMinimumAge(service.Image)
-		if minimumAge <= 0 {
+		if minimumAge = policy.setExemptMinimumAge(service.Image, update); minimumAge <= 0 {
 			return false
 		}
-		update.MinimumAgeSeconds = int64(minimumAge / time.Second)
-		update.MinimumAgeFromLabel = false
-		update.MinimumAgeEnforced = true
 	}
 
 	since := "pushed"

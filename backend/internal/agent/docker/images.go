@@ -380,7 +380,7 @@ func (c *Client) checkImageUnit(ctx context.Context, appID string, policy Releas
 			use.update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE
 			use.update.CurrentDigest = remoteDigest
 			// Shown even without an update, so the tab lists the age of every service.
-			_, _ = policy.setMinimumAge(use.service, use.update)
+			policy.reportMinimumAge(use.service, use.update)
 		}
 		return nil
 	}
