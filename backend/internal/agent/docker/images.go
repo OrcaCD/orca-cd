@@ -176,92 +176,36 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 
 	dockerCLI := c.cli.Client()
 
+	units := imageUnitsOf(project)
 	var updates []*messages.ImageUpdate
-	var stale []*messages.ImageUpdate
 	var digestErrs []error
-	// The services that are updated, and the digests of those whose release
-	// age was checked.
-	updated := map[string]struct{}{}
-	pinned := map[string]string{}
-	// The image every other service runs now, pinned to its digest.
-	kept := map[string]string{}
-	keep := func(name string, image string, localDigests []string) {
-		kept[name] = localPinnedRef(image, localDigests)
-	}
-	for name, service := range project.Services {
-		if service.Image == "" {
-			continue
+	for _, unit := range units {
+		if err := c.checkImageUnit(ctx, appID, policy, dockerCLI, unit); err != nil {
+			digestErrs = append(digestErrs, err)
 		}
-
-		remoteDigest, err := getRemoteDigest(ctx, c.cli, service.Image)
-		if err != nil {
-			if isLocalOnlyImage(ctx, dockerCLI, service.Image) {
-				c.log.Debug().Err(err).Str("image", service.Image).Msg("skipping digest check for local-only image")
-				continue
-			}
-			c.log.Error().Err(err).Str("image", service.Image).Msg("failed to get remote digest for image")
-			digestErrs = append(digestErrs, fmt.Errorf("image %s: %w", service.Image, err))
-			updates = append(updates, &messages.ImageUpdate{
-				Service: name,
-				Image:   service.Image,
-				Status:  messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED,
-				Reason:  err.Error(),
-			})
-			localDigests, _ := getLocalDigests(ctx, dockerCLI, service.Image)
-			keep(name, service.Image, localDigests)
-			continue
-		}
-
-		update := &messages.ImageUpdate{Service: name, Image: service.Image}
-		updates = append(updates, update)
-		localDigests, err := getLocalDigests(ctx, dockerCLI, service.Image)
-		if err != nil && !cerrdefs.IsNotFound(err) {
-			// Only an image that is missing locally may be pulled unchecked.
-			c.log.Error().Err(err).Str("image", service.Image).Msg("failed to inspect local image")
-			digestErrs = append(digestErrs, fmt.Errorf("image %s: inspect local image: %w", service.Image, err))
-			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED
-			update.Reason = err.Error()
-			continue
-		}
-		if err == nil {
-			update.CurrentDigest = localDigest(localDigests)
-			update.CurrentVersion = getLocalVersion(ctx, dockerCLI, service.Image)
-		}
-		if err == nil && digestMatchesLocal(localDigests, remoteDigest) {
-			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE
-			update.CurrentDigest = remoteDigest
-			// Shown even without an update, so the tab lists the age of every service.
-			if age, fromLabel, err := policy.minimumAge(service); err == nil {
-				update.MinimumAgeSeconds = int64(age / time.Second)
-				update.MinimumAgeFromLabel = fromLabel
-			}
-			keep(name, service.Image, localDigests)
-			continue
-		}
-
-		update.NewDigest = remoteDigest
-		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED
-		// An image missing locally is deployed rather than updated, so its
-		// release age isn't checked.
-		if err == nil {
-			update.NewVersion = c.imageVersion(ctx, service.Image, remoteDigest)
-			checked := c.evaluateUpdate(ctx, appID, policy, service, remoteDigest, update)
-			if isHeldBack(update) {
-				c.log.Info().Str("image", service.Image).Str("reason", update.Reason).Msg("image update held back")
-				keep(name, service.Image, localDigests)
-				continue
-			}
-			if checked {
-				pinned[name] = remoteDigest
+		for _, use := range unit.uses {
+			if !use.hook && use.update.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UNSPECIFIED {
+				updates = append(updates, use.update)
 			}
 		}
-		stale = append(stale, update)
-		updated[name] = struct{}{}
 	}
 	digestErr := errors.Join(digestErrs...)
 	slices.SortFunc(updates, func(a, b *messages.ImageUpdate) int { return strings.Compare(a.Service, b.Service) })
 
-	if len(stale) == 0 {
+	var stale []*messages.ImageUpdate
+	var updatedUnits []*imageUnit
+	for _, unit := range units {
+		if !unit.updated {
+			continue
+		}
+		updatedUnits = append(updatedUnits, unit)
+		for _, use := range unit.uses {
+			if !use.hook {
+				stale = append(stale, use.update)
+			}
+		}
+	}
+	if len(updatedUnits) == 0 {
 		return false, updates, digestErr
 	}
 	// failStale marks the updates that were about to be applied as failed.
@@ -273,45 +217,26 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		return err
 	}
 
-	// Only the updated services may be pulled, and checked images not by their
-	// tag, which may point to another image by now, even with pull_policy: always.
-	// The other services keep the image they run. One that shares its tag with
-	// an updated service is pinned to its digest, as the update moves the tag.
-	// The others keep their tag, so the next deploy doesn't see a changed image
-	// and recreate them.
-	var updatedImages []string
-	for name := range updated {
-		updatedImages = append(updatedImages, project.Services[name].Image)
-	}
-	for name := range project.Services {
-		_, isUpdated := updated[name]
-		_, isPinned := pinned[name]
-		if isUpdated && !isPinned {
-			continue
-		}
-		service := project.Services[name]
-		service.PullPolicy = composetypes.PullPolicyNever
-		sharesTag := slices.ContainsFunc(updatedImages, func(image string) bool { return sameTag(image, service.Image) })
-		if ref := kept[name]; ref != "" && !isUpdated && sharesTag {
-			service.Image = ref
-		}
-		project.Services[name] = service
-	}
-
-	pullTarget, err := pinnedProject(project, pinned)
-	if err != nil {
-		return false, updates, errors.Join(failStale(err), digestErr)
-	}
+	pullTarget := pullTargetProject(project, units)
 	if err := pullProject(ctx, c.compose, pullTarget, api.PullOptions{}); err != nil {
 		return false, updates, errors.Join(failStale(fmt.Errorf("pull images: %w", err)), digestErr)
 	}
-	for name := range pinned {
-		image := project.Services[name].Image
-		if err := tagImage(ctx, dockerCLI, pullTarget.Services[name].Image, image); err != nil {
-			return false, updates, errors.Join(failStale(fmt.Errorf("tag image %s: %w", image, err)), digestErr)
+	for _, unit := range updatedUnits {
+		if unit.pinned == "" {
+			continue
+		}
+		if err := tagImage(ctx, dockerCLI, unit.pinned, unit.ref); err != nil {
+			return false, updates, errors.Join(failStale(fmt.Errorf("tag image %s: %w", unit.ref, err)), digestErr)
 		}
 	}
 
+	// Everything was pulled above. compose up must not pull again, as the tags
+	// may point to other images by now and pre_start hooks inherit the pull
+	// policy of their service.
+	for name, service := range project.Services {
+		service.PullPolicy = composetypes.PullPolicyNever
+		project.Services[name] = service
+	}
 	applyOrcaLabels(project, appID)
 
 	var previousImages map[string]struct{}
@@ -336,24 +261,13 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		c.removeReplacedImages(ctx, appID, previousImages)
 	}
 
-	c.log.Info().Str("application_name", appName).Int("images_updated", len(stale)).Msg("image pull completed")
+	c.log.Info().Str("application_name", appName).Int("images_updated", len(updatedUnits)).Msg("image pull completed")
 
 	// The hub resets the application to unknown health when it processes the
 	// pull result, so always report the settled state even if it didn't change.
 	c.observeApplicationHealth(appID)
 
 	return true, updates, digestErr
-}
-
-// localPinnedRef returns the "repo@sha256:..." entry of repoDigests that
-// belongs to the repository of imageRef, or empty if there is none.
-func localPinnedRef(imageRef string, repoDigests []string) string {
-	for _, d := range repoDigests {
-		if sameRepository(d, imageRef) {
-			return d
-		}
-	}
-	return ""
 }
 
 // localDigest returns the digest of the first "repo@sha256:..." entry.
@@ -366,24 +280,261 @@ func localDigest(repoDigests []string) string {
 	return ""
 }
 
-// pinnedProject returns a copy of project that pulls the pinned services by
-// their digest, so a tag moved since the check can't change what is pulled.
-// The tag is pointed at the pulled image afterwards.
-func pinnedProject(project *composetypes.Project, pinned map[string]string) (*composetypes.Project, error) {
-	if len(pinned) == 0 {
-		return project, nil
-	}
-	pull := *project
-	pull.Services = maps.Clone(project.Services)
-	for name, digest := range pinned {
-		service := pull.Services[name]
-		ref, err := pinnedRef(service.Image, digest)
-		if err != nil {
-			return nil, fmt.Errorf("pin image %s: %w", service.Image, err)
+// imageUse is one image a service runs: its own, or that of a pre_start hook.
+type imageUse struct {
+	// service has the image of the use as its image.
+	service composetypes.ServiceConfig
+	hook    bool
+	update  *messages.ImageUpdate
+}
+
+// imageUnit is an image tag and every use of it. They are updated together,
+// as pulling the tag for one of them changes the image of all of them.
+type imageUnit struct {
+	ref     string
+	uses    []*imageUse
+	updated bool
+	// pinned is the reference the unit is pulled by if its release age was
+	// checked, so a tag moved since the check can't change what is pulled.
+	pinned string
+}
+
+// imageUnitsOf groups the images of the services and their pre_start hooks by
+// tag, in the order of the service names.
+func imageUnitsOf(project *composetypes.Project) []*imageUnit {
+	var units []*imageUnit
+	byTag := map[string]*imageUnit{}
+	add := func(service composetypes.ServiceConfig, image string, hook bool) {
+		key := tagKey(image)
+		unit, ok := byTag[key]
+		if !ok {
+			unit = &imageUnit{ref: image}
+			byTag[key] = unit
+			units = append(units, unit)
 		}
-		service.Image = ref
-		service.PullPolicy = ""
+		service.Image = image
+		unit.uses = append(unit.uses, &imageUse{
+			service: service,
+			hook:    hook,
+			update:  &messages.ImageUpdate{Service: service.Name, Image: image},
+		})
+	}
+	for _, name := range slices.Sorted(maps.Keys(project.Services)) {
+		service := project.Services[name]
+		if service.Image != "" {
+			add(service, service.Image, false)
+		}
+		var hookImages []string
+		for _, image := range api.GetDependentImages(service, project.Name) {
+			if !slices.Contains(hookImages, image) {
+				hookImages = append(hookImages, image)
+				add(service, image, true)
+			}
+		}
+	}
+	return units
+}
+
+// checkImageUnit compares the image of unit with its registry and decides
+// whether it is updated, recording the result in the update of every use.
+func (c *Client) checkImageUnit(ctx context.Context, appID string, policy ReleaseAgePolicy, dockerCLI client.APIClient, unit *imageUnit) error {
+	setAll := func(set func(update *messages.ImageUpdate)) {
+		for _, use := range unit.uses {
+			set(use.update)
+		}
+	}
+	fail := func(err error) {
+		setAll(func(update *messages.ImageUpdate) {
+			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_FAILED
+			update.Reason = err.Error()
+		})
+	}
+
+	remoteDigest, err := getRemoteDigest(ctx, c.cli, unit.ref)
+	if err != nil {
+		if isLocalOnlyImage(ctx, dockerCLI, unit.ref) {
+			c.log.Debug().Err(err).Str("image", unit.ref).Msg("skipping digest check for local-only image")
+			return nil
+		}
+		c.log.Error().Err(err).Str("image", unit.ref).Msg("failed to get remote digest for image")
+		fail(err)
+		return fmt.Errorf("image %s: %w", unit.ref, err)
+	}
+
+	localDigests, err := getLocalDigests(ctx, dockerCLI, unit.ref)
+	if err != nil && !cerrdefs.IsNotFound(err) {
+		// Only an image that is missing locally may be pulled unchecked.
+		c.log.Error().Err(err).Str("image", unit.ref).Msg("failed to inspect local image")
+		fail(err)
+		return fmt.Errorf("image %s: inspect local image: %w", unit.ref, err)
+	}
+	missing := err != nil
+	if !missing {
+		current, version := localDigest(localDigests), getLocalVersion(ctx, dockerCLI, unit.ref)
+		setAll(func(update *messages.ImageUpdate) {
+			update.CurrentDigest = current
+			update.CurrentVersion = version
+		})
+	}
+	if !missing && digestMatchesLocal(localDigests, remoteDigest) {
+		for _, use := range unit.uses {
+			use.update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UP_TO_DATE
+			use.update.CurrentDigest = remoteDigest
+			// Shown even without an update, so the tab lists the age of every service.
+			if age, fromLabel, err := policy.minimumAge(use.service); err == nil {
+				use.update.MinimumAgeSeconds = int64(age / time.Second)
+				use.update.MinimumAgeFromLabel = fromLabel
+			}
+		}
+		return nil
+	}
+
+	setAll(func(update *messages.ImageUpdate) {
+		update.NewDigest = remoteDigest
+		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED
+	})
+	// An image missing locally is deployed rather than updated, so its
+	// release age isn't checked.
+	if missing {
+		unit.updated = true
+		return nil
+	}
+
+	version := c.imageVersion(ctx, unit.ref, remoteDigest)
+	checked := false
+	for _, use := range unit.uses {
+		use.update.NewVersion = version
+		if c.evaluateUpdate(ctx, appID, policy, use.service, remoteDigest, use.update) {
+			checked = true
+		}
+	}
+	if holder := holdingUse(unit.uses); holder != nil {
+		holdTogether(unit, holder)
+		c.log.Info().Str("image", unit.ref).Str("reason", holder.update.Reason).Msg("image update held back")
+		return nil
+	}
+	if checked {
+		pinned, err := pinnedRef(unit.ref, remoteDigest)
+		if err != nil {
+			err = fmt.Errorf("pin image %s: %w", unit.ref, err)
+			fail(err)
+			return err
+		}
+		unit.pinned = pinned
+	}
+	unit.updated = true
+	return nil
+}
+
+// holdingUse returns the use that holds back the update of its unit the
+// longest, or nil if none does: an invalid configuration before the latest
+// eligible time, before an image the webhook didn't announce.
+func holdingUse(uses []*imageUse) *imageUse {
+	rank := func(use *imageUse) int {
+		switch use.update.Status {
+		case messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED:
+			return 3
+		case messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING:
+			return 2
+		case messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED:
+			return 1
+		default:
+			return 0
+		}
+	}
+	var holder *imageUse
+	for _, use := range uses {
+		r := rank(use)
+		if r == 0 {
+			continue
+		}
+		if holder == nil || r > rank(holder) ||
+			(r == rank(holder) && use.update.EligibleAt > holder.update.EligibleAt) {
+			holder = use
+		}
+	}
+	return holder
+}
+
+// holdTogether holds back the other uses of the unit as long as holder.
+func holdTogether(unit *imageUnit, holder *imageUse) {
+	name := "service " + holder.service.Name
+	if holder.hook {
+		name = "a pre_start hook of " + name
+	}
+	for _, use := range unit.uses {
+		if use == holder || use.update.Status == messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED {
+			continue
+		}
+		// A use that waits at least as long keeps its own time.
+		if use.update.Status == messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING &&
+			(holder.update.Status == messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED ||
+				use.update.EligibleAt >= holder.update.EligibleAt) {
+			continue
+		}
+		use.update.Status = holder.update.Status
+		use.update.PushedAt = holder.update.PushedAt
+		use.update.FirstSeen = holder.update.FirstSeen
+		use.update.EligibleAt = holder.update.EligibleAt
+		use.update.Reason = fmt.Sprintf("%s uses the same image tag: %s", name, holder.update.Reason)
+	}
+}
+
+// pullTargetProject returns a copy of project that pulls the images of the
+// updated units, the checked ones by digest, and nothing else. The images of
+// pre_start hooks are pulled as services of their own, as compose would pull
+// them with the pull policy of the service they belong to.
+func pullTargetProject(project *composetypes.Project, units []*imageUnit) *composetypes.Project {
+	pull := *project
+	pull.Services = make(composetypes.Services, len(project.Services))
+	for name, service := range project.Services {
+		service.PullPolicy = composetypes.PullPolicyNever
+		service.PreStart = nil
 		pull.Services[name] = service
 	}
-	return &pull, nil
+
+	hooks := 0
+	for _, unit := range units {
+		if !unit.updated {
+			continue
+		}
+		pulled := false
+		for _, use := range unit.uses {
+			if use.hook {
+				continue
+			}
+			service := pull.Services[use.service.Name]
+			service.PullPolicy = use.service.PullPolicy
+			if unit.pinned != "" {
+				service.Image = unit.pinned
+				service.PullPolicy = ""
+			}
+			pull.Services[use.service.Name] = service
+			pulled = true
+		}
+		if pulled {
+			continue
+		}
+
+		image := unit.ref
+		// Like compose, a hook image is pulled with the pull policy of its
+		// service, but can't be built.
+		policy := unit.uses[0].service.PullPolicy
+		if policy == composetypes.PullPolicyBuild {
+			policy = composetypes.PullPolicyMissing
+		}
+		if unit.pinned != "" {
+			image, policy = unit.pinned, ""
+		}
+		var name string
+		for {
+			name = fmt.Sprintf("orca-cd-pre-start-image-%d", hooks)
+			hooks++
+			if _, exists := pull.Services[name]; !exists {
+				break
+			}
+		}
+		pull.Services[name] = composetypes.ServiceConfig{Name: name, Image: image, PullPolicy: policy}
+	}
+	return &pull
 }

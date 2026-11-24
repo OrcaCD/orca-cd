@@ -107,7 +107,7 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 		// The age counts from when the agent first saw the digest instead. That
 		// is never before the push and can't be backdated by the publisher.
 		c.log.Debug().Err(err).Str("image", service.Image).Msg("no push time, using the first time the digest was seen")
-		pushed = c.firstSeenAt(appID, service.Name, digest)
+		pushed = c.firstSeenAt(appID, tagKey(service.Image), digest)
 		update.FirstSeen = true
 		since = "first seen"
 	}
@@ -129,13 +129,13 @@ type firstSeenDigest struct {
 }
 
 // firstSeenAt returns when the agent first saw digest as the new image of the
-// service. It is kept in memory, so it starts over when the agent restarts,
+// image tag of the application. It is kept in memory, so it starts over when the agent restarts,
 // which only makes the update wait longer.
-func (c *Client) firstSeenAt(appID, service, digest string) time.Time {
+func (c *Client) firstSeenAt(appID, image, digest string) time.Time {
 	c.releaseAgeMu.Lock()
 	defer c.releaseAgeMu.Unlock()
 
-	key := appID + "/" + service
+	key := appID + "/" + image
 	if seen, ok := c.firstSeen[key]; ok && seen.digest == digest {
 		return seen.at
 	}
@@ -154,14 +154,6 @@ func isHeldBack(update *messages.ImageUpdate) bool {
 		update.Status == messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
 }
 
-// sameRepository reports whether two image references name the same
-// repository, ignoring their tags and digests.
-func sameRepository(a, b string) bool {
-	namedA, errA := reference.ParseNormalizedNamed(a)
-	namedB, errB := reference.ParseNormalizedNamed(b)
-	return errA == nil && errB == nil && namedA.Name() == namedB.Name()
-}
-
 // sameTag reports whether two image references name the same repository and
 // tag, a missing tag being "latest". A reference without a tag, e.g. one pinned
 // to a digest, only matches itself.
@@ -172,6 +164,16 @@ func sameTag(a, b string) bool {
 		return false
 	}
 	return reference.TagNameOnly(namedA).String() == reference.TagNameOnly(namedB).String()
+}
+
+// tagKey returns the normalized repository and tag of imageRef, e.g.
+// "docker.io/library/redis:latest" for "redis".
+func tagKey(imageRef string) string {
+	named, err := reference.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return imageRef
+	}
+	return reference.TagNameOnly(named).String()
 }
 
 // pinnedRef returns imageRef pinned to digest, e.g. "redis@sha256:…".

@@ -355,7 +355,7 @@ func TestCheckAndPullImages_MissingImageSkipsReleaseAge(t *testing.T) {
 }
 
 // Only the services that are updated may be pulled. The others keep the image
-// they run, even when an updated service moves the tag they share.
+// they run.
 func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 	const (
 		postgresDigest = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
@@ -368,10 +368,10 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 	}
 	loadProject = func(context.Context, api.Compose, api.ProjectLoadOptions) (*composetypes.Project, error) {
 		services := composetypes.Services{
-			// Updated right away, which moves the tag worker shares
+			// Updated right away
 			"web": image("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}),
 			// Held back by the release age
-			"worker": image("ghcr.io/org/app:1.0", nil),
+			"worker": image("ghcr.io/org/worker:1.0", nil),
 			"db":     image("postgres:17", nil),
 			"cache":  image("redis:7", nil),
 			"queue":  image("rabbitmq:3", nil),
@@ -437,10 +437,9 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 	if got := pulled.Services["web"].PullPolicy; got != composetypes.PullPolicyAlways {
 		t.Errorf("web must be pulled, got pull policy %q", got)
 	}
-	// Only worker shares the tag that web moves, so only it is pinned. The
-	// others keep their tag, so the next deploy doesn't recreate them.
+	// The others keep their tag, so the next deploy doesn't recreate them.
 	wantUp := map[string]string{
-		"worker": "ghcr.io/org/app@" + oldDigest,
+		"worker": "ghcr.io/org/worker:1.0",
 		"db":     "postgres:17",
 		"cache":  "redis:7",
 		"queue":  "rabbitmq:3",
