@@ -9,6 +9,7 @@ package restapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"mime"
 	"net/http"
 	"reflect"
@@ -69,6 +70,9 @@ func newConfig() huma.Config {
 			Description: "The session of the web UI.",
 		},
 	}
+
+	// JSON only, even if an import registers more formats in huma.DefaultFormats
+	config.Formats = map[string]huma.Format{"application/json": huma.DefaultJSONFormat}
 
 	// The spec is only published in the docs, the hub doesn't serve it.
 	config.OpenAPIPath = ""
@@ -203,6 +207,10 @@ func init() {
 // validationFailed is the message Huma creates the 422 for invalid requests with
 const validationFailed = "validation failed"
 
+// maxErrorDetails caps the details of an error message. Huma reports every
+// invalid item, e.g. of a large array, which would make the response huge.
+const maxErrorDetails = 5
+
 // documentValidationErrorsAs400 documents the 422 Huma adds for invalid requests
 // as 400, as newError answers them with 400. A 422 the operation lists in its
 // Errors itself stays.
@@ -266,9 +274,14 @@ func newError(status int, msg string, errs ...error) huma.StatusError {
 		errs = nil
 	}
 
-	details := make([]string, 0, len(errs))
+	details := make([]string, 0, min(len(errs), maxErrorDetails+1))
+	omitted := 0
 	for _, err := range errs {
 		if err == nil {
+			continue
+		}
+		if len(details) == maxErrorDetails {
+			omitted++
 			continue
 		}
 		var detailer huma.ErrorDetailer
@@ -283,6 +296,9 @@ func newError(status int, msg string, errs ...error) huma.StatusError {
 			continue
 		}
 		details = append(details, err.Error())
+	}
+	if omitted > 0 {
+		details = append(details, fmt.Sprintf("and %d more", omitted))
 	}
 	switch {
 	case len(details) == 0:

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -378,12 +380,40 @@ func TestHandler_DecodesUnlistedContentTypesAsJSON(t *testing.T) {
 }
 
 func TestHandler_AlwaysAnswersJSON(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/things/2", nil)
-	req.Header.Set("Accept", "application/cbor")
-	newTestRouter(t).ServeHTTP(w, req)
-	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("expected application/json, got %q", ct)
+	for _, accept := range []string{"application/cbor", "json"} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/things/2", nil)
+		req.Header.Set("Accept", accept)
+		newTestRouter(t).ServeHTTP(w, req)
+		if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Errorf("Accept %s: expected application/json, got %q", accept, ct)
+		}
+	}
+}
+
+func TestNewConfig_IgnoresRegisteredFormats(t *testing.T) {
+	// Like an import of huma/v2/formats/cbor
+	huma.DefaultFormats["application/cbor"] = huma.DefaultJSONFormat
+	t.Cleanup(func() { delete(huma.DefaultFormats, "application/cbor") })
+
+	formats := newConfig().Formats
+	if _, ok := formats["application/json"]; !ok || len(formats) != 1 {
+		t.Errorf("expected only application/json, got %v", slices.Collect(maps.Keys(formats)))
+	}
+}
+
+func TestNewError_CapsTheDetails(t *testing.T) {
+	errs := make([]error, 20)
+	for i := range errs {
+		errs[i] = &huma.ErrorDetail{Message: "expected string", Location: fmt.Sprintf("body.items[%d]", i)}
+	}
+
+	msg := huma.NewError(http.StatusUnprocessableEntity, validationFailed, errs...).Error()
+	if !strings.Contains(msg, "body.items[4]") || strings.Contains(msg, "body.items[5]") {
+		t.Errorf("expected the first 5 details in %q", msg)
+	}
+	if !strings.HasSuffix(msg, "and 15 more") {
+		t.Errorf("expected the omitted details to be counted in %q", msg)
 	}
 }
 
