@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 )
 
@@ -36,7 +37,7 @@ type verifySetupCodeRequest struct {
 
 type updateOwnProfileRequest struct {
 	Name  string `json:"name" required:"true" minLength:"3" maxLength:"64"`
-	Email string `json:"email" required:"true" format:"email"`
+	Email string `json:"email" required:"true"`
 }
 
 type providerInfo struct {
@@ -147,6 +148,9 @@ var UpdateOwnProfileHandler = restapi.Handler(huma.Operation{
 }, func(ctx context.Context, input *struct{ Body updateOwnProfileRequest }) (*profileOutput, error) {
 	c := restapi.GinContext(ctx)
 	req := input.Body
+	if err := binding.Validator.ValidateStruct(emailAddress{Email: req.Email}); err != nil {
+		return nil, huma.Error400BadRequest("invalid request: name (min 3 chars) and valid email are required")
+	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	claims, user, err := currentLocalUser(c)

@@ -94,6 +94,7 @@ func TestUpdateReleaseAgeSettingsHandler_Rejects(t *testing.T) {
 		{app.Id, `{"minimumSeconds":0,"allowedRegistries":["registry.local/library"]}`, http.StatusBadRequest},
 		{app.Id, `{"minimumSeconds":0,"allowedRegistries":[""]}`, http.StatusBadRequest},
 		{app.Id, `not json`, http.StatusBadRequest},
+		{app.Id, `{"minimumSeconds":0,"allowedRegistries":null}`, http.StatusBadRequest},
 		{app.Id, `{"minimumSeconds":0,"allowedRegistries":` + tooManyRegistries() + `}`, http.StatusBadRequest},
 		{"missing", `{"minimumSeconds":0,"allowedRegistries":[]}`, http.StatusNotFound},
 	} {
@@ -175,6 +176,7 @@ func TestAdminUpdateReleaseAgeSettingsHandler(t *testing.T) {
 		`{}`,
 		`{"minimumSeconds":null,"allowedRegistries":[]}`,
 		`{"minimumSeconds":0}`,
+		`{"minimumSeconds":0,"allowedRegistries":null}`,
 		`not json`,
 	} {
 		w = invokeReleaseAgeHandler(t, AdminUpdateReleaseAgeSettingsHandler, http.MethodPut,

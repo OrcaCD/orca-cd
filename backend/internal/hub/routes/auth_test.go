@@ -618,6 +618,7 @@ func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	}{
 		{name: "short name", body: updateOwnProfileRequest{Name: "ab", Email: "new@example.com"}},
 		{name: "invalid email", body: updateOwnProfileRequest{Name: "Updated Name", Email: "not-an-email"}},
+		{name: "email without a dot in the domain", body: updateOwnProfileRequest{Name: "Updated Name", Email: "john@localhost"}},
 		{name: "empty body", body: nil},
 	}
 

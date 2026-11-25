@@ -598,7 +598,7 @@ var DeleteRepositoryHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceRepository, models.ActionDelete),
 	Tags:     []string{tagRepositories},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
+	Errors:   []int{http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusBadGateway, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	c := restapi.GinContext(ctx)
 	id := input.ID

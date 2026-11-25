@@ -171,12 +171,8 @@ var AdminCreateRoleHandler = restapi.Handler(huma.Operation{
 
 	utils.RecordAuditLog(restapi.GinContext(ctx), "created", "role", role.Id)
 
-	out, err := roleOutputOf(ctx, &role)
-	if err != nil {
-		return nil, err
-	}
 	publishRoleUpdate(req.UserIds)
-	return out, nil
+	return roleOutputOf(ctx, &role)
 })
 
 var AdminUpdateRoleHandler = restapi.Handler(huma.Operation{
@@ -276,12 +272,8 @@ var AdminUpdateRoleHandler = restapi.Handler(huma.Operation{
 		utils.RecordAuditLog(c, "members-updated", "role", id)
 	}
 
-	out, err := roleOutputOf(ctx, &role)
-	if err != nil {
-		return nil, err
-	}
 	publishRoleUpdate(affected)
-	return out, nil
+	return roleOutputOf(ctx, &role)
 })
 
 var AdminDeleteRoleHandler = restapi.Handler(huma.Operation{

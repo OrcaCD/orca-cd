@@ -116,7 +116,7 @@ const invalidRegistriesMessage = "allowed registries must be at most 50 registry
 // minimum release age, while a missing field is refused.
 type updateReleaseAgeRequest struct {
 	MinimumSeconds    *int64   `json:"minimumSeconds" required:"true" nullable:"true" doc:"The minimum release age in seconds, at most 365 days and not below the global one. null uses the global one."`
-	AllowedRegistries []string `json:"allowedRegistries" required:"true" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the minimum release age"`
+	AllowedRegistries []string `json:"allowedRegistries" required:"true" nullable:"false" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the minimum release age"`
 }
 
 // UpdateReleaseAgeSettingsHandler configures the minimum release age of the
@@ -276,7 +276,7 @@ var GetReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
 
 type updateGlobalReleaseAgeRequest struct {
 	MinimumSeconds    int64    `json:"minimumSeconds" required:"true" doc:"The minimum release age in seconds, at most 365 days"`
-	AllowedRegistries []string `json:"allowedRegistries" required:"true" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the global minimum release age"`
+	AllowedRegistries []string `json:"allowedRegistries" required:"true" nullable:"false" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the global minimum release age"`
 }
 
 // AdminUpdateReleaseAgeSettingsHandler changes the global release age settings.

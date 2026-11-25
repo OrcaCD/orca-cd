@@ -314,7 +314,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusBadGateway, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateApplicationRequest
@@ -516,7 +516,7 @@ var DeleteApplicationHandler = restapi.Handler(huma.Operation{
 		requires(models.ResourceApplication, models.ActionDelete),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden, http.StatusBadGateway, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	c := restapi.GinContext(ctx)
 	id := input.ID

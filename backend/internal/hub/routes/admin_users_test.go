@@ -175,6 +175,25 @@ func TestAdminCreateUserHandler_Success(t *testing.T) {
 	}
 }
 
+func TestAdminCreateUserHandler_InvalidEmail(t *testing.T) {
+	setupTestDB(t)
+
+	for _, email := range []string{"not-an-email", "john@localhost"} {
+		reqBody, _ := json.Marshal(map[string]any{"name": "New User", "email": email})
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(reqBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		AdminCreateUserHandler(c)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d: %s", email, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestAdminCreateUserHandler_DuplicateEmail(t *testing.T) {
 	setupTestDB(t)
 

@@ -39,7 +39,7 @@ type adminUserWithEnrollmentResponse struct {
 
 type adminCreateUserRequest struct {
 	Name  string `json:"name" required:"true" minLength:"3" maxLength:"64"`
-	Email string `json:"email" required:"true" format:"email"`
+	Email string `json:"email" required:"true"`
 	// Without roleIds, the user gets the default role
 	RoleIds []string `json:"roleIds" maxItems:"100" doc:"Leave it out to give the user the built-in user role"`
 }
@@ -56,6 +56,12 @@ type adminUpdateUserRequest struct {
 
 type adminUserProfile struct {
 	Name  string `binding:"required,min=3,max=64"`
+	Email string `binding:"required,email"`
+}
+
+// emailAddress is checked with Gin's email rule instead of format:"email",
+// which also accepts domains without a dot, like john@localhost.
+type emailAddress struct {
 	Email string `binding:"required,email"`
 }
 
@@ -181,6 +187,9 @@ var AdminCreateUserHandler = restapi.Handler(huma.Operation{
 	Errors:   []int{http.StatusBadRequest, http.StatusConflict, http.StatusForbidden},
 }, func(ctx context.Context, input *struct{ Body adminCreateUserRequest }) (*adminUserWithEnrollmentOutput, error) {
 	req := input.Body
+	if err := binding.Validator.ValidateStruct(emailAddress{Email: req.Email}); err != nil {
+		return nil, huma.Error400BadRequest("invalid request: name and email are required and must be valid")
+	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	roleIds := uniqueIds(req.RoleIds)
 

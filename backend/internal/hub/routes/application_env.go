@@ -105,7 +105,8 @@ var ListApplicationEnvHandler = restapi.Handler(huma.Operation{
 		envServerErrorsDoc + " " + requires(models.ResourceApplication, models.ActionRead),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden},
+	Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *idInput) (*envListOutput, error) {
 	if DemoMode {
 		return listDemoApplicationEnv(ctx, input.ID)
@@ -148,7 +149,8 @@ var UpdateApplicationEnvHandler = restapi.Handler(huma.Operation{
 		envServerErrorsDoc + " Needs the `application:update` and `application:deploy` permissions.",
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusForbidden},
+	Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusForbidden,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateEnvRequest
