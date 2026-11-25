@@ -260,6 +260,11 @@ async function openImageUpdates(page: Page, id: string) {
 	await expect(page.getByText("Image Pull Webhook")).toBeVisible();
 }
 
+// The image updates page has a form per card, each with its own buttons
+function pollingCard(page: Page) {
+	return page.locator('[data-slot="card"]').filter({ hasText: "Enable image polling" });
+}
+
 test.describe("Image pull webhook", () => {
 	let id = "";
 	let secret = "";
@@ -581,7 +586,7 @@ test.describe("Image polling", () => {
 				saves.push(request.url());
 			}
 		});
-		await page.getByRole("button", { name: "Save Changes" }).click();
+		await pollingCard(page).getByRole("button", { name: "Save Changes" }).click();
 
 		// The browser blocks the submit, so nothing is sent
 		await expect
@@ -613,7 +618,7 @@ test.describe("Image polling", () => {
 
 		await openImageUpdates(page, off.id);
 		await page.getByRole("switch", { name: "Enable image polling" }).click();
-		await page.getByRole("button", { name: "Save Changes" }).click();
+		await pollingCard(page).getByRole("button", { name: "Save Changes" }).click();
 		await expect(page.getByText("Application updated")).toBeVisible();
 		expect(await getApplication(page, off.id)).toMatchObject({ imagePollEnabled: false });
 
@@ -639,7 +644,7 @@ test.describe("Image polling", () => {
 		await expect(toggle).not.toBeChecked();
 		await toggle.click();
 		await page.getByLabel("Polling interval (seconds)").fill("60");
-		await page.getByRole("button", { name: "Save Changes" }).click();
+		await pollingCard(page).getByRole("button", { name: "Save Changes" }).click();
 		await expect(page.getByText("Application updated")).toBeVisible();
 
 		expect(await getApplication(page, id)).toMatchObject({
@@ -650,7 +655,7 @@ test.describe("Image polling", () => {
 
 		// Cancel goes back to the saved values, not to the ones from before the save
 		await page.getByLabel("Polling interval (seconds)").fill("500");
-		await page.getByRole("button", { name: "Cancel" }).click();
+		await pollingCard(page).getByRole("button", { name: "Cancel" }).click();
 		await expect(page.getByRole("switch", { name: "Enable image polling" })).toBeChecked();
 		await expect(page.getByLabel("Polling interval (seconds)")).toHaveValue("60");
 

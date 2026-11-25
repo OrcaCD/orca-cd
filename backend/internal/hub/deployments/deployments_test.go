@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -672,5 +673,50 @@ func TestVerifyAndRejectCompleteTheirEvent(t *testing.T) {
 				t.Errorf("event status changed to %q", got.Status)
 			}
 		})
+	}
+}
+
+func TestRejectForRollbackKeepsSourceEventRunning(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	event := seedEvent(t, app.Id, "req-1")
+	gated := succeedDeployment(t, &app, "req-1", time.Minute)
+
+	if ok, err := RejectForRollback(t.Context(), gated); err != nil || !ok {
+		t.Fatalf("RejectForRollback = %v, %v", ok, err)
+	}
+	if got := loadEvent(t, event.Id); got.Status != models.ApplicationEventRunning || got.DeploymentId != nil {
+		t.Errorf("expected source event to stay running without its rejected deployment, got %+v", got)
+	}
+	if ok, err := Verify(t.Context(), gated); err != nil || ok {
+		t.Errorf("removed deployment should no longer be verifiable, got %v, %v", ok, err)
+	}
+	// Startup recovery must finish the event if the Hub stops between rejection
+	// and the terminal status write.
+	if recovered, err := applicationevents.RecoverRunning(t.Context(), "hub restarted"); err != nil || recovered != 1 {
+		t.Fatalf("RecoverRunning = %d, %v, want one recovered event", recovered, err)
+	}
+	if got := loadEvent(t, event.Id); got.Status != models.ApplicationEventFailed {
+		t.Errorf("recovered event status = %q, want failed", got.Status)
+	}
+}
+
+func TestRejectKeepsDeploymentWhenEventCompletionFails(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	event := seedEvent(t, app.Id, "req-1")
+	gated := succeedDeployment(t, &app, "req-1", time.Minute)
+	if err := db.DB.Exec(`CREATE TRIGGER deny_event_completion
+		BEFORE UPDATE OF status ON application_events
+		BEGIN SELECT RAISE(ABORT, 'event is read-only'); END`).Error; err != nil {
+		t.Fatalf("install database trigger: %v", err)
+	}
+
+	if ok, err := Reject(t.Context(), gated, "unhealthy"); err == nil || ok {
+		t.Fatalf("Reject = %v, %v, want failure", ok, err)
+	}
+	if got := loadEvent(t, event.Id); got.Status != models.ApplicationEventRunning ||
+		got.DeploymentId == nil || *got.DeploymentId != gated.Id {
+		t.Errorf("expected running event to keep its deployment after failed rejection, got %+v", got)
 	}
 }

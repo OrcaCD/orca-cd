@@ -3,12 +3,14 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/pkg/authconfig"
@@ -27,7 +29,14 @@ func saveRestoreVars(t *testing.T) {
 	origUp := upProject
 	origListImages := listApplicationImageIDs
 	origRemoveImage := removeImage
+	origImageVersion := getImageVersion
+	origLocalVersion := getLocalVersion
+	// Version lookups would reach out to real registries.
+	getImageVersion = func(context.Context, command.Cli, string, string) (string, error) { return "", nil }
+	getLocalVersion = func(context.Context, client.APIClient, string) string { return "" }
 	t.Cleanup(func() {
+		getImageVersion = origImageVersion
+		getLocalVersion = origLocalVersion
 		getRemoteDigest = origGetRemote
 		getLocalDigests = origGetLocal
 		isLocalOnlyImage = origIsLocalOnly
@@ -99,7 +108,7 @@ func TestCheckAndPullImages_MissingComposeFile(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when compose file does not exist")
 	}
@@ -125,7 +134,7 @@ func TestCheckAndPullImagesRejectsUnresolvedLocalComposeReferences(t *testing.T)
 		return makeProject("test:1"), nil
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil || !strings.Contains(err.Error(), `unsupported Compose feature "extends" in service "app"`) {
 		t.Fatalf("CheckAndPullImages() error = %v, want unsupported extends error", err)
 	}
@@ -138,7 +147,7 @@ func TestCheckAndPullImages_UnsafeAppName(t *testing.T) {
 	c := newTestClient(t)
 	c.deploymentsDir = t.TempDir()
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "../bad", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "../bad", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error for unsafe application name")
 	}
@@ -180,7 +189,7 @@ func TestCheckAndPullImages_NothingStale(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -231,7 +240,7 @@ func TestCheckAndPullImages_StaleImages(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -297,7 +306,7 @@ func TestCheckAndPullImages_TranslatesBindMountBeforeUp(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("CheckAndPullImages: %v", err)
 	}
@@ -342,7 +351,7 @@ func TestCheckAndPullImages_OrcaLabelsAppliedBeforeUp(t *testing.T) {
 	}
 
 	const appID = "app-abc-123"
-	if _, err := c.CheckAndPullImages(t.Context(), appID, "myapp", false); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), appID, "myapp", false, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -389,7 +398,7 @@ func TestCheckAndPullImages_LocalOnlyImage(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -425,7 +434,7 @@ func TestCheckAndPullImages_DigestLookupFailure(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected an error for a failed digest lookup")
 	}
@@ -468,7 +477,7 @@ func TestIsLocalOnlyImage(t *testing.T) {
 		cli  *fakeInspectClient
 		want bool
 	}{
-		{"missing locally", &fakeInspectClient{err: errors.New("no such image")}, false},
+		{"missing locally", &fakeInspectClient{err: errNoSuchImage}, false},
 		{"containerd store, pulled", inspected(pulled, "app@sha256:a"), false},
 		// The containerd store lists a digest for the local tag of a build as well
 		{"containerd store, built", inspected(built, "reg.example.com/app@sha256:a"), true},
@@ -517,7 +526,7 @@ func TestCheckAndPullImages_DigestFailureAlongsideStaleImage(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if !updated {
 		t.Error("expected the healthy stale image to be updated")
 	}
@@ -621,7 +630,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 	}
 	// Image not present locally — treat as stale.
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 
 	var pullCalled bool
@@ -633,7 +642,7 @@ func TestCheckAndPullImages_ImageNotPresentLocally(t *testing.T) {
 		return nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -662,7 +671,7 @@ func TestCheckAndPullImages_LoadProjectError(t *testing.T) {
 		return nil, errors.New("load error")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when loadProject fails")
 	}
@@ -688,13 +697,13 @@ func TestCheckAndPullImages_PullError(t *testing.T) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		return errors.New("pull failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when pullProject fails")
 	}
@@ -720,7 +729,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 		return "sha256:new", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("no such image")
+		return nil, errNoSuchImage
 	}
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
 		return nil
@@ -729,7 +738,7 @@ func TestCheckAndPullImages_UpProjectError(t *testing.T) {
 		return errors.New("up failed")
 	}
 
-	_, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	_, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected error when upProject fails")
 	}
@@ -799,7 +808,7 @@ func TestCheckAndPullImages_DeleteOldImages(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app", "sha256:sidecar"}, []string{"sha256:new-app", "sha256:sidecar"})
 	setupStaleImageApp(t, c, upDone)
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -819,7 +828,7 @@ func TestCheckAndPullImages_KeepsOldImagesWhenDisabled(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, []string{"sha256:old-app"}, []string{"sha256:new-app"})
 	setupStaleImageApp(t, c, upDone)
 
-	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*removed) != 0 {
@@ -836,7 +845,7 @@ func TestCheckAndPullImages_DeleteOldImages_FirstDeploy(t *testing.T) {
 	upDone, removed := stubImageCleanup(t, nil, []string{"sha256:new-app"})
 	setupStaleImageApp(t, c, upDone)
 
-	if _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true); err != nil {
+	if _, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", true, ReleaseAgePolicy{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*removed) != 0 {
@@ -871,7 +880,7 @@ func TestCheckAndPullImages_NoBuildServices(t *testing.T) {
 		return "sha256:abc", nil
 	}
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "myapp", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -906,7 +915,7 @@ func stubStalePrivilegedProject(t *testing.T) (pullCalled, upCalled *bool) {
 		return "sha256:newdigest", nil
 	}
 	getLocalDigests = func(_ context.Context, _ client.APIClient, _ string) ([]string, error) {
-		return nil, errors.New("not present locally")
+		return nil, errNoSuchImage
 	}
 	var pulled, upped bool
 	pullProject = func(_ context.Context, _ api.Compose, _ *composetypes.Project, _ api.PullOptions) error {
@@ -927,7 +936,7 @@ func TestCheckAndPullImages_RejectsPolicyViolation(t *testing.T) {
 	writeTestComposeFile(t, c.deploymentsDir, "billing")
 	pullCalled, upCalled := stubStalePrivilegedProject(t)
 
-	updated, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), "app-123", "billing", false, ReleaseAgePolicy{})
 	if err == nil {
 		t.Fatal("expected a compose file violating the security policy to be rejected")
 	}
@@ -948,7 +957,7 @@ func TestCheckAndPullImages_AllowlistedApplicationBypassesPolicy(t *testing.T) {
 	writeTestComposeFile(t, c.deploymentsDir, "billing")
 	_, upCalled := stubStalePrivilegedProject(t)
 
-	updated, err := c.CheckAndPullImages(t.Context(), allowedAppID, "billing", false)
+	updated, _, err := c.CheckAndPullImages(t.Context(), allowedAppID, "billing", false, ReleaseAgePolicy{})
 	if err != nil {
 		t.Fatalf("expected allowlisted application to be redeployed, got: %v", err)
 	}
@@ -956,3 +965,6 @@ func TestCheckAndPullImages_AllowlistedApplicationBypassesPolicy(t *testing.T) {
 		t.Fatal("expected compose up for an allowlisted application")
 	}
 }
+
+// errNoSuchImage is what the Docker client returns for a missing image.
+var errNoSuchImage = fmt.Errorf("no such image: %w", cerrdefs.ErrNotFound)

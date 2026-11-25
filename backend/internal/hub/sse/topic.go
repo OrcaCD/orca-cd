@@ -32,6 +32,8 @@ var (
 	TopicAdminOIDCProvider   = Topic{url: apiPrefix + "/admin/oidc-providers", adminOnly: true}
 	TopicAdminRoles          = Topic{url: apiPrefix + "/admin/roles", adminOnly: true}
 	TopicAdminAPITokens      = Topic{url: apiPrefix + "/admin/api-tokens", adminOnly: true}
+	// TopicSettings holds global settings every user can read.
+	TopicSettings = Topic{url: apiPrefix + "/settings"}
 )
 
 // topicProfile makes clients reload their own profile, which holds their
@@ -69,6 +71,14 @@ func TopicApplicationEvents(applicationID string) Topic {
 func (t Topic) For(id string) Topic {
 	t.resourceID = id
 	return t
+}
+
+func TopicApplicationImageUpdates(applicationID string) Topic {
+	return Topic{
+		url:        apiPrefix + "/applications/" + applicationID + "/image-updates",
+		resource:   models.ResourceApplication,
+		resourceID: applicationID,
+	}
 }
 
 func (t Topic) URL() string {

@@ -120,6 +120,7 @@ type applicationResponse struct {
 	RolledBackReason         *string                   `json:"rolledBackReason" required:"true" nullable:"true"`
 	AutoSyncPaused           bool                      `json:"autoSyncPaused" required:"true" doc:"Automatic syncs are paused after a rollback until they are resumed"`
 	Rollback                 rollbackSettingsResponse  `json:"rollback" required:"true"`
+	ReleaseAge               releaseAgeSettings        `json:"releaseAge" required:"true"`
 	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled" required:"true"`
 	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
 	Warnings                 []composewarnings.Warning `json:"warnings" required:"true" doc:"Problems found in the compose file"`
@@ -422,7 +423,8 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 		Select("*").
 		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
 			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
-			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
+			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync",
+			"MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries", "ReleaseAgeServiceOverrides").
 		Updates(ctx, application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			return nil, huma.Error400BadRequest("invalid repositoryId or agentId")
@@ -733,6 +735,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 			HealthTimeoutSeconds: app.RollbackHealthTimeoutSeconds,
 			PauseAutoSync:        app.RollbackPauseAutoSync,
 		},
+		ReleaseAge:          toReleaseAgeSettings(app),
 		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
 		Warnings:            warnings,
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
+	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -187,6 +188,7 @@ func Run(cfg Config) error {
 
 		defer db.StartVacuumScheduler()()
 		defer healthhistory.StartPruner(&Log)()
+		defer githubactions.StartPruner(&Log)()
 		defer websocket.StartHealthGate(&Log)()
 	}
 

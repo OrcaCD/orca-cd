@@ -13,6 +13,7 @@ import (
 
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
 	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
@@ -60,8 +61,9 @@ func getGitHubActionsProvider(ctx context.Context) (*gooidc.Provider, error) {
 }
 
 type githubActionsRequest struct {
-	SyncRepo   bool `json:"syncRepo" doc:"Sync the applications to the commit of the workflow run"`
-	PullImages bool `json:"pullImages" doc:"Pull the images of the applications and redeploy them"`
+	SyncRepo      bool `json:"syncRepo" doc:"Sync the applications to the commit of the workflow run"`
+	PullImages    bool `json:"pullImages" doc:"Pull the images of the applications and redeploy them"`
+	WaitForResult bool `json:"waitForResult" doc:"The workflow waits for the result with the trigger status route, which then also reports applications whose agent isn't connected instead of answering 409"`
 }
 
 type githubActionsInput struct {
@@ -71,9 +73,26 @@ type githubActionsInput struct {
 	RawBody []byte
 }
 
+type githubActionsOutput struct {
+	Body struct {
+		Message      string                      `json:"message" required:"true" example:"deployment triggered"`
+		TriggerId    string                      `json:"triggerId,omitempty" doc:"The ID to get the result of the deployment from the trigger status route"`
+		Applications []githubactions.Application `json:"applications,omitempty" doc:"The applications the deployment was triggered for"`
+	}
+}
+
+func githubActionsResult(message, triggerID string, applications []githubactions.Application) *githubActionsOutput {
+	out := &githubActionsOutput{}
+	out.Body.Message = message
+	out.Body.TriggerId = triggerID
+	out.Body.Applications = applications
+	return out
+}
+
 // https://docs.github.com/en/actions/concepts/security/openid-connect#understanding-the-oidc-token
 type githubActionsClaims struct {
 	Repository  string `json:"repository"`
+	RunId       string `json:"run_id"`
 	Ref         string `json:"ref"`
 	RefType     string `json:"ref_type"`
 	Sha         string `json:"sha"`
@@ -115,34 +134,13 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 	Content: map[string]*huma.MediaType{
 		"application/json": {Schema: restapi.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[githubActionsRequest](), true, "")},
 	},
-}, func(ctx context.Context, input *githubActionsInput) (*restapi.MessageOutput, error) {
-	c := restapi.GinContext(ctx)
-
-	rawToken := strings.TrimPrefix(input.Authorization, "Bearer ")
-	rawToken = strings.TrimSpace(rawToken)
-	if rawToken == "" {
-		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
-		return nil, huma.Error401Unauthorized("missing bearer token")
-	}
-
-	oidcProvider, err := getGitHubActionsProvider(ctx)
+}, func(ctx context.Context, input *githubActionsInput) (*githubActionsOutput, error) {
+	claims, err := verifyGitHubActionsClaims(ctx, input.Authorization)
 	if err != nil {
-		return nil, internalError()
+		return nil, err
 	}
 
-	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
-	idToken, err := verifier.Verify(ctx, rawToken)
-	if err != nil {
-		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
-		return nil, huma.Error401Unauthorized("invalid token")
-	}
-
-	var claims githubActionsClaims
-	if err := idToken.Claims(&claims); err != nil {
-		return nil, huma.Error401Unauthorized("invalid token claims")
-	}
-
-	if claims.Repository == "" || claims.Ref == "" {
+	if claims.Repository == "" || claims.Ref == "" || claims.RunId == "" {
 		return nil, huma.Error401Unauthorized("missing required token claims")
 	}
 
@@ -224,7 +222,7 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 
 	if len(apps) == 0 {
 		// No applications configured for this branch — nothing to do.
-		return restapi.Message("no applications found for branch"), nil
+		return githubActionsResult("no applications found for branch", "", nil), nil
 	}
 
 	// Decoded like Gin's ShouldBindJSON did, which ignores data after the object
@@ -254,8 +252,30 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 			return nil, huma.Error409Conflict("repository sync already in progress")
 		}
 		defer release()
+	}
 
-		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}, &hubApplications.Log)
+	trigger := models.GitHubActionsTrigger{
+		RepositoryId:   matchedRepo.Id,
+		Repository:     strings.ToLower(claims.Repository),
+		RunId:          claims.RunId,
+		SyncRepo:       req.SyncRepo,
+		PullImages:     req.PullImages,
+		ApplicationIds: make([]string, 0, len(apps)),
+	}
+	targets := make([]githubactions.Application, 0, len(apps))
+	for i := range apps {
+		app := &apps[i]
+		trigger.ApplicationIds = append(trigger.ApplicationIds, app.Id)
+		targets = append(targets, githubactions.Application{Id: app.Id, Name: app.Name.String()})
+	}
+	if err := gorm.G[models.GitHubActionsTrigger](db.DB).Create(ctx, &trigger); err != nil {
+		hubApplications.Log.Error().Err(err).Msg("failed to record GitHub Actions trigger")
+		return nil, internalError()
+	}
+
+	origin := hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions, TriggerID: &trigger.Id}
+	if req.SyncRepo {
+		hubApplications.SyncApplications(ctx, matchedRepo, repoProvider, apps, hubApplications.StaticCommit(claims.Sha, ""), origin, &hubApplications.Log)
 	}
 
 	// Todo
@@ -263,11 +283,43 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 	// (even if compose file did not change)
 	if req.PullImages {
 		for i := range apps {
-			if !hubApplications.TriggerImagePull(&apps[i], hubApplications.SyncOrigin{Source: models.ApplicationEventSourceGitHubActions}) {
+			// Waiting workflows receive dispatch failures in their result and
+			// still wait for every other application the trigger covers.
+			if !hubApplications.TriggerImagePull(&apps[i], origin) && !req.WaitForResult {
 				return nil, huma.Error409Conflict("agent is not connected")
 			}
 		}
 	}
 
-	return restapi.Message("deployment triggered"), nil
+	return githubActionsResult("deployment triggered", trigger.Id, targets), nil
 })
+
+// verifyGitHubActionsClaims verifies the OIDC token of a workflow run, sent as
+// "Bearer <token>", and returns its claims.
+func verifyGitHubActionsClaims(ctx context.Context, authorization string) (githubActionsClaims, error) {
+	c := restapi.GinContext(ctx)
+	rawToken := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))
+	if rawToken == "" {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "missing_token")
+		return githubActionsClaims{}, huma.Error401Unauthorized("missing bearer token")
+	}
+
+	oidcProvider, err := getGitHubActionsProvider(ctx)
+	if err != nil {
+		return githubActionsClaims{}, internalError()
+	}
+
+	verifier := oidcProvider.Verifier(&gooidc.Config{ClientID: githubActionsAppURL})
+	idToken, err := verifier.Verify(ctx, rawToken)
+	if err != nil {
+		seclog.Warn(c, seclog.WebhookAuthFailed, "reason", "invalid_token")
+		return githubActionsClaims{}, huma.Error401Unauthorized("invalid token")
+	}
+
+	var claims githubActionsClaims
+	if err := idToken.Claims(&claims); err != nil {
+		return githubActionsClaims{}, huma.Error401Unauthorized("invalid token claims")
+	}
+
+	return claims, nil
+}

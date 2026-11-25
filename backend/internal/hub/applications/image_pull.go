@@ -6,6 +6,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
 	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/google/uuid"
@@ -19,11 +20,17 @@ import (
 func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// This pull supersedes a debounced one queued for the same application.
 	DefaultImagePullDebouncer.Cancel(app.Id)
+	return triggerImagePull(app, origin)
+}
 
+// triggerImagePull is TriggerImagePull for a debounced pull, which leaves the
+// pulls queued after it.
+func triggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	// A rolled back application runs pinned images. Pulling would replace them
 	// with the latest ones, so updates wait until it is deployed again.
 	if app.RolledBackAt != nil {
 		Log.Info().Str("applicationId", app.Id).Msg("skipping image pull of rolled back application")
+		recordTriggerSkip(context.Background(), origin.TriggerID, app.Id, models.ApplicationEventImageUpdate, "image pull was skipped to keep rolled back images pinned", &Log)
 		return true
 	}
 
@@ -32,6 +39,7 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 	if _, err := applicationevents.Start(ctx, applicationevents.Params{
 		ApplicationID: app.Id,
 		RequestID:     &requestID,
+		TriggerID:     origin.TriggerID,
 		Type:          models.ApplicationEventImageUpdate,
 		Source:        origin.Source,
 		ActorUserID:   origin.ActorUserID,
@@ -44,6 +52,13 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 		failImagePullEvent(ctx, requestID, app.Id, "hub not initialized")
 		return false
 	}
+	// Without the global settings the pull would skip the release age.
+	global, err := releaseage.Global(ctx)
+	if err != nil {
+		Log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to load the global release age settings")
+		failImagePullEvent(ctx, requestID, app.Id, "failed to load the release age settings")
+		return false
+	}
 	sent := hubws.DefaultHub.Send(app.AgentId, &messages.ServerMessage{
 		Payload: &messages.ServerMessage_PullImagesRequest{
 			PullImagesRequest: &messages.PullImagesRequest{
@@ -52,6 +67,8 @@ func TriggerImagePull(app *models.Application, origin SyncOrigin) bool {
 				ApplicationName: app.Name.String(),
 				DeleteOldImages: app.DeleteOldImages,
 				ImageRetention:  imageRetention(ctx, app),
+				ReleaseAge:      releaseage.Policy(app, global),
+				WebhookImages:   origin.WebhookImages,
 			},
 		},
 	})

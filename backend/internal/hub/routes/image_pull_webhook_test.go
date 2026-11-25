@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ import (
 func setupTestDBForImagePullWebhook(t *testing.T) {
 	t.Helper()
 	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}); err != nil {
+	if err := db.DB.AutoMigrate(&models.Agent{}, &models.Repository{}, &models.Application{}, &models.ApplicationEvent{}, &models.ApplicationDeployment{}, &models.Settings{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	nop := zerolog.Nop()
@@ -422,6 +423,46 @@ func TestImagePullWebhookHandler_GitHubPackage_Published_TriggersPull(t *testing
 	}
 }
 
+func TestImagePullWebhookHandler_GitHubPackage_AnnouncesPackageImage(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	hub := setupHubForTest(t)
+
+	const secret = "mysecret"
+	const agentID = "agent-pkg-image"
+	// Shortened from a real GitHub "package" delivery.
+	const body = `{"action":"published","package":{"id":1,"name":"app","namespace":"octo-org","package_type":"CONTAINER",` +
+		`"package_version":{"id":2,"version":"sha256:3a1f","name":"sha256:3a1f",` +
+		`"package_url":"ghcr.io/octo-org/app:1.2.3","container_metadata":{"tag":{"name":"1.2.3","digest":"sha256:3a1f"}}}}}`
+
+	app := seedAppWithWebhookSecret(t, secret)
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).Update("agent_id", agentID).Error; err != nil {
+		t.Fatalf("failed to update agent_id: %v", err)
+	}
+	client, err := hub.Register(agentID, nil)
+	if err != nil {
+		t.Fatalf("failed to register agent: %v", err)
+	}
+
+	c, w := makeGitHubPackageRequest(app.Id, body, imagePullHMAC(secret, body))
+	ImagePullWebhookHandler(c)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case msg := <-client.Send:
+		req := msg.GetPullImagesRequest()
+		if req == nil {
+			t.Fatalf("expected PullImagesRequest, got %T", msg.Payload)
+		}
+		if want := []string{"ghcr.io/octo-org/app:1.2.3"}; !slices.Equal(req.WebhookImages, want) {
+			t.Errorf("webhook images = %v, want %v", req.WebhookImages, want)
+		}
+	default:
+		t.Error("expected a PullImagesRequest to be queued on the agent's Send channel")
+	}
+}
+
 func TestImagePullWebhookHandler_GitHubPackage_Updated_TriggersPull(t *testing.T) {
 	setupTestDBForImagePullWebhook(t)
 	hub := setupHubForTest(t)
@@ -647,6 +688,10 @@ func TestImagePullWebhookHandler_Harbor_PushImage_TriggersPull(t *testing.T) {
 		}
 		if req.ApplicationId != app.Id {
 			t.Errorf("application_id: got %q, want %q", req.ApplicationId, app.Id)
+		}
+		// The hub can't check the registry of a Harbor image, so it announces none.
+		if len(req.WebhookImages) != 0 {
+			t.Errorf("expected no webhook images, got %v", req.WebhookImages)
 		}
 	default:
 		t.Error("expected a PullImagesRequest to be queued on the agent's Send channel")
@@ -903,7 +948,7 @@ func TestImagePullWebhookHandler_DockerHub_MissingAuth_Returns401(t *testing.T) 
 	}
 }
 
-func TestIsDockerHubPayload(t *testing.T) {
+func TestParseDockerHubPayload(t *testing.T) {
 	tests := []struct {
 		name string
 		body string
@@ -918,9 +963,9 @@ func TestIsDockerHubPayload(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isDockerHubPayload([]byte(tt.body))
+			_, got := parseDockerHubPayload([]byte(tt.body))
 			if got != tt.want {
-				t.Errorf("isDockerHubPayload(%q) = %v, want %v", tt.body, got, tt.want)
+				t.Errorf("parseDockerHubPayload(%q) = %v, want %v", tt.body, got, tt.want)
 			}
 		})
 	}

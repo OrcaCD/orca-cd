@@ -172,3 +172,28 @@ func TestRegisterRoutes_DisableUI_NoStaticFiles(t *testing.T) {
 		t.Errorf("expected 404 in DisableUI mode for non-API path, got %d", w.Code)
 	}
 }
+
+func TestRegisterRoutes_GitHubActionsPollingHasIndependentRateLimit(t *testing.T) {
+	router := gin.New()
+	if err := RegisterRoutes(router, Config{AppURL: "http://localhost:8080", DisableUI: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := func(method, path string) int {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, nil)
+		router.ServeHTTP(recorder, req)
+		return recorder.Code
+	}
+	for i := range 10 {
+		if got := request(http.MethodGet, "/api/v1/github-actions/triggers/test"); got != http.StatusUnauthorized {
+			t.Fatalf("poll %d = %d, want 401", i+1, got)
+		}
+	}
+	if got := request(http.MethodGet, "/api/v1/github-actions/triggers/test"); got != http.StatusTooManyRequests {
+		t.Fatalf("poll after burst = %d, want 429", got)
+	}
+	if got := request(http.MethodPost, "/api/v1/github-actions"); got != http.StatusUnauthorized {
+		t.Fatalf("deployment request = %d, want 401 after polling is rate limited", got)
+	}
+}

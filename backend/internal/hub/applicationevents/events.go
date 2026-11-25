@@ -17,6 +17,7 @@ const MaxPerApplication = 1000
 type Params struct {
 	ApplicationID string
 	RequestID     *string
+	TriggerID     *string
 	Type          models.ApplicationEventType
 	Source        models.ApplicationEventSource
 	ActorUserID   *string
@@ -45,7 +46,8 @@ func RecordCompleted(
 func isCompletedStatus(status models.ApplicationEventStatus) bool {
 	return status == models.ApplicationEventSucceeded ||
 		status == models.ApplicationEventFailed ||
-		status == models.ApplicationEventNoChange
+		status == models.ApplicationEventNoChange ||
+		status == models.ApplicationEventHeldBack
 }
 
 func create(
@@ -57,6 +59,7 @@ func create(
 	event := models.ApplicationEvent{
 		ApplicationId: p.ApplicationID,
 		RequestId:     p.RequestID,
+		TriggerId:     p.TriggerID,
 		Type:          p.Type,
 		Source:        p.Source,
 		Status:        status,
@@ -84,9 +87,9 @@ func create(
 		return nil, err
 	}
 
-	// The activity endpoint never includes no_change events, so recording one
-	// does not change it.
-	publishUpdate(p.ApplicationID, status != models.ApplicationEventNoChange)
+	// The activity endpoint never includes events that changed nothing, so
+	// recording one does not change it.
+	publishUpdate(p.ApplicationID, status != models.ApplicationEventNoChange && status != models.ApplicationEventHeldBack)
 	return &event, nil
 }
 

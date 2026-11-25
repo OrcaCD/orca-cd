@@ -75,11 +75,15 @@ func TestRunMigrations_AllTablesExist(t *testing.T) {
 		"agent_notifications",
 		"repository_notifications",
 		"application_events",
+		"github_actions_triggers",
+		"github_actions_trigger_skips",
 		"application_deployments",
 		"roles",
 		"role_permissions",
 		"user_roles",
 		"api_tokens",
+		"settings",
+		"application_image_updates",
 	}
 	for _, table := range tables {
 		if !db.Migrator().HasTable(table) {
@@ -813,6 +817,48 @@ func TestRunMigrations_AgentAndRepositoryNotificationsDown(t *testing.T) {
 	}
 }
 
+func TestRunMigrations_GitHubActionsTriggersDown(t *testing.T) {
+	gormDB := openTestDB(t)
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestMigrator(t, sqlDB)
+	if err := m.Migrate(51); err != nil {
+		t.Fatalf("migrate to trigger schema: %v", err)
+	}
+	if err := m.Migrate(50); err != nil {
+		t.Fatalf("revert trigger schema: %v", err)
+	}
+	for _, table := range []string{"github_actions_triggers", "github_actions_trigger_skips"} {
+		if gormDB.Migrator().HasTable(table) {
+			t.Errorf("expected %q to be dropped", table)
+		}
+	}
+	if columnNames(t, sqlDB, "application_events")["trigger_id"] {
+		t.Error("expected application_events.trigger_id to be dropped")
+	}
+}
+
+func TestRunMigrations_GitHubActionsTriggerSkipsCascadeOnApplicationDelete(t *testing.T) {
+	gormDB := openTestDB(t)
+	if err := runMigrations(gormDB); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDelete string
+	if err := sqlDB.QueryRow(`SELECT on_delete FROM pragma_foreign_key_list('github_actions_trigger_skips')
+		WHERE "from" = 'application_id' AND "table" = 'applications' AND "to" = 'id'`).Scan(&onDelete); err != nil {
+		t.Fatalf("load application foreign key: %v", err)
+	}
+	if onDelete != "CASCADE" {
+		t.Errorf("application foreign key ON DELETE = %q, want CASCADE", onDelete)
+	}
+}
+
 func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
 	gormDB := openTestDB(t)
 	if err := runMigrations(gormDB); err != nil {
@@ -827,6 +873,9 @@ func TestRunMigrations_ApplicationEventsTableSchema(t *testing.T) {
 		t.Fatalf("failed to get sql.DB: %v", err)
 	}
 	cols := columnNames(t, sqlDB, "application_events")
+	if !cols["trigger_id"] {
+		t.Error("application events must have a trigger ID column")
+	}
 	required := []string{
 		"id", "application_id", "request_id", "type", "source", "status",
 		"actor_user_id", "actor_name", "commit_hash", "commit_message",
@@ -1063,6 +1112,8 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 		"notifications":      {&models.Notification{}, 2},
 		"audit logs":         {&models.AuditLog{}, 9},
 		"api tokens":         {&models.APIToken{}, 4},
+		"image updates":      {&models.ApplicationImageUpdate{}, 3},
+		"settings":           {&models.Settings{}, 1},
 	}
 	for name, c := range counts {
 		var got int64

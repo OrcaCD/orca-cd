@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
@@ -69,20 +70,24 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 			Str("application_id", r.ApplicationId).
 			Msg("failed to update application after image poll")
 	}
+	if !r.Success {
+		handleFailedImagePull(ctx, &app, r, log)
+		return
+	}
 	if ctx.Err() != nil {
 		return
 	}
 
 	// An update under a health gate completes once the gate decided.
 	var gate time.Duration
-	if r.Success && r.ImagesUpdated && !rolledBack {
+	if r.ImagesUpdated && !rolledBack {
 		gate = app.HealthGate()
 	}
 	requestID := recordImagePullHistory(ctx, r, gate > 0, log)
 	if ctx.Err() != nil {
 		return
 	}
-	if r.Success && r.ImagesUpdated && !rolledBack {
+	if r.ImagesUpdated && !rolledBack {
 		if _, err := deployments.RecordImageUpdate(ctx, r.ApplicationId, requestID, r.Images, gate); err != nil {
 			log.Error().Err(err).Str("application_id", r.ApplicationId).Msg("failed to record image update deployment")
 			forgetCurrentDeployment(ctx, r.ApplicationId, log)
@@ -91,21 +96,42 @@ func handlePullImagesResult(parent context.Context, client *Client, r *messages.
 	}
 
 	sse.PublishUpdate(sse.TopicApplications.For(r.ApplicationId))
+	heldBack := !r.ImagesUpdated && len(r.HeldBackImages) > 0
+	if gate == 0 && !heldBack {
+		go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
+	}
+}
 
-	if r.Success {
-		if gate == 0 {
-			go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateSucceeded, "Success: image update succeeded for "+app.Name.String(), log)
+func handleFailedImagePull(ctx context.Context, app *models.Application, r *messages.PullImagesResult, log *zerolog.Logger) {
+	// Only a failed redeploy changed the application. A failed check or pull
+	// left the containers as they were.
+	var target *models.ApplicationDeployment
+	var event *models.ApplicationEvent
+	if r.RedeployFailed && ctx.Err() == nil {
+		target = automaticRollbackTarget(ctx, app, nil, log)
+		if target != nil {
+			var err error
+			event, err = applicationevents.ForRequest(ctx, r.RequestId, r.ApplicationId)
+			if err != nil {
+				log.Error().Err(err).Str("applicationId", r.ApplicationId).Msg("failed to look up image update event for rollback")
+			}
 		}
+	}
+	rollbackBeforeCompletion := event != nil && event.TriggerId != nil
+	if rollbackBeforeCompletion {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
+	}
+
+	writeCtx, cancelWrite := failureEventWriteContext(ctx)
+	defer cancelWrite()
+	recordImagePullHistory(writeCtx, r, false, log)
+	sse.PublishUpdate(sse.TopicApplications.For(r.ApplicationId))
+	if ctx.Err() != nil {
 		return
 	}
 	go notifications.SendForApplication(r.ApplicationId, models.NotificationEventImageUpdateFailed, "Error: image update failed for "+app.Name.String(), log)
-
-	// Only a failed redeploy changed the application. A failed check or pull
-	// left the containers as they were.
-	if r.RedeployFailed {
-		if target := automaticRollbackTarget(ctx, &app, nil, log); target != nil {
-			triggerAutomaticRollback(ctx, &app, target, models.ApplicationEventSourceDeploymentFailure, log)
-		}
+	if target != nil && !rollbackBeforeCompletion {
+		triggerAutomaticRollback(ctx, app, target, models.ApplicationEventSourceDeploymentFailure, event, log)
 	}
 }
 
@@ -159,14 +185,21 @@ func isRepeatedPeriodicFailure(ctx context.Context, r *messages.PullImagesResult
 // ID of the event, if one was recorded.
 func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, gated bool, log *zerolog.Logger) string {
 	status := models.ApplicationEventFailed
-	if r.Success && r.ImagesUpdated {
+	switch {
+	case r.Success && r.ImagesUpdated:
 		status = models.ApplicationEventSucceeded
-	} else if r.Success {
+	case r.Success && len(r.HeldBackImages) > 0:
+		status = models.ApplicationEventHeldBack
+	case r.Success:
 		status = models.ApplicationEventNoChange
 	}
 	var errMsg *string
 	if !r.Success && r.ErrorMessage != "" {
 		errMsg = &r.ErrorMessage
+	}
+	if status == models.ApplicationEventHeldBack {
+		msg := heldBackMessage(r.HeldBackImages)
+		errMsg = &msg
 	}
 	if gated {
 		return startGatedImageUpdateEvent(ctx, r, log)
@@ -180,7 +213,7 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, g
 	if matched {
 		return r.RequestId
 	}
-	if r.Success && !r.ImagesUpdated {
+	if status == models.ApplicationEventNoChange {
 		return ""
 	}
 
@@ -203,4 +236,14 @@ func recordImagePullHistory(ctx context.Context, r *messages.PullImagesResult, g
 		return ""
 	}
 	return requestID
+}
+
+// heldBackMessage explains in the history why image updates were held back.
+func heldBackMessage(images []*messages.HeldBackImage) string {
+	var msg strings.Builder
+	msg.WriteString("Held back by the minimum release age:")
+	for _, image := range images {
+		msg.WriteString("\n" + image.Image + ": " + image.Reason)
+	}
+	return msg.String()
 }

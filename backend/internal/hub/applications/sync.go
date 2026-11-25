@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // SyncOrigin identifies what triggered a sync so history events can attribute it.
@@ -22,6 +23,9 @@ type SyncOrigin struct {
 	Source      models.ApplicationEventSource
 	ActorUserID *string
 	ActorName   *string
+	TriggerID   *string
+	// WebhookImages are the images an image pull webhook announced.
+	WebhookImages []string
 }
 
 type syncJob struct {
@@ -50,6 +54,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if skipAutoSyncAfterRollback(job) {
 		log.Info().Str("applicationId", job.Application.Id).Str("commit", job.Commit).
 			Msg("skipping automatic sync of rolled back application")
+		recordTriggerSkip(ctx, job.Origin.TriggerID, job.Application.Id, models.ApplicationEventCommitSync, "automatic sync was skipped after rollback", log)
 		return
 	}
 
@@ -143,6 +148,7 @@ func syncEventParams(job syncJob, requestID *string) applicationevents.Params {
 	params := applicationevents.Params{
 		ApplicationID: job.Application.Id,
 		RequestID:     requestID,
+		TriggerID:     job.Origin.TriggerID,
 		Type:          models.ApplicationEventCommitSync,
 		Source:        job.Origin.Source,
 		ActorUserID:   job.Origin.ActorUserID,
@@ -184,6 +190,7 @@ func recordSyncFailure(ctx context.Context, application *models.Application, ori
 	}
 	params := applicationevents.Params{
 		ApplicationID: application.Id,
+		TriggerID:     origin.TriggerID,
 		Type:          models.ApplicationEventCommitSync,
 		Source:        origin.Source,
 		ActorUserID:   origin.ActorUserID,
@@ -199,6 +206,20 @@ func recordSyncFailure(ctx context.Context, application *models.Application, ori
 	defer cancel()
 	if _, err := applicationevents.RecordCompleted(eventCtx, params, models.ApplicationEventFailed, &errorMessage); err != nil {
 		log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to record sync failure event")
+	}
+}
+
+func recordTriggerSkip(ctx context.Context, triggerID *string, applicationID string, operation models.ApplicationEventType, reason string, log *zerolog.Logger) {
+	if triggerID == nil {
+		return
+	}
+	eventCtx, cancel := applicationEventWriteContext(ctx)
+	defer cancel()
+	skip := models.GitHubActionsTriggerSkip{
+		TriggerId: *triggerID, ApplicationId: applicationID, Type: operation, Reason: reason,
+	}
+	if err := gorm.G[models.GitHubActionsTriggerSkip](db.DB, clause.OnConflict{DoNothing: true}).Create(eventCtx, &skip); err != nil {
+		log.Error().Err(err).Str("applicationId", applicationID).Msg("failed to record skipped GitHub Actions operation")
 	}
 }
 
