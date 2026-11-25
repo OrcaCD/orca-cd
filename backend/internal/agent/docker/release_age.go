@@ -59,6 +59,22 @@ func ReleaseAgePolicyFromProto(policy *messages.ReleaseAgePolicy, webhookImages 
 	}
 }
 
+const excludedReason = "image polling is off for this service, a manual pull or webhook updates it"
+
+// excludesAll reports whether every use of the unit belongs to a service that
+// image polling skips.
+func (p ReleaseAgePolicy) excludesAll(unit *imageUnit) bool {
+	if len(p.ExcludedServices) == 0 {
+		return false
+	}
+	for _, use := range unit.uses {
+		if !slices.Contains(p.ExcludedServices, use.service.Name) {
+			return false
+		}
+	}
+	return true
+}
+
 func (p ReleaseAgePolicy) equal(other ReleaseAgePolicy) bool {
 	return p.MinimumAge == other.MinimumAge &&
 		maps.Equal(p.ServiceMinimumAge, other.ServiceMinimumAge) &&
@@ -145,7 +161,7 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 	}
 	if slices.Contains(policy.ExcludedServices, service.Name) {
 		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
-		update.Reason = "image polling is off for this service, a manual pull or webhook updates it"
+		update.Reason = excludedReason
 		return false
 	}
 	if minimumAge <= 0 {

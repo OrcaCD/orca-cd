@@ -349,6 +349,15 @@ func (c *Client) checkImageUnit(ctx context.Context, appID string, policy Releas
 		})
 	}
 
+	// An image that only excluded services use is neither checked nor pulled.
+	if policy.excludesAll(unit) {
+		setAll(func(update *messages.ImageUpdate) {
+			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
+			update.Reason = excludedReason
+		})
+		return nil
+	}
+
 	remoteDigest, err := getRemoteDigest(ctx, c.cli, unit.ref)
 	if err != nil {
 		if isLocalOnlyImage(ctx, dockerCLI, unit.ref) {

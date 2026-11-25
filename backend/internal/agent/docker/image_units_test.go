@@ -252,3 +252,34 @@ func TestPullTargetProject_PullsHookOnlyUnits(t *testing.T) {
 		t.Error("the project itself must not change")
 	}
 }
+
+// Image polling neither checks nor pulls an image that only excluded services
+// use, also when it is missing locally.
+func TestCheckAndPullImages_ExcludedServicesAreNotChecked(t *testing.T) {
+	c := setupStaleImage(t)
+	pulled, _, _ := stubUnitProject(t, composetypes.Services{
+		"web": serviceWith("ghcr.io/org/app:1.0", nil),
+		"db":  serviceWith("postgres:17", nil),
+	})
+	checked := []string{}
+	getRemoteDigest = func(_ context.Context, _ command.Cli, ref string) (string, error) {
+		checked = append(checked, ref)
+		return newDigest, nil
+	}
+
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{ExcludedServices: []string{"db"}})
+	if err != nil || !updated {
+		t.Fatalf("expected web to update, got updated=%v err=%v", updated, err)
+	}
+	if !slices.Equal(checked, []string{"ghcr.io/org/app:1.0"}) {
+		t.Errorf("checked %v, want only the image of web", checked)
+	}
+	if got := (*pulled).Services["db"].PullPolicy; got != composetypes.PullPolicyNever {
+		t.Errorf("expected db not to be pulled, got pull policy %q", got)
+	}
+	for _, update := range images {
+		if update.Service == "db" && update.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED {
+			t.Errorf("db: status %v, want skipped", update.Status)
+		}
+	}
+}
