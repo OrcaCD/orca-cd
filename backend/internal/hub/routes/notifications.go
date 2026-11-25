@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"slices"
 	"sort"
@@ -18,45 +17,46 @@ import (
 	hubnotifications "github.com/OrcaCD/orca-cd/internal/hub/notifications"
 	"github.com/OrcaCD/orca-cd/internal/hub/notifications/provider"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 	"gorm.io/gorm"
 )
 
 type createNotificationRequest struct {
-	Name            string                     `json:"name" binding:"required,min=1,max=128"`
-	Enabled         *bool                      `json:"enabled"`
-	AllApplications *bool                      `json:"allApplications"`
-	AllAgents       *bool                      `json:"allAgents"`
-	AllRepositories *bool                      `json:"allRepositories"`
-	Events          []models.NotificationEvent `json:"events"`
-	Type            models.NotificationType    `json:"type" binding:"required"`
-	Config          json.RawMessage            `json:"config" binding:"required"`
-	ApplicationIds  []string                   `json:"applicationIds"`
-	AgentIds        []string                   `json:"agentIds"`
-	RepositoryIds   []string                   `json:"repositoryIds"`
+	Name            string                     `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Enabled         *bool                      `json:"enabled" doc:"Defaults to true"`
+	AllApplications *bool                      `json:"allApplications" doc:"Tell about every application, including future ones"`
+	AllAgents       *bool                      `json:"allAgents" doc:"Tell about every agent, including future ones"`
+	AllRepositories *bool                      `json:"allRepositories" doc:"Tell about every repository, including future ones"`
+	Events          []models.NotificationEvent `json:"events,omitempty" doc:"The events to tell about. Leave it out for all events."`
+	Type            models.NotificationType    `json:"type" required:"true" minLength:"1" doc:"The provider, e.g. discord or webhook"`
+	Config          json.RawMessage            `json:"config" required:"true" doc:"The settings of the provider, as a JSON object or a string. It holds secrets and is never returned."`
+	ApplicationIds  []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
+	AgentIds        []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
+	RepositoryIds   []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
 }
 
 type setNotificationEnabledRequest struct {
-	Enabled *bool `json:"enabled"`
+	Enabled bool `json:"enabled" required:"true"`
 }
 
 type updateNotificationRequest struct {
-	Enabled         *bool                      `json:"enabled"`
-	AllApplications *bool                      `json:"allApplications"`
-	AllAgents       *bool                      `json:"allAgents"`
-	AllRepositories *bool                      `json:"allRepositories"`
-	Events          []models.NotificationEvent `json:"events"`
-	ApplicationIds  []string                   `json:"applicationIds"`
-	AgentIds        []string                   `json:"agentIds"`
-	RepositoryIds   []string                   `json:"repositoryIds"`
+	Enabled         bool                       `json:"enabled" required:"true"`
+	AllApplications bool                       `json:"allApplications" required:"true"`
+	AllAgents       bool                       `json:"allAgents" required:"true"`
+	AllRepositories bool                       `json:"allRepositories" required:"true"`
+	Events          []models.NotificationEvent `json:"events" required:"true" nullable:"false"`
+	ApplicationIds  []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
+	AgentIds        []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
+	RepositoryIds   []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
 }
 
 type testNotificationRequest struct {
-	Message string `json:"message"`
+	Message string `json:"message,omitempty" doc:"The text to send. Leave it out for the default test message."`
 }
 
 var sendTestNotification = hubnotifications.SendTestNotification
@@ -64,26 +64,38 @@ var sendTestNotification = hubnotifications.SendTestNotification
 var notificationsLog = logger.New("notifications", false)
 
 type notificationResponse struct {
-	Id              string                     `json:"id"`
-	Name            string                     `json:"name"`
-	Enabled         bool                       `json:"enabled"`
-	AllApplications bool                       `json:"allApplications"`
-	AllAgents       bool                       `json:"allAgents"`
-	AllRepositories bool                       `json:"allRepositories"`
-	Events          []models.NotificationEvent `json:"events"`
-	Status          string                     `json:"status"`
-	Type            string                     `json:"type"`
-	ApplicationIds  []string                   `json:"applicationIds"`
-	AgentIds        []string                   `json:"agentIds"`
-	RepositoryIds   []string                   `json:"repositoryIds"`
-	CreatedAt       string                     `json:"createdAt"`
-	UpdatedAt       string                     `json:"updatedAt"`
+	Id              string                     `json:"id" required:"true"`
+	Name            string                     `json:"name" required:"true"`
+	Enabled         bool                       `json:"enabled" required:"true"`
+	AllApplications bool                       `json:"allApplications" required:"true"`
+	AllAgents       bool                       `json:"allAgents" required:"true"`
+	AllRepositories bool                       `json:"allRepositories" required:"true"`
+	Events          []models.NotificationEvent `json:"events" required:"true"`
+	Status          string                     `json:"status" required:"true" enum:"unknown,success,error" doc:"Whether the last notification was delivered"`
+	Type            string                     `json:"type" required:"true"`
+	ApplicationIds  []string                   `json:"applicationIds" required:"true" doc:"The assigned applications the user may view"`
+	AgentIds        []string                   `json:"agentIds" required:"true" doc:"The assigned agents the user may view"`
+	RepositoryIds   []string                   `json:"repositoryIds" required:"true" doc:"The assigned repositories the user may view"`
+	CreatedAt       string                     `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt       string                     `json:"updatedAt" required:"true" format:"date-time"`
 }
 
-func ListNotificationsHandler(c *gin.Context) {
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+type notificationOutput struct {
+	Body notificationResponse
+}
+
+var ListNotificationsHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-notifications",
+	Method:      http.MethodGet,
+	Path:        "/notifications",
+	Summary:     "List notifications",
+	Description: "Lists the notifications the user may view. Their configs hold secrets and are never returned.",
+	Tags:        []string{tagNotifications},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []notificationResponse }, error) {
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 
 	items, err := gorm.G[models.Notification](db.DB).
@@ -92,10 +104,9 @@ func ListNotificationsHandler(c *gin.Context) {
 		Preload("Agents", selectNotificationResourceId).
 		Preload("Repositories", selectNotificationResourceId).
 		Order("created_at ASC").
-		Find(c.Request.Context())
+		Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	response := make([]notificationResponse, 0, len(items))
@@ -103,35 +114,38 @@ func ListNotificationsHandler(c *gin.Context) {
 		response = append(response, toNotificationResponse(perms, &items[i]))
 	}
 
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body []notificationResponse }{Body: response}, nil
+})
 
-func CreateNotificationHandler(c *gin.Context) {
-	var req createNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, type and config are required"})
-		return
-	}
-
+var CreateNotificationHandler = restapi.Handler(huma.Operation{
+	OperationID:   "create-notification",
+	Method:        http.MethodPost,
+	Path:          "/notifications",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create a notification",
+	Description: "Sends a test notification first and only saves the notification when it was delivered. " +
+		"The user needs to be able to view every resource it tells about. " +
+		requires(models.ResourceNotification, models.ActionCreate),
+	Tags:     []string{tagNotifications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusBadGateway},
+}, func(ctx context.Context, input *struct{ Body createNotificationRequest }) (*notificationOutput, error) {
+	req := input.Body
 	normalizedName, err := normalizeNotificationName(req.Name)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
 	if !isValidNotificationType(req.Type) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid type"})
-		return
+		return nil, huma.Error400BadRequest("invalid type")
 	}
 
 	normalizedConfig, err := normalizeNotificationConfig(req.Config)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err := validateNotificationConfig(req.Type, normalizedConfig); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config: " + err.Error()})
-		return
+		return nil, huma.Error400BadRequest("invalid config: " + err.Error())
 	}
 
 	// Omitting events subscribes to everything, matching the behavior before
@@ -140,8 +154,7 @@ func CreateNotificationHandler(c *gin.Context) {
 	if req.Events != nil {
 		events, err = normalizeNotificationEvents(req.Events)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 	}
 
@@ -153,33 +166,31 @@ func CreateNotificationHandler(c *gin.Context) {
 	allAgents := req.AllAgents != nil && *req.AllAgents
 	allRepositories := req.AllRepositories != nil && *req.AllRepositories
 
-	ctx := c.Request.Context()
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
-	if !authorizeNotificationTargets(c, perms, notificationScope{
+	if err := authorizeNotificationTargets(perms, notificationScope{
 		allApplications: allApplications, allAgents: allAgents, allRepositories: allRepositories,
 		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 
-	targets, ok := loadNotificationTargets(c,
+	targets, err := loadNotificationTargets(ctx,
 		scopedNotificationResourceIds(allApplications, req.ApplicationIds),
 		scopedNotificationResourceIds(allAgents, req.AgentIds),
 		scopedNotificationResourceIds(allRepositories, req.RepositoryIds),
 	)
-	if !ok {
-		return
+	if err != nil {
+		return nil, err
 	}
 
 	// Reject configs that can't deliver before saving them, so new
 	// notifications never start in an unknown state.
 	if err := sendTestNotification(req.Type, normalizedConfig, ""); err != nil {
 		notificationsLog.Warn().Err(err).Str("type", string(req.Type)).Msg("test notification failed while creating notification")
-		respondTestNotificationError(c, err)
-		return
+		return nil, testNotificationError(err)
 	}
 
 	notification := models.Notification{
@@ -202,73 +213,77 @@ func CreateNotificationHandler(c *gin.Context) {
 		return targets.replace(tx, &notification)
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	createdNotification, err := getNotificationById(ctx, notification.Id)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusCreated, toNotificationResponse(perms, &createdNotification))
 	sse.PublishUpdate(sse.TopicNotifications.For(notification.Id))
-}
+	return &notificationOutput{Body: toNotificationResponse(perms, &createdNotification)}, nil
+})
 
-func UpdateNotificationHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	var req updateNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil ||
-		req.Enabled == nil || req.AllApplications == nil || req.AllAgents == nil || req.AllRepositories == nil || req.Events == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled, allApplications, allAgents, allRepositories and events are required"})
-		return
-	}
+var UpdateNotificationHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-notification",
+	Method:      http.MethodPut,
+	Path:        "/notifications/{id}",
+	Summary:     "Update a notification",
+	Description: "Replaces the events and the resources the notification tells about. Its name, type and config can't be changed. " +
+		"The user needs to be able to view every resource it told and will tell about. " +
+		requires(models.ResourceNotification, models.ActionUpdate),
+	Tags:     []string{tagNotifications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the notification"`
+	Body updateNotificationRequest
+}) (*notificationOutput, error) {
+	id, req := input.ID, input.Body
 
 	events, err := normalizeNotificationEvents(req.Events)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	ctx := c.Request.Context()
 	notification, err := getNotificationById(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
-	if !canChangeNotification(c, perms, &notification) || !authorizeNotificationTargets(c, perms, notificationScope{
-		allApplications: *req.AllApplications, allAgents: *req.AllAgents, allRepositories: *req.AllRepositories,
+	if err := canChangeNotification(perms, &notification); err != nil {
+		return nil, err
+	}
+	if err := authorizeNotificationTargets(perms, notificationScope{
+		allApplications: req.AllApplications, allAgents: req.AllAgents, allRepositories: req.AllRepositories,
 		applicationIds: req.ApplicationIds, agentIds: req.AgentIds, repositoryIds: req.RepositoryIds,
-	}) {
-		return
+	}); err != nil {
+		return nil, err
 	}
 
-	targets, ok := loadNotificationTargets(c,
-		scopedNotificationResourceIds(*req.AllApplications, req.ApplicationIds),
-		scopedNotificationResourceIds(*req.AllAgents, req.AgentIds),
-		scopedNotificationResourceIds(*req.AllRepositories, req.RepositoryIds),
+	targets, err := loadNotificationTargets(ctx,
+		scopedNotificationResourceIds(req.AllApplications, req.ApplicationIds),
+		scopedNotificationResourceIds(req.AllAgents, req.AgentIds),
+		scopedNotificationResourceIds(req.AllRepositories, req.RepositoryIds),
 	)
-	if !ok {
-		return
+	if err != nil {
+		return nil, err
 	}
 
 	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		updates := models.Notification{
-			Enabled:         *req.Enabled,
-			AllApplications: *req.AllApplications,
-			AllAgents:       *req.AllAgents,
-			AllRepositories: *req.AllRepositories,
+			Enabled:         req.Enabled,
+			AllApplications: req.AllApplications,
+			AllAgents:       req.AllAgents,
+			AllRepositories: req.AllRepositories,
 			Events:          events,
 		}
 		rowsAffected, err := gorm.G[models.Notification](tx).
@@ -286,113 +301,129 @@ func UpdateNotificationHandler(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	updatedNotification, err := getNotificationById(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, toNotificationResponse(perms, &updatedNotification))
 	sse.PublishUpdate(sse.TopicNotifications.For(id))
-}
+	return &notificationOutput{Body: toNotificationResponse(perms, &updatedNotification)}, nil
+})
 
 // SetNotificationEnabledHandler only toggles the enabled flag, so it cannot overwrite a concurrent
 // edit of the subscription.
-func SetNotificationEnabledHandler(c *gin.Context) {
-	id := c.Param("id")
+var SetNotificationEnabledHandler = restapi.Handler(huma.Operation{
+	OperationID: "set-notification-enabled",
+	Method:      http.MethodPut,
+	Path:        "/notifications/{id}/enabled",
+	Summary:     "Enable or disable a notification",
+	Description: "Only changes the enabled flag, so it can't overwrite a concurrent update. " +
+		"The user needs to be able to view every resource the notification tells about. " +
+		requires(models.ResourceNotification, models.ActionUpdate),
+	Tags:     []string{tagNotifications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the notification"`
+	Body setNotificationEnabledRequest
+}) (*notificationOutput, error) {
+	id, req := input.ID, input.Body
 
-	var req setNotificationEnabledRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: enabled is required"})
-		return
-	}
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 
-	ctx := c.Request.Context()
 	notification, err := getNotificationById(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
-	if !canChangeNotification(c, perms, &notification) {
-		return
+	if err := canChangeNotification(perms, &notification); err != nil {
+		return nil, err
 	}
 
 	rowsAffected, err := gorm.G[models.Notification](db.DB).
 		Where("id = ?", id).
-		Update(ctx, "enabled", *req.Enabled)
+		Update(ctx, "enabled", req.Enabled)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-		return
+		return nil, huma.Error404NotFound("notification not found")
 	}
-	notification.Enabled = *req.Enabled
+	notification.Enabled = req.Enabled
 
-	c.JSON(http.StatusOK, toNotificationResponse(perms, &notification))
 	sse.PublishUpdate(sse.TopicNotifications.For(id))
-}
+	return &notificationOutput{Body: toNotificationResponse(perms, &notification)}, nil
+})
 
-func DeleteNotificationHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	rowsAffected, err := gorm.G[models.Notification](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+var DeleteNotificationHandler = restapi.Handler(huma.Operation{
+	OperationID: "delete-notification",
+	Method:      http.MethodDelete,
+	Path:        "/notifications/{id}",
+	Summary:     "Delete a notification",
+	Description: requires(models.ResourceNotification, models.ActionDelete),
+	Tags:        []string{tagNotifications},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	rowsAffected, err := gorm.G[models.Notification](db.DB).Where("id = ?", input.ID).Delete(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-		return
+		return nil, huma.Error404NotFound("notification not found")
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "notification deleted"})
 	sse.PublishUpdate(sse.TopicNotifications)
 	// After the update, so clients still get it before losing access
-	pruneGrants(c.Request.Context())
-}
+	pruneGrants(ctx)
 
-func TestNotificationHandler(c *gin.Context) {
-	id := c.Param("id")
-	ctx := c.Request.Context()
+	return restapi.Message("notification deleted"), nil
+})
+
+var TestNotificationHandler = restapi.Handler(huma.Operation{
+	OperationID: "test-notification",
+	Method:      http.MethodPost,
+	Path:        "/notifications/{id}/test",
+	Summary:     "Send a test notification",
+	Description: "Sends a test message and sets the status of the notification to whether it was delivered. " +
+		"A delivery failure answers 502 with the reason. " +
+		requires(models.ResourceNotification, models.ActionUpdate),
+	Tags:     []string{tagNotifications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the notification"`
+	Body *testNotificationRequest
+}) (*restapi.MessageOutput, error) {
+	id := input.ID
 
 	notification, err := gorm.G[models.Notification](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	var req testNotificationRequest
-	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: message must be a string"})
-		return
+	var message string
+	if input.Body != nil {
+		message = input.Body.Message
 	}
 
-	sendErr := sendTestNotification(notification.Type, notification.Config.String(), req.Message)
+	sendErr := sendTestNotification(notification.Type, notification.Config.String(), message)
 	status := models.NotificationStatusSuccess
 	if sendErr != nil {
 		notificationsLog.Warn().Err(sendErr).Str("notificationId", notification.Id).Msg("test notification failed")
@@ -401,33 +432,30 @@ func TestNotificationHandler(c *gin.Context) {
 
 	if err := updateNotificationStatus(ctx, notification.Id, status); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "notification not found"})
-			return
+			return nil, huma.Error404NotFound("notification not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	sse.PublishUpdate(sse.TopicNotifications.For(id))
 
 	if sendErr != nil {
-		respondTestNotificationError(c, sendErr)
-		return
+		return nil, testNotificationError(sendErr)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "test notification sent"})
-}
+	return restapi.Message("test notification sent"), nil
+})
 
-// respondTestNotificationError exposes the failure reason so users can fix
-// their config. The errors are already stripped of credentials.
-func respondTestNotificationError(c *gin.Context, err error) {
+// testNotificationError exposes the failure reason so users can fix their
+// config. The errors are already stripped of credentials.
+func testNotificationError(err error) error {
 	switch {
 	case errors.Is(err, hubnotifications.ErrInvalidNotificationConfig):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return huma.Error400BadRequest(err.Error())
 	case errors.Is(err, hubnotifications.ErrNotificationDispatch):
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return huma.NewError(http.StatusBadGateway, err.Error())
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return internalError()
 	}
 }
 
@@ -583,36 +611,31 @@ func (t *notificationTargets) replace(tx *gorm.DB, notification *models.Notifica
 	return tx.Model(notification).Association("Repositories").Replace(t.repositories)
 }
 
-// loadNotificationTargets loads the assigned resources and writes the error
-// response if one of them does not exist.
-func loadNotificationTargets(c *gin.Context, applicationIds, agentIds, repositoryIds []string) (notificationTargets, bool) {
-	ctx := c.Request.Context()
+// loadNotificationTargets loads the assigned resources and returns a 400 error
+// if one of them does not exist.
+func loadNotificationTargets(ctx context.Context, applicationIds, agentIds, repositoryIds []string) (notificationTargets, error) {
 	var targets notificationTargets
 	var missing string
 	var err error
 
 	if targets.applications, missing, err = loadNotificationResources(ctx, applicationIds, applicationIdOf); err != nil || missing != "" {
-		respondNotificationResourceError(c, "application", missing, err)
-		return targets, false
+		return targets, notificationResourceError("application", missing, err)
 	}
 	if targets.agents, missing, err = loadNotificationResources(ctx, agentIds, agentIdOf); err != nil || missing != "" {
-		respondNotificationResourceError(c, "agent", missing, err)
-		return targets, false
+		return targets, notificationResourceError("agent", missing, err)
 	}
 	if targets.repositories, missing, err = loadNotificationResources(ctx, repositoryIds, repositoryIdOf); err != nil || missing != "" {
-		respondNotificationResourceError(c, "repository", missing, err)
-		return targets, false
+		return targets, notificationResourceError("repository", missing, err)
 	}
 
-	return targets, true
+	return targets, nil
 }
 
-func respondNotificationResourceError(c *gin.Context, resource, missingId string, err error) {
+func notificationResourceError(resource, missingId string, err error) error {
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return internalError()
 	}
-	c.JSON(http.StatusBadRequest, gin.H{"error": resource + " not found: " + missingId})
+	return huma.Error400BadRequest(resource + " not found: " + missingId)
 }
 
 // loadNotificationResources loads the resources with the given IDs. It returns
@@ -704,18 +727,17 @@ func canReadNotificationScope(perms *rbac.Permissions, scope notificationScope) 
 
 // authorizeNotificationTargets makes sure users only subscribe notifications to
 // resources they can read, since the notification tells about them.
-func authorizeNotificationTargets(c *gin.Context, perms *rbac.Permissions, scope notificationScope) bool {
+func authorizeNotificationTargets(perms *rbac.Permissions, scope notificationScope) error {
 	if denied, ok := canReadNotificationScope(perms, scope); !ok {
-		respondForbidden(c, "insufficient permissions for "+denied)
-		return false
+		return huma.Error403Forbidden("insufficient permissions for " + denied)
 	}
-	return true
+	return nil
 }
 
 // canChangeNotification makes sure users only change notifications about
 // resources they can read. Otherwise they could enable it or add events and
 // learn about resources they cannot see.
-func canChangeNotification(c *gin.Context, perms *rbac.Permissions, notification *models.Notification) bool {
+func canChangeNotification(perms *rbac.Permissions, notification *models.Notification) error {
 	if _, ok := canReadNotificationScope(perms, notificationScope{
 		allApplications: notification.AllApplications,
 		allAgents:       notification.AllAgents,
@@ -724,10 +746,9 @@ func canChangeNotification(c *gin.Context, perms *rbac.Permissions, notification
 		agentIds:        sortedIds(notification.Agents, agentIdOf),
 		repositoryIds:   sortedIds(notification.Repositories, repositoryIdOf),
 	}); !ok {
-		respondForbidden(c, "insufficient permissions: the notification is about resources you cannot access")
-		return false
+		return huma.Error403Forbidden("insufficient permissions: the notification is about resources you cannot access")
 	}
-	return true
+	return nil
 }
 
 func readableIds(perms *rbac.Permissions, resource models.PermissionResource, ids []string) []string {

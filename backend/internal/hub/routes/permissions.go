@@ -3,67 +3,71 @@ package routes
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 var permissionsLog = logger.New("permissions", false)
 
-// currentPermissions returns the permissions of the authenticated user and
-// responds with an error when they cannot be loaded.
-func currentPermissions(c *gin.Context) (*rbac.Permissions, bool) {
+// permissionsFor returns the permissions of the authenticated user.
+func permissionsFor(c *gin.Context) (*rbac.Permissions, error) {
 	perms, err := rbac.For(c)
 	if err != nil {
 		if errors.Is(err, rbac.ErrMissingUser) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return nil, huma.Error401Unauthorized("missing authentication")
 		}
-		return nil, false
+		return nil, internalError()
 	}
-	return perms, true
+	return perms, nil
 }
 
-// canDeleteApplicationsOf checks that the user may delete every application
+// checkDeleteApplicationsOf checks that the user may delete every application
 // that is deleted together with its repository or agent.
-func canDeleteApplicationsOf(c *gin.Context, column, id string) bool {
-	return canOnApplicationsOf(c, models.ActionDelete, column, id, "insufficient permissions to delete its applications")
+func checkDeleteApplicationsOf(c *gin.Context, column, id string) error {
+	return checkApplicationsOf(c, models.ActionDelete, column, id, "insufficient permissions to delete its applications")
 }
 
-// canOnApplicationsOf checks that the action is allowed on every application
-// of a repository or agent, including the ones the user can't see.
-func canOnApplicationsOf(c *gin.Context, action models.PermissionAction, column, id, message string) bool {
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return false
+// checkApplicationsOf checks that the action is allowed on every application of
+// a repository or agent, including the ones the user can't see.
+func checkApplicationsOf(c *gin.Context, action models.PermissionAction, column, id, message string) error {
+	perms, err := permissionsFor(c)
+	if err != nil {
+		return err
 	}
 	if perms.CanAll(models.ResourceApplication, action) {
-		return true
+		return nil
 	}
 
 	apps, err := gorm.G[models.Application](db.DB).Select("id").Where(column+" = ?", id).Find(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return false
+		return internalError()
 	}
 	for i := range apps {
 		if !perms.Can(models.ResourceApplication, action, apps[i].Id) {
-			respondForbidden(c, message)
-			return false
+			return huma.Error403Forbidden(message)
 		}
 	}
-	return true
+	return nil
 }
 
-func respondForbidden(c *gin.Context, message string) {
-	c.JSON(http.StatusForbidden, gin.H{"error": message})
+// currentPermissions is permissionsFor for the plain Gin handlers, which
+// respond with the error themselves.
+func currentPermissions(c *gin.Context) (*rbac.Permissions, bool) {
+	perms, err := permissionsFor(c)
+	if err != nil {
+		if statusErr, ok := errors.AsType[huma.StatusError](err); ok {
+			c.JSON(statusErr.GetStatus(), gin.H{"error": statusErr.Error()})
+		}
+		return nil, false
+	}
+	return perms, true
 }
 
 // pruneGrants removes the grants on deleted resources and tells the members of

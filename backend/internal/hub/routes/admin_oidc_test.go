@@ -176,12 +176,14 @@ func TestAdminCreateOIDCProviderHandler_InvalidRequest(t *testing.T) {
 	tests := []struct {
 		name string
 		body any
+		want string
 	}{
-		{"empty body", nil},
-		{"missing name", map[string]any{"issuerUrl": "https://example.com", "clientId": "c", "clientSecret": "s"}},
-		{"missing issuerUrl", map[string]any{"name": "IDP", "clientId": "c", "clientSecret": "s"}},
-		{"missing clientId", map[string]any{"name": "IDP", "issuerUrl": "https://example.com", "clientSecret": "s"}},
-		{"missing clientSecret", map[string]any{"name": "IDP", "issuerUrl": "https://example.com", "clientId": "c"}},
+		{"empty body", nil, "request body is required"},
+		{"missing name", map[string]any{"issuerUrl": "https://example.com", "clientId": "c", "clientSecret": "s"}, "validation failed: expected required property name to be present (body)"},
+		{"missing issuerUrl", map[string]any{"name": "IDP", "clientId": "c", "clientSecret": "s"}, "validation failed: expected required property issuerUrl to be present (body)"},
+		{"missing clientId", map[string]any{"name": "IDP", "issuerUrl": "https://example.com", "clientSecret": "s"}, "validation failed: expected required property clientId to be present (body)"},
+		{"missing clientSecret", map[string]any{"name": "IDP", "issuerUrl": "https://example.com", "clientId": "c"}, "validation failed: expected required property clientSecret to be present (body)"},
+		{"issuerUrl without http", map[string]any{"name": "IDP", "issuerUrl": "ftp://example.com", "clientId": "c", "clientSecret": "s"}, "invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid"},
 	}
 
 	for _, tt := range tests {
@@ -206,7 +208,7 @@ func TestAdminCreateOIDCProviderHandler_InvalidRequest(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 				t.Fatalf("invalid JSON: %v", err)
 			}
-			if body["error"] != "invalid request: name, issuerUrl, clientId, and clientSecret are required and must be valid" {
+			if body["error"] != tt.want {
 				t.Errorf("unexpected error message: %q", body["error"])
 			}
 		})
@@ -257,7 +259,7 @@ func TestAdminUpdateOIDCProviderHandler_InvalidRequest(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if body["error"] != "invalid request: name, issuerUrl, and clientId are required and must be valid" {
+	if body["error"] != "validation failed: expected required property clientId to be present (body), expected required property issuerUrl to be present (body)" {
 		t.Errorf("unexpected error message: %q", body["error"])
 	}
 }

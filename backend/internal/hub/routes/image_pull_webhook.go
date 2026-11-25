@@ -1,10 +1,10 @@
 package routes
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -12,8 +12,9 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/distribution/reference"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -52,99 +53,111 @@ type harborPayload struct {
 	EventType string `json:"event_type"`
 }
 
-func ImagePullWebhookHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
+type imagePullWebhookInput struct {
+	ID              string `path:"id" doc:"The ID of the application"`
+	GitHubEvent     string `header:"X-GitHub-Event" doc:"Set by GitHub: package events of published container images trigger a pull, ping is answered"`
+	GitHubSignature string `header:"X-Hub-Signature-256" doc:"Set by GitHub: sha256= followed by the hex HMAC-SHA256 of the body, keyed with the webhook secret"`
+	Authorization   string `header:"Authorization" doc:"Bearer followed by the webhook secret"`
+	Token           string `query:"token" doc:"The webhook secret, for registries that can't set headers, like Docker Hub. Only read without an Authorization header."`
+}
 
-	app, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
+var imagePullWebhookRequestBody = &huma.RequestBody{
+	Description: "The event of the registry. Harbor events only trigger a pull for pushed artifacts, " +
+		"bodies without an event type always trigger one. May be empty.",
+	Content: map[string]*huma.MediaType{
+		"application/json": {Schema: &huma.Schema{Type: huma.TypeObject}},
+	},
+}
+
+var ImagePullWebhookHandler = webhookHandler(huma.Operation{
+	OperationID: "receive-image-webhook",
+	Method:      http.MethodPost,
+	Path:        "/webhooks/images/{id}",
+	Summary:     "Receive an image webhook",
+	Description: "Called by a container registry (GitHub Container Registry, Docker Hub, Harbor, or anything that can send a request) " +
+		"after an image was pushed, to pull the images of an application and redeploy it. GitHub signs the body with the webhook secret, " +
+		"other callers send it as `Authorization: Bearer <webhook secret>` or in the `token` query parameter.",
+	Tags:          []string{tagWebhooks},
+	DefaultStatus: http.StatusNoContent,
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusRequestEntityTooLarge},
+}, imagePullWebhookRequestBody, func(ctx context.Context, input *imagePullWebhookInput) (*struct{}, error) {
+	c := restapi.GinContext(ctx)
+
+	app, err := gorm.G[models.Application](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			rejectWebhook(c, "unknown_id")
-			return
+			return nil, rejectWebhook(c, "unknown_id")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	if app.ImageWebhookSecret == nil {
-		rejectWebhook(c, "webhook_disabled")
-		return
+		return nil, rejectWebhook(c, "webhook_disabled")
 	}
 
 	secret := app.ImageWebhookSecret.String()
 
-	if event := c.GetHeader("X-GitHub-Event"); event != "" {
-		body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
+	if event := input.GitHubEvent; event != "" {
+		body, err := readWebhookBody(ctx)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
+			return nil, err
 		}
-		if !validateHMACSHA256(secret, body, strings.TrimPrefix(c.GetHeader("X-Hub-Signature-256"), "sha256=")) {
-			rejectWebhook(c, "invalid_signature")
-			return
+		if !validateHMACSHA256(secret, body, strings.TrimPrefix(input.GitHubSignature, "sha256=")) {
+			return nil, rejectWebhook(c, "invalid_signature")
 		}
 		if event == "ping" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
+			return &struct{}{}, nil
 		}
 		if event != "package" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported event type"})
-			return
+			return nil, huma.Error400BadRequest("unsupported event type")
 		}
 		var payload githubPackagePayload
 		if err := json.Unmarshal(body, &payload); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook payload"})
-			return
+			return nil, huma.Error400BadRequest("invalid webhook payload")
 		}
 		if !strings.EqualFold(payload.Package.PackageType, "CONTAINER") ||
 			(!strings.EqualFold(payload.Action, "published") && !strings.EqualFold(payload.Action, "updated")) ||
 			!isGitHubImageTagEvent(&payload) {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
+			return &struct{}{}, nil
 		}
 		var image string
 		if payload.Package.PackageVersion != nil {
 			image = announcedImage(payload.Package.PackageVersion.PackageURL, "ghcr.io")
 		}
 		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, image)
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+		return &struct{}{}, nil
 	}
 
-	token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	token := strings.TrimSpace(strings.TrimPrefix(input.Authorization, "Bearer "))
 	if token == "" {
-		token = c.Query("token")
+		token = input.Token
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
-		rejectWebhook(c, "invalid_token")
-		return
+		return nil, rejectWebhook(c, "invalid_token")
 	}
 
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxWebhookBodySize))
+	body, err := readWebhookBody(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, err
 	}
 
 	// Docker Hub payloads carry a push_data field; all Docker Hub webhooks are push events.
 	if payload, ok := parseDockerHubPayload(body); ok {
 		applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, dockerHubImage(payload))
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+		return &struct{}{}, nil
 	}
 
 	// If the payload contains event_type (Harbor-style), only trigger on pushImage.
 	if !isHarborPushEvent(body) {
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+		return &struct{}{}, nil
 	}
 
 	// The hub doesn't know the host of a Harbor registry, so it can't check
 	// the image a Harbor payload names. The pull checks the release age of
 	// every image instead.
 	applications.ScheduleImagePull(&app, models.ApplicationEventSourceImageWebhook, "")
-	c.AbortWithStatus(http.StatusNoContent)
-}
+	return &struct{}{}, nil
+})
 
 func dockerHubImage(payload dockerHubPayload) string {
 	if payload.Repository.RepoName == "" || payload.PushData.Tag == "" {

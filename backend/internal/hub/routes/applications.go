@@ -15,11 +15,13 @@ import (
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/repositories"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
 	sharedutils "github.com/OrcaCD/orca-cd/internal/shared/utils"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -44,98 +46,110 @@ func validImagePollInterval(enabled bool, seconds int64) bool {
 }
 
 type createApplicationRequest struct {
-	Name                     string `json:"name" binding:"required"`
-	Icon                     string `json:"icon" binding:"omitempty,min=1,max=128"`
-	RepositoryId             string `json:"repositoryId" binding:"required"`
-	AgentId                  string `json:"agentId" binding:"required"`
-	Branch                   string `json:"branch" binding:"required"`
-	Path                     string `json:"path" binding:"required"`
+	Name                     string `json:"name" required:"true" minLength:"1"`
+	Icon                     string `json:"icon" maxLength:"128"`
+	RepositoryId             string `json:"repositoryId" required:"true" minLength:"1"`
+	AgentId                  string `json:"agentId" required:"true" minLength:"1"`
+	Branch                   string `json:"branch" required:"true" minLength:"1"`
+	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
 type updateApplicationRequest struct {
-	Name                     string `json:"name" binding:"required"`
-	Icon                     string `json:"icon" binding:"omitempty,min=1,max=128"`
-	RepositoryId             string `json:"repositoryId" binding:"required"`
-	AgentId                  string `json:"agentId" binding:"required"`
-	Branch                   string `json:"branch" binding:"required"`
-	Path                     string `json:"path" binding:"required"`
+	Name                     string `json:"name" required:"true" minLength:"1"`
+	Icon                     string `json:"icon" maxLength:"128" doc:"Leave it out to keep the icon"`
+	RepositoryId             string `json:"repositoryId" required:"true" minLength:"1"`
+	AgentId                  string `json:"agentId" required:"true" minLength:"1"`
+	Branch                   string `json:"branch" required:"true" minLength:"1"`
+	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
 type applicationListResponse struct {
-	Id               string  `json:"id"`
-	Icon             string  `json:"icon"`
-	Name             string  `json:"name"`
-	HealthStatus     string  `json:"healthStatus"`
-	SyncStatus       string  `json:"syncStatus"`
-	Branch           string  `json:"branch"`
-	Commit           string  `json:"commit"`
-	LastSyncedAt     *string `json:"lastSyncedAt"`
-	Path             string  `json:"path"`
+	Id               string  `json:"id" required:"true"`
+	Icon             string  `json:"icon" required:"true"`
+	Name             string  `json:"name" required:"true"`
+	HealthStatus     string  `json:"healthStatus" required:"true"`
+	SyncStatus       string  `json:"syncStatus" required:"true"`
+	Branch           string  `json:"branch" required:"true"`
+	Commit           string  `json:"commit" required:"true"`
+	LastSyncedAt     *string `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
+	Path             string  `json:"path" required:"true"`
 	LastSyncError    *string `json:"lastSyncError,omitempty"`
-	AgentId          string  `json:"agentId"`
-	AgentName        string  `json:"agentName"`
-	RepositoryId     string  `json:"repositoryId"`
-	RolledBackAt     *string `json:"rolledBackAt"`
-	RolledBackCommit *string `json:"rolledBackCommit"`
-	RepositoryName   string  `json:"repositoryName"`
+	AgentId          string  `json:"agentId" required:"true"`
+	AgentName        string  `json:"agentName" required:"true"`
+	RepositoryId     string  `json:"repositoryId" required:"true"`
+	RolledBackAt     *string `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
+	RolledBackCommit *string `json:"rolledBackCommit" required:"true" nullable:"true"`
+	RepositoryName   string  `json:"repositoryName" required:"true"`
 }
 
 type applicationResponse struct {
-	Id                       string                    `json:"id"`
-	Icon                     string                    `json:"icon"`
-	Name                     string                    `json:"name"`
-	RepositoryId             string                    `json:"repositoryId"`
-	RepositoryName           string                    `json:"repositoryName"`
-	RepositoryUrl            string                    `json:"repositoryUrl"`
-	RepositorySyncType       string                    `json:"repositorySyncType"`
-	AgentId                  string                    `json:"agentId"`
-	AgentName                string                    `json:"agentName"`
-	SyncStatus               string                    `json:"syncStatus"`
-	HealthStatus             string                    `json:"healthStatus"`
-	Branch                   string                    `json:"branch"`
-	Commit                   string                    `json:"commit"`
-	CommitMessage            string                    `json:"commitMessage"`
-	LastSyncedAt             *string                   `json:"lastSyncedAt"`
+	Id                       string                    `json:"id" required:"true"`
+	Icon                     string                    `json:"icon" required:"true"`
+	Name                     string                    `json:"name" required:"true"`
+	RepositoryId             string                    `json:"repositoryId" required:"true"`
+	RepositoryName           string                    `json:"repositoryName" required:"true"`
+	RepositoryUrl            string                    `json:"repositoryUrl" required:"true"`
+	RepositorySyncType       string                    `json:"repositorySyncType" required:"true"`
+	AgentId                  string                    `json:"agentId" required:"true"`
+	AgentName                string                    `json:"agentName" required:"true"`
+	SyncStatus               string                    `json:"syncStatus" required:"true"`
+	HealthStatus             string                    `json:"healthStatus" required:"true"`
+	Branch                   string                    `json:"branch" required:"true"`
+	Commit                   string                    `json:"commit" required:"true"`
+	CommitMessage            string                    `json:"commitMessage" required:"true"`
+	LastSyncedAt             *string                   `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
 	LastSyncError            *string                   `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string                   `json:"lastSyncSource,omitempty"`
-	Path                     string                    `json:"path"`
-	CreatedAt                string                    `json:"createdAt"`
-	UpdatedAt                string                    `json:"updatedAt"`
-	ComposeFile              string                    `json:"composeFile"`
-	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty"`
-	ImagePollEnabled         bool                      `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds"`
-	DeleteOldImages          bool                      `json:"deleteOldImages"`
-	CurrentDeploymentId      *string                   `json:"currentDeploymentId"`
-	RolledBackAt             *string                   `json:"rolledBackAt"`
-	RolledBackCommit         *string                   `json:"rolledBackCommit"`
-	RolledBackReason         *string                   `json:"rolledBackReason"`
-	AutoSyncPaused           bool                      `json:"autoSyncPaused"`
-	Rollback                 rollbackSettingsResponse  `json:"rollback"`
-	ReleaseAge               releaseAgeSettings        `json:"releaseAge"`
-	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled"`
+	LastSyncSource           *string                   `json:"lastSyncSource,omitempty" doc:"What triggered the last sync"`
+	Path                     string                    `json:"path" required:"true"`
+	CreatedAt                string                    `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt                string                    `json:"updatedAt" required:"true" format:"date-time"`
+	ComposeFile              string                    `json:"composeFile" required:"true"`
+	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty" doc:"The compose file before the last change of the application"`
+	ImagePollEnabled         bool                      `json:"imagePollEnabled" required:"true"`
+	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds" required:"true"`
+	DeleteOldImages          bool                      `json:"deleteOldImages" required:"true"`
+	CurrentDeploymentId      *string                   `json:"currentDeploymentId" required:"true" nullable:"true"`
+	RolledBackAt             *string                   `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
+	RolledBackCommit         *string                   `json:"rolledBackCommit" required:"true" nullable:"true"`
+	RolledBackReason         *string                   `json:"rolledBackReason" required:"true" nullable:"true"`
+	AutoSyncPaused           bool                      `json:"autoSyncPaused" required:"true" doc:"Automatic syncs are paused after a rollback until they are resumed"`
+	Rollback                 rollbackSettingsResponse  `json:"rollback" required:"true"`
+	ReleaseAge               releaseAgeSettings        `json:"releaseAge" required:"true"`
+	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled" required:"true"`
 	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
-	Warnings                 []composewarnings.Warning `json:"warnings"`
+	Warnings                 []composewarnings.Warning `json:"warnings" required:"true" doc:"Problems found in the compose file"`
 }
 
 type rollbackSettingsResponse struct {
-	Enabled              bool  `json:"enabled"`
-	OnDeployFailure      bool  `json:"onDeployFailure"`
-	OnUnhealthy          bool  `json:"onUnhealthy"`
-	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds"`
-	PauseAutoSync        bool  `json:"pauseAutoSync"`
+	Enabled              bool  `json:"enabled" required:"true"`
+	OnDeployFailure      bool  `json:"onDeployFailure" required:"true"`
+	OnUnhealthy          bool  `json:"onUnhealthy" required:"true"`
+	HealthTimeoutSeconds int64 `json:"healthTimeoutSeconds" required:"true" doc:"How long a deployment may take to become healthy"`
+	PauseAutoSync        bool  `json:"pauseAutoSync" required:"true" doc:"Whether automatic syncs are paused after a rollback"`
 }
 
-func ListApplicationsHandler(c *gin.Context) {
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+type applicationOutput struct {
+	Body applicationResponse
+}
+
+var ListApplicationsHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-applications",
+	Method:      http.MethodGet,
+	Path:        "/applications",
+	Summary:     "List applications",
+	Description: "Lists the applications the user may view.",
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []applicationListResponse }, error) {
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 
 	applications, err := gorm.G[models.Application](db.DB).
@@ -143,10 +157,9 @@ func ListApplicationsHandler(c *gin.Context) {
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Order("created_at ASC").
-		Find(c.Request.Context())
+		Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	response := make([]applicationListResponse, 0, len(applications))
@@ -154,67 +167,75 @@ func ListApplicationsHandler(c *gin.Context) {
 		response = append(response, toApplicationListResponse(&applications[i]))
 	}
 
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body []applicationListResponse }{Body: response}, nil
+})
 
-func GetApplicationHandler(c *gin.Context) {
-	id := c.Param("id")
-
+var GetApplicationHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-application",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}",
+	Summary:     "Get an application",
+	Description: requires(models.ResourceApplication, models.ActionRead),
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*applicationOutput, error) {
 	application, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
-		Where("id = ?", id).
-		First(c.Request.Context())
+		Where("id = ?", input.ID).
+		First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, toApplicationResponse(&application))
-}
+	return &applicationOutput{Body: toApplicationResponse(&application)}, nil
+})
 
-func CreateApplicationHandler(c *gin.Context) {
-	var req createApplicationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
-		return
-	}
+var CreateApplicationHandler = restapi.Handler(huma.Operation{
+	OperationID:   "create-application",
+	Method:        http.MethodPost,
+	Path:          "/applications",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create an application",
+	Description: "Reads the compose file from the latest commit of the branch and starts the first deployment. " +
+		"Needs read access to the repository and the agent. Answers 422 when the repository can't be read. " +
+		requires(models.ResourceApplication, models.ActionCreate),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
+}, func(ctx context.Context, input *struct{ Body createApplicationRequest }) (*applicationOutput, error) {
+	c := restapi.GinContext(ctx)
+	req := input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
-		return
+		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
 	}
-	if !canUseApplicationSources(c, req.RepositoryId, req.AgentId) {
-		return
+	if err := checkApplicationSources(c, req.RepositoryId, req.AgentId); err != nil {
+		return nil, err
 	}
 
 	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if !repoExists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "repository not found"})
-		return
+		return nil, huma.Error400BadRequest("repository not found")
 	}
 
 	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if !agentExists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
-		return
+		return nil, huma.Error400BadRequest("agent not found")
 	}
 
-	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
-	if sourceErr != "" {
-		c.JSON(statusCode, gin.H{"error": sourceErr})
-		return
+	composeFile, latestCommit, err := fetchApplicationComposeAndCommit(ctx, req.RepositoryId, req.Branch, req.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	application := models.Application{
@@ -238,32 +259,26 @@ func CreateApplicationHandler(c *gin.Context) {
 		DeleteOldImages:          req.DeleteOldImages,
 	}
 
-	if err := gorm.G[models.Application](db.DB).Select("*").Create(c.Request.Context(), &application); err != nil {
+	if err := gorm.G[models.Application](db.DB).Select("*").Create(ctx, &application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
-			return
+			return nil, huma.Error400BadRequest("invalid repositoryId or agentId")
 		}
 		if isUniqueConstraintError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
-			return
+			return nil, huma.Error409Conflict("an application with this name already exists")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	createdApplication, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Where("id = ?", application.Id).
-		First(c.Request.Context())
+		First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	utils.RecordAuditLog(c, "created", "application", application.Id)
-
-	c.JSON(http.StatusCreated, toApplicationResponse(&createdApplication))
 	sse.PublishUpdate(sse.TopicApplications.For(createdApplication.Id))
 
 	sendAgentSettings(c, req.AgentId)
@@ -271,7 +286,7 @@ func CreateApplicationHandler(c *gin.Context) {
 	if application_deployer.DefaultApplicationDeployer != nil {
 		requestID := uuid.NewString()
 		actorUserID, actorName := eventActor(c)
-		if _, err := applicationevents.Start(c.Request.Context(), applicationevents.Params{
+		if _, err := applicationevents.Start(ctx, applicationevents.Params{
 			ApplicationID: createdApplication.Id,
 			RequestID:     &requestID,
 			Type:          models.ApplicationEventDeployment,
@@ -283,29 +298,39 @@ func CreateApplicationHandler(c *gin.Context) {
 		}
 		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile, requestID)
 	}
-}
 
-func UpdateApplicationHandler(c *gin.Context) {
-	id := c.Param("id")
+	return &applicationOutput{Body: toApplicationResponse(&createdApplication)}, nil
+})
 
-	var req updateApplicationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name, repositoryId, agentId, syncStatus, healthStatus, branch, commit, commitMessage, and path are required"})
-		return
-	}
+var UpdateApplicationHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-application",
+	Method:      http.MethodPut,
+	Path:        "/applications/{id}",
+	Summary:     "Update an application",
+	Description: "Reads the compose file from the latest commit of the branch again. Moving the application to another agent " +
+		"or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, " +
+		"as does a new source, which also needs read access to the new repository or agent. " +
+		"Answers 422 when the repository can't be read. " +
+		requires(models.ResourceApplication, models.ActionUpdate),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusBadGateway, http.StatusGatewayTimeout},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the application"`
+	Body updateApplicationRequest
+}) (*applicationOutput, error) {
+	c := restapi.GinContext(ctx)
+	id, req := input.ID, input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "image poll interval must be at least 60 seconds"})
-		return
+		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
 	}
 
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	// Only a new source needs read access, so the settings of an application
@@ -317,45 +342,39 @@ func UpdateApplicationHandler(c *gin.Context) {
 	if agentId == application.AgentId {
 		agentId = ""
 	}
-	if !canUseApplicationSources(c, repositoryId, agentId) {
-		return
+	if err := checkApplicationSources(c, repositoryId, agentId); err != nil {
+		return nil, err
 	}
 	// A new source or compose project replaces what is deployed
 	if repositoryId != "" || agentId != "" || composeProjectChanged(application.Name.String(), req.Name) {
-		perms, ok := currentPermissions(c)
-		if !ok {
-			return
+		perms, err := permissionsFor(c)
+		if err != nil {
+			return nil, err
 		}
 		if !perms.Can(models.ResourceApplication, models.ActionDeploy, id) {
-			respondForbidden(c, "insufficient permissions to deploy the application")
-			return
+			return nil, huma.Error403Forbidden("insufficient permissions to deploy the application")
 		}
 	}
 
 	repoExists, err := hasRecord[models.Repository](c, req.RepositoryId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if !repoExists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "repository not found"})
-		return
+		return nil, huma.Error400BadRequest("repository not found")
 	}
 
 	agentExists, err := hasRecord[models.Agent](c, req.AgentId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if !agentExists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
-		return
+		return nil, huma.Error400BadRequest("agent not found")
 	}
 
-	composeFile, latestCommit, statusCode, sourceErr := fetchApplicationComposeAndCommit(c, req.RepositoryId, req.Branch, req.Path)
-	if sourceErr != "" {
-		c.JSON(statusCode, gin.H{"error": sourceErr})
-		return
+	composeFile, latestCommit, err := fetchApplicationComposeAndCommit(ctx, req.RepositoryId, req.Branch, req.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	nameHash := crypto.BlindIndex(models.NormalizeName(req.Name))
@@ -367,19 +386,16 @@ func UpdateApplicationHandler(c *gin.Context) {
 		// deployment, so a conflict doesn't leave the application undeployed.
 		conflicts, err := gorm.G[models.Application](db.DB).
 			Where("agent_id = ? AND name_hash = ? AND id <> ?", req.AgentId, nameHash, id).
-			Count(c.Request.Context(), "*")
+			Count(ctx, "*")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
+			return nil, internalError()
 		}
 		if conflicts > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
-			return
+			return nil, huma.Error409Conflict("an application with this name already exists")
 		}
 
-		if status, msg := undeployApplication(c.Request.Context(), &application, "move or rename"); status != 0 {
-			c.JSON(status, gin.H{"error": msg})
-			return
+		if status, msg := undeployApplication(ctx, &application, "move or rename"); status != 0 {
+			return nil, huma.NewError(status, msg)
 		}
 	}
 
@@ -409,56 +425,50 @@ func UpdateApplicationHandler(c *gin.Context) {
 			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
 			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync",
 			"MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries", "ReleaseAgeServiceOverrides").
-		Updates(c.Request.Context(), application); err != nil {
+		Updates(ctx, application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid repositoryId or agentId"})
-			return
+			return nil, huma.Error400BadRequest("invalid repositoryId or agentId")
 		}
 		if isUniqueConstraintError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "an application with this name already exists"})
-			return
+			return nil, huma.Error409Conflict("an application with this name already exists")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	updatedApplication, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Where("id = ?", id).
-		First(c.Request.Context())
+		First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	utils.RecordAuditLog(c, "updated", "application", id)
-
-	c.JSON(http.StatusOK, toApplicationResponse(&updatedApplication))
 	sse.PublishUpdate(sse.TopicApplications.For(id))
 	sendAgentSettings(c, req.AgentId)
 	if oldAgentId != req.AgentId {
 		sendAgentSettings(c, oldAgentId)
 	}
-}
 
-// canUseApplicationSources checks that the user can read the repository and the
+	return &applicationOutput{Body: toApplicationResponse(&updatedApplication)}, nil
+})
+
+// checkApplicationSources checks that the user can read the repository and the
 // agent an application is deployed from, since it exposes their files and names.
 // An empty ID is not checked.
-func canUseApplicationSources(c *gin.Context, repositoryId, agentId string) bool {
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return false
+func checkApplicationSources(c *gin.Context, repositoryId, agentId string) error {
+	perms, err := permissionsFor(c)
+	if err != nil {
+		return err
 	}
 	if repositoryId != "" && !perms.Can(models.ResourceRepository, models.ActionRead, repositoryId) {
-		respondForbidden(c, "insufficient permissions for the repository")
-		return false
+		return huma.Error403Forbidden("insufficient permissions for the repository")
 	}
 	if agentId != "" && !perms.Can(models.ResourceAgent, models.ActionRead, agentId) {
-		respondForbidden(c, "insufficient permissions for the agent")
-		return false
+		return huma.Error403Forbidden("insufficient permissions for the agent")
 	}
-	return true
+	return nil
 }
 
 // composeProjectChanged reports whether renaming an application changes the
@@ -497,67 +507,83 @@ func undeployApplication(ctx context.Context, application *models.Application, a
 	return 0, ""
 }
 
-func DeleteApplicationHandler(c *gin.Context) {
-	id := c.Param("id")
+var DeleteApplicationHandler = restapi.Handler(huma.Operation{
+	OperationID: "delete-application",
+	Method:      http.MethodDelete,
+	Path:        "/applications/{id}",
+	Summary:     "Delete an application",
+	Description: "Removes the application from its agent first and waits for it, so it fails while the agent is offline. " +
+		requires(models.ResourceApplication, models.ActionDelete),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden, http.StatusBadGateway, http.StatusGatewayTimeout},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	c := restapi.GinContext(ctx)
+	id := input.ID
 
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	if status, msg := undeployApplication(c.Request.Context(), &application, "delete"); status != 0 {
-		c.JSON(status, gin.H{"error": msg})
-		return
+	if status, msg := undeployApplication(ctx, &application, "delete"); status != 0 {
+		return nil, huma.NewError(status, msg)
 	}
 
-	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(c.Request.Context())
+	rowsAffected, err := gorm.G[models.Application](db.DB).Where("id = ?", id).Delete(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
+		return nil, huma.Error404NotFound("application not found")
 	}
 
 	utils.RecordAuditLog(c, "deleted", "application", id)
 
-	c.JSON(http.StatusOK, gin.H{"message": "application deleted"})
 	sse.PublishUpdate(sse.TopicApplications)
 	// After the update, so clients still get it before losing access
-	pruneGrants(c.Request.Context())
+	pruneGrants(ctx)
 	sendAgentSettings(c, application.AgentId)
-}
 
-func DeployApplicationHandler(c *gin.Context) {
+	return restapi.Message("application deleted"), nil
+})
+
+var DeployApplicationHandler = restapi.Handler(huma.Operation{
+	OperationID:   "deploy-application",
+	Method:        http.MethodPost,
+	Path:          "/applications/{id}/deploy",
+	DefaultStatus: http.StatusAccepted,
+	Summary:       "Deploy an application",
+	Description: "Deploys the current compose file again. The deployment runs in the background, its progress shows in the events of the application. " +
+		requires(models.ResourceApplication, models.ActionDeploy),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
 	if application_deployer.DefaultApplicationDeployer == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "application deployer not initialized"})
-		return
+		return nil, huma.Error500InternalServerError("application deployer not initialized")
 	}
 
-	id := c.Param("id")
+	c := restapi.GinContext(ctx)
+	id := input.ID
 	application, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Where("id = ?", id).
-		First(c.Request.Context())
+		First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	requestID := uuid.NewString()
 	actorUserID, actorName := eventActor(c)
-	if _, eventErr := applicationevents.Start(c.Request.Context(), applicationevents.Params{
+	if _, eventErr := applicationevents.Start(ctx, applicationevents.Params{
 		ApplicationID: application.Id,
 		RequestID:     &requestID,
 		Type:          models.ApplicationEventDeployment,
@@ -572,49 +598,54 @@ func DeployApplicationHandler(c *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
-			c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot deploy application"})
-			return
+			return nil, huma.Error409Conflict("agent is offline; cannot deploy application")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to trigger application deploy: %v", err)})
-		return
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to trigger application deploy: %v", err))
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "deployment started"})
 	sse.PublishUpdate(sse.TopicApplications.For(id))
-}
+	return restapi.Message("deployment started"), nil
+})
 
 // PullApplicationImagesHandler asks the agent to pull newer images for the
 // application and redeploy it when any image changed.
-func PullApplicationImagesHandler(c *gin.Context) {
-	id := c.Param("id")
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(c.Request.Context())
+var PullApplicationImagesHandler = restapi.Handler(huma.Operation{
+	OperationID:   "pull-application-images",
+	Method:        http.MethodPost,
+	Path:          "/applications/{id}/pull-images",
+	DefaultStatus: http.StatusAccepted,
+	Summary:       "Pull the images of an application",
+	Description: "Asks the agent to pull newer images and redeploy the application when any image changed. " +
+		"Not possible while the application is rolled back. " +
+		requires(models.ResourceApplication, models.ActionPullImages),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	if application.RolledBackAt != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "application is rolled back; deploy it again before pulling images"})
-		return
+		return nil, huma.Error409Conflict("application is rolled back; deploy it again before pulling images")
 	}
 
-	actorUserID, actorName := eventActor(c)
+	actorUserID, actorName := eventActor(restapi.GinContext(ctx))
 	accepted := hubApplications.TriggerImagePull(&application, hubApplications.SyncOrigin{
 		Source:      models.ApplicationEventSourceManual,
 		ActorUserID: actorUserID,
 		ActorName:   actorName,
 	})
 	if !accepted {
-		c.JSON(http.StatusConflict, gin.H{"error": "agent is offline; cannot pull images"})
-		return
+		return nil, huma.Error409Conflict("agent is offline; cannot pull images")
 	}
 
-	c.JSON(http.StatusAccepted, gin.H{"message": "image pull started"})
-}
+	return restapi.Message("image pull started"), nil
+})
 
 func toApplicationListResponse(app *models.Application) applicationListResponse {
 	return applicationListResponse{
@@ -729,35 +760,35 @@ func sendAgentSettings(c *gin.Context, agentID string) {
 	websocket.DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }
 
-func fetchApplicationComposeAndCommit(c *gin.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, int, string) {
-	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(c.Request.Context())
+func fetchApplicationComposeAndCommit(ctx context.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, error) {
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", repositories.CommitInfo{}, http.StatusBadRequest, "repository not found"
+			return "", repositories.CommitInfo{}, huma.Error400BadRequest("repository not found")
 		}
-		return "", repositories.CommitInfo{}, http.StatusInternalServerError, "internal server error"
+		return "", repositories.CommitInfo{}, internalError()
 	}
 
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
-		return "", repositories.CommitInfo{}, http.StatusBadRequest, "unsupported provider"
+		return "", repositories.CommitInfo{}, huma.Error400BadRequest("unsupported provider")
 	}
 
-	latestCommit, err := provider.GetLatestCommit(c.Request.Context(), &repo, branch)
+	latestCommit, err := provider.GetLatestCommit(ctx, &repo, branch)
 	if err != nil {
-		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
-	if err := repositories.VerifyCommit(c.Request.Context(), provider, &repo, latestCommit.Hash); err != nil {
-		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+	if err := repositories.VerifyCommit(ctx, provider, &repo, latestCommit.Hash); err != nil {
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
-	composeFile, err := provider.GetFileContent(c.Request.Context(), &repo, latestCommit.Hash, path)
+	composeFile, err := provider.GetFileContent(ctx, &repo, latestCommit.Hash, path)
 	if err != nil {
-		return "", repositories.CommitInfo{}, http.StatusUnprocessableEntity, err.Error()
+		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
-	return composeFile, latestCommit, 0, ""
+	return composeFile, latestCommit, nil
 }
 
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {

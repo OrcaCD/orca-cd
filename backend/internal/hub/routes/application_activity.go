@@ -3,12 +3,12 @@ package routes
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/gin-gonic/gin"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -20,39 +20,47 @@ const (
 )
 
 type applicationActivityDay struct {
-	Date      string `json:"date"`
-	Succeeded int    `json:"succeeded"`
-	Failed    int    `json:"failed"`
+	Date      string `json:"date" required:"true" format:"date"`
+	Succeeded int    `json:"succeeded" required:"true" doc:"Number of successful deployments on the day"`
+	Failed    int    `json:"failed" required:"true" doc:"Number of failed deployments on the day"`
 }
 
 type applicationActivityDeployment struct {
 	applicationEventResponse
-	ApplicationId   string `json:"applicationId"`
-	ApplicationName string `json:"applicationName"`
-	ApplicationIcon string `json:"applicationIcon"`
+	ApplicationId   string `json:"applicationId" required:"true"`
+	ApplicationName string `json:"applicationName" required:"true"`
+	ApplicationIcon string `json:"applicationIcon" required:"true"`
 }
 
 type applicationActivityResponse struct {
-	Days              []applicationActivityDay        `json:"days"`
-	RecentDeployments []applicationActivityDeployment `json:"recentDeployments"`
+	Days              []applicationActivityDay        `json:"days" required:"true" doc:"The last 7 days, oldest first"`
+	RecentDeployments []applicationActivityDeployment `json:"recentDeployments" required:"true" doc:"The newest events with changes, newest first"`
 }
 
 // ApplicationActivityHandler summarizes deployments across all applications.
 // Days are bucketed in the caller's timezone, passed as utcOffset in minutes
 // east of UTC, so the chart lines up with the user's calendar days.
-func ApplicationActivityHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+var ApplicationActivityHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-application-activity",
+	Method:      http.MethodGet,
+	Path:        "/activity",
+	Summary:     "Get the deployment activity",
+	Description: "Counts the deployments of the last 7 days and lists the newest events across the applications the user may view.",
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusBadRequest},
+}, func(ctx context.Context, input *struct {
+	UTCOffset int `query:"utcOffset" doc:"The timezone of the days in minutes east of UTC, between -840 and 840"`
+}) (*struct{ Body applicationActivityResponse }, error) {
+	perms, err := permissionsFor(restapi.GinContext(ctx))
+	if err != nil {
+		return nil, err
 	}
 	visible := perms.Scope(models.ResourceApplication, models.ActionRead, "application_id")
 
-	offset, ok := parseUTCOffset(c.Query("utcOffset"))
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid utcOffset"})
-		return
+	offset := input.UTCOffset
+	if offset < -maxUTCOffsetMinutes || offset > maxUTCOffsetMinutes {
+		return nil, huma.Error400BadRequest("invalid utcOffset")
 	}
 
 	zone := time.FixedZone("", offset*60)
@@ -70,8 +78,7 @@ func ApplicationActivityHandler(c *gin.Context) {
 		Find(ctx)
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Msg("failed to load application activity")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	days := make([]applicationActivityDay, applicationActivityDays)
@@ -95,12 +102,13 @@ func ApplicationActivityHandler(c *gin.Context) {
 	recentDeployments, err := recentDeployments(ctx, visible)
 	if err != nil {
 		applicationEventsLog.Error().Err(err).Msg("failed to load recent deployments")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, applicationActivityResponse{Days: days, RecentDeployments: recentDeployments})
-}
+	return &struct{ Body applicationActivityResponse }{
+		Body: applicationActivityResponse{Days: days, RecentDeployments: recentDeployments},
+	}, nil
+})
 
 // recentDeployments returns the newest events across all applications. Events
 // without changes are left out, since polling would otherwise flood the feed.
@@ -134,15 +142,4 @@ func recentDeployments(ctx context.Context, visible func(*gorm.Statement)) ([]ap
 		})
 	}
 	return deployments, nil
-}
-
-func parseUTCOffset(raw string) (int, bool) {
-	if raw == "" {
-		return 0, true
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value < -maxUTCOffsetMinutes || value > maxUTCOffsetMinutes {
-		return 0, false
-	}
-	return value, true
 }

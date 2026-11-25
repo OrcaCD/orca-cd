@@ -13,44 +13,45 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/passkeys"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 )
 
 type adminUserResponse struct {
-	Id        string             `json:"id"`
-	Name      string             `json:"name"`
-	Email     string             `json:"email"`
-	Roles     []userRoleResponse `json:"roles"`
-	Providers []string           `json:"providers"`
-	IsLocal   bool               `json:"isLocal"`
-	CreatedAt string             `json:"createdAt"`
-	UpdatedAt string             `json:"updatedAt"`
+	Id        string             `json:"id" required:"true"`
+	Name      string             `json:"name" required:"true"`
+	Email     string             `json:"email" required:"true"`
+	Roles     []userRoleResponse `json:"roles" required:"true"`
+	Providers []string           `json:"providers" required:"true" doc:"How the user signs in: \"passkey\" for local users, then the names of their OIDC providers"`
+	IsLocal   bool               `json:"isLocal" required:"true" doc:"Whether the user signs in with passkeys. The profile of other users is managed by their OIDC provider."`
+	CreatedAt string             `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt string             `json:"updatedAt" required:"true" format:"date-time"`
 }
 
 type adminUserWithEnrollmentResponse struct {
 	adminUserResponse
-	EnrollmentToken string `json:"enrollmentToken,omitempty"`
+	EnrollmentToken string `json:"enrollmentToken,omitempty" doc:"The token with which the user registers a passkey. Only returned once."`
 }
 
 type adminCreateUserRequest struct {
-	Name  string `json:"name" binding:"required,min=3,max=64"`
-	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" required:"true" minLength:"3" maxLength:"64"`
+	Email string `json:"email" required:"true"`
 	// Without roleIds, the user gets the default role
-	RoleIds []string `json:"roleIds" binding:"max=100"`
+	RoleIds []string `json:"roleIds" maxItems:"100" doc:"Leave it out to give the user the built-in user role"`
 }
 
 type adminUpdateUserRequest struct {
 	// Name and email are validated by adminUserProfile, unless the profile is
 	// managed by an OIDC provider.
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name  string `json:"name" doc:"Required for local users, 3 to 64 characters"`
+	Email string `json:"email" doc:"Required for local users"`
 	// Without roleIds, the roles are left unchanged
-	RoleIds       []string `json:"roleIds" binding:"max=100"`
-	ResetPasskeys bool     `json:"resetPasskeys"`
+	RoleIds       []string `json:"roleIds" maxItems:"100" doc:"The roles an admin assigns. Leave it out to keep them."`
+	ResetPasskeys bool     `json:"resetPasskeys" doc:"Removes the passkeys of a local user and returns a new enrollment token"`
 }
 
 type adminUserProfile struct {
@@ -58,13 +59,19 @@ type adminUserProfile struct {
 	Email string `binding:"required,email"`
 }
 
+// emailAddress is checked with Gin's email rule instead of format:"email",
+// which also accepts domains without a dot, like john@localhost.
+type emailAddress struct {
+	Email string `binding:"required,email"`
+}
+
 // userRoleResponse is a role of a user. Sources tells whether an admin assigned
 // it, it comes from an OIDC group, or both.
 type userRoleResponse struct {
-	Id      string                  `json:"id"`
-	Name    string                  `json:"name"`
-	BuiltIn *models.RoleBuiltIn     `json:"builtIn"`
-	Sources []models.UserRoleSource `json:"sources"`
+	Id      string                  `json:"id" required:"true"`
+	Name    string                  `json:"name" required:"true"`
+	BuiltIn *models.RoleBuiltIn     `json:"builtIn" required:"true" nullable:"true" enum:"admin,user" doc:"Which built-in role it is, null for roles admins created"`
+	Sources []models.UserRoleSource `json:"sources" required:"true" enum:"manual,oidc" doc:"Whether an admin assigned the role, the user gets it from an OIDC group, or both"`
 }
 
 type adminUserProviderRow struct {
@@ -95,11 +102,27 @@ func toAdminUserWithEnrollmentTokenResponse(user *models.User, oidcProviderNames
 	}
 }
 
-func AdminListUsersHandler(c *gin.Context) {
-	var users []models.User
-	if err := db.DB.WithContext(c.Request.Context()).Order("created_at ASC").Find(&users).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+type adminUserOutput struct {
+	Body adminUserResponse
+}
+
+type adminUserWithEnrollmentOutput struct {
+	Body adminUserWithEnrollmentResponse
+}
+
+var AdminListUsersHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-list-users",
+	Method:      http.MethodGet,
+	Path:        "/admin/users",
+	Summary:     "List users",
+	Description: "Lists every user with their roles and how they sign in. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusForbidden},
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body []adminUserResponse }, error) {
+	users, err := gorm.G[models.User](db.DB).Order("created_at ASC").Find(ctx)
+	if err != nil {
+		return nil, internalError()
 	}
 
 	userIds := make([]string, 0, len(users))
@@ -107,16 +130,14 @@ func AdminListUsersHandler(c *gin.Context) {
 		userIds = append(userIds, users[i].Id)
 	}
 
-	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, userIds)
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(ctx, userIds)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), userIds)
+	rolesByUserId, err := loadRolesByUserId(ctx, userIds)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	response := make([]adminUserResponse, 0, len(users))
@@ -124,44 +145,56 @@ func AdminListUsersHandler(c *gin.Context) {
 		response = append(response, toAdminUserResponse(&users[i], oidcProviderNamesByUserId[users[i].Id], rolesByUserId[users[i].Id]))
 	}
 
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body []adminUserResponse }{Body: response}, nil
+})
 
-func AdminGetUserHandler(c *gin.Context) {
-	id := c.Param("id")
-
-	var user models.User
-	if err := db.DB.WithContext(c.Request.Context()).Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
-	}
-
-	response, err := buildAdminUserResponse(c, &user)
+var AdminGetUserHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-get-user",
+	Method:      http.MethodGet,
+	Path:        "/admin/users/{id}",
+	Summary:     "Get a user",
+	Description: requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*adminUserOutput, error) {
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", input.ID).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, huma.Error404NotFound("user not found")
+		}
+		return nil, internalError()
 	}
 
-	c.JSON(http.StatusOK, response)
-}
-
-func AdminCreateUserHandler(c *gin.Context) {
-	var req adminCreateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
-		return
+	response, err := buildAdminUserResponse(ctx, &user)
+	if err != nil {
+		return nil, internalError()
 	}
 
+	return &adminUserOutput{Body: response}, nil
+})
+
+var AdminCreateUserHandler = restapi.Handler(huma.Operation{
+	OperationID:   "admin-create-user",
+	Method:        http.MethodPost,
+	Path:          "/admin/users",
+	DefaultStatus: http.StatusCreated,
+	Summary:       "Create a user",
+	Description: "Creates a user who signs in with a passkey and returns the enrollment token to register it with, which is only shown once. " +
+		requiresAdmin,
+	Tags:     []string{tagAdmin},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusConflict, http.StatusForbidden},
+}, func(ctx context.Context, input *struct{ Body adminCreateUserRequest }) (*adminUserWithEnrollmentOutput, error) {
+	req := input.Body
+	if err := binding.Validator.ValidateStruct(emailAddress{Email: req.Email}); err != nil {
+		return nil, huma.Error400BadRequest("invalid request: name and email are required and must be valid")
+	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	roleIds := uniqueIds(req.RoleIds)
 
 	user := models.User{Name: req.Name, Email: req.Email, LocalAuthEnabled: true}
 	enrollmentToken := ""
-	ctx := c.Request.Context()
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if req.RoleIds == nil {
 			role, err := rbac.BuiltInRole(ctx, tx, models.RoleBuiltInUser)
@@ -184,51 +217,50 @@ func AdminCreateUserHandler(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, errUnknownRole) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if isUniqueConstraintError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
-			return
+			return nil, huma.Error409Conflict("a user with this email already exists")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	rolesByUserId, err := loadRolesByUserId(ctx, []string{user.Id})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	utils.RecordAuditLog(c, "created", "user", user.Id)
-
-	c.JSON(http.StatusCreated, toAdminUserWithEnrollmentTokenResponse(&user, nil, rolesByUserId[user.Id], enrollmentToken))
+	utils.RecordAuditLog(restapi.GinContext(ctx), "created", "user", user.Id)
 	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles)
-}
 
-func AdminUpdateUserHandler(c *gin.Context) {
-	id := c.Param("id")
+	return &adminUserWithEnrollmentOutput{Body: toAdminUserWithEnrollmentTokenResponse(&user, nil, rolesByUserId[user.Id], enrollmentToken)}, nil
+})
 
-	var req adminUpdateUserRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
-		return
-	}
+var AdminUpdateUserHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-update-user",
+	Method:      http.MethodPut,
+	Path:        "/admin/users/{id}",
+	Summary:     "Update a user",
+	Description: "Only the roles of users managed by an OIDC provider can be changed. The last admin can't lose the admin role. " +
+		requiresAdmin,
+	Tags:     []string{tagAdmin},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusConflict, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the user"`
+	Body adminUpdateUserRequest
+}) (*adminUserWithEnrollmentOutput, error) {
+	id, req := input.ID, input.Body
 
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	roleIds := uniqueIds(req.RoleIds)
 
-	ctx := c.Request.Context()
-
-	var user models.User
-	if err := db.DB.WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			return
+			return nil, huma.Error404NotFound("user not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	// The profile of users without local authentication is managed by their OIDC provider,
@@ -236,13 +268,11 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	// sent, and the provider may have set values the validation would reject.
 	if !user.LocalAuthEnabled {
 		if (req.Name != "" && req.Name != user.Name) || (req.Email != "" && !strings.EqualFold(req.Email, user.Email)) || req.ResetPasskeys {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot update a managed user"})
-			return
+			return nil, huma.Error400BadRequest("cannot update a managed user")
 		}
 	} else {
 		if err := binding.Validator.ValidateStruct(adminUserProfile{Name: req.Name, Email: req.Email}); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name and email are required and must be valid"})
-			return
+			return nil, huma.Error400BadRequest("invalid request: name and email are required and must be valid")
 		}
 		if user.Email != req.Email {
 			user.EmailUnconfirmed = false
@@ -254,7 +284,7 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	enrollmentToken := ""
 
 	rolesChanged := false
-	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if user.LocalAuthEnabled {
 			user.UpdatedAt = time.Now()
 			// Only the columns this handler changes, so a concurrent change of
@@ -290,43 +320,46 @@ func AdminUpdateUserHandler(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			return
+			return nil, huma.Error404NotFound("user not found")
 		}
 		if errors.Is(err, errLastAdmin) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin user"})
-			return
+			return nil, huma.Error400BadRequest("cannot demote the last admin user")
 		}
 		if errors.Is(err, errUnknownRole) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		if isUniqueConstraintError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
-			return
+			return nil, huma.Error409Conflict("a user with this email already exists")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	response, err := buildAdminUserResponse(c, &user)
+	response, err := buildAdminUserResponse(ctx, &user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
+	c := restapi.GinContext(ctx)
 	utils.RecordAuditLog(c, "updated", "user", id)
 	if rolesChanged {
 		utils.RecordAuditLog(c, "roles-updated", "user", id)
 	}
-
-	c.JSON(http.StatusOK, adminUserWithEnrollmentResponse{adminUserResponse: response, EnrollmentToken: enrollmentToken})
 	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfileOf(id))
-}
 
-func AdminDeleteUserHandler(c *gin.Context) {
-	id := c.Param("id")
-	ctx := c.Request.Context()
+	return &adminUserWithEnrollmentOutput{Body: adminUserWithEnrollmentResponse{adminUserResponse: response, EnrollmentToken: enrollmentToken}}, nil
+})
+
+var AdminDeleteUserHandler = restapi.Handler(huma.Operation{
+	OperationID: "admin-delete-user",
+	Method:      http.MethodDelete,
+	Path:        "/admin/users/{id}",
+	Summary:     "Delete a user",
+	Description: "The last admin can't be deleted. " + requiresAdmin,
+	Tags:        []string{tagAdmin},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *idInput) (*restapi.MessageOutput, error) {
+	id := input.ID
 
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return keepLastAdmin(ctx, tx, func() error {
@@ -343,20 +376,19 @@ func AdminDeleteUserHandler(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return nil, huma.Error404NotFound("user not found")
 		case errors.Is(err, errLastAdmin):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete the last admin user"})
+			return nil, huma.Error400BadRequest("cannot delete the last admin user")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return nil, internalError()
 		}
-		return
 	}
 
-	utils.RecordAuditLog(c, "deleted", "user", id)
-
-	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
+	utils.RecordAuditLog(restapi.GinContext(ctx), "deleted", "user", id)
 	sse.PublishUpdate(sse.TopicAdminUsers, sse.TopicAdminRoles, sse.TopicProfileOf(id))
-}
+
+	return restapi.Message("user deleted"), nil
+})
 
 var errLastAdmin = errors.New("at least one admin user is required")
 
@@ -396,12 +428,12 @@ func checkRolesExist(ctx context.Context, tx *gorm.DB, roleIds []string) error {
 	return nil
 }
 
-func buildAdminUserResponse(c *gin.Context, user *models.User) (adminUserResponse, error) {
-	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(c, []string{user.Id})
+func buildAdminUserResponse(ctx context.Context, user *models.User) (adminUserResponse, error) {
+	oidcProviderNamesByUserId, err := loadOIDCProviderNamesByUserId(ctx, []string{user.Id})
 	if err != nil {
 		return adminUserResponse{}, err
 	}
-	rolesByUserId, err := loadRolesByUserId(c.Request.Context(), []string{user.Id})
+	rolesByUserId, err := loadRolesByUserId(ctx, []string{user.Id})
 	if err != nil {
 		return adminUserResponse{}, err
 	}
@@ -467,7 +499,7 @@ func compareUserRoles(a, b userRoleResponse) int {
 	return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 }
 
-func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string][]string, error) {
+func loadOIDCProviderNamesByUserId(ctx context.Context, userIds []string) (map[string][]string, error) {
 	providerNamesByUserId := make(map[string][]string, len(userIds))
 	for _, userId := range userIds {
 		providerNamesByUserId[userId] = make([]string, 0)
@@ -478,7 +510,7 @@ func loadOIDCProviderNamesByUserId(c *gin.Context, userIds []string) (map[string
 	}
 
 	var rows []adminUserProviderRow
-	err := db.DB.WithContext(c.Request.Context()).
+	err := db.DB.WithContext(ctx).
 		Table("user_oidc_identities AS uoi").
 		Select("uoi.user_id, op.name AS provider_name").
 		Joins("JOIN oidc_providers AS op ON op.id = uoi.provider_id").

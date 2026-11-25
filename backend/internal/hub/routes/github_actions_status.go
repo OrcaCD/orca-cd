@@ -1,35 +1,48 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
-	"github.com/gin-gonic/gin"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
 // GitHubActionsTriggerStatusHandler returns the result to the originating workflow run.
-func GitHubActionsTriggerStatusHandler(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	claims, ok := verifyGitHubActionsClaims(c)
-	if !ok {
-		return
+var GitHubActionsTriggerStatusHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-github-actions-trigger",
+	Method:      http.MethodGet,
+	Path:        "/github-actions/triggers/{id}",
+	Summary:     "Get the result of a GitHub Actions deployment",
+	Description: "Called by the workflow run that triggered a deployment to wait for its result. " +
+		"It authenticates with the OIDC token of the same run, results are kept for 24 hours.",
+	Tags: []string{tagWebhooks},
+	// Authenticates with the OIDC token of the workflow run, not with a token or session
+	Security: restapi.Public,
+	Errors:   []int{http.StatusUnauthorized, http.StatusNotFound},
+}, func(ctx context.Context, input *struct {
+	ID            string `path:"id" doc:"The trigger ID the deployment returned"`
+	Authorization string `header:"Authorization" doc:"Bearer followed by the OIDC token of the workflow run, with the URL of the hub as audience"`
+}) (*struct{ Body githubactions.Result }, error) {
+	// Set before any error, so no answer is cached
+	restapi.GinContext(ctx).Header("Cache-Control", "no-store")
+	claims, err := verifyGitHubActionsClaims(ctx, input.Authorization)
+	if err != nil {
+		return nil, err
 	}
 	if claims.Repository == "" || claims.RunId == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "trigger not found"})
-		return
+		return nil, huma.Error404NotFound("trigger not found")
 	}
 
-	id := c.Param("id")
-	result, err := githubactions.GetResult(c.Request.Context(), id, claims.Repository, claims.RunId)
+	result, err := githubactions.GetResult(ctx, input.ID, claims.Repository, claims.RunId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "trigger not found"})
-		return
+		return nil, huma.Error404NotFound("trigger not found")
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
-	c.JSON(http.StatusOK, result)
-}
+	return &struct{ Body githubactions.Result }{Body: result}, nil
+})

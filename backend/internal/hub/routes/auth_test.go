@@ -3,6 +3,7 @@ package routes
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -117,12 +119,12 @@ func TestCurrentLocalUserRequiresExplicitAccountFlag(t *testing.T) {
 	setupTestDB(t)
 	for _, local := range []bool{false, true} {
 		user := models.User{Id: "account", LocalAuthEnabled: local}
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 		setUserClaims(t, c, &user)
-		_, _, ok := getCurrentLocalUser(c)
-		if ok != local || (!local && w.Code != http.StatusForbidden) {
+		_, _, err := currentLocalUser(c)
+		var statusErr huma.StatusError
+		if (err == nil) != local || (!local && (!errors.As(err, &statusErr) || statusErr.GetStatus() != http.StatusForbidden)) {
 			t.Fatal("local account access did not follow LocalAuthEnabled")
 		}
 	}
@@ -616,6 +618,7 @@ func TestUpdateOwnProfileHandler_InvalidRequest(t *testing.T) {
 	}{
 		{name: "short name", body: updateOwnProfileRequest{Name: "ab", Email: "new@example.com"}},
 		{name: "invalid email", body: updateOwnProfileRequest{Name: "Updated Name", Email: "not-an-email"}},
+		{name: "email without a dot in the domain", body: updateOwnProfileRequest{Name: "Updated Name", Email: "john@localhost"}},
 		{name: "empty body", body: nil},
 	}
 

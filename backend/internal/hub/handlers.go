@@ -7,7 +7,6 @@ import (
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/routes"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
@@ -42,12 +41,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 	api := router.Group("/api/v1")
 	{
-		// Routes on Huma are part of the OpenAPI spec. The others move there one by one.
-		restAPI := restapi.New(router, api)
-
 		// Public routes (no authentication required)
-		routes.RegisterHealth(restAPI)
-		routes.RegisterOrca(restAPI)
+		api.GET("/health", routes.HealthHandler)
+		api.GET("/orca", routes.OrcaHandler)
 		api.GET("/auth/setup", routes.SetupHandler)
 
 		// OIDC auth flow (public): 10 req/min per IP, burst of 5

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -10,10 +11,13 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
 	"github.com/OrcaCD/orca-cd/internal/hub/setupcode"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 )
 
@@ -28,53 +32,66 @@ var LocalAuthDisabled bool
 var DemoMode bool
 
 type verifySetupCodeRequest struct {
-	SetupCode string `json:"setupCode" binding:"max=128"`
+	SetupCode string `json:"setupCode" maxLength:"128" doc:"The setup code printed in the hub log on first start"`
 }
 
 type updateOwnProfileRequest struct {
-	Name  string `json:"name" binding:"required,min=3,max=64"`
-	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" required:"true" minLength:"3" maxLength:"64"`
+	Email string `json:"email" required:"true"`
 }
 
 type providerInfo struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
+	Id   string `json:"id" required:"true"`
+	Name string `json:"name" required:"true"`
 }
 
 type setupResponse struct {
-	NeedsSetup       bool           `json:"needsSetup"`
-	Providers        []providerInfo `json:"providers"`
-	LocalAuthEnabled bool           `json:"localAuthEnabled"`
-	Demo             bool           `json:"demo"`
+	NeedsSetup       bool           `json:"needsSetup" required:"true" doc:"True until the first user exists"`
+	Providers        []providerInfo `json:"providers" required:"true" doc:"The enabled OIDC providers users can sign in with"`
+	LocalAuthEnabled bool           `json:"localAuthEnabled" required:"true" doc:"Whether users can sign in with passkeys"`
+	Demo             bool           `json:"demo" required:"true" doc:"Whether the hub runs as a read-only demo"`
 }
 
 type profileResponse struct {
-	Id          string                                           `json:"id"`
-	Name        string                                           `json:"name"`
-	Email       string                                           `json:"email"`
-	Picture     string                                           `json:"picture,omitempty"`
-	IsAdmin     bool                                             `json:"isAdmin"`
-	Roles       []userRoleResponse                               `json:"roles"`
-	Permissions map[models.PermissionResource]rbac.ResourceGrant `json:"permissions"`
-	IsLocal     bool                                             `json:"isLocal"`
-	Demo        bool                                             `json:"demo"`
+	Id          string                                           `json:"id" required:"true"`
+	Name        string                                           `json:"name" required:"true"`
+	Email       string                                           `json:"email" required:"true"`
+	Picture     string                                           `json:"picture,omitempty" doc:"The URL of the profile picture, if the OIDC provider has one"`
+	IsAdmin     bool                                             `json:"isAdmin" required:"true"`
+	Roles       []userRoleResponse                               `json:"roles" required:"true"`
+	Permissions map[models.PermissionResource]rbac.ResourceGrant `json:"permissions" required:"true" doc:"The effective permissions per resource type"`
+	IsLocal     bool                                             `json:"isLocal" required:"true" doc:"Whether the user signs in with passkeys rather than OIDC"`
+	Demo        bool                                             `json:"demo" required:"true" doc:"Whether the hub runs as a read-only demo"`
 }
 
-func ProfileHandler(c *gin.Context) {
-	claims, user, ok := getCurrentUser(c)
-	if !ok {
-		return
+type profileOutput struct {
+	Body profileResponse
+}
+
+var ProfileHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-profile",
+	Method:      http.MethodGet,
+	Path:        "/auth/profile",
+	Summary:     "Get your profile",
+	Description: "Returns the signed-in user, including their roles and what they are allowed to do.",
+	Tags:        []string{tagProfile},
+	Security:    restapi.SessionOnly,
+	Errors:      []int{http.StatusUnauthorized},
+}, func(ctx context.Context, _ *struct{}) (*profileOutput, error) {
+	c := restapi.GinContext(ctx)
+	claims, user, err := currentUser(c)
+	if err != nil {
+		return nil, err
 	}
 
-	writeProfile(c, claims, user)
-}
+	return profileFor(c, claims, user)
+})
 
-// writeProfile responds with the profile of the current user, including what they are allowed to do.
-func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
+// profileFor returns the profile of the current user, including what they are allowed to do.
+func profileFor(c *gin.Context, claims *auth.UserClaims, user *models.User) (*profileOutput, error) {
 	perms, err := rbac.For(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	roles := make([]userRoleResponse, 0, len(perms.Roles()))
 	for _, role := range perms.Roles() {
@@ -82,7 +99,7 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 	}
 	slices.SortFunc(roles, compareUserRoles)
 
-	c.JSON(http.StatusOK, profileResponse{
+	return &profileOutput{Body: profileResponse{
 		Id:          user.Id,
 		Name:        user.Name,
 		Email:       user.Email,
@@ -92,79 +109,92 @@ func writeProfile(c *gin.Context, claims *auth.UserClaims, user *models.User) {
 		Permissions: perms.Grants(),
 		IsLocal:     user.LocalAuthEnabled,
 		Demo:        DemoMode,
-	})
+	}}, nil
 }
 
-// getCurrentUser returns the token claims and the user loaded by the auth middleware.
-func getCurrentUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
+// currentUser returns the token claims and the user loaded by the auth middleware.
+func currentUser(c *gin.Context) (*auth.UserClaims, *models.User, error) {
 	claims, hasClaims := auth.GetClaims(c)
 	user, hasUser := auth.GetUser(c)
 	if !hasClaims || !hasUser {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
-		return nil, nil, false
+		return nil, nil, huma.Error401Unauthorized("missing authentication")
 	}
-	return claims, user, true
+	return claims, user, nil
 }
 
-func getCurrentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, bool) {
-	claims, user, ok := getCurrentUser(c)
-	if !ok {
-		return nil, nil, false
+func currentLocalUser(c *gin.Context) (*auth.UserClaims, *models.User, error) {
+	claims, user, err := currentUser(c)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if !user.LocalAuthEnabled {
-		c.JSON(http.StatusForbidden, gin.H{"error": "this operation is not available for sso users"})
-		return nil, nil, false
+		return nil, nil, huma.Error403Forbidden("this operation is not available for sso users")
 	}
 
-	return claims, user, true
+	return claims, user, nil
 }
 
-func UpdateOwnProfileHandler(c *gin.Context) {
-	var req updateOwnProfileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: name (min 3 chars) and valid email are required"})
-		return
+var UpdateOwnProfileHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-profile",
+	Method:      http.MethodPut,
+	Path:        "/auth/profile",
+	Summary:     "Update your profile",
+	Description: "Changes the name and email of a user who signs in with passkeys and renews the session cookie. " +
+		"A changed email is marked as unconfirmed. Users from an OIDC provider can't change their profile.",
+	Tags:     []string{tagProfile},
+	Security: restapi.SessionOnly,
+	Errors:   []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict},
+}, func(ctx context.Context, input *struct{ Body updateOwnProfileRequest }) (*profileOutput, error) {
+	c := restapi.GinContext(ctx)
+	req := input.Body
+	if err := binding.Validator.ValidateStruct(emailAddress{Email: req.Email}); err != nil {
+		return nil, huma.Error400BadRequest("invalid request: name (min 3 chars) and valid email are required")
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
-	claims, user, ok := getCurrentLocalUser(c)
-	if !ok {
-		return
+	claims, user, err := currentLocalUser(c)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := db.DB.WithContext(c.Request.Context()).Model(&models.User{}).Where("id = ?", user.Id).Updates(map[string]any{"name": req.Name, "email": req.Email, "email_unconfirmed": user.EmailUnconfirmed || req.Email != user.Email}).Error; err != nil {
+	if _, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).
+		Select("name", "email", "email_unconfirmed").
+		Updates(ctx, models.User{Name: req.Name, Email: req.Email, EmailUnconfirmed: user.EmailUnconfirmed || req.Email != user.Email}); err != nil {
 		if isUniqueConstraintError(err) {
-			c.JSON(http.StatusConflict, gin.H{"error": "a user with this email already exists"})
-			return
+			return nil, huma.Error409Conflict("a user with this email already exists")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	user.Name = req.Name
 	user.Email = req.Email
 
 	token, err := auth.GenerateUserTokenWithPicture(user, claims.Picture)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	auth.SetAuthCookie(c, token)
-	writeProfile(c, claims, user)
-}
+	return profileFor(c, claims, user)
+})
 
-func SetupHandler(c *gin.Context) {
-	count, err := gorm.G[models.User](db.DB).Count(c.Request.Context(), "*")
+var SetupHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-auth-setup",
+	Method:      http.MethodGet,
+	Path:        "/auth/setup",
+	Summary:     "Get the sign-in options",
+	Description: "Tells the login page whether the hub still needs its first user and how users can sign in.",
+	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
+}, func(ctx context.Context, _ *struct{}) (*struct{ Body setupResponse }, error) {
+	count, err := gorm.G[models.User](db.DB).Count(ctx, "*")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
-	providers, err := gorm.G[models.OIDCProvider](db.DB).Where("enabled = ?", true).Find(c.Request.Context())
+	providers, err := gorm.G[models.OIDCProvider](db.DB).Where("enabled = ?", true).Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	infos := make([]providerInfo, 0, len(providers))
@@ -172,67 +202,93 @@ func SetupHandler(c *gin.Context) {
 		infos = append(infos, providerInfo{Id: p.Id, Name: p.Name})
 	}
 
-	c.JSON(http.StatusOK, setupResponse{
+	return &struct{ Body setupResponse }{Body: setupResponse{
 		NeedsSetup:       count == 0,
 		Providers:        infos,
 		LocalAuthEnabled: !LocalAuthDisabled,
 		Demo:             DemoMode,
-	})
-}
+	}}, nil
+})
 
-func VerifySetupCodeHandler(c *gin.Context) {
-	var req verifySetupCodeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
+var VerifySetupCodeHandler = restapi.Handler(huma.Operation{
+	OperationID: "verify-setup-code",
+	Method:      http.MethodPost,
+	Path:        "/auth/setup/verify",
+	Summary:     "Check the setup code",
+	Description: "Checks the setup code from the hub log before the first user registers. Rate limited.",
+	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
+	Errors:      []int{http.StatusForbidden},
+}, func(ctx context.Context, input *struct{ Body verifySetupCodeRequest }) (*restapi.MessageOutput, error) {
+	if !setupcode.Verify(input.Body.SetupCode) {
+		seclog.Warn(restapi.GinContext(ctx), seclog.SetupCodeFailed)
+		return nil, huma.Error403Forbidden(errInvalidSetupCode)
 	}
 
-	if !setupcode.Verify(req.SetupCode) {
-		seclog.Warn(c, seclog.SetupCodeFailed)
-		c.JSON(http.StatusForbidden, gin.H{"error": errInvalidSetupCode})
-		return
-	}
+	return restapi.Message("setup code accepted"), nil
+})
 
-	c.JSON(http.StatusOK, gin.H{"message": "setup code accepted"})
-}
-
-func LogoutHandler(c *gin.Context) {
-	auth.ClearAuthCookie(c)
-	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
-}
+var LogoutHandler = restapi.Handler(huma.Operation{
+	OperationID: "logout",
+	Method:      http.MethodPost,
+	Path:        "/auth/logout",
+	Summary:     "Sign out",
+	Description: "Clears the session cookie of this browser.",
+	Tags:        []string{tagAuth},
+	Security:    restapi.SessionOnly,
+}, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
+	auth.ClearAuthCookie(restapi.GinContext(ctx))
+	return restapi.Message("logged out successfully"), nil
+})
 
 // LogoutAllHandler invalidates every token issued to the current user, including the current one.
-func LogoutAllHandler(c *gin.Context) {
-	_, user, ok := getCurrentUser(c)
-	if !ok {
-		return
+var LogoutAllHandler = restapi.Handler(huma.Operation{
+	OperationID: "logout-all",
+	Method:      http.MethodPost,
+	Path:        "/auth/logout-all",
+	Summary:     "Sign out everywhere",
+	Description: "Invalidates every session of the user, including this one.",
+	Tags:        []string{tagAuth},
+	Security:    restapi.SessionOnly,
+	Errors:      []int{http.StatusUnauthorized},
+}, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
+	c := restapi.GinContext(ctx)
+	_, user, err := currentUser(c)
+	if err != nil {
+		return nil, err
 	}
 
-	rows, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(c.Request.Context(), "token_version", gorm.Expr("token_version + 1"))
+	rows, err := gorm.G[models.User](db.DB).Where("id = ?", user.Id).Update(ctx, "token_version", gorm.Expr("token_version + 1"))
 	if err != nil || rows == 0 {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	utils.RecordAuditLog(c, "revoked-sessions", "user", user.Id)
 
 	auth.ClearAuthCookie(c)
-	c.JSON(http.StatusOK, gin.H{"message": "logged out everywhere"})
-}
+	return restapi.Message("logged out everywhere"), nil
+})
 
 // DemoLoginHandler grants the deliberately public, read-only demo session.
-func DemoLoginHandler(c *gin.Context) {
+var DemoLoginHandler = restapi.Handler(huma.Operation{
+	OperationID: "demo-login",
+	Method:      http.MethodPost,
+	Path:        "/auth/demo",
+	Summary:     "Sign in to the demo",
+	Description: "Sets a session cookie for the read-only demo user. Only available when the hub runs as a demo. Rate limited.",
+	Tags:        []string{tagAuth},
+	Security:    restapi.Public,
+	Errors:      []int{http.StatusForbidden},
+}, func(ctx context.Context, _ *struct{}) (*restapi.MessageOutput, error) {
 	if !DemoMode {
-		c.JSON(http.StatusForbidden, gin.H{"error": "demo mode is disabled"})
-		return
+		return nil, huma.Error403Forbidden("demo mode is disabled")
 	}
-	user, err := gorm.G[models.User](db.DB).Where("id = ?", db.DemoUserID).First(c.Request.Context())
+	user, err := gorm.G[models.User](db.DB).Where("id = ?", db.DemoUserID).First(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
-	if !setPasskeyLoginCookie(c, &user) {
-		return
+	if err := setLoginCookie(restapi.GinContext(ctx), &user); err != nil {
+		return nil, err
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "login successful"})
-}
+	return restapi.Message("login successful"), nil
+})

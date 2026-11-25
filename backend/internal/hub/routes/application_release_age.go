@@ -2,7 +2,6 @@ package routes
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
@@ -14,9 +13,11 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -33,14 +34,14 @@ const (
 // releaseAgeSettings are the release age settings of an application. A nil
 // MinimumSeconds uses the global default.
 type releaseAgeSettings struct {
-	MinimumSeconds    *int64           `json:"minimumSeconds"`
-	AllowedRegistries []string         `json:"allowedRegistries"`
-	ServiceOverrides  map[string]int64 `json:"serviceOverrides"`
+	MinimumSeconds    *int64           `json:"minimumSeconds" required:"true" nullable:"true" doc:"The minimum release age of the images, null uses the global one"`
+	AllowedRegistries []string         `json:"allowedRegistries" required:"true" doc:"Registry hosts whose images skip the minimum release age of the application"`
+	ServiceOverrides  map[string]int64 `json:"serviceOverrides" required:"true" doc:"The minimum release age of single compose services, by service name"`
 }
 
 type globalReleaseAgeSettings struct {
-	MinimumSeconds    int64    `json:"minimumSeconds"`
-	AllowedRegistries []string `json:"allowedRegistries"`
+	MinimumSeconds    int64    `json:"minimumSeconds" required:"true" doc:"The default minimum release age of applications and the least one of every image not from an allowed registry"`
+	AllowedRegistries []string `json:"allowedRegistries" required:"true" doc:"Registry hosts whose images skip the global minimum release age"`
 }
 
 func toReleaseAgeSettings(app *models.Application) releaseAgeSettings {
@@ -85,98 +86,80 @@ func normalizeRegistries(registries []string) ([]string, bool) {
 	return normalized, true
 }
 
-// nullableSeconds is a number of seconds that may be null, telling a null
-// apart from a missing field.
-type nullableSeconds struct {
-	Set   bool
-	Value *int64
-}
-
-func (n *nullableSeconds) UnmarshalJSON(data []byte) error {
-	n.Set = true
-	n.Value = nil
-	if string(data) == "null" {
+// checkMinimumSeconds returns a 400 if seconds is not a valid minimum release
+// age, which must not be below the global one.
+func checkMinimumSeconds(seconds *int64, global models.Settings) error {
+	if seconds == nil {
 		return nil
 	}
-	var seconds int64
-	if err := json.Unmarshal(data, &seconds); err != nil {
-		return err
+	if !validMinimumSeconds(*seconds) {
+		return huma.Error400BadRequest("minimum release age must be between 0 and 365 days")
 	}
-	n.Value = &seconds
+	if *seconds < global.MinimumReleaseAgeSeconds {
+		return huma.Error400BadRequest("minimum release age must not be below the global minimum release age")
+	}
 	return nil
 }
 
-// checkMinimumSeconds answers with 400 and returns false if seconds is not a
-// valid minimum release age, which must not be below the global one.
-func checkMinimumSeconds(c *gin.Context, seconds *int64, global models.Settings) bool {
-	if seconds == nil {
-		return true
-	}
-	if !validMinimumSeconds(*seconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
-		return false
-	}
-	if *seconds < global.MinimumReleaseAgeSeconds {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must not be below the global minimum release age"})
-		return false
-	}
-	return true
-}
-
-// loadGlobalReleaseAge returns the global settings, or answers with 500.
-func loadGlobalReleaseAge(c *gin.Context) (models.Settings, bool) {
-	global, err := releaseage.Global(c.Request.Context())
+// checkReleaseAge checks seconds against the global settings when it is set.
+func checkReleaseAge(ctx context.Context, seconds *int64) error {
+	global, err := releaseage.Global(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return global, false
+		return internalError()
 	}
-	return global, true
+	return checkMinimumSeconds(seconds, global)
 }
 
+const invalidRegistriesMessage = "allowed registries must be at most 50 registry hosts, e.g. registry.example.com:5000"
+
+// The minimum seconds are required but nullable: null uses the global
+// minimum release age, while a missing field is refused.
 type updateReleaseAgeRequest struct {
-	MinimumSeconds    nullableSeconds `json:"minimumSeconds"`
-	AllowedRegistries []string        `json:"allowedRegistries" binding:"required"`
+	MinimumSeconds    *int64   `json:"minimumSeconds" required:"true" nullable:"true" doc:"The minimum release age in seconds, at most 365 days and not below the global one. null uses the global one."`
+	AllowedRegistries []string `json:"allowedRegistries" required:"true" nullable:"false" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the minimum release age"`
 }
 
 // UpdateReleaseAgeSettingsHandler configures the minimum release age of the
 // images an application is updated to. A null minimumSeconds uses the global
 // one, which is also the least minimum release age.
-func UpdateReleaseAgeSettingsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
+var UpdateReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-application-release-age-settings",
+	Method:      http.MethodPut,
+	Path:        "/applications/{id}/release-age/settings",
+	Summary:     "Update the release age settings of an application",
+	Description: "Sets how old an image must be before the application is updated to it. " + requires(models.ResourceApplication, models.ActionUpdate),
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID   string `path:"id" doc:"The ID of the application"`
+	Body updateReleaseAgeRequest
+}) (*applicationOutput, error) {
+	id, req := input.ID, input.Body
 
-	var req updateReleaseAgeRequest
-	if err := c.ShouldBindJSON(&req); err != nil || !req.MinimumSeconds.Set {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-	global, ok := loadGlobalReleaseAge(c)
-	if !ok || !checkMinimumSeconds(c, req.MinimumSeconds.Value, global) {
-		return
+	if err := checkReleaseAge(ctx, req.MinimumSeconds); err != nil {
+		return nil, err
 	}
 	registries, ok := normalizeRegistries(req.AllowedRegistries)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed registries must be at most 50 registry hosts, e.g. registry.example.com:5000"})
-		return
+		return nil, huma.Error400BadRequest(invalidRegistriesMessage)
 	}
 
 	rowsAffected, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", id).
 		Select("MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries").
 		Updates(ctx, models.Application{
-			MinimumReleaseAgeSeconds:    req.MinimumSeconds.Value,
+			MinimumReleaseAgeSeconds:    req.MinimumSeconds,
 			ReleaseAgeAllowedRegistries: registries,
 		})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		return
+		return nil, huma.Error404NotFound("application not found")
 	}
-	respondWithUpdatedApplication(c, id)
-}
+	return updatedApplication(restapi.GinContext(ctx), id)
+})
 
 const (
 	maxServiceReleaseAgeOverrides = 100
@@ -184,7 +167,7 @@ const (
 )
 
 type updateServiceReleaseAgeRequest struct {
-	MinimumSeconds nullableSeconds `json:"minimumSeconds"`
+	MinimumSeconds *int64 `json:"minimumSeconds" required:"true" nullable:"true" doc:"The minimum release age of the service in seconds, at most 365 days and not below the global one. null removes the override."`
 }
 
 // serviceOverridesMu serializes changes to the service overrides, which are
@@ -193,19 +176,28 @@ var serviceOverridesMu sync.Mutex
 
 // UpdateServiceReleaseAgeHandler overrides the minimum release age of one
 // compose service. A null minimumSeconds removes the override.
-func UpdateServiceReleaseAgeHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
-	service := c.Param("service")
+var UpdateServiceReleaseAgeHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-service-release-age",
+	Method:      http.MethodPut,
+	Path:        "/applications/{id}/release-age/services/{service}",
+	Summary:     "Override the release age of a service",
+	Description: "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. " +
+		requires(models.ResourceApplication, models.ActionUpdate),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID      string `path:"id" doc:"The ID of the application"`
+	Service string `path:"service" doc:"The name of the compose service"`
+	Body    updateServiceReleaseAgeRequest
+}) (*applicationOutput, error) {
+	id, service, req := input.ID, input.Service, input.Body
 
-	var req updateServiceReleaseAgeRequest
-	if err := c.ShouldBindJSON(&req); err != nil || !req.MinimumSeconds.Set || service == "" || len(service) > maxServiceNameLength {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
+	if service == "" || len(service) > maxServiceNameLength {
+		return nil, huma.Error400BadRequest("invalid request")
 	}
-	global, ok := loadGlobalReleaseAge(c)
-	if !ok || !checkMinimumSeconds(c, req.MinimumSeconds.Value, global) {
-		return
+	if err := checkReleaseAge(ctx, req.MinimumSeconds); err != nil {
+		return nil, err
 	}
 
 	serviceOverridesMu.Lock()
@@ -214,96 +206,109 @@ func UpdateServiceReleaseAgeHandler(c *gin.Context) {
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	overrides := maps.Clone(application.ReleaseAgeServiceOverrides)
 	if overrides == nil {
 		overrides = map[string]int64{}
 	}
-	if req.MinimumSeconds.Value == nil {
+	if req.MinimumSeconds == nil {
 		delete(overrides, service)
 	} else {
 		if _, exists := overrides[service]; !exists && len(overrides) >= maxServiceReleaseAgeOverrides {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "the minimum release age can be overridden for at most 100 services"})
-			return
+			return nil, huma.Error400BadRequest("the minimum release age can be overridden for at most 100 services")
 		}
-		overrides[service] = *req.MinimumSeconds.Value
+		overrides[service] = *req.MinimumSeconds
 	}
 	if _, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", id).
 		Select("ReleaseAgeServiceOverrides").
 		Updates(ctx, models.Application{ReleaseAgeServiceOverrides: overrides}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
-	respondWithUpdatedApplication(c, id)
-}
+	return updatedApplication(restapi.GinContext(ctx), id)
+})
 
-// respondWithUpdatedApplication answers with the application after its
-// release age settings changed and sends them to its agent.
-func respondWithUpdatedApplication(c *gin.Context, id string) {
+// updatedApplication returns the application after its release age settings
+// changed and sends them to its agent.
+func updatedApplication(c *gin.Context, id string) (*applicationOutput, error) {
 	application, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
 		Preload("Agent", nil).
 		Where("id = ?", id).
 		First(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	utils.RecordAuditLog(c, "updated", "application", id)
-	c.JSON(http.StatusOK, toApplicationResponse(&application))
 	sse.PublishUpdate(sse.TopicApplications.For(id))
 	sendAgentSettings(c, application.AgentId)
+	return &applicationOutput{Body: toApplicationResponse(&application)}, nil
+}
+
+type globalReleaseAgeOutput struct {
+	Body globalReleaseAgeSettings
 }
 
 // GetReleaseAgeSettingsHandler returns the global release age settings.
-func GetReleaseAgeSettingsHandler(c *gin.Context) {
-	settings, ok := loadGlobalReleaseAge(c)
-	if !ok {
-		return
+var GetReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-release-age-settings",
+	Method:      http.MethodGet,
+	Path:        "/settings/release-age",
+	Summary:     "Get the global release age settings",
+	Description: "Returns the default minimum release age of applications and the registries that skip it.",
+	Tags:        []string{tagApplications},
+	Security:    restapi.Authenticated,
+}, func(ctx context.Context, _ *struct{}) (*globalReleaseAgeOutput, error) {
+	settings, err := releaseage.Global(ctx)
+	if err != nil {
+		return nil, internalError()
 	}
-	c.JSON(http.StatusOK, globalReleaseAgeSettings{
+	return &globalReleaseAgeOutput{Body: globalReleaseAgeSettings{
 		MinimumSeconds:    settings.MinimumReleaseAgeSeconds,
 		AllowedRegistries: nonNil(settings.ReleaseAgeAllowedRegistries),
-	})
-}
+	}}, nil
+})
 
 type updateGlobalReleaseAgeRequest struct {
-	MinimumSeconds    *int64   `json:"minimumSeconds" binding:"required"`
-	AllowedRegistries []string `json:"allowedRegistries" binding:"required"`
+	MinimumSeconds    int64    `json:"minimumSeconds" required:"true" doc:"The minimum release age in seconds, at most 365 days"`
+	AllowedRegistries []string `json:"allowedRegistries" required:"true" nullable:"false" doc:"At most 50 registry hosts, e.g. registry.example.com:5000, whose images skip the global minimum release age"`
 }
 
 // AdminUpdateReleaseAgeSettingsHandler changes the global release age settings.
 // The minimum release age is the default of applications without their own,
 // and the least one of every image that is not from an allowed registry.
-func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+var AdminUpdateReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
+	OperationID: "update-release-age-settings",
+	Method:      http.MethodPut,
+	Path:        "/admin/settings/release-age",
+	Summary:     "Update the global release age settings",
+	Description: "Sets the default minimum release age of applications, which is also the least one of every image not from an allowed registry. " +
+		"Application and service ages below a raised minimum are raised to it. " + requiresAdmin,
+	Tags:     []string{tagAdmin},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	Body updateGlobalReleaseAgeRequest
+}) (*globalReleaseAgeOutput, error) {
+	c := restapi.GinContext(ctx)
+	req := input.Body
 
-	var req updateGlobalReleaseAgeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
-		return
-	}
-	if !validMinimumSeconds(*req.MinimumSeconds) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum release age must be between 0 and 365 days"})
-		return
+	if !validMinimumSeconds(req.MinimumSeconds) {
+		return nil, huma.Error400BadRequest("minimum release age must be between 0 and 365 days")
 	}
 	registries, ok := normalizeRegistries(req.AllowedRegistries)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "allowed registries must be at most 50 registry hosts, e.g. registry.example.com:5000"})
-		return
+		return nil, huma.Error400BadRequest(invalidRegistriesMessage)
 	}
 
 	settings := models.Settings{
 		Id:                          models.SettingsId,
-		MinimumReleaseAgeSeconds:    *req.MinimumSeconds,
+		MinimumReleaseAgeSeconds:    req.MinimumSeconds,
 		ReleaseAgeAllowedRegistries: registries,
 	}
 	// The overrides are read and written back as a whole, see UpdateServiceReleaseAgeHandler.
@@ -320,18 +325,17 @@ func AdminUpdateReleaseAgeSettingsHandler(c *gin.Context) {
 	serviceOverridesMu.Unlock()
 	if err != nil {
 		releaseAgeLog.Error().Err(err).Msg("failed to update the global release age settings")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 
 	utils.RecordAuditLog(c, "updated", "settings", "release-age")
-	c.JSON(http.StatusOK, globalReleaseAgeSettings{MinimumSeconds: settings.MinimumReleaseAgeSeconds, AllowedRegistries: registries})
 	sse.PublishUpdate(sse.TopicSettings)
 	for _, id := range raised {
 		sse.PublishUpdate(sse.TopicApplications.For(id))
 	}
 	sendAllAgentSettings(c)
-}
+	return &globalReleaseAgeOutput{Body: globalReleaseAgeSettings{MinimumSeconds: settings.MinimumReleaseAgeSeconds, AllowedRegistries: registries}}, nil
+})
 
 // raiseReleaseAgesBelow makes the stored ages of applications and services
 // match a raised global minimum, so they show and save the age that applies.
@@ -389,57 +393,64 @@ func sendAllAgentSettings(c *gin.Context) {
 }
 
 type imageUpdateResponse struct {
-	Service           string  `json:"service"`
-	Image             string  `json:"image"`
-	Status            string  `json:"status"`
-	CurrentDigest     string  `json:"currentDigest"`
-	CurrentVersion    string  `json:"currentVersion"`
-	NewDigest         string  `json:"newDigest"`
-	NewVersion        string  `json:"newVersion"`
-	PushedAt          *string `json:"pushedAt"`
-	FirstSeen         bool    `json:"firstSeen"`
-	EligibleAt        *string `json:"eligibleAt"`
-	MinimumAgeSeconds int64   `json:"minimumAgeSeconds"`
+	Service           string  `json:"service" required:"true"`
+	Image             string  `json:"image" required:"true"`
+	Status            string  `json:"status" required:"true"`
+	CurrentDigest     string  `json:"currentDigest" required:"true"`
+	CurrentVersion    string  `json:"currentVersion" required:"true"`
+	NewDigest         string  `json:"newDigest" required:"true"`
+	NewVersion        string  `json:"newVersion" required:"true"`
+	PushedAt          *string `json:"pushedAt" required:"true" nullable:"true" format:"date-time"`
+	FirstSeen         bool    `json:"firstSeen" required:"true"`
+	EligibleAt        *string `json:"eligibleAt" required:"true" nullable:"true" format:"date-time" doc:"When the new image is old enough to update to"`
+	MinimumAgeSeconds int64   `json:"minimumAgeSeconds" required:"true"`
 	// AgeSource says where the minimum age comes from: label, service,
 	// application or global.
-	AgeSource string `json:"ageSource"`
+	AgeSource string `json:"ageSource" required:"true" enum:"label,service,application,global" doc:"Where the minimum age comes from"`
 	// MinimumAgeEnforced means the global minimum raised the age of its source.
-	MinimumAgeEnforced bool   `json:"minimumAgeEnforced"`
-	Reason             string `json:"reason"`
+	MinimumAgeEnforced bool   `json:"minimumAgeEnforced" required:"true" doc:"The global minimum release age raised the age of its source"`
+	Reason             string `json:"reason" required:"true"`
 }
 
 type imageUpdatesResponse struct {
-	CheckedAt *string               `json:"checkedAt"`
-	Images    []imageUpdateResponse `json:"images"`
+	CheckedAt *string               `json:"checkedAt" required:"true" nullable:"true" format:"date-time" doc:"When the images were last checked"`
+	Images    []imageUpdateResponse `json:"images" required:"true"`
 }
 
 // ListApplicationImageUpdatesHandler returns the update state of every image
 // of the application, as of the last image check.
-func ListApplicationImageUpdatesHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
+var ListApplicationImageUpdatesHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-application-image-updates",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}/image-updates",
+	Summary:     "List the image updates of an application",
+	Description: "Returns the update state of every image of the application as of the last image check, " +
+		"including updates held back by the minimum release age. " + requires(models.ResourceApplication, models.ActionRead),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusNotFound, http.StatusForbidden},
+}, func(ctx context.Context, input *struct {
+	ID string `path:"id" doc:"The ID of the application"`
+}) (*struct{ Body imageUpdatesResponse }, error) {
+	id := input.ID
 
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-			return
+			return nil, huma.Error404NotFound("application not found")
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	rows, err := gorm.G[models.ApplicationImageUpdate](db.DB).
 		Where("application_id = ?", id).
 		Order("service").
 		Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	global, err := releaseage.Global(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	_, inherited := releaseage.MinimumSeconds(&application, global)
 
@@ -470,8 +481,8 @@ func ListApplicationImageUpdatesHandler(c *gin.Context) {
 	if !checkedAt.IsZero() {
 		response.CheckedAt = formatTimestamp(&checkedAt)
 	}
-	c.JSON(http.StatusOK, response)
-}
+	return &struct{ Body imageUpdatesResponse }{Body: response}, nil
+})
 
 func ageSource(row *models.ApplicationImageUpdate, app *models.Application, inherited bool) string {
 	// A label wins over the settings, even when the global minimum raises it.
