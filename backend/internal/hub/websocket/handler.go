@@ -576,6 +576,11 @@ func withoutIgnoredServices(status *messages.ApplicationStatus, ignored []string
 	services := slices.DeleteFunc(slices.Clone(status.Services), func(service *messages.ServiceStatus) bool {
 		return service == nil || slices.Contains(ignored, service.GetName())
 	})
+	if len(services) == 0 {
+		// Nothing counts for the health, which would otherwise stay unknown
+		// and fail the health gate of every deployment.
+		return &messages.ApplicationStatus{ApplicationId: status.ApplicationId, Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY}
+	}
 	return &messages.ApplicationStatus{
 		ApplicationId: status.ApplicationId,
 		Health:        servicesHealth(services),
@@ -585,7 +590,7 @@ func withoutIgnoredServices(status *messages.ApplicationStatus, ignored []string
 
 // servicesHealth combines the health of services: unhealthy when one is
 // unhealthy or stopped while the others run, stopped when all are stopped,
-// unknown while one is still starting or when there is none.
+// unknown while one is still starting.
 func servicesHealth(services []*messages.ServiceStatus) messages.HealthStatus {
 	if len(services) == 0 {
 		return messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED

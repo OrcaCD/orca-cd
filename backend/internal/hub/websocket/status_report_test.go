@@ -313,7 +313,7 @@ func TestWithoutIgnoredServices(t *testing.T) {
 		{"other service unhealthy", status(unhealthy, service("web", unhealthy), service("db", healthy), service("worker", healthy)), models.Degraded},
 		{"other services stopped", status(unhealthy, service("web", stopped), service("db", stopped), service("worker", healthy)), models.Stopped},
 		{"other service starting", status(unhealthy, service("web", starting), service("worker", unhealthy)), models.UnknownHealth},
-		{"only ignored services", status(unhealthy, service("worker", unhealthy)), models.UnknownHealth},
+		{"only ignored services", status(unhealthy, service("worker", unhealthy)), models.Healthy},
 		{"no services from older agents", status(unhealthy), models.Unhealthy},
 	}
 	for _, tt := range tests {
