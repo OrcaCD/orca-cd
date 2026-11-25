@@ -22,7 +22,7 @@ import (
 type rolePermissionRequest struct {
 	// Not an enum, so unknown values keep answering "invalid permission"
 	Resource   models.PermissionResource `json:"resource" required:"true" minLength:"1" doc:"application, repository, agent, notification or api_token"`
-	Action     models.PermissionAction   `json:"action" required:"true" minLength:"1" doc:"An action the resource supports, like read, create, update, delete, deploy, pull_images, rollback or sync"`
+	Action     models.PermissionAction   `json:"action" required:"true" minLength:"1" doc:"An action the resource supports, like read, create, update, delete, deploy, pull_images, rollback, sync or inspect"`
 	ResourceId *string                   `json:"resourceId" doc:"Limits the permission to one resource. Leave it out or null to grant it on all of them. Not allowed for create."`
 }
 
@@ -43,7 +43,7 @@ type roleOIDCGroup struct {
 
 type rolePermissionResponse struct {
 	Resource   models.PermissionResource `json:"resource" required:"true" enum:"application,repository,agent,notification,api_token"`
-	Action     models.PermissionAction   `json:"action" required:"true" enum:"read,create,update,delete,deploy,pull_images,rollback,sync"`
+	Action     models.PermissionAction   `json:"action" required:"true" enum:"read,create,update,delete,deploy,pull_images,rollback,sync,inspect"`
 	ResourceId *string                   `json:"resourceId" required:"true" nullable:"true" doc:"The resource the permission is limited to, null for all of them"`
 }
 

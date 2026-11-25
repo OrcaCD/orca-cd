@@ -1051,6 +1051,231 @@
         ],
         "type": "object"
       },
+      "ContainerInspectResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "inspectJson": {
+            "description": "The output of docker inspect as JSON, without environment variables",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inspectJson"
+        ],
+        "type": "object"
+      },
+      "ContainerListResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "containers": {
+            "items": {
+              "$ref": "#/components/schemas/ContainerResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "containers"
+        ],
+        "type": "object"
+      },
+      "ContainerMountResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "destination": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "destination",
+          "readOnly"
+        ],
+        "type": "object"
+      },
+      "ContainerNetworkResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ipAddress": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "ipAddress",
+          "aliases"
+        ],
+        "type": "object"
+      },
+      "ContainerResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "containerNumber": {
+            "description": "The compose replica number, 0 when unknown",
+            "format": "int32",
+            "type": "integer"
+          },
+          "cpuLimit": {
+            "description": "The CPUs the container may use, 0 without a limit",
+            "format": "double",
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "description": "Why the container could not start",
+            "type": "string"
+          },
+          "exitCode": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "finishedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "health": {
+            "type": "string"
+          },
+          "healthFailingStreak": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "healthRaw": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "imageDigest": {
+            "description": "Empty for images that did not come from a registry",
+            "type": "string"
+          },
+          "imageId": {
+            "type": "string"
+          },
+          "logDriver": {
+            "type": "string"
+          },
+          "mounts": {
+            "items": {
+              "$ref": "#/components/schemas/ContainerMountResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "networks": {
+            "items": {
+              "$ref": "#/components/schemas/ContainerNetworkResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "oomKilled": {
+            "type": "boolean"
+          },
+          "ports": {
+            "items": {
+              "$ref": "#/components/schemas/PortBindingResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "restartCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "restartPolicy": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "The Docker state, like running or exited",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "service",
+          "containerNumber",
+          "state",
+          "health",
+          "healthRaw",
+          "healthFailingStreak",
+          "image",
+          "imageId",
+          "imageDigest",
+          "restartCount",
+          "restartPolicy",
+          "exitCode",
+          "oomKilled",
+          "error",
+          "logDriver",
+          "cpuLimit",
+          "createdAt",
+          "startedAt",
+          "finishedAt",
+          "ports",
+          "networks",
+          "mounts"
+        ],
+        "type": "object"
+      },
       "CreateAPITokenRequest": {
         "additionalProperties": true,
         "properties": {
@@ -2308,6 +2533,35 @@
         ],
         "type": "object"
       },
+      "PortBindingResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "ip": {
+            "type": "string"
+          },
+          "privatePort": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "publicPort": {
+            "description": "0 when the port is not published",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ip",
+          "publicPort",
+          "privatePort",
+          "protocol"
+        ],
+        "type": "object"
+      },
       "ProfileResponse": {
         "additionalProperties": true,
         "properties": {
@@ -2784,7 +3038,7 @@
         "additionalProperties": true,
         "properties": {
           "action": {
-            "description": "An action the resource supports, like read, create, update, delete, deploy, pull_images, rollback or sync",
+            "description": "An action the resource supports, like read, create, update, delete, deploy, pull_images, rollback, sync or inspect",
             "minLength": 1,
             "type": "string"
           },
@@ -2819,7 +3073,8 @@
               "deploy",
               "pull_images",
               "rollback",
-              "sync"
+              "sync",
+              "inspect"
             ],
             "type": "string"
           },
@@ -6770,6 +7025,300 @@
           }
         ],
         "summary": "Update an application",
+        "tags": [
+          "Applications"
+        ]
+      }
+    },
+    "/applications/{id}/containers": {
+      "get": {
+        "description": "Loads the containers from the agent of the application. Answers 422 when the agent is too old for container monitoring, 503 while it is offline, 504 when it doesn't respond in time and 502 when it fails. Needs the `application:read` permission.",
+        "operationId": "list-application-containers",
+        "parameters": [
+          {
+            "description": "The ID of the resource",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The ID of the resource",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired authentication"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "apiToken": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List the containers of an application",
+        "tags": [
+          "Applications"
+        ]
+      }
+    },
+    "/applications/{id}/containers/{containerId}/inspect": {
+      "get": {
+        "description": "Loads the inspect output of the container from the agent, which removes the environment variables. Answers 422 when the agent is too old for container monitoring, 503 while it is offline, 504 when it doesn't respond in time and 502 when it fails. Needs the `application:inspect` permission.",
+        "operationId": "inspect-application-container",
+        "parameters": [
+          {
+            "description": "The ID of the application",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The ID of the application",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the container, or at least its first 12 characters",
+            "in": "path",
+            "name": "containerId",
+            "required": true,
+            "schema": {
+              "description": "The ID of the container, or at least its first 12 characters",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerInspectResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired authentication"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "security": [
+          {
+            "apiToken": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Inspect a container of an application",
         "tags": [
           "Applications"
         ]

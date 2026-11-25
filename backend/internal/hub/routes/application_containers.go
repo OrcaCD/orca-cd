@@ -9,11 +9,12 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
 	"github.com/OrcaCD/orca-cd/internal/hub/utils"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/logger"
-	"github.com/gin-gonic/gin"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -27,152 +28,188 @@ const agentContainerNotFound = "container not found"
 var containerIDPattern = regexp.MustCompile(`^[0-9a-f]{12,64}$`)
 
 type portBindingResponse struct {
-	Ip          string `json:"ip"`
-	PublicPort  uint32 `json:"publicPort"`
-	PrivatePort uint32 `json:"privatePort"`
-	Protocol    string `json:"protocol"`
+	Ip          string `json:"ip" required:"true"`
+	PublicPort  uint32 `json:"publicPort" required:"true" doc:"0 when the port is not published"`
+	PrivatePort uint32 `json:"privatePort" required:"true"`
+	Protocol    string `json:"protocol" required:"true"`
 }
 
 type containerNetworkResponse struct {
-	Name      string   `json:"name"`
-	IpAddress string   `json:"ipAddress"`
-	Aliases   []string `json:"aliases"`
+	Name      string   `json:"name" required:"true"`
+	IpAddress string   `json:"ipAddress" required:"true"`
+	Aliases   []string `json:"aliases" required:"true"`
 }
 
 type containerMountResponse struct {
-	Type        string `json:"type"`
-	Name        string `json:"name"`
-	Destination string `json:"destination"`
-	ReadOnly    bool   `json:"readOnly"`
+	Type        string `json:"type" required:"true"`
+	Name        string `json:"name" required:"true"`
+	Destination string `json:"destination" required:"true"`
+	ReadOnly    bool   `json:"readOnly" required:"true"`
 }
 
 type containerResponse struct {
-	Id                  string                     `json:"id"`
-	Name                string                     `json:"name"`
-	Service             string                     `json:"service"`
-	ContainerNumber     int32                      `json:"containerNumber"`
-	State               string                     `json:"state"`
-	Health              models.HealthStatus        `json:"health"`
-	HealthRaw           string                     `json:"healthRaw"`
-	HealthFailingStreak int32                      `json:"healthFailingStreak"`
-	Image               string                     `json:"image"`
-	ImageId             string                     `json:"imageId"`
-	ImageDigest         string                     `json:"imageDigest"`
-	RestartCount        int32                      `json:"restartCount"`
-	RestartPolicy       string                     `json:"restartPolicy"`
-	ExitCode            int32                      `json:"exitCode"`
-	OomKilled           bool                       `json:"oomKilled"`
-	Error               string                     `json:"error"`
-	LogDriver           string                     `json:"logDriver"`
-	CpuLimit            float64                    `json:"cpuLimit"`
-	CreatedAt           *time.Time                 `json:"createdAt"`
-	StartedAt           *time.Time                 `json:"startedAt"`
-	FinishedAt          *time.Time                 `json:"finishedAt"`
-	Ports               []portBindingResponse      `json:"ports"`
-	Networks            []containerNetworkResponse `json:"networks"`
-	Mounts              []containerMountResponse   `json:"mounts"`
+	Id                  string                     `json:"id" required:"true"`
+	Name                string                     `json:"name" required:"true"`
+	Service             string                     `json:"service" required:"true"`
+	ContainerNumber     int32                      `json:"containerNumber" required:"true" doc:"The compose replica number, 0 when unknown"`
+	State               string                     `json:"state" required:"true" doc:"The Docker state, like running or exited"`
+	Health              models.HealthStatus        `json:"health" required:"true"`
+	HealthRaw           string                     `json:"healthRaw" required:"true"`
+	HealthFailingStreak int32                      `json:"healthFailingStreak" required:"true"`
+	Image               string                     `json:"image" required:"true"`
+	ImageId             string                     `json:"imageId" required:"true"`
+	ImageDigest         string                     `json:"imageDigest" required:"true" doc:"Empty for images that did not come from a registry"`
+	RestartCount        int32                      `json:"restartCount" required:"true"`
+	RestartPolicy       string                     `json:"restartPolicy" required:"true"`
+	ExitCode            int32                      `json:"exitCode" required:"true"`
+	OomKilled           bool                       `json:"oomKilled" required:"true"`
+	Error               string                     `json:"error" required:"true" doc:"Why the container could not start"`
+	LogDriver           string                     `json:"logDriver" required:"true"`
+	CpuLimit            float64                    `json:"cpuLimit" required:"true" doc:"The CPUs the container may use, 0 without a limit"`
+	CreatedAt           *time.Time                 `json:"createdAt" required:"true" nullable:"true"`
+	StartedAt           *time.Time                 `json:"startedAt" required:"true" nullable:"true"`
+	FinishedAt          *time.Time                 `json:"finishedAt" required:"true" nullable:"true"`
+	Ports               []portBindingResponse      `json:"ports" required:"true"`
+	Networks            []containerNetworkResponse `json:"networks" required:"true"`
+	Mounts              []containerMountResponse   `json:"mounts" required:"true"`
 }
 
-func ListApplicationContainersHandler(c *gin.Context) {
-	application, ok := loadContainerTarget(c)
-	if !ok {
-		return
+type containerListResponse struct {
+	Containers []containerResponse `json:"containers" required:"true"`
+}
+
+type containerListOutput struct {
+	Body containerListResponse
+}
+
+type containerInspectResponse struct {
+	InspectJson string `json:"inspectJson" required:"true" doc:"The output of docker inspect as JSON, without environment variables"`
+}
+
+type containerInspectOutput struct {
+	Body containerInspectResponse
+}
+
+const containerServerErrorsDoc = "Answers 422 when the agent is too old for container monitoring, 503 while it is offline, " +
+	"504 when it doesn't respond in time and 502 when it fails. "
+
+var ListApplicationContainersHandler = restapi.Handler(huma.Operation{
+	OperationID: "list-application-containers",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}/containers",
+	Summary:     "List the containers of an application",
+	Description: "Loads the containers from the agent of the application. " +
+		containerServerErrorsDoc + requires(models.ResourceApplication, models.ActionRead),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden, http.StatusTooManyRequests,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout},
+}, func(ctx context.Context, input *idInput) (*containerListOutput, error) {
+	application, err := loadContainerTarget(ctx, input.ID)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), containerRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, containerRequestTimeout)
 	defer cancel()
 
 	result, err := websocket.DefaultHub.ListContainers(ctx, application.AgentId, application.Id)
 	if err != nil {
-		respondContainerTransportError(c, application, err)
-		return
+		return nil, containerTransportError(application, err)
 	}
 	if !result.Success {
-		c.JSON(http.StatusBadGateway, gin.H{"error": containerAgentError(result.ErrorMessage, "The agent failed to list the containers.")})
-		return
+		return nil, huma.Error502BadGateway(containerAgentError(result.ErrorMessage, "The agent failed to list the containers."))
 	}
 
-	containers := make([]containerResponse, 0, len(result.Containers))
+	response := containerListResponse{Containers: make([]containerResponse, 0, len(result.Containers))}
 	for _, container := range result.Containers {
 		if container != nil {
-			containers = append(containers, toContainerResponse(container))
+			response.Containers = append(response.Containers, toContainerResponse(container))
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"containers": containers})
-}
+	return &containerListOutput{Body: response}, nil
+})
 
-func InspectApplicationContainerHandler(c *gin.Context) {
-	containerID := c.Param("containerId")
-	if !containerIDPattern.MatchString(containerID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid container id"})
-		return
+var InspectApplicationContainerHandler = restapi.Handler(huma.Operation{
+	OperationID: "inspect-application-container",
+	Method:      http.MethodGet,
+	Path:        "/applications/{id}/containers/{containerId}/inspect",
+	Summary:     "Inspect a container of an application",
+	Description: "Loads the inspect output of the container from the agent, which removes the environment variables. " +
+		containerServerErrorsDoc + requires(models.ResourceApplication, models.ActionInspect),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden,
+		http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout},
+}, func(ctx context.Context, input *struct {
+	ID          string `path:"id" doc:"The ID of the application"`
+	ContainerID string `path:"containerId" doc:"The ID of the container, or at least its first 12 characters"`
+}) (*containerInspectOutput, error) {
+	if !containerIDPattern.MatchString(input.ContainerID) {
+		return nil, huma.Error400BadRequest("invalid container id")
 	}
 
-	application, ok := loadContainerTarget(c)
-	if !ok {
-		return
+	application, err := loadContainerTarget(ctx, input.ID)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), containerRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, containerRequestTimeout)
 	defer cancel()
 
-	result, err := websocket.DefaultHub.InspectContainer(ctx, application.AgentId, application.Id, containerID)
+	result, err := websocket.DefaultHub.InspectContainer(ctx, application.AgentId, application.Id, input.ContainerID)
 	if err != nil {
-		respondContainerTransportError(c, application, err)
-		return
+		return nil, containerTransportError(application, err)
 	}
 	if !result.Success {
 		if result.ErrorMessage == agentContainerNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "container not found"})
-			return
+			return nil, huma.Error404NotFound("container not found")
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": containerAgentError(result.ErrorMessage, "The agent failed to inspect the container.")})
-		return
+		return nil, huma.Error502BadGateway(containerAgentError(result.ErrorMessage, "The agent failed to inspect the container."))
 	}
 
-	c.JSON(http.StatusOK, gin.H{"inspectJson": result.InspectJson})
-}
+	return &containerInspectOutput{Body: containerInspectResponse{InspectJson: result.InspectJson}}, nil
+})
 
-func loadContainerTarget(c *gin.Context) (models.Application, bool) {
+const containerAgentOfflineMessage = "The agent is offline. Containers can only be monitored while it is connected."
+
+func loadContainerTarget(ctx context.Context, id string) (models.Application, error) {
+	var application models.Application
+
 	if websocket.DefaultHub == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "hub not initialized"})
-		return models.Application{}, false
+		return application, huma.Error500InternalServerError("hub not initialized")
 	}
 
-	application, err := gorm.G[models.Application](db.DB).Where("id = ?", c.Param("id")).First(c.Request.Context())
+	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return application, huma.Error404NotFound("application not found")
 		}
-		return application, false
+		return application, internalError()
 	}
 
 	if _, online := websocket.DefaultHub.GetClient(application.AgentId); !online {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Containers can only be monitored while it is connected."})
-		return application, false
+		return application, huma.Error503ServiceUnavailable(containerAgentOfflineMessage)
 	}
 
 	if !websocket.DefaultHub.HasCapability(application.AgentId, websocket.CapabilityContainerMonitoring) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "This agent does not support container monitoring. Please update it."})
-		return application, false
+		return application, huma.Error422UnprocessableEntity("This agent does not support container monitoring. Please update it.")
 	}
 
-	return application, true
+	return application, nil
 }
 
-func respondContainerTransportError(c *gin.Context, application models.Application, err error) {
+func containerTransportError(application models.Application, err error) error {
 	switch {
 	case errors.Is(err, websocket.ErrAgentOffline):
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "The agent is offline. Containers can only be monitored while it is connected."})
+		return huma.Error503ServiceUnavailable(containerAgentOfflineMessage)
 	case errors.Is(err, context.DeadlineExceeded):
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "The agent did not respond in time. Please try again."})
+		return huma.Error504GatewayTimeout("The agent did not respond in time. Please try again.")
 	case errors.Is(err, context.Canceled):
-		c.AbortWithStatus(499)
+		return huma.NewError(499, "request canceled")
 	default:
 		applicationContainersLog.Error().Err(err).Str("agent_id", application.AgentId).Msg("container request failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return internalError()
 	}
 }
 
