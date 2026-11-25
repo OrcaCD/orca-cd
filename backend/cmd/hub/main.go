@@ -92,6 +92,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newKeyCmd())
 	rootCmd.AddCommand(newExportCmd())
 	rootCmd.AddCommand(newImportCmd())
+	rootCmd.AddCommand(newOpenAPICmd())
 
 	return rootCmd
 }
