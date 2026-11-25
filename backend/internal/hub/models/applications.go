@@ -103,6 +103,12 @@ type Application struct {
 	// ReleaseAgeServiceOverrides overrides the minimum release age in seconds
 	// per compose service.
 	ReleaseAgeServiceOverrides map[string]int64 `gorm:"serializer:json;type:text;not null;default:'{}'"`
+	// ImagePollExcludedServices are compose services that image polling skips,
+	// set with x-orcacd.
+	ImagePollExcludedServices []string `gorm:"serializer:json;type:text;not null;default:'[]'"`
+	// HealthIgnoredServices are compose services that don't count for the
+	// health of the application, set with x-orcacd.
+	HealthIgnoredServices []string `gorm:"serializer:json;type:text;not null;default:'[]'"`
 	// ManagedSettings are the settings that come from x-orcacd in the compose
 	// file, which can't be changed through the API.
 	ManagedSettings []string       `gorm:"serializer:json;type:text;not null;default:'[]'"`

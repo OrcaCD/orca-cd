@@ -147,6 +147,8 @@ message ImagePollSettings {
   string application_name = 5;
   ImageRetention image_retention = 6;
   ReleaseAgePolicy release_age = 7;
+  // Compose services whose images image polling skips.
+  repeated string excluded_services = 8;
 }
 
 // ReleaseAgePolicy holds back updated images until their registry push time is

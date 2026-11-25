@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -369,6 +370,11 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 	topics := make([]sse.Topic, 0, len(report.Statuses))
 	defer func() { sse.PublishUpdate(topics...) }()
 
+	ignored, err := healthIgnoredServices(ctx, client.Id)
+	if err != nil {
+		log.Error().Err(err).Str("agent_id", client.Id).Msg("failed to load the services left out of health")
+	}
+
 	for _, status := range report.Statuses {
 		if ctx.Err() != nil {
 			return
@@ -376,6 +382,7 @@ func handleApplicationStatusReport(parent context.Context, client *Client, repor
 		if status == nil {
 			continue
 		}
+		status = withoutIgnoredServices(status, ignored[status.ApplicationId])
 		health := reportedApplicationHealth(status)
 		event, changed, err := applyReportedHealth(ctx, client.Id, status.ApplicationId, health)
 		if err != nil {
@@ -543,6 +550,59 @@ func notifyHealthChange(ctx context.Context, applicationId string, event models.
 		message = "Application " + app.Name.String() + " is degraded"
 	}
 	go notifications.SendForApplication(applicationId, event, message, log)
+}
+
+// healthIgnoredServices returns the services that x-orcacd leaves out of the
+// health of the agent's applications, by application.
+func healthIgnoredServices(ctx context.Context, agentID string) (map[string][]string, error) {
+	apps, err := gorm.G[models.Application](db.DB).
+		Select("id", "health_ignored_services").
+		Where("agent_id = ? AND health_ignored_services <> '[]'", agentID).
+		Find(ctx)
+	ignored := make(map[string][]string, len(apps))
+	for _, app := range apps {
+		ignored[app.Id] = app.HealthIgnoredServices
+	}
+	return ignored, err
+}
+
+// withoutIgnoredServices leaves the ignored services out of a status report
+// and derives the application health from the other services, as the agent
+// does from all of them.
+func withoutIgnoredServices(status *messages.ApplicationStatus, ignored []string) *messages.ApplicationStatus {
+	if len(ignored) == 0 || len(status.Services) == 0 {
+		return status
+	}
+	services := slices.DeleteFunc(slices.Clone(status.Services), func(service *messages.ServiceStatus) bool {
+		return service == nil || slices.Contains(ignored, service.GetName())
+	})
+	return &messages.ApplicationStatus{
+		ApplicationId: status.ApplicationId,
+		Health:        servicesHealth(services),
+		Services:      services,
+	}
+}
+
+// servicesHealth combines the health of services: unhealthy when one is
+// unhealthy or stopped while the others run, stopped when all are stopped,
+// unknown while one is still starting or when there is none.
+func servicesHealth(services []*messages.ServiceStatus) messages.HealthStatus {
+	if len(services) == 0 {
+		return messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED
+	}
+	count := map[messages.HealthStatus]int{}
+	for _, service := range services {
+		count[service.GetHealth()]++
+	}
+	switch {
+	case count[messages.HealthStatus_HEALTH_STATUS_STOPPED] == len(services):
+		return messages.HealthStatus_HEALTH_STATUS_STOPPED
+	case count[messages.HealthStatus_HEALTH_STATUS_UNHEALTHY] > 0 || count[messages.HealthStatus_HEALTH_STATUS_STOPPED] > 0:
+		return messages.HealthStatus_HEALTH_STATUS_UNHEALTHY
+	case count[messages.HealthStatus_HEALTH_STATUS_HEALTHY] < len(services):
+		return messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED
+	}
+	return messages.HealthStatus_HEALTH_STATUS_HEALTHY
 }
 
 // reportedApplicationHealth derives the application health from a status

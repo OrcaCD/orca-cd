@@ -690,6 +690,13 @@
           "deleteOldImages": {
             "type": "boolean"
           },
+          "healthIgnoredServices": {
+            "description": "Compose services that don't count for the health of the application, set with x-orcacd in the compose file",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "healthStatus": {
             "type": "string"
           },
@@ -701,6 +708,13 @@
           },
           "imagePollEnabled": {
             "type": "boolean"
+          },
+          "imagePollExcludedServices": {
+            "description": "Compose services that image polling skips, set with x-orcacd in the compose file",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "imagePollIntervalSeconds": {
             "format": "int64",
@@ -831,7 +845,9 @@
           "releaseAge",
           "imageWebhookEnabled",
           "warnings",
-          "managedSettings"
+          "managedSettings",
+          "imagePollExcludedServices",
+          "healthIgnoredServices"
         ],
         "type": "object"
       },
@@ -8461,7 +8477,7 @@
     },
     "/applications/{id}/release-age/services/{service}": {
       "put": {
-        "description": "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. Needs the `application:update` permission.",
+        "description": "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. Not possible when x-orcacd of the service sets it (409). Needs the `application:update` permission.",
         "operationId": "update-service-release-age",
         "parameters": [
           {
@@ -8545,6 +8561,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {

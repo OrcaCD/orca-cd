@@ -1672,8 +1672,10 @@ type ImagePollSettings struct {
 	ApplicationName string                 `protobuf:"bytes,5,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	ImageRetention  *ImageRetention        `protobuf:"bytes,6,opt,name=image_retention,json=imageRetention,proto3" json:"image_retention,omitempty"`
 	ReleaseAge      *ReleaseAgePolicy      `protobuf:"bytes,7,opt,name=release_age,json=releaseAge,proto3" json:"release_age,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Compose services whose images image polling skips.
+	ExcludedServices []string `protobuf:"bytes,8,rep,name=excluded_services,json=excludedServices,proto3" json:"excluded_services,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ImagePollSettings) Reset() {
@@ -1751,6 +1753,13 @@ func (x *ImagePollSettings) GetImageRetention() *ImageRetention {
 func (x *ImagePollSettings) GetReleaseAge() *ReleaseAgePolicy {
 	if x != nil {
 		return x.ReleaseAge
+	}
+	return nil
+}
+
+func (x *ImagePollSettings) GetExcludedServices() []string {
+	if x != nil {
+		return x.ExcludedServices
 	}
 	return nil
 }
@@ -4461,7 +4470,7 @@ const file_messages_proto_rawDesc = "" +
 	"\aservice\x18\x02 \x01(\tR\aservice\x12\x14\n" +
 	"\x05field\x18\x03 \x01(\tR\x05field\"\\\n" +
 	"\rAgentSettings\x12K\n" +
-	"\x13image_poll_settings\x18\x01 \x03(\v2\x1b.messages.ImagePollSettingsR\x11imagePollSettings\"\xd6\x02\n" +
+	"\x13image_poll_settings\x18\x01 \x03(\v2\x1b.messages.ImagePollSettingsR\x11imagePollSettings\"\x83\x03\n" +
 	"\x11ImagePollSettings\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12)\n" +
@@ -4470,7 +4479,8 @@ const file_messages_proto_rawDesc = "" +
 	"\x10application_name\x18\x05 \x01(\tR\x0fapplicationName\x12A\n" +
 	"\x0fimage_retention\x18\x06 \x01(\v2\x18.messages.ImageRetentionR\x0eimageRetention\x12;\n" +
 	"\vrelease_age\x18\a \x01(\v2\x1a.messages.ReleaseAgePolicyR\n" +
-	"releaseAge\"\x9b\x03\n" +
+	"releaseAge\x12+\n" +
+	"\x11excluded_services\x18\b \x03(\tR\x10excludedServices\"\x9b\x03\n" +
 	"\x10ReleaseAgePolicy\x12'\n" +
 	"\x0fminimum_seconds\x18\x01 \x01(\x03R\x0eminimumSeconds\x12-\n" +
 	"\x12allowed_registries\x18\x02 \x03(\tR\x11allowedRegistries\x12m\n" +

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
+	"github.com/OrcaCD/orca-cd/internal/hub/composeconfig"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
@@ -179,10 +181,11 @@ var UpdateServiceReleaseAgeHandler = restapi.Handler(huma.Operation{
 	Path:        "/applications/{id}/release-age/services/{service}",
 	Summary:     "Override the release age of a service",
 	Description: "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. " +
+		"Not possible when x-orcacd of the service sets it (409). " +
 		requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden, http.StatusConflict},
 }, func(ctx context.Context, input *struct {
 	ID      string `path:"id" doc:"The ID of the application"`
 	Service string `path:"service" doc:"The name of the compose service"`
@@ -206,6 +209,9 @@ var UpdateServiceReleaseAgeHandler = restapi.Handler(huma.Operation{
 			return nil, huma.Error404NotFound("application not found")
 		}
 		return nil, internalError()
+	}
+	if setting := composeconfig.ServiceReleaseAgeSetting(service); slices.Contains(application.ManagedSettings, setting) {
+		return nil, huma.Error409Conflict(composeconfig.ManagedError([]string{setting}))
 	}
 
 	overrides := maps.Clone(application.ReleaseAgeServiceOverrides)

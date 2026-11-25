@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -578,10 +579,11 @@ func TestHub_SendAgentSettings(t *testing.T) {
 
 	apps := []models.Application{
 		{
-			Id:                       "app-1",
-			ImagePollEnabled:         true,
-			ImagePollIntervalSeconds: 120,
-			DeleteOldImages:          true,
+			Id:                        "app-1",
+			ImagePollEnabled:          true,
+			ImagePollIntervalSeconds:  120,
+			DeleteOldImages:           true,
+			ImagePollExcludedServices: []string{"db"},
 		},
 		{
 			Id:               "app-2",
@@ -619,6 +621,9 @@ func TestHub_SendAgentSettings(t *testing.T) {
 		}
 		if !s1.DeleteOldImages {
 			t.Error("expected DeleteOldImages=true for app-1")
+		}
+		if !slices.Equal(s1.ExcludedServices, []string{"db"}) {
+			t.Errorf("expected excluded services [db], got %v", s1.ExcludedServices)
 		}
 		s2, ok := byID["app-2"]
 		if !ok {

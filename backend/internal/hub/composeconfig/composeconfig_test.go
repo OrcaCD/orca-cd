@@ -368,3 +368,105 @@ func TestParse_Notifications(t *testing.T) {
 		t.Error("expected notifications set through the API to be kept")
 	}
 }
+
+func TestParse_Services(t *testing.T) {
+	cfg := mustParse(t, `
+services:
+  web:
+    image: nginx
+    x-orcacd:
+      image-poll: false
+      release-age: 2d
+  worker:
+    image: worker
+    x-orcacd:
+      health: false
+      image-poll: true
+  db:
+    image: postgres
+`)
+	app := defaultApplication()
+	app.ReleaseAgeServiceOverrides = map[string]int64{"db": 60}
+	changed := cfg.Apply(&app)
+
+	if !slices.Equal(app.ImagePollExcludedServices, []string{"web"}) {
+		t.Errorf("ImagePollExcludedServices = %v, want [web]", app.ImagePollExcludedServices)
+	}
+	if !slices.Equal(app.HealthIgnoredServices, []string{"worker"}) {
+		t.Errorf("HealthIgnoredServices = %v, want [worker]", app.HealthIgnoredServices)
+	}
+	if want := map[string]int64{"db": 60, "web": 2 * 24 * 60 * 60}; !reflect.DeepEqual(app.ReleaseAgeServiceOverrides, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", app.ReleaseAgeServiceOverrides, want)
+	}
+	if !slices.Equal(app.ManagedSettings, []string{ServiceReleaseAgeSetting("web")}) {
+		t.Errorf("ManagedSettings = %v", app.ManagedSettings)
+	}
+	if len(changed) != 3 {
+		t.Errorf("changed = %v, want the three service columns", changed)
+	}
+
+	// Removing x-orcacd of the services removes their settings, but keeps
+	// release ages set through the API.
+	changed = mustParse(t, "services:\n  web:\n    image: nginx\n").Apply(&app)
+	if len(app.ImagePollExcludedServices) != 0 || len(app.HealthIgnoredServices) != 0 {
+		t.Errorf("expected no excluded services, got %v and %v", app.ImagePollExcludedServices, app.HealthIgnoredServices)
+	}
+	if want := map[string]int64{"db": 60}; !reflect.DeepEqual(app.ReleaseAgeServiceOverrides, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", app.ReleaseAgeServiceOverrides, want)
+	}
+	if len(changed) != 3 || len(app.ManagedSettings) != 0 {
+		t.Errorf("changed = %v, managed = %v", changed, app.ManagedSettings)
+	}
+}
+
+func TestParse_ServiceErrors(t *testing.T) {
+	_, err := Parse("services:\n  web:\n    x-orcacd:\n      image-poll: no\n      restart: always\n  api:\n    x-orcacd: true\n")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{
+		`services."web".x-orcacd.image-poll: must be true or false`,
+		`services."web".x-orcacd: unknown key "restart"`,
+		`services."api".x-orcacd: must be a mapping`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+func TestSameWithoutConfig_Services(t *testing.T) {
+	base := "services:\n  web:\n    image: nginx\n"
+	withService := "services:\n  web:\n    image: nginx\n    x-orcacd:\n      health: false\n"
+	if !SameWithoutConfig(base, withService) {
+		t.Error("expected files that only differ in x-orcacd of a service to be the same")
+	}
+}
+
+func TestSchemaMatchesServiceSettings(t *testing.T) {
+	data, err := os.ReadFile("compose.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Defs map[string]json.RawMessage `json:"$defs"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	collectSchemaPaths(t, schema.Defs["service"], "", &paths)
+	slices.Sort(paths)
+	if want := []string{"health", "image-poll", "release-age"}; !slices.Equal(paths, want) {
+		t.Errorf("schema keys = %v, want %v", paths, want)
+	}
+}
+
+func TestParse_NumericServiceName(t *testing.T) {
+	cfg := mustParse(t, "services:\n  2048:\n    image: game\n  web:\n    x-orcacd:\n      health: false\n")
+	app := defaultApplication()
+	cfg.Apply(&app)
+	if !slices.Equal(app.HealthIgnoredServices, []string{"web"}) {
+		t.Errorf("HealthIgnoredServices = %v, want [web]", app.HealthIgnoredServices)
+	}
+}

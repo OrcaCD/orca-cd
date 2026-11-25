@@ -91,42 +91,44 @@ type applicationListResponse struct {
 }
 
 type applicationResponse struct {
-	Id                       string                    `json:"id" required:"true"`
-	Icon                     string                    `json:"icon" required:"true"`
-	Name                     string                    `json:"name" required:"true"`
-	RepositoryId             string                    `json:"repositoryId" required:"true"`
-	RepositoryName           string                    `json:"repositoryName" required:"true"`
-	RepositoryUrl            string                    `json:"repositoryUrl" required:"true"`
-	RepositorySyncType       string                    `json:"repositorySyncType" required:"true"`
-	AgentId                  string                    `json:"agentId" required:"true"`
-	AgentName                string                    `json:"agentName" required:"true"`
-	SyncStatus               string                    `json:"syncStatus" required:"true"`
-	HealthStatus             string                    `json:"healthStatus" required:"true"`
-	Branch                   string                    `json:"branch" required:"true"`
-	Commit                   string                    `json:"commit" required:"true"`
-	CommitMessage            string                    `json:"commitMessage" required:"true"`
-	LastSyncedAt             *string                   `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
-	LastSyncError            *string                   `json:"lastSyncError,omitempty"`
-	LastSyncSource           *string                   `json:"lastSyncSource,omitempty" doc:"What triggered the last sync"`
-	Path                     string                    `json:"path" required:"true"`
-	CreatedAt                string                    `json:"createdAt" required:"true" format:"date-time"`
-	UpdatedAt                string                    `json:"updatedAt" required:"true" format:"date-time"`
-	ComposeFile              string                    `json:"composeFile" required:"true"`
-	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty" doc:"The compose file before the last change of the application"`
-	ImagePollEnabled         bool                      `json:"imagePollEnabled" required:"true"`
-	ImagePollIntervalSeconds int64                     `json:"imagePollIntervalSeconds" required:"true"`
-	DeleteOldImages          bool                      `json:"deleteOldImages" required:"true"`
-	CurrentDeploymentId      *string                   `json:"currentDeploymentId" required:"true" nullable:"true"`
-	RolledBackAt             *string                   `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
-	RolledBackCommit         *string                   `json:"rolledBackCommit" required:"true" nullable:"true"`
-	RolledBackReason         *string                   `json:"rolledBackReason" required:"true" nullable:"true"`
-	AutoSyncPaused           bool                      `json:"autoSyncPaused" required:"true" doc:"Automatic syncs are paused after a rollback until they are resumed"`
-	Rollback                 rollbackSettingsResponse  `json:"rollback" required:"true"`
-	ReleaseAge               releaseAgeSettings        `json:"releaseAge" required:"true"`
-	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled" required:"true"`
-	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
-	Warnings                 []composewarnings.Warning `json:"warnings" required:"true" doc:"Problems found in the compose file"`
-	ManagedSettings          []string                  `json:"managedSettings" required:"true" nullable:"false" doc:"Settings that come from x-orcacd in the compose file, by field path like rollback.enabled. They can't be changed through the API."`
+	Id                        string                    `json:"id" required:"true"`
+	Icon                      string                    `json:"icon" required:"true"`
+	Name                      string                    `json:"name" required:"true"`
+	RepositoryId              string                    `json:"repositoryId" required:"true"`
+	RepositoryName            string                    `json:"repositoryName" required:"true"`
+	RepositoryUrl             string                    `json:"repositoryUrl" required:"true"`
+	RepositorySyncType        string                    `json:"repositorySyncType" required:"true"`
+	AgentId                   string                    `json:"agentId" required:"true"`
+	AgentName                 string                    `json:"agentName" required:"true"`
+	SyncStatus                string                    `json:"syncStatus" required:"true"`
+	HealthStatus              string                    `json:"healthStatus" required:"true"`
+	Branch                    string                    `json:"branch" required:"true"`
+	Commit                    string                    `json:"commit" required:"true"`
+	CommitMessage             string                    `json:"commitMessage" required:"true"`
+	LastSyncedAt              *string                   `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
+	LastSyncError             *string                   `json:"lastSyncError,omitempty"`
+	LastSyncSource            *string                   `json:"lastSyncSource,omitempty" doc:"What triggered the last sync"`
+	Path                      string                    `json:"path" required:"true"`
+	CreatedAt                 string                    `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt                 string                    `json:"updatedAt" required:"true" format:"date-time"`
+	ComposeFile               string                    `json:"composeFile" required:"true"`
+	PreviousComposeFile       string                    `json:"previousComposeFile,omitempty" doc:"The compose file before the last change of the application"`
+	ImagePollEnabled          bool                      `json:"imagePollEnabled" required:"true"`
+	ImagePollIntervalSeconds  int64                     `json:"imagePollIntervalSeconds" required:"true"`
+	DeleteOldImages           bool                      `json:"deleteOldImages" required:"true"`
+	CurrentDeploymentId       *string                   `json:"currentDeploymentId" required:"true" nullable:"true"`
+	RolledBackAt              *string                   `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
+	RolledBackCommit          *string                   `json:"rolledBackCommit" required:"true" nullable:"true"`
+	RolledBackReason          *string                   `json:"rolledBackReason" required:"true" nullable:"true"`
+	AutoSyncPaused            bool                      `json:"autoSyncPaused" required:"true" doc:"Automatic syncs are paused after a rollback until they are resumed"`
+	Rollback                  rollbackSettingsResponse  `json:"rollback" required:"true"`
+	ReleaseAge                releaseAgeSettings        `json:"releaseAge" required:"true"`
+	ImageWebhookEnabled       bool                      `json:"imageWebhookEnabled" required:"true"`
+	ImageWebhookUrl           *string                   `json:"imageWebhookUrl,omitempty"`
+	Warnings                  []composewarnings.Warning `json:"warnings" required:"true" doc:"Problems found in the compose file"`
+	ManagedSettings           []string                  `json:"managedSettings" required:"true" nullable:"false" doc:"Settings that come from x-orcacd in the compose file, by field path like rollback.enabled. They can't be changed through the API."`
+	ImagePollExcludedServices []string                  `json:"imagePollExcludedServices" required:"true" nullable:"false" doc:"Compose services that image polling skips, set with x-orcacd in the compose file"`
+	HealthIgnoredServices     []string                  `json:"healthIgnoredServices" required:"true" nullable:"false" doc:"Compose services that don't count for the health of the application, set with x-orcacd in the compose file"`
 }
 
 type rollbackSettingsResponse struct {
@@ -792,10 +794,12 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 			HealthTimeoutSeconds: app.RollbackHealthTimeoutSeconds,
 			PauseAutoSync:        app.RollbackPauseAutoSync,
 		},
-		ReleaseAge:          toReleaseAgeSettings(app),
-		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
-		Warnings:            warnings,
-		ManagedSettings:     nonNil(app.ManagedSettings),
+		ReleaseAge:                toReleaseAgeSettings(app),
+		ImageWebhookEnabled:       app.ImageWebhookSecret != nil,
+		Warnings:                  warnings,
+		ManagedSettings:           nonNil(app.ManagedSettings),
+		ImagePollExcludedServices: nonNil(app.ImagePollExcludedServices),
+		HealthIgnoredServices:     nonNil(app.HealthIgnoredServices),
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)

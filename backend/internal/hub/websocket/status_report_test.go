@@ -290,3 +290,63 @@ func TestHandleApplicationStatusReport_SyncsHealthHistoryOncePerConnection(t *te
 		t.Errorf("expected the stored health to stay healthy, got %q", got)
 	}
 }
+
+func TestWithoutIgnoredServices(t *testing.T) {
+	healthy := messages.HealthStatus_HEALTH_STATUS_HEALTHY
+	unhealthy := messages.HealthStatus_HEALTH_STATUS_UNHEALTHY
+	stopped := messages.HealthStatus_HEALTH_STATUS_STOPPED
+	starting := messages.HealthStatus_HEALTH_STATUS_UNSPECIFIED
+	status := func(health messages.HealthStatus, services ...*messages.ServiceStatus) *messages.ApplicationStatus {
+		return &messages.ApplicationStatus{ApplicationId: "app", Health: health, Services: services}
+	}
+	service := func(name string, health messages.HealthStatus) *messages.ServiceStatus {
+		return &messages.ServiceStatus{Name: name, Health: health}
+	}
+
+	tests := []struct {
+		name   string
+		status *messages.ApplicationStatus
+		want   models.HealthStatus
+	}{
+		{"ignored service unhealthy", status(unhealthy, service("web", healthy), service("worker", unhealthy)), models.Healthy},
+		{"ignored service stopped", status(unhealthy, service("web", healthy), service("worker", stopped)), models.Healthy},
+		{"other service unhealthy", status(unhealthy, service("web", unhealthy), service("db", healthy), service("worker", healthy)), models.Degraded},
+		{"other services stopped", status(unhealthy, service("web", stopped), service("db", stopped), service("worker", healthy)), models.Stopped},
+		{"other service starting", status(unhealthy, service("web", starting), service("worker", unhealthy)), models.UnknownHealth},
+		{"only ignored services", status(unhealthy, service("worker", unhealthy)), models.UnknownHealth},
+		{"no services from older agents", status(unhealthy), models.Unhealthy},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reportedApplicationHealth(withoutIgnoredServices(tt.status, []string{"worker"}))
+			if got != tt.want {
+				t.Errorf("health = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleApplicationStatusReport_IgnoresServices(t *testing.T) {
+	setupDeployTestEnv(t)
+	app := seedAppForAgent(t, "agent-1")
+	if err := db.DB.Model(&app).Update("health_ignored_services", `["worker"]`).Error; err != nil {
+		t.Fatal(err)
+	}
+	setAppHealthAndSync(t, app.Id, models.Healthy, models.Synced)
+
+	nop := zerolog.Nop()
+	handleApplicationStatusReport(t.Context(), &Client{Id: "agent-1"}, &messages.ApplicationStatusReport{
+		Statuses: []*messages.ApplicationStatus{{
+			ApplicationId: app.Id,
+			Health:        messages.HealthStatus_HEALTH_STATUS_UNHEALTHY,
+			Services: []*messages.ServiceStatus{
+				{Name: "web", Health: messages.HealthStatus_HEALTH_STATUS_HEALTHY},
+				{Name: "worker", Health: messages.HealthStatus_HEALTH_STATUS_UNHEALTHY},
+			},
+		}},
+	}, &nop)
+
+	if got := healthOf(t, app.Id); got != models.Healthy {
+		t.Errorf("expected the ignored worker not to count, got %q", got)
+	}
+}

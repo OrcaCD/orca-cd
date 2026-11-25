@@ -35,6 +35,8 @@ type Config struct {
 	// clearNotifications is set by Apply when x-orcacd no longer sets the
 	// notifications, which then go back to none.
 	clearNotifications bool
+	// services holds x-orcacd of the compose services, by service name.
+	services map[string]serviceConfig
 }
 
 // maxComposeSize is the largest compose file that is parsed. Larger files
@@ -46,19 +48,27 @@ const maxComposeSize = 1 << 20
 // isn't valid YAML leaves the settings as they are, the agent reports it when
 // it deploys the file.
 func Parse(compose string) (*Config, error) {
-	cfg := &Config{values: map[string]any{}}
+	cfg := &Config{values: map[string]any{}, services: map[string]serviceConfig{}}
 	var document map[string]any
 	if len(compose) > maxComposeSize || yaml.Unmarshal([]byte(compose), &document) != nil {
 		cfg.unreadable = true
 		return cfg, nil
 	}
-	raw, ok := document[Key]
-	if !ok || raw == nil {
-		return cfg, nil
+	errs := []error{parseServices(cfg, document["services"])}
+	if raw := document[Key]; raw != nil {
+		errs = append(errs, parseBlock(cfg, raw))
 	}
+	if err := joinErrors(errs); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// parseBlock reads the top-level x-orcacd block.
+func parseBlock(cfg *Config, raw any) error {
 	block, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s must be a mapping", Key)
+		return fmt.Errorf("%s must be a mapping", Key)
 	}
 	var errs []error
 	if raw, ok := block[keyNotifications]; ok {
@@ -74,10 +84,7 @@ func Parse(compose string) (*Config, error) {
 	if cfg.values[SettingRollbackOnDeployFailure] == false && cfg.values[SettingRollbackOnUnhealthy] == false {
 		errs = append(errs, fmt.Errorf("%s.rollback: on-deploy-failure and on-unhealthy can't both be false", Key))
 	}
-	if err := joinErrors(errs); err != nil {
-		return nil, err
-	}
-	return cfg, nil
+	return errors.Join(errs...)
 }
 
 // maxErrors and maxErrorLength bound the error of a compose file, which is
@@ -127,6 +134,11 @@ func (c *Config) Managed() []string {
 	if c.notifications != nil {
 		names = append(names, SettingNotifications)
 	}
+	for _, service := range sortedKeys(c.services) {
+		if c.services[service].releaseAge != nil {
+			names = append(names, ServiceReleaseAgeSetting(service))
+		}
+	}
 	return names
 }
 
@@ -153,6 +165,7 @@ func (c *Config) Apply(app *models.Application) []string {
 		}
 	}
 	c.clearNotifications = c.notifications == nil && slices.Contains(app.ManagedSettings, SettingNotifications)
+	changed = append(changed, c.applyServices(app)...)
 	app.ManagedSettings = c.Managed()
 	return changed
 }
@@ -218,6 +231,15 @@ func decodeWithoutConfig(compose string) (map[string]any, bool) {
 		return nil, false
 	}
 	delete(document, Key)
+	if services, ok := asMap(document["services"]); ok {
+		for name, service := range services {
+			if block, ok := asMap(service); ok {
+				delete(block, Key)
+				services[name] = block
+			}
+		}
+		document["services"] = services
+	}
 	return document, true
 }
 
@@ -261,7 +283,7 @@ func parseGroup(cfg *Config, block map[string]any, group *node, path string) err
 	return errors.Join(errs...)
 }
 
-func sortedKeys(m map[string]any) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)

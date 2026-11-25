@@ -293,11 +293,12 @@ func (h *Hub) SendAgentSettings(ctx context.Context, agentID string, apps []mode
 			ApplicationId:   apps[i].Id,
 			ApplicationName: apps[i].Name.String(),
 			// A rolled back application runs pinned images until it is deployed again.
-			Enabled:         apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
-			IntervalSeconds: apps[i].ImagePollIntervalSeconds,
-			DeleteOldImages: apps[i].DeleteOldImages,
-			ImageRetention:  retentions[apps[i].Id],
-			ReleaseAge:      releaseage.Policy(&apps[i], global),
+			Enabled:          apps[i].ImagePollEnabled && apps[i].RolledBackAt == nil,
+			IntervalSeconds:  apps[i].ImagePollIntervalSeconds,
+			DeleteOldImages:  apps[i].DeleteOldImages,
+			ImageRetention:   retentions[apps[i].Id],
+			ReleaseAge:       releaseage.Policy(&apps[i], global),
+			ExcludedServices: apps[i].ImagePollExcludedServices,
 		})
 	}
 	return h.Send(agentID, &messages.ServerMessage{

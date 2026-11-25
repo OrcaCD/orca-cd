@@ -338,3 +338,20 @@ func TestSaveNotifications_DeletedNotificationIsNotRecreated(t *testing.T) {
 		t.Error("expected the deleted notification not to be created again")
 	}
 }
+
+func TestProcessSyncJob_ComposeConfig_ServiceSettingsDoNotDeploy(t *testing.T) {
+	setupTestDB(t)
+	app := seedSyncedApp(t, composeWithoutConfig)
+	compose := "services:\n  app:\n    image: myimage:1.0\n    x-orcacd:\n      image-poll: false\n      health: false\n      release-age: 2h\n"
+
+	stub := runComposeSync(t, app, compose)
+
+	if stub.called {
+		t.Error("expected no deployment when only x-orcacd of a service changed")
+	}
+	updated := loadApp(t, app.Id)
+	if !slices.Equal(updated.ImagePollExcludedServices, []string{"app"}) || !slices.Equal(updated.HealthIgnoredServices, []string{"app"}) ||
+		updated.ReleaseAgeServiceOverrides["app"] != 7200 {
+		t.Errorf("expected the service settings to be saved, got %+v", updated)
+	}
+}
