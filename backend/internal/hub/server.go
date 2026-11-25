@@ -185,7 +185,6 @@ func Run(cfg Config) error {
 
 		applications.DefaultImagePullDebouncer = applications.NewImagePullDebouncer(&Log)
 		defer applications.DefaultImagePullDebouncer.Stop()
-		defer applications.StartReleaseAgeRetry()()
 
 		defer db.StartVacuumScheduler()()
 		defer healthhistory.StartPruner(&Log)()

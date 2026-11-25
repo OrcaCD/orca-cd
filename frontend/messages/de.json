@@ -1099,7 +1099,7 @@
 	"releaseAgeUnit": "Einheit",
 	"releaseAgeUnitHours": "Stunden",
 	"releaseAgeUnitDays": "Tage",
-	"releaseAgeMinimumHint": "0 deaktiviert es. Ein neues Image wird aktualisiert, sobald es alt genug ist, auch wenn ein Image-Pull-Webhook es ankündigt. Damit eigene Images sofort aktualisiert werden, setze das Alter ihres Service auf 0.",
+	"releaseAgeMinimumHint": "0 deaktiviert es. Auch Image-Pull-Webhooks warten darauf. Damit eigene Images sofort aktualisiert werden, setze das Alter ihres Service auf 0.",
 	"releaseAgePushTimeInfo": "Das Alter stammt aus dem Push-Zeitpunkt in der Registry, nicht aus dem Erstellungsdatum des Images, das sein Herausgeber zurückdatieren kann. Docker Hub, GHCR, GitLab.com und Harbor liefern einen Push-Zeitpunkt. Bei anderen Registries zählt das Alter ab dem Zeitpunkt, an dem der Agent das neue Image zuerst gesehen hat.",
 	"releaseAgeLabelInfo": "Um es für einen einzelnen Service zu überschreiben, bis hinunter zum globalen Mindestalter, z. B. \"0\" für eigene Images oder \"7d\" für eine Datenbank, setze das Label",
 	"releaseAgeAllowedRegistries": "Registries ohne Altersprüfung",
