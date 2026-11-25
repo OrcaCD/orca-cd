@@ -34,9 +34,8 @@ type ReleaseAgePolicy struct {
 	// EnforcedExemptRegistries skip it.
 	EnforcedMinimumAge       time.Duration
 	EnforcedExemptRegistries []string
-	// WebhookImages are the images an image pull webhook announced. When set,
-	// only they are updated, without the check but for EnforcedMinimumAge, as
-	// their publisher triggered it.
+	// WebhookImages limit the pull to these images, e.g. the ones an image pull
+	// webhook announced. They wait for the release age like any other image.
 	WebhookImages []string
 }
 
@@ -106,10 +105,9 @@ func (p ReleaseAgePolicy) setMinimumAge(service composetypes.ServiceConfig, upda
 }
 
 // exempt reports whether imageRef only waits for the enforced minimum, as it
-// is from an allowed registry or its publisher announced it.
+// is from an allowed registry.
 func (p ReleaseAgePolicy) exempt(imageRef string) bool {
-	return slices.Contains(p.AllowedRegistries, registryHost(imageRef)) ||
-		slices.ContainsFunc(p.WebhookImages, func(image string) bool { return sameTag(image, imageRef) })
+	return slices.Contains(p.AllowedRegistries, registryHost(imageRef))
 }
 
 // setExemptMinimumAge records the minimum release age of an exempt image in
@@ -146,18 +144,13 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 		return false
 	}
 
-	// An image its publisher announced, or one of an allowed registry, only
-	// waits for the enforced minimum.
-	exempt := slices.Contains(policy.AllowedRegistries, registryHost(service.Image))
-	if len(policy.WebhookImages) > 0 {
-		if !slices.ContainsFunc(policy.WebhookImages, func(image string) bool { return sameTag(image, service.Image) }) {
-			update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
-			update.Reason = "not announced by the image pull webhook, image polling updates it"
-			return false
-		}
-		exempt = true
+	if len(policy.WebhookImages) > 0 &&
+		!slices.ContainsFunc(policy.WebhookImages, func(image string) bool { return sameTag(image, service.Image) }) {
+		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
+		update.Reason = "not part of this pull, image polling updates it"
+		return false
 	}
-	if exempt {
+	if policy.exempt(service.Image) {
 		if minimumAge = policy.setExemptMinimumAge(service.Image, update); minimumAge <= 0 {
 			return false
 		}

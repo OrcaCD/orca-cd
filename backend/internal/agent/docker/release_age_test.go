@@ -160,20 +160,28 @@ func TestEvaluateUpdate(t *testing.T) {
 			wantLookup: true,
 		},
 		{name: "invalid label", policy: policy, service: withLabel("soon"), wantStatus: blocked, wantReason: "invalid " + releaseAgeLabel + " label"},
-		{name: "announced by webhook", policy: ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:1.0"}}, service: service, wantStatus: updated},
+		{
+			name:       "announced by webhook waits too",
+			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:1.0"}},
+			service:    service,
+			pushed:     time.Now().Add(-time.Hour),
+			wantStatus: waiting,
+			wantReason: "minimum release age 3d",
+			wantLookup: true,
+		},
 		{
 			name:       "not announced by webhook",
 			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/other:1.0"}},
 			service:    service,
 			wantStatus: skipped,
-			wantReason: "not announced by the image pull webhook",
+			wantReason: "not part of this pull",
 		},
 		{
 			name:       "webhook announced another tag",
 			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:2.0"}},
 			service:    service,
 			wantStatus: skipped,
-			wantReason: "not announced by the image pull webhook",
+			wantReason: "not part of this pull",
 		},
 		{
 			name:       "enforced minimum raises a lower label",
@@ -196,15 +204,6 @@ func TestEvaluateUpdate(t *testing.T) {
 		{
 			name:       "enforced minimum applies to allowed registries",
 			policy:     ReleaseAgePolicy{MinimumAge: week, EnforcedMinimumAge: 3 * 24 * time.Hour, AllowedRegistries: []string{"ghcr.io"}},
-			service:    service,
-			pushed:     time.Now().Add(-time.Hour),
-			wantStatus: waiting,
-			wantReason: "minimum release age 3d",
-			wantLookup: true,
-		},
-		{
-			name:       "enforced minimum applies to announced images",
-			policy:     ReleaseAgePolicy{MinimumAge: week, EnforcedMinimumAge: 3 * 24 * time.Hour, WebhookImages: []string{"ghcr.io/org/app:1.0"}},
 			service:    service,
 			pushed:     time.Now().Add(-time.Hour),
 			wantStatus: waiting,
@@ -540,28 +539,24 @@ func TestReleaseAge_ExemptImageReportsOnlyTheEnforcedMinimum(t *testing.T) {
 	week := 7 * 24 * time.Hour
 	service := composetypes.ServiceConfig{Name: "app", Image: "ghcr.io/org/app:1.0", Labels: composetypes.Labels{releaseAgeLabel: "3d"}}
 	c := newTestClient(t)
-	for _, policy := range []ReleaseAgePolicy{
-		{MinimumAge: week, AllowedRegistries: []string{"ghcr.io"}},
-		{MinimumAge: week, WebhookImages: []string{"ghcr.io/org/app:1.0"}},
-	} {
-		update := &messages.ImageUpdate{}
-		if checked := c.evaluateUpdate(t.Context(), "app-1", policy, service, newDigest, update); checked {
-			t.Error("an exempt image without an enforced minimum must not be checked")
-		}
-		if update.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED ||
-			update.MinimumAgeSeconds != 0 || update.MinimumAgeFromLabel || update.MinimumAgeEnforced {
-			t.Errorf("%+v: unexpected update %+v", policy, update)
-		}
-
-		upToDate := &messages.ImageUpdate{}
-		policy.reportMinimumAge(service, upToDate)
-		if upToDate.MinimumAgeSeconds != 0 || upToDate.MinimumAgeFromLabel || upToDate.MinimumAgeEnforced {
-			t.Errorf("%+v: unexpected up-to-date row %+v", policy, upToDate)
-		}
+	policy := ReleaseAgePolicy{MinimumAge: week, AllowedRegistries: []string{"ghcr.io"}}
+	update := &messages.ImageUpdate{}
+	if checked := c.evaluateUpdate(t.Context(), "app-1", policy, service, newDigest, update); checked {
+		t.Error("an exempt image without an enforced minimum must not be checked")
+	}
+	if update.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED ||
+		update.MinimumAgeSeconds != 0 || update.MinimumAgeFromLabel || update.MinimumAgeEnforced {
+		t.Errorf("unexpected update %+v", update)
 	}
 
-	policy := ReleaseAgePolicy{MinimumAge: week, AllowedRegistries: []string{"ghcr.io"}, EnforcedMinimumAge: 24 * time.Hour}
 	upToDate := &messages.ImageUpdate{}
+	policy.reportMinimumAge(service, upToDate)
+	if upToDate.MinimumAgeSeconds != 0 || upToDate.MinimumAgeFromLabel || upToDate.MinimumAgeEnforced {
+		t.Errorf("unexpected up-to-date row %+v", upToDate)
+	}
+
+	policy.EnforcedMinimumAge = 24 * time.Hour
+	upToDate = &messages.ImageUpdate{}
 	policy.reportMinimumAge(service, upToDate)
 	if upToDate.MinimumAgeSeconds != 86400 || upToDate.MinimumAgeFromLabel || !upToDate.MinimumAgeEnforced {
 		t.Errorf("unexpected up-to-date row %+v", upToDate)

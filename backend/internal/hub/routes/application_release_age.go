@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
@@ -247,6 +248,7 @@ func updatedApplication(c *gin.Context, id string) (*applicationOutput, error) {
 	utils.RecordAuditLog(c, "updated", "application", id)
 	sse.PublishUpdate(sse.TopicApplications.For(id))
 	sendAgentSettings(c, application.AgentId)
+	hubApplications.RecheckWaitingImages(c.Request.Context(), id)
 	return &applicationOutput{Body: toApplicationResponse(&application)}, nil
 }
 
@@ -334,6 +336,7 @@ var AdminUpdateReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
 		sse.PublishUpdate(sse.TopicApplications.For(id))
 	}
 	sendAllAgentSettings(c)
+	hubApplications.RecheckWaitingImages(ctx)
 	return &globalReleaseAgeOutput{Body: globalReleaseAgeSettings{MinimumSeconds: settings.MinimumReleaseAgeSeconds, AllowedRegistries: registries}}, nil
 })
 
