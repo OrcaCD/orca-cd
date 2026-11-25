@@ -37,6 +37,10 @@ var undocumentedRoutes = []string{
 	"GET /auth/oidc/{id}/authorize",
 	"GET /auth/oidc/{id}/callback",
 	"GET /auth/profile-picture",
+	// MCP clients speak JSON-RPC, the tools describe themselves.
+	"GET /mcp",
+	"POST /mcp",
+	"DELETE /mcp",
 }
 
 var ginParam = regexp.MustCompile(`[:*](\w+)`)
