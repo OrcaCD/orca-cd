@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"maps"
@@ -13,7 +14,8 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
-	"github.com/gin-gonic/gin"
+	"github.com/OrcaCD/orca-cd/internal/hub/restapi"
+	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )
 
@@ -120,39 +122,74 @@ func (r *oauthAuthorizationRequest) redirectURL(params url.Values) string {
 	return u.String()
 }
 
-func respondOAuthRequestError(c *gin.Context, err *oauthRequestError) {
-	body := gin.H{"error": err.description}
-	if err.redirectURL != "" {
-		body["redirectUrl"] = err.redirectURL
-	}
-	c.JSON(http.StatusBadRequest, body)
+// oauthRequestErrorResponse is the 400 of the consent page. With a redirect
+// URL, the page sends the user back to the client with the error.
+type oauthRequestErrorResponse struct {
+	Message     string `json:"error" required:"true" doc:"What is wrong with the request"`
+	RedirectURL string `json:"redirectUrl,omitempty" doc:"Where to send the user, set once the client and its redirect URI are known"`
+}
+
+func (e *oauthRequestErrorResponse) Error() string {
+	return e.Message
+}
+
+func (e *oauthRequestErrorResponse) GetStatus() int {
+	return http.StatusBadRequest
+}
+
+func (e *oauthRequestError) response() error {
+	return &oauthRequestErrorResponse{Message: e.description, RedirectURL: e.redirectURL}
 }
 
 type oauthScopeResponse struct {
-	Scope models.APITokenScope `json:"scope"`
-	// Grantable tells whether the user has the permission to give the scope.
-	Grantable bool `json:"grantable"`
+	Scope     models.APITokenScope `json:"scope" required:"true"`
+	Grantable bool                 `json:"grantable" required:"true" doc:"Whether the user has the permission to give the scope"`
 }
 
 type oauthAuthorizationResponse struct {
-	ClientName  string               `json:"clientName"`
-	RedirectURI string               `json:"redirectUri"`
-	Scopes      []oauthScopeResponse `json:"scopes"`
+	ClientName  string               `json:"clientName" required:"true" doc:"The name the client registered with, which it chose itself"`
+	RedirectURI string               `json:"redirectUri" required:"true" doc:"Where the user returns to after answering"`
+	Scopes      []oauthScopeResponse `json:"scopes" required:"true" doc:"The scopes the client asks for"`
 	// CanAuthorize tells whether the user may create API tokens.
-	CanAuthorize bool `json:"canAuthorize"`
+	CanAuthorize bool `json:"canAuthorize" required:"true" doc:"Whether the user has the permission to create API tokens"`
+}
+
+// oauthAuthorizationQuery documents the authorization request (RFC 6749
+// section 4.1.1). The handler parses the raw query instead, to reject
+// repeated parameters and to send errors back to the client once its redirect
+// URI is known, so nothing is validated here.
+type oauthAuthorizationQuery struct {
+	ClientID            string `query:"client_id" doc:"The client ID from the registration"`
+	RedirectURI         string `query:"redirect_uri" doc:"One of the registered redirect URIs, required when the client registered more than one"`
+	ResponseType        string `query:"response_type" doc:"Must be code"`
+	Scope               string `query:"scope" doc:"Space separated scopes, the MCP scopes when empty"`
+	State               string `query:"state" doc:"Returned to the client unchanged"`
+	CodeChallenge       string `query:"code_challenge" doc:"The PKCE code challenge"`
+	CodeChallengeMethod string `query:"code_challenge_method" doc:"Must be S256"`
+	Resource            string `query:"resource" doc:"The MCP endpoint or the hub"`
 }
 
 // OAuthAuthorizationRequestHandler checks the authorization request the
 // consent page was opened with, and returns what the page shows.
-func OAuthAuthorizationRequestHandler(c *gin.Context) {
+var OAuthAuthorizationRequestHandler = restapi.Handler(huma.Operation{
+	OperationID: "get-oauth-authorization-request",
+	Method:      http.MethodGet,
+	Path:        "/oauth/authorize",
+	Summary:     "Check an authorization request",
+	Description: "Checks the authorization request of an MCP client and returns what the consent page shows. " +
+		"Errors with a redirect URL send the user back to the client.",
+	Tags:     []string{tagAPITokens},
+	Security: restapi.SessionOnly,
+	Errors:   []int{http.StatusBadRequest},
+}, func(ctx context.Context, _ *oauthAuthorizationQuery) (*struct{ Body oauthAuthorizationResponse }, error) {
+	c := restapi.GinContext(ctx)
 	req, reqErr := parseOAuthAuthorizationRequest(c.Request.URL.Query())
 	if reqErr != nil {
-		respondOAuthRequestError(c, reqErr)
-		return
+		return nil, reqErr.response()
 	}
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+	perms, err := permissionsFor(c)
+	if err != nil {
+		return nil, err
 	}
 
 	scopes := make([]oauthScopeResponse, 0, len(req.scopes))
@@ -160,93 +197,95 @@ func OAuthAuthorizationRequestHandler(c *gin.Context) {
 		_, ungranted := ungrantedAPITokenScope(perms, []models.APITokenScope{scope})
 		scopes = append(scopes, oauthScopeResponse{Scope: scope, Grantable: !ungranted})
 	}
-	c.JSON(http.StatusOK, oauthAuthorizationResponse{
+	return &struct{ Body oauthAuthorizationResponse }{Body: oauthAuthorizationResponse{
 		ClientName:   req.client.Name,
 		RedirectURI:  req.redirectURI,
 		Scopes:       scopes,
 		CanAuthorize: perms.CanAny(models.ResourceAPIToken, models.ActionCreate),
-	})
-}
+	}}, nil
+})
 
 type oauthAuthorizeRequest struct {
-	// Query is the query string the consent page was opened with. It is
-	// checked again, so the page can't change what the client asked for.
-	Query   string                 `json:"query"`
-	Approve bool                   `json:"approve"`
-	Scopes  []models.APITokenScope `json:"scopes"`
+	Query   string                 `json:"query" required:"true" doc:"The query string the consent page was opened with. It is checked again, so the page can't change what the client asked for."`
+	Approve bool                   `json:"approve" required:"true" doc:"Whether the user allows the client"`
+	Scopes  []models.APITokenScope `json:"scopes" doc:"The scopes the user gives, a part of the requested ones. Required when approving."`
+}
+
+type oauthRedirectResponse struct {
+	RedirectURL string `json:"redirectUrl" required:"true" doc:"Where to send the user: back to the client with a code, or with an error after a denial"`
 }
 
 // OAuthAuthorizeHandler answers the consent page. It returns where to send
 // the user: back to the client with a code, or with an error when they denied
 // it.
-func OAuthAuthorizeHandler(c *gin.Context) {
+var OAuthAuthorizeHandler = restapi.Handler(huma.Operation{
+	OperationID: "answer-oauth-authorization-request",
+	Method:      http.MethodPost,
+	Path:        "/oauth/authorize",
+	Summary:     "Answer an authorization request",
+	Description: fmt.Sprintf("Allows or denies the authorization request of an MCP client. Allowing it gives the client an API token "+
+		"with the chosen scopes, which only works on the MCP endpoint. A user can have at most %d tokens. ", maxAPITokensPerUser) +
+		requires(models.ResourceAPIToken, models.ActionCreate),
+	Tags:     []string{tagAPITokens},
+	Security: restapi.SessionOnly,
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable},
+}, func(ctx context.Context, input *struct{ Body oauthAuthorizeRequest }) (*struct{ Body oauthRedirectResponse }, error) {
+	c := restapi.GinContext(ctx)
 	user, ok := auth.GetUser(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
-		return
+		return nil, huma.Error401Unauthorized("missing authentication")
 	}
-	var body oauthAuthorizeRequest
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
+	body := input.Body
 	query, err := url.ParseQuery(body.Query)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid authorization request"})
-		return
+		return nil, huma.Error400BadRequest("invalid authorization request")
 	}
 	req, reqErr := parseOAuthAuthorizationRequest(query)
 	if reqErr != nil {
-		respondOAuthRequestError(c, reqErr)
-		return
+		return nil, reqErr.response()
+	}
+	redirect := func(params url.Values) (*struct{ Body oauthRedirectResponse }, error) {
+		return &struct{ Body oauthRedirectResponse }{Body: oauthRedirectResponse{RedirectURL: req.redirectURL(params)}}, nil
 	}
 
 	if !body.Approve {
-		c.JSON(http.StatusOK, gin.H{"redirectUrl": req.redirectURL(url.Values{
+		return redirect(url.Values{
 			"error":             {"access_denied"},
 			"error_description": {"the user denied the request"},
-		})})
-		return
+		})
 	}
 
-	perms, ok := currentPermissions(c)
-	if !ok {
-		return
+	perms, err := permissionsFor(c)
+	if err != nil {
+		return nil, err
 	}
 	if !perms.CanAny(models.ResourceAPIToken, models.ActionCreate) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you don't have the permission to create api tokens"})
-		return
+		return nil, huma.Error403Forbidden("you don't have the permission to create api tokens")
 	}
 	if len(body.Scopes) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one scope is required"})
-		return
+		return nil, huma.Error400BadRequest("at least one scope is required")
 	}
 	for _, scope := range body.Scopes {
 		if !slices.Contains(req.scopes, scope) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "the client didn't ask for the scope " + string(scope)})
-			return
+			return nil, huma.Error400BadRequest("the client didn't ask for the scope " + string(scope))
 		}
 	}
 	scopes, err := normalizeAPITokenScopes(body.Scopes)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if scope, ungranted := ungrantedAPITokenScope(perms, scopes); ungranted {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you don't have the permission for scope " + string(scope)})
-		return
+		return nil, huma.Error403Forbidden("you don't have the permission for scope " + string(scope))
 	}
 
 	// Checked here too, so the user isn't sent back to a client that then
 	// fails to get its token.
-	tokens, err := gorm.G[models.APIToken](db.DB).Where("user_id = ?", user.Id).Find(c.Request.Context())
+	tokens, err := gorm.G[models.APIToken](db.DB).Where("user_id = ?", user.Id).Find(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		return
+		return nil, internalError()
 	}
 	if kept, _ := replacedAPITokens(tokens, req.clientId); len(kept) >= maxAPITokensPerUser {
-		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("you can't have more than %d api tokens, revoke one first", maxAPITokensPerUser)})
-		return
+		return nil, huma.Error409Conflict(fmt.Sprintf("you can't have more than %d api tokens, revoke one first", maxAPITokensPerUser))
 	}
 
 	code := rand.Text()
@@ -260,11 +299,10 @@ func OAuthAuthorizeHandler(c *gin.Context) {
 		scopes:           scopes,
 		expiresAt:        oauthNow().Add(oauthCodeLifetime),
 	}) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many pending authorizations, try again in a minute"})
-		return
+		return nil, huma.Error503ServiceUnavailable("too many pending authorizations, try again in a minute")
 	}
-	c.JSON(http.StatusOK, gin.H{"redirectUrl": req.redirectURL(url.Values{"code": {code}})})
-}
+	return redirect(url.Values{"code": {code}})
+})
 
 // oauthAuthorizationCode is what the user approved, until the client exchanges
 // the code for a token. Codes live a minute, so they are kept in memory.
