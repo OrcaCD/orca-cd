@@ -52,6 +52,8 @@ export interface NotificationSubscription {
 	agentIds: string[];
 	allRepositories: boolean;
 	repositoryIds: string[];
+	// composeAssignable lets applications assign themselves with x-orcacd in their compose file.
+	composeAssignable: boolean;
 }
 
 export interface Notification extends NotificationSubscription {

@@ -75,13 +75,16 @@ type Notification struct {
 	AllApplications bool                   `gorm:"not null"`
 	AllAgents       bool                   `gorm:"not null"`
 	AllRepositories bool                   `gorm:"not null"`
-	Events          []NotificationEvent    `gorm:"type:text;not null;serializer:json"`
-	Status          NotificationStatus     `gorm:"type:text;not null"`
-	Type            NotificationType       `gorm:"type:text;not null"`
-	Config          crypto.EncryptedString `gorm:"type:text;not null"`
-	Applications    []Application          `gorm:"many2many:application_notifications;"`
-	Agents          []Agent                `gorm:"many2many:agent_notifications;"`
-	Repositories    []Repository           `gorm:"many2many:repository_notifications;"`
+	// ComposeAssignable lets applications assign themselves to the
+	// notification with x-orcacd in their compose file.
+	ComposeAssignable bool                   `gorm:"not null;default:false"`
+	Events            []NotificationEvent    `gorm:"type:text;not null;serializer:json"`
+	Status            NotificationStatus     `gorm:"type:text;not null"`
+	Type              NotificationType       `gorm:"type:text;not null"`
+	Config            crypto.EncryptedString `gorm:"type:text;not null"`
+	Applications      []Application          `gorm:"many2many:application_notifications;"`
+	Agents            []Agent                `gorm:"many2many:agent_notifications;"`
+	Repositories      []Repository           `gorm:"many2many:repository_notifications;"`
 }
 
 func (n *Notification) SubscribesTo(event NotificationEvent) bool {

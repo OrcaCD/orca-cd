@@ -286,6 +286,9 @@ func TestUpdateNotificationHandler_ManagedApplications(t *testing.T) {
 	managed := seedNotificationManagedApplication(t, "Managed App")
 	plain := seedNotificationApplication(t, managed.RepositoryId, managed.AgentId, "Plain App")
 	notification := createNotificationRecord(t, []string{managed.Id})
+	if err := db.DB.Model(&notification).Update("compose_assignable", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	update := func(allApplications bool, applicationIds []string) *httptest.ResponseRecorder {
 		return invokeNotificationHandler(t, http.MethodPut, notification.Id, map[string]any{
 			"enabled": true, "allApplications": allApplications, "allAgents": false, "allRepositories": false,
@@ -312,12 +315,50 @@ func TestCreateNotificationHandler_ManagedApplication(t *testing.T) {
 	setupTestDBWithNotifications(t)
 	managed := seedNotificationManagedApplication(t, "Managed App")
 
-	w := invokeNotificationHandler(t, http.MethodPost, "", map[string]any{
-		"name": "Ops", "type": "discord", "config": json.RawMessage(validDiscordConfig),
-		"applicationIds": []string{managed.Id},
-	})
-	if w.Code != http.StatusConflict {
+	create := func(composeAssignable bool) *httptest.ResponseRecorder {
+		return invokeNotificationHandler(t, http.MethodPost, "", map[string]any{
+			"name": "Ops", "type": "discord", "config": json.RawMessage(validDiscordConfig),
+			"applicationIds": []string{managed.Id}, "composeAssignable": composeAssignable,
+		})
+	}
+	if w := create(true); w.Code != http.StatusConflict {
 		t.Fatalf("expected 409 for assigning the managed application, got %d: %s", w.Code, w.Body.String())
+	}
+	// Notifications that compose files can't assign are not locked.
+	if w := create(false); w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateNotificationHandler_ComposeAssignable(t *testing.T) {
+	setupTestDBWithNotifications(t)
+	app := seedNotificationApplication(t, seedNotificationRepository(t).Id, seedNotificationAgent(t).Id, "App")
+	notification := createNotificationRecord(t, []string{app.Id})
+	update := func(body map[string]any) notificationResponse {
+		t.Helper()
+		w := invokeNotificationHandler(t, http.MethodPut, notification.Id, body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var response notificationResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	body := map[string]any{
+		"enabled": true, "allApplications": false, "allAgents": false, "allRepositories": false,
+		"events": []string{string(models.NotificationEventDeploymentFailed)}, "applicationIds": []string{app.Id},
+	}
+
+	body["composeAssignable"] = true
+	if response := update(body); !response.ComposeAssignable {
+		t.Error("expected composeAssignable to be set")
+	}
+	// Leaving it out keeps it.
+	delete(body, "composeAssignable")
+	if response := update(body); !response.ComposeAssignable {
+		t.Error("expected composeAssignable to be kept")
 	}
 }
 
@@ -327,6 +368,9 @@ func TestCreateApplicationHandler_AssignsNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	notification := createNotificationRecord(t, nil)
+	if err := db.DB.Model(&notification).Update("compose_assignable", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	useComposeFile(t, "x-orcacd:\n  notifications: [Initial Notification]\nservices: {}\n")
 	repo := seedTestRepository(t, "https://github.com/owner/repo-create-notifications")
 	agent := seedTestAgent(t, "agent-create-notifications")
@@ -347,7 +391,7 @@ func TestCreateApplicationHandler_AssignsNotifications(t *testing.T) {
 	w = invokeCreateApplication(t, map[string]any{
 		"name": "Other", "repositoryId": repo.Id, "agentId": agent.Id, "branch": "main", "path": "services/billing.yml",
 	})
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `there is no notification \"Unknown\"`) {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `no notification \"Unknown\" allows compose files`) {
 		t.Fatalf("expected 422 for an unknown notification, got %d: %s", w.Code, w.Body.String())
 	}
 }

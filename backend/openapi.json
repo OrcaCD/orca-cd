@@ -1458,6 +1458,13 @@
               "null"
             ]
           },
+          "composeAssignable": {
+            "description": "Whether applications can assign themselves to the notification with x-orcacd in their compose file. Defaults to false. Applications it assigns can't be assigned or removed through the API.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "config": {
             "description": "The settings of the provider, as a JSON object or a string. It holds secrets and is never returned."
           },
@@ -2214,6 +2221,10 @@
               "null"
             ]
           },
+          "composeAssignable": {
+            "description": "Whether applications can assign themselves to the notification with x-orcacd in their compose file. Applications it assigns can't be assigned or removed through the API.",
+            "type": "boolean"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -2270,6 +2281,7 @@
           "allApplications",
           "allAgents",
           "allRepositories",
+          "composeAssignable",
           "events",
           "status",
           "type",
@@ -3560,6 +3572,13 @@
             },
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "composeAssignable": {
+            "description": "Leave it out to keep it. Whether applications can assign themselves to the notification with x-orcacd in their compose file.",
+            "type": [
+              "boolean",
               "null"
             ]
           },

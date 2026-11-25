@@ -41,6 +41,7 @@ export const notificationSubscriptionSchema = z.object({
 	agentIds: z.array(z.string()),
 	allRepositories: z.boolean(),
 	repositoryIds: z.array(z.string()),
+	composeAssignable: z.boolean(),
 });
 
 export const notificationEventLabels: Record<NotificationEvent, () => string> = {
@@ -130,7 +131,8 @@ export function NotificationSubscriptionFields({
 			id: app.id,
 			name: app.name,
 			description: `${app.repositoryName} / ${app.agentName}`,
-			locked: isManaged(app, "notifications"),
+			// Applications assign themselves only to notifications that allow it.
+			locked: value.composeAssignable && isManaged(app, "notifications"),
 		})),
 		agents: agents?.map((agent) => ({ id: agent.id, name: agent.name })),
 		repositories: repositories?.map((repo) => ({
@@ -225,6 +227,22 @@ function ResourceSubscriptionFields({
 					onCheckedChange={(checked) => onChange({ ...value, [config.allKey]: checked })}
 				/>
 			</div>
+
+			{resource === "applications" && (
+				<div className="flex items-center justify-between gap-4 rounded-md border p-3">
+					<div>
+						<p className="text-sm font-medium">{m.notificationComposeAssignable()}</p>
+						<p className="text-xs text-muted-foreground">
+							{m.notificationComposeAssignableDescription()}
+						</p>
+					</div>
+					<Switch
+						aria-label={m.notificationComposeAssignable()}
+						checked={value.composeAssignable}
+						onCheckedChange={(checked) => onChange({ ...value, composeAssignable: checked })}
+					/>
+				</div>
+			)}
 
 			{!value[config.allKey] && (
 				<ResourceSelectField

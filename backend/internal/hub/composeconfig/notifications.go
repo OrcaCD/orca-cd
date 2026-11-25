@@ -44,12 +44,17 @@ func parseNotifications(value any) ([]string, error) {
 }
 
 // ResolveNotifications looks up the notifications of the config by name or
-// ID. A name has to match exactly one notification.
+// ID, among the notifications that applications can assign themselves to.
+// A name has to match exactly one of them. Other notifications are never
+// matched, so their names can't be probed.
 func (c *Config) ResolveNotifications(ctx context.Context) error {
 	if c.notifications == nil {
 		return nil
 	}
-	all, err := gorm.G[models.Notification](db.DB).Select("id", "name").Find(ctx)
+	assignable, err := gorm.G[models.Notification](db.DB).
+		Select("id", "name").
+		Where("compose_assignable = ?", true).
+		Find(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load the notifications: %w", err)
 	}
@@ -57,7 +62,7 @@ func (c *Config) ResolveNotifications(ctx context.Context) error {
 	var errs []error
 	for _, name := range c.notifications {
 		var matches []models.Notification
-		for _, notification := range all {
+		for _, notification := range assignable {
 			if notification.Id == name || notification.Name.String() == name {
 				matches = append(matches, notification)
 			}
@@ -68,24 +73,46 @@ func (c *Config) ResolveNotifications(ctx context.Context) error {
 				c.resolved = append(c.resolved, matches[0])
 			}
 		case 0:
-			errs = append(errs, fmt.Errorf("%s.%s: there is no notification %q", Key, keyNotifications, name))
+			errs = append(errs, fmt.Errorf("%s.%s: no notification %s allows compose files to assign applications",
+				Key, keyNotifications, quoteKey(name)))
 		default:
-			errs = append(errs, fmt.Errorf("%s.%s: %d notifications are named %q, use the ID of one", Key, keyNotifications, len(matches), name))
+			errs = append(errs, fmt.Errorf("%s.%s: %d notifications are named %s, use the ID of one",
+				Key, keyNotifications, len(matches), quoteKey(name)))
 		}
 	}
-	return errors.Join(errs...)
+	return joinErrors(errs)
 }
 
 // SaveNotifications assigns the application to the notifications of the
-// config, which ResolveNotifications looked up, or to none when x-orcacd
-// stopped setting them. Otherwise it leaves them as they are.
+// config, which ResolveNotifications looked up, and removes it from the other
+// notifications that allow compose files to assign applications. When
+// x-orcacd stopped setting the notifications, it removes it from all of
+// those. Notifications that don't allow it are left alone.
 func (c *Config) SaveNotifications(ctx context.Context, app *models.Application) error {
-	association := db.DB.WithContext(ctx).Model(app).Association("Notifications")
-	switch {
-	case c.notifications != nil:
-		return association.Replace(c.resolved)
-	case c.clearNotifications:
-		return association.Clear()
+	if c.notifications == nil && !c.clearNotifications {
+		return nil
 	}
-	return nil
+	return db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var linked []models.Notification
+		if err := tx.Model(app).Where("compose_assignable = ?", true).Association("Notifications").Find(&linked); err != nil {
+			return err
+		}
+		isResolved := func(n models.Notification) bool {
+			return slices.ContainsFunc(c.resolved, func(r models.Notification) bool { return r.Id == n.Id })
+		}
+		isLinked := func(n models.Notification) bool {
+			return slices.ContainsFunc(linked, func(l models.Notification) bool { return l.Id == n.Id })
+		}
+		if remove := slices.DeleteFunc(slices.Clone(linked), isResolved); len(remove) > 0 {
+			if err := tx.Model(app).Association("Notifications").Delete(remove); err != nil {
+				return err
+			}
+		}
+		if add := slices.DeleteFunc(slices.Clone(c.resolved), isLinked); len(add) > 0 {
+			// Omit keeps Append from writing the notifications, which were only
+			// loaded partially, e.g. when one was deleted meanwhile.
+			return tx.Omit("Notifications.*").Model(app).Association("Notifications").Append(add)
+		}
+		return nil
+	})
 }

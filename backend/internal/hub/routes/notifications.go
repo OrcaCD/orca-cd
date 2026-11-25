@@ -28,17 +28,18 @@ import (
 )
 
 type createNotificationRequest struct {
-	Name            string                     `json:"name" required:"true" minLength:"1" maxLength:"128"`
-	Enabled         *bool                      `json:"enabled" doc:"Defaults to true"`
-	AllApplications *bool                      `json:"allApplications" doc:"Tell about every application, including future ones"`
-	AllAgents       *bool                      `json:"allAgents" doc:"Tell about every agent, including future ones"`
-	AllRepositories *bool                      `json:"allRepositories" doc:"Tell about every repository, including future ones"`
-	Events          []models.NotificationEvent `json:"events,omitempty" doc:"The events to tell about. Leave it out for all events."`
-	Type            models.NotificationType    `json:"type" required:"true" minLength:"1" doc:"The provider, e.g. discord or webhook"`
-	Config          json.RawMessage            `json:"config" required:"true" doc:"The settings of the provider, as a JSON object or a string. It holds secrets and is never returned."`
-	ApplicationIds  []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
-	AgentIds        []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
-	RepositoryIds   []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
+	Name              string                     `json:"name" required:"true" minLength:"1" maxLength:"128"`
+	Enabled           *bool                      `json:"enabled" doc:"Defaults to true"`
+	AllApplications   *bool                      `json:"allApplications" doc:"Tell about every application, including future ones"`
+	AllAgents         *bool                      `json:"allAgents" doc:"Tell about every agent, including future ones"`
+	AllRepositories   *bool                      `json:"allRepositories" doc:"Tell about every repository, including future ones"`
+	ComposeAssignable *bool                      `json:"composeAssignable" doc:"Whether applications can assign themselves to the notification with x-orcacd in their compose file. Defaults to false. Applications it assigns can't be assigned or removed through the API."`
+	Events            []models.NotificationEvent `json:"events,omitempty" doc:"The events to tell about. Leave it out for all events."`
+	Type              models.NotificationType    `json:"type" required:"true" minLength:"1" doc:"The provider, e.g. discord or webhook"`
+	Config            json.RawMessage            `json:"config" required:"true" doc:"The settings of the provider, as a JSON object or a string. It holds secrets and is never returned."`
+	ApplicationIds    []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
+	AgentIds          []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
+	RepositoryIds     []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
 }
 
 type setNotificationEnabledRequest struct {
@@ -46,14 +47,15 @@ type setNotificationEnabledRequest struct {
 }
 
 type updateNotificationRequest struct {
-	Enabled         bool                       `json:"enabled" required:"true"`
-	AllApplications bool                       `json:"allApplications" required:"true"`
-	AllAgents       bool                       `json:"allAgents" required:"true"`
-	AllRepositories bool                       `json:"allRepositories" required:"true"`
-	Events          []models.NotificationEvent `json:"events" required:"true" nullable:"false"`
-	ApplicationIds  []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
-	AgentIds        []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
-	RepositoryIds   []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
+	Enabled           bool                       `json:"enabled" required:"true"`
+	AllApplications   bool                       `json:"allApplications" required:"true"`
+	AllAgents         bool                       `json:"allAgents" required:"true"`
+	AllRepositories   bool                       `json:"allRepositories" required:"true"`
+	ComposeAssignable *bool                      `json:"composeAssignable" doc:"Leave it out to keep it. Whether applications can assign themselves to the notification with x-orcacd in their compose file."`
+	Events            []models.NotificationEvent `json:"events" required:"true" nullable:"false"`
+	ApplicationIds    []string                   `json:"applicationIds,omitempty" doc:"Ignored when allApplications is set"`
+	AgentIds          []string                   `json:"agentIds,omitempty" doc:"Ignored when allAgents is set"`
+	RepositoryIds     []string                   `json:"repositoryIds,omitempty" doc:"Ignored when allRepositories is set"`
 }
 
 type testNotificationRequest struct {
@@ -65,20 +67,21 @@ var sendTestNotification = hubnotifications.SendTestNotification
 var notificationsLog = logger.New("notifications", false)
 
 type notificationResponse struct {
-	Id              string                     `json:"id" required:"true"`
-	Name            string                     `json:"name" required:"true"`
-	Enabled         bool                       `json:"enabled" required:"true"`
-	AllApplications bool                       `json:"allApplications" required:"true"`
-	AllAgents       bool                       `json:"allAgents" required:"true"`
-	AllRepositories bool                       `json:"allRepositories" required:"true"`
-	Events          []models.NotificationEvent `json:"events" required:"true"`
-	Status          string                     `json:"status" required:"true" enum:"unknown,success,error" doc:"Whether the last notification was delivered"`
-	Type            string                     `json:"type" required:"true"`
-	ApplicationIds  []string                   `json:"applicationIds" required:"true" doc:"The assigned applications the user may view"`
-	AgentIds        []string                   `json:"agentIds" required:"true" doc:"The assigned agents the user may view"`
-	RepositoryIds   []string                   `json:"repositoryIds" required:"true" doc:"The assigned repositories the user may view"`
-	CreatedAt       string                     `json:"createdAt" required:"true" format:"date-time"`
-	UpdatedAt       string                     `json:"updatedAt" required:"true" format:"date-time"`
+	Id                string                     `json:"id" required:"true"`
+	Name              string                     `json:"name" required:"true"`
+	Enabled           bool                       `json:"enabled" required:"true"`
+	AllApplications   bool                       `json:"allApplications" required:"true"`
+	AllAgents         bool                       `json:"allAgents" required:"true"`
+	AllRepositories   bool                       `json:"allRepositories" required:"true"`
+	ComposeAssignable bool                       `json:"composeAssignable" required:"true" doc:"Whether applications can assign themselves to the notification with x-orcacd in their compose file. Applications it assigns can't be assigned or removed through the API."`
+	Events            []models.NotificationEvent `json:"events" required:"true"`
+	Status            string                     `json:"status" required:"true" enum:"unknown,success,error" doc:"Whether the last notification was delivered"`
+	Type              string                     `json:"type" required:"true"`
+	ApplicationIds    []string                   `json:"applicationIds" required:"true" doc:"The assigned applications the user may view"`
+	AgentIds          []string                   `json:"agentIds" required:"true" doc:"The assigned agents the user may view"`
+	RepositoryIds     []string                   `json:"repositoryIds" required:"true" doc:"The assigned repositories the user may view"`
+	CreatedAt         string                     `json:"createdAt" required:"true" format:"date-time"`
+	UpdatedAt         string                     `json:"updatedAt" required:"true" format:"date-time"`
 }
 
 type notificationOutput struct {
@@ -167,6 +170,7 @@ var CreateNotificationHandler = restapi.Handler(huma.Operation{
 	allApplications := req.AllApplications != nil && *req.AllApplications
 	allAgents := req.AllAgents != nil && *req.AllAgents
 	allRepositories := req.AllRepositories != nil && *req.AllRepositories
+	composeAssignable := req.ComposeAssignable != nil && *req.ComposeAssignable
 
 	perms, err := permissionsFor(restapi.GinContext(ctx))
 	if err != nil {
@@ -187,7 +191,7 @@ var CreateNotificationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
-	if err := keepManagedApplications(ctx, nil, allApplications, &targets); err != nil {
+	if err := keepManagedApplications(ctx, nil, composeAssignable, allApplications, &targets); err != nil {
 		return nil, err
 	}
 
@@ -199,15 +203,16 @@ var CreateNotificationHandler = restapi.Handler(huma.Operation{
 	}
 
 	notification := models.Notification{
-		Name:            crypto.EncryptedString(normalizedName),
-		Enabled:         enabled,
-		AllApplications: allApplications,
-		AllAgents:       allAgents,
-		AllRepositories: allRepositories,
-		Events:          events,
-		Status:          models.NotificationStatusSuccess,
-		Type:            req.Type,
-		Config:          crypto.EncryptedString(normalizedConfig),
+		Name:              crypto.EncryptedString(normalizedName),
+		Enabled:           enabled,
+		AllApplications:   allApplications,
+		AllAgents:         allAgents,
+		AllRepositories:   allRepositories,
+		ComposeAssignable: composeAssignable,
+		Events:            events,
+		Status:            models.NotificationStatusSuccess,
+		Type:              req.Type,
+		Config:            crypto.EncryptedString(normalizedConfig),
 	}
 
 	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -283,21 +288,27 @@ var UpdateNotificationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
-	if err := keepManagedApplications(ctx, &notification, req.AllApplications, &targets); err != nil {
+	// The applications that x-orcacd assigned stay locked until the
+	// notification no longer allows it.
+	if err := keepManagedApplications(ctx, &notification, notification.ComposeAssignable, req.AllApplications, &targets); err != nil {
 		return nil, err
 	}
 
 	err = db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		updates := models.Notification{
-			Enabled:         req.Enabled,
-			AllApplications: req.AllApplications,
-			AllAgents:       req.AllAgents,
-			AllRepositories: req.AllRepositories,
-			Events:          events,
+			Enabled:           req.Enabled,
+			AllApplications:   req.AllApplications,
+			AllAgents:         req.AllAgents,
+			AllRepositories:   req.AllRepositories,
+			ComposeAssignable: notification.ComposeAssignable,
+			Events:            events,
+		}
+		if req.ComposeAssignable != nil {
+			updates.ComposeAssignable = *req.ComposeAssignable
 		}
 		rowsAffected, err := gorm.G[models.Notification](tx).
 			Where("id = ?", id).
-			Select("enabled", "all_applications", "all_agents", "all_repositories", "events").
+			Select("enabled", "all_applications", "all_agents", "all_repositories", "compose_assignable", "events").
 			Updates(ctx, updates)
 		if err != nil {
 			return err
@@ -499,20 +510,21 @@ func selectNotificationResourceId(db gorm.PreloadBuilder) error {
 // toNotificationResponse leaves out the targets the user cannot read.
 func toNotificationResponse(perms *rbac.Permissions, notification *models.Notification) notificationResponse {
 	response := notificationResponse{
-		Id:              notification.Id,
-		Name:            notification.Name.String(),
-		Enabled:         notification.Enabled,
-		AllApplications: notification.AllApplications,
-		AllAgents:       notification.AllAgents,
-		AllRepositories: notification.AllRepositories,
-		Events:          notification.Events,
-		Status:          string(notification.Status),
-		Type:            string(notification.Type),
-		ApplicationIds:  readableIds(perms, models.ResourceApplication, sortedIds(notification.Applications, applicationIdOf)),
-		AgentIds:        readableIds(perms, models.ResourceAgent, sortedIds(notification.Agents, agentIdOf)),
-		RepositoryIds:   readableIds(perms, models.ResourceRepository, sortedIds(notification.Repositories, repositoryIdOf)),
-		CreatedAt:       notification.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:       notification.UpdatedAt.Format(time.RFC3339),
+		Id:                notification.Id,
+		Name:              notification.Name.String(),
+		Enabled:           notification.Enabled,
+		AllApplications:   notification.AllApplications,
+		AllAgents:         notification.AllAgents,
+		AllRepositories:   notification.AllRepositories,
+		ComposeAssignable: notification.ComposeAssignable,
+		Events:            notification.Events,
+		Status:            string(notification.Status),
+		Type:              string(notification.Type),
+		ApplicationIds:    readableIds(perms, models.ResourceApplication, sortedIds(notification.Applications, applicationIdOf)),
+		AgentIds:          readableIds(perms, models.ResourceAgent, sortedIds(notification.Agents, agentIdOf)),
+		RepositoryIds:     readableIds(perms, models.ResourceRepository, sortedIds(notification.Repositories, repositoryIdOf)),
+		CreatedAt:         notification.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:         notification.UpdatedAt.Format(time.RFC3339),
 	}
 
 	return response
@@ -622,9 +634,13 @@ func (t *notificationTargets) replace(tx *gorm.DB, notification *models.Notifica
 
 // keepManagedApplications answers 409 when the targets add or remove an
 // application whose notifications come from x-orcacd, and keeps its link to
-// a notification that tells about all applications. notification is nil for
-// a new one.
-func keepManagedApplications(ctx context.Context, notification *models.Notification, allApplications bool, targets *notificationTargets) error {
+// a notification that tells about all applications. Only notifications that
+// applications can assign themselves to with x-orcacd are locked.
+// notification is nil for a new one.
+func keepManagedApplications(ctx context.Context, notification *models.Notification, composeAssignable, allApplications bool, targets *notificationTargets) error {
+	if !composeAssignable {
+		return nil
+	}
 	managed, err := gorm.G[models.Application](db.DB).
 		Select("id", "name", "managed_settings").
 		Where("managed_settings LIKE ?", `%"`+composeconfig.SettingNotifications+`"%`).

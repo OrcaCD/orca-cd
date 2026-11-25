@@ -148,6 +148,7 @@ const defaultSubscription: NotificationSubscription = {
 	agentIds: [],
 	allRepositories: false,
 	repositoryIds: [],
+	composeAssignable: false,
 };
 
 const notificationSchema = notificationBaseSchema.superRefine((value, ctx) => {

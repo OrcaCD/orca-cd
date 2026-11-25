@@ -225,14 +225,15 @@ func TestProcessSyncJob_ComposeConfig_InvalidCommitFailsOncePerPoll(t *testing.T
 	}
 }
 
-func seedNotification(t *testing.T, name string) models.Notification {
+func seedNotification(t *testing.T, name string, composeAssignable bool) models.Notification {
 	t.Helper()
 	notification := models.Notification{
-		Name:   crypto.EncryptedString(name),
-		Events: models.NotificationEvents,
-		Status: models.NotificationStatusUnknown,
-		Type:   models.NotificationTypeDiscord,
-		Config: crypto.EncryptedString("{}"),
+		Name:              crypto.EncryptedString(name),
+		Events:            models.NotificationEvents,
+		Status:            models.NotificationStatusUnknown,
+		Type:              models.NotificationTypeDiscord,
+		Config:            crypto.EncryptedString("{}"),
+		ComposeAssignable: composeAssignable,
 	}
 	if err := db.DB.Select("*").Create(&notification).Error; err != nil {
 		t.Fatalf("seed notification: %v", err)
@@ -256,44 +257,84 @@ func appNotificationIds(t *testing.T, id string) []string {
 
 func TestProcessSyncJob_ComposeConfig_Notifications(t *testing.T) {
 	setupTestDB(t)
-	ops := seedNotification(t, "ops")
-	alerts := seedNotification(t, "alerts")
-	other := seedNotification(t, "other")
+	ops := seedNotification(t, "ops", true)
+	alerts := seedNotification(t, "alerts", true)
+	previous := seedNotification(t, "previous", true)
+	// An admin assigned the application to a notification that compose files
+	// can't assign, which x-orcacd leaves alone.
+	security := seedNotification(t, "security", false)
 	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
-	if err := db.DB.Model(&app).Association("Notifications").Replace([]models.Notification{other}); err != nil {
+	if err := db.DB.Model(&app).Association("Notifications").Replace([]models.Notification{previous, security}); err != nil {
 		t.Fatal(err)
 	}
 
 	runComposeSync(t, app, "x-orcacd:\n  notifications: [ops, "+alerts.Id+"]\n"+composeWithoutConfig)
 
-	want := []string{ops.Id, alerts.Id}
+	want := []string{ops.Id, alerts.Id, security.Id}
 	slices.Sort(want)
 	if got := appNotificationIds(t, app.Id); !slices.Equal(got, want) {
 		t.Errorf("notifications = %v, want %v", got, want)
 	}
 
-	// Without the key, the application goes back to no notifications.
+	// Without the key, the application leaves the notifications x-orcacd can
+	// assign.
 	runComposeSync(t, loadApp(t, app.Id), composeWithoutConfig)
-	if got := appNotificationIds(t, app.Id); len(got) != 0 {
-		t.Errorf("expected no notifications, got %v", got)
+	if got := appNotificationIds(t, app.Id); !slices.Equal(got, []string{security.Id}) {
+		t.Errorf("notifications = %v, want only %s", got, security.Id)
+	}
+	if _, err := gorm.G[models.Notification](db.DB).Where("id = ?", ops.Id).First(t.Context()); err != nil {
+		t.Errorf("expected the notification itself to stay: %v", err)
 	}
 }
 
 func TestProcessSyncJob_ComposeConfig_UnknownOrAmbiguousNotification(t *testing.T) {
 	setupTestDB(t)
-	seedNotification(t, "ops")
-	seedNotification(t, "ops")
+	seedNotification(t, "ops", true)
+	seedNotification(t, "ops", true)
+	// A notification that doesn't allow compose files is never matched, so
+	// its name can't be probed.
+	private := seedNotification(t, "private", false)
 	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
 
-	stub := runComposeSync(t, app, "x-orcacd:\n  notifications: [ops, missing]\n"+composeWithoutConfig)
+	stub := runComposeSync(t, app, "x-orcacd:\n  notifications: [ops, missing, private, "+private.Id+"]\n"+composeWithoutConfig)
 
 	if stub.called {
 		t.Error("expected no deployment")
 	}
 	updated := loadApp(t, app.Id)
-	if updated.LastSyncError == nil ||
-		!strings.Contains(*updated.LastSyncError, `2 notifications are named "ops"`) ||
-		!strings.Contains(*updated.LastSyncError, `there is no notification "missing"`) {
-		t.Errorf("expected the sync to fail naming both notifications, got %v", updated.LastSyncError)
+	for _, want := range []string{
+		`2 notifications are named "ops"`,
+		`no notification "missing" allows compose files to assign applications`,
+		`no notification "private" allows compose files to assign applications`,
+		`no notification "` + private.Id + `" allows compose files to assign applications`,
+	} {
+		if updated.LastSyncError == nil || !strings.Contains(*updated.LastSyncError, want) {
+			t.Errorf("expected the sync error to contain %q, got %v", want, updated.LastSyncError)
+		}
+	}
+}
+
+// A notification deleted between looking it up and saving is not created
+// again from its partially loaded row.
+func TestSaveNotifications_DeletedNotificationIsNotRecreated(t *testing.T) {
+	setupTestDB(t)
+	ops := seedNotification(t, "ops", true)
+	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
+	cfg, err := composeconfig.Parse("x-orcacd:\n  notifications: [ops]\n" + composeWithoutConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.ResolveNotifications(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Apply(&app)
+	if _, err := gorm.G[models.Notification](db.DB).Where("id = ?", ops.Id).Delete(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	_ = cfg.SaveNotifications(t.Context(), &app)
+
+	if count, _ := gorm.G[models.Notification](db.DB).Where("id = ?", ops.Id).Count(t.Context(), "*"); count != 0 {
+		t.Error("expected the deleted notification not to be created again")
 	}
 }

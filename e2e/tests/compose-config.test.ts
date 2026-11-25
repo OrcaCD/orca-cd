@@ -136,6 +136,7 @@ test.describe("Settings from the compose file", () => {
 			name,
 			type: "webhook",
 			config: JSON.stringify({ webhookUrl: hookUrl("compose-config") }),
+			composeAssignable: true,
 		});
 		try {
 			await commit(repo!.name, {

@@ -85,7 +85,7 @@
           "maxItems": 50,
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
-          "description": "The notifications that tell about the application, by name or ID. A name must match one notification. Sets all notifications of the application."
+          "description": "The notifications that tell about the application, by name or ID. Only notifications that allow compose files to assign applications can be listed, and a name must match one of them. Other notifications of the application are left alone."
         },
         "release-age": {
           "type": "object",

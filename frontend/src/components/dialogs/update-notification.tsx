@@ -53,6 +53,7 @@ export default function UpdateNotificationDialog({
 				agentIds: notification.agentIds,
 				allRepositories: notification.allRepositories,
 				repositoryIds: notification.repositoryIds,
+				composeAssignable: notification.composeAssignable,
 			},
 		},
 		validators: { onSubmit: notificationSettingsSchema },
