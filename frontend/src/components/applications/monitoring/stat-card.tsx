@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
 	Card,
@@ -9,15 +10,15 @@ import {
 } from "@/components/ui/card";
 
 export function StatCard({
+	icon: Icon,
 	title,
 	value,
-	aside,
 	chart,
 	children,
 }: {
+	icon: LucideIcon;
 	title: string;
 	value: string;
-	aside?: ReactNode;
 	chart?: ReactNode;
 	children?: ReactNode;
 }) {
@@ -26,11 +27,9 @@ export function StatCard({
 			<CardHeader>
 				<CardDescription>{title}</CardDescription>
 				<CardTitle className="text-2xl font-semibold tabular-nums">{value}</CardTitle>
-				{aside ? (
-					<CardAction className="text-right text-xs text-muted-foreground tabular-nums">
-						{aside}
-					</CardAction>
-				) : null}
+				<CardAction className="text-muted-foreground">
+					<Icon className="size-5" />
+				</CardAction>
 			</CardHeader>
 			{chart || children ? (
 				// Two lines high, so a line that shows up later doesn't move the card

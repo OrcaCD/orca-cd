@@ -27,13 +27,13 @@ export function ContainerSwitcher({
 		>
 			<TabsList
 				aria-label={m.monitoringContainerSwitcher()}
-				className="group-data-horizontal/tabs:h-10"
+				className="group-data-horizontal/tabs:h-9"
 			>
 				{containers.map((container) => (
 					<TabsTrigger
 						key={container.id}
 						value={containerKey(container, containers)}
-						className="gap-2 px-3.5"
+						className="gap-2 px-3"
 					>
 						<span
 							aria-hidden="true"

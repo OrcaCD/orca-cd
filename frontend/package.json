@@ -26,6 +26,7 @@
 		"@tanstack/react-router": "^1.170.46",
 		"@tanstack/react-router-devtools": "^1.167.3",
 		"@tanstack/react-table": "^9.3.1",
+		"@tanstack/react-virtual": "^3.14.26",
 		"@tanstack/router-plugin": "^1.169.0",
 		"blobatar": "^2.7.0",
 		"class-variance-authority": "^0.7.1",

@@ -1,3 +1,4 @@
+import { CpuIcon, MemoryStickIcon, NetworkIcon, RotateCwIcon } from "lucide-react";
 import { StatCard } from "@/components/applications/monitoring/stat-card";
 import { StatChart } from "@/components/applications/monitoring/stat-chart";
 import { useContainerStats, type StatsStatus } from "@/hooks/use-container-stats";
@@ -49,6 +50,7 @@ export function ContainerStatCards({
 	return (
 		<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 			<StatCard
+				icon={CpuIcon}
 				title={m.monitoringCpu()}
 				value={cpu ? formatPercent(cpu.percent) : NO_VALUE}
 				chart={
@@ -76,6 +78,7 @@ export function ContainerStatCards({
 				{hint ? <span>{hint}</span> : null}
 			</StatCard>
 			<StatCard
+				icon={MemoryStickIcon}
 				title={m.monitoringMemory()}
 				value={latest ? formatBytes(latest.memUsageBytes) : NO_VALUE}
 				chart={
@@ -99,17 +102,9 @@ export function ContainerStatCards({
 				{hint ? <span>{hint}</span> : null}
 			</StatCard>
 			<StatCard
+				icon={NetworkIcon}
 				title={m.monitoringNetwork()}
 				value={rxRate !== null ? `↓ ${formatByteRate(rxRate)}` : NO_VALUE}
-				aside={
-					latest ? (
-						<>
-							<span className="block">{m.monitoringNetworkTotal()}</span>
-							<span className="block">↓ {formatBytes(latest.netRxBytes)}</span>
-							<span className="block">↑ {formatBytes(latest.netTxBytes)}</span>
-						</>
-					) : null
-				}
 				chart={
 					<StatChart
 						points={points}
@@ -131,10 +126,22 @@ export function ContainerStatCards({
 					/>
 				}
 			>
-				<span>{txLine}</span>
+				<div className="flex flex-wrap justify-between gap-x-3 tabular-nums">
+					<span>{txLine}</span>
+					{latest ? (
+						<span>
+							{m.monitoringNetworkTotal()} ↓ {formatBytes(latest.netRxBytes)} ↑{" "}
+							{formatBytes(latest.netTxBytes)}
+						</span>
+					) : null}
+				</div>
 				{latest && hint ? <span>{hint}</span> : null}
 			</StatCard>
-			<StatCard title={m.monitoringRestarts()} value={String(container.restartCount)}>
+			<StatCard
+				icon={RotateCwIcon}
+				title={m.monitoringRestarts()}
+				value={String(container.restartCount)}
+			>
 				<span>
 					{container.startedAt
 						? m.monitoringStarted({ time: formatRelativeTime(container.startedAt, now) })

@@ -4,6 +4,7 @@ import { z } from "zod";
 import ErrorAlert from "@/components/alerts/error-alert";
 import { ApplicationStatusBadge } from "@/components/badges/application-status-badge";
 import { ContainerDetails } from "@/components/applications/monitoring/container-details";
+import { ContainerPanel } from "@/components/applications/monitoring/container-panel";
 import { ContainerStatCards } from "@/components/applications/monitoring/container-stat-cards";
 import { ContainerStatePill } from "@/components/applications/monitoring/container-state";
 import { ContainerSwitcher } from "@/components/applications/monitoring/container-switcher";
@@ -90,6 +91,7 @@ function ApplicationMonitoringPage() {
 					) : null}
 					<ContainerStatCards applicationId={id} container={selected} />
 					<ContainerDetails container={selected} />
+					<ContainerPanel applicationId={id} container={selected} />
 				</>
 			)}
 		</div>

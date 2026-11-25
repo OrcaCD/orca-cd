@@ -1,5 +1,6 @@
+import useSWR from "swr";
 import type { HealthStatus } from "./applications";
-import { useFetch } from "./api";
+import { fetcher, useFetch } from "./api";
 
 export interface ContainerPort {
 	ip: string;
@@ -55,6 +56,15 @@ export function useApplicationContainers(applicationId: string) {
 	return useFetch<{ containers: ContainerInfo[] }>(`/applications/${applicationId}/containers`, {
 		refreshInterval: CONTAINER_REFRESH_INTERVAL,
 	});
+}
+
+export function useContainerInspect(applicationId: string, container: ContainerInfo) {
+	return useSWR(
+		["container-inspect", applicationId, container.id, container.startedAt] as const,
+		([, id, containerId]) =>
+			fetcher<{ inspectJson: string }>(`/applications/${id}/containers/${containerId}/inspect`),
+		{ revalidateOnFocus: false, revalidateOnReconnect: false },
+	);
 }
 
 export function isScaled(container: ContainerInfo, containers: ContainerInfo[]): boolean {

@@ -1129,6 +1129,26 @@ test.describe("Monitoring page", () => {
 
 		await expect(running(page)).toBeVisible({ timeout: 30_000 });
 	});
+
+	test("shows the live logs and the inspect data without secrets", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+		await gotoApp(page, `/applications/${appId}/monitoring`);
+
+		const logs = page.getByRole("log", { name: "Logs" });
+		await expect(logs).toBeVisible();
+		await expect(page.getByText("Live", { exact: true })).toBeVisible({ timeout: 30_000 });
+		const marker = `e2e-monitoring-${Date.now()}`;
+		logFromContainer(container.id, marker);
+		await expect(logs).toContainText(marker, { timeout: 30_000 });
+
+		await page.getByRole("tab", { name: "Inspect" }).click();
+		const inspect = page.locator("[data-slot='code-block']");
+		await expect(inspect).toContainText('"Image"', { timeout: 30_000 });
+		await expect(inspect).toContainText("[redacted]");
+		await expect(inspect).not.toContainText("APP_VERSION");
+		await expect(inspect).not.toContainText(CREDENTIAL_LABEL_VALUE);
+	});
 });
 
 test.describe("Rollback", () => {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { cleanup, createActiveUser } from "./helpers/users.ts";
 
 const APP_ID = "monitoring-app";
 const DAY = 24 * 60 * 60 * 1000;
@@ -67,6 +68,8 @@ async function mockApplication(page: Page) {
 }
 
 const STATS_STREAM = `**/api/v1/applications/${APP_ID}/containers/*/stats/stream`;
+const LOGS_STREAM = new RegExp(`/api/v1/applications/${APP_ID}/containers/[^/]+/logs/stream`);
+const INSPECT = `**/api/v1/applications/${APP_ID}/containers/*/inspect`;
 
 function sample(overrides: Record<string, unknown> = {}) {
 	return {
@@ -90,7 +93,14 @@ async function mockContainers(page: Page, status: number, body: unknown) {
 	await page.route(STATS_STREAM, (route) =>
 		route.fulfill({ status: 404, json: { error: "container not found" } }),
 	);
+	await page.route(LOGS_STREAM, (route) =>
+		route.fulfill({ status: 404, json: { error: "container not found" } }),
+	);
 }
+
+test.afterEach(async ({ page }) => {
+	await cleanup(page);
+});
 
 /** Ends with the container being gone, so the page doesn't reconnect and repeat the samples. */
 async function mockStats(page: Page, samples: Record<string, unknown>[]) {
@@ -105,6 +115,20 @@ async function mockStats(page: Page, samples: Record<string, unknown>[]) {
 
 const card = (page: Page, title: string) =>
 	page.locator("[data-slot='card']").filter({ has: page.getByText(title, { exact: true }) });
+
+/** Needs `page.clock.install()` before the page is loaded. */
+async function hideTabForAWhile(page: Page) {
+	const setVisibility = (state: DocumentVisibilityState) =>
+		page.evaluate((value) => {
+			Object.defineProperty(document, "visibilityState", { configurable: true, get: () => value });
+			document.dispatchEvent(new Event("visibilitychange"));
+		}, state);
+
+	await setVisibility("hidden");
+	await page.clock.fastForward(31_000);
+	await setVisibility("visible");
+	await page.clock.runFor(1_000);
+}
 
 test("the sidebar links to the monitoring page", async ({ page }) => {
 	await mockContainers(page, 200, { containers: [container()] });
@@ -249,10 +273,7 @@ test("the cards show the CPU, memory and network values with their charts", asyn
 	const network = card(page, "Network");
 	await expect(network.locator("[data-slot='card-title']")).toHaveText("↓ 2 KiB/s");
 	await expect(network.getByText("↑ 1.5 KiB/s")).toBeVisible();
-	const total = network.locator("[data-slot='card-action']");
-	await expect(total).toContainText("Total");
-	await expect(total.getByText("↓ 9 KiB", { exact: true })).toBeVisible();
-	await expect(total.getByText("↑ 6.5 KiB", { exact: true })).toBeVisible();
+	await expect(network.getByText("Total ↓ 9 KiB ↑ 6.5 KiB")).toBeVisible();
 
 	for (const stat of [cpu, memory, network]) {
 		// The mocked samples give flat lines, which have no height and count as hidden.
@@ -315,10 +336,331 @@ test("a container that is not running doesn't open a stats stream", async ({ pag
 	expect(requests).toEqual([]);
 });
 
+test("an ended stats stream stays ended after the tab was hidden", async ({ page }) => {
+	await page.clock.install();
+	await mockContainers(page, 200, { containers: [container()] });
+	await mockStats(page, [sample()]);
+	await page.goto(`/applications/${APP_ID}/monitoring`);
+	const stopped = card(page, "CPU").getByText("Container stopped, showing the last values");
+	await expect(stopped).toBeVisible();
+
+	await hideTabForAWhile(page);
+
+	await expect(stopped).toBeVisible();
+});
+
 test("the cards wait for the first sample", async ({ page }) => {
 	await mockContainers(page, 200, { containers: [container()] });
 	await page.goto(`/applications/${APP_ID}/monitoring`);
 
 	await expect(card(page, "Memory").getByText("Waiting for data…")).toBeVisible();
 	await expect(card(page, "Memory").locator("[data-slot='card-title']")).toHaveText("—");
+});
+
+function logLine(second: number, text: string, stream = "stdout") {
+	return {
+		timestamp: new Date(Date.UTC(2026, 0, 1, 12, 0, second))
+			.toISOString()
+			.replace(".000Z", ".123456789Z"),
+		stream,
+		text,
+		truncated: false,
+	};
+}
+
+type LogLine = ReturnType<typeof logLine>;
+
+function logEvents(lines: LogLine[], end?: string) {
+	const events = [`event: log\ndata: ${JSON.stringify({ lines, droppedLines: 0 })}\n\n`];
+	if (end) {
+		events.push(`event: end\ndata: ${JSON.stringify({ reason: end, error: "" })}\n\n`);
+	}
+	return events.join("");
+}
+
+/** Ends with the container being gone, so the page doesn't reconnect and repeat the lines. */
+async function mockLogs(page: Page, lines: LogLine[]) {
+	await page.route(LOGS_STREAM, (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "text/event-stream",
+			body: logEvents(lines, "container_gone"),
+		}),
+	);
+}
+
+const logPanel = (page: Page) => page.getByRole("log", { name: "Logs" });
+
+test.describe("logs", () => {
+	test("show the lines of the container and mark levels and colors", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [
+			logLine(1, "server listening on :3000"),
+			logLine(2, "2026-01-01 ERROR database unreachable", "stderr"),
+			logLine(3, "\u001b[31mred text\u001b[0m"),
+		]);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		await expect(logs).toContainText("server listening on :3000");
+		await expect(logs).toContainText("database unreachable");
+		await expect(logs.getByText("ERROR", { exact: true })).toHaveClass(/text-red/);
+		await expect(logs).toContainText("red text");
+		await expect(logs).not.toContainText("[31m");
+		await expect(logs.locator("time").first()).toHaveAttribute(
+			"datetime",
+			/^2026-01-01T12:00:01\./,
+		);
+		await expect(page.getByText("3 lines loaded")).toBeVisible();
+		await expect(page.getByText("Container stopped, no more logs")).toBeVisible();
+	});
+
+	test("are requested with the tail and follow", async ({ page }) => {
+		const requests: URL[] = [];
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [logLine(1, "hello")]);
+		page.on("request", (request) => {
+			if (LOGS_STREAM.test(request.url())) {
+				requests.push(new URL(request.url()));
+			}
+		});
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		await expect(logPanel(page)).toContainText("hello");
+		expect(requests).toHaveLength(1);
+		expect(requests[0].searchParams.get("follow")).toBe("true");
+		expect(requests[0].searchParams.get("tail")).toBe("1000");
+		expect(requests[0].searchParams.get("since")).toBeNull();
+	});
+
+	test("are filtered in the loaded lines", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [
+			logLine(1, "server listening on :3000"),
+			logLine(2, "database unreachable"),
+			logLine(3, "\u001b[31mDatabase\u001b[0m retry"),
+		]);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		await expect(logs.locator("time")).toHaveCount(3);
+		await expect(page.getByText("The filter only covers")).toHaveCount(0);
+
+		const filter = page.getByRole("searchbox", { name: "Filter logs" });
+		await filter.fill("database");
+		await expect(logs.locator("time")).toHaveCount(2);
+		await expect(logs).not.toContainText("server listening");
+		await expect(page.getByText("2 of 3 lines")).toBeVisible();
+		await expect(page.getByText("The filter only covers the lines loaded here.")).toBeVisible();
+
+		await filter.fill("[31m");
+		await expect(page.getByText("No loaded lines match the filter.")).toBeVisible();
+
+		await filter.press("Escape");
+		await expect(logs.locator("time")).toHaveCount(3);
+		await expect(page.getByText("3 lines loaded")).toBeVisible();
+	});
+
+	test("resume after a broken connection without repeating lines", async ({ page }) => {
+		const first = logLine(1, "first");
+		const second = logLine(2, "second");
+		const third = logLine(3, "third");
+		const requests: URL[] = [];
+		await mockContainers(page, 200, { containers: [container()] });
+		await page.route(LOGS_STREAM, (route) => {
+			requests.push(new URL(route.request().url()));
+			// The second answer repeats the last line, like the agent does for the same millisecond
+			return requests.length === 1
+				? route.fulfill({
+						status: 200,
+						contentType: "text/event-stream",
+						body: logEvents([first, second]),
+					})
+				: route.fulfill({
+						status: 200,
+						contentType: "text/event-stream",
+						body: logEvents([second, third], "container_gone"),
+					});
+		});
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		await expect(logs.locator("time")).toHaveCount(3, { timeout: 15_000 });
+		await expect(logs.locator("span.flex-1")).toHaveText(["first", "second", "third"]);
+		expect(requests).toHaveLength(2);
+		expect(requests[1].searchParams.get("since")).toBe(second.timestamp);
+	});
+
+	test("stay ended after the tab was hidden", async ({ page }) => {
+		await page.clock.install();
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [logLine(1, "hello")]);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+		const ended = page.getByText("Container stopped, no more logs");
+		await expect(ended).toBeVisible();
+
+		await hideTabForAWhile(page);
+
+		await expect(ended).toBeVisible();
+	});
+
+	test("only render the visible lines of a long log and follow the end", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(
+			page,
+			Array.from({ length: 3000 }, (_, index) => logLine(index, `line ${index}`)),
+		);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		await expect(page.getByText("3000 lines loaded")).toBeVisible();
+		await expect(logs).toContainText("line 2999");
+		expect(await logs.locator("time").count()).toBeLessThan(200);
+	});
+
+	test("stop following when scrolling up and follow again with the switch", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(
+			page,
+			Array.from({ length: 500 }, (_, index) => logLine(index, `line ${index}`)),
+		);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		const follow = page.getByRole("switch", { name: "Follow" });
+		await expect(follow).toBeChecked();
+		await expect(logs).toContainText("line 499");
+
+		await logs.evaluate((element) => {
+			element.scrollTop = 0;
+		});
+		await expect(follow).not.toBeChecked();
+		await expect(logs).toContainText("line 0");
+		await expect(logs).not.toContainText("line 499");
+
+		await follow.click();
+		await expect(follow).toBeChecked();
+		await expect(logs).toContainText("line 499");
+	});
+
+	test("follow again after switching to another container", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container(), database] });
+		await mockLogs(
+			page,
+			Array.from({ length: 500 }, (_, index) => logLine(index, `line ${index}`)),
+		);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		const logs = logPanel(page);
+		const follow = page.getByRole("switch", { name: "Follow" });
+		await expect(logs).toContainText("line 499");
+		await logs.evaluate((element) => {
+			element.scrollTop = 0;
+		});
+		await expect(follow).not.toBeChecked();
+
+		await page.getByRole("tablist", { name: "Container" }).getByRole("tab", { name: "db" }).click();
+
+		await expect(follow).toBeChecked();
+		await expect(logs).toContainText("line 499");
+	});
+
+	test("offer the whole log as a download", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [logLine(1, "hello")]);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		await expect(page.getByRole("link", { name: "Download", exact: true })).toHaveAttribute(
+			"href",
+			`/api/v1/applications/${APP_ID}/containers/${container().id}/logs/download`,
+		);
+	});
+
+	test("explain that a container without a log driver has none", async ({ page }) => {
+		const requests: string[] = [];
+		page.on("request", (request) => {
+			if (LOGS_STREAM.test(request.url())) {
+				requests.push(request.url());
+			}
+		});
+		await mockContainers(page, 200, { containers: [container({ logDriver: "none" })] });
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		await expect(page.getByText("doesn't keep any logs")).toBeVisible();
+		expect(requests).toEqual([]);
+	});
+});
+
+test.describe("inspect", () => {
+	test("shows the inspect data and offers it as a file", async ({ page }) => {
+		const requests: string[] = [];
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [logLine(1, "hello")]);
+		await page.route(INSPECT, (route) => {
+			requests.push(route.request().url());
+			return route.fulfill({
+				json: {
+					inspectJson: JSON.stringify(
+						{
+							Id: container().id,
+							Config: {
+								Image: "ghcr.io/example/shop:1.4.2",
+								Labels: { "traefik.http.middlewares.auth.basicauth.users": "[redacted]" },
+							},
+						},
+						null,
+						2,
+					),
+				},
+			});
+		});
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+		expect(requests).toEqual([]);
+
+		await page.getByRole("tab", { name: "Inspect" }).click();
+
+		const block = page.locator("[data-slot='code-block']");
+		await expect(block).toContainText('"Image": "ghcr.io/example/shop:1.4.2"');
+		await expect(block).toContainText("[redacted]");
+		await expect(block.getByRole("link", { name: "Download inspect data" })).toHaveAttribute(
+			"download",
+			"shop-app-1-inspect.json",
+		);
+		expect(requests).toHaveLength(1);
+
+		await page.getByRole("tab", { name: "Logs" }).click();
+		await expect(logPanel(page)).toContainText("hello");
+	});
+
+	test("shows the error of a failed request", async ({ page }) => {
+		await mockContainers(page, 200, { containers: [container()] });
+		await mockLogs(page, [logLine(1, "hello")]);
+		await page.route(INSPECT, (route) =>
+			route.fulfill({ status: 502, json: { error: "The agent failed to inspect the container." } }),
+		);
+		await page.goto(`/applications/${APP_ID}/monitoring`);
+
+		await page.getByRole("tab", { name: "Inspect" }).click();
+		await expect(page.getByText("Failed to load the inspect data")).toBeVisible();
+		await expect(page.getByText("The agent failed to inspect the container.")).toBeVisible();
+	});
+});
+
+test("logs and inspect need the inspect permission", async ({ page, browser }) => {
+	const user = await createActiveUser(page, browser);
+	const requests: string[] = [];
+	user.page.on("request", (request) => {
+		if (LOGS_STREAM.test(request.url()) || request.url().includes("/inspect")) {
+			requests.push(request.url());
+		}
+	});
+	await mockContainers(user.page, 200, { containers: [container()] });
+	await user.page.goto(`/applications/${APP_ID}/monitoring`);
+
+	await expect(user.page.getByText("You don't have permission to view the logs")).toBeVisible();
+	await expect(user.page.getByRole("tab", { name: "Logs" })).toHaveCount(0);
+	await expect(user.page.getByRole("tab", { name: "Inspect" })).toHaveCount(0);
+	// The rest of the page only needs the view permission
+	await expect(user.page.getByText("Running · Up 12d 3h")).toBeVisible();
+	expect(requests).toEqual([]);
 });
