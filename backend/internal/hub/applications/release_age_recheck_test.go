@@ -7,6 +7,7 @@ import (
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
+	hubws "github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	"gorm.io/gorm"
 )
 
@@ -44,18 +45,39 @@ func TestRecheckWaitingImages_PullsAllWaitingImages(t *testing.T) {
 	expectNoPullRequest(t, client, 50*time.Millisecond)
 }
 
-func TestRecheckWaitingImages_LeavesPollingApplicationsToPolling(t *testing.T) {
-	setupTestDB(t)
-	if err := db.DB.AutoMigrate(&models.ApplicationImageUpdate{}); err != nil {
-		t.Fatalf("migrate image updates: %v", err)
+func TestRecheckWaitingImages_SkipsApplicationsItCantPull(t *testing.T) {
+	tests := map[string]func(t *testing.T, app *models.Application){
+		"image polling enabled": func(t *testing.T, app *models.Application) {
+			if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+				Update(t.Context(), "image_poll_enabled", true); err != nil {
+				t.Fatalf("enable image polling: %v", err)
+			}
+		},
+		"agent offline": func(_ *testing.T, app *models.Application) {
+			hubws.DefaultHub.Unregister(app.AgentId)
+		},
 	}
-	app, client := seedConnectedApp(t)
-	seedWaitingImageUpdate(t, app.Id, "app", "ghcr.io/org/app:1.0")
-	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
-		Update(t.Context(), "image_poll_enabled", true); err != nil {
-		t.Fatalf("enable image polling: %v", err)
-	}
+	for name, prepare := range tests {
+		t.Run(name, func(t *testing.T) {
+			setupTestDB(t)
+			if err := db.DB.AutoMigrate(&models.ApplicationImageUpdate{}); err != nil {
+				t.Fatalf("migrate image updates: %v", err)
+			}
+			app, client := seedConnectedApp(t)
+			seedWaitingImageUpdate(t, app.Id, "app", "ghcr.io/org/app:1.0")
+			prepare(t, app)
 
+			RecheckWaitingImages(t.Context(), app.Id)
+			expectNoPullRequest(t, client, 50*time.Millisecond)
+		})
+	}
+}
+
+func TestRecheckWaitingImages_IgnoresAFailingQuery(t *testing.T) {
+	setupTestDB(t)
+	app, client := seedConnectedApp(t)
+
+	// The image updates table is missing, so loading the waiting updates fails.
 	RecheckWaitingImages(t.Context(), app.Id)
 	expectNoPullRequest(t, client, 50*time.Millisecond)
 }
