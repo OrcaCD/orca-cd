@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,33 @@ func TestTimeoutMiddleware_SkipsSSERoute(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestTimeoutMiddleware_SkipsStreamingRoutes(t *testing.T) {
+	t.Parallel()
+
+	for _, pattern := range StreamingRoutePaths() {
+		t.Run(pattern, func(t *testing.T) {
+			t.Parallel()
+
+			router := gin.New()
+			router.Use(TimeoutMiddleware(100 * time.Millisecond))
+			router.GET(pattern, func(c *gin.Context) {
+				if _, ok := c.Request.Context().Deadline(); ok {
+					t.Fatal("expected no deadline for streaming route")
+				}
+				c.Status(http.StatusOK)
+			})
+
+			path := strings.NewReplacer(":id", "app-1", ":containerId", "0123456789ab").Replace(pattern)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", w.Code)
+			}
+		})
 	}
 }
 

@@ -2,21 +2,29 @@ package middleware
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-const sseRoutePath = "/api/v1/events"
+var streamingRoutePaths = []string{
+	"/api/v1/events",
+	"/api/v1/applications/:id/containers/:containerId/logs/stream",
+	"/api/v1/applications/:id/containers/:containerId/logs/download",
+	"/api/v1/applications/:id/containers/:containerId/stats/stream",
+}
+
+func StreamingRoutePaths() []string {
+	return slices.Clone(streamingRoutePaths)
+}
 
 func TimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// WebSocket and SSE connections are long-lived; skip the timeout.
-		// The SSE exemption is tied to the registered route path, not the
-		// client-supplied Accept header, to prevent bypass via a crafted header.
+		// WebSocket and streaming connections are long-lived; skip the timeout.
 		if strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") ||
-			c.FullPath() == sseRoutePath {
+			slices.Contains(streamingRoutePaths, c.FullPath()) {
 			c.Next()
 			return
 		}

@@ -111,6 +111,9 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			containerRateLimit := middleware.RateLimitPerUser(time.Second, 20)
 			protected.GET("/applications/:id/containers", app(models.ActionRead), containerRateLimit, routes.ListApplicationContainersHandler)
 			protected.GET("/applications/:id/containers/:containerId/inspect", app(models.ActionInspect), containerRateLimit, routes.InspectApplicationContainerHandler)
+			session.GET("/applications/:id/containers/:containerId/logs/stream", app(models.ActionInspect), containerRateLimit, routes.ContainerLogsStreamHandler)
+			session.GET("/applications/:id/containers/:containerId/stats/stream", app(models.ActionRead), containerRateLimit, routes.ContainerStatsStreamHandler)
+			protected.GET("/applications/:id/containers/:containerId/logs/download", app(models.ActionInspect), containerRateLimit, routes.ContainerLogsDownloadHandler)
 
 			protected.POST("/applications", app(models.ActionCreate), routes.CreateApplicationHandler)
 			protected.POST("/applications/:id/deploy", app(models.ActionDeploy), routes.DeployApplicationHandler)

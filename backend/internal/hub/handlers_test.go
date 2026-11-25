@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
+	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
@@ -72,11 +74,38 @@ func TestRegisterRoutes_ContainerEndpointsRequireAuth(t *testing.T) {
 	for _, path := range []string{
 		"/api/v1/applications/app-1/containers",
 		"/api/v1/applications/app-1/containers/0123456789ab/inspect",
+		"/api/v1/applications/app-1/containers/0123456789ab/logs/stream",
+		"/api/v1/applications/app-1/containers/0123456789ab/logs/download",
+		"/api/v1/applications/app-1/containers/0123456789ab/stats/stream",
 	} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("GET %s: expected 401 without authentication, got %d", path, w.Code)
+		}
+	}
+}
+
+func TestRegisterRoutes_StreamingRoutesAreExemptFromTimeout(t *testing.T) {
+	router := gin.New()
+	if err := RegisterRoutes(router, Config{AppURL: "http://localhost:8080", DisableUI: true}); err != nil {
+		t.Fatalf("Failed to register routes: %v", err)
+	}
+
+	registered := make(map[string]bool)
+	for _, route := range router.Routes() {
+		registered[route.Path] = true
+	}
+	for _, pattern := range middleware.StreamingRoutePaths() {
+		if !registered[pattern] {
+			t.Errorf("timeout exemption %q matches no registered route", pattern)
+		}
+	}
+	for _, route := range router.Routes() {
+		if strings.HasSuffix(route.Path, "/logs/stream") || strings.HasSuffix(route.Path, "/stats/stream") || strings.HasSuffix(route.Path, "/logs/download") {
+			if !slices.Contains(middleware.StreamingRoutePaths(), route.Path) {
+				t.Errorf("streaming route %q is not exempt from the request timeout", route.Path)
+			}
 		}
 	}
 }

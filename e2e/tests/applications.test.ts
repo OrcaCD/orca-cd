@@ -14,6 +14,7 @@ import {
 	deploymentDirExists,
 	execInContainer,
 	inspectContainer,
+	logFromContainer,
 	projectContainers,
 	pullImage,
 	removeApplicationContainers,
@@ -23,6 +24,7 @@ import {
 	startContainer,
 	stopContainer,
 } from "./helpers/docker.ts";
+import { loggedLines, openEventStream, type EventStreamHandle } from "./helpers/event-stream.ts";
 import { commit, requireToken } from "./helpers/gitea-mock.ts";
 import { gotoApp } from "./helpers/navigation.ts";
 import {
@@ -889,6 +891,204 @@ test.describe("Container monitoring API", () => {
 			await inspectClient.dispose();
 			await deleteApiTokens(page, [TOKEN_NAME]);
 		}
+	});
+
+	test.describe("streams", () => {
+		const containerPath = (id: string) => `/applications/${appId}/containers/${id}`;
+		const texts = async (stream: EventStreamHandle) =>
+			(await loggedLines(stream)).map((line) => line.text);
+		const uniqueMarker = (name: string) => `e2e-${name}-${Date.now()}`;
+
+		test("the logs are followed live and tell stdout from stderr", async ({ page }) => {
+			const [container] = appContainers(appId);
+			const marker = uniqueMarker("logs");
+			logFromContainer(container.id, `${marker}-out`);
+			logFromContainer(container.id, `${marker}-err`, "stderr");
+
+			const stream = await openEventStream(
+				page,
+				`${containerPath(container.id)}/logs/stream?tail=50`,
+			);
+			try {
+				await expect
+					.poll(() => texts(stream), { timeout: 20_000 })
+					.toEqual(expect.arrayContaining([`${marker}-out`, `${marker}-err`]));
+
+				const lines = await loggedLines(stream);
+				const out = lines.find((line) => line.text === `${marker}-out`);
+				const err = lines.find((line) => line.text === `${marker}-err`);
+				expect(out?.stream).toBe("stdout");
+				expect(err?.stream).toBe("stderr");
+				expect(out?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+
+				logFromContainer(container.id, `${marker}-live`);
+				await expect.poll(() => texts(stream), { timeout: 20_000 }).toContain(`${marker}-live`);
+			} finally {
+				await stream.close();
+			}
+		});
+
+		test("tail=0 sends only the lines written after opening", async ({ page }) => {
+			const [container] = appContainers(appId);
+			const marker = uniqueMarker("tail");
+			logFromContainer(container.id, `${marker}-old`);
+
+			const stream = await openEventStream(
+				page,
+				`${containerPath(container.id)}/logs/stream?tail=0`,
+			);
+			try {
+				// The agent may attach to the log a moment after the stream was opened
+				let written = 0;
+				await expect
+					.poll(
+						async () => {
+							logFromContainer(container.id, `${marker}-new-${written++}`);
+							return (await texts(stream)).some((text) => text.startsWith(`${marker}-new-`));
+						},
+						{ timeout: 20_000, intervals: [500] },
+					)
+					.toBe(true);
+				expect(await texts(stream)).not.toContain(`${marker}-old`);
+			} finally {
+				await stream.close();
+			}
+		});
+
+		test("the stats are sampled", async ({ page }) => {
+			const [container] = appContainers(appId);
+
+			const stream = await openEventStream(page, `${containerPath(container.id)}/stats/stream`);
+			try {
+				await expect
+					.poll(async () => (await stream.events()).some((event) => event.name === "stats"), {
+						timeout: 20_000,
+					})
+					.toBe(true);
+
+				const sample = (await stream.events()).find((event) => event.name === "stats")?.data;
+				expect(sample.timestampMs).toBeGreaterThan(0);
+				expect(sample.cpuPercent).toBeGreaterThanOrEqual(0);
+				expect(sample.memUsageBytes).toBeGreaterThan(0);
+				expect(sample.memLimitBytes).toBeGreaterThan(0);
+				expect(sample.pids).toBeGreaterThanOrEqual(1);
+				expect(sample.onlineCpus).toBeGreaterThanOrEqual(1);
+				expect(sample.netRxBytes).toBeGreaterThanOrEqual(0);
+				expect(sample.netTxBytes).toBeGreaterThanOrEqual(0);
+			} finally {
+				await stream.close();
+			}
+		});
+
+		test("the streams end when the container stops", async ({ page }) => {
+			const [container] = appContainers(appId);
+			const logs = await openEventStream(page, `${containerPath(container.id)}/logs/stream?tail=0`);
+			const stats = await openEventStream(page, `${containerPath(container.id)}/stats/stream`);
+			const endOf = async (stream: EventStreamHandle) =>
+				(await stream.events()).find((event) => event.name === "end")?.data;
+
+			try {
+				await expect
+					.poll(async () => (await stats.events()).some((event) => event.name === "stats"), {
+						timeout: 20_000,
+					})
+					.toBe(true);
+
+				stopContainer(container.id);
+				await expect
+					.poll(() => endOf(stats), { timeout: 30_000 })
+					.toEqual({ reason: "container_gone", error: "" });
+				await expect
+					.poll(() => endOf(logs), { timeout: 30_000 })
+					.toEqual({ reason: "container_gone", error: "" });
+			} finally {
+				await logs.close();
+				await stats.close();
+				startContainer(container.id);
+			}
+			await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+		});
+
+		test("the log is downloaded as a text file", async ({ page }) => {
+			const [container] = appContainers(appId);
+			const marker = uniqueMarker("download");
+			logFromContainer(container.id, `${marker}-line`);
+
+			const response = await page.request.get(
+				`/api/v1${containerPath(container.id)}/logs/download`,
+			);
+			expect(response.status()).toBe(200);
+			expect(response.headers()["content-type"]).toContain("text/plain");
+			expect(response.headers()["content-disposition"]).toMatch(
+				/^attachment; filename="?container-[0-9a-f]{12}\.log"?$/,
+			);
+			expect(await response.text()).toMatch(
+				new RegExp(`^\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z ${marker}-line$`, "m"),
+			);
+		});
+
+		test("containers of other applications are not found", async ({ page }) => {
+			const unknown = containerPath("0123456789abcdef0123456789abcdef");
+			for (const route of ["logs/stream", "stats/stream", "logs/download"]) {
+				const response = await api(page, "GET", `${unknown}/${route}`);
+				expect(response.status, route).toBe(404);
+				expect(response.body.error, route).toBe("container not found");
+
+				const malformed = await api(page, "GET", `${containerPath("not-a-container")}/${route}`);
+				expect(malformed.status, route).toBe(400);
+			}
+		});
+
+		test("invalid log options are rejected", async ({ page }) => {
+			const [container] = appContainers(appId);
+			for (const query of ["tail=abc", "since=yesterday", "follow=maybe"]) {
+				const response = await api(
+					page,
+					"GET",
+					`${containerPath(container.id)}/logs/stream?${query}`,
+				);
+				expect(response.status, query).toBe(400);
+			}
+		});
+
+		test("tokens can download logs with the inspect scope but not stream", async ({ page }) => {
+			const [container] = appContainers(appId);
+			const download = `/api/v1${containerPath(container.id)}/logs/download`;
+			const streams = ["logs/stream", "stats/stream"].map(
+				(route) => `/api/v1${containerPath(container.id)}/${route}`,
+			);
+
+			const reader = await createApiTokenInUi(page, TOKEN_NAME, ["application:read"]);
+			const readClient = await tokenClient(reader);
+			try {
+				const denied = await readClient.get(download);
+				expect(denied.status()).toBe(403);
+				expect((await denied.json()).error).toBe("insufficient permissions");
+			} finally {
+				await readClient.dispose();
+				await deleteApiTokens(page, [TOKEN_NAME]);
+			}
+
+			const inspector = await createApiTokenInUi(page, TOKEN_NAME, ["application:inspect"]);
+			const inspectClient = await tokenClient(inspector);
+			try {
+				const marker = uniqueMarker("token");
+				logFromContainer(container.id, `${marker}-line`);
+				const allowed = await inspectClient.get(download);
+				expect(allowed.status()).toBe(200);
+				expect(await allowed.text()).toContain(`${marker}-line`);
+
+				// The streams are for the web UI
+				for (const stream of streams) {
+					const response = await inspectClient.get(stream);
+					expect(response.status(), stream).toBe(403);
+					expect((await response.json()).error).toBe("this route can't be used with an api token");
+				}
+			} finally {
+				await inspectClient.dispose();
+				await deleteApiTokens(page, [TOKEN_NAME]);
+			}
+		});
 	});
 });
 
