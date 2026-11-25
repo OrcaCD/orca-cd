@@ -38,6 +38,26 @@ export interface Application {
 	rollback: RollbackSettings;
 	warnings: ApplicationWarning[];
 	releaseAge: ReleaseAgeSettings;
+	// managedSettings come from x-orcacd in the compose file and can only be changed there.
+	managedSettings: ManagedSetting[];
+}
+
+// ManagedSetting is the path of a setting in the application, like "rollback.enabled".
+export type ManagedSetting =
+	| "icon"
+	| "imagePollEnabled"
+	| "imagePollIntervalSeconds"
+	| "deleteOldImages"
+	| "rollback.enabled"
+	| "rollback.onDeployFailure"
+	| "rollback.onUnhealthy"
+	| "rollback.healthTimeoutSeconds"
+	| "rollback.pauseAutoSync"
+	| "releaseAge.minimumSeconds"
+	| "releaseAge.allowedRegistries";
+
+export function isManaged(application: Application | undefined, setting: ManagedSetting): boolean {
+	return application?.managedSettings.includes(setting) ?? false;
 }
 
 export interface ReleaseAgeSettings {
