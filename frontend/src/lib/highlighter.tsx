@@ -4,6 +4,7 @@ import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
 
 // Add the languages you need. Each one loads the first time it is used.
 const languages = {
+	json: () => import("shiki/langs/json.mjs"),
 	yaml: () => import("shiki/langs/yaml.mjs"),
 };
 
