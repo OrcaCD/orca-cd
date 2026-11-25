@@ -1539,8 +1539,8 @@ type PullImagesRequest struct {
 	DeleteOldImages bool                   `protobuf:"varint,4,opt,name=delete_old_images,json=deleteOldImages,proto3" json:"delete_old_images,omitempty"`
 	ImageRetention  *ImageRetention        `protobuf:"bytes,5,opt,name=image_retention,json=imageRetention,proto3" json:"image_retention,omitempty"`
 	ReleaseAge      *ReleaseAgePolicy      `protobuf:"bytes,6,opt,name=release_age,json=releaseAge,proto3" json:"release_age,omitempty"`
-	// Images an image pull webhook announced. With a release age, only these
-	// are updated, and without the age check.
+	// Limits the pull to these images, e.g. the ones an image pull webhook
+	// announced. They still wait for the release age.
 	WebhookImages []string `protobuf:"bytes,7,rep,name=webhook_images,json=webhookImages,proto3" json:"webhook_images,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

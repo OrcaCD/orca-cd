@@ -156,8 +156,8 @@ message PullImagesRequest {
   bool delete_old_images = 4;
   ImageRetention image_retention = 5;
   ReleaseAgePolicy release_age = 6;
-  // Images an image pull webhook announced. With a release age, only these
-  // are updated, and without the age check.
+  // Limits the pull to these images, e.g. the ones an image pull webhook
+  // announced. They still wait for the release age.
   repeated string webhook_images = 7;
 }
 

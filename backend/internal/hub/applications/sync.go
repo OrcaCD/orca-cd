@@ -24,7 +24,8 @@ type SyncOrigin struct {
 	ActorUserID *string
 	ActorName   *string
 	TriggerID   *string
-	// WebhookImages are the images an image pull webhook announced.
+	// WebhookImages limit an image pull to these images, e.g. the ones an
+	// image pull webhook announced.
 	WebhookImages []string
 }
 

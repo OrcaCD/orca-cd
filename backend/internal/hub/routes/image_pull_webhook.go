@@ -167,8 +167,8 @@ func dockerHubImage(payload dockerHubPayload) string {
 }
 
 // announcedImage returns image if it is in the registry of the provider that
-// sent the webhook, or empty otherwise. An announced image skips the release
-// age, so a payload must not name the image of another registry.
+// sent the webhook, or empty otherwise, so a payload can't name the image of
+// another registry.
 func announcedImage(image, registry string) string {
 	named, err := reference.ParseNormalizedNamed(image)
 	if err != nil || reference.Domain(named) != registry {
