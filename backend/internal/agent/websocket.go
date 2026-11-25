@@ -192,7 +192,7 @@ func (s *messageSender) SendMessage(msg *messages.ClientMessage) error {
 	return nil
 }
 
-func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor, poller pollerHandler) {
+func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, session *wscrypto.Session, sender outboundSender, deployer deployExecutor, poller pollerHandler, streams *streamManager) {
 	_, isEncrypted := msg.Payload.(*messages.ServerMessage_EncryptedPayload)
 	if !isEncrypted && !wscrypto.AllowedUnencrypted(msg) {
 		Log.Warn().Msgf("dropping unencrypted message of type %T", msg.Payload)
@@ -258,6 +258,14 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 		go executeContainerList(ctx, sender, deployer, p.ContainerListRequest)
 	case *messages.ServerMessage_ContainerInspectRequest:
 		go executeContainerInspect(ctx, sender, deployer, p.ContainerInspectRequest)
+	case *messages.ServerMessage_ContainerLogsRequest:
+		streams.StartLogs(ctx, sender, deployer, p.ContainerLogsRequest)
+	case *messages.ServerMessage_ContainerStatsRequest:
+		streams.StartStats(ctx, sender, deployer, p.ContainerStatsRequest)
+	case *messages.ServerMessage_StreamCancel:
+		streams.Cancel(p.StreamCancel.RequestId)
+	case *messages.ServerMessage_StreamKeepAlive:
+		streams.KeepAlive(p.StreamKeepAlive.RequestId)
 	default:
 		Log.Warn().Str("type", fmt.Sprintf("%T", msg.Payload)).Msg("unknown message type received")
 	}
@@ -267,7 +275,7 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 // daemon is reachable to the hub so it can display them and warn about
 // outdated or broken agents.
 func sendAgentInfo(sender outboundSender, dockerState dockerStateProvider) {
-	info := &messages.AgentInfo{Version: version.Version}
+	info := &messages.AgentInfo{Version: version.Version, Capabilities: []string{capabilityContainerMonitoring}}
 	if dockerState != nil {
 		info.DockerVersion = dockerState.ServerVersion()
 		info.DockerUnreachable = !dockerState.Ready()

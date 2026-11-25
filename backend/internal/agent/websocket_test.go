@@ -201,7 +201,7 @@ func TestHandleServerMessage_Ping(t *testing.T) {
 		t.Fatalf("unmarshal ping: %v", err)
 	}
 	sender := newMessageSender(clientConn, nil)
-	handleServerMessage(context.Background(), msg, nil, sender, nil, nil)
+	handleServerMessage(context.Background(), msg, nil, sender, nil, nil, newStreamManager())
 
 	select {
 	case <-done:
@@ -234,7 +234,7 @@ func TestHandleServerMessage_UnknownPayload(t *testing.T) {
 	defer clientConn.Close() //nolint:errcheck
 
 	sender := newMessageSender(clientConn, nil)
-	handleServerMessage(context.Background(), &messages.ServerMessage{}, nil, sender, nil, nil)
+	handleServerMessage(context.Background(), &messages.ServerMessage{}, nil, sender, nil, nil, newStreamManager())
 
 	select {
 	case <-writeReceived:
@@ -856,7 +856,7 @@ func TestHandleServerMessage_EncryptedPing(t *testing.T) {
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
 	}
 
-	handleServerMessage(context.Background(), encryptedMsg, session, newMessageSender(conn, session), nil, nil)
+	handleServerMessage(context.Background(), encryptedMsg, session, newMessageSender(conn, session), nil, nil, newStreamManager())
 
 	select {
 	case <-done:
@@ -909,7 +909,7 @@ func TestHandleServerMessage_DeployRequest(t *testing.T) {
 		Payload: &messages.ServerMessage_EncryptedPayload{
 			EncryptedPayload: env,
 		},
-	}, session, sender, deployer, nil)
+	}, session, sender, deployer, nil, newStreamManager())
 
 	select {
 	case req := <-deployer.reqCh:
@@ -978,7 +978,7 @@ func TestHandleServerMessage_EncryptedDecryptError(t *testing.T) {
 			},
 		},
 	}
-	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil) // must return without panic
+	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil, newStreamManager()) // must return without panic
 }
 
 func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
@@ -1000,7 +1000,7 @@ func TestHandleServerMessage_DoublyEncrypted(t *testing.T) {
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
 	}
-	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil) // must drop without panic
+	handleServerMessage(context.Background(), msg, session, &stubSender{}, nil, nil, newStreamManager()) // must drop without panic
 }
 
 func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
@@ -1008,7 +1008,7 @@ func TestHandleServerMessage_DropsUnencryptedNonPing(t *testing.T) {
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_KeyExchangeInit{KeyExchangeInit: &messages.KeyExchangeInit{}},
 	}
-	handleServerMessage(context.Background(), msg, nil, &stubSender{}, nil, nil) // must return without panic
+	handleServerMessage(context.Background(), msg, nil, &stubSender{}, nil, nil, newStreamManager()) // must return without panic
 }
 
 type stubPoller struct {
@@ -1085,7 +1085,7 @@ func TestHandleServerMessage_AgentSettings(t *testing.T) {
 
 	handleServerMessage(context.Background(), &messages.ServerMessage{
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
-	}, session, &stubSender{}, nil, poller)
+	}, session, &stubSender{}, nil, poller, newStreamManager())
 
 	select {
 	case <-poller.applyCh:
@@ -1159,7 +1159,7 @@ func TestHandleServerMessage_PullImagesRequest(t *testing.T) {
 
 	handleServerMessage(context.Background(), &messages.ServerMessage{
 		Payload: &messages.ServerMessage_EncryptedPayload{EncryptedPayload: env},
-	}, session, &stubSender{}, nil, poller)
+	}, session, &stubSender{}, nil, poller, newStreamManager())
 
 	select {
 	case <-poller.triggerCh:

@@ -144,6 +144,7 @@ func buildContainerInfo(ctx context.Context, cli client.APIClient, item containe
 
 	if hostConfig := inspected.HostConfig; hostConfig != nil {
 		info.LogDriver = hostConfig.LogConfig.Type
+		info.CpuLimit = cpuLimit(hostConfig)
 		info.RestartPolicy = string(hostConfig.RestartPolicy.Name)
 		if retries := hostConfig.RestartPolicy.MaximumRetryCount; retries > 0 {
 			info.RestartPolicy += ":" + strconv.Itoa(retries)
@@ -159,6 +160,27 @@ func buildContainerInfo(ctx context.Context, cli client.APIClient, item containe
 	info.Ports, info.Networks = portsAndNetworks(inspected.NetworkSettings)
 	info.Mounts = mountInfos(inspected.Mounts)
 	return info
+}
+
+// defaultCPUPeriod is the CFS period Docker applies when only a quota is set.
+const defaultCPUPeriod = 100_000 // microseconds
+
+// cpuLimit returns the CPUs the container may use, 0 without a limit.
+func cpuLimit(host *container.HostConfig) float64 {
+	if host == nil {
+		return 0
+	}
+	if host.NanoCPUs > 0 {
+		return float64(host.NanoCPUs) / 1e9
+	}
+	if host.CPUQuota > 0 {
+		period := host.CPUPeriod
+		if period <= 0 {
+			period = defaultCPUPeriod
+		}
+		return float64(host.CPUQuota) / float64(period)
+	}
+	return 0
 }
 
 func portsAndNetworks(settings *container.NetworkSettings) ([]*messages.PortBinding, []*messages.NetworkInfo) {

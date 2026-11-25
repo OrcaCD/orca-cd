@@ -3350,10 +3350,11 @@ type ContainerInfo struct {
 	ContainerNumber int32 `protobuf:"varint,18,opt,name=container_number,json=containerNumber,proto3" json:"container_number,omitempty"`
 	OomKilled       bool  `protobuf:"varint,19,opt,name=oom_killed,json=oomKilled,proto3" json:"oom_killed,omitempty"`
 	// Why the container could not start, from the Docker state.
-	Error               string `protobuf:"bytes,20,opt,name=error,proto3" json:"error,omitempty"`
-	RestartPolicy       string `protobuf:"bytes,21,opt,name=restart_policy,json=restartPolicy,proto3" json:"restart_policy,omitempty"`
-	LogDriver           string `protobuf:"bytes,22,opt,name=log_driver,json=logDriver,proto3" json:"log_driver,omitempty"`
-	HealthFailingStreak int32  `protobuf:"varint,23,opt,name=health_failing_streak,json=healthFailingStreak,proto3" json:"health_failing_streak,omitempty"`
+	Error               string  `protobuf:"bytes,20,opt,name=error,proto3" json:"error,omitempty"`
+	RestartPolicy       string  `protobuf:"bytes,21,opt,name=restart_policy,json=restartPolicy,proto3" json:"restart_policy,omitempty"`
+	LogDriver           string  `protobuf:"bytes,22,opt,name=log_driver,json=logDriver,proto3" json:"log_driver,omitempty"`
+	HealthFailingStreak int32   `protobuf:"varint,23,opt,name=health_failing_streak,json=healthFailingStreak,proto3" json:"health_failing_streak,omitempty"`
+	CpuLimit            float64 `protobuf:"fixed64,24,opt,name=cpu_limit,json=cpuLimit,proto3" json:"cpu_limit,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -3545,6 +3546,13 @@ func (x *ContainerInfo) GetLogDriver() string {
 func (x *ContainerInfo) GetHealthFailingStreak() int32 {
 	if x != nil {
 		return x.HealthFailingStreak
+	}
+	return 0
+}
+
+func (x *ContainerInfo) GetCpuLimit() float64 {
+	if x != nil {
+		return x.CpuLimit
 	}
 	return 0
 }
@@ -3771,7 +3779,8 @@ type ContainerLogsRequest struct {
 	Tail        int32 `protobuf:"varint,4,opt,name=tail,proto3" json:"tail,omitempty"`
 	SinceUnixMs int64 `protobuf:"varint,5,opt,name=since_unix_ms,json=sinceUnixMs,proto3" json:"since_unix_ms,omitempty"`
 	Follow      bool  `protobuf:"varint,6,opt,name=follow,proto3" json:"follow,omitempty"`
-	// Cap for non-follow reads, 0 for the agent default.
+	// Cap for non-follow reads, 0 for the agent default. It cuts off the newest
+	// lines, use tail or since to read the end of a large log.
 	MaxBytes      int64 `protobuf:"varint,7,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4190,6 +4199,7 @@ type ContainerStatsSample struct {
 	NetRxBytes    uint64 `protobuf:"varint,6,opt,name=net_rx_bytes,json=netRxBytes,proto3" json:"net_rx_bytes,omitempty"`
 	NetTxBytes    uint64 `protobuf:"varint,7,opt,name=net_tx_bytes,json=netTxBytes,proto3" json:"net_tx_bytes,omitempty"`
 	Pids          uint64 `protobuf:"varint,8,opt,name=pids,proto3" json:"pids,omitempty"`
+	OnlineCpus    uint32 `protobuf:"varint,9,opt,name=online_cpus,json=onlineCpus,proto3" json:"online_cpus,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4276,6 +4286,13 @@ func (x *ContainerStatsSample) GetNetTxBytes() uint64 {
 func (x *ContainerStatsSample) GetPids() uint64 {
 	if x != nil {
 		return x.Pids
+	}
+	return 0
+}
+
+func (x *ContainerStatsSample) GetOnlineCpus() uint32 {
+	if x != nil {
+		return x.OnlineCpus
 	}
 	return 0
 }
@@ -4588,7 +4605,7 @@ const file_messages_proto_rawDesc = "" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdestination\x18\x03 \x01(\tR\vdestination\x12\x1b\n" +
-	"\tread_only\x18\x04 \x01(\bR\breadOnly\"\x9d\x06\n" +
+	"\tread_only\x18\x04 \x01(\bR\breadOnly\"\xba\x06\n" +
 	"\rContainerInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -4616,7 +4633,8 @@ const file_messages_proto_rawDesc = "" +
 	"\x0erestart_policy\x18\x15 \x01(\tR\rrestartPolicy\x12\x1d\n" +
 	"\n" +
 	"log_driver\x18\x16 \x01(\tR\tlogDriver\x122\n" +
-	"\x15health_failing_streak\x18\x17 \x01(\x05R\x13healthFailingStreak\"\xd3\x01\n" +
+	"\x15health_failing_streak\x18\x17 \x01(\x05R\x13healthFailingStreak\x12\x1b\n" +
+	"\tcpu_limit\x18\x18 \x01(\x01R\bcpuLimit\"\xd3\x01\n" +
 	"\x13ContainerListResult\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -4670,7 +4688,7 @@ const file_messages_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12'\n" +
 	"\x05lines\x18\x02 \x03(\v2\x11.messages.LogLineR\x05lines\x12#\n" +
-	"\rdropped_lines\x18\x03 \x01(\x03R\fdroppedLines\"\xa1\x02\n" +
+	"\rdropped_lines\x18\x03 \x01(\x03R\fdroppedLines\"\xc2\x02\n" +
 	"\x14ContainerStatsSample\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
@@ -4683,7 +4701,9 @@ const file_messages_proto_rawDesc = "" +
 	"netRxBytes\x12 \n" +
 	"\fnet_tx_bytes\x18\a \x01(\x04R\n" +
 	"netTxBytes\x12\x12\n" +
-	"\x04pids\x18\b \x01(\x04R\x04pids\"\x82\x01\n" +
+	"\x04pids\x18\b \x01(\x04R\x04pids\x12\x1f\n" +
+	"\vonline_cpus\x18\t \x01(\rR\n" +
+	"onlineCpus\"\x82\x01\n" +
 	"\tStreamEnd\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x121\n" +
