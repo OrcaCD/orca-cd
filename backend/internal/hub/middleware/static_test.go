@@ -660,6 +660,99 @@ func TestRegisterStatic_ErrorWhenDistMissing(t *testing.T) {
 	}
 }
 
+func TestRegisterStatic_IndexHTML(t *testing.T) {
+	cleanup := setupDistDir(t, map[string][]byte{
+		"index.html":    []byte("<html>spa</html>"),
+		"index.html.gz": []byte("gz-html"),
+	})
+	defer cleanup()
+
+	router := gin.New()
+	if err := RegisterStatic(router); err != nil {
+		t.Fatalf("RegisterStatic() unexpected error: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		path           string
+		acceptEncoding string
+		wantStatus     int
+		wantEncoding   string
+		wantBody       string
+		wantLocation   string
+	}{
+		{
+			name:       "spa route without Accept-Encoding serves index",
+			path:       "/login",
+			wantStatus: http.StatusOK,
+			wantBody:   "<html>spa</html>",
+		},
+		{
+			name:           "spa route with unsupported Accept-Encoding serves index",
+			path:           "/login",
+			acceptEncoding: "identity",
+			wantStatus:     http.StatusOK,
+			wantBody:       "<html>spa</html>",
+		},
+		{
+			name:           "spa route with gzip serves compressed index",
+			path:           "/login",
+			acceptEncoding: "gzip",
+			wantStatus:     http.StatusOK,
+			wantEncoding:   "gzip",
+			wantBody:       "gz-html",
+		},
+		{
+			name:       "root without Accept-Encoding serves index",
+			path:       "/",
+			wantStatus: http.StatusOK,
+			wantBody:   "<html>spa</html>",
+		},
+		{
+			name:         "explicit index.html is normalized without Accept-Encoding",
+			path:         "/index.html",
+			wantStatus:   http.StatusMovedPermanently,
+			wantLocation: "/",
+		},
+		{
+			name:           "explicit index.html is normalized with gzip",
+			path:           "/index.html",
+			acceptEncoding: "gzip",
+			wantStatus:     http.StatusMovedPermanently,
+			wantLocation:   "/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			if tt.acceptEncoding != "" {
+				req.Header.Set("Accept-Encoding", tt.acceptEncoding)
+			}
+			router.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d (Location %q)", w.Code, tt.wantStatus, w.Header().Get("Location"))
+			}
+			if got := w.Header().Get("Content-Encoding"); got != tt.wantEncoding {
+				t.Errorf("Content-Encoding = %q, want %q", got, tt.wantEncoding)
+			}
+			if tt.wantBody != "" {
+				if got := w.Body.String(); got != tt.wantBody {
+					t.Errorf("body = %q, want %q", got, tt.wantBody)
+				}
+				if got := w.Header().Get("Cache-Control"); got != "no-store" {
+					t.Errorf("Cache-Control = %q, want %q", got, "no-store")
+				}
+			}
+			if got := w.Header().Get("Location"); got != tt.wantLocation {
+				t.Errorf("Location = %q, want %q", got, tt.wantLocation)
+			}
+		})
+	}
+}
+
 func TestRegisterStatic_HandlerBehaviors(t *testing.T) {
 	cleanup := setupDistDir(t, map[string][]byte{
 		"index.html":      []byte("<html></html>"),
