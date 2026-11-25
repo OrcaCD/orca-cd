@@ -54,17 +54,18 @@ func RegisterStatic(router *gin.Engine) error {
 		// Remove trailing slashes. Leading slashes are collapsed too, otherwise a path
 		// like "//evil.example/" would produce a protocol-relative (off-site) Location.
 		if strings.HasSuffix(reqPath, "/") {
-			target := "/" + strings.Trim(c.Request.URL.EscapedPath(), "/")
-			if c.Request.URL.RawQuery != "" {
-				target += "?" + c.Request.URL.RawQuery
-			}
-			c.Redirect(http.StatusFound, target)
+			redirectNormalized(c, http.StatusFound, c.Request.URL.EscapedPath())
 			return
 		}
 
 		// Return 404 for API routes
 		if strings.HasPrefix(reqPath, "api/") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "This endpoint does not exist"})
+			return
+		}
+
+		if path.Base(reqPath) == indexHTMLPath {
+			redirectNormalized(c, http.StatusMovedPermanently, strings.TrimSuffix(c.Request.URL.EscapedPath(), indexHTMLPath))
 			return
 		}
 
@@ -87,6 +88,14 @@ func RegisterStatic(router *gin.Engine) error {
 	router.NoRoute(handler)
 
 	return nil
+}
+
+func redirectNormalized(c *gin.Context, status int, escapedPath string) {
+	target := "/" + strings.Trim(escapedPath, "/")
+	if c.Request.URL.RawQuery != "" {
+		target += "?" + c.Request.URL.RawQuery
+	}
+	c.Redirect(status, target)
 }
 
 type FileServerWithCaching struct {
@@ -138,6 +147,12 @@ func (f *FileServerWithCaching) ServeHTTP(w http.ResponseWriter, r *http.Request
 			w.Header().Set("Content-Encoding", ce)
 			r.URL.Path += "." + ext
 		}
+	}
+
+	// http.FileServer redirects "/index.html" to "./". Serving the directory instead
+	// returns the same file without the redirect.
+	if r.URL.Path == "/"+indexHTMLPath {
+		r.URL.Path = "/"
 	}
 
 	f.fileServer.ServeHTTP(w, r)
