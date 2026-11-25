@@ -63,6 +63,24 @@ func TestRegisterRoutes_EventsEndpointDisabledInDemoMode(t *testing.T) {
 	}
 }
 
+func TestRegisterRoutes_ContainerEndpointsRequireAuth(t *testing.T) {
+	router := gin.New()
+	if err := RegisterRoutes(router, Config{AppURL: "http://localhost:8080", DisableUI: true}); err != nil {
+		t.Fatalf("Failed to register routes: %v", err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/applications/app-1/containers",
+		"/api/v1/applications/app-1/containers/0123456789ab/inspect",
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("GET %s: expected 401 without authentication, got %d", path, w.Code)
+		}
+	}
+}
+
 func TestRegisterRoutes_OIDCEndpointsRateLimited(t *testing.T) {
 	testDB, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	if err != nil {

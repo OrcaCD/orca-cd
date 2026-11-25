@@ -53,6 +53,10 @@ func MigrateForTest(tx *gorm.DB) error {
 			continue
 		}
 		for _, action := range models.PermissionActions[resource] {
+			// Permission not granted by default
+			if resource == models.ResourceApplication && action == models.ActionInspect {
+				continue
+			}
 			if err := gorm.G[models.RolePermission](tx).Create(ctx, &models.RolePermission{
 				RoleId:   UserRoleID,
 				Resource: resource,

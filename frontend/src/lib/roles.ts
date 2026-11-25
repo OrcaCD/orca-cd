@@ -16,7 +16,8 @@ export type PermissionAction =
 	| "deploy"
 	| "pull_images"
 	| "rollback"
-	| "sync";
+	| "sync"
+	| "inspect";
 
 export type RoleBuiltIn = "admin" | "user";
 
@@ -36,7 +37,16 @@ export const resourcesWithoutItems: PermissionResource[] = ["api_token"];
 
 // Mirrors models.PermissionActions in the hub
 export const permissionActions: Record<PermissionResource, PermissionAction[]> = {
-	application: ["read", "create", "update", "delete", "deploy", "pull_images", "rollback"],
+	application: [
+		"read",
+		"create",
+		"update",
+		"delete",
+		"deploy",
+		"pull_images",
+		"rollback",
+		"inspect",
+	],
 	repository: ["read", "create", "update", "delete", "sync"],
 	agent: ["read", "create", "update", "delete"],
 	notification: ["read", "create", "update", "delete"],

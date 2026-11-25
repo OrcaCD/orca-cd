@@ -44,8 +44,10 @@ func TestIsValidAPITokenScope(t *testing.T) {
 	}{
 		{APITokenScopeAdmin, true},
 		{"application:deploy", true},
+		{"application:inspect", true},
 		{"repository:sync", true},
 		{"notification:read", true},
+		{"agent:inspect", false},
 		{"agent:deploy", false},
 		{"application:sync", false},
 		{"api_token:create", false},

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -406,4 +408,19 @@ func TestAdminRoles_ReloadOnlyMembers(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	expectReloads("delete", other.Id)
+}
+
+func TestRolePermissionResponse_EnumListsEveryAction(t *testing.T) {
+	field, ok := reflect.TypeFor[rolePermissionResponse]().FieldByName("Action")
+	if !ok {
+		t.Fatal("rolePermissionResponse has no Action field")
+	}
+	documented := strings.Split(field.Tag.Get("enum"), ",")
+	for resource, actions := range models.PermissionActions {
+		for _, action := range actions {
+			if !slices.Contains(documented, string(action)) {
+				t.Errorf("%s:%s is missing from the enum of the spec", resource, action)
+			}
+		}
+	}
 }

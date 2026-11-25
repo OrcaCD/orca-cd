@@ -30,6 +30,7 @@ const (
 	ActionPullImages PermissionAction = "pull_images"
 	ActionRollback   PermissionAction = "rollback"
 	ActionSync       PermissionAction = "sync"
+	ActionInspect    PermissionAction = "inspect"
 )
 
 // PermissionResources lists every resource type in display order.
@@ -43,7 +44,7 @@ var PermissionResources = []PermissionResource{
 
 // PermissionActions lists the actions each resource type supports, in display order.
 var PermissionActions = map[PermissionResource][]PermissionAction{
-	ResourceApplication:  {ActionRead, ActionCreate, ActionUpdate, ActionDelete, ActionDeploy, ActionPullImages, ActionRollback},
+	ResourceApplication:  {ActionRead, ActionCreate, ActionUpdate, ActionDelete, ActionDeploy, ActionPullImages, ActionRollback, ActionInspect},
 	ResourceRepository:   {ActionRead, ActionCreate, ActionUpdate, ActionDelete, ActionSync},
 	ResourceAgent:        {ActionRead, ActionCreate, ActionUpdate, ActionDelete},
 	ResourceNotification: {ActionRead, ActionCreate, ActionUpdate, ActionDelete},

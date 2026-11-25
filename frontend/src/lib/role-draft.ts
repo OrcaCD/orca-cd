@@ -185,6 +185,7 @@ export const actionLabels: Record<PermissionAction, () => string> = {
 	pull_images: () => m.permissionPullImages(),
 	rollback: () => m.permissionRollback(),
 	sync: () => m.permissionSync(),
+	inspect: () => m.permissionInspect(),
 };
 
 export function actionDescription(resource: PermissionResource, action: PermissionAction): string {
@@ -199,6 +200,8 @@ export function actionDescription(resource: PermissionResource, action: Permissi
 			return m.permissionApplicationRollbackDescription();
 		case "application.delete":
 			return m.permissionApplicationDeleteDescription();
+		case "application.inspect":
+			return m.permissionApplicationInspectDescription();
 		case "repository.update":
 			return m.permissionRepositoryUpdateDescription();
 		case "repository.sync":

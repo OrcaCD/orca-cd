@@ -53,6 +53,9 @@ const IMAGE = BUSYBOX_IMAGE;
 const UNPULLABLE_IMAGE = "127.0.0.1:1/e2e/missing:1";
 // The healthcheck passes while this file exists, so tests can fail it with docker exec
 const HEALTHY_FILE = "/tmp/healthy";
+// The agent redacts the value of credential labels like this one in the inspect output
+const CREDENTIAL_LABEL = "traefik.http.middlewares.e2e-auth.basicauth.users";
+const CREDENTIAL_LABEL_VALUE = "e2e:credential-hash-value";
 
 const AGENT_NAME = "E2E Deploy Agent";
 const REPO = "e2e/deploy-main";
@@ -161,6 +164,8 @@ function composeFile(version: number, image = IMAGE) {
     stop_grace_period: 1s
     environment:
       APP_VERSION: "${version}"
+    labels:
+      ${CREDENTIAL_LABEL}: "${CREDENTIAL_LABEL_VALUE}"
     healthcheck:
       test: ["CMD", "test", "-f", "${HEALTHY_FILE}"]
       interval: 2s
@@ -804,6 +809,86 @@ test.describe("Runtime health", () => {
 		await expect(
 			page.getByRole("row").filter({ hasText: "All containers are stopped" }),
 		).toBeVisible();
+	});
+});
+
+test.describe("Container monitoring API", () => {
+	const TOKEN_NAME = "E2E Inspect Token";
+
+	test("lists the containers of the application", async ({ page }) => {
+		const [container] = appContainers(appId);
+		await waitForApplication(page, appId, (app) => app.healthStatus === "healthy");
+
+		const { status, body } = await api(page, "GET", `/applications/${appId}/containers`);
+		expect(status, JSON.stringify(body)).toBe(200);
+		expect(body.containers).toHaveLength(1);
+		const [listed] = body.containers;
+		expect(listed.id.startsWith(container.id)).toBe(true);
+		expect(listed).toMatchObject({ service: "app", state: "running", health: "healthy" });
+		expect(listed.image).toBe(IMAGE);
+		expect(Date.parse(listed.startedAt)).not.toBeNaN();
+	});
+
+	test("inspect never returns environment variables or credential labels", async ({ page }) => {
+		const [container] = appContainers(appId);
+
+		const { status, body } = await api(
+			page,
+			"GET",
+			`/applications/${appId}/containers/${container.id}/inspect`,
+		);
+		expect(status, JSON.stringify(body)).toBe(200);
+
+		const inspectJson: string = body.inspectJson;
+		expect(inspectJson).not.toContain("APP_VERSION");
+		expect(inspectJson).not.toContain(CREDENTIAL_LABEL_VALUE);
+
+		const inspected = JSON.parse(inspectJson);
+		expect(inspected.Config.Env).toBeUndefined();
+		expect(inspected.Config.Labels[CREDENTIAL_LABEL]).toBe("[redacted]");
+		expect(inspected.Config.Image).toBe(IMAGE);
+	});
+
+	test("rejects containers that don't belong to the application", async ({ page }) => {
+		const inspect = (id: string) =>
+			api(page, "GET", `/applications/${appId}/containers/${id}/inspect`);
+
+		// A well-formed ID of a container the application doesn't have
+		const unknown = await inspect("0123456789abcdef0123456789abcdef");
+		expect(unknown.status).toBe(404);
+		expect(unknown.body.error).toBe("container not found");
+
+		expect((await inspect("not-a-container")).status).toBe(400);
+	});
+
+	test("inspecting needs its own permission, listing only view access", async ({ page }) => {
+		const [container] = appContainers(appId);
+		const token = await createApiTokenInUi(page, TOKEN_NAME, ["application:read"]);
+		const client = await tokenClient(token);
+		try {
+			const list = await client.get(`/api/v1/applications/${appId}/containers`);
+			expect(list.status()).toBe(200);
+			const inspect = await client.get(
+				`/api/v1/applications/${appId}/containers/${container.id}/inspect`,
+			);
+			expect(inspect.status()).toBe(403);
+			expect(await inspect.text()).not.toContain("Config");
+		} finally {
+			await client.dispose();
+			await deleteApiTokens(page, [TOKEN_NAME]);
+		}
+
+		const inspectToken = await createApiTokenInUi(page, TOKEN_NAME, ["application:inspect"]);
+		const inspectClient = await tokenClient(inspectToken);
+		try {
+			const inspect = await inspectClient.get(
+				`/api/v1/applications/${appId}/containers/${container.id}/inspect`,
+			);
+			expect(inspect.status()).toBe(200);
+		} finally {
+			await inspectClient.dispose();
+			await deleteApiTokens(page, [TOKEN_NAME]);
+		}
 	});
 });
 

@@ -252,6 +252,9 @@ func TestLoad_AdminAndDefaultRoles(t *testing.T) {
 			continue
 		}
 		for _, action := range models.PermissionActions[resource] {
+			if resource == models.ResourceApplication && action == models.ActionInspect {
+				continue
+			}
 			if !user.CanAll(resource, action) {
 				t.Errorf("expected the user role to allow %s on all %s", action, resource)
 			}
@@ -259,6 +262,9 @@ func TestLoad_AdminAndDefaultRoles(t *testing.T) {
 	}
 	if user.CanAll(models.ResourceAPIToken, models.ActionCreate) {
 		t.Error("expected the user role not to allow creating API tokens by default")
+	}
+	if user.CanAny(models.ResourceApplication, models.ActionInspect) {
+		t.Error("expected the user role not to allow inspecting applications by default")
 	}
 	if user.IsAdmin() {
 		t.Error("expected the user role not to be admin")
