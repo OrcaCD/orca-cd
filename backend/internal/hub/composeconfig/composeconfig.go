@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -27,6 +28,13 @@ type Config struct {
 	values map[string]any
 	// unreadable is set for a file that isn't valid YAML.
 	unreadable bool
+	// notifications are the names or IDs of the notifications of the
+	// application, nil when x-orcacd doesn't set them.
+	notifications []string
+	resolved      []models.Notification
+	// clearNotifications is set by Apply when x-orcacd no longer sets the
+	// notifications, which then go back to none.
+	clearNotifications bool
 }
 
 // maxComposeSize is the largest compose file that is parsed. Larger files
@@ -52,7 +60,17 @@ func Parse(compose string) (*Config, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s must be a mapping", Key)
 	}
-	errs := []error{parseGroup(cfg, block, settingsTree, Key)}
+	var errs []error
+	if raw, ok := block[keyNotifications]; ok {
+		block = maps.Clone(block)
+		delete(block, keyNotifications)
+		names, err := parseNotifications(raw)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s.%s: %w", Key, keyNotifications, err))
+		}
+		cfg.notifications = names
+	}
+	errs = append(errs, parseGroup(cfg, block, settingsTree, Key))
 	if cfg.values[SettingRollbackOnDeployFailure] == false && cfg.values[SettingRollbackOnUnhealthy] == false {
 		errs = append(errs, fmt.Errorf("%s.rollback: on-deploy-failure and on-unhealthy can't both be false", Key))
 	}
@@ -106,6 +124,9 @@ func (c *Config) Managed() []string {
 			names = append(names, s.name)
 		}
 	}
+	if c.notifications != nil {
+		names = append(names, SettingNotifications)
+	}
 	return names
 }
 
@@ -131,6 +152,7 @@ func (c *Config) Apply(app *models.Application) []string {
 			changed = append(changed, s.column)
 		}
 	}
+	c.clearNotifications = c.notifications == nil && slices.Contains(app.ManagedSettings, SettingNotifications)
 	app.ManagedSettings = c.Managed()
 	return changed
 }

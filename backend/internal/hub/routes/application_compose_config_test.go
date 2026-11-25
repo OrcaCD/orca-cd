@@ -238,3 +238,116 @@ func TestUpdateReleaseAgeSettingsHandler_ManagedAgeBelowGlobalMinimum(t *testing
 		t.Errorf("allowedRegistries = %v, want [ghcr.io]", response.ReleaseAge.AllowedRegistries)
 	}
 }
+
+// seedNotificationManagedApplication seeds an application that sets its
+// notifications with x-orcacd, assigned to notification.
+func seedNotificationManagedApplication(t *testing.T, name string) models.Application {
+	t.Helper()
+	app := seedNotificationApplication(t, seedNotificationRepository(t).Id, seedNotificationAgent(t).Id, name)
+	app.ManagedSettings = []string{composeconfig.SettingNotifications}
+	if err := db.DB.Model(&app).Select("ManagedSettings").Updates(&app).Error; err != nil {
+		t.Fatal(err)
+	}
+	return app
+}
+
+func invokeNotificationHandler(t *testing.T, method, id string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	reqBody, _ := json.Marshal(body)
+	router := newAdminRouter()
+	router.POST("/api/v1/notifications", CreateNotificationHandler)
+	router.PUT("/api/v1/notifications/:id", UpdateNotificationHandler)
+	path := "/api/v1/notifications"
+	if id != "" {
+		path += "/" + id
+	}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(method, path, bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func notificationApplicationIds(t *testing.T, id string) []string {
+	t.Helper()
+	stored, err := gorm.G[models.Notification](db.DB).Preload("Applications", nil).Where("id = ?", id).First(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, app := range stored.Applications {
+		ids = append(ids, app.Id)
+	}
+	return ids
+}
+
+func TestUpdateNotificationHandler_ManagedApplications(t *testing.T) {
+	setupTestDBWithNotifications(t)
+	managed := seedNotificationManagedApplication(t, "Managed App")
+	plain := seedNotificationApplication(t, managed.RepositoryId, managed.AgentId, "Plain App")
+	notification := createNotificationRecord(t, []string{managed.Id})
+	update := func(allApplications bool, applicationIds []string) *httptest.ResponseRecorder {
+		return invokeNotificationHandler(t, http.MethodPut, notification.Id, map[string]any{
+			"enabled": true, "allApplications": allApplications, "allAgents": false, "allRepositories": false,
+			"events": []string{string(models.NotificationEventDeploymentFailed)}, "applicationIds": applicationIds,
+		})
+	}
+
+	if w := update(false, []string{plain.Id}); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "Managed App") {
+		t.Fatalf("expected 409 for removing the managed application, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := update(false, []string{managed.Id, plain.Id}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 when keeping the managed application, got %d: %s", w.Code, w.Body.String())
+	}
+	// Telling about all applications keeps the link from x-orcacd.
+	if w := update(true, nil); w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if ids := notificationApplicationIds(t, notification.Id); !slices.Equal(ids, []string{managed.Id}) {
+		t.Errorf("applications = %v, want only the managed one", ids)
+	}
+}
+
+func TestCreateNotificationHandler_ManagedApplication(t *testing.T) {
+	setupTestDBWithNotifications(t)
+	managed := seedNotificationManagedApplication(t, "Managed App")
+
+	w := invokeNotificationHandler(t, http.MethodPost, "", map[string]any{
+		"name": "Ops", "type": "discord", "config": json.RawMessage(validDiscordConfig),
+		"applicationIds": []string{managed.Id},
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for assigning the managed application, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateApplicationHandler_AssignsNotifications(t *testing.T) {
+	setupTestDBWithApplications(t)
+	if err := db.DB.AutoMigrate(&models.Notification{}); err != nil {
+		t.Fatal(err)
+	}
+	notification := createNotificationRecord(t, nil)
+	useComposeFile(t, "x-orcacd:\n  notifications: [Initial Notification]\nservices: {}\n")
+	repo := seedTestRepository(t, "https://github.com/owner/repo-create-notifications")
+	agent := seedTestAgent(t, "agent-create-notifications")
+
+	w := invokeCreateApplication(t, validApplicationRequestBody(repo.Id, agent.Id))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var body applicationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if ids := notificationApplicationIds(t, notification.Id); !slices.Equal(ids, []string{body.Id}) {
+		t.Errorf("notification applications = %v, want [%s]", ids, body.Id)
+	}
+
+	useComposeFile(t, "x-orcacd:\n  notifications: [Unknown]\nservices: {}\n")
+	w = invokeCreateApplication(t, map[string]any{
+		"name": "Other", "repositoryId": repo.Id, "agentId": agent.Id, "branch": "main", "path": "services/billing.yml",
+	})
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `there is no notification \"Unknown\"`) {
+		t.Fatalf("expected 422 for an unknown notification, got %d: %s", w.Code, w.Body.String())
+	}
+}

@@ -71,22 +71,23 @@ type updateApplicationRequest struct {
 }
 
 type applicationListResponse struct {
-	Id               string  `json:"id" required:"true"`
-	Icon             string  `json:"icon" required:"true"`
-	Name             string  `json:"name" required:"true"`
-	HealthStatus     string  `json:"healthStatus" required:"true"`
-	SyncStatus       string  `json:"syncStatus" required:"true"`
-	Branch           string  `json:"branch" required:"true"`
-	Commit           string  `json:"commit" required:"true"`
-	LastSyncedAt     *string `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
-	Path             string  `json:"path" required:"true"`
-	LastSyncError    *string `json:"lastSyncError,omitempty"`
-	AgentId          string  `json:"agentId" required:"true"`
-	AgentName        string  `json:"agentName" required:"true"`
-	RepositoryId     string  `json:"repositoryId" required:"true"`
-	RolledBackAt     *string `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
-	RolledBackCommit *string `json:"rolledBackCommit" required:"true" nullable:"true"`
-	RepositoryName   string  `json:"repositoryName" required:"true"`
+	Id               string   `json:"id" required:"true"`
+	Icon             string   `json:"icon" required:"true"`
+	Name             string   `json:"name" required:"true"`
+	HealthStatus     string   `json:"healthStatus" required:"true"`
+	SyncStatus       string   `json:"syncStatus" required:"true"`
+	Branch           string   `json:"branch" required:"true"`
+	Commit           string   `json:"commit" required:"true"`
+	LastSyncedAt     *string  `json:"lastSyncedAt" required:"true" nullable:"true" format:"date-time"`
+	Path             string   `json:"path" required:"true"`
+	LastSyncError    *string  `json:"lastSyncError,omitempty"`
+	AgentId          string   `json:"agentId" required:"true"`
+	AgentName        string   `json:"agentName" required:"true"`
+	RepositoryId     string   `json:"repositoryId" required:"true"`
+	RolledBackAt     *string  `json:"rolledBackAt" required:"true" nullable:"true" format:"date-time" doc:"Set while the application runs a deployment it was rolled back to"`
+	RolledBackCommit *string  `json:"rolledBackCommit" required:"true" nullable:"true"`
+	RepositoryName   string   `json:"repositoryName" required:"true"`
+	ManagedSettings  []string `json:"managedSettings" required:"true" nullable:"false" doc:"Settings that come from x-orcacd in the compose file, see the application"`
 }
 
 type applicationResponse struct {
@@ -240,7 +241,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := parseComposeConfig(composeFile)
+	cfg, err := parseComposeConfig(ctx, composeFile)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +275,9 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		if isUniqueConstraintError(err) {
 			return nil, huma.Error409Conflict("an application with this name already exists")
 		}
+		return nil, internalError()
+	}
+	if err := cfg.SaveNotifications(ctx, &application); err != nil {
 		return nil, internalError()
 	}
 
@@ -396,7 +400,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := parseComposeConfig(composeFile)
+	cfg, err := parseComposeConfig(ctx, composeFile)
 	if err != nil {
 		return nil, err
 	}
@@ -461,6 +465,9 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 		}
 		return nil, internalError()
 	}
+	if err := cfg.SaveNotifications(ctx, &application); err != nil {
+		return nil, internalError()
+	}
 
 	updatedApplication, err := gorm.G[models.Application](db.DB).
 		Preload("Repository", nil).
@@ -483,8 +490,11 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 
 // parseComposeConfig reads x-orcacd of a compose file, answering 422 when it
 // is invalid.
-func parseComposeConfig(composeFile string) (*composeconfig.Config, error) {
+func parseComposeConfig(ctx context.Context, composeFile string) (*composeconfig.Config, error) {
 	cfg, err := composeconfig.Parse(composeFile)
+	if err == nil {
+		err = cfg.ResolveNotifications(ctx)
+	}
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("invalid " + composeconfig.Key + " in the compose file: " + err.Error())
 	}
@@ -711,6 +721,7 @@ func toApplicationListResponse(app *models.Application) applicationListResponse 
 		AgentName:        app.Agent.Name.String(),
 		RolledBackAt:     formatTimestamp(app.RolledBackAt),
 		RolledBackCommit: app.RolledBackCommit,
+		ManagedSettings:  nonNil(app.ManagedSettings),
 	}
 }
 

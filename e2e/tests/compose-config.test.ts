@@ -2,7 +2,13 @@ import { test, expect, type Page } from "@playwright/test";
 import { api, seedRepository, type ApiRepository } from "./helpers/api.ts";
 import { commit, deleteRepo } from "./helpers/gitea-mock.ts";
 import { gotoApp } from "./helpers/navigation.ts";
+import {
+	createNotification,
+	deleteNotifications,
+	getNotification,
+} from "./helpers/notifications.ts";
 import { uniqueId } from "./helpers/oidc.ts";
+import { hookUrl } from "./helpers/receiver-mock.ts";
 
 const services = "services:\n  web:\n    image: busybox:1.37\n";
 const managedCompose = `x-orcacd:
@@ -122,5 +128,46 @@ test.describe("Settings from the compose file", () => {
 		await expect(
 			page.getByText("x-orcacd.rollback.health-timeout", { exact: false }),
 		).toBeVisible();
+	});
+
+	test("assign the notifications of the application", async ({ page }) => {
+		const name = uniqueId("Compose Config Notification");
+		const notification = await createNotification(page, {
+			name,
+			type: "webhook",
+			config: JSON.stringify({ webhookUrl: hookUrl("compose-config") }),
+		});
+		try {
+			await commit(repo!.name, {
+				files: { "compose.yaml": `x-orcacd:\n  notifications: ["${name}"]\n${services}` },
+				message: "Assign the notification",
+			});
+			await syncRepository(page);
+			await expect
+				.poll(async () => (await getNotification(page, name))?.applicationIds)
+				.toEqual([appId]);
+
+			const update = await api(page, "PUT", `/notifications/${notification.id}`, {
+				enabled: true,
+				allApplications: false,
+				allAgents: false,
+				allRepositories: false,
+				events: ["application.deployment.failed"],
+				applicationIds: [],
+			});
+			expect(update.status).toBe(409);
+
+			await gotoApp(page, "/notifications");
+			await page
+				.locator("[data-slot='card']", { hasText: name })
+				.getByRole("button", { name: "Card actions" })
+				.click();
+			await page.getByRole("menuitem", { name: "Edit" }).click();
+			await expect(
+				page.getByRole("dialog").getByText("Some applications set their notifications"),
+			).toBeVisible();
+		} finally {
+			await deleteNotifications(page, [notification.id]);
+		}
 	});
 });

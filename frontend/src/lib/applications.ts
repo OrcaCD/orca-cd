@@ -54,9 +54,13 @@ export type ManagedSetting =
 	| "rollback.healthTimeoutSeconds"
 	| "rollback.pauseAutoSync"
 	| "releaseAge.minimumSeconds"
-	| "releaseAge.allowedRegistries";
+	| "releaseAge.allowedRegistries"
+	| "notifications";
 
-export function isManaged(application: Application | undefined, setting: ManagedSetting): boolean {
+export function isManaged(
+	application: Pick<Application, "managedSettings"> | undefined,
+	setting: ManagedSetting,
+): boolean {
 	return application?.managedSettings.includes(setting) ?? false;
 }
 
@@ -109,6 +113,7 @@ export interface ApplicationListItem {
 	path: string;
 	rolledBackAt: string | null;
 	rolledBackCommit: string | null;
+	managedSettings: ManagedSetting[];
 }
 
 export interface ApplicationActivityDay {

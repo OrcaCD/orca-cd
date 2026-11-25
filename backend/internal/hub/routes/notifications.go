@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/composeconfig"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -125,10 +126,11 @@ var CreateNotificationHandler = restapi.Handler(huma.Operation{
 	Summary:       "Create a notification",
 	Description: "Sends a test notification first and only saves the notification when it was delivered. " +
 		"The user needs to be able to view every resource it tells about. " +
+		"Applications that set their notifications with x-orcacd in the compose file can't be assigned (409). " +
 		requires(models.ResourceNotification, models.ActionCreate),
 	Tags:     []string{tagNotifications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusBadGateway},
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusBadGateway},
 }, func(ctx context.Context, input *struct{ Body createNotificationRequest }) (*notificationOutput, error) {
 	req := input.Body
 	normalizedName, err := normalizeNotificationName(req.Name)
@@ -185,6 +187,9 @@ var CreateNotificationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
+	if err := keepManagedApplications(ctx, nil, allApplications, &targets); err != nil {
+		return nil, err
+	}
 
 	// Reject configs that can't deliver before saving them, so new
 	// notifications never start in an unknown state.
@@ -232,10 +237,11 @@ var UpdateNotificationHandler = restapi.Handler(huma.Operation{
 	Summary:     "Update a notification",
 	Description: "Replaces the events and the resources the notification tells about. Its name, type and config can't be changed. " +
 		"The user needs to be able to view every resource it told and will tell about. " +
+		"Applications that set their notifications with x-orcacd in the compose file can't be assigned or removed (409). " +
 		requires(models.ResourceNotification, models.ActionUpdate),
 	Tags:     []string{tagNotifications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound},
+	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the notification"`
 	Body updateNotificationRequest
@@ -275,6 +281,9 @@ var UpdateNotificationHandler = restapi.Handler(huma.Operation{
 		scopedNotificationResourceIds(req.AllRepositories, req.RepositoryIds),
 	)
 	if err != nil {
+		return nil, err
+	}
+	if err := keepManagedApplications(ctx, &notification, req.AllApplications, &targets); err != nil {
 		return nil, err
 	}
 
@@ -609,6 +618,38 @@ func (t *notificationTargets) replace(tx *gorm.DB, notification *models.Notifica
 		return err
 	}
 	return tx.Model(notification).Association("Repositories").Replace(t.repositories)
+}
+
+// keepManagedApplications answers 409 when the targets add or remove an
+// application whose notifications come from x-orcacd, and keeps its link to
+// a notification that tells about all applications. notification is nil for
+// a new one.
+func keepManagedApplications(ctx context.Context, notification *models.Notification, allApplications bool, targets *notificationTargets) error {
+	managed, err := gorm.G[models.Application](db.DB).
+		Select("id", "name", "managed_settings").
+		Where("managed_settings LIKE ?", `%"`+composeconfig.SettingNotifications+`"%`).
+		Find(ctx)
+	if err != nil {
+		return internalError()
+	}
+	for _, app := range managed {
+		if !slices.Contains(app.ManagedSettings, composeconfig.SettingNotifications) {
+			continue
+		}
+		isApp := func(a models.Application) bool { return a.Id == app.Id }
+		linked := notification != nil && slices.ContainsFunc(notification.Applications, isApp)
+		if allApplications {
+			if linked {
+				targets.applications = append(targets.applications, app)
+			}
+			continue
+		}
+		if linked != slices.ContainsFunc(targets.applications, isApp) {
+			return huma.Error409Conflict("the notifications of the application " + app.Name.String() +
+				" are set with " + composeconfig.Key + " in its compose file")
+		}
+	}
+	return nil
 }
 
 // loadNotificationTargets loads the assigned resources and returns a 400 error

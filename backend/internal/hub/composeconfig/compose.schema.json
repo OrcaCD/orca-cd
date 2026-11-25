@@ -80,6 +80,13 @@
             }
           ]
         },
+        "notifications": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The notifications that tell about the application, by name or ID. A name must match one notification. Sets all notifications of the application."
+        },
         "release-age": {
           "type": "object",
           "description": "Holds back image updates until the new image was pushed long enough ago.",

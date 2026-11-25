@@ -129,6 +129,8 @@ func TestParse_Errors(t *testing.T) {
 		"both triggers":   {"x-orcacd:\n  rollback:\n    on-deploy-failure: false\n    on-unhealthy: false\n", []string{"x-orcacd.rollback: on-deploy-failure and on-unhealthy can't both be false"}},
 		"long interval":   {"x-orcacd:\n  image-poll:\n    interval: 31d\n", []string{"x-orcacd.image-poll.interval: must be at most 30d"}},
 		"several invalid": {"x-orcacd:\n  icon: 1\n  foo: bar\n", []string{`x-orcacd: unknown key "foo"`, "x-orcacd.icon: must be an icon name"}},
+		"notifications":   {"x-orcacd:\n  notifications: ops\n", []string{"x-orcacd.notifications: must be a list"}},
+		"empty name":      {"x-orcacd:\n  notifications: [\"\"]\n", []string{"x-orcacd.notifications: must be a list"}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -262,7 +264,7 @@ func TestSchemaMatchesSettings(t *testing.T) {
 	collectSchemaPaths(t, schema.Defs["orcacd"], "", &paths)
 	slices.Sort(paths)
 
-	var want []string
+	want := []string{keyNotifications}
 	for _, s := range settings {
 		want = append(want, s.path)
 	}
@@ -339,5 +341,30 @@ func TestSameWithoutConfig_ComparesDecodedFiles(t *testing.T) {
 	}
 	if !SameWithoutConfig(base, "# comment\nservices:\n    web:\n        image: nginx\n") {
 		t.Error("expected comments and indentation not to count as changes")
+	}
+}
+
+func TestParse_Notifications(t *testing.T) {
+	cfg := mustParse(t, "x-orcacd:\n  notifications: [ops, \" ops \", alerts]\n")
+	if !slices.Equal(cfg.notifications, []string{"ops", "alerts"}) {
+		t.Errorf("notifications = %v, want [ops alerts]", cfg.notifications)
+	}
+	app := defaultApplication()
+	cfg.Apply(&app)
+	if !slices.Equal(app.ManagedSettings, []string{SettingNotifications}) {
+		t.Errorf("ManagedSettings = %v, want [notifications]", app.ManagedSettings)
+	}
+
+	// Removing the key clears the notifications on save.
+	empty := mustParse(t, "services: {}\n")
+	empty.Apply(&app)
+	if !empty.clearNotifications || len(app.ManagedSettings) != 0 {
+		t.Errorf("expected the notifications to be cleared, got clear=%v managed=%v", empty.clearNotifications, app.ManagedSettings)
+	}
+	// Without having been managed, they are left as they are.
+	other := mustParse(t, "services: {}\n")
+	other.Apply(&app)
+	if other.clearNotifications {
+		t.Error("expected notifications set through the API to be kept")
 	}
 }

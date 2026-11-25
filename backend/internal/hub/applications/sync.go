@@ -80,6 +80,9 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	}
 
 	cfg, err := composeconfig.Parse(content)
+	if err == nil {
+		err = cfg.ResolveNotifications(ctx)
+	}
 	if err != nil {
 		message := "invalid " + composeconfig.Key + " in the compose file: " + err.Error()
 		log.Warn().Err(err).Str("applicationId", job.Application.Id).Msg("invalid compose settings during sync")
@@ -126,7 +129,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 			job.Application.ComposeFile = crypto.EncryptedString(content)
 			columns = append(columns, "ComposeFile", "PreviousComposeFile")
 		}
-		if err := saveApplication(ctx, &job.Application, append(columns, settingColumns...), log); err != nil {
+		if err := saveApplication(ctx, &job.Application, cfg, append(columns, settingColumns...), log); err != nil {
 			completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, "failed to persist application sync status: "+err.Error(), log)
 			return
 		}
@@ -153,7 +156,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	// The settings are saved before the deployment, which uses them, e.g. for
 	// the automatic rollback.
 	columns := append([]string{"ComposeFile", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage"}, settingColumns...)
-	if err := saveApplication(ctx, &job.Application, columns, log); err != nil {
+	if err := saveApplication(ctx, &job.Application, cfg, columns, log); err != nil {
 		failSyncJob(job.Application, log)
 		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, "failed to persist compose file: "+err.Error(), log)
 		return
@@ -276,13 +279,17 @@ func updateApplicationStatus(ctx context.Context, applicationID string, updates 
 }
 
 // saveApplication saves the columns of the application, which always
-// include the settings that come from x-orcacd.
-func saveApplication(ctx context.Context, application *models.Application, columns []string, log *zerolog.Logger) error {
+// include the settings that come from x-orcacd, and its notifications.
+func saveApplication(ctx context.Context, application *models.Application, cfg *composeconfig.Config, columns []string, log *zerolog.Logger) error {
 	columns = append(columns, "ManagedSettings")
+	ctx = context.WithoutCancel(ctx)
 	_, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", application.Id).
 		Select(columns[0], toAny(columns[1:])...).
-		Updates(context.WithoutCancel(ctx), *application)
+		Updates(ctx, *application)
+	if err == nil {
+		err = cfg.SaveNotifications(ctx, application)
+	}
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", application.Id).Msg("failed to save application")
 	}

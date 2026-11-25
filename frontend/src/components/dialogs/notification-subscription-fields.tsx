@@ -20,7 +20,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Agent } from "@/lib/agents";
 import { useFetch } from "@/lib/api";
-import type { ApplicationListItem } from "@/lib/applications";
+import { isManaged, type ApplicationListItem } from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import {
 	getNotificationResourceEvents,
 	type NotificationEvent,
@@ -102,6 +103,9 @@ interface ResourceOption {
 	id: string;
 	name: string;
 	description?: string;
+	// locked options set their notifications with x-orcacd, so they can't be
+	// added or removed.
+	locked?: boolean;
 }
 
 export function NotificationSubscriptionFields({
@@ -126,6 +130,7 @@ export function NotificationSubscriptionFields({
 			id: app.id,
 			name: app.name,
 			description: `${app.repositoryName} / ${app.agentName}`,
+			locked: isManaged(app, "notifications"),
 		})),
 		agents: agents?.map((agent) => ({ id: agent.id, name: agent.name })),
 		repositories: repositories?.map((repo) => ({
@@ -254,6 +259,13 @@ function ResourceSelectField({
 	modal?: boolean;
 }) {
 	const anchor = useComboboxAnchor();
+	const isLocked = (id: string) => options?.some((option) => option.id === id && option.locked);
+	// Locked options keep their state, e.g. when the last chip is removed with backspace.
+	const changeUnlocked = (ids: string[]) =>
+		onChange([
+			...ids.filter((id) => !isLocked(id) || value.includes(id)),
+			...value.filter((id) => isLocked(id) && !ids.includes(id)),
+		]);
 
 	return (
 		<Field>
@@ -263,7 +275,7 @@ function ResourceSelectField({
 				multiple
 				autoHighlight
 				value={value}
-				onValueChange={onChange}
+				onValueChange={changeUnlocked}
 				modal={modal}
 			>
 				<ComboboxChips ref={anchor}>
@@ -271,7 +283,7 @@ function ResourceSelectField({
 						{(values) => (
 							<>
 								{values.map((id: string) => (
-									<ComboboxChip key={id}>
+									<ComboboxChip key={id} showRemove={!isLocked(id)}>
 										{options?.find((option) => option.id === id)?.name ?? id}
 									</ComboboxChip>
 								))}
@@ -284,7 +296,7 @@ function ResourceSelectField({
 					<ComboboxEmpty>{empty}</ComboboxEmpty>
 					<ComboboxList>
 						{(item: ResourceOption) => (
-							<ComboboxItem key={item.id} value={item.id}>
+							<ComboboxItem key={item.id} value={item.id} disabled={item.locked}>
 								<Item className="p-0">
 									<ItemContent>
 										<ItemTitle className="whitespace-nowrap">{item.name}</ItemTitle>
@@ -296,6 +308,9 @@ function ResourceSelectField({
 					</ComboboxList>
 				</ComboboxContent>
 			</Combobox>
+			{options?.some((option) => option.locked) && (
+				<ManagedSettingHint message={m.notificationApplicationsManagedByComposeFile()} />
+			)}
 		</Field>
 	);
 }

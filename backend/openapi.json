@@ -595,6 +595,13 @@
               "null"
             ]
           },
+          "managedSettings": {
+            "description": "Settings that come from x-orcacd in the compose file, see the application",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "name": {
             "type": "string"
           },
@@ -640,7 +647,8 @@
           "repositoryId",
           "rolledBackAt",
           "rolledBackCommit",
-          "repositoryName"
+          "repositoryName",
+          "managedSettings"
         ],
         "type": "object"
       },
@@ -10476,7 +10484,7 @@
         ]
       },
       "post": {
-        "description": "Sends a test notification first and only saves the notification when it was delivered. The user needs to be able to view every resource it tells about. Needs the `notification:create` permission.",
+        "description": "Sends a test notification first and only saves the notification when it was delivered. The user needs to be able to view every resource it tells about. Applications that set their notifications with x-orcacd in the compose file can't be assigned (409). Needs the `notification:create` permission.",
         "operationId": "create-notification",
         "requestBody": {
           "content": {
@@ -10528,6 +10536,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
@@ -10656,7 +10674,7 @@
         ]
       },
       "put": {
-        "description": "Replaces the events and the resources the notification tells about. Its name, type and config can't be changed. The user needs to be able to view every resource it told and will tell about. Needs the `notification:update` permission.",
+        "description": "Replaces the events and the resources the notification tells about. Its name, type and config can't be changed. The user needs to be able to view every resource it told and will tell about. Applications that set their notifications with x-orcacd in the compose file can't be assigned or removed (409). Needs the `notification:update` permission.",
         "operationId": "update-notification",
         "parameters": [
           {
@@ -10730,6 +10748,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
