@@ -26,9 +26,13 @@ import (
 )
 
 // undocumentedRoutes stay plain Gin handlers outside the spec, as they aren't
-// JSON: the event stream, the agent socket, browser redirects and an image.
+// JSON: the event, log and stats streams, the log download, the agent socket,
+// browser redirects and an image.
 var undocumentedRoutes = []string{
 	"GET /events",
+	"GET /applications/{id}/containers/{containerId}/logs/stream",
+	"GET /applications/{id}/containers/{containerId}/logs/download",
+	"GET /applications/{id}/containers/{containerId}/stats/stream",
 	"GET /ws",
 	"GET /auth/oidc/{id}/authorize",
 	"GET /auth/oidc/{id}/callback",

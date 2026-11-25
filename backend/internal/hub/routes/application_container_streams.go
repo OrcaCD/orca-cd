@@ -17,6 +17,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/websocket"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -282,9 +283,10 @@ func beginContainerStream(c *gin.Context, spec containerStreamSpec) (*websocket.
 	}
 	releaseUser := func() { containerStreamSlots.release(user.Id) }
 
-	application, ok := loadContainerTarget(c)
-	if !ok {
+	application, err := loadContainerTarget(c.Request.Context(), c.Param("id"))
+	if err != nil {
 		releaseUser()
+		respondContainerError(c, err)
 		return nil, none, nil, false
 	}
 
@@ -321,8 +323,16 @@ func respondStreamOpenError(c *gin.Context, application models.Application, err 
 		applicationContainersLog.Warn().Err(err).Str("agent_id", application.AgentId).Msg("agent rejected container stream")
 		c.JSON(http.StatusBadGateway, gin.H{"error": "The agent could not open the stream."})
 	default:
-		respondContainerTransportError(c, application, err)
+		respondContainerError(c, containerTransportError(application, err))
 	}
+}
+
+func respondContainerError(c *gin.Context, err error) {
+	if statusErr, ok := errors.AsType[huma.StatusError](err); ok {
+		c.JSON(statusErr.GetStatus(), gin.H{"error": statusErr.Error()})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 }
 
 type sseStream struct {
