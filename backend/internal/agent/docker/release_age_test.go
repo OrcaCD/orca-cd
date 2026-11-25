@@ -160,6 +160,8 @@ func TestEvaluateUpdate(t *testing.T) {
 			wantLookup: true,
 		},
 		{name: "invalid label", policy: policy, service: withLabel("soon"), wantStatus: blocked, wantReason: "invalid " + releaseAgeLabel + " label"},
+		{name: "excluded from polling", policy: ReleaseAgePolicy{ExcludedServices: []string{"app"}}, service: service, wantStatus: skipped, wantReason: "image polling is off for this service"},
+		{name: "other service excluded from polling", policy: ReleaseAgePolicy{ExcludedServices: []string{"db"}}, service: service, wantStatus: updated},
 		{
 			name:       "announced by webhook waits too",
 			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:1.0"}},

@@ -40,6 +40,10 @@ export interface Application {
 	releaseAge: ReleaseAgeSettings;
 	// managedSettings come from x-orcacd in the compose file and can only be changed there.
 	managedSettings: ManagedSetting[];
+	// Compose services that image polling skips, set with x-orcacd.
+	imagePollExcludedServices: string[];
+	// Compose services that don't count for the health of the application, set with x-orcacd.
+	healthIgnoredServices: string[];
 }
 
 // ManagedSetting is the path of a setting in the application, like "rollback.enabled".
@@ -55,7 +59,8 @@ export type ManagedSetting =
 	| "rollback.pauseAutoSync"
 	| "releaseAge.minimumSeconds"
 	| "releaseAge.allowedRegistries"
-	| "notifications";
+	| "notifications"
+	| `releaseAge.serviceOverrides.${string}`;
 
 export function isManaged(
 	application: Pick<Application, "managedSettings"> | undefined,

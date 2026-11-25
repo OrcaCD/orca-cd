@@ -105,6 +105,13 @@ function ApplicationHealthPage() {
 				)}
 			</div>
 
+			{application && application.healthIgnoredServices.length > 0 && (
+				<p className="text-sm text-muted-foreground">
+					{m.healthIgnoredServices({ services: application.healthIgnoredServices.join(", ") })}{" "}
+					<code className="font-mono text-foreground">x-orcacd</code>
+				</p>
+			)}
+
 			{error ? (
 				<ErrorAlert title={m.healthLoadFailed()} description={(error as Error).message} />
 			) : isLoading || !stats ? (

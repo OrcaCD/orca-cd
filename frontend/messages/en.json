@@ -660,6 +660,8 @@
 	"deleteOldImages": "Delete old images",
 	"deleteOldImagesDescription": "Remove replaced image versions after every successful deployment or image update",
 	"managedByComposeFile": "Set in the compose file with",
+	"serviceImagePollOff": "Image polling off",
+	"healthIgnoredServices": "Not counted for the health: {services}. Set in the compose file with",
 	"notificationApplicationsManagedByComposeFile": "Some applications set their notifications in their compose file, so they can't be added or removed here. They use",
 	"notificationComposeAssignable": "Assignable from compose files",
 	"notificationComposeAssignableDescription": "Applications can assign themselves to this notification with x-orcacd in their compose file, which then also decides whether those applications stay assigned. Anyone who can push to their repository can send their events here.",

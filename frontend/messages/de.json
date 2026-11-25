@@ -660,6 +660,8 @@
 	"deleteOldImages": "Alte Images löschen",
 	"deleteOldImagesDescription": "Ersetzte Image-Versionen nach jedem erfolgreichen Deployment oder Image-Update entfernen",
 	"managedByComposeFile": "In der Compose-Datei festgelegt mit",
+	"serviceImagePollOff": "Image-Polling aus",
+	"healthIgnoredServices": "Zählt nicht zur Health: {services}. In der Compose-Datei festgelegt mit",
 	"notificationApplicationsManagedByComposeFile": "Einige Anwendungen legen ihre Benachrichtigungen in ihrer Compose-Datei fest und können hier nicht hinzugefügt oder entfernt werden. Sie nutzen",
 	"notificationComposeAssignable": "Aus Compose-Dateien zuweisbar",
 	"notificationComposeAssignableDescription": "Anwendungen können sich mit x-orcacd in ihrer Compose-Datei dieser Benachrichtigung zuweisen. Die Compose-Datei entscheidet dann auch, ob diese Anwendungen zugewiesen bleiben. Wer in ihr Repository pushen kann, kann ihre Ereignisse hierher senden.",

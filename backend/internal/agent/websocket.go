@@ -302,6 +302,9 @@ func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) 
 	}
 	apps := make([]docker.AppPollConfig, 0, len(settings.ImagePollSettings))
 	for _, s := range settings.ImagePollSettings {
+		// Only polling skips the excluded services, not pulls the hub requests.
+		policy := docker.ReleaseAgePolicyFromProto(s.ReleaseAge, nil)
+		policy.ExcludedServices = s.ExcludedServices
 		apps = append(apps, docker.AppPollConfig{
 			AppID:   s.ApplicationId,
 			AppName: s.ApplicationName,
@@ -309,7 +312,7 @@ func applyAgentSettings(poller pollerHandler, settings *messages.AgentSettings) 
 				Enabled:         s.Enabled,
 				IntervalSeconds: s.IntervalSeconds,
 				DeleteOldImages: s.DeleteOldImages,
-				ReleaseAge:      docker.ReleaseAgePolicyFromProto(s.ReleaseAge, nil),
+				ReleaseAge:      policy,
 			},
 		})
 	}

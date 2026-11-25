@@ -37,6 +37,8 @@ type ReleaseAgePolicy struct {
 	// WebhookImages limit the pull to these images, e.g. the ones an image pull
 	// webhook announced. They wait for the release age like any other image.
 	WebhookImages []string
+	// ExcludedServices are compose services whose images image polling skips.
+	ExcludedServices []string
 }
 
 func ReleaseAgePolicyFromProto(policy *messages.ReleaseAgePolicy, webhookImages []string) ReleaseAgePolicy {
@@ -63,7 +65,8 @@ func (p ReleaseAgePolicy) equal(other ReleaseAgePolicy) bool {
 		slices.Equal(p.AllowedRegistries, other.AllowedRegistries) &&
 		p.EnforcedMinimumAge == other.EnforcedMinimumAge &&
 		slices.Equal(p.EnforcedExemptRegistries, other.EnforcedExemptRegistries) &&
-		slices.Equal(p.WebhookImages, other.WebhookImages)
+		slices.Equal(p.WebhookImages, other.WebhookImages) &&
+		slices.Equal(p.ExcludedServices, other.ExcludedServices)
 }
 
 // minimumAge returns the minimum release age of the service, and whether its
@@ -138,6 +141,11 @@ func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy Releas
 	if err != nil {
 		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED
 		update.Reason = fmt.Sprintf("invalid %s label: %v", releaseAgeLabel, err)
+		return false
+	}
+	if slices.Contains(policy.ExcludedServices, service.Name) {
+		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
+		update.Reason = "image polling is off for this service, a manual pull or webhook updates it"
 		return false
 	}
 	if minimumAge <= 0 {

@@ -26,7 +26,8 @@ import {
 import { toast } from "@/components/ui/toast";
 import { useNow } from "@/hooks/use-now";
 import { useFetch } from "@/lib/api";
-import { updateServiceReleaseAge, type Application } from "@/lib/applications";
+import { isManaged, updateServiceReleaseAge, type Application } from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import { m } from "@/lib/paraglide/messages";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -145,6 +146,11 @@ function ImageUpdatesPage() {
 											>
 												{image.image}
 											</div>
+											{application?.imagePollExcludedServices.includes(image.service) && (
+												<Badge variant="outline" className="mt-1">
+													{m.serviceImagePollOff()}
+												</Badge>
+											)}
 										</TableCell>
 										<TableCell>
 											<VersionCell image={image} />
@@ -162,9 +168,15 @@ function ImageUpdatesPage() {
 												override={application?.releaseAge.serviceOverrides[image.service]}
 												appAge={policy.age}
 												globalAge={global.minimumSeconds}
-												disabled={!canUpdate}
+												disabled={
+													!canUpdate ||
+													isManaged(application, `releaseAge.serviceOverrides.${image.service}`)
+												}
 												onUpdated={(updated) => mutateApplication(updated, { revalidate: false })}
 											/>
+											{isManaged(application, `releaseAge.serviceOverrides.${image.service}`) && (
+												<ManagedSettingHint />
+											)}
 										</TableCell>
 									</TableRow>
 								))}

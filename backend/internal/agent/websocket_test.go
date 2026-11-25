@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1511,5 +1512,19 @@ func TestConnTracker_SetAndClose(t *testing.T) {
 	case <-serverDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("server did not detect connection close")
+	}
+}
+
+func TestApplyAgentSettings_ExcludedServicesOnlyForPolling(t *testing.T) {
+	poller := &stubPoller{}
+	applyAgentSettings(poller, &messages.AgentSettings{
+		ImagePollSettings: []*messages.ImagePollSettings{
+			{ApplicationId: "app-1", ApplicationName: "myapp", Enabled: true, ExcludedServices: []string{"db"}},
+		},
+	})
+
+	snap := poller.lastSnapshot()
+	if len(snap) != 1 || !slices.Equal(snap[0].Settings.ReleaseAge.ExcludedServices, []string{"db"}) {
+		t.Fatalf("expected the poll policy to exclude db, got %+v", snap)
 	}
 }
