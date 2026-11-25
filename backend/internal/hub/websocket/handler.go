@@ -318,6 +318,30 @@ func handleClientMessage(ctx context.Context, client *Client, msg *messages.Clie
 		if DefaultHub == nil || !DefaultHub.ResolveEnvUpdateResult(client.Id, p.EnvUpdateResult) {
 			log.Warn().Str("client", client.Id).Str("request_id", p.EnvUpdateResult.RequestId).Msg("received env update result for unknown request")
 		}
+	case *messages.ClientMessage_ContainerListResult:
+		if DefaultHub == nil || !DefaultHub.ResolveContainerListResult(client.Id, p.ContainerListResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.ContainerListResult.RequestId).Msg("received container list result for unknown request")
+		}
+	case *messages.ClientMessage_ContainerInspectResult:
+		if DefaultHub == nil || !DefaultHub.ResolveContainerInspectResult(client.Id, p.ContainerInspectResult) {
+			log.Warn().Str("client", client.Id).Str("request_id", p.ContainerInspectResult.RequestId).Msg("received container inspect result for unknown request")
+		}
+	case *messages.ClientMessage_StreamStarted:
+		if DefaultHub == nil || !DefaultHub.ResolveStreamStarted(client, p.StreamStarted) {
+			log.Debug().Str("client", client.Id).Msg("received stream ack for unknown stream")
+		}
+	case *messages.ClientMessage_ContainerLogsChunk:
+		if DefaultHub == nil || !DefaultHub.DeliverLogs(client, p.ContainerLogsChunk) {
+			log.Debug().Str("client", client.Id).Msg("dropped log chunk")
+		}
+	case *messages.ClientMessage_ContainerStatsSample:
+		if DefaultHub == nil || !DefaultHub.DeliverStats(client, p.ContainerStatsSample) {
+			log.Debug().Str("client", client.Id).Msg("dropped stats sample")
+		}
+	case *messages.ClientMessage_StreamEnd:
+		if DefaultHub == nil || !DefaultHub.DeliverStreamEnd(client, p.StreamEnd) {
+			log.Debug().Str("client", client.Id).Msg("received end for unknown stream")
+		}
 	case *messages.ClientMessage_PullImagesResult:
 		handlePullImagesResult(ctx, client, p.PullImagesResult, log)
 	case *messages.ClientMessage_ImageUpdatesReport:
@@ -386,6 +410,7 @@ func handleAgentInfo(parent context.Context, client *Client, info *messages.Agen
 	if info == nil {
 		return
 	}
+	client.setCapabilities(info.Capabilities)
 
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()

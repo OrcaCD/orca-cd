@@ -119,3 +119,60 @@ func TestHandleAgentInfo_NilIsIgnored(t *testing.T) {
 		t.Errorf("expected empty version, got %q", got.Version)
 	}
 }
+
+func TestHandleAgentInfo_StoresCapabilities(t *testing.T) {
+	setupHandlerTestEnv(t)
+	agent := createTestAgent(t, "key-1")
+	nop := zerolog.Nop()
+	h := NewHub(&nop)
+	client := registerEnvTestClient(t, h)
+	client.Id = agent.Id
+
+	if h.HasCapability("agent-1", CapabilityContainerMonitoring) {
+		t.Fatal("capability reported before the agent advertised it")
+	}
+
+	handleAgentInfo(t.Context(), client, &messages.AgentInfo{
+		Version:      "v0.5.0",
+		Capabilities: []string{CapabilityContainerMonitoring},
+	}, &nop)
+
+	if !h.HasCapability("agent-1", CapabilityContainerMonitoring) {
+		t.Error("expected the advertised capability")
+	}
+	if h.HasCapability("agent-1", "something-else") {
+		t.Error("unadvertised capability reported")
+	}
+	if h.HasCapability("missing", CapabilityContainerMonitoring) {
+		t.Error("capability reported for an unknown agent")
+	}
+
+	handleAgentInfo(t.Context(), client, &messages.AgentInfo{Version: "v0.5.0"}, &nop)
+	if h.HasCapability("agent-1", CapabilityContainerMonitoring) {
+		t.Error("capability must be dropped when no longer advertised")
+	}
+}
+
+func TestHandleAgentInfo_BoundsCapabilities(t *testing.T) {
+	setupHandlerTestEnv(t)
+	agent := createTestAgent(t, "key-1")
+	nop := zerolog.Nop()
+	client := &Client{Id: agent.Id}
+
+	capabilities := make([]string, 0, maxReportedCapabilities+10)
+	for range maxReportedCapabilities + 10 {
+		capabilities = append(capabilities, "cap")
+	}
+	capabilities = append(capabilities, CapabilityContainerMonitoring)
+	handleAgentInfo(t.Context(), client, &messages.AgentInfo{Capabilities: capabilities}, &nop)
+
+	if client.hasCapability(CapabilityContainerMonitoring) {
+		t.Error("capabilities beyond the limit must be ignored")
+	}
+}
+
+func TestClientHasCapability_ZeroValue(t *testing.T) {
+	if (&Client{}).hasCapability(CapabilityContainerMonitoring) {
+		t.Error("a client that sent no agent info has no capabilities")
+	}
+}

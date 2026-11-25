@@ -38,6 +38,8 @@ type Client struct {
 	// reportedHealth holds the last healthReport of each application this
 	// connection reported the health of. Only the message handler writes it.
 	reportedHealth sync.Map
+	// capabilities holds what the agent advertised in its last AgentInfo.
+	capabilities atomic.Pointer[[]string]
 }
 
 // healthReport is the last health a connection reported for an application.
@@ -88,9 +90,15 @@ type Hub struct {
 	deleteMu       sync.Mutex
 	pendingDeletes map[string]pendingDelete
 
-	envMu             sync.Mutex
-	pendingEnvLists   map[string]pendingEnv[*messages.EnvListResult]
-	pendingEnvUpdates map[string]pendingEnv[*messages.EnvUpdateResult]
+	requestMu         sync.Mutex
+	pendingEnvLists   map[string]pendingRequest[*messages.EnvListResult]
+	pendingEnvUpdates map[string]pendingRequest[*messages.EnvUpdateResult]
+
+	pendingContainerLists    map[string]pendingRequest[*messages.ContainerListResult]
+	pendingContainerInspects map[string]pendingRequest[*messages.ContainerInspectResult]
+
+	streamMu sync.Mutex
+	streams  map[string]*streamEntry
 
 	presence *agentPresenceNotifier
 }
@@ -101,8 +109,13 @@ func NewHub(log *zerolog.Logger) *Hub {
 		log:            log,
 		pendingDeletes: make(map[string]pendingDelete),
 
-		pendingEnvLists:   make(map[string]pendingEnv[*messages.EnvListResult]),
-		pendingEnvUpdates: make(map[string]pendingEnv[*messages.EnvUpdateResult]),
+		pendingEnvLists:   make(map[string]pendingRequest[*messages.EnvListResult]),
+		pendingEnvUpdates: make(map[string]pendingRequest[*messages.EnvUpdateResult]),
+
+		pendingContainerLists:    make(map[string]pendingRequest[*messages.ContainerListResult]),
+		pendingContainerInspects: make(map[string]pendingRequest[*messages.ContainerInspectResult]),
+
+		streams: make(map[string]*streamEntry),
 		presence: newAgentPresenceNotifier(agentOfflineGracePeriod, func(agentId string, event models.NotificationEvent) {
 			notifyAgentPresence(agentId, event, log)
 		}),
@@ -169,7 +182,8 @@ func (h *Hub) FinishDisconnect(c *Client) {
 		delete(h.clients, c.Id)
 	}
 	h.mu.Unlock()
-	h.abortPendingEnv(c)
+	h.abortPendingRequests(c)
+	h.abortStreams(c)
 	h.log.Debug().Str("client", c.Id).Msg("Client unregistered")
 }
 
