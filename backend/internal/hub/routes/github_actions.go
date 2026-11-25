@@ -68,9 +68,7 @@ type githubActionsRequest struct {
 
 type githubActionsInput struct {
 	Authorization string `header:"Authorization" doc:"Bearer followed by the OIDC token of the workflow run, with the URL of the hub as audience"`
-	// Read as raw bytes, as the body is only parsed once the token was checked
-	// and applications matched.
-	RawBody []byte
+	// The body is only read once the token was checked and applications matched
 }
 
 type githubActionsOutput struct {
@@ -128,7 +126,7 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 		"whose settings can limit the workflows, branches and actions. Pull request events are refused.",
 	Tags:          []string{tagWebhooks},
 	DefaultStatus: http.StatusAccepted,
-	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusRequestEntityTooLarge},
 }, &huma.RequestBody{
 	Description: "Required once applications match the branch.",
 	Content: map[string]*huma.MediaType{
@@ -226,8 +224,12 @@ var GitHubActionsDeployHandler = webhookHandler(huma.Operation{
 	}
 
 	// Decoded like Gin's ShouldBindJSON did, which ignores data after the object
+	body, err := readWebhookBody(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var req githubActionsRequest
-	if err := json.NewDecoder(bytes.NewReader(input.RawBody)).Decode(&req); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&req); err != nil {
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 

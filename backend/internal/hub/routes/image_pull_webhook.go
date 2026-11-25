@@ -59,7 +59,6 @@ type imagePullWebhookInput struct {
 	GitHubSignature string `header:"X-Hub-Signature-256" doc:"Set by GitHub: sha256= followed by the hex HMAC-SHA256 of the body, keyed with the webhook secret"`
 	Authorization   string `header:"Authorization" doc:"Bearer followed by the webhook secret"`
 	Token           string `query:"token" doc:"The webhook secret, for registries that can't set headers, like Docker Hub. Only read without an Authorization header."`
-	RawBody         []byte
 }
 
 var imagePullWebhookRequestBody = &huma.RequestBody{
@@ -80,7 +79,7 @@ var ImagePullWebhookHandler = webhookHandler(huma.Operation{
 		"other callers send it as `Authorization: Bearer <webhook secret>` or in the `token` query parameter.",
 	Tags:          []string{tagWebhooks},
 	DefaultStatus: http.StatusNoContent,
-	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized},
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusRequestEntityTooLarge},
 }, imagePullWebhookRequestBody, func(ctx context.Context, input *imagePullWebhookInput) (*struct{}, error) {
 	c := restapi.GinContext(ctx)
 
@@ -97,9 +96,12 @@ var ImagePullWebhookHandler = webhookHandler(huma.Operation{
 	}
 
 	secret := app.ImageWebhookSecret.String()
-	body := input.RawBody
 
 	if event := input.GitHubEvent; event != "" {
+		body, err := readWebhookBody(ctx)
+		if err != nil {
+			return nil, err
+		}
 		if !validateHMACSHA256(secret, body, strings.TrimPrefix(input.GitHubSignature, "sha256=")) {
 			return nil, rejectWebhook(c, "invalid_signature")
 		}
@@ -132,6 +134,11 @@ var ImagePullWebhookHandler = webhookHandler(huma.Operation{
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(secret)) != 1 {
 		return nil, rejectWebhook(c, "invalid_token")
+	}
+
+	body, err := readWebhookBody(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Docker Hub payloads carry a push_data field; all Docker Hub webhooks are push events.

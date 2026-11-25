@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,7 +44,8 @@ type pushPayload struct {
 }
 
 // webhookInput is the input of the repository webhook. The providers sign the
-// raw body, so it's verified against exactly the bytes that were sent.
+// raw body, so it's read with readWebhookBody and verified against exactly the
+// bytes that were sent.
 type webhookInput struct {
 	ID              string `path:"id" doc:"The ID of the repository"`
 	GitHubEvent     string `header:"X-GitHub-Event" doc:"Set by GitHub. Only push events trigger a sync."`
@@ -54,7 +56,6 @@ type webhookInput struct {
 	GitLabToken     string `header:"X-Gitlab-Token" doc:"Set by GitLab: the webhook secret"`
 	Authorization   string `header:"Authorization" doc:"Generic webhooks without a provider event header send Bearer followed by the webhook secret"`
 	ContentType     string `header:"Content-Type" hidden:"true"`
-	RawBody         []byte
 }
 
 var webhookRequestBody = &huma.RequestBody{
@@ -66,19 +67,32 @@ var webhookRequestBody = &huma.RequestBody{
 	},
 }
 
-// webhookHandler turns a webhook operation into a Gin handler. A webhook takes
-// the body as RawBody, which Huma then requires and documents as
-// application/octet-stream. Callers may send no body at all, e.g. a generic
-// webhook with only the token, and Huma never parses the bytes, so the body is
-// made optional and documented with body after registering.
+// webhookHandler turns a webhook operation into a Gin handler. The handler
+// reads the body with readWebhookBody once the ID and, where the body isn't
+// signed, the credentials are checked, so unauthenticated requests are refused
+// without reading their body. Huma reads and validates every body whose
+// documentation has a schema, so the operation is registered without one and
+// the body is documented after registering.
 func webhookHandler[I, O any](op huma.Operation, body *huma.RequestBody, handler func(context.Context, *I) (*O, error)) gin.HandlerFunc {
 	// Webhooks authenticate with their own secret, not with a token or session
 	op.Security = restapi.Public
-	op.MaxBodyBytes = maxWebhookBodySize
 	op.RequestBody = &huma.RequestBody{}
 	h := restapi.Handler(op, handler)
 	*op.RequestBody = *body
 	return h
+}
+
+// readWebhookBody reads the body of a webhook, up to maxWebhookBodySize.
+func readWebhookBody(ctx context.Context) ([]byte, error) {
+	c := restapi.GinContext(ctx)
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxWebhookBodySize))
+	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return nil, huma.Error413RequestEntityTooLarge("request body is too large")
+		}
+		return nil, huma.Error400BadRequest("failed to read the request body")
+	}
+	return body, nil
 }
 
 func rejectWebhook(c *gin.Context, reason string) error {
@@ -97,7 +111,7 @@ var WebhookHandler = webhookHandler(huma.Operation{
 		"and syncs the given branch and commit, or every application of the repository at its latest commit.",
 	Tags:          []string{tagWebhooks},
 	DefaultStatus: http.StatusNoContent,
-	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized},
+	Errors:        []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusRequestEntityTooLarge},
 }, webhookRequestBody, func(ctx context.Context, input *webhookInput) (*struct{}, error) {
 	c := restapi.GinContext(ctx)
 
@@ -119,7 +133,12 @@ var WebhookHandler = webhookHandler(huma.Operation{
 
 	secret := repo.WebhookSecret.String()
 
-	if !validateSignature(input, repo.Provider, secret) {
+	body, err := readWebhookBody(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !validateSignature(input, body, repo.Provider, secret) {
 		return nil, rejectWebhook(c, "invalid_signature")
 	}
 
@@ -127,7 +146,7 @@ var WebhookHandler = webhookHandler(huma.Operation{
 		return &struct{}{}, nil
 	}
 
-	pushDetails, err := parseWebhookPushDetails(input.ContentType, input.RawBody)
+	pushDetails, err := parseWebhookPushDetails(input.ContentType, body)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid webhook payload")
 	}
@@ -178,7 +197,11 @@ func handleGenericWebhook(ctx context.Context, input *webhookInput, repo models.
 		return nil, rejectWebhook(restapi.GinContext(ctx), "invalid_token")
 	}
 
-	branch, commit := parseGenericWebhookBody(input.RawBody)
+	body, err := readWebhookBody(ctx)
+	if err != nil {
+		return nil, err
+	}
+	branch, commit := parseGenericWebhookBody(body)
 
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
@@ -234,12 +257,12 @@ func hasProviderEventHeader(input *webhookInput) bool {
 	return input.GitHubEvent != "" || input.GiteaEvent != "" || input.GitLabEvent != ""
 }
 
-func validateSignature(input *webhookInput, provider models.RepositoryProvider, secret string) bool {
+func validateSignature(input *webhookInput, body []byte, provider models.RepositoryProvider, secret string) bool {
 	switch provider {
 	case models.GitHub:
-		return validateHMACSHA256(secret, input.RawBody, strings.TrimPrefix(input.GitHubSignature, "sha256="))
+		return validateHMACSHA256(secret, body, strings.TrimPrefix(input.GitHubSignature, "sha256="))
 	case models.Gitea:
-		return validateHMACSHA256(secret, input.RawBody, input.GiteaSignature)
+		return validateHMACSHA256(secret, body, input.GiteaSignature)
 	case models.GitLab:
 		return subtle.ConstantTimeCompare([]byte(input.GitLabToken), []byte(secret)) == 1
 	default:

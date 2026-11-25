@@ -1,11 +1,13 @@
 package routes
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -508,9 +510,9 @@ func TestValidateSignature_GitHub_Valid(t *testing.T) {
 	const secret = "s3cr3t"
 	body := []byte(`{"ref":"refs/heads/main"}`)
 
-	input := &webhookInput{GitHubSignature: githubSig(secret, string(body)), RawBody: body}
+	input := &webhookInput{GitHubSignature: githubSig(secret, string(body))}
 
-	if !validateSignature(input, models.GitHub, secret) {
+	if !validateSignature(input, body, models.GitHub, secret) {
 		t.Error("expected valid GitHub signature to pass")
 	}
 }
@@ -519,9 +521,9 @@ func TestValidateSignature_GitLab_Valid(t *testing.T) {
 	const secret = "s3cr3t"
 	body := []byte(`{"ref":"refs/heads/main"}`)
 
-	input := &webhookInput{GitLabToken: secret, RawBody: body}
+	input := &webhookInput{GitLabToken: secret}
 
-	if !validateSignature(input, models.GitLab, secret) {
+	if !validateSignature(input, body, models.GitLab, secret) {
 		t.Error("expected valid GitLab token to pass")
 	}
 }
@@ -529,9 +531,9 @@ func TestValidateSignature_GitLab_Valid(t *testing.T) {
 func TestValidateSignature_GitLab_Invalid(t *testing.T) {
 	body := []byte(`{}`)
 
-	input := &webhookInput{GitLabToken: "wrongtoken", RawBody: body}
+	input := &webhookInput{GitLabToken: "wrongtoken"}
 
-	if validateSignature(input, models.GitLab, "correcttoken") {
+	if validateSignature(input, body, models.GitLab, "correcttoken") {
 		t.Error("expected wrong GitLab token to fail")
 	}
 }
@@ -539,9 +541,9 @@ func TestValidateSignature_GitLab_Invalid(t *testing.T) {
 func TestValidateSignature_UnknownProvider(t *testing.T) {
 	body := []byte(`{}`)
 
-	input := &webhookInput{RawBody: body}
+	input := &webhookInput{}
 
-	if validateSignature(input, models.Generic, "secret") {
+	if validateSignature(input, body, models.Generic, "secret") {
 		t.Error("expected unknown provider to fail")
 	}
 }
@@ -948,5 +950,65 @@ func TestGenericWebhookResolve_NoCommit_SameBranch_FetchesOnce(t *testing.T) {
 	}
 	if provider.getLatestCommitCalls[0] != "main" {
 		t.Errorf("expected GetLatestCommit called with branch=main, got %q", provider.getLatestCommitCalls[0])
+	}
+}
+
+// unreadBody fails the test when a handler reads it
+type unreadBody struct{ t *testing.T }
+
+func (b unreadBody) Read([]byte) (int, error) {
+	b.t.Error("the body was read before the request was authenticated")
+	return 0, io.EOF
+}
+
+func TestWebhooks_RejectWithoutReadingTheBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		request func(t *testing.T) (*gin.Context, *httptest.ResponseRecorder)
+		handler gin.HandlerFunc
+	}{
+		{"unknown repository", func(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {
+			setupTestDBWithWebhookRepos(t)
+			return makeWebhookRequest("nonexistent-id", "")
+		}, WebhookHandler},
+		{"generic webhook with a wrong secret", func(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {
+			setupTestDBWithWebhookRepos(t)
+			repo := seedWebhookRepo(t, models.GitHub, "secret")
+			c, w := makeWebhookRequest(repo.Id, "")
+			c.Request.Header.Set("Authorization", "Bearer wrong")
+			return c, w
+		}, WebhookHandler},
+		{"image webhook with a wrong token", func(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {
+			setupTestDBForImagePullWebhook(t)
+			app := seedAppWithWebhookSecret(t, "secret")
+			return makeImagePullWebhookRequest(app.Id, "wrong")
+		}, ImagePullWebhookHandler},
+		{"GitHub Actions with an invalid token", func(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {
+			setupGHActionsTest(t)
+			return makeGHActionsRequest("not-a-valid-jwt", "")
+		}, GitHubActionsDeployHandler},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := tt.request(t)
+			c.Request.Body = io.NopCloser(unreadBody{t})
+			tt.handler(c)
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestWebhooks_RefuseTooLargeBodies(t *testing.T) {
+	setupTestDBForImagePullWebhook(t)
+	app := seedAppWithWebhookSecret(t, "secret")
+	c, w := makeImagePullWebhookRequest(app.Id, "secret")
+	c.Request.Body = io.NopCloser(bytes.NewReader(make([]byte, maxWebhookBodySize+1)))
+
+	ImagePullWebhookHandler(c)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d: %s", w.Code, w.Body.String())
 	}
 }
