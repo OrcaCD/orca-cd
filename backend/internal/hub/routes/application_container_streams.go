@@ -106,6 +106,10 @@ func ContainerLogsStreamHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if DemoMode {
+		serveDemoLogs(c)
+		return
+	}
 	serveContainerEvents(c, containerStreamSpec{
 		action:   models.ActionInspect,
 		download: !opts.Follow,
@@ -114,6 +118,10 @@ func ContainerLogsStreamHandler(c *gin.Context) {
 }
 
 func ContainerStatsStreamHandler(c *gin.Context) {
+	if DemoMode {
+		serveDemoStats(c)
+		return
+	}
 	serveContainerEvents(c, containerStreamSpec{
 		action: models.ActionRead,
 		open: func(ctx context.Context, application models.Application, containerID string) (*websocket.Stream, error) {
@@ -127,6 +135,10 @@ func ContainerLogsDownloadHandler(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if DemoMode {
+		serveDemoLogDownload(c)
+		return
+	}
 	stream, _, release, ok := beginContainerStream(c, containerStreamSpec{
 		action:   models.ActionInspect,
 		download: true,
@@ -138,14 +150,28 @@ func ContainerLogsDownloadHandler(c *gin.Context) {
 	defer stream.Close()
 	defer release()
 
+	startLogDownload(c)
+	writeLogDownload(c, stream)
+}
+
+func startLogDownload(c *gin.Context) {
 	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 	c.Header("Content-Type", "text/plain; charset=utf-8")
 	c.Header("Content-Disposition", attachmentDisposition("container-"+c.Param("containerId")[:12]+".log"))
 	c.Header("Cache-Control", "no-store")
 	c.Status(http.StatusOK)
 	c.Writer.Flush()
+}
 
-	writeLogDownload(c, stream)
+func formatLogDownload(lines []logLineEvent) string {
+	var out strings.Builder
+	for _, line := range lines {
+		out.WriteString(line.Timestamp)
+		out.WriteByte(' ')
+		out.WriteString(line.Text)
+		out.WriteByte('\n')
+	}
+	return out.String()
 }
 
 func attachmentDisposition(filename string) string {
@@ -179,14 +205,7 @@ func writeLogDownload(c *gin.Context, stream *websocket.Stream) {
 			if frame.Logs == nil {
 				continue
 			}
-			var out strings.Builder
-			for _, line := range toLogLineEvents(frame.Logs) {
-				out.WriteString(line.Timestamp)
-				out.WriteByte(' ')
-				out.WriteString(line.Text)
-				out.WriteByte('\n')
-			}
-			if _, err := c.Writer.WriteString(out.String()); err != nil {
+			if _, err := c.Writer.WriteString(formatLogDownload(toLogLineEvents(frame.Logs))); err != nil {
 				return
 			}
 			c.Writer.Flush()
@@ -369,15 +388,9 @@ func serveContainerEvents(c *gin.Context, spec containerStreamSpec) {
 	defer stream.Close()
 	defer release()
 
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache, no-transform")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	if _, err := fmt.Fprint(c.Writer, ": connected\n\n"); err != nil {
+	if !startEventStream(c) {
 		return
 	}
-	c.Writer.Flush()
 
 	out := sseStream{c}
 	expiry := time.NewTimer(time.Until(claims.ExpiresAt.Time))
@@ -422,6 +435,19 @@ func serveContainerEvents(c *gin.Context, spec containerStreamSpec) {
 			return
 		}
 	}
+}
+
+func startEventStream(c *gin.Context) bool {
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache, no-transform")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	if _, err := fmt.Fprint(c.Writer, ": connected\n\n"); err != nil {
+		return false
+	}
+	c.Writer.Flush()
+	return true
 }
 
 func (s sseStream) frame(frame websocket.Frame) bool {

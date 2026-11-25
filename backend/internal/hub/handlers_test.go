@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -61,6 +62,33 @@ func TestRegisterRoutes_EventsEndpointDisabledInDemoMode(t *testing.T) {
 		}
 		if registered == demo {
 			t.Errorf("demo=%v: events route registered = %v", demo, registered)
+		}
+	}
+}
+
+func TestContainerRateLimit_DemoLimitsEachAddress(t *testing.T) {
+	for _, demo := range []bool{false, true} {
+		router := gin.New()
+		router.GET("/", func(c *gin.Context) {
+			auth.SetUser(c, &models.User{Id: "shared-user"})
+		}, newContainerRateLimit(demo), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+		request := func(address string) int {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = address + ":1234"
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			return w.Code
+		}
+		for request("192.0.2.1") == http.StatusOK {
+		}
+
+		want := http.StatusTooManyRequests
+		if demo {
+			want = http.StatusOK
+		}
+		if got := request("192.0.2.2"); got != want {
+			t.Errorf("demo=%v: second address got %d, want %d", demo, got, want)
 		}
 	}
 }

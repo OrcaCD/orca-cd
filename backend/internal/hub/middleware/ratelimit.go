@@ -40,9 +40,9 @@ func newRateLimiter(r rate.Limit, burst int) *rateLimiter {
 	}
 }
 
-// limiterKey collapses IPv6 addresses to their /64 prefix, since a single
+// ClientKey collapses IPv6 addresses to their /64 prefix, since a single
 // subscriber typically controls a whole /64 and could rotate addresses freely.
-func limiterKey(ip string) string {
+func ClientKey(ip string) string {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
 		return ip
@@ -59,7 +59,7 @@ func limiterKey(ip string) string {
 }
 
 func (rl *rateLimiter) get(ip string) *rate.Limiter {
-	ip = limiterKey(ip)
+	ip = ClientKey(ip)
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()

@@ -14,6 +14,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func newContainerRateLimit(demo bool) gin.HandlerFunc {
+	// Everyone shares the demo user
+	if demo {
+		return middleware.RateLimit(time.Second, 20)
+	}
+	return middleware.RateLimitPerUser(time.Second, 20)
+}
+
 func RegisterRoutes(router *gin.Engine, cfg Config) error {
 	if !cfg.Demo {
 		if err := routes.InitPasskeys(cfg.AppURL); err != nil && !cfg.DisableLocalAuth {
@@ -107,8 +115,7 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 			// Saving the env redeploys the application
 			protected.PUT("/applications/:id/env", app(models.ActionUpdate), app(models.ActionDeploy), routes.UpdateApplicationEnvHandler)
 			protected.POST("/env/parse", routes.ParseEnvHandler)
-			// Each call reaches out to the agent. 1 req/s per user, burst of 20
-			containerRateLimit := middleware.RateLimitPerUser(time.Second, 20)
+			containerRateLimit := newContainerRateLimit(cfg.Demo)
 			protected.GET("/applications/:id/containers", app(models.ActionRead), containerRateLimit, routes.ListApplicationContainersHandler)
 			protected.GET("/applications/:id/containers/:containerId/inspect", app(models.ActionInspect), containerRateLimit, routes.InspectApplicationContainerHandler)
 			session.GET("/applications/:id/containers/:containerId/logs/stream", app(models.ActionInspect), containerRateLimit, routes.ContainerLogsStreamHandler)
