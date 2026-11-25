@@ -9,6 +9,8 @@ interface EmptyStateProps {
 	icon?: LucideIcon;
 	/** `empty` when there is nothing yet, `noMatches` when a search or filter hides everything. */
 	variant?: "empty" | "noMatches";
+	/** `destructive` colours the icon red for states that need attention. */
+	tone?: "default" | "destructive";
 	action?: ReactNode;
 	className?: string;
 }
@@ -22,6 +24,7 @@ export function EmptyState({
 	description,
 	icon,
 	variant = "empty",
+	tone = "default",
 	action,
 	className,
 }: EmptyStateProps) {
@@ -38,9 +41,11 @@ export function EmptyState({
 			<div
 				className={cn(
 					"flex size-11 items-center justify-center rounded-xl ring-1 ring-inset",
-					variant === "empty"
-						? "bg-primary/10 text-primary ring-primary/20"
-						: "bg-muted text-muted-foreground ring-foreground/5",
+					tone === "destructive"
+						? "bg-destructive/10 text-destructive ring-destructive/20"
+						: variant === "empty"
+							? "bg-primary/10 text-primary ring-primary/20"
+							: "bg-muted text-muted-foreground ring-foreground/5",
 				)}
 			>
 				<Icon className="size-5" aria-hidden="true" />

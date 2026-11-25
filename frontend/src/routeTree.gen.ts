@@ -38,6 +38,7 @@ import { Route as AuthenticatedApplicationsIdDetailsRouteImport } from './routes
 import { Route as AuthenticatedApplicationsIdHealthRouteImport } from './routes/_authenticated/applications/$id/health'
 import { Route as AuthenticatedApplicationsIdHistoryRouteImport } from './routes/_authenticated/applications/$id/history'
 import { Route as AuthenticatedApplicationsIdImageUpdatesRouteImport } from './routes/_authenticated/applications/$id/image-updates'
+import { Route as AuthenticatedApplicationsIdMonitoringRouteImport } from './routes/_authenticated/applications/$id/monitoring'
 import { Route as AuthenticatedRepositoriesIdIndexRouteImport } from './routes/_authenticated/repositories/$id/index'
 import { Route as AuthenticatedApplicationsIdSettingsIndexRouteImport } from './routes/_authenticated/applications/$id/settings/index'
 import { Route as AuthenticatedApplicationsIdSettingsEnvironmentRouteImport } from './routes/_authenticated/applications/$id/settings/environment'
@@ -213,6 +214,12 @@ const AuthenticatedApplicationsIdImageUpdatesRoute =
     path: '/image-updates',
     getParentRoute: () => AuthenticatedApplicationsIdRoute,
   } as any)
+const AuthenticatedApplicationsIdMonitoringRoute =
+  AuthenticatedApplicationsIdMonitoringRouteImport.update({
+    id: '/monitoring',
+    path: '/monitoring',
+    getParentRoute: () => AuthenticatedApplicationsIdRoute,
+  } as any)
 const AuthenticatedRepositoriesIdIndexRoute =
   AuthenticatedRepositoriesIdIndexRouteImport.update({
     id: '/',
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
+  '/applications/$id/monitoring': typeof AuthenticatedApplicationsIdMonitoringRoute
   '/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -338,6 +346,7 @@ export interface FileRoutesByTo {
   '/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
+  '/applications/$id/monitoring': typeof AuthenticatedApplicationsIdMonitoringRoute
   '/applications/$id': typeof AuthenticatedApplicationsIdIndexRoute
   '/repositories/$id': typeof AuthenticatedRepositoriesIdIndexRoute
   '/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -380,6 +389,7 @@ export interface FileRoutesById {
   '/_authenticated/applications/$id/health': typeof AuthenticatedApplicationsIdHealthRoute
   '/_authenticated/applications/$id/history': typeof AuthenticatedApplicationsIdHistoryRoute
   '/_authenticated/applications/$id/image-updates': typeof AuthenticatedApplicationsIdImageUpdatesRoute
+  '/_authenticated/applications/$id/monitoring': typeof AuthenticatedApplicationsIdMonitoringRoute
   '/_authenticated/applications/$id/': typeof AuthenticatedApplicationsIdIndexRoute
   '/_authenticated/repositories/$id/': typeof AuthenticatedRepositoriesIdIndexRoute
   '/_authenticated/applications/$id/settings/environment': typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
@@ -422,6 +432,7 @@ export interface FileRouteTypes {
     | '/applications/$id/health'
     | '/applications/$id/history'
     | '/applications/$id/image-updates'
+    | '/applications/$id/monitoring'
     | '/applications/$id/'
     | '/repositories/$id/'
     | '/applications/$id/settings/environment'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/applications/$id/health'
     | '/applications/$id/history'
     | '/applications/$id/image-updates'
+    | '/applications/$id/monitoring'
     | '/applications/$id'
     | '/repositories/$id'
     | '/applications/$id/settings/environment'
@@ -499,6 +511,7 @@ export interface FileRouteTypes {
     | '/_authenticated/applications/$id/health'
     | '/_authenticated/applications/$id/history'
     | '/_authenticated/applications/$id/image-updates'
+    | '/_authenticated/applications/$id/monitoring'
     | '/_authenticated/applications/$id/'
     | '/_authenticated/repositories/$id/'
     | '/_authenticated/applications/$id/settings/environment'
@@ -723,6 +736,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedApplicationsIdImageUpdatesRouteImport
       parentRoute: typeof AuthenticatedApplicationsIdRoute
     }
+    '/_authenticated/applications/$id/monitoring': {
+      id: '/_authenticated/applications/$id/monitoring'
+      path: '/monitoring'
+      fullPath: '/applications/$id/monitoring'
+      preLoaderRoute: typeof AuthenticatedApplicationsIdMonitoringRouteImport
+      parentRoute: typeof AuthenticatedApplicationsIdRoute
+    }
     '/_authenticated/repositories/$id/': {
       id: '/_authenticated/repositories/$id/'
       path: '/'
@@ -845,6 +865,7 @@ interface AuthenticatedApplicationsIdRouteChildren {
   AuthenticatedApplicationsIdHealthRoute: typeof AuthenticatedApplicationsIdHealthRoute
   AuthenticatedApplicationsIdHistoryRoute: typeof AuthenticatedApplicationsIdHistoryRoute
   AuthenticatedApplicationsIdImageUpdatesRoute: typeof AuthenticatedApplicationsIdImageUpdatesRoute
+  AuthenticatedApplicationsIdMonitoringRoute: typeof AuthenticatedApplicationsIdMonitoringRoute
   AuthenticatedApplicationsIdIndexRoute: typeof AuthenticatedApplicationsIdIndexRoute
   AuthenticatedApplicationsIdSettingsEnvironmentRoute: typeof AuthenticatedApplicationsIdSettingsEnvironmentRoute
   AuthenticatedApplicationsIdSettingsGeneralRoute: typeof AuthenticatedApplicationsIdSettingsGeneralRoute
@@ -863,6 +884,8 @@ const AuthenticatedApplicationsIdRouteChildren: AuthenticatedApplicationsIdRoute
       AuthenticatedApplicationsIdHistoryRoute,
     AuthenticatedApplicationsIdImageUpdatesRoute:
       AuthenticatedApplicationsIdImageUpdatesRoute,
+    AuthenticatedApplicationsIdMonitoringRoute:
+      AuthenticatedApplicationsIdMonitoringRoute,
     AuthenticatedApplicationsIdIndexRoute:
       AuthenticatedApplicationsIdIndexRoute,
     AuthenticatedApplicationsIdSettingsEnvironmentRoute:
