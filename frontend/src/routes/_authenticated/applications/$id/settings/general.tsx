@@ -5,6 +5,7 @@ import {
 	deployApplication,
 	isManaged,
 	updateApplication,
+	withManagedValues,
 	type Application,
 } from "@/lib/applications";
 import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
@@ -132,7 +133,7 @@ function GeneralSettingsPage() {
 			const previous = application!;
 			setIsSubmitting(true);
 			try {
-				const updated = await updateApplication(previous.id, value);
+				const updated = await updateApplication(previous.id, withManagedValues(previous, value));
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);

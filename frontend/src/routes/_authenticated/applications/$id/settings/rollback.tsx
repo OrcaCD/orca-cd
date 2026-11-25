@@ -126,15 +126,25 @@ function RollbackSettingsPage() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
+				const current = application!.rollback;
+				// Managed settings send their current value, which a sync may have
+				// changed after the form was opened.
+				const pick = <T,>(setting: ManagedSetting, server: T, form: T) =>
+					managed(setting) ? server : form;
 				const updated = await updateRollbackSettings(id, {
-					enabled: value.enabled,
-					onDeployFailure: value.onDeployFailure,
-					onUnhealthy: value.onUnhealthy,
-					healthTimeoutSeconds: healthTimeoutSeconds(
-						value.healthTimeoutMinutes,
-						settings?.healthTimeoutSeconds ?? 300,
+					enabled: pick("rollback.enabled", current.enabled, value.enabled),
+					onDeployFailure: pick(
+						"rollback.onDeployFailure",
+						current.onDeployFailure,
+						value.onDeployFailure,
 					),
-					pauseAutoSync: value.pauseAutoSync,
+					onUnhealthy: pick("rollback.onUnhealthy", current.onUnhealthy, value.onUnhealthy),
+					healthTimeoutSeconds: pick(
+						"rollback.healthTimeoutSeconds",
+						current.healthTimeoutSeconds,
+						healthTimeoutSeconds(value.healthTimeoutMinutes, current.healthTimeoutSeconds),
+					),
+					pauseAutoSync: pick("rollback.pauseAutoSync", current.pauseAutoSync, value.pauseAutoSync),
 				});
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });

@@ -81,9 +81,18 @@ export function ReleaseAgeSettings({
 			}
 			setIsSubmitting(true);
 			try {
+				// Managed settings send their current value, which a sync may have
+				// changed after the form was opened.
+				const current = application.releaseAge;
 				const updated = await updateReleaseAgeSettings(application.id, {
-					minimumSeconds: value.useGlobal ? null : value.seconds,
-					allowedRegistries: value.allowedRegistries,
+					minimumSeconds: minimumManaged
+						? current.minimumSeconds
+						: value.useGlobal
+							? null
+							: value.seconds,
+					allowedRegistries: registriesManaged
+						? current.allowedRegistries
+						: value.allowedRegistries,
 				});
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await onUpdated(updated);
