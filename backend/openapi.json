@@ -1379,7 +1379,7 @@
             "type": "boolean"
           },
           "imagePollIntervalSeconds": {
-            "description": "At least 60 when image polling is enabled",
+            "description": "At least 60 when image polling is enabled, at most 30 days",
             "format": "int64",
             "type": "integer"
           },
@@ -3459,7 +3459,7 @@
             "type": "boolean"
           },
           "imagePollIntervalSeconds": {
-            "description": "At least 60 when image polling is enabled",
+            "description": "At least 60 when image polling is enabled, at most 30 days",
             "format": "int64",
             "type": "integer"
           },

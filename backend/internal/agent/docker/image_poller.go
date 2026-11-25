@@ -11,7 +11,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const minPollIntervalSeconds = 60
+const (
+	minPollIntervalSeconds = 60
+	// maxPollInterval keeps the ticker interval from overflowing.
+	maxPollInterval = 30 * 24 * time.Hour
+)
 
 // PollSettings holds the image polling configuration for one application.
 type PollSettings struct {
@@ -159,7 +163,10 @@ func (p *ImagePoller) StopAll() {
 }
 
 func (p *ImagePoller) runTicker(appID, appName string, settings PollSettings, stop <-chan struct{}) {
-	interval := time.Duration(settings.IntervalSeconds) * time.Second
+	interval := maxPollInterval
+	if settings.IntervalSeconds < int64(maxPollInterval/time.Second) {
+		interval = time.Duration(settings.IntervalSeconds) * time.Second
+	}
 	if p.intervalOverride > 0 {
 		interval = p.intervalOverride
 	}

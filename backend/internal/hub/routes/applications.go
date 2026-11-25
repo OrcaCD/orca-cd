@@ -37,6 +37,9 @@ const defaultApplicationIcon = "box"
 const agentDeleteTimeout = 5 * time.Minute
 
 func validImagePollInterval(enabled bool, seconds int64) bool {
+	if seconds > models.MaxImagePollIntervalSeconds {
+		return false
+	}
 	if enabled {
 		return seconds >= models.MinImagePollIntervalSeconds
 	}
@@ -51,7 +54,7 @@ type createApplicationRequest struct {
 	Branch                   string `json:"branch" required:"true" minLength:"1"`
 	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled, at most 30 days"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
@@ -63,7 +66,7 @@ type updateApplicationRequest struct {
 	Branch                   string `json:"branch" required:"true" minLength:"1"`
 	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled, at most 30 days"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
@@ -211,7 +214,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 	c := restapi.GinContext(ctx)
 	req := input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
+		return nil, huma.Error400BadRequest("image poll interval must be between 60 seconds and 30 days")
 	}
 	if err := checkApplicationSources(c, req.RepositoryId, req.AgentId); err != nil {
 		return nil, err
@@ -328,7 +331,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	c := restapi.GinContext(ctx)
 	id, req := input.ID, input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
+		return nil, huma.Error400BadRequest("image poll interval must be between 60 seconds and 30 days")
 	}
 
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)

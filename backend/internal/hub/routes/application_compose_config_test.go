@@ -102,7 +102,7 @@ func TestCreateApplicationHandler_InvalidComposeConfig(t *testing.T) {
 	agent := seedTestAgent(t, "agent-create-invalid-config")
 
 	w := invokeCreateApplication(t, validApplicationRequestBody(repo.Id, agent.Id))
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "x-orcacd.sync: unknown key") {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), `x-orcacd: unknown key \"sync\"`) {
 		t.Fatalf("expected 422 naming the unknown key, got %d: %s", w.Code, w.Body.String())
 	}
 	if count, _ := gorm.G[models.Application](db.DB).Count(t.Context(), "*"); count != 0 {

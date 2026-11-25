@@ -74,9 +74,20 @@ func TestProcessSyncJob_ComposeConfig_AppliedBeforeDeploy(t *testing.T) {
 	}
 }
 
+// seedSyncedApp seeds an application whose last deployment succeeded.
+func seedSyncedApp(t *testing.T, compose string) models.Application {
+	t.Helper()
+	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, compose)
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Updates(t.Context(), models.Application{SyncStatus: models.Synced}); err != nil {
+		t.Fatal(err)
+	}
+	return loadApp(t, app.Id)
+}
+
 func TestProcessSyncJob_ComposeConfig_OnlySettingsChangedDoesNotDeploy(t *testing.T) {
 	setupTestDB(t)
-	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
+	app := seedSyncedApp(t, composeWithoutConfig)
 	compose := "x-orcacd:\n  delete-old-images: true\n\n" + composeWithoutConfig
 
 	stub := runComposeSync(t, app, compose)
@@ -150,5 +161,64 @@ func TestProcessSyncJob_ComposeConfig_InvalidFailsSync(t *testing.T) {
 	events := loadAppEvents(t, app.Id)
 	if len(events) != 1 || events[0].Status != models.ApplicationEventFailed {
 		t.Errorf("expected one failed event, got %+v", events)
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_OnlySettingsChangedDeploysWhenOutOfSync(t *testing.T) {
+	setupTestDB(t)
+	// The last deployment failed, so a commit that only changes x-orcacd
+	// must not mark the application synced without deploying.
+	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Updates(t.Context(), models.Application{SyncStatus: models.OutOfSync}); err != nil {
+		t.Fatal(err)
+	}
+
+	stub := runComposeSync(t, loadApp(t, app.Id), "x-orcacd:\n  delete-old-images: true\n"+composeWithoutConfig)
+
+	if !stub.called {
+		t.Error("expected a deployment")
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_KeepsChangesMadeWhileQueued(t *testing.T) {
+	setupTestDB(t)
+	app := seedSyncedApp(t, composeWithoutConfig)
+	// The icon changes through the API after the job was queued.
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Updates(t.Context(), models.Application{Icon: "rocket"}); err != nil {
+		t.Fatal(err)
+	}
+
+	runComposeSync(t, app, "x-orcacd:\n  delete-old-images: true\n"+composeWithoutConfig)
+
+	if updated := loadApp(t, app.Id); updated.Icon != "rocket" || !updated.DeleteOldImages {
+		t.Errorf("expected the icon from the API and the setting from x-orcacd, got %q and %v", updated.Icon, updated.DeleteOldImages)
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_InvalidCommitFailsOncePerPoll(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
+	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", app.RepositoryId).First(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nop := zerolog.Nop()
+	poll := func() {
+		processSyncJob(t.Context(), syncJob{
+			Application:        app,
+			Repository:         repo,
+			RepositoryProvider: &mockProvider{fileContent: "x-orcacd:\n  sync: auto\n" + composeWithoutConfig},
+			Commit:             "badsha",
+			Origin:             SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
+		}, &nop)
+	}
+
+	poll()
+	poll()
+
+	if events := loadAppEvents(t, app.Id); len(events) != 1 {
+		t.Errorf("expected one failed event for the invalid commit, got %d", len(events))
 	}
 }

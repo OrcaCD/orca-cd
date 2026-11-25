@@ -64,7 +64,7 @@ var settings = []setting{
 	newSetting(SettingImagePollEnabled, "image-poll.enabled", "ImagePollEnabled", false, parseBool,
 		func(a *models.Application) *bool { return &a.ImagePollEnabled }),
 	newSetting(SettingImagePollIntervalSeconds, "image-poll.interval", "ImagePollIntervalSeconds", int64(120),
-		durationBetween(models.MinImagePollIntervalSeconds, 0),
+		durationBetween(models.MinImagePollIntervalSeconds, models.MaxImagePollIntervalSeconds),
 		func(a *models.Application) *int64 { return &a.ImagePollIntervalSeconds }),
 	newSetting(SettingDeleteOldImages, "delete-old-images", "DeleteOldImages", false, parseBool,
 		func(a *models.Application) *bool { return &a.DeleteOldImages }),
@@ -161,8 +161,8 @@ func parseReleaseAge(value any) (*int64, error) {
 	return &seconds, nil
 }
 
-// durationBetween parses a duration in seconds that is at least minSeconds
-// and, unless maxSeconds is 0, at most maxSeconds.
+// durationBetween parses a duration in seconds between minSeconds and
+// maxSeconds.
 func durationBetween(minSeconds, maxSeconds int64) func(any) (int64, error) {
 	return func(value any) (int64, error) {
 		seconds, err := parseDuration(value)
@@ -172,7 +172,7 @@ func durationBetween(minSeconds, maxSeconds int64) func(any) (int64, error) {
 		if seconds < minSeconds {
 			return 0, fmt.Errorf("must be at least %s", formatSeconds(minSeconds))
 		}
-		if maxSeconds > 0 && seconds > maxSeconds {
+		if seconds > maxSeconds {
 			return 0, fmt.Errorf("must be at most %s", formatSeconds(maxSeconds))
 		}
 		return seconds, nil

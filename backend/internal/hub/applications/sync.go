@@ -2,6 +2,7 @@ package applications
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
@@ -60,6 +61,9 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		recordTriggerSkip(ctx, job.Origin.TriggerID, job.Application.Id, models.ApplicationEventCommitSync, "automatic sync was skipped after rollback", log)
 		return
 	}
+	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && rejectedConfigs.has(job.Application.Id, job.Commit) {
+		return
+	}
 
 	requestID := uuid.NewString()
 	if _, err := applicationevents.Start(ctx, syncEventParams(job, &requestID)); err != nil {
@@ -79,17 +83,33 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if err != nil {
 		message := "invalid " + composeconfig.Key + " in the compose file: " + err.Error()
 		log.Warn().Err(err).Str("applicationId", job.Application.Id).Msg("invalid compose settings during sync")
+		rejectedConfigs.set(job.Application.Id, job.Commit)
 		failSyncJobWithError(job.Application, message, log)
 		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, message, log)
 		return
 	}
+	rejectedConfigs.set(job.Application.Id, "")
+
+	// The settings are applied to their values now, not when the job was
+	// queued, so changes made through the API meanwhile are kept.
+	current, err := gorm.G[models.Application](db.DB).Where("id = ?", job.Application.Id).First(ctx)
+	if err != nil {
+		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to load application during sync")
+		failSyncJob(job.Application, log)
+		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, "failed to load the application: "+err.Error(), log)
+		return
+	}
+	composeconfig.CopySettings(&job.Application, &current)
+	job.Application.SyncStatus = current.SyncStatus
 	settingColumns := cfg.Apply(&job.Application)
 
 	// A rolled back application runs an earlier compose file, so a new commit
 	// is deployed even when it doesn't change the compose file. Changes of
-	// x-orcacd alone are applied without deploying.
+	// x-orcacd alone are applied without deploying, unless the last deployment
+	// didn't succeed.
 	previousCompose := job.Application.ComposeFile.String()
-	if (content == previousCompose || composeconfig.SameWithoutConfig(content, previousCompose)) && job.Application.RolledBackAt == nil {
+	onlySettingsChanged := job.Application.SyncStatus == models.Synced && composeconfig.SameWithoutConfig(content, previousCompose)
+	if (content == previousCompose || onlySettingsChanged) && job.Application.RolledBackAt == nil {
 		now := time.Now()
 		// Non-nil pointer to "" clears any previous error (GORM skips only nil pointers).
 		cleared := ""
@@ -111,7 +131,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 			return
 		}
 		if len(settingColumns) > 0 {
-			sendAgentSettings(ctx, job.Application.AgentId, log)
+			hubws.SendAgentSettings(ctx, job.Application.AgentId, log)
 		}
 		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventNoChange, "", log)
 		return
@@ -139,7 +159,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 	if len(settingColumns) > 0 {
-		sendAgentSettings(ctx, job.Application.AgentId, log)
+		hubws.SendAgentSettings(ctx, job.Application.AgentId, log)
 	}
 
 	// The deployer completes the event on dispatch failure; the Agent's deploy
@@ -278,18 +298,30 @@ func toAny(values []string) []any {
 	return result
 }
 
-// sendAgentSettings sends the settings of the agent's applications again,
-// after x-orcacd changed them.
-func sendAgentSettings(ctx context.Context, agentID string, log *zerolog.Logger) {
-	if hubws.DefaultHub == nil {
-		return
+// rejectedConfigs remembers the commit whose x-orcacd was invalid per
+// application, so polls of that commit don't record the failure again.
+var rejectedConfigs = rejectedConfigCommits{byApp: map[string]string{}}
+
+type rejectedConfigCommits struct {
+	sync.Mutex
+	byApp map[string]string
+}
+
+func (r *rejectedConfigCommits) has(applicationID, commit string) bool {
+	r.Lock()
+	defer r.Unlock()
+	return commit != "" && r.byApp[applicationID] == commit
+}
+
+// set remembers the commit, an empty one forgets it.
+func (r *rejectedConfigCommits) set(applicationID, commit string) {
+	r.Lock()
+	defer r.Unlock()
+	if commit == "" {
+		delete(r.byApp, applicationID)
+	} else {
+		r.byApp[applicationID] = commit
 	}
-	apps, err := gorm.G[models.Application](db.DB).Where("agent_id = ?", agentID).Find(ctx)
-	if err != nil {
-		log.Error().Err(err).Str("agent_id", agentID).Msg("failed to load applications for agent settings")
-		return
-	}
-	hubws.DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }
 
 func failSyncJobWithError(application models.Application, message string, log *zerolog.Logger) {

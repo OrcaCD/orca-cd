@@ -80,6 +80,15 @@ func TestImagePoller_ApplySettings_MinimumInterval(t *testing.T) {
 	}
 }
 
+// An interval that overflows time.Duration used to panic in the ticker
+// goroutine, which crashed the agent.
+func TestImagePoller_ApplySettings_HugeIntervalDoesNotPanic(t *testing.T) {
+	p := newTestPoller(t, nil)
+	applyOne(p, "app-1", "myapp", PollSettings{Enabled: true, IntervalSeconds: 9223372037})
+	time.Sleep(50 * time.Millisecond)
+	p.StopAll()
+}
+
 func TestImagePoller_SettingsFor_ReturnsCorrectValues(t *testing.T) {
 	p := newTestPoller(t, nil)
 	settings := PollSettings{Enabled: true, IntervalSeconds: 120, DeleteOldImages: true}

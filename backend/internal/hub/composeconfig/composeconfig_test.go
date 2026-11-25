@@ -2,6 +2,7 @@ package composeconfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -44,7 +45,7 @@ x-orcacd:
   rollback:
     enabled: true
     on-deploy-failure: false
-    on-unhealthy: false
+    on-unhealthy: true
     health-timeout: 90
     pause-auto-sync: false
   release-age:
@@ -65,6 +66,7 @@ services:
 		ImagePollIntervalSeconds:     300,
 		DeleteOldImages:              true,
 		RollbackEnabled:              true,
+		RollbackOnUnhealthy:          true,
 		RollbackHealthTimeoutSeconds: 90,
 		MinimumReleaseAgeSeconds:     &minimum,
 		ReleaseAgeAllowedRegistries:  []string{"ghcr.io", "registry.example.com:5000"},
@@ -76,8 +78,9 @@ services:
 	if len(app.ManagedSettings) != len(settings) {
 		t.Errorf("ManagedSettings = %v, want all %d settings", app.ManagedSettings, len(settings))
 	}
-	if len(changed) != len(settings) {
-		t.Errorf("changed columns = %v, want all %d", changed, len(settings))
+	// on-unhealthy keeps its default value, so its column doesn't change.
+	if len(changed) != len(settings)-1 || slices.Contains(changed, "RollbackOnUnhealthy") {
+		t.Errorf("changed columns = %v, want all but RollbackOnUnhealthy", changed)
 	}
 }
 
@@ -113,8 +116,8 @@ func TestParse_Errors(t *testing.T) {
 		want    []string
 	}{
 		"not a mapping":   {"x-orcacd: true\n", []string{"x-orcacd must be a mapping"}},
-		"unknown key":     {"x-orcacd:\n  sync: auto\n", []string{"x-orcacd.sync: unknown key"}},
-		"unknown nested":  {"x-orcacd:\n  rollback:\n    enable: true\n", []string{"x-orcacd.rollback.enable: unknown key"}},
+		"unknown key":     {"x-orcacd:\n  sync: auto\n", []string{`x-orcacd: unknown key "sync"`}},
+		"unknown nested":  {"x-orcacd:\n  rollback:\n    enable: true\n", []string{`x-orcacd.rollback: unknown key "enable"`}},
 		"wrong type":      {"x-orcacd:\n  delete-old-images: yes\n", []string{"x-orcacd.delete-old-images: must be true or false"}},
 		"group not map":   {"x-orcacd:\n  release-age: 3d\n", []string{"x-orcacd.release-age: must be a mapping"}},
 		"short interval":  {"x-orcacd:\n  image-poll:\n    interval: 30s\n", []string{"x-orcacd.image-poll.interval: must be at least 1m"}},
@@ -123,7 +126,9 @@ func TestParse_Errors(t *testing.T) {
 		"long release":    {"x-orcacd:\n  release-age:\n    minimum: 400d\n", []string{"x-orcacd.release-age.minimum: must be at most 365d"}},
 		"bad registry":    {"x-orcacd:\n  release-age:\n    allowed-registries: [ghcr.io/org]\n", []string{"x-orcacd.release-age.allowed-registries: must be a list"}},
 		"empty icon":      {"x-orcacd:\n  icon: \"\"\n", []string{"x-orcacd.icon: must be an icon name"}},
-		"several invalid": {"x-orcacd:\n  icon: 1\n  foo: bar\n", []string{"x-orcacd.foo: unknown key", "x-orcacd.icon: must be an icon name"}},
+		"both triggers":   {"x-orcacd:\n  rollback:\n    on-deploy-failure: false\n    on-unhealthy: false\n", []string{"x-orcacd.rollback: on-deploy-failure and on-unhealthy can't both be false"}},
+		"long interval":   {"x-orcacd:\n  image-poll:\n    interval: 31d\n", []string{"x-orcacd.image-poll.interval: must be at most 30d"}},
+		"several invalid": {"x-orcacd:\n  icon: 1\n  foo: bar\n", []string{`x-orcacd: unknown key "foo"`, "x-orcacd.icon: must be an icon name"}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -292,5 +297,47 @@ func collectSchemaPaths(t *testing.T, raw json.RawMessage, prefix string, paths 
 	}
 	for key, child := range def.Properties {
 		collectSchemaPaths(t, child, prefix+"."+key, paths)
+	}
+}
+
+func TestParse_LimitsErrors(t *testing.T) {
+	var compose strings.Builder
+	compose.WriteString("x-orcacd:\n")
+	for i := range 20 {
+		fmt.Fprintf(&compose, "  key%02d-%s: 1\n", i, strings.Repeat("x", 100))
+	}
+	_, err := Parse(compose.String())
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "and 10 more") || len(err.Error()) > maxErrorLength+3 {
+		t.Errorf("expected at most 10 errors of bounded length, got %q", err)
+	}
+	if strings.Contains(err.Error(), strings.Repeat("x", 100)) {
+		t.Error("expected long keys to be shortened")
+	}
+}
+
+func TestParse_LargeFileKeepsSettings(t *testing.T) {
+	compose := "x-orcacd:\n  rollback: true\nx-padding: " + strings.Repeat("a", maxComposeSize) + "\n"
+	app := defaultApplication()
+	if changed := mustParse(t, compose).Apply(&app); changed != nil || app.RollbackEnabled {
+		t.Errorf("expected a file over the size limit to be left alone, got %v", changed)
+	}
+}
+
+func TestSameWithoutConfig_ComparesDecodedFiles(t *testing.T) {
+	anchored := func(icon string) string {
+		return "x-orcacd:\n  icon: &image " + icon + "\nservices:\n  web:\n    image: *image\n"
+	}
+	if SameWithoutConfig(anchored("nginx"), anchored("caddy")) {
+		t.Error("expected a value shared through an anchor to count as a change")
+	}
+	base := "services:\n  web:\n    image: nginx\n"
+	if SameWithoutConfig(base, "x-orcacd:\n  icon: rocket\n"+base+"---\nservices:\n  web:\n    image: caddy\n") {
+		t.Error("expected a file with several documents never to count as the same")
+	}
+	if !SameWithoutConfig(base, "# comment\nservices:\n    web:\n        image: nginx\n") {
+		t.Error("expected comments and indentation not to count as changes")
 	}
 }

@@ -10,6 +10,7 @@ package composeconfig
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -28,6 +29,10 @@ type Config struct {
 	unreadable bool
 }
 
+// maxComposeSize is the largest compose file that is parsed. Larger files
+// keep their settings, so a huge file can't exhaust the memory of the hub.
+const maxComposeSize = 1 << 20
+
 // Parse reads x-orcacd from a compose file. A file without x-orcacd gives an
 // empty config, which resets the settings Git managed before. A file that
 // isn't valid YAML leaves the settings as they are, the agent reports it when
@@ -35,7 +40,7 @@ type Config struct {
 func Parse(compose string) (*Config, error) {
 	cfg := &Config{values: map[string]any{}}
 	var document map[string]any
-	if err := yaml.Unmarshal([]byte(compose), &document); err != nil {
+	if len(compose) > maxComposeSize || yaml.Unmarshal([]byte(compose), &document) != nil {
 		cfg.unreadable = true
 		return cfg, nil
 	}
@@ -47,10 +52,50 @@ func Parse(compose string) (*Config, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s must be a mapping", Key)
 	}
-	if err := parseGroup(cfg, block, settingsTree, Key); err != nil {
+	errs := []error{parseGroup(cfg, block, settingsTree, Key)}
+	if cfg.values[SettingRollbackOnDeployFailure] == false && cfg.values[SettingRollbackOnUnhealthy] == false {
+		errs = append(errs, fmt.Errorf("%s.rollback: on-deploy-failure and on-unhealthy can't both be false", Key))
+	}
+	if err := joinErrors(errs); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// maxErrors and maxErrorLength bound the error of a compose file, which is
+// shown on the application and sent in notifications.
+const (
+	maxErrors      = 10
+	maxErrorLength = 2000
+)
+
+func joinErrors(errs []error) error {
+	var messages []string
+	for _, err := range errs {
+		if err != nil {
+			messages = append(messages, strings.Split(err.Error(), "\n")...)
+		}
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+	if len(messages) > maxErrors {
+		messages = append(messages[:maxErrors], fmt.Sprintf("and %d more", len(messages)-maxErrors))
+	}
+	message := strings.Join(messages, "\n")
+	if len(message) > maxErrorLength {
+		message = message[:maxErrorLength] + "..."
+	}
+	return errors.New(message)
+}
+
+// quoteKey quotes a key from the compose file for an error message.
+func quoteKey(key string) string {
+	const maxKeyLength = 64
+	if len(key) > maxKeyLength {
+		key = key[:maxKeyLength] + "..."
+	}
+	return fmt.Sprintf("%q", key)
 }
 
 // Managed returns the names of the settings in the config.
@@ -90,6 +135,15 @@ func (c *Config) Apply(app *models.Application) []string {
 	return changed
 }
 
+// CopySettings copies the settings x-orcacd can change, and which of them
+// it manages, from src to dst.
+func CopySettings(dst, src *models.Application) {
+	for _, s := range settings {
+		s.set(dst, s.get(src))
+	}
+	dst.ManagedSettings = src.ManagedSettings
+}
+
 // ManagedChanges returns the settings managed by Git whose value differs
 // between the application as stored and as a request would change it.
 func ManagedChanges(stored, requested *models.Application) []string {
@@ -118,36 +172,31 @@ func ManagedError(names []string) string {
 }
 
 // SameWithoutConfig reports whether two compose files only differ in
-// x-orcacd, so applying their settings doesn't need a deployment. Comments
-// and formatting count as differences.
+// x-orcacd, so applying their settings doesn't need a deployment. The files
+// are compared as decoded, with their aliases expanded, so a value that
+// x-orcacd shares through an anchor counts as a change. Files with several
+// YAML documents, which compose merges, never count as the same.
 func SameWithoutConfig(a, b string) bool {
-	strippedA, errA := withoutConfig(a)
-	strippedB, errB := withoutConfig(b)
-	return errA == nil && errB == nil && strippedA == strippedB
+	documentA, okA := decodeWithoutConfig(a)
+	documentB, okB := decodeWithoutConfig(b)
+	return okA && okB && reflect.DeepEqual(documentA, documentB)
 }
 
-func withoutConfig(compose string) (string, error) {
-	var document yaml.Node
-	if err := yaml.Unmarshal([]byte(compose), &document); err != nil {
-		return "", err
+func decodeWithoutConfig(compose string) (map[string]any, bool) {
+	if len(compose) > maxComposeSize {
+		return nil, false
 	}
-	if len(document.Content) == 1 {
-		removeKey(document.Content[0], Key)
+	decoder := yaml.NewDecoder(strings.NewReader(compose))
+	var document map[string]any
+	if err := decoder.Decode(&document); err != nil {
+		return nil, false
 	}
-	out, err := yaml.Marshal(&document)
-	return string(out), err
-}
-
-func removeKey(mapping *yaml.Node, key string) {
-	if mapping.Kind != yaml.MappingNode {
-		return
+	var next any
+	if err := decoder.Decode(&next); !errors.Is(err, io.EOF) {
+		return nil, false
 	}
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == key {
-			mapping.Content = slices.Delete(mapping.Content, i, i+2)
-			return
-		}
-	}
+	delete(document, Key)
+	return document, true
 }
 
 // parseGroup reads a mapping of x-orcacd against the keys allowed there.
@@ -158,7 +207,7 @@ func parseGroup(cfg *Config, block map[string]any, group *node, path string) err
 		keyPath := path + "." + key
 		child, ok := group.children[key]
 		if !ok {
-			errs = append(errs, fmt.Errorf("%s: unknown key", keyPath))
+			errs = append(errs, fmt.Errorf("%s: unknown key %s", path, quoteKey(key)))
 			continue
 		}
 		if child.setting != nil {

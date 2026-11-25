@@ -40,6 +40,7 @@ const (
 	// MinImagePollIntervalSeconds mirrors the agent's behavior, so a shorter
 	// interval is rejected instead of being silently raised.
 	MinImagePollIntervalSeconds     = 60
+	MaxImagePollIntervalSeconds     = 30 * 24 * 60 * 60
 	MinRollbackHealthTimeoutSeconds = 30
 	MaxRollbackHealthTimeoutSeconds = 60 * 60
 	MaxMinimumReleaseAgeSeconds     = 365 * 24 * 60 * 60
