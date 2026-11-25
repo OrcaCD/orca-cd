@@ -73,8 +73,8 @@ func TestLimiterKey(t *testing.T) {
 		{"not-an-ip", "not-an-ip"},
 	}
 	for _, tt := range tests {
-		if got := limiterKey(tt.ip); got != tt.want {
-			t.Errorf("limiterKey(%q) = %q, want %q", tt.ip, got, tt.want)
+		if got := ClientKey(tt.ip); got != tt.want {
+			t.Errorf("ClientKey(%q) = %q, want %q", tt.ip, got, tt.want)
 		}
 	}
 }

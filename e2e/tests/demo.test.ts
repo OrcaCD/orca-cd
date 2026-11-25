@@ -232,6 +232,61 @@ test.describe("signed in", () => {
 		expect(unknown.status).toBe(404);
 	});
 
+	test("containers come from the demo data", async ({ page }) => {
+		const web = await demoApi(page, "GET", `/applications/${WEB_APP.id}/containers`);
+		expect(web.status).toBe(200);
+		expect(web.body.containers).toEqual([
+			expect.objectContaining({ service: "web", state: "running" }),
+		]);
+
+		const [{ id }] = web.body.containers;
+		const inspect = await demoApi(
+			page,
+			"GET",
+			`/applications/${WEB_APP.id}/containers/${id}/inspect`,
+		);
+		expect(inspect.status).toBe(200);
+		expect(JSON.parse(inspect.body.inspectJson).Config).not.toHaveProperty("Env");
+
+		const download = await page.request.get(
+			`${DEMO_URL}/api/v1/applications/${WEB_APP.id}/containers/${id}/logs/download`,
+		);
+		expect(download.status()).toBe(200);
+		expect(download.headers()["content-disposition"]).toContain("attachment");
+		expect(await download.text()).toContain("listening on port 80");
+
+		const monitoring = await demoApi(page, "GET", `/applications/${MONITORING_APP.id}/containers`);
+		expect(monitoring.body.containers.map((c: { service: string }) => c.service)).toEqual([
+			"alertmanager",
+			"blackbox-exporter",
+			"prometheus",
+		]);
+	});
+
+	test("the monitoring page shows live stats, logs and inspect data", async ({ page }) => {
+		await page.goto(`/applications/${WEB_APP.id}/monitoring`);
+
+		const card = (title: string) =>
+			page.locator("[data-slot='card']").filter({ has: page.getByText(title, { exact: true }) });
+		await expect(card("CPU")).toContainText("of 4 CPUs");
+		await expect(card("Memory")).toContainText("of 8");
+
+		const logs = page.getByRole("log", { name: "Logs" });
+		await expect(logs).toContainText("payment provider timed out");
+		await expect(page.getByText("Log stream ended")).toBeVisible();
+
+		await page.getByRole("tab", { name: "Inspect" }).click();
+		await expect(page.locator("[data-slot='code-block']")).toContainText(
+			'"Image": "ghcr.io/orcacd/demo-app:1.4.2"',
+		);
+	});
+
+	test("containers of the offline agent can't be monitored", async ({ page }) => {
+		await page.goto(`/applications/${WORKER_APP.id}/monitoring`);
+
+		await expect(page.getByText("Agent is offline")).toBeVisible();
+	});
+
 	test("the system information hides the host configuration", async ({ page }) => {
 		const { status, body } = await demoApi(page, "GET", "/admin/system-info");
 		expect(status).toBe(200);

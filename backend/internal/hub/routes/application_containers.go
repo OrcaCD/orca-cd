@@ -105,6 +105,10 @@ var ListApplicationContainersHandler = restapi.Handler(huma.Operation{
 	Errors: []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusForbidden, http.StatusTooManyRequests,
 		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout},
 }, func(ctx context.Context, input *idInput) (*containerListOutput, error) {
+	if DemoMode {
+		return listDemoApplicationContainers(ctx, input.ID)
+	}
+
 	application, err := loadContainerTarget(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -147,6 +151,9 @@ var InspectApplicationContainerHandler = restapi.Handler(huma.Operation{
 }) (*containerInspectOutput, error) {
 	if !containerIDPattern.MatchString(input.ContainerID) {
 		return nil, huma.Error400BadRequest("invalid container id")
+	}
+	if DemoMode {
+		return inspectDemoApplicationContainer(ctx, input.ID, input.ContainerID)
 	}
 
 	application, err := loadContainerTarget(ctx, input.ID)
