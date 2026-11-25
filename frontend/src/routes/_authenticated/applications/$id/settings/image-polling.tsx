@@ -12,6 +12,7 @@ import {
 	generateImageWebhook,
 	isManaged,
 	revokeImageWebhook,
+	withManagedValues,
 	type Application,
 } from "@/lib/applications";
 import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
@@ -99,7 +100,10 @@ function ImagePollingPage() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				const updated = await updateApplication(application!.id, value);
+				const updated = await updateApplication(
+					application!.id,
+					withManagedValues(application!, value),
+				);
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);

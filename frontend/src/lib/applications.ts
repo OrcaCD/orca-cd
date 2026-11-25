@@ -189,6 +189,28 @@ export function updateApplication(
 	return fetcher<Application>(`/applications/${id}`, "PUT", data);
 }
 
+const updateRequestSettings = [
+	"icon",
+	"imagePollEnabled",
+	"imagePollIntervalSeconds",
+	"deleteOldImages",
+] as const;
+
+// withManagedValues sends the current values of the settings that x-orcacd
+// manages, which a sync may have changed after the form was opened.
+export function withManagedValues(
+	application: Application,
+	data: UpdateApplicationRequest,
+): UpdateApplicationRequest {
+	const result = { ...data };
+	for (const setting of updateRequestSettings) {
+		if (isManaged(application, setting)) {
+			Object.assign(result, { [setting]: application[setting] });
+		}
+	}
+	return result;
+}
+
 export function deleteApplication(id: string): Promise<void> {
 	return fetcher(`/applications/${id}`, "DELETE");
 }
