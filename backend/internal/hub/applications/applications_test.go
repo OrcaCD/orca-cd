@@ -312,6 +312,7 @@ func TestProcessSyncJob_FetchError_FailsSync(t *testing.T) {
 // processSyncJob can be asserted in isolation.
 type stubDeployer struct {
 	called    bool
+	app       models.Application
 	compose   string
 	requestID string
 	err       error
@@ -321,8 +322,9 @@ func (s *stubDeployer) TriggerRollback(context.Context, *models.Application, *mo
 	return nil
 }
 
-func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, _ *models.Application, composeFile, requestID string) error {
+func (s *stubDeployer) TriggerApplicationDeploy(_ context.Context, app *models.Application, composeFile, requestID string) error {
 	s.called = true
+	s.app = *app
 	s.compose = composeFile
 	s.requestID = requestID
 	return s.err

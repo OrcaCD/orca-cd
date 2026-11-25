@@ -6,12 +6,38 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"gorm.io/gorm"
 )
+
+const (
+	maxAllowedRegistries = 50
+	maxRegistryLength    = 253
+)
+
+// NormalizeRegistries lowercases and deduplicates registry hosts like
+// "registry.example.com:5000". It reports false for an invalid host or more
+// than 50 hosts.
+func NormalizeRegistries(registries []string) ([]string, bool) {
+	if len(registries) > maxAllowedRegistries {
+		return nil, false
+	}
+	normalized := make([]string, 0, len(registries))
+	for _, registry := range registries {
+		registry = strings.ToLower(strings.TrimSpace(registry))
+		if registry == "" || len(registry) > maxRegistryLength || strings.ContainsAny(registry, "/ \t@") {
+			return nil, false
+		}
+		if !slices.Contains(normalized, registry) {
+			normalized = append(normalized, registry)
+		}
+	}
+	return normalized, true
+}
 
 // Global returns the global settings. Without a database or a row, e.g. in
 // tests that don't run the migrations, the release age is disabled.
