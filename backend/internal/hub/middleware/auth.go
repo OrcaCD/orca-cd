@@ -18,6 +18,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// MCPPath is the only route the tokens of OAuth clients work on.
+const MCPPath = "/api/v1/mcp"
+
 // apiTokenUsedInterval is how often last_used_at of an API token is written at
 // most, so busy clients don't cause a write on every request.
 const apiTokenUsedInterval = time.Minute
@@ -119,6 +122,12 @@ func authenticateAPIToken(c *gin.Context, plain string) {
 	// Like expired sessions, expired tokens are expected and not a security event.
 	if token.IsExpired(now) {
 		reject("")
+		return
+	}
+	// A client the user approved for MCP can't use the rest of the API. The
+	// route gin matched is checked, so it can't differ from what the path says.
+	if token.IsOAuth() && c.FullPath() != MCPPath {
+		reject("oauth_token_outside_mcp")
 		return
 	}
 

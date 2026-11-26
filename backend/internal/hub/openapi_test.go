@@ -25,9 +25,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// undocumentedRoutes stay plain Gin handlers outside the spec, as they aren't
-// JSON: the event, log and stats streams, the log download, the agent socket,
-// browser redirects and an image.
+// undocumentedRoutes stay outside the spec because they are not JSON or follow
+// a protocol of their own. They include streams, the log download, the agent
+// socket, browser redirects, an image, MCP and OAuth for MCP clients.
 var undocumentedRoutes = []string{
 	"GET /events",
 	"GET /applications/{id}/containers/{containerId}/logs/stream",
@@ -41,6 +41,13 @@ var undocumentedRoutes = []string{
 	"GET /mcp",
 	"POST /mcp",
 	"DELETE /mcp",
+	"OPTIONS /mcp",
+	// OAuth for MCP clients, defined by RFC 7591 and RFC 6749. The token
+	// endpoint takes a form.
+	"POST /oauth/register",
+	"OPTIONS /oauth/register",
+	"POST /oauth/token",
+	"OPTIONS /oauth/token",
 }
 
 var ginParam = regexp.MustCompile(`[:*](\w+)`)

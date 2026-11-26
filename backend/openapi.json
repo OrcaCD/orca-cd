@@ -335,6 +335,10 @@
           "name": {
             "type": "string"
           },
+          "oauth": {
+            "description": "Whether an MCP client got the token by asking the user. Its prefix changes whenever the client refreshes it.",
+            "type": "boolean"
+          },
           "owner": {
             "$ref": "#/components/schemas/ApiTokenOwnerResponse",
             "description": "Only set in the admin list"
@@ -360,7 +364,8 @@
           "scopes",
           "expiresAt",
           "lastUsedAt",
-          "createdAt"
+          "createdAt",
+          "oauth"
         ],
         "type": "object"
       },
@@ -2262,6 +2267,115 @@
           "repositoryIds",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "OauthAuthorizationResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "canAuthorize": {
+            "description": "Whether the user has the permission to create API tokens",
+            "type": "boolean"
+          },
+          "clientName": {
+            "description": "The name the client registered with, which it chose itself",
+            "type": "string"
+          },
+          "redirectUri": {
+            "description": "Where the user returns to after answering",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "The scopes the client asks for",
+            "items": {
+              "$ref": "#/components/schemas/OauthScopeResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clientName",
+          "redirectUri",
+          "scopes",
+          "canAuthorize"
+        ],
+        "type": "object"
+      },
+      "OauthAuthorizeRequest": {
+        "additionalProperties": true,
+        "properties": {
+          "approve": {
+            "description": "Whether the user allows the client",
+            "type": "boolean"
+          },
+          "query": {
+            "description": "The query string the consent page was opened with. It is checked again, so the page can't change what the client asked for.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "The scopes the user gives, a part of the requested ones. Required when approving.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query",
+          "approve"
+        ],
+        "type": "object"
+      },
+      "OauthRedirectResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "redirectUrl": {
+            "description": "Where to send the user: back to the client with a code, or with an error after a denial",
+            "type": "string"
+          }
+        },
+        "required": [
+          "redirectUrl"
+        ],
+        "type": "object"
+      },
+      "OauthRequestErrorResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "description": "What is wrong with the request",
+            "type": "string"
+          },
+          "redirectUrl": {
+            "description": "Where to send the user, set once the client and its redirect URI are known",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "OauthScopeResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "grantable": {
+            "description": "Whether the user has the permission to give the scope",
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "grantable"
         ],
         "type": "object"
       },
@@ -10938,6 +11052,250 @@
         "summary": "Send a test notification",
         "tags": [
           "Notifications"
+        ]
+      }
+    },
+    "/oauth/authorize": {
+      "get": {
+        "description": "Checks the authorization request of an MCP client and returns what the consent page shows. Errors with a redirect URL send the user back to the client.",
+        "operationId": "get-oauth-authorization-request",
+        "parameters": [
+          {
+            "description": "The client ID from the registration",
+            "explode": false,
+            "in": "query",
+            "name": "client_id",
+            "schema": {
+              "description": "The client ID from the registration",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of the registered redirect URIs, required when the client registered more than one",
+            "explode": false,
+            "in": "query",
+            "name": "redirect_uri",
+            "schema": {
+              "description": "One of the registered redirect URIs, required when the client registered more than one",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Must be code",
+            "explode": false,
+            "in": "query",
+            "name": "response_type",
+            "schema": {
+              "description": "Must be code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Space separated scopes, the MCP scopes when empty",
+            "explode": false,
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "description": "Space separated scopes, the MCP scopes when empty",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Returned to the client unchanged",
+            "explode": false,
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "description": "Returned to the client unchanged",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The PKCE code challenge",
+            "explode": false,
+            "in": "query",
+            "name": "code_challenge",
+            "schema": {
+              "description": "The PKCE code challenge",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Must be S256",
+            "explode": false,
+            "in": "query",
+            "name": "code_challenge_method",
+            "schema": {
+              "description": "Must be S256",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The MCP endpoint or the hub",
+            "explode": false,
+            "in": "query",
+            "name": "resource",
+            "schema": {
+              "description": "The MCP endpoint or the hub",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthAuthorizationResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthRequestErrorResponse"
+                }
+              }
+            },
+            "description": "The authorization request or the answer is invalid"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired authentication"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden, also for requests with an API token"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check an authorization request",
+        "tags": [
+          "API tokens"
+        ]
+      },
+      "post": {
+        "description": "Allows or denies the authorization request of an MCP client. Allowing it gives the client an API token with the chosen scopes, which only works on the MCP endpoint. A user can have at most 50 tokens. Needs the `api_token:create` permission.",
+        "operationId": "answer-oauth-authorization-request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OauthAuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthRedirectResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OauthRequestErrorResponse"
+                }
+              }
+            },
+            "description": "The authorization request or the answer is invalid"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Missing, invalid or expired authentication"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "summary": "Answer an authorization request",
+        "tags": [
+          "API tokens"
         ]
       }
     },
