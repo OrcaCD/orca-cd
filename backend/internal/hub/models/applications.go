@@ -37,23 +37,28 @@ const (
 
 type Application struct {
 	Base
-	Name                     crypto.EncryptedString  `gorm:"type:text;not null"`
-	NameHash                 string                  `gorm:"type:text;not null;default:''"`
-	Icon                     string                  `gorm:"type:text;not null;default:box"`
-	RepositoryId             string                  `gorm:"type:text;not null"`
-	Repository               Repository              `gorm:"foreignKey:RepositoryId"`
-	AgentId                  string                  `gorm:"type:text;not null"`
-	Agent                    Agent                   `gorm:"foreignKey:AgentId"`
-	SyncStatus               SyncStatus              `gorm:"type:text;not null"`
-	HealthStatus             HealthStatus            `gorm:"type:text;not null"`
-	Branch                   string                  `gorm:"type:text;not null"`
-	Commit                   string                  `gorm:"type:text;not null"`
-	CommitMessage            string                  `gorm:"type:text;not null"`
-	LastSyncedAt             *time.Time              `gorm:"type:timestamp;"`
-	LastSyncError            *string                 `gorm:"type:text;"`
-	LastSyncSource           *ApplicationEventSource `gorm:"type:text;"`
-	Path                     string                  `gorm:"type:text;not null"`
-	ComposeFile              crypto.EncryptedString  `gorm:"type:text;not null"`
+	Name                crypto.EncryptedString  `gorm:"type:text;not null"`
+	NameHash            string                  `gorm:"type:text;not null;default:''"`
+	Icon                string                  `gorm:"type:text;not null;default:box"`
+	RepositoryId        string                  `gorm:"type:text;not null"`
+	Repository          Repository              `gorm:"foreignKey:RepositoryId"`
+	AgentId             string                  `gorm:"type:text;not null"`
+	Agent               Agent                   `gorm:"foreignKey:AgentId"`
+	SyncStatus          SyncStatus              `gorm:"type:text;not null"`
+	HealthStatus        HealthStatus            `gorm:"type:text;not null"`
+	Branch              string                  `gorm:"type:text;not null"`
+	Commit              string                  `gorm:"type:text;not null"`
+	CommitMessage       string                  `gorm:"type:text;not null"`
+	LastSyncedAt        *time.Time              `gorm:"type:timestamp;"`
+	LastSyncError       *string                 `gorm:"type:text;"`
+	LastSyncSource      *ApplicationEventSource `gorm:"type:text;"`
+	Path                string                  `gorm:"type:text;not null"`
+	ComposeFile         crypto.EncryptedString  `gorm:"type:text;not null"`
+	AdditionalFilePaths []string                `gorm:"type:text;not null;serializer:json;default:'[]'"`
+	AdditionalFiles     crypto.EncryptedString  `gorm:"type:text;not null"`
+	// PendingFilesRevision records an edit that still needs a deployment,
+	// even if sync sees the same commit as the last settings update.
+	PendingFilesRevision     string                  `gorm:"type:text;not null"`
 	Warnings                 string                  `gorm:"type:text;not null;default:'[]'"`
 	PreviousComposeFile      crypto.EncryptedString  `gorm:"type:text;not null"`
 	ImagePollEnabled         bool                    `gorm:"not null;default:false"`

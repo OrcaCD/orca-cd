@@ -234,17 +234,34 @@ func (h *Hub) Send(id string, msg *messages.ServerMessage) bool {
 	return h.send(id, msg, nil)
 }
 
-// send queues msg for the client, calling beforeSend with the target client
-// while the hub lock is held.
+// SendWithCapability checks support on the same connection it sends to.
+func (h *Hub) SendWithCapability(id string, msg *messages.ServerMessage, capability string) (sent, unsupported bool) {
+	sent = h.sendToClient(id, msg, func(c *Client) bool {
+		unsupported = !c.hasCapability(capability)
+		return !unsupported
+	})
+	return sent, unsupported
+}
+
+// send registers pending requests with the target client before queueing.
 func (h *Hub) send(id string, msg *messages.ServerMessage, beforeSend func(*Client)) bool {
+	return h.sendToClient(id, msg, func(c *Client) bool {
+		if beforeSend != nil {
+			beforeSend(c)
+		}
+		return true
+	})
+}
+
+func (h *Hub) sendToClient(id string, msg *messages.ServerMessage, canSend func(*Client) bool) bool {
 	h.mu.RLock()
 	c, ok := h.clients[id]
 	defer h.mu.RUnlock()
 	if !ok || c.closing.Load() {
 		return false
 	}
-	if beforeSend != nil {
-		beforeSend(c)
+	if !canSend(c) {
+		return false
 	}
 	select {
 	case c.Send <- msg:

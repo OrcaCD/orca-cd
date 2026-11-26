@@ -720,3 +720,60 @@ func TestRejectKeepsDeploymentWhenEventCompletionFails(t *testing.T) {
 		t.Errorf("expected running event to keep its deployment after failed rejection, got %+v", got)
 	}
 }
+
+func TestRecordImageUpdateKeepsRunningDeploymentFiles(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	app.AdditionalFiles = `{"config/site.txt":"b2xk"}`
+	active := succeedDeployment(t, &app, "req-original", 0)
+	app.Commit = "new-settings"
+	app.AdditionalFiles = `{"config/site.txt":"bmV3"}`
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("Commit", "AdditionalFiles").Updates(t.Context(), app); err != nil {
+		t.Fatal(err)
+	}
+
+	deployment, err := RecordImageUpdate(t.Context(), app.Id, "req-image-files", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deployment.Commit != active.Commit || deployment.AdditionalFiles != active.AdditionalFiles {
+		t.Fatalf("image update recorded desired settings instead of the running snapshot: %+v", deployment)
+	}
+}
+
+func TestOnlyMatchingSuccessfulDeploymentClearsFileRevision(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	saveRevision := func(revision string) {
+		t.Helper()
+		app.PendingFilesRevision = revision
+		if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+			Select("PendingFilesRevision").Updates(t.Context(), app); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveRevision("first")
+	startDeployment(t, &app, "first")
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "first" {
+		t.Fatalf("pending after dispatch = %q", got)
+	}
+	if _, err := Discard(t.Context(), app.Id, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "first" {
+		t.Fatalf("pending after failure = %q", got)
+	}
+	startDeployment(t, &app, "retry")
+	saveRevision("newer")
+	if _, err := Succeed(t.Context(), app.Id, "retry", nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "newer" {
+		t.Fatalf("pending after stale success = %q", got)
+	}
+	succeedDeployment(t, &app, "newer", 0)
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "" {
+		t.Fatalf("pending after matching success = %q", got)
+	}
+}

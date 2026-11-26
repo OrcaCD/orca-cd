@@ -81,6 +81,7 @@ func setupKeyRotateTestDBWithLogger(t *testing.T, logger gormlogger.Interface) {
 		&models.Agent{},
 		&models.Repository{},
 		&models.Application{},
+		&models.ApplicationDeployment{},
 		&models.Notification{},
 		&models.OIDCProvider{},
 		&models.Passkey{},
@@ -176,6 +177,7 @@ func seedKeyRotateFixture(t *testing.T) keyRotateFixture {
 		ComposeFile:         crypto.EncryptedString("services:\n  app:\n    image: nginx\n"),
 		PreviousComposeFile: crypto.EncryptedString("services: {}\n"),
 		ImageWebhookSecret:  &imageWebhookSecret,
+		AdditionalFiles:     `{"config/app.txt":"YWN0dWFs"}`,
 	}
 	if err := gorm.G[models.Application](db.DB).Create(t.Context(), &application); err != nil {
 		t.Fatalf("failed to create application: %v", err)
@@ -245,12 +247,23 @@ func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	setupKeyRotateTestDB(t)
 	fixture := seedKeyRotateFixture(t)
 
+	snapshot := models.ApplicationDeployment{
+		ApplicationId:   fixture.ApplicationID,
+		Status:          models.DeploymentSucceeded,
+		ComposeFile:     "services: {}\n",
+		AdditionalFiles: `{"config/app.txt":"c25hcHNob3Q="}`,
+		Images:          []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+
 	result, err := rotateDatabaseEncryptionKey(t.Context(), testOldAppSecret, testNewAppSecret)
 	if err != nil {
 		t.Fatalf("rotateDatabaseEncryptionKey() unexpected error: %v", err)
 	}
 
-	if result.Agents != 1 || result.Applications != 1 || result.Repositories != 1 || result.Notifications != 1 || result.OIDCProviders != 1 {
+	if result.Agents != 1 || result.Applications != 1 || result.Deployments != 1 || result.Repositories != 1 || result.Notifications != 1 || result.OIDCProviders != 1 {
 		t.Fatalf("unexpected rotation result: %+v", result)
 	}
 
@@ -273,9 +286,15 @@ func TestRotateDatabaseEncryptionKeyReencryptsEncryptedFields(t *testing.T) {
 	if application.Name.String() != "application-name" ||
 		application.ComposeFile.String() != "services:\n  app:\n    image: nginx\n" ||
 		application.PreviousComposeFile.String() != "services: {}\n" ||
+		application.AdditionalFiles != `{"config/app.txt":"YWN0dWFs"}` ||
 		application.ImageWebhookSecret == nil ||
 		application.ImageWebhookSecret.String() != "image-webhook-secret" {
 		t.Fatalf("unexpected application values after rotation: %+v", application)
+	}
+
+	rotatedSnapshot, err := gorm.G[models.ApplicationDeployment](db.DB).Where("id = ?", snapshot.Id).First(t.Context())
+	if err != nil || rotatedSnapshot.ComposeFile != snapshot.ComposeFile || rotatedSnapshot.AdditionalFiles != snapshot.AdditionalFiles {
+		t.Fatalf("failed to read the deployment snapshot with the new key: %v", err)
 	}
 
 	repository, err := gorm.G[models.Repository](db.DB).Where("id = ?", fixture.RepositoryID).First(t.Context())
@@ -383,7 +402,7 @@ func TestEncryptedModelSchemaDiscoversEncryptedColumns(t *testing.T) {
 				schema, err := encryptedModelSchemaFor[models.Application](db.DB)
 				return schema.encryptedColumns, err
 			},
-			want: []string{"compose_file", "image_webhook_secret", "name", "previous_compose_file"},
+			want: []string{"additional_files", "compose_file", "image_webhook_secret", "name", "previous_compose_file"},
 		},
 		{
 			name: "repositories",

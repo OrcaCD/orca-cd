@@ -6,11 +6,13 @@ import (
 	"fmt"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
+	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/sse"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/deployfiles"
 	"github.com/rs/zerolog"
 	"gorm.io/gorm"
 )
@@ -19,6 +21,7 @@ import (
 // pass a mock so the deployer can be exercised without a real hub or agent.
 type messageSender interface {
 	Send(agentID string, msg *messages.ServerMessage) bool
+	SendWithCapability(agentID string, msg *messages.ServerMessage, capability string) (sent, unsupported bool)
 }
 
 // ApplicationDeploymentManager dispatches a deploy to an agent. It is an interface
@@ -46,45 +49,84 @@ var DefaultApplicationDeployer ApplicationDeploymentManager
 // agent is not connected.
 var ErrAgentOffline = errors.New("agent is not connected")
 
+// ErrAgentFileSyncUnsupported is returned when the connected agent must be
+// upgraded before it can apply a deployment's managed files.
+var ErrAgentFileSyncUnsupported = errors.New("upgrade the agent to deploy additional files")
+
 func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app *models.Application, composeFile, requestID string) error {
-	// A deployment that can't be recorded can't be rolled back to, but still runs.
+	files, required, err := deploymentFiles(ctx, app, app.AdditionalFiles)
+	if err != nil {
+		d.recordDispatchFailure(ctx, app, requestID, err.Error())
+		return err
+	}
 	if _, err := deployments.Start(ctx, app, composeFile, requestID); err != nil {
 		d.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record deployment")
+		// A Compose-only deployment can still run without a rollback snapshot.
+		if required || app.PendingFilesRevision != "" {
+			d.recordDispatchFailure(ctx, app, requestID, "could not record deployment files for rollback")
+			return err
+		}
 	}
 
-	err := d.dispatch(ctx, app, true, &messages.DeployRequest{
+	err = d.dispatch(ctx, app, true, required, &messages.DeployRequest{
 		RequestId:       requestID,
 		ApplicationId:   app.Id,
 		ApplicationName: app.Name.String(),
 		ComposeFile:     composeFile,
+		AdditionalFiles: files,
 		DeleteOldImages: app.DeleteOldImages,
 		ImageRetention:  d.imageRetention(ctx, app),
 	})
-	if errors.Is(err, ErrAgentOffline) {
+	if errors.Is(err, ErrAgentOffline) || errors.Is(err, ErrAgentFileSyncUnsupported) {
 		if _, discardErr := deployments.Discard(ctx, app.Id, requestID); discardErr != nil {
 			d.log.Error().Err(discardErr).Str("applicationId", app.Id).Msg("failed to discard undispatched deployment")
 		}
 	}
+
 	return err
 }
 
-// TriggerRollback deploys the compose file and the exact images of an earlier
-// deployment again.
+// TriggerRollback deploys the Compose file, additional files, and exact images
+// of an earlier deployment again.
 func (d *ApplicationDeployer) TriggerRollback(ctx context.Context, app *models.Application, target *models.ApplicationDeployment, requestID string) error {
+	files, required, err := deploymentFiles(ctx, app, target.AdditionalFiles)
+	if err != nil {
+		d.completeFailedEvent(ctx, requestID, app.Id, err.Error())
+		return err
+	}
 	if err := deployments.Supersede(ctx, app.Id); err != nil {
 		d.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to end the health check of the replaced deployment")
 	}
 	// The error of the deployment that is rolled back stays, so the rolled
 	// back application shows why.
-	return d.dispatch(ctx, app, false, &messages.DeployRequest{
+	return d.dispatch(ctx, app, false, required, &messages.DeployRequest{
 		RequestId:       requestID,
 		ApplicationId:   app.Id,
 		ApplicationName: app.Name.String(),
 		ComposeFile:     target.ComposeFile.String(),
+		AdditionalFiles: files,
 		DeleteOldImages: app.DeleteOldImages,
 		PinnedImages:    deployments.ToServiceImages(target.Images),
 		ImageRetention:  d.imageRetention(ctx, app),
 	})
+}
+
+func deploymentFiles(ctx context.Context, app *models.Application, stored crypto.EncryptedString) (*messages.DeploymentFiles, bool, error) {
+	files, err := models.DecodeDeploymentFiles(stored)
+	if err != nil {
+		return nil, false, err
+	}
+	required := len(files) != 0 || app.AdditionalFiles != ""
+	if !required && app.CurrentDeploymentId != nil {
+		count, err := gorm.G[models.ApplicationDeployment](db.DB).
+			Where("id = ? AND application_id = ? AND additional_files <> ''", *app.CurrentDeploymentId, app.Id).
+			Count(ctx, "*")
+		if err != nil {
+			return nil, false, fmt.Errorf("check current deployment files: %w", err)
+		}
+		required = count != 0
+	}
+	return &messages.DeploymentFiles{Files: files}, required, nil
 }
 
 // imageRetention keeps the images a rollback needs when old images are
@@ -97,21 +139,25 @@ func (d *ApplicationDeployer) imageRetention(ctx context.Context, app *models.Ap
 	return retention
 }
 
-func (d *ApplicationDeployer) dispatch(ctx context.Context, app *models.Application, clearError bool, req *messages.DeployRequest) error {
+func (d *ApplicationDeployer) dispatch(ctx context.Context, app *models.Application, clearError, requireFiles bool, req *messages.DeployRequest) error {
 	msg := &messages.ServerMessage{
 		Payload: &messages.ServerMessage_DeployRequest{
 			DeployRequest: req,
 		},
 	}
 
-	if !d.hub.Send(app.AgentId, msg) {
-		errMsg := "could not connect to agent: " + app.Agent.Name.String()
-		_ = updateApplicationStatus(ctx, app.Id, models.Application{
-			SyncStatus:    models.OutOfSync,
-			HealthStatus:  models.UnknownHealth,
-			LastSyncError: &errMsg,
-		}, d.log)
-		d.completeFailedEvent(ctx, req.RequestId, app.Id, errMsg)
+	var sent, unsupported bool
+	if requireFiles {
+		sent, unsupported = d.hub.SendWithCapability(app.AgentId, msg, deployfiles.Capability)
+	} else {
+		sent = d.hub.Send(app.AgentId, msg)
+	}
+	if unsupported {
+		d.recordDispatchFailure(ctx, app, req.RequestId, ErrAgentFileSyncUnsupported.Error())
+		return ErrAgentFileSyncUnsupported
+	}
+	if !sent {
+		d.recordDispatchFailure(ctx, app, req.RequestId, "could not connect to agent: "+app.Agent.Name.String())
 		return ErrAgentOffline
 	}
 
@@ -120,6 +166,15 @@ func (d *ApplicationDeployer) dispatch(ctx context.Context, app *models.Applicat
 		return err
 	}
 	return nil
+}
+
+func (d *ApplicationDeployer) recordDispatchFailure(ctx context.Context, app *models.Application, requestID, message string) {
+	_ = updateApplicationStatus(ctx, app.Id, models.Application{
+		SyncStatus:    models.OutOfSync,
+		HealthStatus:  models.UnknownHealth,
+		LastSyncError: &message,
+	}, d.log)
+	d.completeFailedEvent(ctx, requestID, app.Id, message)
 }
 
 func (d *ApplicationDeployer) completeFailedEvent(ctx context.Context, requestID, applicationID, message string) {

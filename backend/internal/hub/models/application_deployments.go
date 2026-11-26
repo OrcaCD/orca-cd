@@ -29,18 +29,20 @@ type DeployedImage struct {
 }
 
 // ApplicationDeployment is a snapshot of what an application ran: the compose
-// file and the exact images of its services. It is what a rollback deploys.
+// file, additional files, and the exact images of its services. It is what a rollback deploys.
 type ApplicationDeployment struct {
 	Base
-	ApplicationId string                      `gorm:"type:text;not null;index:idx_application_deployments_app_deployed,priority:1"`
-	Application   Application                 `gorm:"foreignKey:ApplicationId;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
-	RequestId     *string                     `gorm:"type:text;uniqueIndex"`
-	Status        ApplicationDeploymentStatus `gorm:"type:text;not null"`
-	Commit        string                      `gorm:"type:text;not null"`
-	CommitMessage string                      `gorm:"type:text;not null"`
-	ComposeFile   crypto.EncryptedString      `gorm:"type:text;not null"`
-	Images        []DeployedImage             `gorm:"type:text;not null;serializer:json"`
-	DeployedAt    *time.Time                  `gorm:"type:timestamp;index:idx_application_deployments_app_deployed,priority:2"`
+	ApplicationId   string                      `gorm:"type:text;not null;index:idx_application_deployments_app_deployed,priority:1"`
+	Application     Application                 `gorm:"foreignKey:ApplicationId;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	RequestId       *string                     `gorm:"type:text;uniqueIndex"`
+	Status          ApplicationDeploymentStatus `gorm:"type:text;not null"`
+	Commit          string                      `gorm:"type:text;not null"`
+	CommitMessage   string                      `gorm:"type:text;not null"`
+	ComposeFile     crypto.EncryptedString      `gorm:"type:text;not null"`
+	AdditionalFiles crypto.EncryptedString      `gorm:"type:text;not null"`
+	FilesRevision   string                      `gorm:"type:text;not null"`
+	Images          []DeployedImage             `gorm:"type:text;not null;serializer:json"`
+	DeployedAt      *time.Time                  `gorm:"type:timestamp;index:idx_application_deployments_app_deployed,priority:2"`
 	// PreviousDeploymentId is what the application ran before, which an
 	// automatic rollback restores.
 	PreviousDeploymentId *string    `gorm:"type:text"`

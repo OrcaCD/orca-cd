@@ -29,13 +29,15 @@ func Start(ctx context.Context, app *models.Application, composeFile, requestID 
 		return nil, err
 	}
 	deployment := models.ApplicationDeployment{
-		ApplicationId: app.Id,
-		RequestId:     &requestID,
-		Status:        models.DeploymentPending,
-		Commit:        app.Commit,
-		CommitMessage: app.CommitMessage,
-		ComposeFile:   crypto.EncryptedString(composeFile),
-		Images:        []models.DeployedImage{},
+		ApplicationId:   app.Id,
+		RequestId:       &requestID,
+		Status:          models.DeploymentPending,
+		Commit:          app.Commit,
+		CommitMessage:   app.CommitMessage,
+		ComposeFile:     crypto.EncryptedString(composeFile),
+		AdditionalFiles: app.AdditionalFiles,
+		FilesRevision:   app.PendingFilesRevision,
+		Images:          []models.DeployedImage{},
 	}
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := deleteDeployments(ctx, tx, pendingIDs(tx).Where("application_id = ?", app.Id)); err != nil {
@@ -89,6 +91,13 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 		if err != nil {
 			return err
 		}
+		if succeeded.FilesRevision != "" {
+			if _, err := gorm.G[models.Application](tx).
+				Where("id = ? AND pending_files_revision = ?", applicationID, succeeded.FilesRevision).
+				Select("PendingFilesRevision").Updates(ctx, models.Application{}); err != nil {
+				return err
+			}
+		}
 		deployment = &succeeded
 		return setCurrent(ctx, tx, &succeeded)
 	})
@@ -102,16 +111,32 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 }
 
 // RecordImageUpdate records the images an image update deployed. The update
-// ran the application's current compose file at its current commit.
+// reuses the files from the deployment already running on the agent.
 func RecordImageUpdate(ctx context.Context, applicationID, requestID string, images []*messages.ServiceImage, gate time.Duration) (*models.ApplicationDeployment, error) {
-	if err := Supersede(ctx, applicationID); err != nil {
-		return nil, err
-	}
 	app, err := gorm.G[models.Application](db.DB).
-		Select("id", "commit", "commit_message", "compose_file").
+		Select("id", "commit", "commit_message", "compose_file", "additional_files", "pending_files_revision", "current_deployment_id").
 		Where("id = ?", applicationID).
 		First(ctx)
 	if err != nil {
+		return nil, err
+	}
+	var current models.ApplicationDeployment
+	if app.CurrentDeploymentId != nil {
+		current, err = gorm.G[models.ApplicationDeployment](db.DB).
+			Select("commit", "commit_message", "compose_file", "additional_files").
+			Where("id = ? AND application_id = ?", *app.CurrentDeploymentId, app.Id).First(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if app.AdditionalFiles != "" || app.PendingFilesRevision != "" {
+			return nil, errors.New("no current deployment snapshot for the image update")
+		}
+		current = models.ApplicationDeployment{
+			Commit: app.Commit, CommitMessage: app.CommitMessage, ComposeFile: app.ComposeFile,
+		}
+	}
+	if err := Supersede(ctx, applicationID); err != nil {
 		return nil, err
 	}
 	previous, err := lastGood(ctx, db.DB, applicationID)
@@ -121,9 +146,10 @@ func RecordImageUpdate(ctx context.Context, applicationID, requestID string, ima
 
 	deployment := models.ApplicationDeployment{
 		ApplicationId:        applicationID,
-		Commit:               app.Commit,
-		CommitMessage:        app.CommitMessage,
-		ComposeFile:          app.ComposeFile,
+		Commit:               current.Commit,
+		CommitMessage:        current.CommitMessage,
+		ComposeFile:          current.ComposeFile,
+		AdditionalFiles:      current.AdditionalFiles,
 		PreviousDeploymentId: previous,
 	}
 	applyResult(&deployment, images, gate)

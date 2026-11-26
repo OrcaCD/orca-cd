@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
@@ -46,27 +47,29 @@ func validImagePollInterval(enabled bool, seconds int64) bool {
 }
 
 type createApplicationRequest struct {
-	Name                     string `json:"name" required:"true" minLength:"1"`
-	Icon                     string `json:"icon" maxLength:"128"`
-	RepositoryId             string `json:"repositoryId" required:"true" minLength:"1"`
-	AgentId                  string `json:"agentId" required:"true" minLength:"1"`
-	Branch                   string `json:"branch" required:"true" minLength:"1"`
-	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
-	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
-	DeleteOldImages          bool   `json:"deleteOldImages"`
+	Name                     string   `json:"name" required:"true" minLength:"1"`
+	Icon                     string   `json:"icon" maxLength:"128"`
+	RepositoryId             string   `json:"repositoryId" required:"true" minLength:"1"`
+	AgentId                  string   `json:"agentId" required:"true" minLength:"1"`
+	Branch                   string   `json:"branch" required:"true" minLength:"1"`
+	Path                     string   `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
+	AdditionalFilePaths      []string `json:"additionalFilePaths,omitempty" maxItems:"64" doc:"Repository file paths under the Compose file directory"`
+	ImagePollEnabled         bool     `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64    `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	DeleteOldImages          bool     `json:"deleteOldImages"`
 }
 
 type updateApplicationRequest struct {
-	Name                     string `json:"name" required:"true" minLength:"1"`
-	Icon                     string `json:"icon" maxLength:"128" doc:"Leave it out to keep the icon"`
-	RepositoryId             string `json:"repositoryId" required:"true" minLength:"1"`
-	AgentId                  string `json:"agentId" required:"true" minLength:"1"`
-	Branch                   string `json:"branch" required:"true" minLength:"1"`
-	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
-	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
-	DeleteOldImages          bool   `json:"deleteOldImages"`
+	Name                     string    `json:"name" required:"true" minLength:"1"`
+	Icon                     string    `json:"icon" maxLength:"128" doc:"Leave it out to keep the icon"`
+	RepositoryId             string    `json:"repositoryId" required:"true" minLength:"1"`
+	AgentId                  string    `json:"agentId" required:"true" minLength:"1"`
+	Branch                   string    `json:"branch" required:"true" minLength:"1"`
+	Path                     string    `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
+	AdditionalFilePaths      *[]string `json:"additionalFilePaths,omitempty" maxItems:"64" doc:"Repository file paths under the Compose file directory. Omit to keep the selection. Send an empty array to clear it."`
+	ImagePollEnabled         bool      `json:"imagePollEnabled"`
+	ImagePollIntervalSeconds int64     `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	DeleteOldImages          bool      `json:"deleteOldImages"`
 }
 
 type applicationListResponse struct {
@@ -109,6 +112,7 @@ type applicationResponse struct {
 	Path                     string                    `json:"path" required:"true"`
 	CreatedAt                string                    `json:"createdAt" required:"true" format:"date-time"`
 	UpdatedAt                string                    `json:"updatedAt" required:"true" format:"date-time"`
+	AdditionalFilePaths      []string                  `json:"additionalFilePaths" required:"true"`
 	ComposeFile              string                    `json:"composeFile" required:"true"`
 	PreviousComposeFile      string                    `json:"previousComposeFile,omitempty" doc:"The compose file before the last change of the application"`
 	ImagePollEnabled         bool                      `json:"imagePollEnabled" required:"true"`
@@ -233,7 +237,9 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		return nil, huma.Error400BadRequest("agent not found")
 	}
 
-	composeFile, latestCommit, err := fetchApplicationComposeAndCommit(ctx, req.RepositoryId, req.Branch, req.Path)
+	filePaths := append([]string{}, req.AdditionalFilePaths...)
+	slices.Sort(filePaths)
+	bundle, latestCommit, err := fetchApplicationBundleAndCommit(ctx, req.RepositoryId, req.Branch, req.Path, filePaths)
 	if err != nil {
 		return nil, err
 	}
@@ -251,12 +257,18 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		CommitMessage:            latestCommit.Message,
 		LastSyncedAt:             nil,
 		Path:                     req.Path,
-		ComposeFile:              crypto.EncryptedString(composeFile),
+		ComposeFile:              crypto.EncryptedString(bundle.compose),
+		AdditionalFilePaths:      filePaths,
+		AdditionalFiles:          bundle.files,
 		Warnings:                 "[]",
 		PreviousComposeFile:      crypto.EncryptedString(""),
 		ImagePollEnabled:         req.ImagePollEnabled,
 		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
 		DeleteOldImages:          req.DeleteOldImages,
+	}
+
+	if len(filePaths) != 0 {
+		application.PendingFilesRevision = uuid.NewString()
 	}
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(ctx, &application); err != nil {
@@ -296,7 +308,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		}); err != nil {
 			hubApplications.Log.Error().Err(err).Str("applicationId", createdApplication.Id).Msg("failed to record initial deployment event")
 		}
-		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, composeFile, requestID)
+		_ = application_deployer.DefaultApplicationDeployer.TriggerApplicationDeploy(c, &createdApplication, bundle.compose, requestID)
 	}
 
 	return &applicationOutput{Body: toApplicationResponse(&createdApplication)}, nil
@@ -307,7 +319,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	Method:      http.MethodPut,
 	Path:        "/applications/{id}",
 	Summary:     "Update an application",
-	Description: "Reads the compose file from the latest commit of the branch again. Moving the application to another agent " +
+	Description: "Reads the Compose file and any selected additional files from the latest commit of the branch again. Moving the application to another agent " +
 		"or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, " +
 		"as does a new source, which also needs read access to the new repository or agent. " +
 		"Answers 422 when the repository can't be read. " +
@@ -335,8 +347,14 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 
 	// Only a new source needs read access, so the settings of an application
 	// can be changed without access to its repository and agent.
+	filePaths := application.AdditionalFilePaths
+	if req.AdditionalFilePaths != nil {
+		filePaths = append([]string{}, (*req.AdditionalFilePaths)...)
+		slices.Sort(filePaths)
+	}
+	filesSelectionChanged := !slices.Equal(filePaths, application.AdditionalFilePaths)
 	repositoryId, agentId := req.RepositoryId, req.AgentId
-	if repositoryId == application.RepositoryId && req.Branch == application.Branch && req.Path == application.Path {
+	if repositoryId == application.RepositoryId && req.Branch == application.Branch && req.Path == application.Path && !filesSelectionChanged {
 		repositoryId = ""
 	}
 	if agentId == application.AgentId {
@@ -372,7 +390,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 		return nil, huma.Error400BadRequest("agent not found")
 	}
 
-	composeFile, latestCommit, err := fetchApplicationComposeAndCommit(ctx, req.RepositoryId, req.Branch, req.Path)
+	bundle, latestCommit, err := fetchApplicationBundleAndCommit(ctx, req.RepositoryId, req.Branch, req.Path, filePaths)
 	if err != nil {
 		return nil, err
 	}
@@ -410,11 +428,16 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	application.Commit = latestCommit.Hash
 	application.CommitMessage = latestCommit.Message
 	application.Path = req.Path
-	if application.ComposeFile.String() != composeFile {
+	if filesSelectionChanged || application.AdditionalFiles != bundle.files {
+		application.PendingFilesRevision = uuid.NewString()
+	}
+	application.AdditionalFilePaths = append([]string{}, filePaths...)
+	application.AdditionalFiles = bundle.files
+	if application.ComposeFile.String() != bundle.compose {
 		application.Warnings = "[]"
 	}
 	application.PreviousComposeFile = application.ComposeFile
-	application.ComposeFile = crypto.EncryptedString(composeFile)
+	application.ComposeFile = crypto.EncryptedString(bundle.compose)
 	application.ImagePollEnabled = req.ImagePollEnabled
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages
@@ -557,7 +580,7 @@ var DeployApplicationHandler = restapi.Handler(huma.Operation{
 	Path:          "/applications/{id}/deploy",
 	DefaultStatus: http.StatusAccepted,
 	Summary:       "Deploy an application",
-	Description: "Deploys the current compose file again. The deployment runs in the background, its progress shows in the events of the application. " +
+	Description: "Deploys the current Compose file and any selected additional files again. The deployment runs in the background, its progress shows in the events of the application. " +
 		requires(models.ResourceApplication, models.ActionDeploy),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
@@ -599,6 +622,9 @@ var DeployApplicationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
 			return nil, huma.Error409Conflict("agent is offline; cannot deploy application")
+		}
+		if errors.Is(err, application_deployer.ErrAgentFileSyncUnsupported) {
+			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to trigger application deploy: %v", err))
 	}
@@ -718,6 +744,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		Path:                     app.Path,
 		CreatedAt:                app.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:                app.UpdatedAt.Format(time.RFC3339),
+		AdditionalFilePaths:      append([]string{}, app.AdditionalFilePaths...),
 		ComposeFile:              app.ComposeFile.String(),
 		PreviousComposeFile:      app.PreviousComposeFile.String(),
 		ImagePollEnabled:         app.ImagePollEnabled,
@@ -760,35 +787,48 @@ func sendAgentSettings(c *gin.Context, agentID string) {
 	websocket.DefaultHub.SendAgentSettings(ctx, agentID, apps)
 }
 
-func fetchApplicationComposeAndCommit(ctx context.Context, repositoryID, branch, path string) (string, repositories.CommitInfo, error) {
+type applicationBundle struct {
+	compose string
+	files   crypto.EncryptedString
+}
+
+func fetchApplicationBundleAndCommit(ctx context.Context, repositoryID, branch, path string, filePaths []string) (applicationBundle, repositories.CommitInfo, error) {
+	if _, err := hubApplications.AdditionalFileDestinations(path, filePaths); err != nil {
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error400BadRequest(err.Error())
+	}
+
 	repo, err := gorm.G[models.Repository](db.DB).Where("id = ?", repositoryID).First(ctx)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", repositories.CommitInfo{}, huma.Error400BadRequest("repository not found")
+			return applicationBundle{}, repositories.CommitInfo{}, huma.Error400BadRequest("repository not found")
 		}
-		return "", repositories.CommitInfo{}, internalError()
+		return applicationBundle{}, repositories.CommitInfo{}, internalError()
 	}
 
 	provider, err := repositories.Get(repo.Provider)
 	if err != nil {
-		return "", repositories.CommitInfo{}, huma.Error400BadRequest("unsupported provider")
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error400BadRequest("unsupported provider")
 	}
 
 	latestCommit, err := provider.GetLatestCommit(ctx, &repo, branch)
 	if err != nil {
-		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	if err := repositories.VerifyCommit(ctx, provider, &repo, latestCommit.Hash); err != nil {
-		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
 	composeFile, err := provider.GetFileContent(ctx, &repo, latestCommit.Hash, path)
 	if err != nil {
-		return "", repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
 	}
 
-	return composeFile, latestCommit, nil
+	files, err := hubApplications.FetchAdditionalFiles(ctx, provider, &repo, latestCommit.Hash, path, filePaths)
+	if err != nil {
+		return applicationBundle{}, repositories.CommitInfo{}, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return applicationBundle{compose: composeFile, files: files}, latestCommit, nil
 }
 
 func parseRFC3339Timestamp(value *string) (*time.Time, bool) {

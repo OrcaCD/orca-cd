@@ -2,6 +2,7 @@ package application_deployer
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,15 +22,23 @@ import (
 // mockSender records what the deployer sends and reports a configurable
 // connected/not-connected result, so tests need no real hub or agent.
 type mockSender struct {
-	connected bool
-	agentID   string
-	sent      *messages.ServerMessage
+	connected           bool
+	fileSyncUnsupported bool
+	agentID             string
+	sent                *messages.ServerMessage
 }
 
 func (m *mockSender) Send(agentID string, msg *messages.ServerMessage) bool {
 	m.agentID = agentID
 	m.sent = msg
 	return m.connected
+}
+
+func (m *mockSender) SendWithCapability(agentID string, msg *messages.ServerMessage, _ string) (bool, bool) {
+	if m.fileSyncUnsupported {
+		return false, true
+	}
+	return m.Send(agentID, msg), false
 }
 
 func setupTestDB(t *testing.T) {
@@ -217,5 +226,75 @@ func TestTriggerApplicationDeploy_AgentNotConnected_DiscardsDeployment(t *testin
 	}
 	if count != 0 {
 		t.Errorf("expected the undispatched deployment to be discarded, got %d", count)
+	}
+}
+
+func TestDeployAndRollbackAdditionalFiles(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t)
+	nop := zerolog.Nop()
+	sender := &mockSender{connected: true, fileSyncUnsupported: true}
+	d := NewApplicationDeployer(sender, &nop)
+	app.AdditionalFiles = `{"config/site.txt":"Y3VycmVudA=="}`
+
+	if err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "unsupported"); !errors.Is(err, ErrAgentFileSyncUnsupported) {
+		t.Fatalf("expected an upgrade error, got %v", err)
+	}
+	if sender.sent != nil {
+		t.Fatal("sent a deployment that the connected agent cannot apply")
+	}
+	sender.fileSyncUnsupported = false
+	if err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "deploy"); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.sent.GetDeployRequest().GetAdditionalFiles().GetFiles()["config/site.txt"]; string(got) != "current" {
+		t.Fatalf("deployed file = %q", got)
+	}
+	snapshot, err := gorm.G[models.ApplicationDeployment](db.DB).Where("request_id = ?", "deploy").First(t.Context())
+	if err != nil || snapshot.AdditionalFiles != app.AdditionalFiles {
+		t.Fatalf("snapshot files = %q, error = %v", snapshot.AdditionalFiles, err)
+	}
+
+	target := &models.ApplicationDeployment{AdditionalFiles: `{"config/site.txt":"b2xk"}`}
+	if err := d.TriggerRollback(t.Context(), &app, target, "rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.sent.GetDeployRequest().GetAdditionalFiles().GetFiles()["config/site.txt"]; string(got) != "old" {
+		t.Fatalf("rollback file = %q", got)
+	}
+
+	target.AdditionalFiles = ""
+	if err := d.TriggerRollback(t.Context(), &app, target, "rollback-empty"); err != nil {
+		t.Fatal(err)
+	}
+	if got := sender.sent.GetDeployRequest().GetAdditionalFiles(); got == nil || len(got.GetFiles()) != 0 {
+		t.Fatalf("rollback to Compose-only snapshot needs an explicit empty set, got %v", got)
+	}
+}
+
+func TestEmptyFilesDeploymentOnOlderAgent(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t)
+	app.PendingFilesRevision = "removed"
+	nop := zerolog.Nop()
+	sender := &mockSender{connected: true, fileSyncUnsupported: true}
+	d := NewApplicationDeployer(sender, &nop)
+	if err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "compose-only"); err != nil {
+		t.Fatalf("an empty selection should work on an older agent: %v", err)
+	}
+
+	deployed := models.ApplicationDeployment{
+		ApplicationId:   app.Id,
+		AdditionalFiles: `{"config/site.txt":"YQ=="}`,
+		Status:          models.DeploymentSucceeded,
+		Images:          []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployed); err != nil {
+		t.Fatal(err)
+	}
+	app.CurrentDeploymentId = &deployed.Id
+	err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "remove-deployed-files")
+	if !errors.Is(err, ErrAgentFileSyncUnsupported) {
+		t.Fatalf("removing previously deployed files should require support: %v", err)
 	}
 }

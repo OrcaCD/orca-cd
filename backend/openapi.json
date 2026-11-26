@@ -647,6 +647,15 @@
       "ApplicationResponse": {
         "additionalProperties": true,
         "properties": {
+          "additionalFilePaths": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "agentId": {
             "type": "string"
           },
@@ -803,6 +812,7 @@
           "path",
           "createdAt",
           "updatedAt",
+          "additionalFilePaths",
           "composeFile",
           "imagePollEnabled",
           "imagePollIntervalSeconds",
@@ -1352,6 +1362,17 @@
       "CreateApplicationRequest": {
         "additionalProperties": true,
         "properties": {
+          "additionalFilePaths": {
+            "description": "Repository file paths under the Compose file directory",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "agentId": {
             "minLength": 1,
             "type": "string"
@@ -3431,6 +3452,14 @@
       "UpdateApplicationRequest": {
         "additionalProperties": true,
         "properties": {
+          "additionalFilePaths": {
+            "description": "Repository file paths under the Compose file directory. Omit to keep the selection. Send an empty array to clear it.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
           "agentId": {
             "minLength": 1,
             "type": "string"
@@ -6890,7 +6919,7 @@
         ]
       },
       "put": {
-        "description": "Reads the compose file from the latest commit of the branch again. Moving the application to another agent or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, as does a new source, which also needs read access to the new repository or agent. Answers 422 when the repository can't be read. Needs the `application:update` permission.",
+        "description": "Reads the Compose file and any selected additional files from the latest commit of the branch again. Moving the application to another agent or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, as does a new source, which also needs read access to the new repository or agent. Answers 422 when the repository can't be read. Needs the `application:update` permission.",
         "operationId": "update-application",
         "parameters": [
           {
@@ -7326,7 +7355,7 @@
     },
     "/applications/{id}/deploy": {
       "post": {
-        "description": "Deploys the current compose file again. The deployment runs in the background, its progress shows in the events of the application. Needs the `application:deploy` permission.",
+        "description": "Deploys the current Compose file and any selected additional files again. The deployment runs in the background, its progress shows in the events of the application. Needs the `application:deploy` permission.",
         "operationId": "deploy-application",
         "parameters": [
           {

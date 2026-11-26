@@ -3,8 +3,10 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -429,6 +431,12 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 	query.Set("path", "/"+normalizedPath)
 	query.Set("versionDescriptor.version", ref)
 	query.Set("versionDescriptor.versionType", "branch")
+	sha, shaErr := hex.DecodeString(ref)
+	atCommit := shaErr == nil && len(sha) == 20
+	if atCommit {
+		query.Set("versionDescriptor.versionType", "commit")
+		query.Del("includeContent")
+	}
 	apiURL := buildAzureDevOpsAPIURL(parsedRepoURL, fmt.Sprintf(
 		"_apis/git/repositories/%s/items",
 		url.PathEscape(parsedRepoURL.repository),
@@ -439,6 +447,9 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 		return "", fmt.Errorf("failed to build azure devops request: %w", err)
 	}
 	addAzureDevOpsHeaders(req, repo)
+	if atCommit {
+		req.Header.Set("Accept", "application/octet-stream")
+	}
 
 	resp, err := httpclient.Default.Do(req)
 	if err != nil {
@@ -453,6 +464,17 @@ func (azureDevOpsProvider) GetFileContent(ctx context.Context, repo *models.Repo
 
 	switch resp.StatusCode {
 	case http.StatusOK:
+		if atCommit {
+			// Request the blob directly to preserve bytes of non-text files.
+			data, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
+			if err != nil {
+				return "", fmt.Errorf("failed to read azure devops file content: %w", err)
+			}
+			if len(data) > maxProviderResponseBytes {
+				return "", fmt.Errorf("azure devops file exceeds %d bytes", maxProviderResponseBytes)
+			}
+			return string(data), nil
+		}
 		var parsed azureDevOpsFileResponse
 		if err := decodeJSON(resp.Body, &parsed); err != nil {
 			return "", fmt.Errorf("failed to decode azure devops file response: %w", err)
