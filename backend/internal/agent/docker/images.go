@@ -237,6 +237,11 @@ func (c *Client) CheckAndPullImages(ctx context.Context, appID, appName string, 
 		project.Services[name] = service
 	}
 	applyOrcaLabels(project, appID)
+	manifest, err := loadDeploymentFilesManifest(filepath.Dir(composePath))
+	if err != nil {
+		return false, updates, errors.Join(failStale(fmt.Errorf("open managed deployment files: %w", err)), digestErr)
+	}
+	applyDeploymentFilesLabel(project, manifest.Revision)
 
 	var previousImages map[string]struct{}
 	if deleteOldImages {

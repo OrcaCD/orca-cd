@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
+	"github.com/OrcaCD/orca-cd/internal/shared/deployfiles"
 	"github.com/OrcaCD/orca-cd/internal/shared/utils"
 	"github.com/compose-spec/compose-go/v2/cli"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -18,7 +19,7 @@ import (
 )
 
 const (
-	composeFileName    = "compose.yaml"
+	composeFileName    = deployfiles.ComposeName
 	labelManagedBy     = "managed_by"
 	labelApplicationID = "orca-cd.application-id"
 	managedByValue     = "orca-cd"
@@ -45,6 +46,8 @@ type DeployRequest struct {
 	ApplicationID   string
 	ApplicationName string
 	ComposeFile     string
+	// A non-nil map replaces the managed files, including when empty.
+	AdditionalFiles map[string][]byte
 	DeleteOldImages bool
 	// PinnedImages maps services to the image they run instead of the one the
 	// compose file names.
@@ -103,7 +106,7 @@ func (c *Client) Deploy(ctx context.Context, req DeployRequest) error {
 	return err
 }
 
-func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]composewarnings.Warning, error) {
+func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) (_ []composewarnings.Warning, deployErr error) {
 	defer c.observeApplicationHealth(req.ApplicationID)
 
 	if c.compose == nil {
@@ -151,14 +154,44 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 	if err := ensureDeploymentDir(applicationDir); err != nil {
 		return nil, fmt.Errorf("create deployment directory: %w", err)
 	}
+	root, manifest, err := openDeploymentFiles(applicationDir)
+	if err != nil {
+		return nil, fmt.Errorf("open managed deployment files: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	var filesUpdate *deploymentFilesUpdate
+	if req.AdditionalFiles != nil && (len(req.AdditionalFiles) != 0 || len(manifest.Paths) != 0) {
+		filesUpdate, err = prepareDeploymentFiles(root, applicationDir, manifest, req.AdditionalFiles)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if deployErr != nil {
+				deployErr = errors.Join(deployErr, filesUpdate.restore())
+			}
+		}()
+		if err := filesUpdate.apply(); err != nil {
+			return nil, err
+		}
+		manifest = filesUpdate.current
+	}
 	previousComposeFile, hadPreviousComposeFile := readDeploymentFile(applicationDir, composeFileName)
 	if err := writeFileAtomic(composePath, []byte(req.ComposeFile)); err != nil {
 		return nil, fmt.Errorf("write compose file: %w", err)
 	}
+	if filesUpdate != nil {
+		defer func() {
+			if deployErr != nil {
+				c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+			}
+		}()
+	}
 
 	project, err := loadProject(ctx, c.compose, composeProjectLoadOptions(projectName, composePath, applicationDir, cli.WithoutEnvironmentResolution))
 	if err != nil {
-		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+		if filesUpdate == nil {
+			c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+		}
 		err = fmt.Errorf("load compose project: %w", err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, err
@@ -173,7 +206,9 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 	if err != nil {
 		// Image pulls redeploy the compose file on disk, so a rejected file must
 		// not stay there.
-		c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+		if filesUpdate == nil {
+			c.restoreComposeFile(composePath, previousComposeFile, hadPreviousComposeFile)
+		}
 		return warnings, err
 	}
 
@@ -184,6 +219,15 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 	pins := preferLocalImageIDs(ctx, c.cli.Client(), req.PinnedImages, req.PinnedImageIDs)
 	pinServiceImages(project, pins)
 	applyOrcaLabels(project, req.ApplicationID)
+	applyDeploymentFilesLabel(project, manifest.Revision)
+	if filesUpdate != nil {
+		previous, existed := readDeploymentFile(applicationDir, overrideFileName)
+		defer func() {
+			if deployErr != nil {
+				c.restoreComposeFile(filepath.Join(applicationDir, overrideFileName), previous, existed)
+			}
+		}()
+	}
 	if err := writeComposeOverride(applicationDir, orcaOverride(project, req.ApplicationID, pins)); err != nil {
 		return warnings, err
 	}
@@ -207,6 +251,14 @@ func (c *Client) DeployWithWarnings(ctx context.Context, req DeployRequest) ([]c
 		},
 	}); err != nil {
 		return warnings, fmt.Errorf("compose up: %w", err)
+	}
+
+	if filesUpdate != nil {
+		if err := filesUpdate.finish(); err != nil {
+			// The project is already running. Pending ownership remains on disk
+			// for cleanup on a later deployment.
+			c.log.Error().Err(err).Str("application_id", req.ApplicationID).Msg("failed to finalize managed deployment files")
+		}
 	}
 
 	if req.DeleteOldImages {
@@ -302,6 +354,9 @@ func (c *Client) Remove(ctx context.Context, req DeleteRequest) error {
 
 	if err := os.RemoveAll(applicationDir); err != nil {
 		return fmt.Errorf("remove deployment directory: %w", err)
+	}
+	if err := storeDeploymentFilesManifest(applicationDir, deploymentFilesManifest{}); err != nil {
+		return err
 	}
 
 	c.log.Info().

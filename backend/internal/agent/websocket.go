@@ -15,6 +15,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/agent/docker"
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
 	"github.com/OrcaCD/orca-cd/internal/shared/composewarnings"
+	"github.com/OrcaCD/orca-cd/internal/shared/deployfiles"
 	"github.com/OrcaCD/orca-cd/internal/shared/wscrypto"
 	"github.com/OrcaCD/orca-cd/internal/shared/wsreject"
 	"github.com/OrcaCD/orca-cd/internal/version"
@@ -275,7 +276,7 @@ func handleServerMessage(ctx context.Context, msg *messages.ServerMessage, sessi
 // daemon is reachable to the hub so it can display them and warn about
 // outdated or broken agents.
 func sendAgentInfo(sender outboundSender, dockerState dockerStateProvider) {
-	info := &messages.AgentInfo{Version: version.Version, Capabilities: []string{capabilityContainerMonitoring}}
+	info := &messages.AgentInfo{Version: version.Version, Capabilities: []string{capabilityContainerMonitoring, deployfiles.Capability}}
 	if dockerState != nil {
 		info.DockerVersion = dockerState.ServerVersion()
 		info.DockerUnreachable = !dockerState.Ready()
@@ -385,10 +386,18 @@ func executeDeployment(ctx context.Context, sender outboundSender, deployer depl
 	defer cancel()
 
 	pins, imageIDs := pinnedImages(req.PinnedImages)
+	var files map[string][]byte
+	if req.AdditionalFiles != nil {
+		files = req.AdditionalFiles.Files
+		if files == nil {
+			files = map[string][]byte{}
+		}
+	}
 	warnings, err := deployer.DeployWithWarnings(deployCtx, docker.DeployRequest{
 		ApplicationID:   req.ApplicationId,
 		ApplicationName: req.ApplicationName,
 		ComposeFile:     req.ComposeFile,
+		AdditionalFiles: files,
 		DeleteOldImages: req.DeleteOldImages,
 		PinnedImages:    pins,
 		PinnedImageIDs:  imageIDs,

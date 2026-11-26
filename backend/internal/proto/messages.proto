@@ -83,6 +83,14 @@ message DeployRequest {
   // runs the exact images of an earlier deployment.
   repeated ServiceImage pinned_images = 6;
   ImageRetention image_retention = 7;
+  // Absent leaves the agent's managed files alone. Present replaces the whole
+  // set, including an empty set when files were deselected.
+  DeploymentFiles additional_files = 8;
+}
+
+message DeploymentFiles {
+  // Destinations relative to the deployed Compose file.
+  map<string, bytes> files = 1;
 }
 
 // ImageRetention adjusts which old images are deleted for an application that

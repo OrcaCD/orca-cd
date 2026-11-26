@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"slices"
 	"testing"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
+	"github.com/OrcaCD/orca-cd/internal/shared/deployfiles"
 	"github.com/OrcaCD/orca-cd/internal/version"
 )
 
@@ -52,13 +54,13 @@ func TestSendAgentInfo_IncludesVersions(t *testing.T) {
 	}
 }
 
-func TestSendAgentInfo_AdvertisesContainerMonitoring(t *testing.T) {
+func TestSendAgentInfo_AdvertisesCapabilities(t *testing.T) {
 	sender := &stubSender{sent: make(chan *messages.ClientMessage, 1)}
 
 	sendAgentInfo(sender, stubDockerState{ready: true})
 
 	info := receiveAgentInfo(t, sender)
-	if len(info.Capabilities) != 1 || info.Capabilities[0] != "container-monitoring" {
+	if !slices.Contains(info.Capabilities, "container-monitoring") || !slices.Contains(info.Capabilities, deployfiles.Capability) {
 		t.Errorf("capabilities = %v", info.Capabilities)
 	}
 }

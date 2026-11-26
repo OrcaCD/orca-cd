@@ -52,6 +52,10 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
+	return writeRootFileAtomicWithMode(root, name, data, 0o600)
+}
+
+func writeRootFileAtomicWithMode(root *os.Root, name string, data []byte, mode os.FileMode) error {
 	name = filepath.FromSlash(name)
 	dir := filepath.Dir(name)
 	if dir != "." {
@@ -60,13 +64,13 @@ func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
 		}
 	}
 
-	existingMode := os.FileMode(0)
+	fileMode := mode
 	info, err := root.Lstat(name)
 	switch {
 	case err == nil && info.Mode()&os.ModeSymlink != 0:
 		return fmt.Errorf("%s is a symlink, which can not be edited", filepath.ToSlash(name))
 	case err == nil && info.Mode().IsRegular():
-		existingMode = info.Mode().Perm()
+		fileMode = info.Mode().Perm()
 	case err != nil && !errors.Is(err, fs.ErrNotExist):
 		return err
 	}
@@ -83,11 +87,9 @@ func writeRootFileAtomic(root *os.Root, name string, data []byte) error {
 	}
 	defer func() { _ = root.Remove(tmpName) }()
 
-	if existingMode != 0 {
-		if err := tmp.Chmod(existingMode); err != nil {
-			_ = tmp.Close()
-			return err
-		}
+	if err := tmp.Chmod(fileMode); err != nil {
+		_ = tmp.Close()
+		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()

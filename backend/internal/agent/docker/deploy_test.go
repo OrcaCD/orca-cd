@@ -1116,3 +1116,109 @@ func TestDeploy_RejectsBindMountThroughSymlinkInApplicationDir(t *testing.T) {
 		t.Fatal("expected compose up to never be called for a rejected deploy")
 	}
 }
+
+func TestDeploySyncsAdditionalFiles(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	originalLoad, originalUp := loadProject, upProject
+	t.Cleanup(func() { loadProject, upProject = originalLoad, originalUp })
+	dir := filepath.Join(c.deploymentsDir, "billing")
+	file := filepath.Join(dir, "config", "nginx.conf")
+	readFile := func() (string, error) {
+		data, err := os.ReadFile(file) //nolint:gosec // path is inside the test's temporary directory
+		return string(data), err
+	}
+	var expected, revision string
+	var reject bool
+	loadProject = func(_ context.Context, _ api.Compose, options api.ProjectLoadOptions) (*composetypes.Project, error) {
+		got, err := readFile()
+		if expected != "" && (err != nil || got != expected) {
+			t.Fatalf("file before Compose load = %q, %v; want %q", got, err, expected)
+		}
+		if expected == "" && !os.IsNotExist(err) {
+			t.Fatalf("deselected file is still on disk: %q, %v", got, err)
+		}
+		return &composetypes.Project{
+			Name:     options.ProjectName,
+			Services: composetypes.Services{"app": {Image: "alpine"}},
+		}, nil
+	}
+	upProject = func(_ context.Context, _ api.Compose, project *composetypes.Project, _ api.UpOptions) error {
+		revision = project.Services["app"].Labels[deploymentFilesLabel]
+		if reject {
+			return errors.New("compose rejected deployment")
+		}
+		return nil
+	}
+	req := DeployRequest{
+		ApplicationID: "app-123", ApplicationName: "billing",
+		ComposeFile: "services:\n  app:\n    image: alpine\n",
+	}
+	expected = "first"
+	req.AdditionalFiles = map[string][]byte{"config/nginx.conf": []byte(expected)}
+	if err := c.Deploy(t.Context(), req); err != nil {
+		t.Fatal(err)
+	}
+	firstRevision := revision
+	if firstRevision == "" {
+		t.Fatal("deployment did not label the services with a file revision")
+	}
+
+	// A local redeploy (e.g. after an env edit) keeps the selection and revision.
+	req.AdditionalFiles = nil
+	if err := c.Deploy(t.Context(), req); err != nil || revision != firstRevision {
+		t.Fatalf("local deploy: revision %q, error %v", revision, err)
+	}
+
+	expected, reject = "second", true
+	req.AdditionalFiles = map[string][]byte{"config/nginx.conf": []byte(expected)}
+	if err := c.Deploy(t.Context(), req); err == nil {
+		t.Fatal("expected the deployment to fail")
+	}
+	if got, err := readFile(); got != "first" || err != nil {
+		t.Fatalf("file after failed deployment = %q, %v", got, err)
+	}
+
+	reject = false
+	if err := c.Deploy(t.Context(), req); err != nil || revision == firstRevision {
+		t.Fatalf("file-only deployment: revision %q, error %v", revision, err)
+	}
+
+	expected = ""
+	req.AdditionalFiles = map[string][]byte{}
+	if err := c.Deploy(t.Context(), req); err != nil || revision != "" {
+		t.Fatalf("deselect: revision %q, error %v", revision, err)
+	}
+	manifest, err := loadDeploymentFilesManifest(dir)
+	if err != nil || len(manifest.Paths) != 0 {
+		t.Fatalf("manifest after deselection = %+v, %v", manifest, err)
+	}
+}
+
+func TestDeployRejectsAdditionalFileCollisions(t *testing.T) {
+	c := newTestClient(t)
+	c.deploymentsDir = t.TempDir()
+	dir := filepath.Join(c.deploymentsDir, "billing")
+	if err := os.Mkdir(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "user.conf"), []byte("local"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(dir, "config")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../other", "compose.yaml", ".env", "compose.override.yaml", "user.conf", "config/nginx.conf"} {
+		req := DeployRequest{
+			ApplicationID: "app-123", ApplicationName: "billing",
+			ComposeFile:     "services:\n  app:\n    image: alpine\n",
+			AdditionalFiles: map[string][]byte{name: []byte("git")},
+		}
+		if err := c.Deploy(t.Context(), req); err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("Deploy(%q) error = %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, composeFileName)); !os.IsNotExist(err) {
+		t.Fatalf("rejected deployments wrote the Compose file: %v", err)
+	}
+}
