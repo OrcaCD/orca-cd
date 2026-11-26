@@ -106,7 +106,7 @@ export default function UpdateNotificationDialog({
 					)
 				}
 			></ResponsiveDialogTrigger>
-			<ResponsiveDialogContent className="sm:max-w-lg">
+			<ResponsiveDialogContent className="flex max-h-[90dvh] flex-col sm:max-w-lg">
 				<ResponsiveDialogHeader>
 					<ResponsiveDialogTitle>{m.editNotification()}</ResponsiveDialogTitle>
 					<ResponsiveDialogDescription>
@@ -114,6 +114,7 @@ export default function UpdateNotificationDialog({
 					</ResponsiveDialogDescription>
 				</ResponsiveDialogHeader>
 				<form
+					className="-m-1 min-h-0 min-w-0 flex-1 overflow-y-auto p-1"
 					onSubmit={async (event) => {
 						event.preventDefault();
 						await form.handleSubmit();
