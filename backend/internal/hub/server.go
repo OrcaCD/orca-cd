@@ -214,6 +214,7 @@ func Run(cfg Config) error {
 
 	err = RegisterRoutes(router, cfg)
 	if err != nil {
+		Log.Error().Err(err).Msg("failed to register routes")
 		return err
 	}
 

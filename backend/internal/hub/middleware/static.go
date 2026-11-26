@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,7 +34,16 @@ type preCompressedEntry struct {
 type preCompressedMap map[string]preCompressedEntry
 
 func RegisterStatic(router *gin.Engine) error {
-	frontendFS := os.DirFS("./frontend/dist")
+	const distDir = "frontend/dist"
+	frontendFS := os.DirFS(distDir)
+
+	if _, err := fs.Stat(frontendFS, indexHTMLPath); err != nil {
+		absDir, absErr := filepath.Abs(distDir)
+		if absErr != nil {
+			absDir = distDir
+		}
+		return fmt.Errorf("cannot load the web UI from %s: build the frontend or set DISABLE_UI=true (for development, use the Vite dev server): %w", absDir, err)
+	}
 
 	buildTime, err := time.Parse(time.RFC3339, version.BuildDate)
 	if err != nil {

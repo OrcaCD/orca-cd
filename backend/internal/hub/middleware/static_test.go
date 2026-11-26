@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -655,8 +656,14 @@ func TestRegisterStatic_ErrorWhenDistMissing(t *testing.T) {
 	}()
 
 	router := gin.New()
-	if err := RegisterStatic(router); err == nil {
+	err = RegisterStatic(router)
+	if err == nil {
 		t.Fatal("RegisterStatic() expected error when frontend/dist is missing, got nil")
+	}
+	for _, want := range []string{filepath.Join("frontend", "dist"), "DISABLE_UI=true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("RegisterStatic() error = %q, want it to contain %q", err, want)
+		}
 	}
 }
 
