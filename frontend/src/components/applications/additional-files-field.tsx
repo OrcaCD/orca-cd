@@ -1,15 +1,10 @@
-import { useId } from "react";
-import { FileText, X } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+import { ArrowUp, Check, ChevronDown, FileText, Folder, Search, X } from "lucide-react";
 import { m } from "@/lib/paraglide/messages";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 export const maxAdditionalFiles = 64;
 
@@ -56,13 +51,6 @@ export function AdditionalFilesField({
 	if (!composePath && value.length === 0) {
 		return null;
 	}
-	const available = entries
-		.filter((entry) => entry.type === "file" && !value.includes(entry.path))
-		.flatMap(({ path }) => {
-			const destination = additionalFileDestination(composePath, path);
-			return destination === null ? [] : [{ path, destination }];
-		})
-		.sort((a, b) => a.destination.localeCompare(b.destination));
 
 	return (
 		<Field>
@@ -96,31 +84,145 @@ export function AdditionalFilesField({
 					</ul>
 				)}
 				{!readOnly && (
-					<Select<string>
-						value={null}
-						onValueChange={(path) => {
-							if (path !== null) {
-								onChange([...value, path].sort());
-							}
-						}}
-					>
-						<SelectTrigger
-							aria-label={m.addAdditionalFile()}
-							disabled={available.length === 0 || value.length >= maxAdditionalFiles}
-							className="w-full"
-						>
-							<SelectValue placeholder={m.addAdditionalFile()} />
-						</SelectTrigger>
-						<SelectContent>
-							{available.map(({ path, destination }) => (
-								<SelectItem key={path} value={path}>
-									{destination}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+					<RepositoryFileBrowser
+						key={composePath}
+						composePath={composePath}
+						entries={entries}
+						value={value}
+						onChange={onChange}
+					/>
 				)}
 			</div>
 		</Field>
+	);
+}
+
+function RepositoryFileBrowser({
+	composePath,
+	entries,
+	value,
+	onChange,
+}: Omit<AdditionalFilesFieldProps, "readOnly">) {
+	const [folder, setFolder] = useState("");
+	const [query, setQuery] = useState("");
+	const files = useMemo(
+		() =>
+			entries
+				.flatMap(({ type, path }) => {
+					const destination = type === "file" ? additionalFileDestination(composePath, path) : null;
+					return destination === null ? [] : [{ path, destination }];
+				})
+				.sort((a, b) => a.destination.localeCompare(b.destination)),
+		[composePath, entries],
+	);
+	const search = query.trim().toLowerCase();
+	const prefix = folder ? folder + "/" : "";
+	const folders = new Set<string>();
+	const visibleFiles = files.filter(({ destination }) => {
+		if (search) {
+			return destination.toLowerCase().includes(search);
+		}
+		if (!destination.startsWith(prefix)) {
+			return false;
+		}
+		const relative = destination.slice(prefix.length);
+		const slash = relative.indexOf("/");
+		if (slash === -1) {
+			return true;
+		}
+		folders.add(relative.slice(0, slash));
+		return false;
+	});
+
+	return (
+		<Collapsible>
+			<CollapsibleTrigger
+				render={<Button type="button" variant="outline" className="w-full justify-between" />}
+			>
+				{m.browseAdditionalFiles()}
+				<ChevronDown aria-hidden="true" />
+			</CollapsibleTrigger>
+			<CollapsibleContent className="mt-2 overflow-hidden rounded-md border">
+				<div className="relative p-2">
+					<Search
+						aria-hidden="true"
+						className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						type="search"
+						aria-label={m.searchAdditionalFiles()}
+						placeholder={m.searchAdditionalFiles()}
+						value={query}
+						onChange={(event) => setQuery(event.currentTarget.value)}
+						className="pl-8"
+					/>
+				</div>
+				{!search && (
+					<div className="flex min-w-0 items-center gap-2 border-b px-2 pb-2">
+						{folder && (
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								aria-label={m.additionalFilesParentFolder()}
+								onClick={() => setFolder(folder.slice(0, Math.max(0, folder.lastIndexOf("/"))))}
+							>
+								<ArrowUp aria-hidden="true" />
+							</Button>
+						)}
+						<span
+							className="truncate px-2 font-mono text-xs text-muted-foreground"
+							title={`./${folder}`}
+						>
+							./{folder}
+						</span>
+					</div>
+				)}
+				<div key={search ? "search" : folder} className="max-h-48 overflow-y-auto p-1">
+					{[...folders].map((name) => (
+						<Button
+							key={name}
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="w-full justify-start"
+							onClick={() => setFolder(prefix + name)}
+						>
+							<Folder aria-hidden="true" />
+							<span className="truncate">{name}</span>
+						</Button>
+					))}
+					{visibleFiles.map(({ path, destination }) => {
+						const selected = value.includes(path);
+						return (
+							<Button
+								key={path}
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="w-full justify-start aria-pressed:bg-accent"
+								title={destination}
+								aria-pressed={selected}
+								disabled={!selected && value.length >= maxAdditionalFiles}
+								onClick={() =>
+									onChange(
+										selected ? value.filter((entry) => entry !== path) : [...value, path].sort(),
+									)
+								}
+							>
+								<FileText aria-hidden="true" />
+								<span className="min-w-0 flex-1 truncate text-left">
+									{search ? destination : destination.slice(prefix.length)}
+								</span>
+								{selected && <Check aria-hidden="true" />}
+							</Button>
+						);
+					})}
+					{folders.size === 0 && visibleFiles.length === 0 && (
+						<p className="px-2 py-3 text-sm text-muted-foreground">{m.noResults()}</p>
+					)}
+				</div>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }

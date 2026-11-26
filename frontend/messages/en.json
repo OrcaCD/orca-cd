@@ -1225,6 +1225,8 @@
 	"monitoringInspectDownload": "Download inspect data",
 	"additionalFiles": "Additional files",
 	"additionalFilesDescription": "Selected files are synced from Git and placed at these paths relative to the Compose file.",
-	"addAdditionalFile": "Add a file",
+	"browseAdditionalFiles": "Browse files",
+	"searchAdditionalFiles": "Search files",
+	"additionalFilesParentFolder": "Up one folder",
 	"removeAdditionalFile": "Remove {path}"
 }

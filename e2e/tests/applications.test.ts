@@ -407,11 +407,18 @@ test("syncs selected additional files and restores them on rollback", async ({ p
 		const dialog = await fillApplicationWizard(page, name, {
 			repositoryName: repoName,
 			selectFiles: async (dialog) => {
-				await selectOption(
-					page,
-					dialog.getByRole("combobox", { name: "Add a file" }),
-					"config/site.txt",
-				);
+				await dialog.getByRole("button", { name: "Browse files" }).click();
+				const search = dialog.getByRole("searchbox", { name: "Search files" });
+				await search.fill("CONFIG/SITE");
+				await expect(
+					dialog.getByRole("button", { name: "config/site.txt", exact: true }),
+				).toBeVisible();
+				await search.clear();
+				await dialog
+					.getByRole("group", { name: "Additional files" })
+					.getByRole("button", { name: "config", exact: true })
+					.click();
+				await dialog.getByRole("button", { name: "site.txt", exact: true }).click();
 				await expect(dialog.getByText("./config/site.txt", { exact: true })).toBeVisible();
 			},
 		});

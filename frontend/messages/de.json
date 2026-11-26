@@ -1225,6 +1225,8 @@
 	"monitoringInspectDownload": "Inspect-Daten herunterladen",
 	"additionalFiles": "Zusätzliche Dateien",
 	"additionalFilesDescription": "Ausgewählte Dateien werden aus Git synchronisiert und unter diesen Pfaden relativ zur Compose-Datei abgelegt.",
-	"addAdditionalFile": "Datei hinzufügen",
+	"browseAdditionalFiles": "Dateien durchsuchen",
+	"searchAdditionalFiles": "Dateien suchen",
+	"additionalFilesParentFolder": "Übergeordneter Ordner",
 	"removeAdditionalFile": "{path} entfernen"
 }
