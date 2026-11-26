@@ -30,6 +30,11 @@ import { cn } from "@/lib/utils";
 import { Switch } from "../ui/switch";
 import { Checkbox } from "../ui/checkbox";
 import { Separator } from "../ui/separator";
+import {
+	AdditionalFilesField,
+	additionalFileDestination,
+	maxAdditionalFiles,
+} from "@/components/applications/additional-files-field";
 import LucideIconPicker, { type LucideIconName } from "../lucide-icon-picker";
 
 export const applicationSchema = z.object({
@@ -54,6 +59,7 @@ export const applicationSchema = z.object({
 		.refine((val) => val.endsWith(".yml") || val.endsWith(".yaml"), {
 			message: m.validationPathMustBeYAML(),
 		}),
+	additionalFilePaths: z.array(z.string()).max(maxAdditionalFiles),
 	imagePollEnabled: z.boolean(),
 	imagePollIntervalSeconds: z.number().int().min(60, m.validationImagePollIntervalMin()),
 	deleteOldImages: z.boolean(),
@@ -69,7 +75,7 @@ type ApplicationStepId = "details" | "source" | "imagePolling";
 
 const applicationStepFields = {
 	details: ["name", "icon", "agentId", "deleteOldImages"],
-	source: ["repositoryId", "branch", "path"],
+	source: ["repositoryId", "branch", "path", "additionalFilePaths"],
 	imagePolling: ["imagePollEnabled", "imagePollIntervalSeconds"],
 } satisfies Record<ApplicationStepId, (keyof ApplicationFormValues)[]>;
 
@@ -350,6 +356,7 @@ export default function UpsertApplicationDialog({
 			agentId: application?.agentId ?? "",
 			branch: application?.branch ?? "",
 			path: application?.path ?? "",
+			additionalFilePaths: application?.additionalFilePaths ?? [],
 			imagePollEnabled: application?.imagePollEnabled ?? false,
 			imagePollIntervalSeconds: application?.imagePollIntervalSeconds || 120,
 			deleteOldImages: application?.deleteOldImages ?? false,
@@ -382,6 +389,7 @@ export default function UpsertApplicationDialog({
 
 	const repositoryId = useStore(form.store, (state) => state.values.repositoryId);
 	const branch = useStore(form.store, (state) => state.values.branch);
+	const composePath = useStore(form.store, (state) => state.values.path);
 	const imagePollEnabled = useStore(form.store, (state) => state.values.imagePollEnabled);
 
 	const { data: branches, isLoading: isBranchesLoading } = useFetch<string[]>(
@@ -389,7 +397,7 @@ export default function UpsertApplicationDialog({
 	);
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
-		branch ? `/repositories/${repositoryId}/tree?branch=${branch}` : null,
+		branch ? `/repositories/${repositoryId}/tree?branch=${encodeURIComponent(branch)}` : null,
 	);
 
 	const fileTree = useMemo(() => {
@@ -654,6 +662,7 @@ export default function UpsertApplicationDialog({
 																				field.handleChange(value ?? "");
 																				form.setFieldValue("branch", "");
 																				form.setFieldValue("path", "");
+																				form.setFieldValue("additionalFilePaths", []);
 																			}}
 																			items={
 																				repos?.map((repo) => ({
@@ -704,6 +713,7 @@ export default function UpsertApplicationDialog({
 																			onValueChange={(value) => {
 																				field.handleChange(value ?? "");
 																				form.setFieldValue("path", "");
+																				form.setFieldValue("additionalFilePaths", []);
 																			}}
 																			disabled={!repositoryId || isBranchesLoading}
 																			items={
@@ -775,7 +785,15 @@ export default function UpsertApplicationDialog({
 																						nodes={fileTree}
 																						depth={0}
 																						selectedPath={field.state.value}
-																						onSelectPath={(path) => field.handleChange(path)}
+																						onSelectPath={(path) => {
+																							field.handleChange(path);
+																							form.setFieldValue("additionalFilePaths", (files) =>
+																								files.filter(
+																									(file) =>
+																										additionalFileDestination(path, file) !== null,
+																								),
+																							);
+																						}}
 																					/>
 																				</div>
 																			)}
@@ -791,6 +809,17 @@ export default function UpsertApplicationDialog({
 																	</Field>
 																);
 															}}
+														/>
+														<form.Field
+															name="additionalFilePaths"
+															children={(field) => (
+																<AdditionalFilesField
+																	composePath={composePath}
+																	entries={fileTreeEntries ?? []}
+																	value={field.state.value}
+																	onChange={field.handleChange}
+																/>
+															)}
 														/>
 													</FieldGroup>
 												)}

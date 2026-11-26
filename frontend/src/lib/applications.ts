@@ -19,6 +19,7 @@ export interface Application {
 	lastSyncError?: string;
 	lastSyncSource?: ApplicationEventSource;
 	path: string;
+	additionalFilePaths: string[];
 	agentId: string;
 	agentName: string;
 	createdAt: string;
@@ -137,6 +138,7 @@ interface CreateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	additionalFilePaths?: string[];
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
 	deleteOldImages: boolean;
@@ -149,6 +151,7 @@ interface UpdateApplicationRequest {
 	agentId: string;
 	branch: string;
 	path: string;
+	additionalFilePaths?: string[];
 	imagePollEnabled: boolean;
 	imagePollIntervalSeconds: number;
 	deleteOldImages: boolean;

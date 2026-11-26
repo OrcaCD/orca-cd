@@ -1,3 +1,7 @@
+import {
+	AdditionalFilesField,
+	additionalFileDestination,
+} from "@/components/applications/additional-files-field";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,6 +81,10 @@ export const Route = createFileRoute("/_authenticated/applications/$id/settings/
 function affectsDeployment(previous: Application, updated: Application): boolean {
 	return (
 		previous.composeFile !== updated.composeFile ||
+		previous.additionalFilePaths.length !== updated.additionalFilePaths.length ||
+		previous.additionalFilePaths.some(
+			(path, index) => path !== updated.additionalFilePaths[index],
+		) ||
 		previous.agentId !== updated.agentId ||
 		previous.name !== updated.name
 	);
@@ -119,6 +127,7 @@ function GeneralSettingsPage() {
 			agentId: application?.agentId ?? "",
 			branch: application?.branch ?? "",
 			path: application?.path ?? "",
+			additionalFilePaths: application?.additionalFilePaths ?? [],
 			imagePollEnabled: application?.imagePollEnabled ?? false,
 			imagePollIntervalSeconds: application?.imagePollIntervalSeconds || 120,
 			deleteOldImages: application?.deleteOldImages ?? false,
@@ -168,6 +177,7 @@ function GeneralSettingsPage() {
 		!!application && (name.trim() !== application.name || agentId !== application.agentId);
 	const repositoryId = useStore(form.store, (state) => state.values.repositoryId);
 	const branch = useStore(form.store, (state) => state.values.branch);
+	const composePath = useStore(form.store, (state) => state.values.path);
 	const isPristine = useStore(form.store, (state) => state.isDefaultValue);
 
 	// Without read access to the repository, its branches and files can't be loaded
@@ -178,7 +188,7 @@ function GeneralSettingsPage() {
 
 	const { data: fileTreeEntries, isLoading: isFileTreeLoading } = useFetch<RepositoryTreeEntry[]>(
 		branch && canChangeSource && canReadRepository
-			? `/repositories/${repositoryId}/tree?branch=${branch}`
+			? `/repositories/${repositoryId}/tree?branch=${encodeURIComponent(branch)}`
 			: null,
 	);
 
@@ -336,6 +346,7 @@ function GeneralSettingsPage() {
 														field.handleChange(value ?? "");
 														form.setFieldValue("branch", "");
 														form.setFieldValue("path", "");
+														form.setFieldValue("additionalFilePaths", []);
 													}}
 													disabled={!canChangeSource}
 													items={repositoryOptions}
@@ -377,6 +388,7 @@ function GeneralSettingsPage() {
 													onValueChange={(value) => {
 														field.handleChange(value ?? "");
 														form.setFieldValue("path", "");
+														form.setFieldValue("additionalFilePaths", []);
 													}}
 													disabled={!canChangeSource || !repositoryId || isBranchesLoading}
 													items={branchOptions.map((branch) => ({
@@ -459,7 +471,14 @@ function GeneralSettingsPage() {
 																	nodes={fileTree}
 																	depth={0}
 																	selectedPath={field.state.value}
-																	onSelectPath={(path) => field.handleChange(path)}
+																	onSelectPath={(path) => {
+																		field.handleChange(path);
+																		form.setFieldValue("additionalFilePaths", (files) =>
+																			files.filter(
+																				(file) => additionalFileDestination(path, file) !== null,
+																			),
+																		);
+																	}}
 																/>
 															</div>
 														)}
@@ -470,6 +489,17 @@ function GeneralSettingsPage() {
 										</Field>
 									);
 								}}
+							</form.Field>
+							<form.Field name="additionalFilePaths">
+								{(field) => (
+									<AdditionalFilesField
+										composePath={composePath}
+										entries={fileTreeEntries ?? []}
+										value={field.state.value}
+										onChange={field.handleChange}
+										readOnly={!canChangeSource || !canReadRepository}
+									/>
+								)}
 							</form.Field>
 						</FormSection>
 
