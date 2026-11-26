@@ -97,6 +97,10 @@ func (c *Client) declaredEnvFiles(ctx context.Context, root *os.Root, projectNam
 	} else if err != nil {
 		return nil, fmt.Errorf("check compose file: %w", err)
 	}
+	manifest, err := loadDeploymentFilesManifest(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read managed deployment files: %w", err)
+	}
 
 	// Skipping the environment resolution keeps a missing env file from failing
 	// the load.
@@ -115,7 +119,7 @@ func (c *Client) declaredEnvFiles(ctx context.Context, root *os.Root, projectNam
 				continue
 			}
 			rel, ok := utils.RelativePathInDir(dir, envFile.Path)
-			if !ok {
+			if !ok || slices.Contains(manifest.Paths, rel) {
 				continue
 			}
 			idx, seen := indexByPath[rel]
