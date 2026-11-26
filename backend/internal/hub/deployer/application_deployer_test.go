@@ -271,3 +271,30 @@ func TestDeployAndRollbackAdditionalFiles(t *testing.T) {
 		t.Fatalf("rollback to Compose-only snapshot needs an explicit empty set, got %v", got)
 	}
 }
+
+func TestEmptyFilesDeploymentOnOlderAgent(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t)
+	app.PendingFilesRevision = "removed"
+	nop := zerolog.Nop()
+	sender := &mockSender{connected: true, fileSyncUnsupported: true}
+	d := NewApplicationDeployer(sender, &nop)
+	if err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "compose-only"); err != nil {
+		t.Fatalf("an empty selection should work on an older agent: %v", err)
+	}
+
+	deployed := models.ApplicationDeployment{
+		ApplicationId:   app.Id,
+		AdditionalFiles: `{"config/site.txt":"YQ=="}`,
+		Status:          models.DeploymentSucceeded,
+		Images:          []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployed); err != nil {
+		t.Fatal(err)
+	}
+	app.CurrentDeploymentId = &deployed.Id
+	err := d.TriggerApplicationDeploy(t.Context(), &app, app.ComposeFile.String(), "remove-deployed-files")
+	if !errors.Is(err, ErrAgentFileSyncUnsupported) {
+		t.Fatalf("removing previously deployed files should require support: %v", err)
+	}
+}

@@ -62,7 +62,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 	if _, err := deployments.Start(ctx, app, composeFile, requestID); err != nil {
 		d.log.Error().Err(err).Str("applicationId", app.Id).Msg("failed to record deployment")
 		// A Compose-only deployment can still run without a rollback snapshot.
-		if required {
+		if required || app.PendingFilesRevision != "" {
 			d.recordDispatchFailure(ctx, app, requestID, "could not record deployment files for rollback")
 			return err
 		}
@@ -116,7 +116,7 @@ func deploymentFiles(ctx context.Context, app *models.Application, stored crypto
 	if err != nil {
 		return nil, false, err
 	}
-	required := len(files) != 0 || app.AdditionalFiles != "" || app.PendingFilesRevision != ""
+	required := len(files) != 0 || app.AdditionalFiles != ""
 	if !required && app.CurrentDeploymentId != nil {
 		count, err := gorm.G[models.ApplicationDeployment](db.DB).
 			Where("id = ? AND application_id = ? AND additional_files <> ''", *app.CurrentDeploymentId, app.Id).
