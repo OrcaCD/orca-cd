@@ -74,10 +74,11 @@ func TestProcessSyncJob_ComposeConfig_AppliedBeforeDeploy(t *testing.T) {
 	}
 }
 
-// seedSyncedApp seeds an application whose last deployment succeeded.
-func seedSyncedApp(t *testing.T, compose string) models.Application {
+// seedSyncedApp seeds an application with composeWithoutConfig whose last
+// deployment succeeded.
+func seedSyncedApp(t *testing.T) models.Application {
 	t.Helper()
-	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, compose)
+	app := seedApp(t, seedRepo(t).Id, seedAgent(t).Id, composeWithoutConfig)
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
 		Updates(t.Context(), models.Application{SyncStatus: models.Synced}); err != nil {
 		t.Fatal(err)
@@ -87,7 +88,7 @@ func seedSyncedApp(t *testing.T, compose string) models.Application {
 
 func TestProcessSyncJob_ComposeConfig_OnlySettingsChangedDoesNotDeploy(t *testing.T) {
 	setupTestDB(t)
-	app := seedSyncedApp(t, composeWithoutConfig)
+	app := seedSyncedApp(t)
 	compose := "x-orcacd:\n  delete-old-images: true\n\n" + composeWithoutConfig
 
 	stub := runComposeSync(t, app, compose)
@@ -183,7 +184,7 @@ func TestProcessSyncJob_ComposeConfig_OnlySettingsChangedDeploysWhenOutOfSync(t 
 
 func TestProcessSyncJob_ComposeConfig_KeepsChangesMadeWhileQueued(t *testing.T) {
 	setupTestDB(t)
-	app := seedSyncedApp(t, composeWithoutConfig)
+	app := seedSyncedApp(t)
 	// The icon changes through the API after the job was queued.
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
 		Updates(t.Context(), models.Application{Icon: "rocket"}); err != nil {
