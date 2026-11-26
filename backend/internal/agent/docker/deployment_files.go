@@ -32,6 +32,7 @@ type deploymentFilesManifest struct {
 type deploymentFileChange struct {
 	name     string
 	previous []byte
+	mode     fs.FileMode
 	existed  bool
 	content  []byte
 	selected bool
@@ -75,7 +76,7 @@ func loadDeploymentFilesManifest(dir string) (deploymentFilesManifest, error) {
 		return manifest, err
 	}
 	defer func() { _ = root.Close() }()
-	data, exists, err := readDeploymentAsset(root, filepath.Base(dir)+".json", maxManifestBytes)
+	data, exists, _, err := readDeploymentAsset(root, filepath.Base(dir)+".json", maxManifestBytes)
 	if err != nil || !exists {
 		return manifest, err
 	}
@@ -114,7 +115,7 @@ func prepareDeploymentFiles(root *os.Root, dir string, previous deploymentFilesM
 	update := &deploymentFilesUpdate{root: root, dir: dir, previous: previous, current: previous}
 	oldSize := 0
 	for _, name := range slices.Sorted(maps.Keys(allPaths)) {
-		old, exists, err := readDeploymentAsset(root, name, 2*deployfiles.MaxBytes-oldSize)
+		old, exists, mode, err := readDeploymentAsset(root, name, 2*deployfiles.MaxBytes-oldSize)
 		if err != nil {
 			return nil, fmt.Errorf("read deployment file %q: %w", name, err)
 		}
@@ -125,7 +126,7 @@ func prepareDeploymentFiles(root *os.Root, dir string, previous deploymentFilesM
 		content, selected := files[name]
 		if exists != selected || (selected && !bytes.Equal(content, old)) {
 			update.changes = append(update.changes, deploymentFileChange{
-				name: name, previous: old, existed: exists, content: content, selected: selected,
+				name: name, previous: old, mode: mode, existed: exists, content: content, selected: selected,
 			})
 		}
 	}
@@ -156,7 +157,7 @@ func (u *deploymentFilesUpdate) apply() error {
 	}
 	u.manifestChanged = true
 	for _, change := range u.changes {
-		if err := setDeploymentAsset(u.root, change.name, change.content, change.selected); err != nil {
+		if err := setDeploymentAsset(u.root, change.name, change.content, change.selected, 0o644); err != nil {
 			return fmt.Errorf("apply deployment file %q: %w", change.name, err)
 		}
 		u.applied++
@@ -180,7 +181,7 @@ func (u *deploymentFilesUpdate) restore() error {
 	var err error
 	for i := u.applied - 1; i >= 0; i-- {
 		change := u.changes[i]
-		if restoreErr := setDeploymentAsset(u.root, change.name, change.previous, change.existed); restoreErr != nil {
+		if restoreErr := setDeploymentAsset(u.root, change.name, change.previous, change.existed, change.mode); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("restore deployment file %q: %w", change.name, restoreErr))
 		}
 	}
@@ -226,39 +227,39 @@ func storeDeploymentFilesManifest(dir string, manifest deploymentFilesManifest) 
 	return nil
 }
 
-func readDeploymentAsset(root *os.Root, name string, limit int) ([]byte, bool, error) {
+func readDeploymentAsset(root *os.Root, name string, limit int) ([]byte, bool, fs.FileMode, error) {
 	parent, err := openDeploymentAssetParent(root, name, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	defer func() { _ = parent.Close() }()
 	base := filepath.Base(name)
 	info, err := parent.Lstat(base)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, false, nil
+		return nil, false, 0, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, false, errors.New("not a regular file")
+		return nil, false, 0, errors.New("not a regular file")
 	}
 	file, err := parent.Open(base)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if len(data) > limit {
-		return nil, false, errors.New("managed files exceed the size limit")
+		return nil, false, 0, errors.New("managed files exceed the size limit")
 	}
-	return data, true, err
+	return data, true, info.Mode().Perm(), err
 }
 
-func setDeploymentAsset(root *os.Root, name string, content []byte, exists bool) error {
+func setDeploymentAsset(root *os.Root, name string, content []byte, exists bool, mode fs.FileMode) error {
 	parent, err := openDeploymentAssetParent(root, name, exists)
 	if err != nil {
 		if !exists && errors.Is(err, fs.ErrNotExist) {
@@ -269,7 +270,7 @@ func setDeploymentAsset(root *os.Root, name string, content []byte, exists bool)
 	defer func() { _ = parent.Close() }()
 	base := filepath.Base(name)
 	if exists {
-		return writeRootFileAtomicWithMode(parent, base, content, 0o644)
+		return writeRootFileAtomicWithMode(parent, base, content, mode)
 	}
 	info, err := parent.Lstat(base)
 	if errors.Is(err, fs.ErrNotExist) {
