@@ -2,6 +2,7 @@ package releaseage
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
@@ -52,5 +53,32 @@ func TestPolicy(t *testing.T) {
 				t.Errorf("Policy = %v", policy)
 			}
 		})
+	}
+}
+
+func TestNormalizeRegistries(t *testing.T) {
+	got, ok := NormalizeRegistries([]string{" GHCR.io ", "ghcr.io", "registry.local:5000"})
+	if !ok || !slices.Equal(got, []string{"ghcr.io", "registry.local:5000"}) {
+		t.Errorf("NormalizeRegistries() = %v, %v", got, ok)
+	}
+	if got, ok := NormalizeRegistries(nil); !ok || got == nil || len(got) != 0 {
+		t.Errorf("expected no registries to give an empty list, got %v, %v", got, ok)
+	}
+
+	tooMany := make([]string, maxAllowedRegistries+1)
+	for i := range tooMany {
+		tooMany[i] = "registry.local"
+	}
+	for name, registries := range map[string][]string{
+		"empty":    {" "},
+		"path":     {"ghcr.io/owner"},
+		"space":    {"ghcr .io"},
+		"digest":   {"ghcr.io@sha256"},
+		"too long": {strings.Repeat("a", maxRegistryLength+1)},
+		"too many": tooMany,
+	} {
+		if _, ok := NormalizeRegistries(registries); ok {
+			t.Errorf("%s: expected %v to be rejected", name, registries)
+		}
 	}
 }
