@@ -3,6 +3,7 @@ package applications
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
@@ -382,3 +383,93 @@ func TestQueueEnqueueFullQueueRecordsFailedEvent(t *testing.T) {
 }
 
 var _ repositories.Provider = (*mockProvider)(nil)
+
+type fileSyncProvider struct {
+	mockProvider
+	contentByPath map[string]string
+	refs          []string
+}
+
+func (p *fileSyncProvider) GetFileContent(_ context.Context, _ *models.Repository, ref, path string) (string, error) {
+	p.refs = append(p.refs, ref)
+	content, ok := p.contentByPath[path]
+	if !ok {
+		return "", errors.New("file not found")
+	}
+	return content, nil
+}
+
+func TestProcessSyncJobAdditionalFiles(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	const compose = "services: {}\n"
+	app := seedApp(t, repo.Id, agent.Id, compose)
+	app.AdditionalFilePaths = []string{"conf/site.txt"}
+	app.AdditionalFiles = `{"conf/site.txt":"b2xk"}`
+
+	stub := &stubDeployer{}
+	oldDeployer := application_deployer.DefaultApplicationDeployer
+	application_deployer.DefaultApplicationDeployer = stub
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = oldDeployer })
+
+	provider := &fileSyncProvider{contentByPath: map[string]string{app.Path: compose, "conf/site.txt": "new"}}
+	nop := zerolog.Nop()
+	job := syncJob{
+		Application: app, Repository: repo, RepositoryProvider: provider,
+		Commit: "files-changed", Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
+	}
+	processSyncJob(t.Context(), job, &nop)
+	if !stub.called || len(provider.refs) != 2 || provider.refs[0] != job.Commit || provider.refs[1] != job.Commit {
+		t.Fatalf("file-only commit: deploy called = %v, fetch refs = %v", stub.called, provider.refs)
+	}
+	updated, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := models.DecodeDeploymentFiles(updated.AdditionalFiles)
+	if err != nil || string(files["conf/site.txt"]) != "new" || updated.Commit != job.Commit {
+		t.Fatalf("updated bundle = %v, commit = %q, error = %v", files, updated.Commit, err)
+	}
+
+	delete(provider.contentByPath, "conf/site.txt")
+	updated.AdditionalFilePaths = app.AdditionalFilePaths
+	job.Application, job.Commit, stub.called = updated, "file-removed", false
+	processSyncJob(t.Context(), job, &nop)
+	if stub.called {
+		t.Fatal("deployed an incomplete bundle")
+	}
+	afterFailure, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailure.Commit != updated.Commit || afterFailure.AdditionalFiles != updated.AdditionalFiles ||
+		afterFailure.LastSyncError == nil || !strings.Contains(*afterFailure.LastSyncError, "conf/site.txt") {
+		t.Fatalf("missing file changed the bundle or failed to name the path: %+v", afterFailure)
+	}
+}
+
+func TestProcessSyncJobDeploysPendingFileSelectionAtSameCommit(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	const compose = "services: {}\n"
+	app := seedApp(t, repo.Id, agent.Id, compose)
+	app.PendingFilesRevision = "deselected"
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("PendingFilesRevision").Updates(t.Context(), app); err != nil {
+		t.Fatal(err)
+	}
+	stub := &stubDeployer{}
+	oldDeployer := application_deployer.DefaultApplicationDeployer
+	application_deployer.DefaultApplicationDeployer = stub
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = oldDeployer })
+	nop := zerolog.Nop()
+	processSyncJob(t.Context(), syncJob{
+		Application: app, Repository: repo, RepositoryProvider: &mockProvider{fileContent: compose},
+		Commit: app.Commit, Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
+	}, &nop)
+	if !stub.called {
+		t.Fatal("pending file selection did not deploy at the same commit")
+	}
+}

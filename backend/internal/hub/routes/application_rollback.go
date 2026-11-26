@@ -75,6 +75,9 @@ var RollbackApplicationHandler = restapi.Handler(huma.Operation{
 		if errors.Is(err, application_deployer.ErrAgentOffline) {
 			return nil, huma.Error409Conflict("agent is offline; cannot roll back application")
 		}
+		if errors.Is(err, application_deployer.ErrAgentFileSyncUnsupported) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("failed to trigger rollback")
 	}
 

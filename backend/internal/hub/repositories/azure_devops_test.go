@@ -589,3 +589,26 @@ func assertAzureDevOpsRequest(t *testing.T, req *http.Request, expectedPath stri
 		t.Fatalf("expected JSON accept header, got %q", req.Header.Get("Accept"))
 	}
 }
+
+func TestAzureDevOpsFetchesRawFileAtCommit(t *testing.T) {
+	originalClient := httpclient.Default
+	t.Cleanup(func() { httpclient.Default = originalClient })
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	const body = "\x00\xffbinary\n"
+	httpclient.Default = mockClient(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != testAzureDevOpsAPIPath+"/items" {
+			t.Fatalf("unexpected path: %s", req.URL.Path)
+		}
+		query := req.URL.Query()
+		if query.Get("versionDescriptor.versionType") != "commit" ||
+			query.Get("versionDescriptor.version") != sha || req.Header.Get("Accept") != "application/octet-stream" {
+			t.Fatalf("wrong ref or Accept header: %s, %s", req.URL, req.Header.Get("Accept"))
+		}
+		return jsonResponseWithBody(http.StatusOK, body), nil
+	})
+	repo := &models.Repository{Url: testAzureDevOpsRepoURL, AuthMethod: models.AuthMethodNone}
+	content, err := (azureDevOpsProvider{}).GetFileContent(t.Context(), repo, sha, "config.bin")
+	if err != nil || content != body {
+		t.Fatalf("get commit file = %q, %v", content, err)
+	}
+}

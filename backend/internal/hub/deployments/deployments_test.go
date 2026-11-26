@@ -720,3 +720,24 @@ func TestRejectKeepsDeploymentWhenEventCompletionFails(t *testing.T) {
 		t.Errorf("expected running event to keep its deployment after failed rejection, got %+v", got)
 	}
 }
+
+func TestRecordImageUpdateKeepsRunningDeploymentFiles(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	app.AdditionalFiles = `{"config/site.txt":"b2xk"}`
+	active := succeedDeployment(t, &app, "req-original", 0)
+	app.Commit = "new-settings"
+	app.AdditionalFiles = `{"config/site.txt":"bmV3"}`
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("Commit", "AdditionalFiles").Updates(t.Context(), app); err != nil {
+		t.Fatal(err)
+	}
+
+	deployment, err := RecordImageUpdate(t.Context(), app.Id, "req-image-files", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deployment.Commit != active.Commit || deployment.AdditionalFiles != active.AdditionalFiles {
+		t.Fatalf("image update recorded desired settings instead of the running snapshot: %+v", deployment)
+	}
+}

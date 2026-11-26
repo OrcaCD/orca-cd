@@ -1977,3 +1977,54 @@ func TestUpdateApplicationHandler_ResetsWarningsOnlyWhenComposeFileChanges(t *te
 		})
 	}
 }
+
+func TestApplicationAdditionalFileSelection(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-extra-files")
+	agent := seedTestAgent(t, "agent-extra-files")
+	payload := map[string]any{
+		"name": "With files", "repositoryId": repo.Id, "agentId": agent.Id,
+		"branch": "main", "path": "stack/compose.yaml",
+		"additionalFilePaths": []string{"stack/config/site.conf"},
+	}
+	send := func(method, id string) applicationResponse {
+		t.Helper()
+		data, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, w := makeAuthContext(t, "user-1")
+		c.Request = httptest.NewRequest(method, "/api/v1/applications"+id, bytes.NewReader(data))
+		c.Request.Header.Set("Content-Type", "application/json")
+		if method == http.MethodPost {
+			CreateApplicationHandler(c)
+		} else {
+			c.Params = []gin.Param{{Key: "id", Value: strings.TrimPrefix(id, "/")}}
+			UpdateApplicationHandler(c)
+		}
+		if w.Code != http.StatusCreated && w.Code != http.StatusOK {
+			t.Fatalf("%s application: %d %s", method, w.Code, w.Body.String())
+		}
+		var body applicationResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	created := send(http.MethodPost, "")
+	if len(created.AdditionalFilePaths) != 1 || created.AdditionalFilePaths[0] != "stack/config/site.conf" {
+		t.Fatalf("created selection = %v", created.AdditionalFilePaths)
+	}
+	delete(payload, "additionalFilePaths")
+	if unchanged := send(http.MethodPut, "/"+created.Id); len(unchanged.AdditionalFilePaths) != 1 {
+		t.Fatalf("omitting paths changed the selection: %v", unchanged.AdditionalFilePaths)
+	}
+	payload["additionalFilePaths"] = []string{}
+	if cleared := send(http.MethodPut, "/"+created.Id); cleared.AdditionalFilePaths == nil || len(cleared.AdditionalFilePaths) != 0 {
+		t.Fatalf("cleared selection = %#v", cleared.AdditionalFilePaths)
+	}
+	stored, err := gorm.G[models.Application](db.DB).Where("id = ?", created.Id).First(t.Context())
+	if err != nil || stored.AdditionalFiles != "" || stored.PendingFilesRevision == "" {
+		t.Fatalf("deselection did not clear cached files and mark the edit as pending: %+v, %v", stored, err)
+	}
+}

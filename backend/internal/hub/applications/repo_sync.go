@@ -165,7 +165,7 @@ func verifySyncCommit(ctx context.Context, provider repositories.Provider, repo 
 
 func allAtCommit(apps []models.Application, hash string) bool {
 	for i := range apps {
-		if apps[i].Commit != hash {
+		if apps[i].Commit != hash || apps[i].PendingFilesRevision != "" {
 			return false
 		}
 	}
