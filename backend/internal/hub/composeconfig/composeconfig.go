@@ -27,6 +27,9 @@ type Config struct {
 	values map[string]any
 	// unreadable is set for a file that isn't valid YAML.
 	unreadable bool
+	// serviceReleaseAges holds the release ages that x-orcacd of the compose
+	// services sets, by service name.
+	serviceReleaseAges map[string]int64
 }
 
 // maxComposeSize is the largest compose file that is parsed. Larger files
@@ -38,28 +41,33 @@ const maxComposeSize = 1 << 20
 // isn't valid YAML leaves the settings as they are, the agent reports it when
 // it deploys the file.
 func Parse(compose string) (*Config, error) {
-	cfg := &Config{values: map[string]any{}}
+	cfg := &Config{values: map[string]any{}, serviceReleaseAges: map[string]int64{}}
 	var document map[string]any
 	if len(compose) > maxComposeSize || yaml.Unmarshal([]byte(compose), &document) != nil {
 		cfg.unreadable = true
 		return cfg, nil
 	}
-	raw, ok := document[Key]
-	if !ok || raw == nil {
-		return cfg, nil
-	}
-	block, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must be a mapping", Key)
-	}
-	errs := []error{parseGroup(cfg, block, settingsTree, Key)}
-	if cfg.values[SettingRollbackOnDeployFailure] == false && cfg.values[SettingRollbackOnUnhealthy] == false {
-		errs = append(errs, fmt.Errorf("%s.rollback: on-deploy-failure and on-unhealthy can't both be false", Key))
+	errs := []error{parseServices(cfg, document["services"])}
+	if raw := document[Key]; raw != nil {
+		errs = append(errs, parseBlock(cfg, raw))
 	}
 	if err := joinErrors(errs); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// parseBlock reads the top-level x-orcacd block.
+func parseBlock(cfg *Config, raw any) error {
+	block, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("%s must be a mapping", Key)
+	}
+	errs := []error{parseGroup(cfg, block, settingsTree, Key)}
+	if cfg.values[SettingRollbackOnDeployFailure] == false && cfg.values[SettingRollbackOnUnhealthy] == false {
+		errs = append(errs, fmt.Errorf("%s.rollback: on-deploy-failure and on-unhealthy can't both be false", Key))
+	}
+	return errors.Join(errs...)
 }
 
 // maxErrors and maxErrorLength bound the error of a compose file, which is
@@ -106,6 +114,9 @@ func (c *Config) Managed() []string {
 			names = append(names, s.name)
 		}
 	}
+	for _, service := range sortedKeys(c.serviceReleaseAges) {
+		names = append(names, ServiceReleaseAgeSetting(service))
+	}
 	return names
 }
 
@@ -131,6 +142,7 @@ func (c *Config) Apply(app *models.Application) []string {
 			changed = append(changed, s.column)
 		}
 	}
+	changed = append(changed, c.applyServices(app)...)
 	app.ManagedSettings = c.Managed()
 	return changed
 }
@@ -142,6 +154,7 @@ func CopySettings(dst, src *models.Application) {
 		s.set(dst, s.get(src))
 	}
 	dst.ManagedSettings = src.ManagedSettings
+	dst.ReleaseAgeServiceOverrides = src.ReleaseAgeServiceOverrides
 }
 
 // ManagedChanges returns the settings managed by Git whose value differs
@@ -196,6 +209,15 @@ func decodeWithoutConfig(compose string) (map[string]any, bool) {
 		return nil, false
 	}
 	delete(document, Key)
+	if services, ok := asMap(document["services"]); ok {
+		for name, service := range services {
+			if block, ok := asMap(service); ok {
+				delete(block, Key)
+				services[name] = block
+			}
+		}
+		document["services"] = services
+	}
 	return document, true
 }
 
@@ -239,7 +261,7 @@ func parseGroup(cfg *Config, block map[string]any, group *node, path string) err
 	return errors.Join(errs...)
 }
 
-func sortedKeys(m map[string]any) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)

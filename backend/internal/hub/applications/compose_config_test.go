@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -221,5 +222,36 @@ func TestProcessSyncJob_ComposeConfig_InvalidCommitFailsOncePerPoll(t *testing.T
 
 	if events := loadAppEvents(t, app.Id); len(events) != 1 {
 		t.Errorf("expected one failed event for the invalid commit, got %d", len(events))
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_ServiceReleaseAgeDoesNotDeploy(t *testing.T) {
+	setupTestDB(t)
+	app := seedSyncedApp(t)
+
+	stub := runComposeSync(t, app, "services:\n  app:\n    image: myimage:1.0\n    x-orcacd:\n      release-age: 2h\n")
+
+	if stub.called {
+		t.Error("expected no deployment when only x-orcacd of a service changed")
+	}
+	if got := loadApp(t, app.Id).ReleaseAgeServiceOverrides["app"]; got != 7200 {
+		t.Errorf("expected the release age of app to be saved, got %d", got)
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_KeepsServiceReleaseAgesSetWhileQueued(t *testing.T) {
+	setupTestDB(t)
+	app := seedSyncedApp(t)
+	// The release age of web changes through the API after the job was queued.
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
+		Update("release_age_service_overrides", `{"web":3600}`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	runComposeSync(t, app, "services:\n  app:\n    image: myimage:1.0\n    x-orcacd:\n      release-age: 2h\n")
+
+	want := map[string]int64{"web": 3600, "app": 7200}
+	if got := loadApp(t, app.Id).ReleaseAgeServiceOverrides; !maps.Equal(got, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", got, want)
 	}
 }

@@ -5,7 +5,14 @@
   "description": "The Compose specification with the x-orcacd extension, which sets the OrcaCD settings of the application.",
   "allOf": [{ "$ref": "https://raw.githubusercontent.com/compose-spec/compose-spec/main/schema/compose-spec.json" }],
   "properties": {
-    "x-orcacd": { "$ref": "#/$defs/orcacd" }
+    "x-orcacd": { "$ref": "#/$defs/orcacd" },
+    "services": {
+      "additionalProperties": {
+        "properties": {
+          "x-orcacd": { "$ref": "#/$defs/service" }
+        }
+      }
+    }
   },
   "$defs": {
     "duration": {
@@ -14,6 +21,17 @@
         { "type": "integer", "minimum": 0 },
         { "type": "string", "pattern": "^\\s*((\\d+d)((\\d+(\\.\\d+)?(h|m|s|ms|us|µs|ns))*)|(\\d+(\\.\\d+)?(h|m|s|ms|us|µs|ns))+|0)\\s*$" }
       ]
+    },
+    "service": {
+      "type": ["object", "null"],
+      "description": "OrcaCD settings of this service.",
+      "additionalProperties": false,
+      "properties": {
+        "release-age": {
+          "$ref": "#/$defs/duration",
+          "description": "The minimum release age of the image of this service, at most 365d. The global minimum still applies when it is higher."
+        }
+      }
     },
     "orcacd": {
       "type": ["object", "null"],

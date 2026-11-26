@@ -341,3 +341,106 @@ func TestSameWithoutConfig_ComparesDecodedFiles(t *testing.T) {
 		t.Error("expected comments and indentation not to count as changes")
 	}
 }
+
+func TestParse_ServiceReleaseAges(t *testing.T) {
+	cfg := mustParse(t, `
+services:
+  web:
+    image: nginx
+    x-orcacd:
+      release-age: 2d
+  db:
+    image: postgres
+`)
+	app := defaultApplication()
+	app.ReleaseAgeServiceOverrides = map[string]int64{"db": 60}
+	changed := cfg.Apply(&app)
+
+	if want := map[string]int64{"db": 60, "web": 2 * 24 * 60 * 60}; !reflect.DeepEqual(app.ReleaseAgeServiceOverrides, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", app.ReleaseAgeServiceOverrides, want)
+	}
+	if !slices.Equal(app.ManagedSettings, []string{ServiceReleaseAgeSetting("web")}) {
+		t.Errorf("ManagedSettings = %v", app.ManagedSettings)
+	}
+	if !slices.Equal(changed, []string{"ReleaseAgeServiceOverrides"}) {
+		t.Errorf("changed = %v, want [ReleaseAgeServiceOverrides]", changed)
+	}
+	if changed := cfg.Apply(&app); len(changed) != 0 {
+		t.Errorf("expected applying the same config again to change nothing, got %v", changed)
+	}
+
+	// Removing x-orcacd of a service removes its release age, but keeps
+	// release ages set through the API.
+	changed = mustParse(t, "services:\n  web:\n    image: nginx\n").Apply(&app)
+	if want := map[string]int64{"db": 60}; !reflect.DeepEqual(app.ReleaseAgeServiceOverrides, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", app.ReleaseAgeServiceOverrides, want)
+	}
+	if len(changed) != 1 || len(app.ManagedSettings) != 0 {
+		t.Errorf("changed = %v, managed = %v", changed, app.ManagedSettings)
+	}
+}
+
+func TestParse_ServiceErrors(t *testing.T) {
+	_, err := Parse("services:\n  web:\n    x-orcacd:\n      release-age: soon\n      image-poll: false\n  api:\n    x-orcacd: true\n")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{
+		`services."web".x-orcacd.release-age:`,
+		`services."web".x-orcacd: unknown key "image-poll"`,
+		`services."api".x-orcacd: must be a mapping`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+func TestParse_TooManyServiceReleaseAges(t *testing.T) {
+	var compose strings.Builder
+	compose.WriteString("services:\n")
+	for i := range maxServiceReleaseAges + 1 {
+		fmt.Fprintf(&compose, "  s%d:\n    x-orcacd:\n      release-age: 1h\n", i)
+	}
+	if _, err := Parse(compose.String()); err == nil || !strings.Contains(err.Error(), "at most 100 services") {
+		t.Errorf("expected an error for too many release ages, got %v", err)
+	}
+}
+
+func TestParse_NumericServiceName(t *testing.T) {
+	cfg := mustParse(t, "services:\n  2048:\n    image: game\n    x-orcacd:\n      release-age: 1h\n")
+	app := defaultApplication()
+	cfg.Apply(&app)
+	if app.ReleaseAgeServiceOverrides["2048"] != 3600 {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want 2048 set", app.ReleaseAgeServiceOverrides)
+	}
+}
+
+func TestSameWithoutConfig_Services(t *testing.T) {
+	base := "services:\n  web:\n    image: nginx\n"
+	withService := "services:\n  web:\n    image: nginx\n    x-orcacd:\n      release-age: 1d\n"
+	if !SameWithoutConfig(base, withService) {
+		t.Error("expected files that only differ in x-orcacd of a service to be the same")
+	}
+	if SameWithoutConfig(base, "services:\n  web:\n    image: nginx:2\n    x-orcacd:\n      release-age: 1d\n") {
+		t.Error("expected a changed image to be a change")
+	}
+}
+
+func TestSchemaMatchesServiceSettings(t *testing.T) {
+	data, err := os.ReadFile("compose.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Defs map[string]json.RawMessage `json:"$defs"`
+	}
+	if err := json.Unmarshal(data, &schema); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	collectSchemaPaths(t, schema.Defs["service"], "", &paths)
+	if want := []string{"release-age"}; !slices.Equal(paths, want) {
+		t.Errorf("schema keys = %v, want %v", paths, want)
+	}
+}

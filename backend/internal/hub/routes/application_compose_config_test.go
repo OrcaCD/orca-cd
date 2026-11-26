@@ -238,3 +238,34 @@ func TestUpdateReleaseAgeSettingsHandler_ManagedAgeBelowGlobalMinimum(t *testing
 		t.Errorf("allowedRegistries = %v, want [ghcr.io]", response.ReleaseAge.AllowedRegistries)
 	}
 }
+
+func TestUpdateServiceReleaseAgeHandler_ManagedService(t *testing.T) {
+	setupTestDBWithApplications(t)
+	repo := seedTestRepository(t, "https://github.com/owner/repo-service-config")
+	agent := seedTestAgent(t, "agent-service-config")
+	app := seedTestApplication(t, repo.Id, agent.Id, "Service Config App")
+	cfg, err := composeconfig.Parse("services:\n  web:\n    x-orcacd:\n      release-age: 1d\n  db: {}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Apply(&app)
+	if err := db.DB.Save(&app).Error; err != nil {
+		t.Fatal(err)
+	}
+	setService := func(service string) *httptest.ResponseRecorder {
+		return invokeReleaseAgeHandler(t, UpdateServiceReleaseAgeHandler, http.MethodPut,
+			"/api/v1/applications/"+app.Id+"/release-age/services/"+service, `{"minimumSeconds":3600}`,
+			gin.Params{{Key: "id", Value: app.Id}, {Key: "service", Value: service}})
+	}
+
+	if w := setService("web"); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "releaseAge.serviceOverrides.web") {
+		t.Fatalf("expected 409 for the managed service, got %d: %s", w.Code, w.Body.String())
+	}
+	response := decodeApplication(t, setService("db"))
+	if response.ReleaseAge.ServiceOverrides["db"] != 3600 || response.ReleaseAge.ServiceOverrides["web"] != 86400 {
+		t.Errorf("serviceOverrides = %v", response.ReleaseAge.ServiceOverrides)
+	}
+	if !slices.Contains(response.ManagedSettings, "releaseAge.serviceOverrides.web") {
+		t.Errorf("managedSettings = %v", response.ManagedSettings)
+	}
+}
