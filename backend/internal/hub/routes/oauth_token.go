@@ -60,13 +60,32 @@ func OAuthTokenHandler(c *gin.Context) {
 		}
 	}
 
-	switch c.Request.PostForm.Get("grant_type") {
-	case grantTypeAuthorizationCode:
-		exchangeOAuthCode(c)
-	case grantTypeRefreshToken:
-		refreshOAuthToken(c)
-	default:
+	// Clients are public and prove themselves with PKCE. Credentials are
+	// refused before a code or refresh token is used, as clients like
+	// golang.org/x/oauth2 try them first and retry without (RFC 6749 section
+	// 5.2, draft-ietf-oauth-client-id-metadata-document section 5).
+	form := c.Request.PostForm
+	if authorization := c.GetHeader("Authorization"); authorization != "" || form.Get("client_secret") != "" || form.Has("client_assertion") {
+		if scheme, _, _ := strings.Cut(authorization, " "); strings.EqualFold(scheme, "Basic") {
+			c.Header("WWW-Authenticate", `Basic realm="OrcaCD"`)
+		}
+		oauthError(c, http.StatusUnauthorized, "invalid_client", "clients must not authenticate, they are public clients that use PKCE")
+		return
+	}
+	grantType := form.Get("grant_type")
+	if grantType != grantTypeAuthorizationCode && grantType != grantTypeRefreshToken {
 		oauthError(c, http.StatusBadRequest, "unsupported_grant_type", "only the authorization_code and refresh_token grant types are supported")
+		return
+	}
+	if form.Get("client_id") == "" {
+		oauthError(c, http.StatusBadRequest, "invalid_request", "the client_id is required")
+		return
+	}
+
+	if grantType == grantTypeAuthorizationCode {
+		exchangeOAuthCode(c)
+	} else {
+		refreshOAuthToken(c)
 	}
 }
 
@@ -108,11 +127,6 @@ func exchangeOAuthCode(c *gin.Context) {
 		oauthError(c, http.StatusBadRequest, "invalid_target", "the resource is not the one that was authorized")
 		return
 	}
-	client, ok := decodeOAuthClientId(clientId)
-	if !ok {
-		invalidGrant()
-		return
-	}
 
 	ctx := c.Request.Context()
 	user, err := gorm.G[models.User](db.DB).Where("id = ?", entry.userId).First(ctx)
@@ -127,7 +141,7 @@ func exchangeOAuthCode(c *gin.Context) {
 
 	// The audit log names the user that approved the client.
 	auth.SetUser(c, &user)
-	token, access, refresh, replaced, err := createOAuthToken(c, &user, clientId, client.Name, entry.scopes)
+	token, access, refresh, replaced, err := createOAuthToken(c, &user, clientId, entry.clientName, entry.scopes)
 	if err != nil {
 		if errors.Is(err, errTooManyAPITokens) {
 			oauthError(c, http.StatusBadRequest, "invalid_grant", err.Error())
@@ -209,13 +223,18 @@ func createOAuthToken(c *gin.Context, user *models.User, clientId, clientName st
 // replacedAPITokens splits the tokens of a user into the ones a new grant of
 // the client keeps and the IDs of the ones it replaces: the earlier grant of
 // the client and the ended grants of all clients, which would otherwise count
-// towards the limit.
+// towards the limit. A client with a metadata document keeps its earlier
+// grants, as all its installs share the client ID, so replacing them would
+// log out the app on the user's other machines.
 func replacedAPITokens(tokens []models.APIToken, clientId string) ([]models.APIToken, []string) {
 	now := oauthNow()
+	sameInstall := func(token *models.APIToken) bool {
+		return *token.OAuthClientId == clientId && !isOAuthClientMetadataURL(clientId)
+	}
 	var kept []models.APIToken
 	var replaced []string
 	for _, token := range tokens {
-		if token.IsOAuth() && (*token.OAuthClientId == clientId || !now.Before(token.GrantExpiresAt())) {
+		if token.IsOAuth() && (sameInstall(&token) || !now.Before(token.GrantExpiresAt())) {
 			replaced = append(replaced, token.Id)
 			continue
 		}

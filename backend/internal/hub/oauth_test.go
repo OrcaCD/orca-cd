@@ -98,9 +98,11 @@ func TestOAuthFlow_MCPClient(t *testing.T) {
 		AuthorizationEndpoint string `json:"authorization_endpoint"`
 		TokenEndpoint         string `json:"token_endpoint"`
 		RegistrationEndpoint  string `json:"registration_endpoint"`
+		// Clients may name themselves with a URL instead of registering.
+		ClientIdMetadataDocumentSupported bool `json:"client_id_metadata_document_supported"`
 	}
 	getJSON("/.well-known/oauth-authorization-server", &server)
-	if server.Issuer != appURL || server.AuthorizationEndpoint != appURL+"/oauth/authorize" {
+	if server.Issuer != appURL || server.AuthorizationEndpoint != appURL+"/oauth/authorize" || !server.ClientIdMetadataDocumentSupported {
 		t.Fatalf("unexpected server metadata: %+v", server)
 	}
 	path := func(endpoint string) string { return strings.TrimPrefix(endpoint, appURL) }

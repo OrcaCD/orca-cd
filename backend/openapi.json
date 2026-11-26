@@ -2277,6 +2277,10 @@
             "description": "Whether the user has the permission to create API tokens",
             "type": "boolean"
           },
+          "clientHost": {
+            "description": "The host that published the name and the redirect URIs of the client, for clients whose client ID is the URL of a metadata document",
+            "type": "string"
+          },
           "clientName": {
             "description": "The name the client registered with, which it chose itself",
             "type": "string"
