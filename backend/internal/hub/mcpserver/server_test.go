@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -263,5 +265,30 @@ func TestHandlerRejectsBatchesAndLargeBodies(t *testing.T) {
 				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+// The SDK runs tools on its own goroutines, where a panic would stop the hub.
+func TestGuardTool_RecoversPanics(t *testing.T) {
+	handler := guardTool(func(context.Context, *mcp.CallToolRequest, applicationInput) (*mcp.CallToolResult, deployApplicationOutput, error) {
+		panic("boom")
+	})
+
+	result, _, err := handler(t.Context(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "get_application"}}, applicationInput{})
+	if result != nil || !errors.Is(err, errInternal) {
+		t.Fatalf("handler() = %v, %v, want the internal error", result, err)
+	}
+}
+
+func TestGuardTool_BoundsTheCall(t *testing.T) {
+	handler := guardTool(func(ctx context.Context, _ *mcp.CallToolRequest, _ applicationInput) (*mcp.CallToolResult, deployApplicationOutput, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > toolTimeout {
+			t.Errorf("expected a deadline within %v, got %v, %v", toolTimeout, deadline, ok)
+		}
+		return nil, deployApplicationOutput{}, nil
+	})
+	if _, _, err := handler(t.Context(), nil, applicationInput{}); err != nil {
+		t.Fatalf("handler() error = %v", err)
 	}
 }

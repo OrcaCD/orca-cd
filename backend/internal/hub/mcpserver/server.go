@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -141,21 +142,36 @@ func newServer(c *caller) *mcp.Server {
 	}, &mcp.ServerOptions{Instructions: instructions, SchemaCache: schemaCache})
 
 	if c.perms.CanAny(models.ResourceApplication, models.ActionRead) {
-		mcp.AddTool(server, listApplicationsTool, withTimeout(c.listApplications))
-		mcp.AddTool(server, getApplicationTool, withTimeout(c.getApplication))
+		mcp.AddTool(server, listApplicationsTool, guardTool(c.listApplications))
+		mcp.AddTool(server, getApplicationTool, guardTool(c.getApplication))
 	}
 	if c.perms.CanAny(models.ResourceAgent, models.ActionRead) {
-		mcp.AddTool(server, listAgentsTool, withTimeout(c.listAgents))
+		mcp.AddTool(server, listAgentsTool, guardTool(c.listAgents))
 	}
 	if c.perms.CanAny(models.ResourceApplication, models.ActionDeploy) {
-		mcp.AddTool(server, previewDeployTool, withTimeout(c.previewDeploy))
-		mcp.AddTool(server, deployApplicationTool, withTimeout(c.deployApplication))
+		mcp.AddTool(server, previewDeployTool, guardTool(c.previewDeploy))
+		mcp.AddTool(server, deployApplicationTool, guardTool(c.deployApplication))
 	}
 	return server
 }
 
-func withTimeout[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+// guardTool bounds a tool call by toolTimeout and turns a panic into an
+// internal error. The SDK runs tools on goroutines of its own without
+// recovering, where Gin's Recovery doesn't reach, so a panic would stop the hub.
+func guardTool[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (result *mcp.CallToolResult, out Out, err error) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				tool := ""
+				if req != nil && req.Params != nil {
+					tool = req.Params.Name
+				}
+				Log.Error().Str("tool", tool).Interface("panic", recovered).Bytes("stack", debug.Stack()).Msg("tool panicked")
+				var zero Out
+				result, out, err = nil, zero, errInternal
+			}
+		}()
+
 		ctx, cancel := context.WithTimeout(ctx, toolTimeout)
 		defer cancel()
 		return handler(ctx, req, in)
