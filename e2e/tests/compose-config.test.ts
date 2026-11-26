@@ -21,6 +21,7 @@ ${services}`;
 let repo: ApiRepository | undefined;
 let agentId = "";
 let appId = "";
+const notificationIds: string[] = [];
 
 interface ApiApplication {
 	commit: string;
@@ -63,6 +64,9 @@ test.describe("Settings from the compose file", () => {
 	});
 
 	test.afterEach(async ({ page }) => {
+		// Notifications left behind would break the notification tests, which
+		// expect none at first.
+		await deleteNotifications(page, notificationIds.splice(0));
 		await api(page, "DELETE", `/applications/${appId}`);
 		await api(page, "DELETE", `/agents/${agentId}`);
 		if (repo) {
@@ -138,37 +142,35 @@ test.describe("Settings from the compose file", () => {
 			config: JSON.stringify({ webhookUrl: hookUrl("compose-config") }),
 			composeAssignable: true,
 		});
-		try {
-			await commit(repo!.name, {
-				files: { "compose.yaml": `x-orcacd:\n  notifications: ["${name}"]\n${services}` },
-				message: "Assign the notification",
-			});
-			await syncRepository(page);
-			await expect
-				.poll(async () => (await getNotification(page, name))?.applicationIds)
-				.toEqual([appId]);
+		notificationIds.push(notification.id);
 
-			const update = await api(page, "PUT", `/notifications/${notification.id}`, {
-				enabled: true,
-				allApplications: false,
-				allAgents: false,
-				allRepositories: false,
-				events: ["application.deployment.failed"],
-				applicationIds: [],
-			});
-			expect(update.status).toBe(409);
+		await commit(repo!.name, {
+			files: { "compose.yaml": `x-orcacd:\n  notifications: ["${name}"]\n${services}` },
+			message: "Assign the notification",
+		});
+		await syncRepository(page);
+		await expect
+			.poll(async () => (await getNotification(page, name))?.applicationIds)
+			.toEqual([appId]);
 
-			await gotoApp(page, "/notifications");
-			await page
-				.locator("[data-slot='card']", { hasText: name })
-				.getByRole("button", { name: "Card actions" })
-				.click();
-			await page.getByRole("menuitem", { name: "Edit" }).click();
-			await expect(
-				page.getByRole("dialog").getByText("Some applications set their notifications"),
-			).toBeVisible();
-		} finally {
-			await deleteNotifications(page, [notification.id]);
-		}
+		const update = await api(page, "PUT", `/notifications/${notification.id}`, {
+			enabled: true,
+			allApplications: false,
+			allAgents: false,
+			allRepositories: false,
+			events: ["application.deployment.failed"],
+			applicationIds: [],
+		});
+		expect(update.status).toBe(409);
+
+		await gotoApp(page, "/notifications");
+		await page
+			.locator("[data-slot='card']", { hasText: name })
+			.getByRole("button", { name: "Card actions" })
+			.click();
+		await page.getByRole("menu").getByRole("button", { name: "Edit" }).click();
+		await expect(
+			page.getByRole("dialog").getByText("Some applications set their notifications"),
+		).toBeVisible();
 	});
 });
