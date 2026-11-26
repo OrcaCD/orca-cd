@@ -56,7 +56,19 @@ func refuseDemoDatabase(db *gorm.DB) error {
 	return nil
 }
 
-const demoWebComposeFile = `services:
+// The Demo Web App sets its icon, image polling and release age in x-orcacd, so
+// they are read-only in the UI, while its rollback settings can be edited.
+// demoWebManagedSettings must list the keys of that block.
+const demoWebComposeFile = `x-orcacd:
+  icon: globe
+  image-poll:
+    enabled: true
+    interval: 5m
+  delete-old-images: true
+  release-age:
+    minimum: 3d
+
+services:
   web:
     image: ghcr.io/orcacd/demo-app:1.4.2
     ports:
@@ -65,7 +77,16 @@ const demoWebComposeFile = `services:
     restart: unless-stopped
 `
 
-const demoWebPreviousComposeFile = `services:
+const demoWebPreviousComposeFile = `x-orcacd:
+  icon: globe
+  image-poll:
+    enabled: true
+    interval: 5m
+  delete-old-images: true
+  release-age:
+    minimum: 3d
+
+services:
   web:
     image: ghcr.io/orcacd/demo-app:1.4.1
     ports:
@@ -73,6 +94,10 @@ const demoWebPreviousComposeFile = `services:
     env_file: .env
     restart: unless-stopped
 `
+
+var demoWebManagedSettings = []string{
+	"icon", "imagePollEnabled", "imagePollIntervalSeconds", "deleteOldImages", "releaseAge.minimumSeconds",
+}
 
 // The Grafana commit failed its health check, so the Monitoring Stack still runs
 // the Prometheus commit, which deployed demoMonitoringPreviousComposeFile.
@@ -427,6 +452,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 			DeleteOldImages:              true,
 			ImageWebhookSecret:           &webhookSecret,
 			MinimumReleaseAgeSeconds:     &webReleaseAge,
+			ManagedSettings:              demoWebManagedSettings,
 			CurrentDeploymentId:          &webDeployment,
 			RollbackEnabled:              true,
 			RollbackOnDeployFailure:      true,
