@@ -7,7 +7,9 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,9 +23,9 @@ import (
 
 const (
 	maxOAuthStateLength = 1024
-	// maxOAuthCodes bounds the codes waiting to be exchanged, which only users
-	// that are logged in can create, and maxOAuthCodesPerUser keeps one user
-	// from taking all of them.
+	// maxOAuthCodes bounds the codes in memory, which only users that are
+	// logged in can create, and maxOAuthCodesPerUser keeps one user from taking
+	// all of them.
 	maxOAuthCodes        = 1000
 	maxOAuthCodesPerUser = 10
 )
@@ -141,6 +143,19 @@ func (e *oauthRequestError) response() error {
 	return &oauthRequestErrorResponse{Message: e.description, RedirectURL: e.redirectURL}
 }
 
+// oauthRequestErrorResponses documents the 400 of the consent operations with
+// its redirect URL, which Huma would document as a plain error. Their Errors
+// leave out the 400, as Huma would replace this one.
+func oauthRequestErrorResponses() map[string]*huma.Response {
+	schema := restapi.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[oauthRequestErrorResponse](), true, "")
+	return map[string]*huma.Response{
+		strconv.Itoa(http.StatusBadRequest): {
+			Description: "The authorization request or the answer is invalid",
+			Content:     map[string]*huma.MediaType{"application/json": {Schema: schema}},
+		},
+	}
+}
+
 type oauthScopeResponse struct {
 	Scope     models.APITokenScope `json:"scope" required:"true"`
 	Grantable bool                 `json:"grantable" required:"true" doc:"Whether the user has the permission to give the scope"`
@@ -178,9 +193,10 @@ var OAuthAuthorizationRequestHandler = restapi.Handler(huma.Operation{
 	Summary:     "Check an authorization request",
 	Description: "Checks the authorization request of an MCP client and returns what the consent page shows. " +
 		"Errors with a redirect URL send the user back to the client.",
-	Tags:     []string{tagAPITokens},
-	Security: restapi.SessionOnly,
-	Errors:   []int{http.StatusBadRequest},
+	Tags:      []string{tagAPITokens},
+	Security:  restapi.SessionOnly,
+	Errors:    []int{http.StatusInternalServerError},
+	Responses: oauthRequestErrorResponses(),
 }, func(ctx context.Context, _ *oauthAuthorizationQuery) (*struct{ Body oauthAuthorizationResponse }, error) {
 	c := restapi.GinContext(ctx)
 	req, reqErr := parseOAuthAuthorizationRequest(c.Request.URL.Query())
@@ -226,9 +242,10 @@ var OAuthAuthorizeHandler = restapi.Handler(huma.Operation{
 	Description: fmt.Sprintf("Allows or denies the authorization request of an MCP client. Allowing it gives the client an API token "+
 		"with the chosen scopes, which only works on the MCP endpoint. A user can have at most %d tokens. ", maxAPITokensPerUser) +
 		requires(models.ResourceAPIToken, models.ActionCreate),
-	Tags:     []string{tagAPITokens},
-	Security: restapi.SessionOnly,
-	Errors:   []int{http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable},
+	Tags:      []string{tagAPITokens},
+	Security:  restapi.SessionOnly,
+	Errors:    []int{http.StatusForbidden, http.StatusConflict, http.StatusServiceUnavailable},
+	Responses: oauthRequestErrorResponses(),
 }, func(ctx context.Context, input *struct{ Body oauthAuthorizeRequest }) (*struct{ Body oauthRedirectResponse }, error) {
 	c := restapi.GinContext(ctx)
 	user, ok := auth.GetUser(c)
@@ -349,14 +366,31 @@ func (s *oauthCodeStore) add(code string, entry *oauthAuthorizationCode) bool {
 
 	now := oauthNow()
 	pendingOfUser := 0
+	var redeemedOfUser []string
 	for key, existing := range s.codes {
-		if existing.isGone(now) {
+		switch {
+		case existing.isGone(now):
 			delete(s.codes, key)
-		} else if existing.userId == entry.userId && !existing.redeemed {
+		case existing.userId != entry.userId:
+		case existing.redeemed:
+			redeemedOfUser = append(redeemedOfUser, key)
+		default:
 			pendingOfUser++
 		}
 	}
-	if len(s.codes) >= maxOAuthCodes || pendingOfUser >= maxOAuthCodesPerUser {
+	if pendingOfUser >= maxOAuthCodesPerUser {
+		return false
+	}
+	// Exchanged codes are only kept to notice when they are used again. They
+	// count towards the user's limit too, oldest out first, so authorizing
+	// again and again can't fill the store for everyone.
+	slices.SortFunc(redeemedOfUser, func(a, b string) int {
+		return s.codes[a].expiresAt.Compare(s.codes[b].expiresAt)
+	})
+	for _, key := range redeemedOfUser[:max(0, pendingOfUser+len(redeemedOfUser)+1-maxOAuthCodesPerUser)] {
+		delete(s.codes, key)
+	}
+	if len(s.codes) >= maxOAuthCodes {
 		return false
 	}
 	s.codes[code] = entry

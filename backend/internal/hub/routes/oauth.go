@@ -97,15 +97,32 @@ type authorizationServerMetadata struct {
 // OAuthCORS lets MCP clients that run in a browser use the endpoints of the
 // clients. The endpoints don't use the session cookie, so any site may call
 // them.
-func OAuthCORS(c *gin.Context) {
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	if c.Request.Method == http.MethodOptions {
-		c.AbortWithStatus(http.StatusNoContent)
-		return
+var OAuthCORS = allowAnyOrigin("GET, POST, OPTIONS", "Content-Type, Authorization", "")
+
+// MCPCORS lets MCP clients in a browser call the MCP endpoint with their token,
+// and read the challenge that starts the OAuth flow. Requests with the session
+// cookie can't use it: the cookie is SameSite=Strict, and ValidateOrigin checks
+// requests that send it.
+var MCPCORS = allowAnyOrigin("GET, POST, DELETE, OPTIONS",
+	"Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id, Last-Event-ID",
+	"WWW-Authenticate, Mcp-Session-Id")
+
+// allowAnyOrigin allows cross-origin requests without credentials and answers
+// preflight requests.
+func allowAnyOrigin(methods, headers, exposedHeaders string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", methods)
+		c.Header("Access-Control-Allow-Headers", headers)
+		if exposedHeaders != "" {
+			c.Header("Access-Control-Expose-Headers", exposedHeaders)
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
 	}
-	c.Next()
 }
 
 // OAuthAuthorizationServerMetadataHandler serves the metadata of the

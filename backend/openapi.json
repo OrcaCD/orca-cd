@@ -2345,6 +2345,23 @@
         ],
         "type": "object"
       },
+      "OauthRequestErrorResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "error": {
+            "description": "What is wrong with the request",
+            "type": "string"
+          },
+          "redirectUrl": {
+            "description": "Where to send the user, set once the client and its redirect URI are known",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
       "OauthScopeResponse": {
         "additionalProperties": true,
         "properties": {
@@ -11139,11 +11156,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/OauthRequestErrorResponse"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "The authorization request or the answer is invalid"
           },
           "401": {
             "content": {
@@ -11214,11 +11231,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/OauthRequestErrorResponse"
                 }
               }
             },
-            "description": "Bad Request"
+            "description": "The authorization request or the answer is invalid"
           },
           "401": {
             "content": {

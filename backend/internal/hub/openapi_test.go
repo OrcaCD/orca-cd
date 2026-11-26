@@ -41,6 +41,7 @@ var undocumentedRoutes = []string{
 	"GET /mcp",
 	"POST /mcp",
 	"DELETE /mcp",
+	"OPTIONS /mcp",
 	// OAuth for MCP clients, defined by RFC 7591 and RFC 6749. The token
 	// endpoint takes a form.
 	"POST /oauth/register",

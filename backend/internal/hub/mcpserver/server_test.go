@@ -1,8 +1,10 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/auth"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
@@ -18,6 +21,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/rbac"
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/zerolog"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -263,5 +267,39 @@ func TestHandlerRejectsBatchesAndLargeBodies(t *testing.T) {
 				t.Errorf("expected %d, got %d: %s", tt.wantStatus, w.Code, w.Body.String())
 			}
 		})
+	}
+}
+
+// The SDK runs tools on its own goroutines, where a panic would stop the hub.
+func TestGuardTool_RecoversPanics(t *testing.T) {
+	var logged bytes.Buffer
+	previousLog := Log
+	Log = zerolog.New(&logged)
+	t.Cleanup(func() { Log = previousLog })
+
+	handler := guardTool(func(context.Context, *mcp.CallToolRequest, applicationInput) (*mcp.CallToolResult, deployApplicationOutput, error) {
+		// Errors like this one have no exported fields, as JSON they are {}.
+		panic(errors.New("boom"))
+	})
+
+	result, _, err := handler(t.Context(), &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "get_application"}}, applicationInput{})
+	if result != nil || !errors.Is(err, errInternal) {
+		t.Fatalf("handler() = %v, %v, want the internal error", result, err)
+	}
+	if !strings.Contains(logged.String(), `"panic":"boom"`) || !strings.Contains(logged.String(), `"tool":"get_application"`) {
+		t.Errorf("expected the panic and the tool in the log, got %s", logged.String())
+	}
+}
+
+func TestGuardTool_BoundsTheCall(t *testing.T) {
+	handler := guardTool(func(ctx context.Context, _ *mcp.CallToolRequest, _ applicationInput) (*mcp.CallToolResult, deployApplicationOutput, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > toolTimeout {
+			t.Errorf("expected a deadline within %v, got %v, %v", toolTimeout, deadline, ok)
+		}
+		return nil, deployApplicationOutput{}, nil
+	})
+	if _, _, err := handler(t.Context(), nil, applicationInput{}); err != nil {
+		t.Fatalf("handler() error = %v", err)
 	}
 }
