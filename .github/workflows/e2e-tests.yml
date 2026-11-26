@@ -82,7 +82,7 @@ jobs:
           # All tests that need neither the agent nor a hub restart
           - name: general
             targets: hub
-            projects: --project=chromium --project=users --project=roles --project=demo
+            projects: --project=chromium --project=users --project=roles --project=demo --project=cli
           # These tests restart the hub and share the agent container, so they run one after
           # another in their own job
           - name: shared-infrastructure
