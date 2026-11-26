@@ -21,6 +21,9 @@ export interface ApiToken {
 	expiresAt: string;
 	lastUsedAt: string | null;
 	createdAt: string;
+	// Whether an MCP client got the token by asking the user. Its prefix changes
+	// whenever the client refreshes it.
+	oauth: boolean;
 	// Only set in the admin list
 	owner?: ApiTokenOwner;
 }
