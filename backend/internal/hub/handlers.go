@@ -208,8 +208,10 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 
 				// The consent page of the web UI. A client can't approve itself with
 				// an API token.
-				session.GET("/oauth/authorize", routes.OAuthAuthorizationRequestHandler)
-				session.POST("/oauth/authorize", middleware.RateLimit(6*time.Second, 10), routes.OAuthAuthorizeHandler)
+				// Both can make the hub fetch the metadata document of a client.
+				consentRateLimit := middleware.RateLimitPerUser(6*time.Second, 10)
+				session.GET("/oauth/authorize", consentRateLimit, routes.OAuthAuthorizationRequestHandler)
+				session.POST("/oauth/authorize", consentRateLimit, routes.OAuthAuthorizeHandler)
 			}
 
 			// The demo data never changes, so there is nothing to stream, and the

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -414,7 +415,7 @@ func TestParseOAuthAuthorizationRequest_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			query := authorizationQuery(clientId)
 			tt.change(query)
-			_, err := parseOAuthAuthorizationRequest(query)
+			_, err := parseOAuthAuthorizationRequest(t.Context(), query)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -433,7 +434,7 @@ func TestParseOAuthAuthorizationRequest_Errors(t *testing.T) {
 	// Without a scope, the client gets the scopes of the MCP tools.
 	query := authorizationQuery(clientId)
 	query.Del("resource")
-	req, err := parseOAuthAuthorizationRequest(query)
+	req, err := parseOAuthAuthorizationRequest(t.Context(), query)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -443,7 +444,7 @@ func TestParseOAuthAuthorizationRequest_Errors(t *testing.T) {
 
 	// Scopes other than the ones of MCP, like offline_access, are left out.
 	query.Set("scope", "offline_access application:read openid user:delete")
-	req, err = parseOAuthAuthorizationRequest(query)
+	req, err = parseOAuthAuthorizationRequest(t.Context(), query)
 	if err != nil {
 		t.Fatalf("unexpected error: %+v", err)
 	}
@@ -870,6 +871,35 @@ func TestOAuthCodeStore_LimitsExchangedCodesPerUser(t *testing.T) {
 	if !store.add("other-user", newCode("user-2")) {
 		t.Error("another user was blocked")
 	}
+}
+
+// Clients are public. Credentials are refused before the code is used, so a
+// client that tries them first can retry without.
+func TestOAuthToken_RefusesCredentialsBeforeUsingTheCode(t *testing.T) {
+	user := setupOAuthTest(t)
+	router := newOAuthRouter(&user, nil)
+	clientId := registerOAuthClient(t, router, "App", testOAuthRedirect)
+	_, redirect := approveOAuth(t, router, authorizationQuery(clientId), true, "application:read")
+	form := codeForm(clientId, redirect.Query().Get("code"))
+
+	withBasic := url.Values{}
+	for key, values := range form {
+		if key != "client_id" {
+			withBasic[key] = values
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/oauth/token", strings.NewReader(withBasic.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(url.QueryEscape(clientId), "")
+	if w := serveOAuth(router, req); w.Code != http.StatusUnauthorized || oauthErrorCode(w) != "invalid_client" || w.Header().Get("WWW-Authenticate") == "" {
+		t.Fatalf("expected invalid_client with a challenge, got %d: %s", w.Code, w.Body.String())
+	}
+	withSecret := url.Values{"client_secret": {"x"}}
+	maps.Copy(withSecret, form)
+	if w := requestOAuthToken(router, withSecret); oauthErrorCode(w) != "invalid_client" {
+		t.Fatalf("expected invalid_client for a client secret, got %d: %s", w.Code, w.Body.String())
+	}
+	decodeOAuthToken(t, requestOAuthToken(router, form))
 }
 
 func TestOAuthToken_RejectsOtherRequests(t *testing.T) {

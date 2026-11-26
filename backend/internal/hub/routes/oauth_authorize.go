@@ -54,7 +54,7 @@ type oauthRequestError struct {
 	redirectURL string
 }
 
-func parseOAuthAuthorizationRequest(query url.Values) (*oauthAuthorizationRequest, *oauthRequestError) {
+func parseOAuthAuthorizationRequest(ctx context.Context, query url.Values) (*oauthAuthorizationRequest, *oauthRequestError) {
 	// Parameters must not be repeated (RFC 6749 section 3.1).
 	for key, values := range query {
 		if len(values) > 1 {
@@ -63,9 +63,12 @@ func parseOAuthAuthorizationRequest(query url.Values) (*oauthAuthorizationReques
 	}
 
 	clientId := query.Get("client_id")
-	client, ok := decodeOAuthClientId(clientId)
-	if !ok {
-		return nil, &oauthRequestError{code: "invalid_client", description: "the client is not registered, it has to register again"}
+	// Without a client, the hub doesn't know where to send errors, so the
+	// consent page shows them (draft-ietf-oauth-client-id-metadata-document
+	// section 6.1).
+	client, err := resolveOAuthClient(ctx, clientId)
+	if err != nil {
+		return nil, &oauthRequestError{code: "invalid_client", description: err.Error()}
 	}
 	redirectURI, ok := client.redirectURI(query.Get("redirect_uri"))
 	if !ok {
@@ -162,7 +165,9 @@ type oauthScopeResponse struct {
 }
 
 type oauthAuthorizationResponse struct {
-	ClientName  string               `json:"clientName" required:"true" doc:"The name the client registered with, which it chose itself"`
+	ClientName string `json:"clientName" required:"true" doc:"The name the client registered with, which it chose itself"`
+	// ClientHost is set for clients with a Client ID Metadata Document.
+	ClientHost  string               `json:"clientHost,omitempty" doc:"The host that published the name and the redirect URIs of the client, for clients whose client ID is the URL of a metadata document"`
 	RedirectURI string               `json:"redirectUri" required:"true" doc:"Where the user returns to after answering"`
 	Scopes      []oauthScopeResponse `json:"scopes" required:"true" doc:"The scopes the client asks for"`
 	// CanAuthorize tells whether the user may create API tokens.
@@ -199,7 +204,7 @@ var OAuthAuthorizationRequestHandler = restapi.Handler(huma.Operation{
 	Responses: oauthRequestErrorResponses(),
 }, func(ctx context.Context, _ *oauthAuthorizationQuery) (*struct{ Body oauthAuthorizationResponse }, error) {
 	c := restapi.GinContext(ctx)
-	req, reqErr := parseOAuthAuthorizationRequest(c.Request.URL.Query())
+	req, reqErr := parseOAuthAuthorizationRequest(ctx, c.Request.URL.Query())
 	if reqErr != nil {
 		return nil, reqErr.response()
 	}
@@ -215,6 +220,7 @@ var OAuthAuthorizationRequestHandler = restapi.Handler(huma.Operation{
 	}
 	return &struct{ Body oauthAuthorizationResponse }{Body: oauthAuthorizationResponse{
 		ClientName:   req.client.Name,
+		ClientHost:   oauthClientHost(req.clientId),
 		RedirectURI:  req.redirectURI,
 		Scopes:       scopes,
 		CanAuthorize: perms.CanAny(models.ResourceAPIToken, models.ActionCreate),
@@ -257,7 +263,7 @@ var OAuthAuthorizeHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid authorization request")
 	}
-	req, reqErr := parseOAuthAuthorizationRequest(query)
+	req, reqErr := parseOAuthAuthorizationRequest(ctx, query)
 	if reqErr != nil {
 		return nil, reqErr.response()
 	}
@@ -308,6 +314,7 @@ var OAuthAuthorizeHandler = restapi.Handler(huma.Operation{
 	code := rand.Text()
 	if !oauthCodes.add(code, &oauthAuthorizationCode{
 		clientId:         req.clientId,
+		clientName:       req.client.Name,
 		redirectURI:      req.redirectURI,
 		redirectURIGiven: req.redirectURIGiven,
 		codeChallenge:    req.codeChallenge,
@@ -325,6 +332,7 @@ var OAuthAuthorizeHandler = restapi.Handler(huma.Operation{
 // the code for a token. Codes live a minute, so they are kept in memory.
 type oauthAuthorizationCode struct {
 	clientId         string
+	clientName       string
 	redirectURI      string
 	redirectURIGiven bool
 	codeChallenge    string

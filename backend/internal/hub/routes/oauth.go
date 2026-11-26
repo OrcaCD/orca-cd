@@ -92,6 +92,7 @@ type authorizationServerMetadata struct {
 	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
 	CodeChallengeMethodsSupported              []string `json:"code_challenge_methods_supported"`
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	ClientIdMetadataDocumentSupported          bool     `json:"client_id_metadata_document_supported"`
 }
 
 // OAuthCORS lets MCP clients that run in a browser use the endpoints of the
@@ -141,6 +142,7 @@ func OAuthAuthorizationServerMetadataHandler(c *gin.Context) {
 		TokenEndpointAuthMethodsSupported:          []string{"none"},
 		CodeChallengeMethodsSupported:              []string{"S256"},
 		AuthorizationResponseIssParameterSupported: true,
+		ClientIdMetadataDocumentSupported:          true,
 	})
 }
 
