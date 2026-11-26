@@ -76,7 +76,7 @@ test.describe("Settings from the compose file", () => {
 		const rollback = page.getByRole("switch", { name: "Automatic rollback" });
 		await expect(rollback).toBeChecked();
 		await expect(rollback).toBeDisabled();
-		await expect(page.getByLabel("Roll back when the deployment fails")).toBeEnabled();
+		await expect(page.getByLabel("Deploy fails")).toBeEnabled();
 		await expect(page.getByText("Set in the compose file with")).toHaveCount(2);
 
 		await gotoApp(page, `/applications/${appId}/settings/general`);
@@ -100,16 +100,14 @@ test.describe("Settings from the compose file", () => {
 		});
 		await syncRepository(page);
 
-		// Only x-orcacd changed, so the settings change without a deployment.
+		// The removed rollback settings go back to their defaults. The agent
+		// never connects, so the application isn't synced and the commit is
+		// deployed; without a deployment is covered by the hub tests.
 		await expect.poll(async () => (await getApplication(page)).commit).toBe(sha);
 		expect(await getApplication(page)).toMatchObject({
 			rollback: { enabled: false, healthTimeoutSeconds: 300 },
 			managedSettings: ["deleteOldImages"],
 		});
-		const events = (await api(page, "GET", `/applications/${appId}/events`)).body as {
-			items: { status: string; commitHash?: string }[];
-		};
-		expect(events.items[0]).toMatchObject({ status: "no_change", commitHash: sha });
 
 		await commit(repo!.name, {
 			files: { "compose.yaml": `x-orcacd:\n  rollback:\n    health-timeout: 2h\n${services}` },
