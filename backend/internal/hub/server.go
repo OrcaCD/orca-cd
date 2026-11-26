@@ -18,6 +18,7 @@ import (
 	"github.com/OrcaCD/orca-cd/internal/hub/deployments"
 	"github.com/OrcaCD/orca-cd/internal/hub/githubactions"
 	"github.com/OrcaCD/orca-cd/internal/hub/healthhistory"
+	"github.com/OrcaCD/orca-cd/internal/hub/mcpserver"
 	"github.com/OrcaCD/orca-cd/internal/hub/middleware"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/seclog"
@@ -45,6 +46,7 @@ type Config struct {
 	DisableLocalAuth      bool
 	Demo                  bool
 	DisableUI             bool
+	DisableMCP            bool
 	SkipAgentVersionCheck bool
 	AllowDowngrade        bool
 	CACertFile            string
@@ -59,6 +61,7 @@ func DefaultConfig() (Config, error) {
 	disableLocalAuth := utils.EnvBool("DISABLE_LOCAL_AUTH")
 	demo := utils.EnvBool("DEMO")
 	disableUI := utils.EnvBool("DISABLE_UI")
+	disableMCP := utils.EnvBool("DISABLE_MCP")
 	skipAgentVersionCheck := utils.EnvBool("SKIP_AGENT_VERSION_CHECK")
 	allowDowngrade := utils.EnvBool("ALLOW_DOWNGRADE")
 	if port == "" {
@@ -107,6 +110,7 @@ func DefaultConfig() (Config, error) {
 		DisableLocalAuth:      disableLocalAuth,
 		Demo:                  demo,
 		DisableUI:             disableUI,
+		DisableMCP:            disableMCP,
 		SkipAgentVersionCheck: skipAgentVersionCheck,
 		AllowDowngrade:        allowDowngrade,
 		CACertFile:            os.Getenv("CA_CERT_FILE"),
@@ -122,6 +126,7 @@ func Run(cfg Config) error {
 	gin.SetMode(gin.ReleaseMode)
 	Log = logger.New("hub", cfg.LogJSON).Level(cfg.LogLevel)
 	applications.Log = Log
+	mcpserver.Log = Log
 	seclog.Init(Log)
 
 	if cfg.Demo {
