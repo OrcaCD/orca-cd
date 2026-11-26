@@ -1222,5 +1222,9 @@
 	"monitoringLogsFiltered": "{shown} von {total} Zeilen",
 	"monitoringLogsFilterHint": "Der Filter durchsucht nur die hier geladenen Zeilen. Lade das Log herunter, um es vollständig zu durchsuchen.",
 	"monitoringInspectFailed": "Inspect-Daten konnten nicht geladen werden",
-	"monitoringInspectDownload": "Inspect-Daten herunterladen"
+	"monitoringInspectDownload": "Inspect-Daten herunterladen",
+	"additionalFiles": "Zusätzliche Dateien",
+	"additionalFilesDescription": "Ausgewählte Dateien werden aus Git synchronisiert und unter diesen Pfaden relativ zur Compose-Datei abgelegt.",
+	"addAdditionalFile": "Datei hinzufügen",
+	"removeAdditionalFile": "{path} entfernen"
 }

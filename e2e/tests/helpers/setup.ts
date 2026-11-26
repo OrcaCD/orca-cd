@@ -19,6 +19,7 @@ export interface ApiApplication {
 	healthStatus: string;
 	branch: string;
 	path: string;
+	additionalFilePaths: string[];
 	commit: string;
 	commitMessage: string;
 	lastSyncedAt: string | null;

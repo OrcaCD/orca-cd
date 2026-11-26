@@ -256,7 +256,17 @@ async function selectOption(page: Page, trigger: Locator, label: string) {
 	await page.getByRole("option", { name: label, exact: true }).click();
 }
 
-async function fillApplicationWizard(page: Page, name: string) {
+async function fillApplicationWizard(
+	page: Page,
+	name: string,
+	{
+		repositoryName = REPO,
+		selectFiles,
+	}: {
+		repositoryName?: string;
+		selectFiles?: (dialog: Locator) => Promise<void>;
+	} = {},
+) {
 	await gotoApp(page, "/applications");
 	await page.getByRole("button", { name: "New Application" }).first().click();
 	const dialog = page.getByRole("dialog");
@@ -265,12 +275,13 @@ async function fillApplicationWizard(page: Page, name: string) {
 	await selectOption(page, dialog.locator("#agent-select"), AGENT_NAME);
 	await dialog.getByRole("button", { name: "Next" }).click();
 
-	await selectOption(page, dialog.locator("#repository-select"), REPO);
+	await selectOption(page, dialog.locator("#repository-select"), repositoryName);
 	await selectOption(page, dialog.locator("#branch-select"), "main");
 	for (const segment of COMPOSE_PATH.split("/")) {
 		await dialog.getByRole("button", { name: segment, exact: true }).click();
 	}
 	await expect(dialog.locator("#path")).toHaveValue(COMPOSE_PATH);
+	await selectFiles?.(dialog);
 	await dialog.getByRole("button", { name: "Next" }).click();
 	return dialog;
 }
@@ -372,6 +383,107 @@ async function updateRepository(page: Page, body: Record<string, unknown>) {
 	expect(response.status).toBe(200);
 	return response.body as ApiRepository;
 }
+
+test("syncs selected additional files and restores them on rollback", async ({ page }) => {
+	test.setTimeout(120_000);
+	const repoName = "e2e/deploy-extra-files";
+	const name = "E2E Extra Files";
+	const project = "e2e-extra-files";
+	const selectedPath = "apps/demo/config/site.txt";
+	const compose = policyComposeFile(
+		`    user: "65534:65534"
+    volumes:
+      - ./config/site.txt:/site.txt:ro
+`,
+	);
+	const repo = await seedRepository(
+		page,
+		repoName,
+		{},
+		{ branches: { main: { files: { [COMPOSE_PATH]: compose, [selectedPath]: "first" } } } },
+	);
+	let id: string | undefined;
+	try {
+		const dialog = await fillApplicationWizard(page, name, {
+			repositoryName: repoName,
+			selectFiles: async (dialog) => {
+				await selectOption(
+					page,
+					dialog.getByRole("combobox", { name: "Add a file" }),
+					"config/site.txt",
+				);
+				await expect(dialog.getByText("./config/site.txt", { exact: true })).toBeVisible();
+			},
+		});
+		await dialog.getByRole("button", { name: "Add Application" }).click();
+		await expect(page.getByText("Application created")).toBeVisible();
+		const application = (await listApplications(page)).find((app) => app.name === name);
+		expect(application).toBeDefined();
+		const applicationId = application!.id;
+		id = applicationId;
+		const readConfig = () =>
+			execInContainer(appContainers(applicationId)[0].id, ["cat", "/site.txt"]);
+		const sync = async () => {
+			expect((await api(page, "POST", `/repositories/${repo.id}/sync`)).status).toBe(202);
+		};
+		const initial = await waitForApplication(
+			page,
+			applicationId,
+			(app) => app.syncStatus === "synced",
+		);
+		expect(initial.additionalFilePaths).toEqual([selectedPath]);
+		expect(readConfig()).toBe("first");
+
+		const updated = await commit(repoName, { files: { [selectedPath]: "second" } });
+		await sync();
+		const second = await waitForApplication(
+			page,
+			applicationId,
+			(app) => app.commit === updated.sha && app.syncStatus === "synced",
+		);
+		expect(second.composeFile).toBe(compose);
+		expect(second.currentDeploymentId).toBeTruthy();
+		expect(readConfig()).toBe("second");
+
+		await commit(repoName, { files: { [selectedPath]: null } });
+		const [running] = appContainers(applicationId);
+		await sync();
+		await waitForApplication(
+			page,
+			applicationId,
+			(app) => app.syncStatus === "out_of_sync" && !!app.lastSyncError?.includes(selectedPath),
+		);
+		expect(appContainers(applicationId)[0].id).toBe(running.id);
+		expect(readConfig()).toBe("second");
+
+		await commit(repoName, { files: { [COMPOSE_PATH]: policyComposeFile("") } });
+		await gotoApp(page, `/applications/${applicationId}/settings/general`);
+		await page.getByRole("button", { name: `Remove ${selectedPath}` }).click();
+		await page.getByRole("button", { name: "Save Changes" }).click();
+		await expect(page.getByText(DEPLOY_PROMPT)).toBeVisible();
+		expect((await getApplication(page, applicationId)).additionalFilePaths).toEqual([]);
+		await sync();
+		await waitForApplication(page, applicationId, (app) => app.syncStatus === "synced");
+		expect(
+			runWithAgentVolumes(["test", "!", "-e", `/deployments/${project}/config/site.txt`]).status,
+		).toBe(0);
+
+		const rollback = await api(
+			page,
+			"POST",
+			`/applications/${applicationId}/deployments/${second.currentDeploymentId!}/rollback`,
+		);
+		expect(rollback.status).toBe(202);
+		await waitForApplication(page, applicationId, (app) => app.rolledBackCommit === updated.sha);
+		expect(readConfig()).toBe("second");
+	} finally {
+		if (id) {
+			await api(page, "DELETE", `/applications/${id}`);
+			removeApplicationContainers(id);
+		}
+		await api(page, "DELETE", `/repositories/${repo.id}`);
+	}
+});
 
 test.describe("Deploy an application", () => {
 	test("create it in the UI", async ({ page }) => {

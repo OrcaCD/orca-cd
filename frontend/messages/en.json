@@ -1222,5 +1222,9 @@
 	"monitoringLogsFiltered": "{shown} of {total} lines",
 	"monitoringLogsFilterHint": "The filter only covers the lines loaded here. Download the log to search all of it.",
 	"monitoringInspectFailed": "Failed to load the inspect data",
-	"monitoringInspectDownload": "Download inspect data"
+	"monitoringInspectDownload": "Download inspect data",
+	"additionalFiles": "Additional files",
+	"additionalFilesDescription": "Selected files are synced from Git and placed at these paths relative to the Compose file.",
+	"addAdditionalFile": "Add a file",
+	"removeAdditionalFile": "Remove {path}"
 }
