@@ -177,6 +177,9 @@ func CopySettings(dst, src *models.Application) {
 		s.set(dst, s.get(src))
 	}
 	dst.ManagedSettings = src.ManagedSettings
+	dst.ImagePollExcludedServices = src.ImagePollExcludedServices
+	dst.HealthIgnoredServices = src.HealthIgnoredServices
+	dst.ReleaseAgeServiceOverrides = src.ReleaseAgeServiceOverrides
 }
 
 // ManagedChanges returns the settings managed by Git whose value differs

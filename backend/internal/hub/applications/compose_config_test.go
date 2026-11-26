@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -353,5 +354,22 @@ func TestProcessSyncJob_ComposeConfig_ServiceSettingsDoNotDeploy(t *testing.T) {
 	if !slices.Equal(updated.ImagePollExcludedServices, []string{"app"}) || !slices.Equal(updated.HealthIgnoredServices, []string{"app"}) ||
 		updated.ReleaseAgeServiceOverrides["app"] != 7200 {
 		t.Errorf("expected the service settings to be saved, got %+v", updated)
+	}
+}
+
+func TestProcessSyncJob_ComposeConfig_KeepsServiceReleaseAgesSetWhileQueued(t *testing.T) {
+	setupTestDB(t)
+	app := seedSyncedApp(t, composeWithoutConfig)
+	// The release age of web changes through the API after the job was queued.
+	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
+		Update("release_age_service_overrides", `{"web":3600}`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	runComposeSync(t, app, "services:\n  app:\n    image: myimage:1.0\n    x-orcacd:\n      release-age: 2h\n")
+
+	want := map[string]int64{"web": 3600, "app": 7200}
+	if got := loadApp(t, app.Id).ReleaseAgeServiceOverrides; !maps.Equal(got, want) {
+		t.Errorf("ReleaseAgeServiceOverrides = %v, want %v", got, want)
 	}
 }
