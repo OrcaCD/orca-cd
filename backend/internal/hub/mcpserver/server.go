@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"runtime/debug"
@@ -166,7 +167,7 @@ func guardTool[In, Out any](handler mcp.ToolHandlerFor[In, Out]) mcp.ToolHandler
 				if req != nil && req.Params != nil {
 					tool = req.Params.Name
 				}
-				Log.Error().Str("tool", tool).Interface("panic", recovered).Bytes("stack", debug.Stack()).Msg("tool panicked")
+				Log.Error().Str("tool", tool).Str("panic", fmt.Sprint(recovered)).Bytes("stack", debug.Stack()).Msg("tool panicked")
 				var zero Out
 				result, out, err = nil, zero, errInternal
 			}
