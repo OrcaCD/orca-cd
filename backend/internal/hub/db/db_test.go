@@ -1139,6 +1139,14 @@ func TestSeedDemoData_SeedsNewerEntities(t *testing.T) {
 		t.Errorf("expected signed commits to be required with one key, got %v / %d keys", signedRepo.RequireSignedCommits, len(signedRepo.CommitSigningKeys))
 	}
 
+	var webApp models.Application
+	if err := gormDB.Where("id = ?", "demo-app-web").First(&webApp).Error; err != nil {
+		t.Fatalf("failed to fetch demo web app: %v", err)
+	}
+	if !slices.Equal(webApp.ManagedSettings, demoWebManagedSettings) || !strings.HasPrefix(webApp.ComposeFile.String(), "x-orcacd:") {
+		t.Errorf("expected the demo web app to manage %v in x-orcacd, got %v", demoWebManagedSettings, webApp.ManagedSettings)
+	}
+
 	var agent models.Agent
 	if err := gormDB.Where("id = ?", demoSeedAgentID).First(&agent).Error; err != nil {
 		t.Fatalf("failed to fetch demo agent: %v", err)
