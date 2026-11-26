@@ -114,3 +114,21 @@ export function agentHealthcheck() {
 	});
 	return result.status === 0;
 }
+
+export function runAgentCli(args: string[], env: Record<string, string> = {}) {
+	const dockerArgs = ["run", "--rm"];
+	for (const [key, value] of Object.entries(env)) {
+		dockerArgs.push("-e", `${key}=${value}`);
+	}
+	dockerArgs.push(AGENT_IMAGE, ...args);
+	const result = spawnSync("docker", dockerArgs, {
+		cwd: e2eDir,
+		encoding: "utf8",
+		timeout: 30_000,
+	});
+	return {
+		status: result.status ?? 1,
+		stdout: (result.stdout ?? "").trim(),
+		stderr: (result.stderr ?? "").trim(),
+	};
+}

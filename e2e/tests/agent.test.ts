@@ -10,6 +10,7 @@ import {
 	duplicateAgentLogs,
 	removeDuplicateAgent,
 	restartHub,
+	runAgentCli,
 	startAgent,
 	startDuplicateAgent,
 	stopAgent,
@@ -93,6 +94,36 @@ test.afterAll(async ({ browser }) => {
 	await removeLeftovers(browser);
 });
 
+test.describe("Agent CLI", () => {
+	test("version, --version and -v print the build version", () => {
+		const version = runAgentCli(["version"]);
+		expect(version.status, version.stderr).toBe(0);
+		expect(version.stdout).toMatch(/^\S+ \(commit: \S+, built: \S+\)$/);
+
+		for (const flag of ["--version", "-v"]) {
+			const res = runAgentCli([flag]);
+			expect(res.status, flag).toBe(0);
+			expect(res.stdout, flag).toBe(version.stdout);
+		}
+	});
+
+	test("--help and -h list the available commands", () => {
+		for (const flag of ["--help", "-h"]) {
+			const res = runAgentCli([flag]);
+			expect(res.status, flag).toBe(0);
+			expect(res.stdout, flag).toContain("Orca Agent");
+			expect(res.stdout, flag).toContain("healthcheck");
+			expect(res.stdout, flag).toContain("version");
+		}
+	});
+
+	test("healthcheck fails with invalid configuration", () => {
+		const res = runAgentCli(["healthcheck"]);
+		expect(res.status).toBe(1);
+		expect(res.stderr).toContain("invalid configuration");
+	});
+});
+
 test.describe("Agent with invalid configuration", () => {
 	test("missing HUB_URL and AUTH_TOKEN", async ({ page }) => {
 		startAgent({});
@@ -163,6 +194,13 @@ test.describe("Agent setup", () => {
 	});
 
 	test("stays offline when the hub is unreachable", async ({ page }) => {
+		const standaloneHealth = runAgentCli(["healthcheck"], {
+			HUB_URL: HUB_WS_URL,
+			AUTH_TOKEN: authToken,
+		});
+		expect(standaloneHealth.status).toBe(1);
+		expect(standaloneHealth.stderr).toContain("health check failed");
+
 		startAgent({ hubUrl: "ws://does-not-exist:8080/api/v1/ws", authToken });
 
 		await expect.poll(agentLogs, { timeout: 30_000 }).toContain("connection failed, retrying");

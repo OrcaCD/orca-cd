@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import {
+	CLI_URL,
 	DEMO_URL,
 	GITEA_MOCK_CONTROL_URL,
 	OIDC_MOCK_CONTROL_URL,
@@ -18,6 +19,8 @@ const authenticated = {
 const sharedInfrastructure = /(agent|applications|images|env|users|roles)\.test\.ts$/;
 // Starts its own hub in demo mode and doesn't use the login of the setup project
 const demoTests = /demo\.test\.ts$/;
+// Starts its own hub with a persistent data volume to test CLI commands
+const cliTests = /cli\.test\.ts$/;
 // CI runs them in a separate job with its own hub, so they don't have to wait for the other tests
 const separateSharedInfrastructure = ["1", "true"].includes(
 	process.env.E2E_SEPARATE_SHARED_INFRASTRUCTURE ?? "",
@@ -55,7 +58,7 @@ export default defineConfig({
 		// Test on Chromium with authenticated state
 		{
 			name: "chromium",
-			testIgnore: [sharedInfrastructure, demoTests],
+			testIgnore: [sharedInfrastructure, demoTests, cliTests],
 			use: authenticated,
 			dependencies: ["setup"],
 		},
@@ -63,6 +66,11 @@ export default defineConfig({
 			name: "demo",
 			testMatch: demoTests,
 			use: { ...devices["Desktop Chrome"], baseURL: DEMO_URL },
+		},
+		{
+			name: "cli",
+			testMatch: cliTests,
+			use: { ...devices["Desktop Chrome"], baseURL: CLI_URL },
 		},
 		{
 			name: "agent",

@@ -11,6 +11,12 @@ export const DEMO_URL = "http://localhost:8091";
 export const DEMO_EMAIL = "demo@orcacd.dev";
 export const DEMO_COMPOSE_PROJECT = "orca-e2e-demo";
 
+export const CLI_PORT = 8092;
+export const CLI_URL = `http://localhost:${CLI_PORT}`;
+export const CLI_HUB_CONTAINER = "orca-hub-e2e-cli";
+export const CLI_DATA_VOLUME = "orca-hub-e2e-cli-data";
+
+export const HUB_IMAGE = "orca-hub-e2e-test";
 export const HUB_CONTAINER = "orca-hub-e2e-test";
 export const AGENT_CONTAINER = "orca-agent-e2e-test";
 export const AGENT_IMAGE = "orca-agent-e2e-test";
