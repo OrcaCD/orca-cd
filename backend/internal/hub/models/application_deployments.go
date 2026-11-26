@@ -40,6 +40,7 @@ type ApplicationDeployment struct {
 	CommitMessage   string                      `gorm:"type:text;not null"`
 	ComposeFile     crypto.EncryptedString      `gorm:"type:text;not null"`
 	AdditionalFiles crypto.EncryptedString      `gorm:"type:text;not null"`
+	FilesRevision   string                      `gorm:"type:text;not null"`
 	Images          []DeployedImage             `gorm:"type:text;not null;serializer:json"`
 	DeployedAt      *time.Time                  `gorm:"type:timestamp;index:idx_application_deployments_app_deployed,priority:2"`
 	// PreviousDeploymentId is what the application ran before, which an

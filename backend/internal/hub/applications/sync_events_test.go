@@ -447,6 +447,22 @@ func TestProcessSyncJobAdditionalFiles(t *testing.T) {
 		afterFailure.LastSyncError == nil || !strings.Contains(*afterFailure.LastSyncError, "conf/site.txt") {
 		t.Fatalf("missing file changed the bundle or failed to name the path: %+v", afterFailure)
 	}
+	// A missing file from the old selection must not mark a newer selection
+	// as failed if the user changes the selection while a sync is running.
+	cleared := ""
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("PendingFilesRevision", "SyncStatus", "LastSyncError").
+		Updates(t.Context(), models.Application{
+			PendingFilesRevision: "new-selection", SyncStatus: models.Synced, LastSyncError: &cleared,
+		}); err != nil {
+		t.Fatal(err)
+	}
+	processSyncJob(t.Context(), job, &nop)
+	current, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).First(t.Context())
+	if err != nil || current.SyncStatus != models.Synced || current.LastSyncError == nil || *current.LastSyncError != "" {
+		t.Fatalf("stale sync changed current status: %s, %v", current.SyncStatus, err)
+	}
+
 }
 
 func TestProcessSyncJobDeploysPendingFileSelectionAtSameCommit(t *testing.T) {
@@ -471,5 +487,48 @@ func TestProcessSyncJobDeploysPendingFileSelectionAtSameCommit(t *testing.T) {
 	}, &nop)
 	if !stub.called {
 		t.Fatal("pending file selection did not deploy at the same commit")
+	}
+}
+
+func TestPollRetriesFileRevisionAfterPendingDeploymentIsDiscarded(t *testing.T) {
+	setupTestDB(t)
+	repo := seedRepo(t)
+	agent := seedAgent(t)
+	const compose = "services: {}\n"
+	app := seedApp(t, repo.Id, agent.Id, compose)
+	app.PendingFilesRevision = "pending"
+	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+		Select("PendingFilesRevision").Updates(t.Context(), app); err != nil {
+		t.Fatal(err)
+	}
+	deployment := models.ApplicationDeployment{
+		ApplicationId: app.Id,
+		Status:        models.DeploymentPending,
+		FilesRevision: app.PendingFilesRevision,
+		Images:        []models.DeployedImage{},
+	}
+	if err := gorm.G[models.ApplicationDeployment](db.DB).Create(t.Context(), &deployment); err != nil {
+		t.Fatal(err)
+	}
+
+	stub := &stubDeployer{}
+	oldDeployer := application_deployer.DefaultApplicationDeployer
+	application_deployer.DefaultApplicationDeployer = stub
+	t.Cleanup(func() { application_deployer.DefaultApplicationDeployer = oldDeployer })
+	job := syncJob{
+		Application: app, Repository: repo, RepositoryProvider: &mockProvider{fileContent: compose},
+		Commit: app.Commit, Origin: SyncOrigin{Source: models.ApplicationEventSourceRepositoryPolling},
+	}
+	nop := zerolog.Nop()
+	processSyncJob(t.Context(), job, &nop)
+	if stub.called {
+		t.Fatal("poll replaced an in-flight deployment")
+	}
+	if _, err := gorm.G[models.ApplicationDeployment](db.DB).Where("id = ?", deployment.Id).Delete(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	processSyncJob(t.Context(), job, &nop)
+	if !stub.called {
+		t.Fatal("poll did not retry the pending file revision")
 	}
 }

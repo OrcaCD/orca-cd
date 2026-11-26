@@ -82,14 +82,7 @@ func (d *ApplicationDeployer) TriggerApplicationDeploy(ctx context.Context, app 
 			d.log.Error().Err(discardErr).Str("applicationId", app.Id).Msg("failed to discard undispatched deployment")
 		}
 	}
-	if err == nil && app.PendingFilesRevision != "" {
-		_, clearErr := gorm.G[models.Application](db.DB).
-			Where("id = ? AND pending_files_revision = ?", app.Id, app.PendingFilesRevision).
-			Select("PendingFilesRevision").Updates(ctx, models.Application{})
-		if clearErr != nil {
-			d.log.Error().Err(clearErr).Str("applicationId", app.Id).Msg("failed to clear pending additional files revision")
-		}
-	}
+
 	return err
 }
 

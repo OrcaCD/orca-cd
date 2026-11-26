@@ -36,6 +36,7 @@ func Start(ctx context.Context, app *models.Application, composeFile, requestID 
 		CommitMessage:   app.CommitMessage,
 		ComposeFile:     crypto.EncryptedString(composeFile),
 		AdditionalFiles: app.AdditionalFiles,
+		FilesRevision:   app.PendingFilesRevision,
 		Images:          []models.DeployedImage{},
 	}
 	err := db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -89,6 +90,13 @@ func Succeed(ctx context.Context, applicationID, requestID string, images []*mes
 			First(ctx)
 		if err != nil {
 			return err
+		}
+		if succeeded.FilesRevision != "" {
+			if _, err := gorm.G[models.Application](tx).
+				Where("id = ? AND pending_files_revision = ?", applicationID, succeeded.FilesRevision).
+				Select("PendingFilesRevision").Updates(ctx, models.Application{}); err != nil {
+				return err
+			}
 		}
 		deployment = &succeeded
 		return setCurrent(ctx, tx, &succeeded)

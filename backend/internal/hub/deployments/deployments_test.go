@@ -741,3 +741,39 @@ func TestRecordImageUpdateKeepsRunningDeploymentFiles(t *testing.T) {
 		t.Fatalf("image update recorded desired settings instead of the running snapshot: %+v", deployment)
 	}
 }
+
+func TestOnlyMatchingSuccessfulDeploymentClearsFileRevision(t *testing.T) {
+	setupTestDB(t)
+	app := seedApp(t, "agent-1")
+	saveRevision := func(revision string) {
+		t.Helper()
+		app.PendingFilesRevision = revision
+		if _, err := gorm.G[models.Application](db.DB).Where("id = ?", app.Id).
+			Select("PendingFilesRevision").Updates(t.Context(), app); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveRevision("first")
+	startDeployment(t, &app, "first")
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "first" {
+		t.Fatalf("pending after dispatch = %q", got)
+	}
+	if _, err := Discard(t.Context(), app.Id, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "first" {
+		t.Fatalf("pending after failure = %q", got)
+	}
+	startDeployment(t, &app, "retry")
+	saveRevision("newer")
+	if _, err := Succeed(t.Context(), app.Id, "retry", nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "newer" {
+		t.Fatalf("pending after stale success = %q", got)
+	}
+	succeedDeployment(t, &app, "newer", 0)
+	if got := loadApp(t, app.Id).PendingFilesRevision; got != "" {
+		t.Fatalf("pending after matching success = %q", got)
+	}
+}

@@ -707,3 +707,34 @@ func newWSPair(t *testing.T) (serverConn, clientConn *websocket.Conn) {
 		return nil, nil
 	}
 }
+
+func TestSendWithCapability(t *testing.T) {
+	log := testLogger()
+	h := NewHub(&log)
+	msg := &messages.ServerMessage{}
+	const capability = "additional-deployment-files"
+	if sent, unsupported := h.SendWithCapability("agent-1", msg, capability); sent || unsupported {
+		t.Fatal("offline agent should be reported as unavailable")
+	}
+	conn := newTestWSConn(t)
+	defer conn.Close() //nolint:errcheck
+	client, err := h.Register("agent-1", conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent, unsupported := h.SendWithCapability("agent-1", msg, capability); sent || !unsupported || len(client.Send) != 0 {
+		t.Fatal("request was not rejected for an agent without the capability")
+	}
+	client.SetCapabilities([]string{capability})
+	if sent, unsupported := h.SendWithCapability("agent-1", msg, capability); !sent || unsupported {
+		t.Fatal("request was not accepted for a capable agent")
+	}
+	select {
+	case got := <-client.Send:
+		if got != msg {
+			t.Fatal("wrong request was queued")
+		}
+	default:
+		t.Fatal("request was not queued")
+	}
+}

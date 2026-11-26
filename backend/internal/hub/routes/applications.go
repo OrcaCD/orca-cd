@@ -267,6 +267,10 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		DeleteOldImages:          req.DeleteOldImages,
 	}
 
+	if len(filePaths) != 0 {
+		application.PendingFilesRevision = uuid.NewString()
+	}
+
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(ctx, &application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			return nil, huma.Error400BadRequest("invalid repositoryId or agentId")

@@ -54,6 +54,18 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && job.Commit == job.Application.Commit && job.Application.PendingFilesRevision == "" {
 		return
 	}
+	if job.Origin.Source == models.ApplicationEventSourceRepositoryPolling && job.Application.PendingFilesRevision != "" {
+		pending, err := gorm.G[models.ApplicationDeployment](db.DB).
+			Where("application_id = ? AND status = ? AND files_revision = ?",
+				job.Application.Id, models.DeploymentPending, job.Application.PendingFilesRevision).Count(ctx, "*")
+		if err != nil {
+			log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to check pending file deployment")
+			return
+		}
+		if pending != 0 {
+			return
+		}
+	}
 	if skipAutoSyncAfterRollback(job) {
 		log.Info().Str("applicationId", job.Application.Id).Str("commit", job.Commit).
 			Msg("skipping automatic sync of rolled back application")
@@ -75,21 +87,28 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 		return
 	}
 
-	files, err := FetchAdditionalFiles(ctx, job.RepositoryProvider, &job.Repository, job.Commit, job.Application.Path, job.Application.AdditionalFilePaths)
-	if err != nil {
-		message := err.Error()
-		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to fetch additional files during sync")
-		_ = updateApplicationStatus(context.Background(), job.Application.Id, models.Application{LastSyncError: &message}, log)
-		failSyncJob(job.Application, log)
-		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, message, log)
-		return
-	}
 	// A queued commit must not replace settings saved while its files were
 	// being fetched.
 	source := gorm.G[models.Application](db.DB).
 		Where("id = ? AND repository_id = ? AND branch = ? AND path = ? AND agent_id = ? AND \"commit\" = ? AND pending_files_revision = ?",
 			job.Application.Id, job.Application.RepositoryId, job.Application.Branch, job.Application.Path,
 			job.Application.AgentId, job.Application.Commit, job.Application.PendingFilesRevision)
+	files, err := FetchAdditionalFiles(ctx, job.RepositoryProvider, &job.Repository, job.Commit, job.Application.Path, job.Application.AdditionalFilePaths)
+	if err != nil {
+		message := err.Error()
+		log.Error().Err(err).Str("applicationId", job.Application.Id).Msg("failed to fetch additional files during sync")
+		rows, updateErr := source.Updates(context.Background(), models.Application{
+			SyncStatus: models.OutOfSync, LastSyncError: &message,
+		})
+		if updateErr != nil {
+			log.Error().Err(updateErr).Str("applicationId", job.Application.Id).Msg("failed to update application status")
+		} else if rows != 0 {
+			sse.PublishUpdate(sse.TopicApplications.For(job.Application.Id))
+			notifications.SendForApplication(job.Application.Id, models.NotificationEventSyncFailed, "Error: sync failed for "+job.Application.Name.String(), log)
+		}
+		completeSyncEvent(ctx, requestID, job.Application.Id, models.ApplicationEventFailed, message, log)
+		return
+	}
 	composeChanged := content != job.Application.ComposeFile.String()
 	filesChanged := files != job.Application.AdditionalFiles || job.Application.PendingFilesRevision != ""
 
@@ -132,19 +151,23 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	}
 
 	updates := models.Application{
-		ComposeFile:         crypto.EncryptedString(content),
-		AdditionalFiles:     files,
-		Warnings:            job.Application.Warnings,
-		PreviousComposeFile: job.Application.PreviousComposeFile,
-		Commit:              job.Commit,
-		CommitMessage:       job.CommitMessage,
+		ComposeFile:          crypto.EncryptedString(content),
+		AdditionalFiles:      files,
+		Warnings:             job.Application.Warnings,
+		PreviousComposeFile:  job.Application.PreviousComposeFile,
+		Commit:               job.Commit,
+		CommitMessage:        job.CommitMessage,
+		PendingFilesRevision: job.Application.PendingFilesRevision,
+	}
+	if files != job.Application.AdditionalFiles {
+		updates.PendingFilesRevision = uuid.NewString()
 	}
 	if composeChanged {
 		updates.Warnings = "[]"
 		updates.PreviousComposeFile = job.Application.ComposeFile
 	}
 	rows, err := source.
-		Select("ComposeFile", "AdditionalFiles", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage").
+		Select("ComposeFile", "AdditionalFiles", "PendingFilesRevision", "Warnings", "PreviousComposeFile", "Commit", "CommitMessage").
 		Updates(context.Background(), updates)
 	if err != nil {
 		log.Error().Err(err).Str("applicationId", job.Application.Id).
@@ -162,6 +185,7 @@ func processSyncJob(ctx context.Context, job syncJob, log *zerolog.Logger) {
 	// The deployment is recorded with the application's new commit.
 	job.Application.ComposeFile = updates.ComposeFile
 	job.Application.AdditionalFiles = files
+	job.Application.PendingFilesRevision = updates.PendingFilesRevision
 	job.Application.Commit = job.Commit
 	job.Application.CommitMessage = job.CommitMessage
 
