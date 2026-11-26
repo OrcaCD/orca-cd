@@ -662,7 +662,7 @@
 	"managedByComposeFile": "Set in the compose file with",
 	"notificationApplicationsManagedByComposeFile": "Some applications set their notifications in their compose file, so they can't be added or removed here. They use",
 	"notificationComposeAssignable": "Assignable from compose files",
-	"notificationComposeAssignableDescription": "Applications can assign themselves to this notification with x-orcacd in their compose file. Anyone who can push to their repository can then send their events here.",
+	"notificationComposeAssignableDescription": "Applications can assign themselves to this notification with x-orcacd in their compose file, which then also decides whether those applications stay assigned. Anyone who can push to their repository can send their events here.",
 	"validationImagePollIntervalMin": "Polling interval must be at least 60 seconds",
 	"imagePullWebhookSectionTitle": "Image Pull Webhook",
 	"imagePullWebhookDescription": "Trigger an image pull when a container image is pushed to your registry. Supports Docker Hub, Harbor, GitHub Container Registry, and any generic registry. For Docker Hub, append ?token=<secret> to the webhook URL instead of using an Authorization header. Deliveries arriving within a few seconds of each other are combined into a single pull, so one push that fires several webhooks results in one deployment.",
