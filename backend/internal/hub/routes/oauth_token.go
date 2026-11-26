@@ -81,8 +81,12 @@ func exchangeOAuthCode(c *gin.Context) {
 	entry, ok, reusedTokenId := oauthCodes.redeem(code)
 	if reusedTokenId != "" {
 		// The code leaked, so the token it got may be in the wrong hands too.
-		if token, err := gorm.G[models.APIToken](db.DB).Where("id = ?", reusedTokenId).First(c.Request.Context()); err == nil {
+		token, err := gorm.G[models.APIToken](db.DB).Where("id = ?", reusedTokenId).First(c.Request.Context())
+		switch {
+		case err == nil:
 			revokeOAuthToken(c, &token, "oauth_code_reused")
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			utils.Log.Error().Err(err).Str("api_token_id", reusedTokenId).Msg("Failed to revoke the OAuth token of a reused code")
 		}
 		invalidGrant()
 		return

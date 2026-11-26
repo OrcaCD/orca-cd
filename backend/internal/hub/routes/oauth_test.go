@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -287,6 +288,9 @@ func TestIsValidRedirectURI(t *testing.T) {
 		{"ms-officecmd://x", false},
 		{"intent://x#Intent;end", false},
 		{"search-ms://query=x", false},
+		{"smb://server/share", false},
+		{"ssh://user@host", false},
+		{"telnet://host", false},
 		{"myapp:callback", false},
 		{"/relative", false},
 		{"https://app.example/" + strings.Repeat("a", 512), false},
@@ -672,6 +676,35 @@ func TestOAuthToken_Refresh(t *testing.T) {
 			t.Errorf("the current refresh token still works: %d", w.Code)
 		}
 	})
+	t.Run("grant ends after a year at most", func(t *testing.T) {
+		clientId, resp := authorizeOAuthClient(t, router, "App", "application:read")
+		grantId, _, _ := strings.Cut(resp.RefreshToken, ".")
+		// The grant was created almost a year ago and refreshed since.
+		createdAt := time.Now().AddDate(-1, 0, -1).Add(10 * time.Minute)
+		if _, err := gorm.G[models.APIToken](db.DB).Where("id = ?", grantId).Update(t.Context(), "created_at", createdAt); err != nil {
+			t.Fatal(err)
+		}
+
+		refreshed := decodeOAuthToken(t, refresh(clientId, resp.RefreshToken, ""))
+		token, ok := findOAuthToken(t, refreshed.AccessToken)
+		if !ok {
+			t.Fatal("the refreshed token is missing")
+		}
+		limit := maxAPITokenExpiry(createdAt)
+		if token.RefreshExpiresAt == nil || !token.RefreshExpiresAt.Equal(limit) {
+			t.Errorf("grant ends at %v, want the limit %v", token.RefreshExpiresAt, limit)
+		}
+		// The access token would last an hour, but not past the grant.
+		if !token.ExpiresAt.Equal(limit) || refreshed.ExpiresIn > int64((10*time.Minute).Seconds()) {
+			t.Errorf("access token expires at %v (in %ds), want the limit %v", token.ExpiresAt, refreshed.ExpiresIn, limit)
+		}
+
+		oauthNow = func() time.Time { return limit.Add(time.Second) }
+		t.Cleanup(func() { oauthNow = time.Now })
+		if w := refresh(clientId, refreshed.RefreshToken, ""); oauthErrorCode(w) != "invalid_grant" {
+			t.Errorf("expected invalid_grant past the limit, got %d: %s", w.Code, w.Body.String())
+		}
+	})
 	t.Run("concurrent refreshes", func(t *testing.T) {
 		clientId, resp := authorizeOAuthClient(t, router, "App", "application:read")
 		var mu sync.Mutex
@@ -782,6 +815,60 @@ func TestOAuthAuthorize_LimitsPendingCodesPerUser(t *testing.T) {
 	}
 	if w, _ := approveOAuth(t, newOAuthRouter(&other, nil), authorizationQuery(clientId), true, "application:read"); w.Code != http.StatusOK {
 		t.Errorf("another user was blocked: %d", w.Code)
+	}
+}
+
+// Exchanged codes are kept to notice reuse. They count towards the user's
+// limit, oldest out first, so a user can't fill the store by authorizing again
+// and again.
+func TestOAuthCodeStore_LimitsExchangedCodesPerUser(t *testing.T) {
+	current := time.Now()
+	oauthNow = func() time.Time { return current }
+	t.Cleanup(func() { oauthNow = time.Now })
+	store := oauthCodeStore{codes: map[string]*oauthAuthorizationCode{}}
+	newCode := func(userId string) *oauthAuthorizationCode {
+		return &oauthAuthorizationCode{userId: userId, expiresAt: current.Add(oauthCodeLifetime)}
+	}
+	codesOf := func(userId string) (codes []string) {
+		for key, code := range store.codes {
+			if code.userId == userId {
+				codes = append(codes, key)
+			}
+		}
+		return codes
+	}
+
+	for i := range 3 * maxOAuthCodesPerUser {
+		code := fmt.Sprintf("code-%02d", i)
+		if !store.add(code, newCode("user-1")) {
+			t.Fatalf("add %s failed", code)
+		}
+		if _, ok, _ := store.redeem(code); !ok {
+			t.Fatalf("redeem %s failed", code)
+		}
+		current = current.Add(time.Second)
+	}
+	if got := len(codesOf("user-1")); got != maxOAuthCodesPerUser {
+		t.Fatalf("user keeps %d codes, want %d", got, maxOAuthCodesPerUser)
+	}
+	if _, ok := store.codes["code-00"]; ok {
+		t.Error("expected the oldest exchanged code to be dropped")
+	}
+	if _, ok := store.codes[fmt.Sprintf("code-%02d", 3*maxOAuthCodesPerUser-1)]; !ok {
+		t.Error("expected the newest exchanged code to be kept")
+	}
+
+	// Pending codes are never dropped, they block new ones instead.
+	for i := range maxOAuthCodesPerUser {
+		if !store.add(fmt.Sprintf("pending-%d", i), newCode("user-1")) {
+			t.Fatalf("pending code %d was refused", i)
+		}
+	}
+	if store.add("one-too-many", newCode("user-1")) {
+		t.Error("expected a code beyond the pending limit to be refused")
+	}
+	if !store.add("other-user", newCode("user-2")) {
+		t.Error("another user was blocked")
 	}
 }
 

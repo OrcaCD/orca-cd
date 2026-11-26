@@ -36,6 +36,7 @@ const (
 var blockedRedirectSchemes = []string{
 	"javascript", "data", "vbscript", "file", "about", "blob", "filesystem", "view-source", "jar",
 	"ftp", "ws", "wss", "mailto", "tel", "sms", "intent", "search", "search-ms", "shell", "res",
+	"smb", "ssh", "sftp", "telnet",
 }
 
 // oauthClient is a registered client. Clients aren't stored: the client ID is
