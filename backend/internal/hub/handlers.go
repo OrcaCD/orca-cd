@@ -202,7 +202,8 @@ func RegisterRoutes(router *gin.Engine, cfg Config) error {
 				// MCP clients open a GET stream and end sessions with DELETE, which the
 				// stateless server answers with 405 instead of a 404. A 401 tells
 				// clients where to authorize, so it is checked before RequireAuth.
-				api.Match([]string{http.MethodGet, http.MethodPost, http.MethodDelete}, "/mcp",
+				// Clients in a browser send a preflight first.
+				api.Match([]string{http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodOptions}, "/mcp", routes.MCPCORS,
 					middleware.BearerChallenge(routes.MCPAuthChallenge()), middleware.RequireAuth(), mcpserver.Handler())
 
 				// The consent page of the web UI. A client can't approve itself with

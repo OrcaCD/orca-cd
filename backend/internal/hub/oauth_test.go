@@ -80,6 +80,9 @@ func TestOAuthFlow_MCPClient(t *testing.T) {
 	if !strings.Contains(challenge, `resource_metadata="`+appURL+`/.well-known/oauth-protected-resource/api/v1/mcp"`) {
 		t.Fatalf("unexpected challenge %q", challenge)
 	}
+	if exposed := w.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(exposed, "WWW-Authenticate") {
+		t.Errorf("clients in a browser can't read the challenge, exposed headers: %q", exposed)
+	}
 
 	// 2. The metadata leads to the authorization server.
 	var resource struct {
@@ -198,6 +201,14 @@ func TestOAuthFlow_MCPClient(t *testing.T) {
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	if w := serve(req); w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Errorf("preflight of the token endpoint: got %d, %v", w.Code, w.Header())
+	}
+	req = httptest.NewRequest(http.MethodOptions, "/api/v1/mcp", nil)
+	req.Header.Set("Origin", "https://inspector.example")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "authorization, content-type, mcp-protocol-version")
+	if w := serve(req); w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "*" ||
+		!strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Mcp-Protocol-Version") {
+		t.Errorf("preflight of the MCP endpoint: got %d, %v", w.Code, w.Header())
 	}
 }
 
