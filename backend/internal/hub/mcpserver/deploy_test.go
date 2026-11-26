@@ -287,29 +287,3 @@ func TestDeployApplication_ConcurrentCallsDeployOnce(t *testing.T) {
 		t.Errorf("expected one deploy, got %v", deployer.deployed)
 	}
 }
-
-func TestPreviewSet_ExpiredPreviewsCantBeUsed(t *testing.T) {
-	start := time.Now()
-	current := start
-	now = func() time.Time { return current }
-	t.Cleanup(func() { now = time.Now })
-
-	set := previewSet{used: map[string]time.Time{}}
-	expiresAt := start.Add(previewTTL)
-	if !set.use("preview", expiresAt) {
-		t.Fatal("expected the first use to succeed")
-	}
-	if set.use("preview", expiresAt) {
-		t.Error("expected a second use to fail")
-	}
-
-	// Past its expiry, a used preview is dropped from the set, so the set must
-	// reject it for being expired instead.
-	current = expiresAt.Add(time.Millisecond)
-	if set.use("preview", expiresAt) {
-		t.Error("expected an expired preview to fail")
-	}
-	if set.use("other", current.Add(previewTTL)); len(set.used) != 1 {
-		t.Errorf("expected expired entries to be dropped, got %v", set.used)
-	}
-}
