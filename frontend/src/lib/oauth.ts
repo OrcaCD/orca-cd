@@ -4,6 +4,10 @@ import type { ApiTokenScope } from "./api-tokens";
 // What an MCP client asks for, as the hub checked it
 export interface OAuthAuthorizationRequest {
 	clientName: string;
+	// For apps that name themselves with the URL of their description, the
+	// host that publishes it. The hub fetched the name and the redirects from
+	// there.
+	clientHost?: string;
 	// Where the user returns to after answering
 	redirectUri: string;
 	scopes: { scope: ApiTokenScope; grantable: boolean }[];

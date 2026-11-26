@@ -139,12 +139,20 @@ function ConsentForm({ query, request }: { query: string; request: OAuthAuthoriz
 				</p>
 			</div>
 
-			<div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-				<span className="text-muted-foreground">{m.oauthRedirectsTo()} </span>
-				<code className="font-mono break-all">{`${redirect.protocol}//${redirect.host}`}</code>
+			<div className="flex flex-col gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+				{request.clientHost && (
+					<div>
+						<span className="text-muted-foreground">{m.oauthClientPublishedBy()} </span>
+						<code className="font-mono break-all">{request.clientHost}</code>
+					</div>
+				)}
+				<div>
+					<span className="text-muted-foreground">{m.oauthRedirectsTo()} </span>
+					<code className="font-mono break-all">{`${redirect.protocol}//${redirect.host}`}</code>
+				</div>
 			</div>
 
-			<p className="text-sm text-muted-foreground">{m.oauthAuthorizeWarning()}</p>
+			<p className="text-sm text-muted-foreground">{consentWarning(request, redirect)}</p>
 
 			{!request.canAuthorize && <AuthErrorBanner message={m.apiTokensCreateNotAllowed()} />}
 
@@ -201,6 +209,20 @@ function ConsentForm({ query, request }: { query: string; request: OAuthAuthoriz
 			</div>
 		</div>
 	);
+}
+
+// What the user should check before allowing the app. A published name only
+// says which app it is when the answer goes to that app's own site: on this
+// computer, any program can receive it.
+function consentWarning(request: OAuthAuthorizationRequest, redirect: URL): string {
+	if (!request.clientHost) {
+		return m.oauthAuthorizeWarning();
+	}
+	// The hub only allows http on loopback addresses, and other schemes open
+	// an app on this computer.
+	return redirect.protocol === "https:"
+		? m.oauthAuthorizeWarningPublished({ host: request.clientHost })
+		: m.oauthAuthorizeWarningLocal({ clientName: request.clientName, host: request.clientHost });
 }
 
 // Sends the user back to the app after an error. It takes a click, as anyone
