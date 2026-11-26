@@ -76,7 +76,7 @@ test.describe("Settings from the compose file", () => {
 		const rollback = page.getByRole("switch", { name: "Automatic rollback" });
 		await expect(rollback).toBeChecked();
 		await expect(rollback).toBeDisabled();
-		await expect(page.getByLabel("Deploy fails")).toBeEnabled();
+		await expect(page.getByRole("checkbox", { name: "Deploy fails" })).toBeEnabled();
 		await expect(page.getByText("Set in the compose file with")).toHaveCount(2);
 
 		await gotoApp(page, `/applications/${appId}/settings/general`);
