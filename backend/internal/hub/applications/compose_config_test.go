@@ -342,7 +342,7 @@ func TestSaveNotifications_DeletedNotificationIsNotRecreated(t *testing.T) {
 
 func TestProcessSyncJob_ComposeConfig_ServiceSettingsDoNotDeploy(t *testing.T) {
 	setupTestDB(t)
-	app := seedSyncedApp(t, composeWithoutConfig)
+	app := seedSyncedApp(t)
 	compose := "services:\n  app:\n    image: myimage:1.0\n    x-orcacd:\n      image-poll: false\n      health: false\n      release-age: 2h\n"
 
 	stub := runComposeSync(t, app, compose)
@@ -359,7 +359,7 @@ func TestProcessSyncJob_ComposeConfig_ServiceSettingsDoNotDeploy(t *testing.T) {
 
 func TestProcessSyncJob_ComposeConfig_KeepsServiceReleaseAgesSetWhileQueued(t *testing.T) {
 	setupTestDB(t)
-	app := seedSyncedApp(t, composeWithoutConfig)
+	app := seedSyncedApp(t)
 	// The release age of web changes through the API after the job was queued.
 	if err := db.DB.Model(&models.Application{}).Where("id = ?", app.Id).
 		Update("release_age_service_overrides", `{"web":3600}`).Error; err != nil {
