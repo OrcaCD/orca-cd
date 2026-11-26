@@ -56,7 +56,7 @@ func refuseDemoDatabase(db *gorm.DB) error {
 	return nil
 }
 
-// The Demo Web App sets its icon, image polling and release age in x-orcacd, so
+// The Demo Web App sets its icon, image polling and release ages in x-orcacd, so
 // they are read-only in the UI, while its rollback settings can be edited.
 // demoWebManagedSettings must list the keys of that block.
 const demoWebComposeFile = `x-orcacd:
@@ -66,7 +66,7 @@ const demoWebComposeFile = `x-orcacd:
     interval: 5m
   delete-old-images: true
   release-age:
-    minimum: 3d
+    minimum: 1d
 
 services:
   web:
@@ -75,6 +75,8 @@ services:
       - "8080:80"
     env_file: .env
     restart: unless-stopped
+    x-orcacd:
+      release-age: 3d
 `
 
 const demoWebPreviousComposeFile = `x-orcacd:
@@ -84,7 +86,7 @@ const demoWebPreviousComposeFile = `x-orcacd:
     interval: 5m
   delete-old-images: true
   release-age:
-    minimum: 3d
+    minimum: 1d
 
 services:
   web:
@@ -93,10 +95,13 @@ services:
       - "8080:80"
     env_file: .env
     restart: unless-stopped
+    x-orcacd:
+      release-age: 3d
 `
 
 var demoWebManagedSettings = []string{
 	"icon", "imagePollEnabled", "imagePollIntervalSeconds", "deleteOldImages", "releaseAge.minimumSeconds",
+	"releaseAge.serviceOverrides.web",
 }
 
 // The Grafana commit failed its health check, so the Monitoring Stack still runs
@@ -425,7 +430,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	manualSource := models.ApplicationEventSourceManual
 	webhookSecret := crypto.EncryptedString("demo-image-webhook-secret")
 	webDeployment, monitoringDeployment := demoWebDeploymentCurrent, demoMonitoringDeploymentGood
-	webReleaseAge := int64(3 * 24 * 60 * 60)
+	webReleaseAge := int64(24 * 60 * 60)
 	rolledBackAt := now.Add(-demoMonitoringRollbackAgo)
 	rolledBackCommit, rolledBackReason := demoMonitoringPrometheusCommit, demoMonitoringRollbackReason
 
@@ -452,6 +457,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 			DeleteOldImages:              true,
 			ImageWebhookSecret:           &webhookSecret,
 			MinimumReleaseAgeSeconds:     &webReleaseAge,
+			ReleaseAgeServiceOverrides:   map[string]int64{"web": 3 * 24 * 60 * 60},
 			ManagedSettings:              demoWebManagedSettings,
 			CurrentDeploymentId:          &webDeployment,
 			RollbackEnabled:              true,

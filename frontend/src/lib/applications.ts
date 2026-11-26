@@ -54,7 +54,8 @@ export type ManagedSetting =
 	| "rollback.healthTimeoutSeconds"
 	| "rollback.pauseAutoSync"
 	| "releaseAge.minimumSeconds"
-	| "releaseAge.allowedRegistries";
+	| "releaseAge.allowedRegistries"
+	| `releaseAge.serviceOverrides.${string}`;
 
 export function isManaged(application: Application | undefined, setting: ManagedSetting): boolean {
 	return application?.managedSettings.includes(setting) ?? false;

@@ -215,12 +215,18 @@ test.describe("signed in", () => {
 				"icon",
 				"imagePollEnabled",
 				"imagePollIntervalSeconds",
+				"releaseAge.serviceOverrides.web",
 			]),
+			releaseAge: { serviceOverrides: { web: 3 * 24 * 60 * 60 } },
 		});
 
 		await page.goto(`/applications/${WEB_APP.id}/settings/image-polling`);
 		await expect(page.getByRole("switch", { name: "Enable image polling" })).toBeDisabled();
 		await expect(page.getByText("Set in the compose file with").first()).toBeVisible();
+
+		await page.goto(`/applications/${WEB_APP.id}/image-updates`);
+		await expect(page.getByText("ghcr.io/orcacd/demo-app:1.4.2")).toBeVisible();
+		await expect(page.getByText("Set in the compose file with")).toBeVisible();
 
 		await page.goto(`/applications/${WEB_APP.id}/settings/rollback`);
 		await expect(page.getByRole("switch", { name: "Automatic rollback" })).toBeEnabled();
