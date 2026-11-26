@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.0](https://github.com/OrcaCD/orca-cd/compare/v0.6.0...v0.7.0) (2026-11-26)
+
+
+### Features
+
+* Add container list and inspect to the agent ([#585](https://github.com/OrcaCD/orca-cd/issues/585)) ([8ed8b6d](https://github.com/OrcaCD/orca-cd/commit/8ed8b6d2bd68ab84f296a676b1636231d56a23ef))
+* Add container list, inspect and streams to the hub ws layer ([#588](https://github.com/OrcaCD/orca-cd/issues/588)) ([416b1c6](https://github.com/OrcaCD/orca-cd/commit/416b1c696d54ab9e51859fa4841e9e19f6511075))
+* Add container log and stats streams to the agent ([#587](https://github.com/OrcaCD/orca-cd/issues/587)) ([3f3f862](https://github.com/OrcaCD/orca-cd/commit/3f3f8628e924f181f182935e62a43f2bd087c46c))
+* Add container logs and inspect to UI ([#619](https://github.com/OrcaCD/orca-cd/issues/619)) ([2bf8802](https://github.com/OrcaCD/orca-cd/commit/2bf88027718be33b283f13d04b2a4f0463881845))
+* Add container monitoring page ([#596](https://github.com/OrcaCD/orca-cd/issues/596)) ([b42920a](https://github.com/OrcaCD/orca-cd/commit/b42920a52edcd5ece493e405e6a15fdefd55ce37))
+* Add proto messages for monitoring ([#584](https://github.com/OrcaCD/orca-cd/issues/584)) ([43679ee](https://github.com/OrcaCD/orca-cd/commit/43679eefefbed67477c5fb7422671851fa46e139))
+* Add routes to list and inspect containers ([#590](https://github.com/OrcaCD/orca-cd/issues/590)) ([db32964](https://github.com/OrcaCD/orca-cd/commit/db32964d66aa6e7b2bac2874feba017d1fd64660))
+* Add routes to stream container logs and stats ([#591](https://github.com/OrcaCD/orca-cd/issues/591)) ([dfc110b](https://github.com/OrcaCD/orca-cd/commit/dfc110b4e643b2217da7fc5077b769bd08bf3c5a))
+* Support monitoring in demo mode ([#620](https://github.com/OrcaCD/orca-cd/issues/620)) ([88f64e1](https://github.com/OrcaCD/orca-cd/commit/88f64e1619db74a48be0abfc4b349164472b5336))
+
+
+### Bug Fixes
+
+* Improve error message for missing frontend ([#627](https://github.com/OrcaCD/orca-cd/issues/627)) ([cf2b2d1](https://github.com/OrcaCD/orca-cd/commit/cf2b2d18b9dc9406c8c7d0f9cb157a00551b26a8))
+
 ## [0.6.0](https://github.com/OrcaCD/orca-cd/compare/v0.5.0...v0.6.0) (2026-11-25)
 
 
