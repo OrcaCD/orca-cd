@@ -13,10 +13,6 @@ import (
 	godigest "github.com/opencontainers/go-digest"
 )
 
-// RemovedReleaseAgeLabel set the minimum release age of a service until it was
-// replaced by x-orcacd. A service that still sets it gets a compose warning.
-const RemovedReleaseAgeLabel = "orca-cd.minimum-release-age"
-
 // ReleaseAgePolicy holds back updated images until they were pushed to their
 // registry at least MinimumAge ago. This gives maintainers and scanners time to
 // remove a malicious version before it is deployed.

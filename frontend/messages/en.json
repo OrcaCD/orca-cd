@@ -206,7 +206,6 @@
 	"applicationWarningPrivilegedContainer": "The agent will reject privileged service “{service}” unless this application is allowlisted.",
 	"applicationWarningHostNetwork": "The agent will reject service “{service}” because it uses the host network, unless this application is allowlisted.",
 	"applicationWarningHostNamespace": "The agent will reject service “{service}” because {field} shares a namespace with the host or another container, unless this application is allowlisted.",
-	"applicationWarningRemovedReleaseAgeLabel": "Service “{service}” sets the orca-cd.minimum-release-age label, which OrcaCD no longer reads. Set release-age in x-orcacd of the service instead.",
 	"applicationInfoLatestCommit": "Latest Commit",
 	"applicationInfoTargetHost": "Target Host",
 	"applicationInfoLastSync": "Last Sync",

@@ -88,7 +88,6 @@ export interface ApplicationWarning {
 		| "privileged_container"
 		| "host_network"
 		| "host_namespace"
-		| "removed_release_age_label"
 		| "unsupported_compose_feature";
 	service?: string;
 	field?: string;

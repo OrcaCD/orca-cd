@@ -69,7 +69,7 @@ func TestEvaluateUpdate(t *testing.T) {
 	policy := ReleaseAgePolicy{MinimumAge: 3 * 24 * time.Hour}
 	service := composetypes.ServiceConfig{Name: "app", Image: "ghcr.io/org/app:1.0"}
 	withLabel := func(value string) composetypes.ServiceConfig {
-		return composetypes.ServiceConfig{Name: "app", Image: service.Image, Labels: composetypes.Labels{RemovedReleaseAgeLabel: value}}
+		return composetypes.ServiceConfig{Name: "app", Image: service.Image, Labels: composetypes.Labels{"orca-cd.minimum-release-age": value}}
 	}
 	const (
 		updated = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED

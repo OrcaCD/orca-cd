@@ -20,7 +20,7 @@ func TestAnalyzeComposeWarnings(t *testing.T) {
 					{Type: composetypes.VolumeTypeBind, Target: "/docker-entrypoint-initdb.d/init.sql"},
 				},
 			},
-			"memcached": {Image: "memcached:1.6", Restart: "unless-stopped", Labels: composetypes.Labels{RemovedReleaseAgeLabel: "7d"}},
+			"memcached": {Image: "memcached:1.6", Restart: "unless-stopped"},
 			"redis": {
 				Image:   "redis:7",
 				Volumes: []composetypes.ServiceVolumeConfig{{Type: composetypes.VolumeTypeVolume, Target: "/data"}},
@@ -37,7 +37,6 @@ func TestAnalyzeComposeWarnings(t *testing.T) {
 		{Code: "database_without_volume", Service: "db"},
 		{Code: "privileged_container", Service: "db"},
 		{Code: "host_network", Service: "db"},
-		{Code: "removed_release_age_label", Service: "memcached"},
 		{Code: "missing_restart_policy", Service: "redis"},
 		{Code: "floating_image_reference", Service: "web"},
 	}

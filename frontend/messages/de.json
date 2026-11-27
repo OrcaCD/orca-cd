@@ -206,7 +206,6 @@
 	"applicationWarningPrivilegedContainer": "Der Agent lehnt den privilegierten Dienst „{service}“ ab, sofern diese Anwendung nicht auf der Zulassungsliste steht.",
 	"applicationWarningHostNetwork": "Der Agent lehnt den Dienst „{service}“ ab, weil er das Host-Netzwerk verwendet, sofern diese Anwendung nicht auf der Zulassungsliste steht.",
 	"applicationWarningHostNamespace": "Der Agent lehnt den Dienst „{service}“ ab, weil {field} einen Namespace mit dem Host oder einem anderen Container teilt, sofern diese Anwendung nicht auf der Zulassungsliste steht.",
-	"applicationWarningRemovedReleaseAgeLabel": "Der Dienst „{service}“ setzt das Label orca-cd.minimum-release-age, das OrcaCD nicht mehr liest. Setze stattdessen release-age in x-orcacd des Dienstes.",
 	"applicationInfoLatestCommit": "Letzter Commit",
 	"applicationInfoTargetHost": "Ziel-Host",
 	"applicationInfoLastSync": "Letzte Synchronisierung",
