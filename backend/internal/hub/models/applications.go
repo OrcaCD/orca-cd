@@ -35,6 +35,17 @@ const (
 	Degraded HealthStatus = "degraded"
 )
 
+// Limits of the application settings, which the API and x-orcacd share.
+const (
+	// MinImagePollIntervalSeconds mirrors the agent's behavior, so a shorter
+	// interval is rejected instead of being silently raised.
+	MinImagePollIntervalSeconds     = 60
+	MaxImagePollIntervalSeconds     = 30 * 24 * 60 * 60
+	MinRollbackHealthTimeoutSeconds = 30
+	MaxRollbackHealthTimeoutSeconds = 60 * 60
+	MaxMinimumReleaseAgeSeconds     = 365 * 24 * 60 * 60
+)
+
 type Application struct {
 	Base
 	Name                     crypto.EncryptedString  `gorm:"type:text;not null"`
@@ -92,7 +103,10 @@ type Application struct {
 	// ReleaseAgeServiceOverrides overrides the minimum release age in seconds
 	// per compose service.
 	ReleaseAgeServiceOverrides map[string]int64 `gorm:"serializer:json;type:text;not null;default:'{}'"`
-	Notifications              []Notification   `gorm:"many2many:application_notifications;"`
+	// ManagedSettings are the settings that come from x-orcacd in the compose
+	// file, which can't be changed through the API.
+	ManagedSettings []string       `gorm:"serializer:json;type:text;not null;default:'[]'"`
+	Notifications   []Notification `gorm:"many2many:application_notifications;"`
 }
 
 // HealthGate returns how long a new deployment is watched before it counts as

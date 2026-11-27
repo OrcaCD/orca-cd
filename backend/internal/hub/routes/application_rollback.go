@@ -123,11 +123,6 @@ var ResumeApplicationAutoSyncHandler = restapi.Handler(huma.Operation{
 	return restapi.Message("auto-sync resumed"), nil
 })
 
-const (
-	minRollbackHealthTimeoutSeconds = 30
-	maxRollbackHealthTimeoutSeconds = 60 * 60
-)
-
 // updateRollbackSettingsRequest replaces all rollback settings, so every
 // field is required: an omitted one would be reset.
 type updateRollbackSettingsRequest struct {
@@ -145,10 +140,11 @@ var UpdateRollbackSettingsHandler = restapi.Handler(huma.Operation{
 	Method:      http.MethodPut,
 	Path:        "/applications/{id}/rollback/settings",
 	Summary:     "Update the rollback settings of an application",
-	Description: "Replaces all settings of the automatic rollback. " + requires(models.ResourceApplication, models.ActionUpdate),
-	Tags:        []string{tagApplications},
-	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+	Description: "Replaces all settings of the automatic rollback. Settings that come from x-orcacd in the compose file can't be changed (409). " +
+		requires(models.ResourceApplication, models.ActionUpdate),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden, http.StatusConflict},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateRollbackSettingsRequest
@@ -156,20 +152,31 @@ var UpdateRollbackSettingsHandler = restapi.Handler(huma.Operation{
 	c := restapi.GinContext(ctx)
 	id, req := input.ID, input.Body
 
-	if req.HealthTimeoutSeconds < minRollbackHealthTimeoutSeconds || req.HealthTimeoutSeconds > maxRollbackHealthTimeoutSeconds {
+	if req.HealthTimeoutSeconds < models.MinRollbackHealthTimeoutSeconds || req.HealthTimeoutSeconds > models.MaxRollbackHealthTimeoutSeconds {
 		return nil, huma.Error400BadRequest("health timeout must be between 30 seconds and 1 hour")
+	}
+
+	stored, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, huma.Error404NotFound("application not found")
+		}
+		return nil, internalError()
+	}
+	requested := stored
+	requested.RollbackEnabled = req.Enabled
+	requested.RollbackOnDeployFailure = req.OnDeployFailure
+	requested.RollbackOnUnhealthy = req.OnUnhealthy
+	requested.RollbackHealthTimeoutSeconds = req.HealthTimeoutSeconds
+	requested.RollbackPauseAutoSync = req.PauseAutoSync
+	if err := checkUnmanaged(&stored, &requested); err != nil {
+		return nil, err
 	}
 
 	rowsAffected, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", id).
 		Select("RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync").
-		Updates(ctx, models.Application{
-			RollbackEnabled:              req.Enabled,
-			RollbackOnDeployFailure:      req.OnDeployFailure,
-			RollbackOnUnhealthy:          req.OnUnhealthy,
-			RollbackHealthTimeoutSeconds: req.HealthTimeoutSeconds,
-			RollbackPauseAutoSync:        req.PauseAutoSync,
-		})
+		Updates(ctx, requested)
 	if err != nil {
 		return nil, internalError()
 	}

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/OrcaCD/orca-cd/internal/hub/applicationevents"
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
+	"github.com/OrcaCD/orca-cd/internal/hub/composeconfig"
 	"github.com/OrcaCD/orca-cd/internal/hub/crypto"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	application_deployer "github.com/OrcaCD/orca-cd/internal/hub/deployer"
@@ -34,13 +36,12 @@ const defaultApplicationIcon = "box"
 // leaving its record out of sync with the agent.
 const agentDeleteTimeout = 5 * time.Minute
 
-// minImagePollIntervalSeconds mirrors the agent's behavior, so a shorter interval is
-// rejected instead of being silently raised.
-const minImagePollIntervalSeconds = 60
-
 func validImagePollInterval(enabled bool, seconds int64) bool {
+	if seconds > models.MaxImagePollIntervalSeconds {
+		return false
+	}
 	if enabled {
-		return seconds >= minImagePollIntervalSeconds
+		return seconds >= models.MinImagePollIntervalSeconds
 	}
 	return seconds >= 0
 }
@@ -53,7 +54,7 @@ type createApplicationRequest struct {
 	Branch                   string `json:"branch" required:"true" minLength:"1"`
 	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled, at most 30 days"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
@@ -65,7 +66,7 @@ type updateApplicationRequest struct {
 	Branch                   string `json:"branch" required:"true" minLength:"1"`
 	Path                     string `json:"path" required:"true" minLength:"1" doc:"The path of the compose file in the repository"`
 	ImagePollEnabled         bool   `json:"imagePollEnabled"`
-	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled"`
+	ImagePollIntervalSeconds int64  `json:"imagePollIntervalSeconds" doc:"At least 60 when image polling is enabled, at most 30 days"`
 	DeleteOldImages          bool   `json:"deleteOldImages"`
 }
 
@@ -124,6 +125,7 @@ type applicationResponse struct {
 	ImageWebhookEnabled      bool                      `json:"imageWebhookEnabled" required:"true"`
 	ImageWebhookUrl          *string                   `json:"imageWebhookUrl,omitempty"`
 	Warnings                 []composewarnings.Warning `json:"warnings" required:"true" doc:"Problems found in the compose file"`
+	ManagedSettings          []string                  `json:"managedSettings" required:"true" nullable:"false" doc:"Settings that come from x-orcacd in the compose file, by field path like rollback.enabled. They can't be changed through the API."`
 }
 
 type rollbackSettingsResponse struct {
@@ -202,7 +204,8 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 	DefaultStatus: http.StatusCreated,
 	Summary:       "Create an application",
 	Description: "Reads the compose file from the latest commit of the branch and starts the first deployment. " +
-		"Needs read access to the repository and the agent. Answers 422 when the repository can't be read. " +
+		"Settings in x-orcacd of the compose file replace those of the request. " +
+		"Needs read access to the repository and the agent. Answers 422 when the repository can't be read or x-orcacd is invalid. " +
 		requires(models.ResourceApplication, models.ActionCreate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
@@ -211,7 +214,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 	c := restapi.GinContext(ctx)
 	req := input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
+		return nil, huma.Error400BadRequest("image poll interval must be between 60 seconds and 30 days")
 	}
 	if err := checkApplicationSources(c, req.RepositoryId, req.AgentId); err != nil {
 		return nil, err
@@ -237,6 +240,10 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := parseComposeConfig(composeFile)
+	if err != nil {
+		return nil, err
+	}
 
 	application := models.Application{
 		Name:                     crypto.EncryptedString(req.Name),
@@ -258,6 +265,7 @@ var CreateApplicationHandler = restapi.Handler(huma.Operation{
 		ImagePollIntervalSeconds: req.ImagePollIntervalSeconds,
 		DeleteOldImages:          req.DeleteOldImages,
 	}
+	cfg.Apply(&application)
 
 	if err := gorm.G[models.Application](db.DB).Select("*").Create(ctx, &application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
@@ -310,7 +318,8 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	Description: "Reads the compose file from the latest commit of the branch again. Moving the application to another agent " +
 		"or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, " +
 		"as does a new source, which also needs read access to the new repository or agent. " +
-		"Answers 422 when the repository can't be read. " +
+		"Settings in x-orcacd of the compose file replace those of the request, and the request must not change those that came from it before (409). " +
+		"Answers 422 when the repository can't be read or x-orcacd is invalid. " +
 		requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
@@ -322,7 +331,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	c := restapi.GinContext(ctx)
 	id, req := input.ID, input.Body
 	if !validImagePollInterval(req.ImagePollEnabled, req.ImagePollIntervalSeconds) {
-		return nil, huma.Error400BadRequest("image poll interval must be at least 60 seconds")
+		return nil, huma.Error400BadRequest("image poll interval must be between 60 seconds and 30 days")
 	}
 
 	application, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
@@ -331,6 +340,17 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 			return nil, huma.Error404NotFound("application not found")
 		}
 		return nil, internalError()
+	}
+
+	requested := application
+	if req.Icon != "" {
+		requested.Icon = req.Icon
+	}
+	requested.ImagePollEnabled = req.ImagePollEnabled
+	requested.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
+	requested.DeleteOldImages = req.DeleteOldImages
+	if err := checkUnmanaged(&application, &requested); err != nil {
+		return nil, err
 	}
 
 	// Only a new source needs read access, so the settings of an application
@@ -376,6 +396,10 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := parseComposeConfig(composeFile)
+	if err != nil {
+		return nil, err
+	}
 
 	nameHash := crypto.BlindIndex(models.NormalizeName(req.Name))
 	oldAgentId := application.AgentId
@@ -401,9 +425,7 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 
 	application.Name = crypto.EncryptedString(req.Name)
 	application.NameHash = nameHash
-	if req.Icon != "" {
-		application.Icon = req.Icon
-	}
+	application.Icon = requested.Icon
 	application.RepositoryId = req.RepositoryId
 	application.AgentId = req.AgentId
 	application.Branch = req.Branch
@@ -418,13 +440,18 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 	application.ImagePollEnabled = req.ImagePollEnabled
 	application.ImagePollIntervalSeconds = req.ImagePollIntervalSeconds
 	application.DeleteOldImages = req.DeleteOldImages
+	settingColumns := cfg.Apply(&application)
 
+	// The other settings have their own endpoints, so they are only saved
+	// when x-orcacd changed them.
+	omit := slices.DeleteFunc([]string{"SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
+		"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
+		"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync",
+		"MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries", "ReleaseAgeServiceOverrides"},
+		func(column string) bool { return slices.Contains(settingColumns, column) })
 	if _, err := gorm.G[models.Application](db.DB).Where("id = ?", id).
 		Select("*").
-		Omit("SyncStatus", "HealthStatus", "LastSyncedAt", "LastSyncError", "LastSyncSource",
-			"CurrentDeploymentId", "RolledBackAt", "RolledBackCommit", "RolledBackReason", "AutoSyncPaused",
-			"RollbackEnabled", "RollbackOnDeployFailure", "RollbackOnUnhealthy", "RollbackHealthTimeoutSeconds", "RollbackPauseAutoSync",
-			"MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries", "ReleaseAgeServiceOverrides").
+		Omit(omit...).
 		Updates(ctx, application); err != nil {
 		if errors.Is(err, gorm.ErrForeignKeyViolated) {
 			return nil, huma.Error400BadRequest("invalid repositoryId or agentId")
@@ -453,6 +480,25 @@ var UpdateApplicationHandler = restapi.Handler(huma.Operation{
 
 	return &applicationOutput{Body: toApplicationResponse(&updatedApplication)}, nil
 })
+
+// parseComposeConfig reads x-orcacd of a compose file, answering 422 when it
+// is invalid.
+func parseComposeConfig(composeFile string) (*composeconfig.Config, error) {
+	cfg, err := composeconfig.Parse(composeFile)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid " + composeconfig.Key + " in the compose file: " + err.Error())
+	}
+	return cfg, nil
+}
+
+// checkUnmanaged answers 409 when a request changes settings that come from
+// x-orcacd in the compose file.
+func checkUnmanaged(stored, requested *models.Application) error {
+	if changes := composeconfig.ManagedChanges(stored, requested); len(changes) > 0 {
+		return huma.Error409Conflict(composeconfig.ManagedError(changes))
+	}
+	return nil
+}
 
 // checkApplicationSources checks that the user can read the repository and the
 // agent an application is deployed from, since it exposes their files and names.
@@ -738,6 +784,7 @@ func toApplicationResponse(app *models.Application) applicationResponse {
 		ReleaseAge:          toReleaseAgeSettings(app),
 		ImageWebhookEnabled: app.ImageWebhookSecret != nil,
 		Warnings:            warnings,
+		ManagedSettings:     nonNil(app.ManagedSettings),
 	}
 	if app.ImageWebhookSecret != nil {
 		webhookUrl := fmt.Sprintf("%s/api/v1/webhooks/images/%s", appUrl, app.Id)

@@ -6,11 +6,11 @@ import (
 	"maps"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	hubApplications "github.com/OrcaCD/orca-cd/internal/hub/applications"
+	"github.com/OrcaCD/orca-cd/internal/hub/composeconfig"
 	"github.com/OrcaCD/orca-cd/internal/hub/db"
 	"github.com/OrcaCD/orca-cd/internal/hub/models"
 	"github.com/OrcaCD/orca-cd/internal/hub/releaseage"
@@ -25,12 +25,6 @@ import (
 )
 
 var releaseAgeLog = logger.New("release-age", false)
-
-const (
-	maxMinimumReleaseAgeSeconds    = 365 * 24 * 60 * 60
-	maxReleaseAgeAllowedRegistries = 50
-	maxRegistryLength              = 253
-)
 
 // releaseAgeSettings are the release age settings of an application. A nil
 // MinimumSeconds uses the global default.
@@ -65,26 +59,7 @@ func nonNil(values []string) []string {
 }
 
 func validMinimumSeconds(seconds int64) bool {
-	return seconds >= 0 && seconds <= maxMinimumReleaseAgeSeconds
-}
-
-// normalizeRegistries lowercases and deduplicates registry hosts like
-// "registry.example.com:5000". It reports false for an invalid host.
-func normalizeRegistries(registries []string) ([]string, bool) {
-	if len(registries) > maxReleaseAgeAllowedRegistries {
-		return nil, false
-	}
-	normalized := make([]string, 0, len(registries))
-	for _, registry := range registries {
-		registry = strings.ToLower(strings.TrimSpace(registry))
-		if registry == "" || len(registry) > maxRegistryLength || strings.ContainsAny(registry, "/ \t@") {
-			return nil, false
-		}
-		if !slices.Contains(normalized, registry) {
-			normalized = append(normalized, registry)
-		}
-	}
-	return normalized, true
+	return seconds >= 0 && seconds <= models.MaxMinimumReleaseAgeSeconds
 }
 
 // checkMinimumSeconds returns a 400 if seconds is not a valid minimum release
@@ -111,6 +86,13 @@ func checkReleaseAge(ctx context.Context, seconds *int64) error {
 	return checkMinimumSeconds(seconds, global)
 }
 
+func equalSeconds(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 const invalidRegistriesMessage = "allowed registries must be at most 50 registry hosts, e.g. registry.example.com:5000"
 
 // The minimum seconds are required but nullable: null uses the global
@@ -128,31 +110,47 @@ var UpdateReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
 	Method:      http.MethodPut,
 	Path:        "/applications/{id}/release-age/settings",
 	Summary:     "Update the release age settings of an application",
-	Description: "Sets how old an image must be before the application is updated to it. " + requires(models.ResourceApplication, models.ActionUpdate),
-	Tags:        []string{tagApplications},
-	Security:    restapi.Authenticated,
-	Errors:      []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+	Description: "Sets how old an image must be before the application is updated to it. Settings that come from x-orcacd in the compose file can't be changed (409). " +
+		requires(models.ResourceApplication, models.ActionUpdate),
+	Tags:     []string{tagApplications},
+	Security: restapi.Authenticated,
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden, http.StatusConflict},
 }, func(ctx context.Context, input *struct {
 	ID   string `path:"id" doc:"The ID of the application"`
 	Body updateReleaseAgeRequest
 }) (*applicationOutput, error) {
 	id, req := input.ID, input.Body
 
-	if err := checkReleaseAge(ctx, req.MinimumSeconds); err != nil {
-		return nil, err
-	}
-	registries, ok := normalizeRegistries(req.AllowedRegistries)
+	registries, ok := releaseage.NormalizeRegistries(req.AllowedRegistries)
 	if !ok {
 		return nil, huma.Error400BadRequest(invalidRegistriesMessage)
+	}
+
+	stored, err := gorm.G[models.Application](db.DB).Where("id = ?", id).First(ctx)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, huma.Error404NotFound("application not found")
+		}
+		return nil, internalError()
+	}
+	// An unchanged age is not checked again: x-orcacd may set one below the
+	// global minimum, which then applies instead.
+	if !equalSeconds(stored.MinimumReleaseAgeSeconds, req.MinimumSeconds) {
+		if err := checkReleaseAge(ctx, req.MinimumSeconds); err != nil {
+			return nil, err
+		}
+	}
+	requested := stored
+	requested.MinimumReleaseAgeSeconds = req.MinimumSeconds
+	requested.ReleaseAgeAllowedRegistries = registries
+	if err := checkUnmanaged(&stored, &requested); err != nil {
+		return nil, err
 	}
 
 	rowsAffected, err := gorm.G[models.Application](db.DB).
 		Where("id = ?", id).
 		Select("MinimumReleaseAgeSeconds", "ReleaseAgeAllowedRegistries").
-		Updates(ctx, models.Application{
-			MinimumReleaseAgeSeconds:    req.MinimumSeconds,
-			ReleaseAgeAllowedRegistries: registries,
-		})
+		Updates(ctx, requested)
 	if err != nil {
 		return nil, internalError()
 	}
@@ -183,10 +181,11 @@ var UpdateServiceReleaseAgeHandler = restapi.Handler(huma.Operation{
 	Path:        "/applications/{id}/release-age/services/{service}",
 	Summary:     "Override the release age of a service",
 	Description: "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. " +
+		"Not possible when x-orcacd of the service sets it (409). " +
 		requires(models.ResourceApplication, models.ActionUpdate),
 	Tags:     []string{tagApplications},
 	Security: restapi.Authenticated,
-	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden},
+	Errors:   []int{http.StatusBadRequest, http.StatusNotFound, http.StatusForbidden, http.StatusConflict},
 }, func(ctx context.Context, input *struct {
 	ID      string `path:"id" doc:"The ID of the application"`
 	Service string `path:"service" doc:"The name of the compose service"`
@@ -210,6 +209,9 @@ var UpdateServiceReleaseAgeHandler = restapi.Handler(huma.Operation{
 			return nil, huma.Error404NotFound("application not found")
 		}
 		return nil, internalError()
+	}
+	if setting := composeconfig.ServiceReleaseAgeSetting(service); slices.Contains(application.ManagedSettings, setting) {
+		return nil, huma.Error409Conflict(composeconfig.ManagedError([]string{setting}))
 	}
 
 	overrides := maps.Clone(application.ReleaseAgeServiceOverrides)
@@ -303,7 +305,7 @@ var AdminUpdateReleaseAgeSettingsHandler = restapi.Handler(huma.Operation{
 	if !validMinimumSeconds(req.MinimumSeconds) {
 		return nil, huma.Error400BadRequest("minimum release age must be between 0 and 365 days")
 	}
-	registries, ok := normalizeRegistries(req.AllowedRegistries)
+	registries, ok := releaseage.NormalizeRegistries(req.AllowedRegistries)
 	if !ok {
 		return nil, huma.Error400BadRequest(invalidRegistriesMessage)
 	}

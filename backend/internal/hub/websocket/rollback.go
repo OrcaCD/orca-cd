@@ -65,7 +65,7 @@ func handleRollbackResult(ctx context.Context, agentID string, app *models.Appli
 		return
 	}
 	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
-	sendAgentSettings(ctx, agentID, log)
+	SendAgentSettings(ctx, agentID, log)
 
 	message := "Warning: " + app.Name.String() + " was rolled back"
 	if event.CommitHash != nil && *event.CommitHash != "" {
@@ -88,12 +88,12 @@ func clearRollbackState(ctx context.Context, agentID string, app *models.Applica
 		return
 	}
 	sse.PublishUpdate(sse.TopicApplications.For(app.Id))
-	sendAgentSettings(ctx, agentID, log)
+	SendAgentSettings(ctx, agentID, log)
 }
 
-// sendAgentSettings pushes the agent's image poll settings again, which a
-// rollback pauses.
-func sendAgentSettings(ctx context.Context, agentID string, log *zerolog.Logger) {
+// SendAgentSettings pushes the settings of the agent's applications again,
+// e.g. after a rollback paused image polling or x-orcacd changed them.
+func SendAgentSettings(ctx context.Context, agentID string, log *zerolog.Logger) {
 	if DefaultHub == nil {
 		return
 	}

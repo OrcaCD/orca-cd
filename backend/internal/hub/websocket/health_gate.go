@@ -247,7 +247,7 @@ func automaticRollbackTarget(ctx context.Context, app *models.Application, previ
 // for rollbacks changed. Only periodic image updates use the settings' retention.
 func sendRetentionSettings(ctx context.Context, app *models.Application, log *zerolog.Logger) {
 	if app.RollbackEnabled && app.DeleteOldImages && app.ImagePollEnabled {
-		sendAgentSettings(ctx, app.AgentId, log)
+		SendAgentSettings(ctx, app.AgentId, log)
 	}
 }
 

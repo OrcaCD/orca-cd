@@ -144,7 +144,7 @@ func TestUpdateServiceReleaseAgeHandler(t *testing.T) {
 }
 
 func tooManyRegistries() string {
-	registries := make([]string, maxReleaseAgeAllowedRegistries+1)
+	registries := make([]string, 51)
 	for i := range registries {
 		registries[i] = fmt.Sprintf("registry%d.local", i)
 	}

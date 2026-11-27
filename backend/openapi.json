@@ -718,6 +718,13 @@
               "null"
             ]
           },
+          "managedSettings": {
+            "description": "Settings that come from x-orcacd in the compose file, by field path like rollback.enabled. They can't be changed through the API.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "name": {
             "type": "string"
           },
@@ -815,7 +822,8 @@
           "rollback",
           "releaseAge",
           "imageWebhookEnabled",
-          "warnings"
+          "warnings",
+          "managedSettings"
         ],
         "type": "object"
       },
@@ -1371,7 +1379,7 @@
             "type": "boolean"
           },
           "imagePollIntervalSeconds": {
-            "description": "At least 60 when image polling is enabled",
+            "description": "At least 60 when image polling is enabled, at most 30 days",
             "format": "int64",
             "type": "integer"
           },
@@ -3451,7 +3459,7 @@
             "type": "boolean"
           },
           "imagePollIntervalSeconds": {
-            "description": "At least 60 when image polling is enabled",
+            "description": "At least 60 when image polling is enabled, at most 30 days",
             "format": "int64",
             "type": "integer"
           },
@@ -6580,7 +6588,7 @@
         ]
       },
       "post": {
-        "description": "Reads the compose file from the latest commit of the branch and starts the first deployment. Needs read access to the repository and the agent. Answers 422 when the repository can't be read. Needs the `application:create` permission.",
+        "description": "Reads the compose file from the latest commit of the branch and starts the first deployment. Settings in x-orcacd of the compose file replace those of the request. Needs read access to the repository and the agent. Answers 422 when the repository can't be read or x-orcacd is invalid. Needs the `application:create` permission.",
         "operationId": "create-application",
         "requestBody": {
           "content": {
@@ -6890,7 +6898,7 @@
         ]
       },
       "put": {
-        "description": "Reads the compose file from the latest commit of the branch again. Moving the application to another agent or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, as does a new source, which also needs read access to the new repository or agent. Answers 422 when the repository can't be read. Needs the `application:update` permission.",
+        "description": "Reads the compose file from the latest commit of the branch again. Moving the application to another agent or renaming its compose project removes it from the old agent first, which needs the `application:deploy` permission, as does a new source, which also needs read access to the new repository or agent. Settings in x-orcacd of the compose file replace those of the request, and the request must not change those that came from it before (409). Answers 422 when the repository can't be read or x-orcacd is invalid. Needs the `application:update` permission.",
         "operationId": "update-application",
         "parameters": [
           {
@@ -8426,7 +8434,7 @@
     },
     "/applications/{id}/release-age/services/{service}": {
       "put": {
-        "description": "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. Needs the `application:update` permission.",
+        "description": "Sets the minimum release age of the images of one compose service of an application, at most 100 services can have one. Not possible when x-orcacd of the service sets it (409). Needs the `application:update` permission.",
         "operationId": "update-service-release-age",
         "parameters": [
           {
@@ -8511,6 +8519,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -8538,7 +8556,7 @@
     },
     "/applications/{id}/release-age/settings": {
       "put": {
-        "description": "Sets how old an image must be before the application is updated to it. Needs the `application:update` permission.",
+        "description": "Sets how old an image must be before the application is updated to it. Settings that come from x-orcacd in the compose file can't be changed (409). Needs the `application:update` permission.",
         "operationId": "update-application-release-age-settings",
         "parameters": [
           {
@@ -8612,6 +8630,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {
@@ -8732,7 +8760,7 @@
     },
     "/applications/{id}/rollback/settings": {
       "put": {
-        "description": "Replaces all settings of the automatic rollback. Needs the `application:update` permission.",
+        "description": "Replaces all settings of the automatic rollback. Settings that come from x-orcacd in the compose file can't be changed (409). Needs the `application:update` permission.",
         "operationId": "update-application-rollback-settings",
         "parameters": [
           {
@@ -8806,6 +8834,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "500": {
             "content": {

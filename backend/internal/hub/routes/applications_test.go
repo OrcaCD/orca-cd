@@ -76,7 +76,7 @@ func setupTestDBWithApplications(t *testing.T) {
 		t.Fatalf("failed to create name_hash unique index: %v", err)
 	}
 
-	restore := mockApplicationRepositoryHTTPClient()
+	restore := mockApplicationRepositoryHTTPClient(mockComposeFileContent)
 	t.Cleanup(restore)
 }
 
@@ -88,8 +88,8 @@ func jsonResponseWithBody(code int, body string) *http.Response {
 	}
 }
 
-func mockApplicationRepositoryHTTPClient() func() {
-	encodedComposeFile := base64.StdEncoding.EncodeToString([]byte(mockComposeFileContent))
+func mockApplicationRepositoryHTTPClient(composeFile string) func() {
+	encodedComposeFile := base64.StdEncoding.EncodeToString([]byte(composeFile))
 	originalClient := httpclient.Default
 
 	httpclient.Default = &http.Client{
@@ -1274,6 +1274,8 @@ func TestApplicationHandlers_RejectInvalidImagePollInterval(t *testing.T) {
 		{name: "enabled with zero", enabled: true, interval: 0},
 		{name: "enabled negative", enabled: true, interval: -60},
 		{name: "disabled negative", enabled: false, interval: -1},
+		{name: "enabled above the maximum", enabled: true, interval: models.MaxImagePollIntervalSeconds + 1},
+		{name: "overflowing the agent ticker", enabled: true, interval: 9223372037},
 	}
 
 	for _, tt := range tests {

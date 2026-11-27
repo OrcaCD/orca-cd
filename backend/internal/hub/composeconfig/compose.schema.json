@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/OrcaCD/orca-cd/main/backend/internal/hub/composeconfig/compose.schema.json",
+  "title": "Compose file with OrcaCD settings",
+  "description": "The Compose specification with the x-orcacd extension, which sets the OrcaCD settings of the application.",
+  "allOf": [{ "$ref": "https://raw.githubusercontent.com/compose-spec/compose-spec/main/schema/compose-spec.json" }],
+  "properties": {
+    "x-orcacd": { "$ref": "#/$defs/orcacd" },
+    "services": {
+      "additionalProperties": {
+        "properties": {
+          "x-orcacd": { "$ref": "#/$defs/service" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "description": "A duration like \"30s\", \"5m\", \"1h30m\" or \"7d\", or a number of seconds.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "pattern": "^\\s*((\\d+d)((\\d+(\\.\\d+)?(h|m|s|ms|us|µs|ns))*)|(\\d+(\\.\\d+)?(h|m|s|ms|us|µs|ns))+|0)\\s*$" }
+      ]
+    },
+    "service": {
+      "type": ["object", "null"],
+      "description": "OrcaCD settings of this service.",
+      "additionalProperties": false,
+      "properties": {
+        "release-age": {
+          "$ref": "#/$defs/duration",
+          "description": "The minimum release age of the image of this service, at most 365d. The global minimum still applies when it is higher."
+        }
+      }
+    },
+    "orcacd": {
+      "type": ["object", "null"],
+      "description": "OrcaCD settings of the application. Settings set here can't be changed in OrcaCD, removing them restores their default.",
+      "additionalProperties": false,
+      "properties": {
+        "icon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The icon of the application."
+        },
+        "image-poll": {
+          "description": "Checks the registries for newer images and redeploys the application when one changed. true or false is short for enabled.",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "interval": {
+                  "$ref": "#/$defs/duration",
+                  "description": "How often to check, at least 1m. Defaults to 2m."
+                }
+              }
+            }
+          ]
+        },
+        "delete-old-images": {
+          "type": "boolean",
+          "default": false,
+          "description": "Deletes images that are no longer used after an update."
+        },
+        "rollback": {
+          "description": "Rolls back to the previous deployment automatically. true or false is short for enabled.",
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false },
+                "on-deploy-failure": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Roll back when the deployment fails."
+                },
+                "on-unhealthy": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Roll back when the deployment doesn't become healthy within the health timeout."
+                },
+                "health-timeout": {
+                  "$ref": "#/$defs/duration",
+                  "description": "How long a deployment may take to become healthy, between 30s and 1h. Defaults to 5m."
+                },
+                "pause-auto-sync": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Pause automatic syncs after a rollback, so they don't undo it."
+                }
+              }
+            }
+          ]
+        },
+        "release-age": {
+          "type": "object",
+          "description": "Holds back image updates until the new image was pushed long enough ago.",
+          "additionalProperties": false,
+          "properties": {
+            "minimum": {
+              "description": "The minimum release age, at most 365d. null uses the global one, which also applies when it is higher.",
+              "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/duration" }]
+            },
+            "allowed-registries": {
+              "type": "array",
+              "maxItems": 50,
+              "items": { "type": "string", "minLength": 1, "maxLength": 253 },
+              "description": "Registry hosts like registry.example.com:5000 whose images skip the minimum release age."
+            }
+          }
+        }
+      }
+    }
+  }
+}
