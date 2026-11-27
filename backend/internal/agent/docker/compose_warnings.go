@@ -51,6 +51,9 @@ func analyzeComposeWarnings(project *composetypes.Project) []composewarnings.War
 		if service.Privileged {
 			warnings = append(warnings, composewarnings.Warning{Code: "privileged_container", Service: name})
 		}
+		if _, ok := service.Labels[RemovedReleaseAgeLabel]; ok {
+			warnings = append(warnings, composewarnings.Warning{Code: "removed_release_age_label", Service: name})
+		}
 		for _, namespace := range []struct {
 			field string
 			value string

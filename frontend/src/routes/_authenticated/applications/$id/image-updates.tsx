@@ -314,22 +314,6 @@ function MinimumAgeSelect({
 }) {
 	const [saving, setSaving] = useState(false);
 
-	// The compose label wins over everything set in the UI, but not over the
-	// global minimum.
-	if (image.ageSource === "label") {
-		return (
-			<span
-				className="text-sm"
-				title={image.minimumAgeEnforced ? m.releaseAgeLabelRaised() : m.releaseAgeSetByLabel()}
-			>
-				{formatReleaseAge(image.minimumAgeSeconds)}{" "}
-				<span className="text-muted-foreground text-xs">
-					({image.minimumAgeEnforced ? m.releaseAgeLabelRaisedShort() : m.releaseAgeLabelShort()})
-				</span>
-			</span>
-		);
-	}
-
 	const allowed = presetAges.filter((seconds) => seconds >= globalAge);
 	if (!allowed.includes(globalAge)) {
 		allowed.unshift(globalAge);

@@ -411,7 +411,7 @@ type imageUpdateResponse struct {
 	MinimumAgeSeconds int64   `json:"minimumAgeSeconds" required:"true"`
 	// AgeSource says where the minimum age comes from: label, service,
 	// application or global.
-	AgeSource string `json:"ageSource" required:"true" enum:"label,service,application,global" doc:"Where the minimum age comes from"`
+	AgeSource string `json:"ageSource" required:"true" enum:"service,application,global" doc:"Where the minimum age comes from"`
 	// MinimumAgeEnforced means the global minimum raised the age of its source.
 	MinimumAgeEnforced bool   `json:"minimumAgeEnforced" required:"true" doc:"The global minimum release age raised the age of its source"`
 	Reason             string `json:"reason" required:"true"`
@@ -490,10 +490,6 @@ var ListApplicationImageUpdatesHandler = restapi.Handler(huma.Operation{
 })
 
 func ageSource(row *models.ApplicationImageUpdate, app *models.Application, inherited bool) string {
-	// A label wins over the settings, even when the global minimum raises it.
-	if row.MinimumAgeFromLabel {
-		return "label"
-	}
 	if row.MinimumAgeEnforced {
 		return "global"
 	}

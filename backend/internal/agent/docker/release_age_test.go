@@ -23,41 +23,6 @@ const (
 	newDigest = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 )
 
-func TestParseReleaseAge(t *testing.T) {
-	tests := []struct {
-		value   string
-		want    time.Duration
-		wantErr bool
-	}{
-		{value: "0", want: 0},
-		{value: "", want: 0},
-		{value: "3d", want: 72 * time.Hour},
-		{value: "1d12h", want: 36 * time.Hour},
-		{value: "90m", want: 90 * time.Minute},
-		{value: " 2d ", want: 48 * time.Hour},
-		{value: "xd", wantErr: true},
-		{value: "-1d", wantErr: true},
-		{value: "-5h", wantErr: true},
-		{value: "soon", wantErr: true},
-		{value: "365d", want: 365 * 24 * time.Hour},
-		{value: "365d1h", wantErr: true},
-		{value: "9000h", wantErr: true},
-		// Would overflow a time.Duration and wrap around to about 36 days
-		{value: "250000d", wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.value, func(t *testing.T) {
-			got, err := parseReleaseAge(tt.value)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("parseReleaseAge(%q) error = %v, wantErr %v", tt.value, err, tt.wantErr)
-			}
-			if got != tt.want {
-				t.Errorf("parseReleaseAge(%q) = %v, want %v", tt.value, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestSameTag(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -104,12 +69,11 @@ func TestEvaluateUpdate(t *testing.T) {
 	policy := ReleaseAgePolicy{MinimumAge: 3 * 24 * time.Hour}
 	service := composetypes.ServiceConfig{Name: "app", Image: "ghcr.io/org/app:1.0"}
 	withLabel := func(value string) composetypes.ServiceConfig {
-		return composetypes.ServiceConfig{Name: "app", Image: service.Image, Labels: composetypes.Labels{releaseAgeLabel: value}}
+		return composetypes.ServiceConfig{Name: "app", Image: service.Image, Labels: composetypes.Labels{RemovedReleaseAgeLabel: value}}
 	}
 	const (
 		updated = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED
 		waiting = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_WAITING
-		blocked = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED
 		skipped = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_SKIPPED
 	)
 
@@ -149,17 +113,15 @@ func TestEvaluateUpdate(t *testing.T) {
 			wantReason: "minimum release age 7d",
 			wantLookup: true,
 		},
-		{name: "label disables it", policy: policy, service: withLabel("0"), wantStatus: updated},
 		{
-			name:       "label wins over service override",
-			policy:     ReleaseAgePolicy{ServiceMinimumAge: map[string]time.Duration{"app": 0}},
-			service:    withLabel("7d"),
-			pushed:     time.Now().Add(-72 * time.Hour),
+			name:       "removed label is ignored",
+			policy:     policy,
+			service:    withLabel("0"),
+			pushed:     time.Now().Add(-time.Hour),
 			wantStatus: waiting,
-			wantReason: "minimum release age 7d",
+			wantReason: "minimum release age 3d",
 			wantLookup: true,
 		},
-		{name: "invalid label", policy: policy, service: withLabel("soon"), wantStatus: blocked, wantReason: "invalid " + releaseAgeLabel + " label"},
 		{
 			name:       "announced by webhook waits too",
 			policy:     ReleaseAgePolicy{MinimumAge: policy.MinimumAge, WebhookImages: []string{"ghcr.io/org/app:1.0"}},
@@ -184,15 +146,6 @@ func TestEvaluateUpdate(t *testing.T) {
 			wantReason: "not part of this pull",
 		},
 		{
-			name:       "enforced minimum raises a lower label",
-			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week},
-			service:    withLabel("0"),
-			pushed:     time.Now().Add(-72 * time.Hour),
-			wantStatus: waiting,
-			wantReason: "minimum release age 7d",
-			wantLookup: true,
-		},
-		{
 			name:       "enforced minimum raises a lower service override",
 			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week, ServiceMinimumAge: map[string]time.Duration{"app": 0}},
 			service:    service,
@@ -213,7 +166,7 @@ func TestEvaluateUpdate(t *testing.T) {
 		{
 			name:       "exempt registry skips the enforced minimum",
 			policy:     ReleaseAgePolicy{EnforcedMinimumAge: week, EnforcedExemptRegistries: []string{"ghcr.io"}, AllowedRegistries: []string{"ghcr.io"}},
-			service:    withLabel("0"),
+			service:    service,
 			wantStatus: updated,
 		},
 	}
@@ -411,7 +364,7 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 	loadProject = func(context.Context, api.Compose, api.ProjectLoadOptions) (*composetypes.Project, error) {
 		services := composetypes.Services{
 			// Updated right away
-			"web": image("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}),
+			"web": image("ghcr.io/org/app:1.0", nil),
 			// Held back by the release age
 			"worker": image("ghcr.io/org/worker:1.0", nil),
 			"db":     image("postgres:17", nil),
@@ -456,7 +409,8 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 		return nil
 	}
 
-	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{MinimumAge: 24 * time.Hour})
+	policy := ReleaseAgePolicy{MinimumAge: 24 * time.Hour, ServiceMinimumAge: map[string]time.Duration{"web": 0}}
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, policy)
 	if !updated || err == nil {
 		t.Fatalf("expected web to be updated and the failed lookups to be reported, got updated=%v err=%v", updated, err)
 	}
@@ -497,26 +451,19 @@ func TestCheckAndPullImages_OnlyUpdatedServicesChangeTheirImage(t *testing.T) {
 }
 
 func TestSetMinimumAge_ReportsEnforcedMinimum(t *testing.T) {
-	policy := ReleaseAgePolicy{EnforcedMinimumAge: 24 * time.Hour}
-	service := composetypes.ServiceConfig{Name: "app", Image: "redis:7", Labels: composetypes.Labels{releaseAgeLabel: "1h"}}
+	policy := ReleaseAgePolicy{EnforcedMinimumAge: 24 * time.Hour, ServiceMinimumAge: map[string]time.Duration{"app": time.Hour}}
+	service := composetypes.ServiceConfig{Name: "app", Image: "redis:7"}
 
 	update := &messages.ImageUpdate{}
-	age, err := policy.setMinimumAge(service, update)
-	if err != nil || age != 24*time.Hour {
-		t.Fatalf("setMinimumAge = %v, %v", age, err)
-	}
-	// The label still sets the age, the global minimum only raises it.
-	if !update.MinimumAgeEnforced || !update.MinimumAgeFromLabel || update.MinimumAgeSeconds != 86400 {
-		t.Errorf("unexpected update %+v", update)
+	// The global minimum raises the shorter age of the service.
+	if age := policy.setMinimumAge(service, update); age != 24*time.Hour || !update.MinimumAgeEnforced || update.MinimumAgeSeconds != 86400 {
+		t.Errorf("setMinimumAge = %v, update %+v", age, update)
 	}
 
-	service.Labels[releaseAgeLabel] = "2d"
+	policy.ServiceMinimumAge["app"] = 48 * time.Hour
 	update = &messages.ImageUpdate{}
-	if _, err := policy.setMinimumAge(service, update); err != nil {
-		t.Fatal(err)
-	}
-	if update.MinimumAgeEnforced || !update.MinimumAgeFromLabel || update.MinimumAgeSeconds != 2*86400 {
-		t.Errorf("unexpected update %+v", update)
+	if age := policy.setMinimumAge(service, update); age != 48*time.Hour || update.MinimumAgeEnforced || update.MinimumAgeSeconds != 2*86400 {
+		t.Errorf("setMinimumAge = %v, update %+v", age, update)
 	}
 }
 
@@ -537,28 +484,28 @@ func TestReleaseAgePolicyFromProto_Enforced(t *testing.T) {
 // update and its up-to-date row both report.
 func TestReleaseAge_ExemptImageReportsOnlyTheEnforcedMinimum(t *testing.T) {
 	week := 7 * 24 * time.Hour
-	service := composetypes.ServiceConfig{Name: "app", Image: "ghcr.io/org/app:1.0", Labels: composetypes.Labels{releaseAgeLabel: "3d"}}
+	service := composetypes.ServiceConfig{Name: "app", Image: "ghcr.io/org/app:1.0"}
 	c := newTestClient(t)
-	policy := ReleaseAgePolicy{MinimumAge: week, AllowedRegistries: []string{"ghcr.io"}}
+	policy := ReleaseAgePolicy{MinimumAge: week, ServiceMinimumAge: map[string]time.Duration{"app": 3 * 24 * time.Hour}, AllowedRegistries: []string{"ghcr.io"}}
 	update := &messages.ImageUpdate{}
 	if checked := c.evaluateUpdate(t.Context(), "app-1", policy, service, newDigest, update); checked {
 		t.Error("an exempt image without an enforced minimum must not be checked")
 	}
 	if update.Status != messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED ||
-		update.MinimumAgeSeconds != 0 || update.MinimumAgeFromLabel || update.MinimumAgeEnforced {
+		update.MinimumAgeSeconds != 0 || update.MinimumAgeEnforced {
 		t.Errorf("unexpected update %+v", update)
 	}
 
 	upToDate := &messages.ImageUpdate{}
 	policy.reportMinimumAge(service, upToDate)
-	if upToDate.MinimumAgeSeconds != 0 || upToDate.MinimumAgeFromLabel || upToDate.MinimumAgeEnforced {
+	if upToDate.MinimumAgeSeconds != 0 || upToDate.MinimumAgeEnforced {
 		t.Errorf("unexpected up-to-date row %+v", upToDate)
 	}
 
 	policy.EnforcedMinimumAge = 24 * time.Hour
 	upToDate = &messages.ImageUpdate{}
 	policy.reportMinimumAge(service, upToDate)
-	if upToDate.MinimumAgeSeconds != 86400 || upToDate.MinimumAgeFromLabel || !upToDate.MinimumAgeEnforced {
+	if upToDate.MinimumAgeSeconds != 86400 || !upToDate.MinimumAgeEnforced {
 		t.Errorf("unexpected up-to-date row %+v", upToDate)
 	}
 }

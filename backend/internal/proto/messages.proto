@@ -224,7 +224,9 @@ message ImageUpdate {
   bool first_seen = 9;
   int64 eligible_at = 10;
   int64 minimum_age_seconds = 11;
-  bool minimum_age_from_label = 12;
+  // minimum_age_from_label was set by the removed orca-cd.minimum-release-age label.
+  reserved 12;
+  reserved "minimum_age_from_label";
   string reason = 13;
   // The enforced minimum raised minimum_age_seconds.
   bool minimum_age_enforced = 14;

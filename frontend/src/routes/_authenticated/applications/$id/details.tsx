@@ -264,6 +264,8 @@ function getApplicationWarningMessage(warning: Application["warnings"][number]) 
 				service: warning.service ?? "",
 				field: warning.field ?? "",
 			});
+		case "removed_release_age_label":
+			return m.applicationWarningRemovedReleaseAgeLabel({ service: warning.service ?? "" });
 	}
 }
 

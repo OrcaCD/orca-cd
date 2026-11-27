@@ -1992,7 +1992,6 @@
           "ageSource": {
             "description": "Where the minimum age comes from",
             "enum": [
-              "label",
               "service",
               "application",
               "global"

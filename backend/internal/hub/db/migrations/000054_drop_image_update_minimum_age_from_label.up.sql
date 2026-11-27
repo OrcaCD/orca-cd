@@ -1,0 +1,1 @@
+ALTER TABLE application_image_updates DROP COLUMN minimum_age_from_label;

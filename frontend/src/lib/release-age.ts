@@ -7,9 +7,6 @@ export const hourInSeconds = 60 * 60;
 export const dayInSeconds = 24 * hourInSeconds;
 export const maxReleaseAgeSeconds = 365 * dayInSeconds;
 
-// The label that overrides the minimum release age of a service in the compose file.
-export const releaseAgeLabel = "orca-cd.minimum-release-age";
-
 export interface GlobalReleaseAgeSettings {
 	minimumSeconds: number;
 	allowedRegistries: string[];
@@ -24,7 +21,7 @@ export enum ImageUpdateStatus {
 }
 
 // Where the minimum age of a service comes from, from strongest to weakest.
-export type ReleaseAgeSource = "label" | "service" | "application" | "global";
+export type ReleaseAgeSource = "service" | "application" | "global";
 
 export interface ImageUpdate {
 	service: string;

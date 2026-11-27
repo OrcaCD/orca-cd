@@ -49,22 +49,21 @@ func handleImageUpdatesReport(parent context.Context, client *Client, r *message
 			continue
 		}
 		rows = append(rows, models.ApplicationImageUpdate{
-			ApplicationId:       r.ApplicationId,
-			Service:             image.Service,
-			Image:               image.Image,
-			Status:              status,
-			CurrentDigest:       image.CurrentDigest,
-			CurrentVersion:      image.CurrentVersion,
-			NewDigest:           image.NewDigest,
-			NewVersion:          image.NewVersion,
-			PushedAt:            unixTime(image.PushedAt),
-			FirstSeen:           image.FirstSeen,
-			EligibleAt:          unixTime(image.EligibleAt),
-			MinimumAgeSeconds:   image.MinimumAgeSeconds,
-			MinimumAgeFromLabel: image.MinimumAgeFromLabel,
-			MinimumAgeEnforced:  image.MinimumAgeEnforced,
-			Reason:              image.Reason,
-			CheckedAt:           checkedAt,
+			ApplicationId:      r.ApplicationId,
+			Service:            image.Service,
+			Image:              image.Image,
+			Status:             status,
+			CurrentDigest:      image.CurrentDigest,
+			CurrentVersion:     image.CurrentVersion,
+			NewDigest:          image.NewDigest,
+			NewVersion:         image.NewVersion,
+			PushedAt:           unixTime(image.PushedAt),
+			FirstSeen:          image.FirstSeen,
+			EligibleAt:         unixTime(image.EligibleAt),
+			MinimumAgeSeconds:  image.MinimumAgeSeconds,
+			MinimumAgeEnforced: image.MinimumAgeEnforced,
+			Reason:             image.Reason,
+			CheckedAt:          checkedAt,
 		})
 	}
 
