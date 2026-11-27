@@ -56,23 +56,53 @@ func refuseDemoDatabase(db *gorm.DB) error {
 	return nil
 }
 
-const demoWebComposeFile = `services:
+// The Demo Web App sets its icon, image polling and release ages in x-orcacd, so
+// they are read-only in the UI, while its rollback settings can be edited.
+// demoWebManagedSettings must list the keys of that block.
+const demoWebComposeFile = `x-orcacd:
+  icon: globe
+  image-poll:
+    enabled: true
+    interval: 5m
+  delete-old-images: true
+  release-age:
+    minimum: 1d
+
+services:
   web:
     image: ghcr.io/orcacd/demo-app:1.4.2
     ports:
       - "8080:80"
     env_file: .env
     restart: unless-stopped
+    x-orcacd:
+      release-age: 3d
 `
 
-const demoWebPreviousComposeFile = `services:
+const demoWebPreviousComposeFile = `x-orcacd:
+  icon: globe
+  image-poll:
+    enabled: true
+    interval: 5m
+  delete-old-images: true
+  release-age:
+    minimum: 1d
+
+services:
   web:
     image: ghcr.io/orcacd/demo-app:1.4.1
     ports:
       - "8080:80"
     env_file: .env
     restart: unless-stopped
+    x-orcacd:
+      release-age: 3d
 `
+
+var demoWebManagedSettings = []string{
+	"icon", "imagePollEnabled", "imagePollIntervalSeconds", "deleteOldImages", "releaseAge.minimumSeconds",
+	"releaseAge.serviceOverrides.web",
+}
 
 // The Grafana commit failed its health check, so the Monitoring Stack still runs
 // the Prometheus commit, which deployed demoMonitoringPreviousComposeFile.
@@ -400,7 +430,7 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 	manualSource := models.ApplicationEventSourceManual
 	webhookSecret := crypto.EncryptedString("demo-image-webhook-secret")
 	webDeployment, monitoringDeployment := demoWebDeploymentCurrent, demoMonitoringDeploymentGood
-	webReleaseAge := int64(3 * 24 * 60 * 60)
+	webReleaseAge := int64(24 * 60 * 60)
 	rolledBackAt := now.Add(-demoMonitoringRollbackAgo)
 	rolledBackCommit, rolledBackReason := demoMonitoringPrometheusCommit, demoMonitoringRollbackReason
 
@@ -427,6 +457,8 @@ func seedDemoApplications(ctx context.Context, tx *gorm.DB) error {
 			DeleteOldImages:              true,
 			ImageWebhookSecret:           &webhookSecret,
 			MinimumReleaseAgeSeconds:     &webReleaseAge,
+			ReleaseAgeServiceOverrides:   map[string]int64{"web": 3 * 24 * 60 * 60},
+			ManagedSettings:              demoWebManagedSettings,
 			CurrentDeploymentId:          &webDeployment,
 			RollbackEnabled:              true,
 			RollbackOnDeployFailure:      true,

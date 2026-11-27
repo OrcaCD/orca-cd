@@ -13,7 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
-import { updateReleaseAgeSettings, type Application } from "@/lib/applications";
+import { isManaged, updateReleaseAgeSettings, type Application } from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import { m } from "@/lib/paraglide/messages";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -23,8 +24,9 @@ import {
 	type GlobalReleaseAgeSettings,
 } from "@/lib/release-age";
 
-// The age is only checked when it is shown, and never below the global minimum.
-function releaseAgeSchema(globalSeconds: number) {
+// The age is only checked when it is shown and can be changed, and never below
+// the global minimum. One from x-orcacd may be lower, the global one applies then.
+function releaseAgeSchema(globalSeconds: number, minimumManaged: boolean) {
 	return z
 		.object({
 			useGlobal: z.boolean(),
@@ -32,7 +34,7 @@ function releaseAgeSchema(globalSeconds: number) {
 			allowedRegistries: z.array(z.string()),
 		})
 		.superRefine((value, ctx) => {
-			if (value.useGlobal) {
+			if (value.useGlobal || minimumManaged) {
 				return;
 			}
 			if (value.seconds < 0 || value.seconds > maxReleaseAgeSeconds) {
@@ -60,6 +62,8 @@ export function ReleaseAgeSettings({
 	const { can } = usePermissions();
 	const canUpdate = application !== undefined && can("application", "update", application.id);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const minimumManaged = isManaged(application, "releaseAge.minimumSeconds");
+	const registriesManaged = isManaged(application, "releaseAge.allowedRegistries");
 
 	const settings = application?.releaseAge;
 	const form = useForm({
@@ -69,7 +73,7 @@ export function ReleaseAgeSettings({
 			allowedRegistries: settings?.allowedRegistries ?? [],
 		},
 		validators: {
-			onSubmit: releaseAgeSchema(global?.minimumSeconds ?? 0),
+			onSubmit: releaseAgeSchema(global?.minimumSeconds ?? 0, minimumManaged),
 		},
 		onSubmit: async ({ value }) => {
 			if (!application) {
@@ -77,9 +81,18 @@ export function ReleaseAgeSettings({
 			}
 			setIsSubmitting(true);
 			try {
+				// Managed settings send their current value, which a sync may have
+				// changed after the form was opened.
+				const current = application.releaseAge;
 				const updated = await updateReleaseAgeSettings(application.id, {
-					minimumSeconds: value.useGlobal ? null : value.seconds,
-					allowedRegistries: value.allowedRegistries,
+					minimumSeconds: minimumManaged
+						? current.minimumSeconds
+						: value.useGlobal
+							? null
+							: value.seconds,
+					allowedRegistries: registriesManaged
+						? current.allowedRegistries
+						: value.allowedRegistries,
 				});
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await onUpdated(updated);
@@ -128,7 +141,7 @@ export function ReleaseAgeSettings({
 													form.setFieldValue("seconds", global.minimumSeconds);
 												}
 											}}
-											disabled={!canUpdate}
+											disabled={!canUpdate || minimumManaged}
 										/>
 										<div className="space-y-1">
 											<Label htmlFor={field.name}>{m.releaseAgeUseGlobal()}</Label>
@@ -139,6 +152,7 @@ export function ReleaseAgeSettings({
 													})}
 												</p>
 											)}
+											{minimumManaged && <ManagedSettingHint />}
 										</div>
 									</div>
 								</Field>
@@ -157,7 +171,7 @@ export function ReleaseAgeSettings({
 												seconds={field.state.value}
 												onBlur={field.handleBlur}
 												onChange={(seconds) => field.handleChange(seconds)}
-												disabled={!canUpdate}
+												disabled={!canUpdate || minimumManaged}
 											/>
 											<p className="text-muted-foreground text-xs">{m.releaseAgeMinimumHint()}</p>
 											{isInvalid && <FieldError errors={field.state.meta.errors} />}
@@ -199,8 +213,9 @@ export function ReleaseAgeSettings({
 										id="release-age-registry"
 										value={field.state.value}
 										onChange={(registries) => field.handleChange(registries)}
-										disabled={!canUpdate}
+										disabled={!canUpdate || registriesManaged}
 									/>
+									{registriesManaged && <ManagedSettingHint />}
 								</Field>
 							)}
 						</form.Field>

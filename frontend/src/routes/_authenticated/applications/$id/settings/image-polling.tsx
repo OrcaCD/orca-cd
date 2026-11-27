@@ -10,9 +10,12 @@ import z from "zod";
 import {
 	updateApplication,
 	generateImageWebhook,
+	isManaged,
 	revokeImageWebhook,
+	withManagedValues,
 	type Application,
 } from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import { useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { toast } from "@/components/ui/toast";
@@ -97,7 +100,10 @@ function ImagePollingPage() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
-				const updated = await updateApplication(application!.id, value);
+				const updated = await updateApplication(
+					application!.id,
+					withManagedValues(application!, value),
+				);
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);
@@ -165,13 +171,14 @@ function ImagePollingPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
-												disabled={!canUpdate}
+												disabled={!canUpdate || isManaged(application, "imagePollEnabled")}
 											/>
 											<div className="space-y-1">
 												<Label htmlFor={field.name}>{m.imagePollEnabled()}</Label>
 												<p className="text-muted-foreground text-xs">
 													{m.imagePollEnabledDescription()}
 												</p>
+												{isManaged(application, "imagePollEnabled") && <ManagedSettingHint />}
 											</div>
 										</div>
 									</Field>
@@ -191,9 +198,14 @@ function ImagePollingPage() {
 													value={field.state.value}
 													onBlur={field.handleBlur}
 													onChange={(e) => field.handleChange(Number(e.target.value))}
-													disabled={!canUpdate}
+													disabled={
+														!canUpdate || isManaged(application, "imagePollIntervalSeconds")
+													}
 												/>
 												<p className="text-muted-foreground text-xs">{m.imagePollIntervalHint()}</p>
+												{isManaged(application, "imagePollIntervalSeconds") && (
+													<ManagedSettingHint />
+												)}
 												{isInvalid && <FieldError errors={field.state.meta.errors} />}
 											</Field>
 										);

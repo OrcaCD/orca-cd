@@ -204,6 +204,35 @@ test.describe("signed in", () => {
 		await expect(page.getByText("Rolled back — out of sync with Git")).toHaveCount(0);
 	});
 
+	test("settings from x-orcacd in the compose file are read-only", async ({ page }) => {
+		const { status, body } = await demoApi(page, "GET", `/applications/${WEB_APP.id}`);
+		expect(status).toBe(200);
+		expect(body).toMatchObject({
+			icon: "globe",
+			imagePollEnabled: true,
+			imagePollIntervalSeconds: 300,
+			managedSettings: expect.arrayContaining([
+				"icon",
+				"imagePollEnabled",
+				"imagePollIntervalSeconds",
+				"releaseAge.serviceOverrides.web",
+			]),
+			releaseAge: { serviceOverrides: { web: 3 * 24 * 60 * 60 } },
+		});
+
+		await page.goto(`/applications/${WEB_APP.id}/settings/image-polling`);
+		await expect(page.getByRole("switch", { name: "Enable image polling" })).toBeDisabled();
+		await expect(page.getByText("Set in the compose file with").first()).toBeVisible();
+
+		await page.goto(`/applications/${WEB_APP.id}/image-updates`);
+		await expect(page.getByText("ghcr.io/orcacd/demo-app:1.4.2")).toBeVisible();
+		await expect(page.getByText("Set in the compose file with")).toBeVisible();
+
+		await page.goto(`/applications/${WEB_APP.id}/settings/rollback`);
+		await expect(page.getByRole("switch", { name: "Automatic rollback" })).toBeEnabled();
+		await expect(page.getByText("Set in the compose file with")).toHaveCount(0);
+	});
+
 	test("environment files come from the demo data and secrets stay hidden", async ({ page }) => {
 		const { status, body } = await demoApi(page, "GET", `/applications/${WEB_APP.id}/env`);
 		expect(status).toBe(200);

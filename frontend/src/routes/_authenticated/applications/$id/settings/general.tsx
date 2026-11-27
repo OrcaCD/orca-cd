@@ -3,9 +3,12 @@ import { Button } from "@/components/ui/button";
 import {
 	deleteApplication,
 	deployApplication,
+	isManaged,
 	updateApplication,
+	withManagedValues,
 	type Application,
 } from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import { useMemo, useState } from "react";
 import { toast } from "@/components/ui/toast";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -130,7 +133,7 @@ function GeneralSettingsPage() {
 			const previous = application!;
 			setIsSubmitting(true);
 			try {
-				const updated = await updateApplication(previous.id, value);
+				const updated = await updateApplication(previous.id, withManagedValues(previous, value));
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
 				form.reset(value);
@@ -262,8 +265,9 @@ function GeneralSettingsPage() {
 												onValueChange={field.handleChange}
 												placeholder={m.selectIcon()}
 												emptyMessage={m.noIconsFound()}
-												disabled={!canUpdate}
+												disabled={!canUpdate || isManaged(application, "icon")}
 											/>
+											{isManaged(application, "icon") && <ManagedSettingHint />}
 										</Field>
 									)}
 								</form.Field>
@@ -485,12 +489,13 @@ function GeneralSettingsPage() {
 											<FieldContent>
 												<FieldTitle>{m.deleteOldImages()}</FieldTitle>
 												<FieldDescription>{m.deleteOldImagesDescription()}</FieldDescription>
+												{isManaged(application, "deleteOldImages") && <ManagedSettingHint />}
 											</FieldContent>
 											<Switch
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
-												disabled={!canUpdate}
+												disabled={!canUpdate || isManaged(application, "deleteOldImages")}
 											/>
 										</Field>
 									</FieldLabel>

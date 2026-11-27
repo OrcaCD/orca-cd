@@ -38,6 +38,27 @@ export interface Application {
 	rollback: RollbackSettings;
 	warnings: ApplicationWarning[];
 	releaseAge: ReleaseAgeSettings;
+	// managedSettings come from x-orcacd in the compose file and can only be changed there.
+	managedSettings: ManagedSetting[];
+}
+
+// ManagedSetting is the path of a setting in the application, like "rollback.enabled".
+export type ManagedSetting =
+	| "icon"
+	| "imagePollEnabled"
+	| "imagePollIntervalSeconds"
+	| "deleteOldImages"
+	| "rollback.enabled"
+	| "rollback.onDeployFailure"
+	| "rollback.onUnhealthy"
+	| "rollback.healthTimeoutSeconds"
+	| "rollback.pauseAutoSync"
+	| "releaseAge.minimumSeconds"
+	| "releaseAge.allowedRegistries"
+	| `releaseAge.serviceOverrides.${string}`;
+
+export function isManaged(application: Application | undefined, setting: ManagedSetting): boolean {
+	return application?.managedSettings.includes(setting) ?? false;
 }
 
 export interface ReleaseAgeSettings {
@@ -167,6 +188,28 @@ export function updateApplication(
 	data: UpdateApplicationRequest,
 ): Promise<Application> {
 	return fetcher<Application>(`/applications/${id}`, "PUT", data);
+}
+
+const updateRequestSettings = [
+	"icon",
+	"imagePollEnabled",
+	"imagePollIntervalSeconds",
+	"deleteOldImages",
+] as const;
+
+// withManagedValues sends the current values of the settings that x-orcacd
+// manages, which a sync may have changed after the form was opened.
+export function withManagedValues(
+	application: Application,
+	data: UpdateApplicationRequest,
+): UpdateApplicationRequest {
+	const result = { ...data };
+	for (const setting of updateRequestSettings) {
+		if (isManaged(application, setting)) {
+			Object.assign(result, { [setting]: application[setting] });
+		}
+	}
+	return result;
 }
 
 export function deleteApplication(id: string): Promise<void> {

@@ -14,7 +14,13 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toast";
 import { useFetch } from "@/lib/api";
-import { updateRollbackSettings, type Application } from "@/lib/applications";
+import {
+	isManaged,
+	updateRollbackSettings,
+	type Application,
+	type ManagedSetting,
+} from "@/lib/applications";
+import { ManagedSettingHint } from "@/components/applications/managed-setting-hint";
 import {
 	getNotificationTypeIconPath,
 	type Notification,
@@ -103,6 +109,7 @@ function RollbackSettingsPage() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const { can, canAny } = usePermissions();
 	const canUpdate = can("application", "update", id);
+	const managed = (setting: ManagedSetting) => isManaged(application, setting);
 
 	const settings = application?.rollback;
 	const form = useForm({
@@ -119,15 +126,25 @@ function RollbackSettingsPage() {
 		onSubmit: async ({ value }) => {
 			setIsSubmitting(true);
 			try {
+				const current = application!.rollback;
+				// Managed settings send their current value, which a sync may have
+				// changed after the form was opened.
+				const pick = <T,>(setting: ManagedSetting, server: T, form: T) =>
+					managed(setting) ? server : form;
 				const updated = await updateRollbackSettings(id, {
-					enabled: value.enabled,
-					onDeployFailure: value.onDeployFailure,
-					onUnhealthy: value.onUnhealthy,
-					healthTimeoutSeconds: healthTimeoutSeconds(
-						value.healthTimeoutMinutes,
-						settings?.healthTimeoutSeconds ?? 300,
+					enabled: pick("rollback.enabled", current.enabled, value.enabled),
+					onDeployFailure: pick(
+						"rollback.onDeployFailure",
+						current.onDeployFailure,
+						value.onDeployFailure,
 					),
-					pauseAutoSync: value.pauseAutoSync,
+					onUnhealthy: pick("rollback.onUnhealthy", current.onUnhealthy, value.onUnhealthy),
+					healthTimeoutSeconds: pick(
+						"rollback.healthTimeoutSeconds",
+						current.healthTimeoutSeconds,
+						healthTimeoutSeconds(value.healthTimeoutMinutes, current.healthTimeoutSeconds),
+					),
+					pauseAutoSync: pick("rollback.pauseAutoSync", current.pauseAutoSync, value.pauseAutoSync),
 				});
 				// Update the cache first, otherwise the form falls back to the stale defaults after the reset
 				await mutateApplication(updated, { revalidate: false });
@@ -186,10 +203,11 @@ function RollbackSettingsPage() {
 												id={field.name}
 												checked={field.state.value}
 												onCheckedChange={(checked) => field.handleChange(checked)}
-												disabled={!canUpdate}
+												disabled={!canUpdate || managed("rollback.enabled")}
 											/>
 											<FieldLabel htmlFor={field.name}>{m.automaticRollback()}</FieldLabel>
 										</div>
+										{managed("rollback.enabled") && <ManagedSettingHint />}
 									</Field>
 								)}
 							</form.Field>
@@ -207,6 +225,7 @@ function RollbackSettingsPage() {
 												checked={field.state.value}
 												onChange={field.handleChange}
 												disabled={!canUpdate}
+												managed={managed("rollback.onDeployFailure")}
 												label={m.rollbackOnDeployFailure()}
 												description={m.rollbackOnDeployFailureDescription()}
 											/>
@@ -219,6 +238,7 @@ function RollbackSettingsPage() {
 												checked={field.state.value}
 												onChange={field.handleChange}
 												disabled={!canUpdate}
+												managed={managed("rollback.onUnhealthy")}
 												label={m.rollbackOnUnhealthy()}
 												description={m.rollbackOnUnhealthyDescription()}
 												errors={field.state.meta.errors}
@@ -242,12 +262,13 @@ function RollbackSettingsPage() {
 																value={field.state.value}
 																onBlur={field.handleBlur}
 																onChange={(e) => field.handleChange(Number(e.target.value))}
-																disabled={!canUpdate}
+																disabled={!canUpdate || managed("rollback.healthTimeoutSeconds")}
 															/>
 															<span className="text-sm text-muted-foreground">
 																{m.rollbackMinutes()}
 															</span>
 														</div>
+														{managed("rollback.healthTimeoutSeconds") && <ManagedSettingHint />}
 														{isInvalid && <FieldError errors={field.state.meta.errors} />}
 													</Field>
 												);
@@ -266,6 +287,7 @@ function RollbackSettingsPage() {
 												checked={field.state.value}
 												onChange={field.handleChange}
 												disabled={!canUpdate}
+												managed={managed("rollback.pauseAutoSync")}
 												label={m.rollbackPauseAutoSync()}
 												description={m.rollbackPauseAutoSyncDescription()}
 											/>
@@ -356,12 +378,14 @@ function CheckboxField({
 	label,
 	description,
 	disabled,
+	managed,
 	errors = [],
 }: {
 	id: string;
 	checked: boolean;
 	onChange: (checked: boolean) => void;
 	disabled: boolean;
+	managed: boolean;
 	label: string;
 	description: string;
 	errors?: ({ message?: string } | undefined)[];
@@ -372,12 +396,13 @@ function CheckboxField({
 				<Checkbox
 					id={id}
 					checked={checked}
-					disabled={disabled}
+					disabled={disabled || managed}
 					onCheckedChange={(value) => onChange(value === true)}
 				/>
 				<div className="space-y-1">
 					<FieldLabel htmlFor={id}>{label}</FieldLabel>
 					<p className="text-muted-foreground text-xs">{description}</p>
+					{managed && <ManagedSettingHint />}
 				</div>
 			</div>
 			{errors.length > 0 && <FieldError errors={errors} />}
