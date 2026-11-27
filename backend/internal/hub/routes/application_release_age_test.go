@@ -233,7 +233,7 @@ func TestListApplicationImageUpdatesHandler(t *testing.T) {
 	checkedAt := time.Now().UTC().Truncate(time.Second)
 	eligibleAt := checkedAt.Add(48 * time.Hour)
 	rows := []models.ApplicationImageUpdate{
-		{ApplicationId: app.Id, Service: "web", Image: "ghcr.io/org/web:1", Status: models.ImageUpdateUpToDate, MinimumAgeSeconds: 0, MinimumAgeFromLabel: true, CheckedAt: checkedAt},
+		{ApplicationId: app.Id, Service: "web", Image: "ghcr.io/org/web:1", Status: models.ImageUpdateUpToDate, MinimumAgeSeconds: 86400, MinimumAgeEnforced: true, CheckedAt: checkedAt},
 		{ApplicationId: app.Id, Service: "db", Image: "postgres:17", Status: models.ImageUpdateWaiting, NewVersion: "17.2", EligibleAt: &eligibleAt, MinimumAgeSeconds: 604800, CheckedAt: checkedAt},
 		{ApplicationId: app.Id, Service: "cache", Image: "redis:7", Status: models.ImageUpdateUpToDate, CheckedAt: checkedAt},
 	}
@@ -257,7 +257,7 @@ func TestListApplicationImageUpdatesHandler(t *testing.T) {
 	for _, image := range response.Images {
 		sources[image.Service] = image.AgeSource
 	}
-	if sources["web"] != "label" || sources["db"] != "service" || sources["cache"] != "global" {
+	if sources["web"] != "global" || sources["db"] != "service" || sources["cache"] != "global" {
 		t.Errorf("age sources = %v", sources)
 	}
 	if db := response.Images[1]; db.Service != "db" || db.NewVersion != "17.2" || db.EligibleAt == nil {
@@ -454,14 +454,14 @@ func TestReleaseAgeHandlers_GlobalSettingsError(t *testing.T) {
 }
 
 func TestAgeSource_Enforced(t *testing.T) {
-	row := &models.ApplicationImageUpdate{Service: "web", MinimumAgeEnforced: true, MinimumAgeFromLabel: false}
+	row := &models.ApplicationImageUpdate{Service: "web", MinimumAgeEnforced: true}
 	app := &models.Application{ReleaseAgeServiceOverrides: map[string]int64{"web": 0}}
 	if got := ageSource(row, app, false); got != "global" {
 		t.Errorf("ageSource = %q, want global", got)
 	}
-	row.MinimumAgeFromLabel = true
-	if got := ageSource(row, app, false); got != "label" {
-		t.Errorf("ageSource = %q, want label for a raised label", got)
+	row.MinimumAgeEnforced = false
+	if got := ageSource(row, app, false); got != "service" {
+		t.Errorf("ageSource = %q, want service", got)
 	}
 }
 

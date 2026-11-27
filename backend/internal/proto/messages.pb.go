@@ -2101,11 +2101,10 @@ type ImageUpdate struct {
 	// Unix seconds, 0 if unknown.
 	PushedAt int64 `protobuf:"varint,8,opt,name=pushed_at,json=pushedAt,proto3" json:"pushed_at,omitempty"`
 	// pushed_at is when the agent first saw the digest, as the registry has no push time.
-	FirstSeen           bool   `protobuf:"varint,9,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
-	EligibleAt          int64  `protobuf:"varint,10,opt,name=eligible_at,json=eligibleAt,proto3" json:"eligible_at,omitempty"`
-	MinimumAgeSeconds   int64  `protobuf:"varint,11,opt,name=minimum_age_seconds,json=minimumAgeSeconds,proto3" json:"minimum_age_seconds,omitempty"`
-	MinimumAgeFromLabel bool   `protobuf:"varint,12,opt,name=minimum_age_from_label,json=minimumAgeFromLabel,proto3" json:"minimum_age_from_label,omitempty"`
-	Reason              string `protobuf:"bytes,13,opt,name=reason,proto3" json:"reason,omitempty"`
+	FirstSeen         bool   `protobuf:"varint,9,opt,name=first_seen,json=firstSeen,proto3" json:"first_seen,omitempty"`
+	EligibleAt        int64  `protobuf:"varint,10,opt,name=eligible_at,json=eligibleAt,proto3" json:"eligible_at,omitempty"`
+	MinimumAgeSeconds int64  `protobuf:"varint,11,opt,name=minimum_age_seconds,json=minimumAgeSeconds,proto3" json:"minimum_age_seconds,omitempty"`
+	Reason            string `protobuf:"bytes,13,opt,name=reason,proto3" json:"reason,omitempty"`
 	// The enforced minimum raised minimum_age_seconds.
 	MinimumAgeEnforced bool `protobuf:"varint,14,opt,name=minimum_age_enforced,json=minimumAgeEnforced,proto3" json:"minimum_age_enforced,omitempty"`
 	unknownFields      protoimpl.UnknownFields
@@ -2217,13 +2216,6 @@ func (x *ImageUpdate) GetMinimumAgeSeconds() int64 {
 		return x.MinimumAgeSeconds
 	}
 	return 0
-}
-
-func (x *ImageUpdate) GetMinimumAgeFromLabel() bool {
-	if x != nil {
-		return x.MinimumAgeFromLabel
-	}
-	return false
 }
 
 func (x *ImageUpdate) GetReason() string {
@@ -4502,7 +4494,7 @@ const file_messages_proto_rawDesc = "" +
 	"\x10held_back_images\x18\b \x03(\v2\x17.messages.HeldBackImageR\x0eheldBackImages\"=\n" +
 	"\rHeldBackImage\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8e\x04\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xf7\x03\n" +
 	"\vImageUpdate\x12\x18\n" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x123\n" +
@@ -4519,10 +4511,9 @@ const file_messages_proto_rawDesc = "" +
 	"\veligible_at\x18\n" +
 	" \x01(\x03R\n" +
 	"eligibleAt\x12.\n" +
-	"\x13minimum_age_seconds\x18\v \x01(\x03R\x11minimumAgeSeconds\x123\n" +
-	"\x16minimum_age_from_label\x18\f \x01(\bR\x13minimumAgeFromLabel\x12\x16\n" +
+	"\x13minimum_age_seconds\x18\v \x01(\x03R\x11minimumAgeSeconds\x12\x16\n" +
 	"\x06reason\x18\r \x01(\tR\x06reason\x120\n" +
-	"\x14minimum_age_enforced\x18\x0e \x01(\bR\x12minimumAgeEnforced\"\x89\x01\n" +
+	"\x14minimum_age_enforced\x18\x0e \x01(\bR\x12minimumAgeEnforcedJ\x04\b\f\x10\rR\x16minimum_age_from_label\"\x89\x01\n" +
 	"\x12ImageUpdatesReport\x12%\n" +
 	"\x0eapplication_id\x18\x01 \x01(\tR\rapplicationId\x12\x1d\n" +
 	"\n" +

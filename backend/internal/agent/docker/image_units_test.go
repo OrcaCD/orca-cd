@@ -57,8 +57,8 @@ func stubUnitProject(t *testing.T, services composetypes.Services) (pulled, uppe
 	return pulled, upped, tagged
 }
 
-func serviceWith(image string, labels composetypes.Labels, hookImages ...string) composetypes.ServiceConfig {
-	service := composetypes.ServiceConfig{Image: image, Labels: labels}
+func serviceWith(image string, hookImages ...string) composetypes.ServiceConfig {
+	service := composetypes.ServiceConfig{Image: image}
 	for _, hookImage := range hookImages {
 		service.PreStart = append(service.PreStart, composetypes.PreStartHook{Image: hookImage})
 	}
@@ -71,12 +71,13 @@ func TestCheckAndPullImages_SharedTagWaitsForTheStrictestAge(t *testing.T) {
 	c := setupStaleImage(t)
 	stubPushTime(t, time.Now().Add(-48*time.Hour), nil)
 	pulled, _, _ := stubUnitProject(t, composetypes.Services{
-		"web":    serviceWith("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}),
-		"worker": serviceWith("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "7d"}),
-		"api":    serviceWith("ghcr.io/org/app:1.0", nil),
+		"web":    serviceWith("ghcr.io/org/app:1.0"),
+		"worker": serviceWith("ghcr.io/org/app:1.0"),
+		"api":    serviceWith("ghcr.io/org/app:1.0"),
 	})
 
-	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{MinimumAge: 24 * time.Hour})
+	policy := ReleaseAgePolicy{MinimumAge: 24 * time.Hour, ServiceMinimumAge: map[string]time.Duration{"web": 0, "worker": 7 * 24 * time.Hour}}
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, policy)
 	if err != nil || updated || *pulled != nil {
 		t.Fatalf("expected the update to wait, got updated=%v err=%v pulled=%v", updated, err, *pulled != nil)
 	}
@@ -106,11 +107,12 @@ func TestCheckAndPullImages_SharedTagUpdatesTogether(t *testing.T) {
 	c := setupStaleImage(t)
 	stubPushTime(t, time.Now().Add(-48*time.Hour), nil)
 	pulled, upped, tagged := stubUnitProject(t, composetypes.Services{
-		"web":    serviceWith("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}),
-		"worker": serviceWith("ghcr.io/org/app:1.0", nil),
+		"web":    serviceWith("ghcr.io/org/app:1.0"),
+		"worker": serviceWith("ghcr.io/org/app:1.0"),
 	})
 
-	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{MinimumAge: 24 * time.Hour})
+	policy := ReleaseAgePolicy{MinimumAge: 24 * time.Hour, ServiceMinimumAge: map[string]time.Duration{"web": 0}}
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, policy)
 	if err != nil || !updated {
 		t.Fatalf("expected an update, got updated=%v err=%v", updated, err)
 	}
@@ -153,7 +155,7 @@ func TestCheckAndPullImages_ChecksPreStartHookImages(t *testing.T) {
 				migrate:               time.Now().Add(-tt.migratePushed),
 			})
 			pulled, upped, tagged := stubUnitProject(t, composetypes.Services{
-				"web": serviceWith("ghcr.io/org/app:1.0", nil, migrate),
+				"web": serviceWith("ghcr.io/org/app:1.0", migrate),
 			})
 
 			updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{MinimumAge: 24 * time.Hour})
@@ -200,8 +202,8 @@ func TestCheckAndPullImages_PreStartHookSharesTagWithService(t *testing.T) {
 	c := setupStaleImage(t)
 	stubPushTime(t, time.Now().Add(-48*time.Hour), nil)
 	pulled, _, _ := stubUnitProject(t, composetypes.Services{
-		"web":     serviceWith("ghcr.io/org/app:1.0", composetypes.Labels{releaseAgeLabel: "0"}, migrate),
-		"migrate": serviceWith(migrate, composetypes.Labels{releaseAgeLabel: "7d"}),
+		"web":     serviceWith("ghcr.io/org/app:1.0", migrate),
+		"migrate": serviceWith(migrate),
 	})
 	getLocalDigests = func(_ context.Context, _ client.APIClient, ref string) ([]string, error) {
 		if ref == "ghcr.io/org/app:1.0" {
@@ -210,7 +212,8 @@ func TestCheckAndPullImages_PreStartHookSharesTagWithService(t *testing.T) {
 		return []string{"ghcr.io/org/migrate@" + oldDigest}, nil
 	}
 
-	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, ReleaseAgePolicy{})
+	policy := ReleaseAgePolicy{ServiceMinimumAge: map[string]time.Duration{"web": 0, "migrate": 7 * 24 * time.Hour}}
+	updated, images, err := c.CheckAndPullImages(t.Context(), "app-1", "myapp", false, policy)
 	if err != nil || updated || *pulled != nil {
 		t.Fatalf("expected the hook image to wait for migrate, got updated=%v err=%v pulled=%v", updated, err, *pulled != nil)
 	}

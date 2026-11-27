@@ -2,12 +2,9 @@ package docker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	messages "github.com/OrcaCD/orca-cd/internal/proto"
@@ -15,10 +12,6 @@ import (
 	"github.com/distribution/reference"
 	godigest "github.com/opencontainers/go-digest"
 )
-
-// releaseAgeLabel overrides the minimum release age for one service, e.g. "0"
-// for a first-party image or "7d" for a database. It wins over the hub's settings.
-const releaseAgeLabel = "orca-cd.minimum-release-age"
 
 // ReleaseAgePolicy holds back updated images until they were pushed to their
 // registry at least MinimumAge ago. This gives maintainers and scanners time to
@@ -66,17 +59,12 @@ func (p ReleaseAgePolicy) equal(other ReleaseAgePolicy) bool {
 		slices.Equal(p.WebhookImages, other.WebhookImages)
 }
 
-// minimumAge returns the minimum release age of the service, and whether its
-// label set it.
-func (p ReleaseAgePolicy) minimumAge(service composetypes.ServiceConfig) (time.Duration, bool, error) {
-	if value, ok := service.Labels[releaseAgeLabel]; ok {
-		age, err := parseReleaseAge(value)
-		return age, true, err
-	}
+// minimumAge returns the minimum release age of the service.
+func (p ReleaseAgePolicy) minimumAge(service composetypes.ServiceConfig) time.Duration {
 	if age, ok := p.ServiceMinimumAge[service.Name]; ok {
-		return age, false, nil
+		return age
 	}
-	return p.MinimumAge, false, nil
+	return p.MinimumAge
 }
 
 // enforcedMinimumAge returns the enforced minimum release age of imageRef.
@@ -89,19 +77,14 @@ func (p ReleaseAgePolicy) enforcedMinimumAge(imageRef string) time.Duration {
 
 // setMinimumAge records the minimum release age of the service in update and
 // returns it. The enforced minimum raises a lower one.
-func (p ReleaseAgePolicy) setMinimumAge(service composetypes.ServiceConfig, update *messages.ImageUpdate) (time.Duration, error) {
-	age, fromLabel, err := p.minimumAge(service)
-	update.MinimumAgeFromLabel = fromLabel
-	if err != nil {
-		return 0, err
-	}
-	// MinimumAgeFromLabel stays set, as the label still wins over the settings.
+func (p ReleaseAgePolicy) setMinimumAge(service composetypes.ServiceConfig, update *messages.ImageUpdate) time.Duration {
+	age := p.minimumAge(service)
 	if enforced := p.enforcedMinimumAge(service.Image); enforced > age {
 		age = enforced
 		update.MinimumAgeEnforced = true
 	}
 	update.MinimumAgeSeconds = int64(age / time.Second)
-	return age, nil
+	return age
 }
 
 // exempt reports whether imageRef only waits for the enforced minimum, as it
@@ -115,7 +98,6 @@ func (p ReleaseAgePolicy) exempt(imageRef string) bool {
 func (p ReleaseAgePolicy) setExemptMinimumAge(imageRef string, update *messages.ImageUpdate) time.Duration {
 	age := p.enforcedMinimumAge(imageRef)
 	update.MinimumAgeSeconds = int64(age / time.Second)
-	update.MinimumAgeFromLabel = false
 	update.MinimumAgeEnforced = age > 0
 	return age
 }
@@ -123,7 +105,7 @@ func (p ReleaseAgePolicy) setExemptMinimumAge(imageRef string, update *messages.
 // reportMinimumAge records in update the minimum release age an update of the
 // image of the service would wait for.
 func (p ReleaseAgePolicy) reportMinimumAge(service composetypes.ServiceConfig, update *messages.ImageUpdate) {
-	if _, err := p.setMinimumAge(service, update); err == nil && p.exempt(service.Image) {
+	if p.setMinimumAge(service, update); p.exempt(service.Image) {
 		p.setExemptMinimumAge(service.Image, update)
 	}
 }
@@ -134,12 +116,7 @@ func (p ReleaseAgePolicy) reportMinimumAge(service composetypes.ServiceConfig, u
 func (c *Client) evaluateUpdate(ctx context.Context, appID string, policy ReleaseAgePolicy, service composetypes.ServiceConfig, digest string, update *messages.ImageUpdate) (checked bool) {
 	update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_UPDATED
 
-	minimumAge, err := policy.setMinimumAge(service, update)
-	if err != nil {
-		update.Status = messages.ImageUpdateStatus_IMAGE_UPDATE_STATUS_BLOCKED
-		update.Reason = fmt.Sprintf("invalid %s label: %v", releaseAgeLabel, err)
-		return false
-	}
+	minimumAge := policy.setMinimumAge(service, update)
 	if minimumAge <= 0 {
 		return false
 	}
@@ -242,46 +219,6 @@ func pinnedRef(imageRef, digest string) (string, error) {
 		return "", err
 	}
 	return pinned.String(), nil
-}
-
-// maxReleaseAge is the longest minimum release age, the same limit the hub
-// sets. It also keeps day counts from overflowing a time.Duration.
-const maxReleaseAge = 365 * 24 * time.Hour
-
-// parseReleaseAge parses durations like "3d", "1d12h" or "90m". Go durations
-// have no days, so a leading day count is handled here.
-func parseReleaseAge(value string) (time.Duration, error) {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "0" {
-		return 0, nil
-	}
-	tooLong := fmt.Errorf("release age %q is longer than %s", value, formatReleaseAge(maxReleaseAge))
-	var age time.Duration
-	if days, rest, ok := strings.Cut(value, "d"); ok {
-		n, err := strconv.Atoi(days)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("invalid number of days in %q", value)
-		}
-		if n > int(maxReleaseAge/(24*time.Hour)) {
-			return 0, tooLong
-		}
-		age = time.Duration(n) * 24 * time.Hour
-		value = rest
-	}
-	if value != "" {
-		duration, err := time.ParseDuration(value)
-		if err != nil {
-			return 0, err
-		}
-		age += duration
-	}
-	if age < 0 {
-		return 0, errors.New("release age must not be negative")
-	}
-	if age > maxReleaseAge {
-		return 0, tooLong
-	}
-	return age, nil
 }
 
 func formatReleaseAge(age time.Duration) string {

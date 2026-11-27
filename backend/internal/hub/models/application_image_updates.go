@@ -29,10 +29,9 @@ type ApplicationImageUpdate struct {
 	PushedAt       *time.Time        `gorm:"type:timestamp"`
 	// FirstSeen means PushedAt is when the agent first saw the new image, as
 	// its registry has no push time.
-	FirstSeen           bool       `gorm:"not null;default:false"`
-	EligibleAt          *time.Time `gorm:"type:timestamp"`
-	MinimumAgeSeconds   int64      `gorm:"not null;default:0"`
-	MinimumAgeFromLabel bool       `gorm:"not null;default:false"`
+	FirstSeen         bool       `gorm:"not null;default:false"`
+	EligibleAt        *time.Time `gorm:"type:timestamp"`
+	MinimumAgeSeconds int64      `gorm:"not null;default:0"`
 	// MinimumAgeEnforced means the global minimum raised MinimumAgeSeconds.
 	MinimumAgeEnforced bool      `gorm:"not null;default:false"`
 	Reason             string    `gorm:"type:text;not null;default:''"`

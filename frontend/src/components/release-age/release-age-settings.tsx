@@ -20,7 +20,6 @@ import { usePermissions } from "@/lib/permissions";
 import {
 	formatReleaseAge,
 	maxReleaseAgeSeconds,
-	releaseAgeLabel,
 	type GlobalReleaseAgeSettings,
 } from "@/lib/release-age";
 
@@ -186,8 +185,8 @@ export function ReleaseAgeSettings({
 							<div className="space-y-1">
 								<p>{m.releaseAgePushTimeInfo()}</p>
 								<p>
-									{m.releaseAgeLabelInfo()}{" "}
-									<code className="font-mono text-foreground">{releaseAgeLabel}</code>
+									{m.releaseAgeServiceInfo()}{" "}
+									<code className="font-mono text-foreground">x-orcacd</code>
 								</p>
 							</div>
 						</div>
