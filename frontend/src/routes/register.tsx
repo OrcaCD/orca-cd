@@ -58,46 +58,59 @@ function RegisterComponent() {
 
 const SETUP_CODE_HASH_PARAM = "setup-code";
 
+function getSetupCodeFromHash(): string | null {
+	return (
+		new URLSearchParams(window.location.hash.slice(1)).get(SETUP_CODE_HASH_PARAM)?.trim() || null
+	);
+}
+
 function SetupCodeForm({ onVerified }: { onVerified: (setupCode: string) => void }) {
-	const [isLoading, setIsLoading] = useState(false);
+	const [isLoading, setIsLoading] = useState(() => getSetupCodeFromHash() !== null);
 	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	const setupCodeSchema = z.object({
 		setupCode: z.string().trim().min(1, m.validationSetupCodeRequired()),
 	});
 
-	async function verify(setupCode: string): Promise<void> {
-		setIsLoading(true);
-		setSubmitError(null);
-		try {
-			await fetcher("/auth/setup/verify", "POST", { setupCode });
-			onVerified(setupCode);
-		} catch (err) {
-			setSubmitError(err instanceof Error ? err.message : m.toastSetupCodeVerificationFailed());
-		} finally {
-			setIsLoading(false);
-		}
-	}
-
 	const form = useForm({
 		defaultValues: { setupCode: "" },
 		validators: { onSubmit: setupCodeSchema },
 		onSubmit: async ({ value }) => {
-			await verify(value.setupCode.trim());
+			setIsLoading(true);
+			setSubmitError(null);
+			const setupCode = value.setupCode.trim();
+			try {
+				await fetcher("/auth/setup/verify", "POST", { setupCode });
+				onVerified(setupCode);
+			} catch (err) {
+				setSubmitError(err instanceof Error ? err.message : m.toastSetupCodeVerificationFailed());
+			} finally {
+				setIsLoading(false);
+			}
 		},
 	});
 
 	// The hub logs a link with the code in the fragment, which is never sent to a server
 	useEffect(() => {
-		const code = new URLSearchParams(window.location.hash.slice(1)).get(SETUP_CODE_HASH_PARAM);
+		const code = getSetupCodeFromHash();
 		if (!code) {
 			return;
 		}
 
 		history.replaceState(null, "", window.location.pathname + window.location.search);
-		void verify(code.trim());
-		// oxlint-disable-next-line react/exhaustive-deps
-	}, []);
+
+		const verify = async () => {
+			try {
+				await fetcher("/auth/setup/verify", "POST", { setupCode: code });
+				onVerified(code);
+			} catch (err) {
+				setSubmitError(err instanceof Error ? err.message : m.toastSetupCodeVerificationFailed());
+			} finally {
+				setIsLoading(false);
+			}
+		};
+		void verify();
+	}, [onVerified]);
 
 	return (
 		<div className="flex flex-col gap-6">
