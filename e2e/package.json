@@ -13,13 +13,13 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.65.1",
-		"@types/node": "^26.6.6",
+		"@types/node": "^26.6.7",
 		"@types/oidc-provider": "^9.13.1",
-		"jose": "^6.2.17",
-		"oidc-provider": "^9.15.0",
-		"oxfmt": "^0.79.0",
-		"oxlint": "^1.94.0",
-		"oxlint-tsgolint": "^7.0.2007",
+		"jose": "^6.2.18",
+		"oidc-provider": "^9.15.1",
+		"oxfmt": "^0.80.0",
+		"oxlint": "^1.95.0",
+		"oxlint-tsgolint": "^7.0.2008",
 		"typescript": "^7.0.2"
 	},
 	"engines": {
